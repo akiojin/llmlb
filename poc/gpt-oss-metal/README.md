@@ -62,7 +62,7 @@ STREAM=1 ./poc/gpt-oss-metal/run.sh
 ### プロセス制御/ログ
 
 - `tmp/poc-gptoss-metal/` にログと作業用ディレクトリを作成します
-- `KEEP_RUNNING=1` を指定すると、PoC終了後も router/node を停止しません（デバッグ用）
+- `KEEP_RUNNING=1` を指定すると、PoC終了後も llmlb/xllm を停止しません（デバッグ用）
 
 ### 注意
 

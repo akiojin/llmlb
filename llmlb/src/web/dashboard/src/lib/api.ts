@@ -1,4 +1,4 @@
-// API Client for LLM Router Dashboard
+// API Client for LLM Load Balancer Dashboard
 
 const API_BASE = ''
 

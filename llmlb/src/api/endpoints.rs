@@ -634,7 +634,8 @@ pub async fn delete_endpoint(
         return e.into_response();
     }
 
-    match db::delete_endpoint(&state.db_pool, id).await {
+    // EndpointRegistry::remove を使用してDBとキャッシュ両方から削除
+    match state.endpoint_registry.remove(id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,

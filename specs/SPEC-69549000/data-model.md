@@ -17,7 +17,7 @@ safetensors形式のLLMモデルを表す。
 Model
 ├── path: string              # モデルファイルパス
 ├── config: ModelConfig       # config.jsonから読み込んだ設定
-├── architecture: Architecture # アーキテクチャ定義（プラグイン）
+├── architecture: Architecture # アーキテクチャ定義（in-process）
 ├── tensors: map<string, ggml_tensor*>  # 重みテンソル
 ├── vocab_size: int           # 語彙サイズ
 ├── n_layers: int             # レイヤー数
@@ -193,7 +193,7 @@ LoRA
 
 ### Architecture
 
-モデルアーキテクチャ（プラグイン）。
+モデルアーキテクチャ（in-process）。
 
 ```text
 Architecture

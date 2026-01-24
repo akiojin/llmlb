@@ -37,7 +37,15 @@ specify-compile:
 	bash .specify/scripts/checks/check-compile.sh
 
 specify-commits:
-	bash .specify/scripts/checks/check-commits.sh --from origin/main --to HEAD
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
+	tracking=$$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo ""); \
+	if [ -n "$$tracking" ]; then \
+		echo "Checking commits from $$tracking to HEAD (feature branch)"; \
+		bash .specify/scripts/checks/check-commits.sh --from "$$tracking" --to HEAD; \
+	else \
+		echo "Checking commits from origin/main to HEAD"; \
+		bash .specify/scripts/checks/check-commits.sh --from origin/main --to HEAD; \
+	fi
 
 specify-checks: specify-tasks specify-tests specify-compile specify-commits
 

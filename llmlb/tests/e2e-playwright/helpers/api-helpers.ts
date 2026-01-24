@@ -291,12 +291,16 @@ export interface NodeInfo {
 }
 
 /**
- * Get list of nodes
+ * Get list of nodes (endpoints)
+ * Note: /v0/runtimes was deprecated in SPEC-66555000, now using /v0/dashboard/endpoints
  */
 export async function getNodes(request: APIRequestContext): Promise<NodeInfo[]> {
-  const response = await request.get(`${API_BASE}/v0/runtimes`, {
+  const response = await request.get(`${API_BASE}/v0/dashboard/endpoints`, {
     headers: AUTH_HEADER,
   });
+  if (!response.ok()) {
+    return [];
+  }
   const data = await response.json();
   // Handle both array and { nodes: [] } response formats
   return Array.isArray(data) ? data : data.nodes || [];

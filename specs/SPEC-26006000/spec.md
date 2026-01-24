@@ -115,10 +115,10 @@
 
 内蔵エンジンインタビューにより以下が確定（詳細は `SPEC-3fc2c1e4` を参照）:
 
-- **プラグインインターフェース統一**: TTS/ASR/画像生成もLLMと同じEngineインターフェースを使用
+- **エンジンインターフェース統一**: TTS/ASR/画像生成もLLMと同じEngineインターフェースを使用
   - 全モダリティで共通の抽象インターフェース
   - 入出力はモダリティ別メソッド（generate_text(), generate_image(), transcribe(), synthesize()等）で分離
-- **エンジンプラグイン**: whisper.cpp、ONNX Runtime等も動的プラグイン（.so/.dylib/.dll）として実装
+- **内蔵エンジン実装**: whisper.cpp、ONNX Runtime等も in-process 実装として統合
 - **ログ統合**: 全エンジンのstdout/stderrをノードがキャプチャして統合ログへ
 
 ---

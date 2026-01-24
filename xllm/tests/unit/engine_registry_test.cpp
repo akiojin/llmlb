@@ -225,6 +225,35 @@ TEST(EngineRegistryTest, RejectsUnsupportedArchitecture) {
     EXPECT_TRUE(error.empty());
 }
 
+TEST(EngineRegistryTest, NormalizesArchitectureFamilies) {
+    EngineRegistry registry;
+
+    auto engine = std::make_unique<FakeEngine>("arch-family");
+    auto* engine_ptr = engine.get();
+    EngineRegistration reg;
+    reg.engine_id = "engine_arch_family";
+    reg.engine_version = "0.1.0";
+    reg.architectures = {"gptoss", "nemotron", "qwen", "glm"};
+    ASSERT_TRUE(registry.registerEngine(std::move(engine), reg, nullptr));
+
+    struct Case {
+        const char* architecture;
+    };
+    const Case cases[] = {
+        {"GptOssForCausalLM"},
+        {"NemotronForCausalLM"},
+        {"Qwen2ForCausalLM"},
+        {"ChatGLM4ForCausalLM"},
+    };
+
+    for (const auto& entry : cases) {
+        ModelDescriptor desc;
+        desc.runtime = "fake";
+        desc.architectures = {entry.architecture};
+        EXPECT_EQ(registry.resolve(desc), engine_ptr) << entry.architecture;
+    }
+}
+
 TEST(EngineRegistryTest, ReturnsNullWhenCapabilityMismatch) {
     EngineRegistry registry;
 

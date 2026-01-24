@@ -1,6 +1,6 @@
 # SPEC-d7feaa2c: xLLM Manager-based Runtime (Text/Audio/Image)
 
-**ステータス**: 草案
+**ステータス**: 下書き
 
 Status: Draft (2026-01-19)
 
@@ -71,7 +71,12 @@ API endpoints
 - Ensure models are under `~/.llmlb/models` (or configured models dir).
 - Prefer Responses API for new integrations.
 
+## Testing requirements
+- gpt/nemotron/qwen/glm model families must be covered by mandatory tests.
+- Verification can be satisfied via model verification suite or integration/E2E coverage, but it must be recorded.
+
 ## Acceptance
 - Managers present in code and docs.
 - No plugin loader/ABI remains.
 - Tests updated to manager assumptions.
+- gpt/nemotron/qwen/glm families have explicit test coverage.

@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 
-# Consolidated prerequisite checking script
+# 前提条件チェック統合スクリプト
 #
-# This script provides unified prerequisite checking for Spec-Driven Development workflow.
-# It replaces the functionality previously spread across multiple scripts.
+# このスクリプトはSpec駆動開発ワークフローの前提条件チェックを統一的に提供します。
+# 従来複数のスクリプトに分散していた機能を統合しています。
 #
-# Usage: ./check-prerequisites.sh [OPTIONS]
+# 使用法: ./check-prerequisites.sh [OPTIONS]
 #
-# OPTIONS:
-#   --json              Output in JSON format
-#   --require-tasks     Require tasks.md to exist (for implementation phase)
-#   --include-tasks     Include tasks.md in AVAILABLE_DOCS list
-#   --paths-only        Only output path variables (no validation)
-#   --help, -h          Show help message
+# オプション:
+#   --json              JSON形式で出力
+#   --require-tasks     tasks.mdの存在を必須とする（実装フェーズ用）
+#   --include-tasks     tasks.mdをAVAILABLE_DOCSリストに含める
+#   --paths-only        パス変数のみ出力（バリデーションなし）
+#   --help, -h          ヘルプメッセージを表示
 #
-# OUTPUTS:
-#   JSON mode: {"FEATURE_DIR":"...", "AVAILABLE_DOCS":["..."]}
-#   Text mode: FEATURE_DIR:... \n AVAILABLE_DOCS: \n ✓/✗ file.md
-#   Paths only: REPO_ROOT: ... \n BRANCH: ... \n FEATURE_DIR: ... etc.
+# 出力:
+#   JSONモード: {"FEATURE_DIR":"...", "AVAILABLE_DOCS":["..."]}
+#   テキストモード: FEATURE_DIR:... \n AVAILABLE_DOCS: \n ✓/✗ file.md
+#   パスのみ: REPO_ROOT: ... \n BRANCH: ... \n FEATURE_DIR: ... など
 
 set -e
 
-# Parse command line arguments
+# コマンドライン引数の解析
 JSON_MODE=false
 REQUIRE_TASKS=false
 INCLUDE_TASKS=false
@@ -44,30 +44,30 @@ for arg in "$@"; do
             ;;
         --help|-h)
             cat << 'EOF'
-Usage: check-prerequisites.sh [OPTIONS] [SPEC-ID]
+使用法: check-prerequisites.sh [OPTIONS] [SPEC-ID]
 
-Consolidated prerequisite checking for Spec-Driven Development workflow.
+Spec駆動開発ワークフローの前提条件チェックを統一的に行います。
 
-OPTIONS:
-  --json              Output in JSON format
-  --require-tasks     Require tasks.md to exist (for implementation phase)
-  --include-tasks     Include tasks.md in AVAILABLE_DOCS list
-  --paths-only        Only output path variables (no prerequisite validation)
-  --help, -h          Show this help message
-  SPEC-ID             Optional SPEC ID (e.g., SPEC-ea015fbb)
-                      If not provided, derives from current branch
+オプション:
+  --json              JSON形式で出力
+  --require-tasks     tasks.mdの存在を必須とする（実装フェーズ用）
+  --include-tasks     tasks.mdをAVAILABLE_DOCSリストに含める
+  --paths-only        パス変数のみ出力（前提条件のバリデーションなし）
+  --help, -h          このヘルプメッセージを表示
+  SPEC-ID             オプションのSPEC ID（例: SPEC-ea015fbb）
+                      未指定の場合は現在のブランチから導出
 
-EXAMPLES:
-  # Check task prerequisites (plan.md required)
+使用例:
+  # タスクの前提条件をチェック（plan.md必須）
   ./check-prerequisites.sh --json
 
-  # Check prerequisites for specific SPEC
+  # 特定のSPECの前提条件をチェック
   ./check-prerequisites.sh --json SPEC-ea015fbb
 
-  # Check implementation prerequisites (plan.md + tasks.md required)
+  # 実装の前提条件をチェック（plan.md + tasks.md必須）
   ./check-prerequisites.sh --json --require-tasks --include-tasks
 
-  # Get feature paths only (no validation)
+  # 機能パスのみ取得（バリデーションなし）
   ./check-prerequisites.sh --paths-only
 
 EOF
@@ -77,18 +77,18 @@ EOF
             SPEC_ID="$arg"
             ;;
         *)
-            echo "ERROR: Unknown option '$arg'. Use --help for usage information." >&2
+            echo "エラー: 不明なオプション '$arg'。使用方法は --help を参照してください。" >&2
             exit 1
             ;;
     esac
 done
 
-# Source common functions
+# 共通関数を読み込み
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-# Get feature paths and validate branch
-# If SPEC_ID is provided, use it to override the feature lookup
+# 機能パスを取得しブランチを検証
+# SPEC_IDが指定されている場合は機能検索をオーバーライド
 if [[ -n "$SPEC_ID" ]]; then
     eval $(get_feature_paths "$SPEC_ID")
 else
@@ -96,10 +96,10 @@ else
 fi
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
-# If paths-only mode, output paths and exit (support JSON + paths-only combined)
+# パスのみモードの場合はパスを出力して終了（JSON + パスのみの組み合わせもサポート）
 if $PATHS_ONLY; then
     if $JSON_MODE; then
-        # Minimal JSON paths payload (no validation performed)
+        # 最小限のJSONパスペイロード（バリデーションなし）
         printf '{"REPO_ROOT":"%s","BRANCH":"%s","FEATURE_DIR":"%s","FEATURE_SPEC":"%s","IMPL_PLAN":"%s","TASKS":"%s"}\n' \
             "$REPO_ROOT" "$CURRENT_BRANCH" "$FEATURE_DIR" "$FEATURE_SPEC" "$IMPL_PLAN" "$TASKS"
     else
@@ -113,67 +113,67 @@ if $PATHS_ONLY; then
     exit 0
 fi
 
-# Validate required directories and files
+# 必須ディレクトリとファイルを検証
 if [[ ! -d "$FEATURE_DIR" ]]; then
-    echo "ERROR: Feature directory not found: $FEATURE_DIR" >&2
-    echo "Run /speckit.specify first to create the feature structure." >&2
+    echo "エラー: 機能ディレクトリが見つかりません: $FEATURE_DIR" >&2
+    echo "まず /speckit.specify を実行して機能構造を作成してください。" >&2
     exit 1
 fi
 
 if [[ ! -f "$IMPL_PLAN" ]]; then
-    echo "ERROR: plan.md not found in $FEATURE_DIR" >&2
-    echo "Run /speckit.plan first to create the implementation plan." >&2
+    echo "エラー: plan.md が $FEATURE_DIR に見つかりません" >&2
+    echo "まず /speckit.plan を実行して実装計画を作成してください。" >&2
     exit 1
 fi
 
-# Check for tasks.md if required
+# tasks.mdが必須の場合はチェック
 if $REQUIRE_TASKS && [[ ! -f "$TASKS" ]]; then
-    echo "ERROR: tasks.md not found in $FEATURE_DIR" >&2
-    echo "Run /speckit.tasks first to create the task list." >&2
+    echo "エラー: tasks.md が $FEATURE_DIR に見つかりません" >&2
+    echo "まず /speckit.tasks を実行してタスクリストを作成してください。" >&2
     exit 1
 fi
 
-# Build list of available documents
+# 利用可能なドキュメントリストを構築
 docs=()
 
-# Always check these optional docs
+# これらのオプションドキュメントを常にチェック
 [[ -f "$RESEARCH" ]] && docs+=("research.md")
 [[ -f "$DATA_MODEL" ]] && docs+=("data-model.md")
 
-# Check contracts directory (only if it exists and has files)
+# contractsディレクトリをチェック（存在しファイルがある場合のみ）
 if [[ -d "$CONTRACTS_DIR" ]] && [[ -n "$(ls -A "$CONTRACTS_DIR" 2>/dev/null)" ]]; then
     docs+=("contracts/")
 fi
 
 [[ -f "$QUICKSTART" ]] && docs+=("quickstart.md")
 
-# Include tasks.md if requested and it exists
+# 要求された場合、tasks.mdが存在すれば含める
 if $INCLUDE_TASKS && [[ -f "$TASKS" ]]; then
     docs+=("tasks.md")
 fi
 
-# Output results
+# 結果を出力
 if $JSON_MODE; then
-    # Build JSON array of documents
+    # ドキュメントのJSON配列を構築
     if [[ ${#docs[@]} -eq 0 ]]; then
         json_docs="[]"
     else
         json_docs=$(printf '"%s",' "${docs[@]}")
         json_docs="[${json_docs%,}]"
     fi
-    
+
     printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s}\n' "$FEATURE_DIR" "$json_docs"
 else
-    # Text output
+    # テキスト出力
     echo "FEATURE_DIR:$FEATURE_DIR"
     echo "AVAILABLE_DOCS:"
-    
-    # Show status of each potential document
+
+    # 各候補ドキュメントのステータスを表示
     check_file "$RESEARCH" "research.md"
     check_file "$DATA_MODEL" "data-model.md"
     check_dir "$CONTRACTS_DIR" "contracts/"
     check_file "$QUICKSTART" "quickstart.md"
-    
+
     if $INCLUDE_TASKS; then
         check_file "$TASKS" "tasks.md"
     fi

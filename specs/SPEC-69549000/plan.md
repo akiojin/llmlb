@@ -93,7 +93,7 @@ node/third_party/safetensors.cpp/
 │   ├── kv-cache.cpp           # KVキャッシュ管理
 │   ├── batch.cpp              # continuous batching
 │   ├── lora.cpp               # LoRA/QLoRAアダプター
-│   └── arch/                  # アーキテクチャ別実装（プラグイン）
+│   └── arch/                  # アーキテクチャ別実装（in-process）
 │       ├── gptoss.cpp         # gpt-oss-20b
 │       ├── nemotron3.cpp      # Nemotron 3 (Mamba-Transformer MoE)
 │       ├── mamba.cpp          # Mamba State Space Model

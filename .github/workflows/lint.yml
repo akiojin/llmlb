@@ -118,5 +118,6 @@ jobs:
       - name: Check commit messages
         run: |
           echo "📝 Checking commit messages..."
+          echo "Base ref: ${{ github.base_ref }}"
           chmod +x .specify/scripts/checks/check-commits.sh
-          .specify/scripts/checks/check-commits.sh --from origin/main --to HEAD
+          .specify/scripts/checks/check-commits.sh --from "origin/${{ github.base_ref }}" --to HEAD

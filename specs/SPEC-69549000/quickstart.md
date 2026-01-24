@@ -175,7 +175,7 @@ Error: STCPP_ERROR_UNSUPPORTED_ARCH
 
 1. config.jsonの`architectures`を確認
 2. 対応アーキテクチャ: gpt-oss, nemotron
-3. 将来的にプラグインで拡張可能
+3. 将来的にマネージャ方式で拡張可能
 
 ## ベンチマーク
 

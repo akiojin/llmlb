@@ -134,7 +134,7 @@ export default function RegisterPage() {
             </div>
             <div className="text-center">
               <h1 className="font-display text-3xl font-bold tracking-tight">
-                LLM Router
+                LLM Load Balancer
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Create your account
@@ -251,7 +251,7 @@ export default function RegisterPage() {
 
           {/* Footer */}
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            LLM Router Dashboard v1.0
+            LLM Load Balancer Dashboard v1.0
           </p>
         </div>
       </div>

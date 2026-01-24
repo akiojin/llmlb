@@ -24,6 +24,7 @@ std::string normalize_architecture_name(const std::string& value) {
     if (compact.find("gemma") != std::string::npos) return "gemma";
     if (compact.find("llama") != std::string::npos) return "llama";
     if (compact.find("qwen") != std::string::npos) return "qwen";
+    if (compact.find("glm") != std::string::npos) return "glm";
     return compact.empty() ? lower : compact;
 }
 
@@ -93,6 +94,7 @@ std::string normalize_architecture(std::string value) {
     if (out.find("nemotron") != std::string::npos) return "nemotron";
     if (out.find("deepseek") != std::string::npos) return "deepseek";
     if (out.find("gptoss") != std::string::npos) return "gptoss";
+    if (out.find("glm") != std::string::npos) return "glm";
     if (out.find("granite") != std::string::npos) return "granite";
     if (out.find("smollm") != std::string::npos) return "smollm";
     if (out.find("kimi") != std::string::npos) return "kimi";

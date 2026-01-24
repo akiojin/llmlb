@@ -75,6 +75,19 @@ static void create_safetensors_model_with_shards(const fs::path& models_dir, con
     })";
 }
 
+static void create_safetensors_model_with_architectures(
+    const fs::path& models_dir,
+    const std::string& dir_name,
+    const std::vector<std::string>& architectures) {
+    auto model_dir = models_dir / dir_name;
+    fs::create_directories(model_dir);
+    nlohmann::json j;
+    j["architectures"] = architectures;
+    std::ofstream(model_dir / "config.json") << j.dump();
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+}
+
 static void write_manifest_with_format(const fs::path& model_dir, const std::string& format) {
     std::ofstream(model_dir / "manifest.json") << std::string(R"({"format":")") + format + R"(","files":[]})";
 }
@@ -116,6 +129,23 @@ TEST(ModelStorageTest, ParseModelNameRejectsInvalidQuantizationFormat) {
     EXPECT_FALSE(ModelStorage::parseModelName("llama-7b:").has_value());
     EXPECT_FALSE(ModelStorage::parseModelName(":Q4_K_M").has_value());
     EXPECT_FALSE(ModelStorage::parseModelName("llama-7b:Q4_K_M:extra").has_value());
+}
+
+TEST(ModelStorageTest, NormalizesArchitectureFamiliesFromConfig) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+
+    create_safetensors_model_with_architectures(
+        tmp.base,
+        "family-test",
+        {"GptOssForCausalLM", "NemotronForCausalLM", "Qwen2ForCausalLM", "ChatGLM4ForCausalLM"});
+
+    auto desc = storage.resolveDescriptor("family-test");
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "safetensors_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    std::vector<std::string> expected = {"gptoss", "nemotron", "qwen", "glm"};
+    EXPECT_EQ(desc->architectures, expected);
 }
 
 // FR-3: resolveGguf returns correct path

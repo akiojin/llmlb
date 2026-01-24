@@ -12,7 +12,7 @@ test.describe('Login Page', () => {
   });
 
   test('L-01: Login page is accessible', async ({ page }) => {
-    await expect(page).toHaveTitle(/Login.*LLM Router/);
+    await expect(page).toHaveTitle(/Login.*LLM Load Balancer/);
   });
 
   test('L-02: Login form elements are visible', async () => {

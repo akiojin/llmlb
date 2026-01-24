@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+# 新規機能ディレクトリ作成スクリプト
+#
+# 使用法: ./create-new-feature.sh [--json] <機能説明>
+#
+# オプション:
+#   --json      JSON形式で出力
+#   --help, -h  ヘルプメッセージを表示
+#
+# 注意: このスクリプトはブランチやWorktreeを作成しません。
+# 現在のブランチ・ディレクトリのまま specs/SPEC-[UUID8桁]/ を作成します。
+
 set -e
 
 JSON_MODE=false
@@ -11,9 +22,12 @@ for arg in "$@"; do
             JSON_MODE=true
             ;;
         --help|-h)
-            echo "Usage: $0 [--json] <feature_description>"
-            echo "  --json      Output in JSON format"
-            echo "  --help, -h  Show this help message"
+            echo "使用法: $0 [--json] <機能説明>"
+            echo "  --json      JSON形式で出力"
+            echo "  --help, -h  このヘルプメッセージを表示"
+            echo ""
+            echo "注意: ブランチやWorktreeは作成しません。"
+            echo "      現在のブランチ上に specs/SPEC-[UUID8桁]/ を作成します。"
             exit 0
             ;;
         *)
@@ -24,11 +38,11 @@ done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] <feature_description>" >&2
+    echo "使用法: $0 [--json] <機能説明>" >&2
     exit 1
 fi
 
-# Generate SPEC ID (SPEC-xxxxxxxx) using UUID8桁 format
+# SPEC ID (SPEC-xxxxxxxx) をUUID8桁形式で生成
 generate_spec_id() {
     for _ in 1 2 3 4 5; do
         if uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null); then
@@ -38,12 +52,12 @@ generate_spec_id() {
             return
         fi
     done
-    # Fallback to timestamp if UUID generation fails
+    # UUIDの生成に失敗した場合はタイムスタンプでフォールバック
     local ts=$(date +%s%N)
     echo "SPEC-${ts: -8}"
 }
 
-# Function to find the repository root by searching for existing project markers
+# リポジトリルートを検索する関数
 find_repo_root() {
     local dir="$1"
     while [ "$dir" != "/" ]; do
@@ -56,29 +70,28 @@ find_repo_root() {
     return 1
 }
 
-# Resolve repository root. Prefer git information when available, but fall back
-# to searching for repository markers so the workflow still functions in repositories that
-# were initialised with --no-git.
+# リポジトリルートを解決
+# Gitが利用可能な場合はGit情報を優先、そうでなければリポジトリマーカーを検索
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
-    # Check if we're in a worktree
+    # Worktreeにいるかチェック
     if git rev-parse --git-dir 2>/dev/null | grep -q "\.git/worktrees"; then
-        # In a worktree: use the worktree root (find from current working directory)
+        # Worktree内: カレントディレクトリからWorktreeルートを検索
         REPO_ROOT="$(find_repo_root "$PWD")"
         if [ -z "$REPO_ROOT" ]; then
-            # Fallback to PWD if marker not found
+            # マーカーが見つからない場合はPWDにフォールバック
             REPO_ROOT="$PWD"
         fi
     else
-        # In main repository: use standard git root
+        # メインリポジトリ内: 標準のGitルートを使用
         REPO_ROOT=$(git rev-parse --show-toplevel)
     fi
     HAS_GIT=true
 else
     REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")"
     if [ -z "$REPO_ROOT" ]; then
-        echo "Error: Could not determine repository root. Please run this script from within the repository." >&2
+        echo "エラー: リポジトリルートを特定できません。リポジトリ内で実行してください。" >&2
         exit 1
     fi
     HAS_GIT=false
@@ -89,7 +102,7 @@ cd "$REPO_ROOT"
 SPECS_DIR="$REPO_ROOT/specs"
 mkdir -p "$SPECS_DIR"
 
-# Generate unique SPEC ID
+# 一意のSPEC IDを生成
 FEATURE_ID=""
 while :; do
     candidate=$(generate_spec_id)
@@ -99,27 +112,26 @@ while :; do
     fi
 done
 
-# Create branch name with feature/ prefix
+# ブランチ名を feature/ プレフィックス付きで作成（参照用のみ）
 BRANCH_NAME="feature/$FEATURE_ID"
 
-# Create Git branch and worktree if git is available
+# Gitが利用可能な場合は現在のブランチを使用（新規ブランチは作成しない）
 if [ "$HAS_GIT" = true ]; then
-    # Use current branch instead of creating new one
     CURRENT_BRANCH=$(git branch --show-current)
-    echo "[specify] Using current branch: $CURRENT_BRANCH"
+    echo "[specify] 現在のブランチを使用: $CURRENT_BRANCH"
 
-    # Create spec directory in current worktree/repo
+    # 現在のWorktree/リポジトリにspecディレクトリを作成
     FEATURE_DIR="$REPO_ROOT/specs/$FEATURE_ID"
-    echo "[specify] Branch creation skipped (user will create branch manually)"
+    echo "[specify] ブランチ作成はスキップ（ユーザーが手動で作成）"
 else
-    # Fallback for non-git repos
+    # 非Gitリポジトリのフォールバック
     FEATURE_DIR="$SPECS_DIR/$FEATURE_ID"
-    echo "[specify] Warning: Git repository not detected; using local directory without worktree"
+    echo "[specify] 警告: Gitリポジトリが検出されません。Worktreeなしでローカルディレクトリを使用"
 fi
 
 mkdir -p "$FEATURE_DIR"
 
-# Initialize spec file from template
+# テンプレートからspecファイルを初期化
 TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
 SPEC_FILE="$FEATURE_DIR/spec.md"
 if [ -f "$TEMPLATE" ]; then
@@ -128,18 +140,18 @@ else
     touch "$SPEC_FILE"
 fi
 
-# Create checklists subdirectory for quality validation
+# 品質検証用のchecklistsサブディレクトリを作成
 mkdir -p "$FEATURE_DIR/checklists"
 
-# Set the SPECIFY_FEATURE environment variable for the current session
+# 現在のセッション用にSPECIFY_FEATURE環境変数を設定
 if [ "$HAS_GIT" = true ]; then
     export SPECIFY_FEATURE="$CURRENT_BRANCH"
     mkdir -p "$REPO_ROOT/.specify"
     echo "$SPECIFY_FEATURE" > "$REPO_ROOT/.specify/.current-feature"
 fi
 
-echo "[specify] Created feature directory: $FEATURE_ID"
-echo "[specify] Description: $FEATURE_DESCRIPTION"
+echo "[specify] 機能ディレクトリを作成: $FEATURE_ID"
+echo "[specify] 説明: $FEATURE_DESCRIPTION"
 
 if $JSON_MODE; then
     if [ "$HAS_GIT" = true ]; then

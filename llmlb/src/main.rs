@@ -127,7 +127,7 @@ async fn init_db_pool(database_url: &str) -> sqlx::Result<sqlx::SqlitePool> {
 }
 
 async fn run_server(config: ServerConfig) {
-    info!("LLM Router v{}", env!("CARGO_PKG_VERSION"));
+    info!("LLM Load Balancer v{}", env!("CARGO_PKG_VERSION"));
 
     // データベース接続プールを最初に作成（他コンポーネントが依存）
     let database_url = llmlb::config::get_env_with_fallback("LLMLB_DATABASE_URL", "DATABASE_URL")

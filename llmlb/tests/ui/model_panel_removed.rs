@@ -29,7 +29,7 @@ async fn dashboard_html_has_no_model_panel() {
     let bytes = to_bytes(body, usize::MAX).await.unwrap();
     let html = String::from_utf8_lossy(&bytes);
 
-    assert!(html.contains("LLM Router"));
+    assert!(html.contains("LLM Load Balancer"));
     assert!(
         !html.contains("available-models-list"),
         "model panel should be removed"

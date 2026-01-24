@@ -38,7 +38,7 @@ impl TrayOptions {
     pub fn new(base_url: &str, dashboard_url: &str) -> Self {
         Self {
             dashboard_url: dashboard_url.to_string(),
-            tooltip: format!("LLM Router\n{}", base_url),
+            tooltip: format!("LLM Load Balancer\n{}", base_url),
         }
     }
 
@@ -218,7 +218,7 @@ impl TrayMenu {
     fn new() -> Self {
         let menu = Menu::new();
         let open_dashboard = MenuItem::new("Open Dashboard", true, None);
-        let quit = MenuItem::new("Quit LLM Router", true, None);
+        let quit = MenuItem::new("Quit LLM Load Balancer", true, None);
 
         menu.append(&open_dashboard)
             .expect("failed to append dashboard menu");

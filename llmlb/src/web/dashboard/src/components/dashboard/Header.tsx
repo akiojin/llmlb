@@ -61,7 +61,7 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
             </div>
             <div>
               <h1 className="font-display text-lg font-semibold tracking-tight">
-                LLM Router
+                LLM Load Balancer
               </h1>
               <p className="text-xs text-muted-foreground">Dashboard</p>
             </div>

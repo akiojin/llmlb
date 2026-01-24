@@ -13,7 +13,7 @@
 
 use crate::common::{
     error::{LbError, RouterResult},
-    types::{HealthMetrics, Node, NodeStatus},
+    types::{HealthMetrics, Node},
 };
 use crate::registry::endpoints::EndpointRegistry;
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
@@ -462,17 +462,18 @@ impl EndpointLoadState {
 
 /// エンドポイント/ノードのロードスナップショット
 ///
-/// NodeRegistry廃止移行中。内部的には`endpoint_id`を使用するが、
-/// API互換性のため`node_id`としてシリアライズする。
+/// エンドポイントの負荷スナップショット
+///
+/// SPEC-f8e3a1b7: Node型依存を削除し、Endpoint型を直接使用
 #[derive(Debug, Clone, Serialize)]
 pub struct EndpointLoadSnapshot {
     /// エンドポイントID（API互換性のためnode_idとしてシリアライズ）
     #[serde(rename = "node_id")]
     pub endpoint_id: Uuid,
-    /// マシン名
+    /// エンドポイント名
     pub machine_name: String,
-    /// ノード状態
-    pub status: NodeStatus,
+    /// エンドポイント状態
+    pub status: crate::types::endpoint::EndpointStatus,
     /// CPU使用率
     pub cpu_usage: Option<f32>,
     /// メモリ使用率
@@ -1363,22 +1364,19 @@ impl LoadManager {
     }
 
     /// 指定されたエンドポイントのロードスナップショットを取得
-    #[allow(deprecated)] // to_legacy_node is deprecated but needed for internal use
-    pub async fn snapshot(&self, node_id: Uuid) -> RouterResult<EndpointLoadSnapshot> {
+    pub async fn snapshot(&self, endpoint_id: Uuid) -> RouterResult<EndpointLoadSnapshot> {
         let endpoint = self
             .endpoint_registry
-            .get(node_id)
+            .get(endpoint_id)
             .await
-            .ok_or(LbError::NodeNotFound(node_id))?;
-        let node = endpoint.to_legacy_node(vec![]);
+            .ok_or(LbError::NodeNotFound(endpoint_id))?;
         let state = self.state.read().await;
-        let load_state = state.get(&node_id).cloned().unwrap_or_default();
+        let load_state = state.get(&endpoint_id).cloned().unwrap_or_default();
 
-        Ok(self.build_snapshot(node, load_state, Utc::now()))
+        Ok(self.build_snapshot_from_endpoint(&endpoint, load_state, Utc::now()))
     }
 
     /// すべてのエンドポイントのロードスナップショットを取得
-    #[allow(deprecated)] // to_legacy_node is deprecated but needed for internal use
     pub async fn snapshots(&self) -> Vec<EndpointLoadSnapshot> {
         let endpoints = self.endpoint_registry.list().await;
         let state = self.state.read().await;
@@ -1386,11 +1384,10 @@ impl LoadManager {
         let now = Utc::now();
 
         endpoints
-            .into_iter()
+            .iter()
             .map(|endpoint| {
-                let node = endpoint.to_legacy_node(vec![]);
-                let load_state = state.get(&node.id).cloned().unwrap_or_default();
-                self.build_snapshot(node, load_state, now)
+                let load_state = state.get(&endpoint.id).cloned().unwrap_or_default();
+                self.build_snapshot_from_endpoint(endpoint, load_state, now)
             })
             .collect()
     }
@@ -1410,33 +1407,29 @@ impl LoadManager {
     }
 
     /// システム全体の統計サマリーを取得
-    #[allow(deprecated)] // to_legacy_node is deprecated but needed for internal use
+    /// システム全体の統計サマリーを取得（SPEC-f8e3a1b7: Endpoint版）
     pub async fn summary(&self) -> SystemSummary {
+        use crate::types::endpoint::EndpointStatus;
+
         let endpoints = self.endpoint_registry.list().await;
-        // EndpointからNodeへ変換してステータス集計
-        let nodes: Vec<Node> = endpoints
-            .into_iter()
-            .map(|e| e.to_legacy_node(vec![]))
-            .collect();
         let state = self.state.read().await;
 
         let mut summary = SystemSummary {
-            total_nodes: nodes.len(),
-            online_nodes: nodes
+            total_nodes: endpoints.len(),
+            online_nodes: endpoints
                 .iter()
-                .filter(|node| node.status == NodeStatus::Online)
+                .filter(|ep| ep.status == EndpointStatus::Online)
                 .count(),
-            pending_nodes: nodes
+            pending_nodes: endpoints
                 .iter()
-                .filter(|node| node.status == NodeStatus::Pending)
+                .filter(|ep| ep.status == EndpointStatus::Pending)
                 .count(),
-            registering_nodes: nodes
+            registering_nodes: 0, // EndpointStatusにはRegisteringがないため常に0
+            offline_nodes: endpoints
                 .iter()
-                .filter(|node| node.status == NodeStatus::Registering)
-                .count(),
-            offline_nodes: nodes
-                .iter()
-                .filter(|node| node.status == NodeStatus::Offline)
+                .filter(|ep| {
+                    ep.status == EndpointStatus::Offline || ep.status == EndpointStatus::Error
+                })
                 .count(),
             queued_requests: self.queue_waiters.load(AtomicOrdering::Relaxed),
             ..Default::default()
@@ -1453,8 +1446,8 @@ impl LoadManager {
         let mut gpu_memory_samples = 0u64;
         let now = Utc::now();
 
-        for node in &nodes {
-            if let Some(load_state) = state.get(&node.id) {
+        for endpoint in &endpoints {
+            if let Some(load_state) = state.get(&endpoint.id) {
                 let is_fresh = !load_state.is_stale(now);
                 if is_fresh {
                     summary.total_active_requests = summary
@@ -1561,9 +1554,10 @@ impl LoadManager {
         prune_history(&mut history, minute);
     }
 
-    fn build_snapshot(
+    /// エンドポイントのスナップショットを構築（SPEC-f8e3a1b7: Endpoint版）
+    fn build_snapshot_from_endpoint(
         &self,
-        node: Node,
+        endpoint: &crate::types::endpoint::Endpoint,
         load_state: EndpointLoadState,
         now: DateTime<Utc>,
     ) -> EndpointLoadSnapshot {
@@ -1610,9 +1604,9 @@ impl LoadManager {
         let active_requests = load_state.combined_active();
 
         EndpointLoadSnapshot {
-            endpoint_id: node.id,
-            machine_name: node.machine_name,
-            status: node.status,
+            endpoint_id: endpoint.id,
+            machine_name: endpoint.name.clone(),
+            status: endpoint.status,
             cpu_usage,
             memory_usage,
             gpu_usage,
@@ -1680,6 +1674,191 @@ impl LoadManager {
 
         Ok(online_nodes[index].clone())
     }
+
+    // ====================================================================
+    // Endpoint版関数（SPEC-f8e3a1b7: Node→Endpoint移行）
+    // ====================================================================
+
+    /// オンラインエンドポイントを収集（Endpoint版）
+    async fn collect_online_endpoints(
+        &self,
+        model_id: Option<&str>,
+    ) -> RouterResult<Vec<crate::types::endpoint::Endpoint>> {
+        if let Some(model_id) = model_id {
+            let endpoints = self.endpoint_registry.find_by_model(model_id).await;
+            if endpoints.is_empty() {
+                return Err(LbError::NoCapableNodes(model_id.to_string()));
+            }
+            return Ok(endpoints);
+        }
+
+        let endpoints = self.endpoint_registry.list_online().await;
+        if endpoints.is_empty() {
+            return Err(LbError::NoNodesAvailable);
+        }
+
+        Ok(endpoints)
+    }
+
+    /// エンドポイントを直接選択（ラウンドロビン - Endpoint版）
+    pub async fn select_endpoint_direct(&self) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(None).await?;
+        self.select_endpoint_round_robin_from_endpoints(endpoints)
+    }
+
+    /// 指定モデルに対応するエンドポイントを直接選択（ラウンドロビン - Endpoint版）
+    pub async fn select_endpoint_direct_for_model(
+        &self,
+        model_id: &str,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        self.select_endpoint_round_robin_from_endpoints(endpoints)
+    }
+
+    /// アイドルエンドポイントを選択（Endpoint版）
+    pub async fn select_idle_endpoint(
+        &self,
+    ) -> RouterResult<Option<crate::types::endpoint::Endpoint>> {
+        let endpoints = self.endpoint_registry.list_online().await;
+        if endpoints.is_empty() {
+            return Err(LbError::NoNodesAvailable);
+        }
+
+        let state = self.state.read().await;
+        // 初期化中でないエンドポイントをフィルタリング
+        let non_initializing: Vec<_> = endpoints
+            .iter()
+            .filter(|ep| {
+                state
+                    .get(&ep.id)
+                    .map(|load| !load.initializing)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+
+        let idle_endpoints: Vec<_> = non_initializing
+            .iter()
+            .filter(|ep| {
+                state
+                    .get(&ep.id)
+                    .map(|load| load.combined_active() == 0)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+
+        if idle_endpoints.is_empty() {
+            return Ok(None);
+        }
+
+        let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let round_robin_start = round_robin_cursor % non_initializing.len().max(1);
+        let round_robin_priority =
+            compute_round_robin_priority_for_endpoints(&non_initializing, round_robin_start);
+
+        let mut ordered = idle_endpoints;
+        ordered.sort_by(|a, b| {
+            let a_rank = round_robin_priority
+                .get(&a.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            let b_rank = round_robin_priority
+                .get(&b.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            a_rank.cmp(&b_rank)
+        });
+
+        Ok(ordered.first().cloned())
+    }
+
+    /// モデル対応のアイドルエンドポイントを選択（Endpoint版）
+    pub async fn select_idle_endpoint_for_model(
+        &self,
+        model_id: &str,
+    ) -> RouterResult<Option<crate::types::endpoint::Endpoint>> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        let state = self.state.read().await;
+
+        // 初期化中でないエンドポイントをフィルタリング
+        let non_initializing: Vec<_> = endpoints
+            .into_iter()
+            .filter(|ep| {
+                state
+                    .get(&ep.id)
+                    .map(|load| !load.initializing)
+                    .unwrap_or(true)
+            })
+            .collect();
+
+        let idle_endpoints: Vec<_> = non_initializing
+            .iter()
+            .filter(|ep| {
+                state
+                    .get(&ep.id)
+                    .map(|load| load.combined_active() == 0)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+
+        if idle_endpoints.is_empty() {
+            return Ok(None);
+        }
+
+        let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let round_robin_start = round_robin_cursor % non_initializing.len().max(1);
+        let round_robin_priority =
+            compute_round_robin_priority_for_endpoints(&non_initializing, round_robin_start);
+
+        let mut ordered = idle_endpoints;
+        ordered.sort_by(|a, b| {
+            let a_rank = round_robin_priority
+                .get(&a.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            let b_rank = round_robin_priority
+                .get(&b.id)
+                .copied()
+                .unwrap_or(usize::MAX);
+            a_rank.cmp(&b_rank)
+        });
+
+        Ok(ordered.first().cloned())
+    }
+
+    /// 純粋なラウンドロビンでエンドポイントを選択（Endpoint版）
+    pub async fn select_endpoint_round_robin_direct(
+        &self,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(None).await?;
+        self.select_endpoint_round_robin_from_endpoints(endpoints)
+    }
+
+    /// 指定モデルに対応するエンドポイントを純粋なラウンドロビンで選択（Endpoint版）
+    pub async fn select_endpoint_round_robin_direct_for_model(
+        &self,
+        model_id: &str,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        self.select_endpoint_round_robin_from_endpoints(endpoints)
+    }
+
+    /// 候補エンドポイントから純粋なラウンドロビンで選択（Endpoint版）
+    fn select_endpoint_round_robin_from_endpoints(
+        &self,
+        endpoints: Vec<crate::types::endpoint::Endpoint>,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        if endpoints.is_empty() {
+            return Err(LbError::NoNodesAvailable);
+        }
+
+        let cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let index = cursor % endpoints.len();
+
+        Ok(endpoints[index].clone())
+    }
 }
 
 fn align_to_minute(ts: DateTime<Utc>) -> DateTime<Utc> {
@@ -1725,6 +1904,25 @@ fn compute_round_robin_priority(nodes: &[Node], start_index: usize) -> HashMap<U
     for offset in 0..len {
         let idx = (start_index + offset) % len;
         priority.insert(nodes[idx].id, offset);
+    }
+
+    priority
+}
+
+/// Endpoint用ラウンドロビン優先度計算（SPEC-f8e3a1b7: Node移行）
+fn compute_round_robin_priority_for_endpoints(
+    endpoints: &[crate::types::endpoint::Endpoint],
+    start_index: usize,
+) -> HashMap<Uuid, usize> {
+    let len = endpoints.len();
+    let mut priority = HashMap::with_capacity(len);
+    if len == 0 {
+        return priority;
+    }
+
+    for offset in 0..len {
+        let idx = (start_index + offset) % len;
+        priority.insert(endpoints[idx].id, offset);
     }
 
     priority

@@ -1,13 +1,11 @@
 //! LLM runtimeプロキシ APIハンドラー
 //!
-//! # 移行中
+//! # SPEC-f8e3a1b7: Endpoint型への移行完了
 //!
-//! このモジュールは現在、Node型からEndpoint型への移行期間中です。
-
-#![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
+//! このモジュールはEndpoint型を使用しています。
 
 use crate::common::{error::LbError, protocol::RequestResponseRecord};
-use crate::{config::QueueConfig, AppState};
+use crate::{config::QueueConfig, types::endpoint::Endpoint, AppState};
 use axum::{
     body::Body,
     http::{HeaderName, HeaderValue, StatusCode},
@@ -24,41 +22,39 @@ use crate::balancer::WaitResult;
 /// 負荷分散は単純なラウンドロビン方式を採用しています。
 /// 標準のOpenAI互換APIにはメトリクスエンドポイントがないため、
 /// エンドポイントの内部状態（VRAM、負荷等）を考慮した選択は行いません。
-pub(crate) async fn select_available_node(
-    state: &AppState,
-) -> Result<crate::common::types::Node, LbError> {
-    let node = state.load_manager.select_endpoint_round_robin().await?;
-    if node.initializing {
-        return Err(LbError::ServiceUnavailable(
-            "All nodes are warming up models".into(),
-        ));
-    }
-    Ok(node)
+pub(crate) async fn select_available_endpoint(state: &AppState) -> Result<Endpoint, LbError> {
+    state
+        .load_manager
+        .select_endpoint_round_robin_direct()
+        .await
 }
 
+/// キュー付きエンドポイント選択の結果
 pub(crate) enum QueueSelection {
+    /// エンドポイントが見つかった
     Ready {
-        node: Box<crate::common::types::Node>,
+        endpoint: Box<Endpoint>,
         queued_wait_ms: Option<u128>,
     },
+    /// キャパシティ超過
     CapacityExceeded,
-    Timeout {
-        waited_ms: u128,
-    },
+    /// タイムアウト
+    Timeout { waited_ms: u128 },
 }
 
-pub(crate) async fn select_available_node_with_queue_for_model(
+/// モデル対応のエンドポイントをキュー付きで選択
+pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
     queue_config: QueueConfig,
     model_id: &str,
 ) -> Result<QueueSelection, LbError> {
     match state
         .load_manager
-        .select_idle_node_for_model(model_id)
+        .select_idle_endpoint_for_model(model_id)
         .await?
     {
-        Some(node) => Ok(QueueSelection::Ready {
-            node: Box::new(node),
+        Some(endpoint) => Ok(QueueSelection::Ready {
+            endpoint: Box::new(endpoint),
             queued_wait_ms: None,
         }),
         None => {
@@ -78,11 +74,11 @@ pub(crate) async fn select_available_node_with_queue_for_model(
                 }),
                 WaitResult::Ready => match state
                     .load_manager
-                    .select_idle_node_for_model(model_id)
+                    .select_idle_endpoint_for_model(model_id)
                     .await?
                 {
-                    Some(node) => Ok(QueueSelection::Ready {
-                        node: Box::new(node),
+                    Some(endpoint) => Ok(QueueSelection::Ready {
+                        endpoint: Box::new(endpoint),
                         queued_wait_ms: Some(wait_start.elapsed().as_millis()),
                     }),
                     None => Err(LbError::NoNodesAvailable),
@@ -140,7 +136,7 @@ pub(crate) fn save_request_record(
 /// エンドポイント選択結果
 pub(crate) enum EndpointSelection {
     /// エンドポイントが見つかった（Boxでヒープ割り当て、enum sizeの最適化）
-    Found(Box<crate::types::endpoint::Endpoint>),
+    Found(Box<Endpoint>),
     /// モデルをサポートするエンドポイントがない
     NotFound,
 }
@@ -169,7 +165,7 @@ pub(crate) async fn select_endpoint_for_model(
 /// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す
 pub(crate) async fn forward_to_endpoint(
     client: &reqwest::Client,
-    endpoint: &crate::types::endpoint::Endpoint,
+    endpoint: &Endpoint,
     path: &str,
     body: Vec<u8>,
     stream: bool,

@@ -29,7 +29,7 @@ use crate::{
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         proxy::{
             forward_streaming_response, forward_to_endpoint, save_request_record,
-            select_available_node, select_available_node_with_queue_for_model,
+            select_available_endpoint, select_available_endpoint_with_queue_for_model,
             select_endpoint_for_model, EndpointSelection, QueueSelection,
         },
     },
@@ -1429,140 +1429,139 @@ async fn proxy_openai_post(
     let queue_config = state.queue_config;
     let mut queued_wait_ms: Option<u128> = None;
 
-    // FR-004: ノード選択失敗時もリクエスト履歴に記録する
-    let node = match select_available_node_with_queue_for_model(state, queue_config, &model).await {
-        Ok(QueueSelection::Ready {
-            node,
-            queued_wait_ms: wait_ms,
-        }) => {
-            queued_wait_ms = wait_ms;
-            *node
-        }
-        Ok(QueueSelection::CapacityExceeded) => {
-            let message = "Request queue is full".to_string();
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model: model.clone(),
-                    node_id: Uuid::nil(),
-                    node_machine_name: "N/A".to_string(),
-                    node_ip: "0.0.0.0".parse().unwrap(),
-                    client_ip: None,
-                    request_body,
-                    response_body: None,
-                    duration_ms: 0,
-                    status: RecordStatus::Error {
-                        message: message.clone(),
+    // FR-004: エンドポイント選択失敗時もリクエスト履歴に記録する
+    let endpoint =
+        match select_available_endpoint_with_queue_for_model(state, queue_config, &model).await {
+            Ok(QueueSelection::Ready {
+                endpoint,
+                queued_wait_ms: wait_ms,
+            }) => {
+                queued_wait_ms = wait_ms;
+                *endpoint
+            }
+            Ok(QueueSelection::CapacityExceeded) => {
+                let message = "Request queue is full".to_string();
+                save_request_record(
+                    state.request_history.clone(),
+                    RequestResponseRecord {
+                        id: record_id,
+                        timestamp,
+                        request_type,
+                        model: model.clone(),
+                        node_id: Uuid::nil(),
+                        node_machine_name: "N/A".to_string(),
+                        node_ip: "0.0.0.0".parse().unwrap(),
+                        client_ip: None,
+                        request_body,
+                        response_body: None,
+                        duration_ms: 0,
+                        status: RecordStatus::Error {
+                            message: message.clone(),
+                        },
+                        completed_at: Utc::now(),
+                        input_tokens: None,
+                        output_tokens: None,
+                        total_tokens: None,
                     },
-                    completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
-                },
-            );
-            let retry_after = queue_config.timeout.as_secs().max(1);
-            return Ok(queue_error_response(
-                StatusCode::TOO_MANY_REQUESTS,
-                &message,
-                "rate_limit_exceeded",
-                Some(retry_after),
-            ));
-        }
-        Ok(QueueSelection::Timeout { waited_ms }) => {
-            let message = "Queue wait timeout".to_string();
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model: model.clone(),
-                    node_id: Uuid::nil(),
-                    node_machine_name: "N/A".to_string(),
-                    node_ip: "0.0.0.0".parse().unwrap(),
-                    client_ip: None,
-                    request_body,
-                    response_body: None,
-                    duration_ms: waited_ms as u64,
-                    status: RecordStatus::Error {
-                        message: message.clone(),
-                    },
-                    completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
-                },
-            );
-            return Ok(queue_error_response(
-                StatusCode::GATEWAY_TIMEOUT,
-                &message,
-                "timeout",
-                None,
-            ));
-        }
-        Err(e) => {
-            let error_message = if matches!(e, LbError::NoCapableNodes(_)) {
-                format!("No available nodes support model: {}", model)
-            } else {
-                format!("Node selection failed: {}", e)
-            };
-            error!(
-                endpoint = %target_path,
-                model = %model,
-                error = %e,
-                "Failed to select available node"
-            );
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model: model.clone(),
-                    node_id: Uuid::nil(),
-                    node_machine_name: "N/A".to_string(),
-                    node_ip: "0.0.0.0".parse().unwrap(),
-                    client_ip: None,
-                    request_body,
-                    response_body: None,
-                    duration_ms: queued_wait_ms.unwrap_or(0) as u64,
-                    status: RecordStatus::Error {
-                        message: error_message.clone(),
-                    },
-                    completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
-                },
-            );
-            if matches!(e, LbError::NoCapableNodes(_)) {
-                return Ok(model_unavailable_response(
-                    error_message,
-                    "no_capable_nodes",
+                );
+                let retry_after = queue_config.timeout.as_secs().max(1);
+                return Ok(queue_error_response(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    &message,
+                    "rate_limit_exceeded",
+                    Some(retry_after),
                 ));
             }
-            return Err(e.into());
-        }
-    };
-    let node_id = node.id;
-    let node_machine_name = node.machine_name.clone();
-    let node_ip = node.ip_address;
+            Ok(QueueSelection::Timeout { waited_ms }) => {
+                let message = "Queue wait timeout".to_string();
+                save_request_record(
+                    state.request_history.clone(),
+                    RequestResponseRecord {
+                        id: record_id,
+                        timestamp,
+                        request_type,
+                        model: model.clone(),
+                        node_id: Uuid::nil(),
+                        node_machine_name: "N/A".to_string(),
+                        node_ip: "0.0.0.0".parse().unwrap(),
+                        client_ip: None,
+                        request_body,
+                        response_body: None,
+                        duration_ms: waited_ms as u64,
+                        status: RecordStatus::Error {
+                            message: message.clone(),
+                        },
+                        completed_at: Utc::now(),
+                        input_tokens: None,
+                        output_tokens: None,
+                        total_tokens: None,
+                    },
+                );
+                return Ok(queue_error_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    &message,
+                    "timeout",
+                    None,
+                ));
+            }
+            Err(e) => {
+                let error_message = if matches!(e, LbError::NoCapableNodes(_)) {
+                    format!("No available nodes support model: {}", model)
+                } else {
+                    format!("Node selection failed: {}", e)
+                };
+                error!(
+                    endpoint = %target_path,
+                    model = %model,
+                    error = %e,
+                    "Failed to select available node"
+                );
+                save_request_record(
+                    state.request_history.clone(),
+                    RequestResponseRecord {
+                        id: record_id,
+                        timestamp,
+                        request_type,
+                        model: model.clone(),
+                        node_id: Uuid::nil(),
+                        node_machine_name: "N/A".to_string(),
+                        node_ip: "0.0.0.0".parse().unwrap(),
+                        client_ip: None,
+                        request_body,
+                        response_body: None,
+                        duration_ms: queued_wait_ms.unwrap_or(0) as u64,
+                        status: RecordStatus::Error {
+                            message: error_message.clone(),
+                        },
+                        completed_at: Utc::now(),
+                        input_tokens: None,
+                        output_tokens: None,
+                        total_tokens: None,
+                    },
+                );
+                if matches!(e, LbError::NoCapableNodes(_)) {
+                    return Ok(model_unavailable_response(
+                        error_message,
+                        "no_capable_nodes",
+                    ));
+                }
+                return Err(e.into());
+            }
+        };
+    let endpoint_id = endpoint.id;
+    let endpoint_name = endpoint.name.clone();
+    // RequestResponseRecordの互換性のため、デフォルトIP使用
+    // (今後、RequestResponseRecordのフィールドをリネームすべき)
+    let endpoint_host: std::net::IpAddr = "0.0.0.0".parse().unwrap();
 
     state
         .load_manager
-        .begin_request(node_id)
+        .begin_request(endpoint_id)
         .await
         .map_err(AppError::from)?;
 
     let client = state.http_client.clone();
-    let node_api_port = node.runtime_port + 1;
-    let runtime_url = format!(
-        "http://{}:{}{}",
-        node.ip_address, node_api_port, target_path
-    );
+    let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
 
     let response = match client.post(&runtime_url).json(&payload).send().await {
@@ -1571,7 +1570,7 @@ async fn proxy_openai_post(
             let duration = start.elapsed();
             state
                 .load_manager
-                .finish_request(node_id, RequestOutcome::Error, duration)
+                .finish_request(endpoint_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
 
@@ -1585,9 +1584,9 @@ async fn proxy_openai_post(
                     timestamp,
                     request_type,
                     model: model.clone(),
-                    node_id,
-                    node_machine_name: node_machine_name.clone(),
-                    node_ip,
+                    node_id: endpoint_id,
+                    node_machine_name: endpoint_name.clone(),
+                    node_ip: endpoint_host,
                     client_ip: None,
                     request_body: request_body.clone(),
                     response_body: None,
@@ -1611,7 +1610,7 @@ async fn proxy_openai_post(
         let duration = start.elapsed();
         state
             .load_manager
-            .finish_request(node_id, RequestOutcome::Success, duration)
+            .finish_request(endpoint_id, RequestOutcome::Success, duration)
             .await
             .map_err(AppError::from)?;
 
@@ -1622,9 +1621,9 @@ async fn proxy_openai_post(
                 timestamp,
                 request_type,
                 model: model.clone(),
-                node_id,
-                node_machine_name: node_machine_name.clone(),
-                node_ip,
+                node_id: endpoint_id,
+                node_machine_name: endpoint_name.clone(),
+                node_ip: endpoint_host,
                 client_ip: None,
                 request_body: request_body.clone(),
                 response_body: None, // ストリームボディは記録しない
@@ -1648,7 +1647,7 @@ async fn proxy_openai_post(
         let duration = start.elapsed();
         state
             .load_manager
-            .finish_request(node_id, RequestOutcome::Error, duration)
+            .finish_request(endpoint_id, RequestOutcome::Error, duration)
             .await
             .map_err(AppError::from)?;
 
@@ -1671,9 +1670,9 @@ async fn proxy_openai_post(
                 timestamp,
                 request_type,
                 model: model.clone(),
-                node_id,
-                node_machine_name: node_machine_name.clone(),
-                node_ip,
+                node_id: endpoint_id,
+                node_machine_name: endpoint_name.clone(),
+                node_ip: endpoint_host,
                 client_ip: None,
                 request_body: request_body.clone(),
                 response_body: None,
@@ -1691,7 +1690,7 @@ async fn proxy_openai_post(
         let payload = json!({
             "error": {
                 "message": message,
-                "type": "node_upstream_error",
+                "type": "endpoint_upstream_error",
                 "code": status_code.as_u16(),
             }
         });
@@ -1707,7 +1706,7 @@ async fn proxy_openai_post(
         let duration = start.elapsed();
         state
             .load_manager
-            .finish_request(node_id, RequestOutcome::Success, duration)
+            .finish_request(endpoint_id, RequestOutcome::Success, duration)
             .await
             .map_err(AppError::from)?;
 
@@ -1718,9 +1717,9 @@ async fn proxy_openai_post(
                 timestamp,
                 request_type,
                 model,
-                node_id,
-                node_machine_name,
-                node_ip,
+                node_id: endpoint_id,
+                node_machine_name: endpoint_name,
+                node_ip: endpoint_host,
                 client_ip: None,
                 request_body,
                 response_body: None,
@@ -1751,7 +1750,7 @@ async fn proxy_openai_post(
             state
                 .load_manager
                 .finish_request_with_tokens(
-                    node_id,
+                    endpoint_id,
                     RequestOutcome::Success,
                     duration,
                     token_usage.clone(),
@@ -1772,9 +1771,9 @@ async fn proxy_openai_post(
                     timestamp,
                     request_type,
                     model,
-                    node_id,
-                    node_machine_name,
-                    node_ip,
+                    node_id: endpoint_id,
+                    node_machine_name: endpoint_name,
+                    node_ip: endpoint_host,
                     client_ip: None,
                     request_body,
                     response_body: Some(body.clone()),
@@ -1796,7 +1795,7 @@ async fn proxy_openai_post(
         Err(e) => {
             state
                 .load_manager
-                .finish_request(node_id, RequestOutcome::Error, duration)
+                .finish_request(endpoint_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
 
@@ -1810,9 +1809,9 @@ async fn proxy_openai_post(
                     timestamp,
                     request_type,
                     model,
-                    node_id,
-                    node_machine_name,
-                    node_ip,
+                    node_id: endpoint_id,
+                    node_machine_name: endpoint_name,
+                    node_ip: endpoint_host,
                     client_ip: None,
                     request_body,
                     response_body: None,
@@ -1832,22 +1831,19 @@ async fn proxy_openai_post(
     }
 }
 
-#[allow(dead_code, deprecated)]
+#[allow(dead_code)]
 async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Response, AppError> {
-    let node = select_available_node(state).await?;
-    let node_id = node.id;
+    let endpoint = select_available_endpoint(state).await?;
+    let endpoint_id = endpoint.id;
 
     state
         .load_manager
-        .begin_request(node_id)
+        .begin_request(endpoint_id)
         .await
         .map_err(AppError::from)?;
 
     let client = state.http_client.clone();
-    let runtime_url = format!(
-        "http://{}:{}{}",
-        node.ip_address, node.runtime_port, target_path
-    );
+    let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
 
     let response = client.get(&runtime_url).send().await.map_err(|e| {
@@ -1865,7 +1861,7 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
     };
     state
         .load_manager
-        .finish_request(node_id, outcome, duration)
+        .finish_request(endpoint_id, outcome, duration)
         .await
         .map_err(AppError::from)?;
 

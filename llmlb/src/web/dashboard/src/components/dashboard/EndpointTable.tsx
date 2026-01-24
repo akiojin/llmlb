@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -31,6 +32,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { EndpointDetailModal } from './EndpointDetailModal'
 import {
   Search,
@@ -43,6 +52,7 @@ import {
   Play,
   RefreshCw,
   Trash2,
+  Plus,
 } from 'lucide-react'
 
 /**
@@ -106,6 +116,38 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isTesting, setIsTesting] = useState<string | null>(null)
   const [isSyncing, setIsSyncing] = useState<string | null>(null)
+  // Create endpoint state
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    base_url: '',
+    api_key: '',
+    notes: '',
+  })
+
+  const handleCreate = async () => {
+    if (!createForm.name || !createForm.base_url) return
+    setIsCreating(true)
+    setCreateError(null)
+    try {
+      await endpointsApi.create({
+        name: createForm.name,
+        base_url: createForm.base_url,
+        api_key: createForm.api_key || undefined,
+        notes: createForm.notes || undefined,
+      })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
+      setIsCreateDialogOpen(false)
+      setCreateForm({ name: '', base_url: '', api_key: '', notes: '' })
+    } catch (error) {
+      console.error('Failed to create endpoint:', error)
+      setCreateError(error instanceof Error ? error.message : 'Failed to create endpoint')
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   const handleDelete = async () => {
     if (!deletingEndpoint) return
@@ -236,6 +278,10 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 {filteredEndpoints.length}
               </Badge>
             </CardTitle>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Endpoint
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -468,6 +514,84 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create Endpoint Dialog */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setCreateError(null)
+          setCreateForm({ name: '', base_url: '', api_key: '', notes: '' })
+        }
+        setIsCreateDialogOpen(open)
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Add New Endpoint</DialogTitle>
+            <DialogDescription>
+              Register a new inference service endpoint (Ollama, vLLM, etc.)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="endpoint-name">Name *</Label>
+              <Input
+                id="endpoint-name"
+                placeholder="e.g., Production Ollama"
+                value={createForm.name}
+                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="endpoint-url">Base URL *</Label>
+              <Input
+                id="endpoint-url"
+                placeholder="e.g., http://localhost:11434"
+                value={createForm.base_url}
+                onChange={(e) => setCreateForm({ ...createForm, base_url: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                The base URL of the OpenAI-compatible API endpoint
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="endpoint-api-key">API Key (optional)</Label>
+              <Input
+                id="endpoint-api-key"
+                type="password"
+                placeholder="sk-..."
+                value={createForm.api_key}
+                onChange={(e) => setCreateForm({ ...createForm, api_key: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="endpoint-notes">Notes (optional)</Label>
+              <Input
+                id="endpoint-notes"
+                placeholder="Description or notes about this endpoint"
+                value={createForm.notes}
+                onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })}
+              />
+            </div>
+            {createError && (
+              <p className="text-sm text-destructive">{createError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsCreateDialogOpen(false)}
+              disabled={isCreating}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={isCreating || !createForm.name || !createForm.base_url}
+            >
+              {isCreating ? 'Creating...' : 'Create Endpoint'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

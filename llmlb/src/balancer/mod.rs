@@ -36,8 +36,6 @@ const METRICS_STALE_THRESHOLD_SECS: i64 = 120;
 const REQUEST_HISTORY_WINDOW_MINUTES: i64 = 60;
 /// ノードメトリクス履歴の最大保持件数
 const METRICS_HISTORY_CAPACITY: usize = 360;
-/// メトリクススコア比較時の許容誤差
-const LOAD_SCORE_EPSILON: f64 = 0.0001;
 
 /// リクエスト結果
 #[derive(Debug, Clone, Copy)]
@@ -195,60 +193,6 @@ mod tests {
     #[tokio::test]
     #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
     async fn metrics_history_tracks_recent_points() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_by_metrics_prefers_lower_load() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_prefers_lower_usage_even_with_same_activity() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_prefers_lower_usage_when_all_high_cpu() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_handles_partial_metrics_with_spec_priority() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_prefers_higher_spec_until_it_becomes_busy() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_by_metrics_deprioritizes_nodes_without_metrics() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_by_metrics_considers_gpu_usage() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_by_metrics_handles_partial_metrics_with_spec_priority() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn select_node_by_metrics_prefers_higher_spec_until_busy() {
         // TODO: EndpointRegistryベースに移行
     }
 
@@ -1692,46 +1636,38 @@ impl LoadManager {
         }
     }
 
-    /// メトリクスベースのノード選択
+    // ========================================================================
+    // ラウンドロビン選択
+    // ========================================================================
+
+    /// ラウンドロビンでエンドポイントを選択（モデル指定なし）
     ///
-    /// ノードの最新メトリクス（CPU使用率、メモリ使用率、アクティブリクエスト数）を基に
-    /// 負荷スコアを計算し、最も低いスコアのノードを選択します。
+    /// llmlbはゲートウェイとしてエンドポイントをブラックボックスとして扱うため、
+    /// 負荷分散は単純なラウンドロビン方式を採用しています。
+    /// 標準のOpenAI互換APIにはメトリクスエンドポイントがないため、
+    /// エンドポイントの内部状態（VRAM、負荷等）を考慮した選択は行いません。
     ///
-    /// # 負荷スコア計算式
+    /// メトリクスや負荷状態を考慮せず、単純にラウンドロビン順で
+    /// オンラインエンドポイントを選択します。デフォルトの負荷分散方式です。
+    pub async fn select_endpoint_round_robin(&self) -> RouterResult<Node> {
+        let online_nodes = self.collect_online_nodes(None).await?;
+        self.select_node_round_robin_from_candidates(online_nodes)
+    }
+
+    /// 指定モデルに対応するエンドポイントを純粋なラウンドロビンで選択
     ///
-    /// ```text
-    /// score = cpu_usage + memory_usage + gpu_usage + gpu_memory_usage + (active_requests × 10)
-    /// ```
-    ///
-    /// - `cpu_usage`: CPU使用率（0.0～100.0）
-    /// - `memory_usage`: メモリ使用率（0.0～100.0）
-    /// - `gpu_usage`: GPU使用率（0.0～100.0、未報告時は0.0として扱う）
-    /// - `gpu_memory_usage`: GPUメモリ使用率（0.0～100.0、未報告時は0.0として扱う）
-    /// - スコアが同じ場合はGPU能力スコアの高いノードを優先
-    /// - `active_requests`: アクティブリクエスト数（重み付け：×10）
-    ///
-    /// # フォールバック戦略
-    ///
-    /// 以下のいずれかの条件に該当する場合、ラウンドロビン選択にフォールバックします：
-    ///
-    /// - すべてのノードのCPU使用率が80%を超えている
-    /// - メトリクスを持つノードが存在しない
-    /// - いずれかのノードが鮮度のあるメトリクスを報告していない
-    /// - すべてのメトリクスが古い（120秒以上前）
-    ///
-    /// # 戻り値
-    ///
-    /// - `Ok(Node)`: 選択されたノード
-    /// - `Err(LbError::NoNodesAvailable)`: オンラインノードが存在しない
-    ///
-    /// # 例
-    ///
-    /// ```ignore
-    /// let manager = LoadManager::new(registry);
-    /// let node = manager.select_node_by_metrics().await?;
-    /// println!("Selected node: {}", node.machine_name);
-    /// ```
-    async fn select_node_by_metrics_from_candidates(
+    /// メトリクスや負荷状態を考慮せず、単純にラウンドロビン順で
+    /// 指定モデルをサポートするオンラインエンドポイントを選択します。
+    pub async fn select_endpoint_round_robin_for_model(
+        &self,
+        model_id: &str,
+    ) -> RouterResult<Node> {
+        let online_nodes = self.collect_online_nodes(Some(model_id)).await?;
+        self.select_node_round_robin_from_candidates(online_nodes)
+    }
+
+    /// 候補ノードから純粋なラウンドロビンで選択
+    fn select_node_round_robin_from_candidates(
         &self,
         online_nodes: Vec<Node>,
     ) -> RouterResult<Node> {
@@ -1739,111 +1675,10 @@ impl LoadManager {
             return Err(LbError::NoNodesAvailable);
         }
 
-        let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
-        let round_robin_start = round_robin_cursor % online_nodes.len();
-        let round_robin_priority = compute_round_robin_priority(&online_nodes, round_robin_start);
+        let cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let index = cursor % online_nodes.len();
 
-        let state = self.state.read().await;
-        let now = Utc::now();
-
-        // メトリクスを持つノードの負荷スコアを計算
-        let mut candidates: Vec<(Node, f64)> = Vec::new();
-
-        for node in &online_nodes {
-            if let Some(load_state) = state.get(&node.id) {
-                if let Some(metrics) = &load_state.last_metrics {
-                    if !load_state.is_stale(now) {
-                        // 負荷スコア = cpu_usage + memory_usage + gpu_usage + gpu_memory_usage + (active_requests * 10)
-                        let gpu_usage = metrics.gpu_usage.unwrap_or(0.0) as f64;
-                        let gpu_memory_usage = metrics.gpu_memory_usage.unwrap_or(0.0) as f64;
-                        let score = metrics.cpu_usage as f64
-                            + metrics.memory_usage as f64
-                            + gpu_usage
-                            + gpu_memory_usage
-                            + (load_state.combined_active() as f64 * 10.0);
-                        candidates.push((node.clone(), score));
-                    }
-                }
-            }
-        }
-
-        // すべてのノードがCPU > 80%かチェック
-        let all_high_load = !candidates.is_empty()
-            && candidates.iter().all(|(node, _)| {
-                if let Some(load_state) = state.get(&node.id) {
-                    if let Some(metrics) = &load_state.last_metrics {
-                        return metrics.cpu_usage > 80.0;
-                    }
-                }
-                false
-            });
-
-        if all_high_load || candidates.is_empty() {
-            // フォールバック: ラウンドロビン
-            return Ok(online_nodes[round_robin_start].clone());
-        }
-
-        // 最小スコアに属するノードを抽出し、ラウンドロビン順序で決定する
-        let min_score = candidates
-            .iter()
-            .fold(f64::INFINITY, |acc, (_, score)| acc.min(*score));
-
-        let mut best_nodes: Vec<Node> = candidates
-            .iter()
-            .filter(|(_, score)| (*score - min_score).abs() <= LOAD_SCORE_EPSILON)
-            .map(|(node, _)| node.clone())
-            .collect();
-
-        if best_nodes.is_empty() {
-            // 理論上起こらないが、安全のためフォールバック
-            return Ok(online_nodes[round_robin_start].clone());
-        }
-
-        if best_nodes.len() == 1 {
-            return Ok(best_nodes.pop().unwrap());
-        }
-
-        best_nodes.sort_by(|a, b| {
-            compare_spec_by_state(a, b, &state).then_with(|| {
-                let a_rank = round_robin_priority
-                    .get(&a.id)
-                    .copied()
-                    .unwrap_or(usize::MAX);
-                let b_rank = round_robin_priority
-                    .get(&b.id)
-                    .copied()
-                    .unwrap_or(usize::MAX);
-                a_rank.cmp(&b_rank)
-            })
-        });
-
-        Ok(best_nodes[0].clone())
-    }
-
-    /// メトリクスベースでエンドポイントを選択（モデル指定なし）
-    pub async fn select_endpoint_by_metrics(&self) -> RouterResult<Node> {
-        let online_nodes = self.collect_online_nodes(None).await?;
-        self.select_node_by_metrics_from_candidates(online_nodes)
-            .await
-    }
-
-    /// select_endpoint_by_metrics のエイリアス（後方互換）
-    #[deprecated(note = "Use select_endpoint_by_metrics instead")]
-    pub async fn select_node_by_metrics(&self) -> RouterResult<Node> {
-        self.select_endpoint_by_metrics().await
-    }
-
-    /// 指定モデルに対応するエンドポイントをメトリクスベースで選択
-    pub async fn select_endpoint_by_metrics_for_model(&self, model_id: &str) -> RouterResult<Node> {
-        let online_nodes = self.collect_online_nodes(Some(model_id)).await?;
-        self.select_node_by_metrics_from_candidates(online_nodes)
-            .await
-    }
-
-    /// select_endpoint_by_metrics_for_model のエイリアス（後方互換）
-    #[deprecated(note = "Use select_endpoint_by_metrics_for_model instead")]
-    pub async fn select_node_by_metrics_for_model(&self, model_id: &str) -> RouterResult<Node> {
-        self.select_endpoint_by_metrics_for_model(model_id).await
+        Ok(online_nodes[index].clone())
     }
 }
 

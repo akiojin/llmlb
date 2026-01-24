@@ -8,8 +8,6 @@ repository.workspace = true
 build = "build.rs"
 
 [dependencies]
-llmlb-common = { path = "../common" }
-
 # 非同期ランタイム
 tokio = { workspace = true }
 

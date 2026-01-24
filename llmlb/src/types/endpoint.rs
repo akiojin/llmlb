@@ -216,8 +216,8 @@ impl Endpoint {
         note = "This is a temporary bridge for NodeRegistry migration. Will be removed after full EndpointRegistry migration."
     )]
     #[allow(deprecated)] // Uses deprecated Node type for migration bridge
-    pub fn to_legacy_node(&self, models: Vec<String>) -> llmlb_common::types::Node {
-        use llmlb_common::types::{Node, NodeStatus};
+    pub fn to_legacy_node(&self, models: Vec<String>) -> crate::common::types::Node {
+        use crate::common::types::{Node, NodeStatus};
         use std::collections::HashSet;
         use std::net::IpAddr;
 

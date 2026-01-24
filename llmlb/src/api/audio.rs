@@ -2,6 +2,11 @@
 //!
 //! OpenAI互換の音声認識（ASR）・音声合成（TTS）API
 
+use crate::common::{
+    error::LbError,
+    protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
+    types::ModelCapability,
+};
 use axum::{
     body::Body,
     extract::{Multipart, State},
@@ -10,11 +15,6 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use llmlb_common::{
-    error::LbError,
-    protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
-    types::ModelCapability,
-};
 use serde_json::json;
 use std::time::Instant;
 use tracing::info;
@@ -467,7 +467,7 @@ mod tests {
     // TextToSpeech capability を持たないモデルで /v1/audio/speech を呼ぶとエラー
     #[test]
     fn test_tts_capability_validation_error_message() {
-        use llmlb_common::types::{ModelCapability, ModelType};
+        use crate::common::types::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、TextToSpeechは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);
@@ -483,7 +483,7 @@ mod tests {
     // SpeechToText capability を持たないモデルで /v1/audio/transcriptions を呼ぶとエラー
     #[test]
     fn test_asr_capability_validation_error_message() {
-        use llmlb_common::types::{ModelCapability, ModelType};
+        use crate::common::types::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、SpeechToTextは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);

@@ -2,6 +2,7 @@
 //!
 //! SPEC-66555000: ルーター主導エンドポイント登録システム
 
+use crate::common::auth::{Claims, UserRole};
 use crate::db::endpoints as db;
 use crate::types::endpoint::{
     Endpoint, EndpointCapability, EndpointModel, EndpointStatus, SupportedAPI,
@@ -13,7 +14,6 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use llmlb_common::auth::{Claims, UserRole};
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;

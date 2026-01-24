@@ -18,9 +18,8 @@
 
 ```text
 llmlb/
-├── llmlb/          # Rust製ロードバランサー（APIサーバー・管理UI）
+├── llmlb/          # Rust製ロードバランサー（APIサーバー・管理UI・共通型定義）
 ├── xllm/            # C++製推論エンジン（llama.cppベース）
-├── common/          # 共通ライブラリ（Rust/C++間共有）
 ├── specs/           # 機能仕様書（SPEC-XXXXXXXX/）
 ├── memory/          # プロジェクト憲章・メモリファイル
 ├── docs/            # ドキュメント

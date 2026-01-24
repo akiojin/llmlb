@@ -2,6 +2,7 @@
 //!
 //! Admin専用のAPIキーCRUD操作
 
+use crate::common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext, Claims, UserRole};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -9,7 +10,6 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use llmlb_common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext, Claims, UserRole};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

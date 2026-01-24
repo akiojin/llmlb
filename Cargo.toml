@@ -1,5 +1,5 @@
 [workspace]
-members = ["common", "llmlb"]
+members = ["llmlb"]
 resolver = "2"
 
 [workspace.package]

@@ -1,6 +1,6 @@
 // T040-T041: データベースマイグレーション実行とJSONインポート
 
-use llmlb_common::error::LbError;
+use crate::common::error::LbError;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::path::Path;
 

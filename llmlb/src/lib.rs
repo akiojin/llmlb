@@ -4,6 +4,9 @@
 
 #![warn(missing_docs)]
 
+/// 共通型定義（llmlb-commonから統合）
+pub mod common;
+
 /// REST APIハンドラー
 pub mod api;
 

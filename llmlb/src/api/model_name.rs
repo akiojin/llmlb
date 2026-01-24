@@ -1,6 +1,6 @@
 //! モデル名の解析ユーティリティ（量子化サフィックス対応）
 
-use llmlb_common::error::{CommonError, LbError};
+use crate::common::error::{CommonError, LbError};
 
 /// 量子化サフィックスを含むモデル名の解析結果
 #[derive(Debug, Clone, PartialEq, Eq)]

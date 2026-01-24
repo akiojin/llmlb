@@ -4,6 +4,7 @@
 //!
 //! このモジュールはEndpointRegistry/Endpoint型を使用しています。
 
+use crate::common::error::{CommonError, LbError, RouterResult};
 use crate::{
     db::models::ModelStorage,
     registry::models::{extract_repo_id, generate_model_id, ModelInfo},
@@ -15,7 +16,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use llmlb_common::error::{CommonError, LbError, RouterResult};
 use once_cell::sync::Lazy;
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -1191,7 +1191,7 @@ pub async fn register_model(
         ArtifactFormat::Safetensors => tags.push("safetensors".to_string()),
     }
     let description = req.display_name.clone().unwrap_or_else(|| repo.clone());
-    let capabilities = vec![llmlb_common::types::ModelCapability::TextGeneration];
+    let capabilities = vec![crate::common::types::ModelCapability::TextGeneration];
     let size_bytes = content_length;
     let required_memory_bytes = required_memory;
 

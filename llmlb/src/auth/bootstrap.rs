@@ -3,10 +3,10 @@
 //! 環境変数または対話式で管理者を作成
 
 use crate::auth::password::hash_password;
+use crate::common::auth::UserRole;
+use crate::common::error::LbError;
 use crate::config::get_env_with_fallback;
 use crate::db;
-use llmlb_common::auth::UserRole;
-use llmlb_common::error::LbError;
 use std::io::{self, Write};
 
 /// 環境変数から管理者を作成

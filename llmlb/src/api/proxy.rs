@@ -6,6 +6,7 @@
 
 #![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
 
+use crate::common::{error::LbError, protocol::RequestResponseRecord};
 use crate::{config::QueueConfig, AppState};
 use axum::{
     body::Body,
@@ -13,7 +14,6 @@ use axum::{
     response::Response,
 };
 use futures::TryStreamExt;
-use llmlb_common::{error::LbError, protocol::RequestResponseRecord};
 use std::{io, sync::Arc, time::Instant};
 
 use crate::balancer::WaitResult;
@@ -26,7 +26,7 @@ use crate::balancer::WaitResult;
 /// エンドポイントの内部状態（VRAM、負荷等）を考慮した選択は行いません。
 pub(crate) async fn select_available_node(
     state: &AppState,
-) -> Result<llmlb_common::types::Node, LbError> {
+) -> Result<crate::common::types::Node, LbError> {
     let node = state.load_manager.select_endpoint_round_robin().await?;
     if node.initializing {
         return Err(LbError::ServiceUnavailable(
@@ -38,7 +38,7 @@ pub(crate) async fn select_available_node(
 
 pub(crate) enum QueueSelection {
     Ready {
-        node: Box<llmlb_common::types::Node>,
+        node: Box<crate::common::types::Node>,
         queued_wait_ms: Option<u128>,
     },
     CapacityExceeded,

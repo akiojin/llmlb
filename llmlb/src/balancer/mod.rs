@@ -11,12 +11,12 @@
 
 #![allow(deprecated)] // Using deprecated Node type during migration
 
-use crate::registry::endpoints::EndpointRegistry;
-use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
-use llmlb_common::{
+use crate::common::{
     error::{LbError, RouterResult},
     types::{HealthMetrics, Node, NodeStatus},
 };
+use crate::registry::endpoints::EndpointRegistry;
+use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
 use serde::Serialize;
 use std::{
     cmp::Ordering,

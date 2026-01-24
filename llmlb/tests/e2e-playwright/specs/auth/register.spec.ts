@@ -56,7 +56,7 @@ test.describe('Register Page', () => {
   });
 
   test('R-01: Register page is accessible', async ({ page }) => {
-    await expect(page).toHaveTitle(/Register.*LLM Router/);
+    await expect(page).toHaveTitle(/Register.*LLM Load Balancer/);
   });
 
   test('R-02: Register form elements are visible', async () => {

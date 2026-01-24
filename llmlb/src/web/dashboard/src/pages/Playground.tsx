@@ -578,7 +578,7 @@ export default function Playground() {
               <Cpu className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <h1 className="font-semibold text-sm">LLM Router</h1>
+              <h1 className="font-semibold text-sm">LLM Load Balancer</h1>
               <p className="text-xs text-muted-foreground">Playground</p>
             </div>
           </div>

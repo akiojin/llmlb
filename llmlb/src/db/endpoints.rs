@@ -15,6 +15,11 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     let registered_at = endpoint.registered_at.to_rfc3339();
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
     let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
+    // SPEC-f8e3a1b7: デバイス情報と推論レイテンシ
+    let device_info = endpoint
+        .device_info
+        .as_ref()
+        .and_then(|d| serde_json::to_string(d).ok());
 
     sqlx::query(
         r#"
@@ -22,8 +27,8 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
             id, name, base_url, api_key_encrypted, status,
             health_check_interval_secs, inference_timeout_secs,
             latency_ms, last_seen, last_error, error_count,
-            registered_at, notes, capabilities
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            registered_at, notes, capabilities, device_info, inference_latency_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -40,6 +45,8 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     .bind(&registered_at)
     .bind(&endpoint.notes)
     .bind(&capabilities)
+    .bind(&device_info)
+    .bind(endpoint.inference_latency_ms)
     .execute(pool)
     .await?;
 
@@ -53,7 +60,8 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities
+               registered_at, notes, supports_responses_api, capabilities,
+               device_info, inference_latency_ms
         FROM endpoints
         ORDER BY registered_at DESC
         "#,
@@ -71,7 +79,8 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities
+               registered_at, notes, supports_responses_api, capabilities,
+               device_info, inference_latency_ms
         FROM endpoints
         WHERE id = ?
         "#,
@@ -89,6 +98,11 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     let status = endpoint.status.as_str();
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
     let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
+    // SPEC-f8e3a1b7: デバイス情報と推論レイテンシ
+    let device_info = endpoint
+        .device_info
+        .as_ref()
+        .and_then(|d| serde_json::to_string(d).ok());
 
     let result = sqlx::query(
         r#"
@@ -96,7 +110,7 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
             name = ?, base_url = ?, api_key_encrypted = ?, status = ?,
             health_check_interval_secs = ?, inference_timeout_secs = ?,
             latency_ms = ?, last_seen = ?, last_error = ?, error_count = ?,
-            notes = ?, capabilities = ?
+            notes = ?, capabilities = ?, device_info = ?, inference_latency_ms = ?
         WHERE id = ?
         "#,
     )
@@ -112,6 +126,8 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     .bind(endpoint.error_count as i32)
     .bind(&endpoint.notes)
     .bind(&capabilities)
+    .bind(&device_info)
+    .bind(endpoint.inference_latency_ms)
     .bind(&id)
     .execute(pool)
     .await?;
@@ -136,7 +152,8 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities
+               registered_at, notes, supports_responses_api, capabilities,
+               device_info, inference_latency_ms
         FROM endpoints
         WHERE name = ?
         "#,
@@ -158,7 +175,8 @@ pub async fn list_endpoints_by_status(
         SELECT id, name, base_url, api_key_encrypted, status,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities
+               registered_at, notes, supports_responses_api, capabilities,
+               device_info, inference_latency_ms
         FROM endpoints
         WHERE status = ?
         ORDER BY registered_at DESC
@@ -196,6 +214,51 @@ pub async fn update_endpoint_status(
     .bind(&now)
     .bind(last_error)
     .bind(status.as_str())
+    .bind(id.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// エンドポイントの推論レイテンシを更新（SPEC-f8e3a1b7）
+/// EMA (α=0.2) で計算された値を保存
+pub async fn update_inference_latency(
+    pool: &SqlitePool,
+    id: Uuid,
+    inference_latency_ms: Option<f64>,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE endpoints SET
+            inference_latency_ms = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(inference_latency_ms)
+    .bind(id.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// エンドポイントのデバイス情報を更新（SPEC-f8e3a1b7）
+/// /v0/system APIから取得した情報を保存
+pub async fn update_device_info(
+    pool: &SqlitePool,
+    id: Uuid,
+    device_info: Option<&crate::types::endpoint::DeviceInfo>,
+) -> Result<bool, sqlx::Error> {
+    let device_info_json = device_info.and_then(|d| serde_json::to_string(d).ok());
+    let result = sqlx::query(
+        r#"
+        UPDATE endpoints SET
+            device_info = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(&device_info_json)
     .bind(id.to_string())
     .execute(pool)
     .await?;
@@ -418,6 +481,10 @@ struct EndpointRow {
     supports_responses_api: i32,
     /// SPEC-66555000移行用: エンドポイントの機能一覧（JSON形式）
     capabilities: Option<String>,
+    /// SPEC-f8e3a1b7: デバイス情報（JSON形式）
+    device_info: Option<String>,
+    /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2で計算）
+    inference_latency_ms: Option<f64>,
 }
 
 impl From<EndpointRow> for Endpoint {
@@ -454,6 +521,9 @@ impl From<EndpointRow> for Endpoint {
             gpu_used_memory_bytes: None,
             gpu_capability_score: None,
             active_requests: None,
+            // SPEC-f8e3a1b7: デバイス情報とレイテンシ
+            device_info: row.device_info.and_then(|s| serde_json::from_str(&s).ok()),
+            inference_latency_ms: row.inference_latency_ms,
         }
     }
 }

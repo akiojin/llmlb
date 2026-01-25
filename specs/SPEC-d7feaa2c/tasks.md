@@ -28,7 +28,7 @@
 - [x] T016 Add TextManager unit tests.
 - [x] T017 Add manager-based integration coverage.
 - [x] T018 Add mandatory test coverage for gpt/nemotron/qwen/glm model families.
-- [ ] T019 Run quality checks.
+- [x] T019 Run quality checks.
 
 ## Notes
 - Tasks refreshed for manager migration (2026-01-19).

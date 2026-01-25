@@ -2,6 +2,11 @@
 //!
 //! OpenAI互換の画像生成（Text-to-Image）・編集（Inpainting）・バリエーションAPI
 
+use crate::common::{
+    error::LbError,
+    protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
+    types::ModelCapability,
+};
 use axum::{
     extract::{Multipart, State},
     http::StatusCode,
@@ -9,11 +14,6 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use llmlb_common::{
-    error::LbError,
-    protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
-    types::ModelCapability,
-};
 use serde_json::json;
 use std::net::IpAddr;
 use std::time::Instant;
@@ -676,7 +676,7 @@ mod tests {
     // ImageGeneration capability を持たないモデルで /v1/images/generations を呼ぶとエラー
     #[test]
     fn test_image_generation_capability_validation_error_message() {
-        use llmlb_common::types::{ModelCapability, ModelType};
+        use crate::common::types::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、ImageGenerationは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);

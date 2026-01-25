@@ -2,11 +2,11 @@
 //!
 //! SQLiteベースでリクエスト履歴を永続化（load balancer.dbと統合）
 
-use chrono::{DateTime, Duration, Utc};
-use llmlb_common::{
+use crate::common::{
     error::{LbError, RouterResult},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
 };
+use chrono::{DateTime, Duration, Utc};
 use sqlx::SqlitePool;
 use std::env;
 use std::net::IpAddr;
@@ -885,8 +885,8 @@ pub fn start_cleanup_task(storage: Arc<RequestHistoryStorage>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::protocol::RequestType;
     use crate::db::migrations::initialize_database;
-    use llmlb_common::protocol::RequestType;
     use serial_test::serial;
     use tempfile::tempdir;
 

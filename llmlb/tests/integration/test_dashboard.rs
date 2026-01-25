@@ -6,11 +6,11 @@
 
 use axum::Router;
 use futures::StreamExt;
+use llmlb::common::auth::UserRole;
 use llmlb::{
     api, auth::jwt::create_jwt, balancer::LoadManager, registry::endpoints::EndpointRegistry,
     AppState,
 };
-use llmlb_common::auth::UserRole;
 use serial_test::serial;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -149,7 +149,7 @@ async fn test_dashboard_receives_node_registration_event() {
             runtime_id: node_id,
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
-            status: llmlb_common::types::NodeStatus::Online,
+            status: llmlb::common::types::NodeStatus::Online,
         });
 
     // Assert: WebSocket client should receive node registration event
@@ -201,8 +201,8 @@ async fn test_dashboard_receives_node_status_change() {
         .event_bus
         .publish(llmlb::events::DashboardEvent::NodeStatusChanged {
             runtime_id: node_id,
-            old_status: llmlb_common::types::NodeStatus::Online,
-            new_status: llmlb_common::types::NodeStatus::Offline,
+            old_status: llmlb::common::types::NodeStatus::Online,
+            new_status: llmlb::common::types::NodeStatus::Offline,
         });
 
     // Assert: WebSocket client should receive status change event

@@ -15,8 +15,8 @@ use tower::ServiceExt;
 
 mod common {
     use axum::Router;
+    use llmlb::common::auth::{ApiKeyScope, UserRole};
     use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-    use llmlb_common::auth::{ApiKeyScope, UserRole};
     use std::sync::Arc;
 
     // Viewer role is used for API users (Admin is for full control)

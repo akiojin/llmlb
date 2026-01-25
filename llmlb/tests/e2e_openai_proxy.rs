@@ -11,7 +11,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use llmlb_common::protocol::{ChatRequest, GenerateRequest};
+use llmlb::common::protocol::{ChatRequest, GenerateRequest};
 use reqwest::{header, Client};
 use serde_json::{json, Value};
 use tokio::time::sleep;
@@ -154,7 +154,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .header("x-api-key", "sk_debug")
         .json(&ChatRequest {
             model: "gpt-oss-20b".into(),
-            messages: vec![llmlb_common::protocol::ChatMessage {
+            messages: vec![llmlb::common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "hello?".into(),
             }],
@@ -176,7 +176,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         .header("x-api-key", "sk_debug")
         .json(&ChatRequest {
             model: "gpt-oss-20b".into(),
-            messages: vec![llmlb_common::protocol::ChatMessage {
+            messages: vec![llmlb::common::protocol::ChatMessage {
                 role: "user".into(),
                 content: "stream?".into(),
             }],

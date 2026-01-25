@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use uuid::Uuid;
 
-use crate::types::{AudioFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
+use super::types::{AudioFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
 
 /// LLM runtimeチャットリクエスト
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_speech_request_serialization() {
-        use crate::types::AudioFormat;
+        use super::super::types::AudioFormat;
 
         let request = SpeechRequest {
             model: "vibevoice-v1".to_string(),
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_image_generation_request_serialization() {
-        use crate::types::{ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
+        use super::super::types::{ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
 
         let request = ImageGenerationRequest {
             model: "stable-diffusion-xl".to_string(),

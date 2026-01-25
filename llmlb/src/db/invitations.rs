@@ -1,7 +1,7 @@
 // 招待コードCRUD操作
 
+use crate::common::error::{CommonError, LbError};
 use chrono::{DateTime, Duration, Utc};
-use llmlb_common::error::{CommonError, LbError};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -366,9 +366,9 @@ impl InvitationCodeRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::auth::UserRole;
     use crate::db::migrations::initialize_database;
     use crate::db::users;
-    use llmlb_common::auth::UserRole;
 
     async fn setup_test_db() -> SqlitePool {
         initialize_database("sqlite::memory:")

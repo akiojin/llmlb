@@ -1,7 +1,7 @@
 // T042-T043: パスワードハッシュ化と検証（bcrypt実装）
 
+use crate::common::error::LbError;
 use bcrypt::{hash, verify};
-use llmlb_common::error::LbError;
 
 /// パスワードハッシュ化のコスト（12推奨、200-300ms）
 const HASH_COST: u32 = 12;

@@ -1,8 +1,8 @@
 // T053-T054: APIキーCRUD操作とキー生成
 
+use crate::common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext};
+use crate::common::error::LbError;
 use chrono::{DateTime, Utc};
-use llmlb_common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext};
-use llmlb_common::error::LbError;
 use rand::Rng;
 use serde_json;
 use sha2::{Digest, Sha256};
@@ -264,9 +264,9 @@ fn serialize_scopes(scopes: &[ApiKeyScope]) -> Result<String, LbError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::auth::UserRole;
     use crate::db::migrations::initialize_database;
     use crate::db::users;
-    use llmlb_common::auth::UserRole;
 
     async fn setup_test_db() -> SqlitePool {
         initialize_database("sqlite::memory:")

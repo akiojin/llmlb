@@ -5,6 +5,7 @@
 //!
 //! Authentication is required via JWT token passed as a query parameter `token`.
 
+use crate::common::auth::UserRole;
 use axum::extract::ws::{Message, WebSocket};
 use axum::{
     extract::{Query, State, WebSocketUpgrade},
@@ -12,7 +13,6 @@ use axum::{
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
-use llmlb_common::auth::UserRole;
 use serde::Deserialize;
 use tracing::{debug, warn};
 

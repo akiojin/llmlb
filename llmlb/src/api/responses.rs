@@ -5,13 +5,13 @@
 //! このモジュールは /v1/responses エンドポイントへのリクエストを
 //! Responses API対応バックエンド（Ollama、vLLM、xLLM等）にパススルーする。
 
+use crate::common::error::LbError;
 use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
-use llmlb_common::error::LbError;
 use serde_json::{json, Value};
 use tracing::{error, info};
 
@@ -43,7 +43,7 @@ fn not_implemented_response(model: &str) -> Response {
 fn extract_model(payload: &Value) -> Result<String, AppError> {
     payload["model"].as_str().map(String::from).ok_or_else(|| {
         AppError::from(LbError::Common(
-            llmlb_common::error::CommonError::Validation("Missing required field: model".into()),
+            crate::common::error::CommonError::Validation("Missing required field: model".into()),
         ))
     })
 }

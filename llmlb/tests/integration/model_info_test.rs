@@ -9,8 +9,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use llmlb::common::auth::{ApiKeyScope, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llmlb_common::auth::{ApiKeyScope, UserRole};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -117,7 +117,7 @@ async fn test_v1_models_returns_fixed_list() {
         &db_pool,
         "test-admin",
         &password_hash,
-        llmlb_common::auth::UserRole::Admin,
+        llmlb::common::auth::UserRole::Admin,
     )
     .await
     .expect("Failed to create test user");
@@ -126,7 +126,7 @@ async fn test_v1_models_returns_fixed_list() {
         "test-key",
         test_user.id,
         None,
-        vec![llmlb_common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyScope::Api],
     )
     .await
     .expect("Failed to create test API key");

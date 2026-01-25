@@ -2,10 +2,10 @@
 //!
 //! Visionリクエストの画像URL/Base64を検証し、デコード済みデータを扱う。
 
+use crate::common::types::{ImageContent, ImageContentType, VisionCapability};
 use base64::engine::general_purpose;
 use base64::Engine;
 use futures::StreamExt;
-use llmlb_common::types::{ImageContent, ImageContentType, VisionCapability};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::Client;
 use std::time::Duration;
@@ -229,7 +229,7 @@ pub async fn validate_image_url(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use llmlb_common::types::ImageContentType;
+    use crate::common::types::ImageContentType;
 
     #[test]
     fn test_parse_data_url_decodes_base64() {

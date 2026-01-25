@@ -6,10 +6,10 @@
 //! - FR-004: ノード選択失敗時の履歴保存
 
 use crate::support::lb::spawn_test_lb_with_db;
+use llmlb::common::protocol::RecordStatus;
 use llmlb::db::models::ModelStorage;
 use llmlb::db::request_history::RequestHistoryStorage;
 use llmlb::registry::models::ModelInfo;
-use llmlb_common::protocol::RecordStatus;
 use reqwest::Client;
 use serial_test::serial;
 use sqlx::SqlitePool;
@@ -29,7 +29,7 @@ fn create_test_model(name: &str) -> ModelInfo {
 /// SQLiteからリクエスト履歴を読み込む
 async fn load_request_history_from_db(
     db_pool: &SqlitePool,
-) -> Vec<llmlb_common::protocol::RequestResponseRecord> {
+) -> Vec<llmlb::common::protocol::RequestResponseRecord> {
     let storage = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
     storage.load_records().await.unwrap_or_default()
 }

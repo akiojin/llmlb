@@ -15,10 +15,10 @@ use tower::ServiceExt;
 
 mod common {
     use axum::Router;
+    use llmlb::common::auth::{ApiKeyScope, UserRole};
     use llmlb::db::models::ModelStorage;
     use llmlb::registry::models::ModelInfo;
     use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-    use llmlb_common::auth::{ApiKeyScope, UserRole};
     use sqlx::SqlitePool;
     use std::sync::Arc;
 

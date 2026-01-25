@@ -9,8 +9,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use llmlb::common::auth::{ApiKeyScope, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llmlb_common::auth::{ApiKeyScope, UserRole};
 use std::sync::Arc;
 use tower::ServiceExt;
 

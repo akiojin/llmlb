@@ -77,7 +77,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
 
 async fn wait_for_one_record(
     storage: &RequestHistoryStorage,
-) -> llmlb_common::protocol::RequestResponseRecord {
+) -> llmlb::common::protocol::RequestResponseRecord {
     for _ in 0..50 {
         let records = storage.load_records().await.expect("records");
         if let Some(last) = records.last() {

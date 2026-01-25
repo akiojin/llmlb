@@ -131,24 +131,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ccache-vision-
 
-      - name: Build xLLM (CPU mode)
+      - name: Build llama-server (CPU mode)
         run: |
-          echo "🔨 Building xLLM..."
+          echo "🔨 Building llama-server..."
           cmake -S xllm -B xllm/build \
             -DBUILD_TESTS=OFF \
             -DPORTABLE_BUILD=ON \
-            -DLLAMA_NATIVE=OFF
-          cmake --build xllm/build --config Release -j$(nproc)
+            -DLLAMA_NATIVE=OFF \
+            -DLLAMA_BUILD_TOOLS=ON
+          cmake --build xllm/build --config Release --target llama-server -j$(nproc)
 
       - name: Build llmlb
         run: cargo build -p llmlb
 
-      - name: Start xLLM server with LLaVA
+      - name: Start llama-server with LLaVA
         run: |
-          echo "🚀 Starting xLLM server with LLaVA model..."
+          echo "🚀 Starting llama-server with LLaVA model..."
           mkdir -p /tmp/xllm-logs
 
-          ./xllm/build/xllm \
+          ./xllm/build/bin/llama-server \
             --model ~/.cache/llmlb/models/${{ env.MODEL_FILE }} \
             --mmproj ~/.cache/llmlb/models/${{ env.MMPROJ_FILE }} \
             --host 127.0.0.1 \
@@ -156,15 +157,15 @@ jobs:
             --ctx-size 2048 \
             > /tmp/xllm-logs/server.log 2>&1 &
 
-          # Wait for xLLM to be ready
-          echo "Waiting for xLLM server..."
-          for i in {1..60}; do
+          # Wait for llama-server to be ready
+          echo "Waiting for llama-server..."
+          for i in {1..90}; do
             if curl -s http://127.0.0.1:8080/v1/models > /dev/null 2>&1; then
-              echo "xLLM server is ready"
+              echo "llama-server is ready"
               break
             fi
-            if [ $i -eq 60 ]; then
-              echo "xLLM server failed to start"
+            if [ $i -eq 90 ]; then
+              echo "llama-server failed to start"
               cat /tmp/xllm-logs/server.log
               exit 1
             fi
@@ -191,14 +192,14 @@ jobs:
             sleep 2
           done
 
-      - name: Register xLLM endpoint
+      - name: Register llama-server endpoint
         run: |
-          echo "📝 Registering xLLM endpoint..."
+          echo "📝 Registering llama-server endpoint..."
           curl -X POST http://127.0.0.1:32768/api/endpoints \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer sk_debug" \
             -d '{
-              "name": "xllm-vision",
+              "name": "llama-vision",
               "base_url": "http://127.0.0.1:8080"
             }'
 
@@ -230,5 +231,5 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          pkill -f xllm || true
+          pkill -f llama-server || true
           pkill -f llmlb || true

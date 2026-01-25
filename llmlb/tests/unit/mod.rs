@@ -7,3 +7,6 @@ mod jwt_test;
 mod endpoint_status_test;
 mod endpoint_validation_test;
 mod latency_routing_test;
+
+// SPEC-f8e3a1b7: OpenAI互換エラーレスポンステスト
+mod openai_error_format_test;

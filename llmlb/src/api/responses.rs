@@ -13,7 +13,9 @@ use axum::{
     Json,
 };
 use serde_json::{json, Value};
+use std::time::Instant;
 use tracing::{error, info};
+use uuid::Uuid;
 
 use crate::{
     api::{
@@ -22,6 +24,29 @@ use crate::{
     },
     AppState,
 };
+
+/// SPEC-f8e3a1b7: 推論リクエスト成功時にエンドポイントのレイテンシを更新（Fire-and-forget）
+fn update_inference_latency(
+    registry: &crate::registry::endpoints::EndpointRegistry,
+    endpoint_id: Uuid,
+    duration: std::time::Duration,
+) {
+    let registry = registry.clone();
+    let latency_ms = duration.as_millis() as f64;
+    tokio::spawn(async move {
+        if let Err(e) = registry
+            .update_inference_latency(endpoint_id, latency_ms)
+            .await
+        {
+            tracing::debug!(
+                endpoint_id = %endpoint_id,
+                latency_ms = latency_ms,
+                error = %e,
+                "Failed to update inference latency"
+            );
+        }
+    });
+}
 
 /// 501 Not Implemented エラーレスポンス（バックエンドがResponses API非対応の場合）
 fn not_implemented_response(model: &str) -> Response {
@@ -115,14 +140,21 @@ pub async fn post_responses(
         AppError::from(LbError::Http(e.to_string()))
     })?;
 
+    // SPEC-f8e3a1b7: レイテンシ計測開始
+    let start = Instant::now();
+
     // エンドポイントにリクエストを転送
     let response =
         forward_to_endpoint(&state.http_client, &endpoint, "/v1/responses", body, stream)
             .await
             .map_err(AppError::from)?;
 
+    let duration = start.elapsed();
+
     // ストリーミングの場合はそのままパススルー
     if stream {
+        // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+        update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
         return forward_streaming_response(response).map_err(AppError::from);
     }
 
@@ -136,6 +168,11 @@ pub async fn post_responses(
     // バックエンドが501を返した場合はそのままパススルー
     if status == reqwest::StatusCode::NOT_IMPLEMENTED {
         return Ok(not_implemented_response(&model));
+    }
+
+    // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+    if status.is_success() {
+        update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
     }
 
     // レスポンスをパース（エラーの場合もそのままパススルー）

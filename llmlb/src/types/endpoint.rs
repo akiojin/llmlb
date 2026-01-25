@@ -7,6 +7,41 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
+/// デバイスタイプ（SPEC-f8e3a1b7）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceType {
+    /// CPU推論
+    #[default]
+    Cpu,
+    /// GPU推論
+    Gpu,
+}
+
+/// デバイス情報（SPEC-f8e3a1b7）
+///
+/// /v0/system APIから取得したデバイス情報を格納
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DeviceInfo {
+    /// デバイスタイプ（CPU/GPU）
+    pub device_type: DeviceType,
+    /// GPUデバイス情報（GPU推論の場合のみ）
+    #[serde(default)]
+    pub gpu_devices: Vec<GpuDevice>,
+}
+
+/// GPU デバイス情報（SPEC-f8e3a1b7）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuDevice {
+    /// デバイス名（例: "NVIDIA RTX 4090"）
+    pub name: String,
+    /// 総メモリ（バイト）
+    pub total_memory_bytes: u64,
+    /// 使用中メモリ（バイト）
+    #[serde(default)]
+    pub used_memory_bytes: u64,
+}
+
 /// モデルがサポートするAPI種別（SPEC-24157000）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -174,6 +209,13 @@ pub struct Endpoint {
     /// 現在のアクティブリクエスト数
     #[serde(default)]
     pub active_requests: Option<u32>,
+    /// デバイス情報（/v0/systemから取得、SPEC-f8e3a1b7）
+    #[serde(default)]
+    pub device_info: Option<DeviceInfo>,
+    /// 推論レイテンシ（EMA、ミリ秒、SPEC-f8e3a1b7）
+    /// ヘルスチェックのlatency_msとは別に、実際の推論時間を追跡
+    #[serde(default)]
+    pub inference_latency_ms: Option<f64>,
 }
 
 impl Endpoint {
@@ -200,6 +242,8 @@ impl Endpoint {
             gpu_used_memory_bytes: None,
             gpu_capability_score: None,
             active_requests: None,
+            device_info: None,
+            inference_latency_ms: None,
         }
     }
 
@@ -208,79 +252,35 @@ impl Endpoint {
         self.capabilities.contains(&cap)
     }
 
-    /// EndpointからNodeへの変換（NodeRegistry廃止移行用）
+    /// 推論レイテンシを更新（EMA α=0.2）（SPEC-f8e3a1b7）
     ///
-    /// LoadManagerのロードバランシングロジックを再利用するための一時的な変換。
-    /// EndpointRegistry完全移行後に削除予定。
-    #[deprecated(
-        note = "This is a temporary bridge for NodeRegistry migration. Will be removed after full EndpointRegistry migration."
-    )]
-    #[allow(deprecated)] // Uses deprecated Node type for migration bridge
-    pub fn to_legacy_node(&self, models: Vec<String>) -> crate::common::types::Node {
-        use crate::common::types::{Node, NodeStatus};
-        use std::collections::HashSet;
-        use std::net::IpAddr;
-
-        // base_urlからホストとポートを抽出
-        let url = reqwest::Url::parse(&self.base_url).ok();
-        let host = url
-            .as_ref()
-            .and_then(|u| u.host_str())
-            .unwrap_or("127.0.0.1");
-        let port = url.as_ref().and_then(|u| u.port()).unwrap_or(8080);
-
-        // IPアドレスをパース（失敗時はローカルホスト）
-        let ip_address: IpAddr = host.parse().unwrap_or_else(|_| {
-            // ホスト名の場合はDNS解決が必要だが、ここでは127.0.0.1にフォールバック
-            "127.0.0.1".parse().unwrap()
+    /// 新しい計測値を指数移動平均で反映する。
+    /// 初回計測時はその値をそのまま設定。
+    pub fn update_inference_latency(&mut self, new_latency_ms: f64) {
+        const ALPHA: f64 = 0.2;
+        self.inference_latency_ms = Some(match self.inference_latency_ms {
+            Some(current) if current.is_finite() => {
+                ALPHA * new_latency_ms + (1.0 - ALPHA) * current
+            }
+            _ => new_latency_ms,
         });
-
-        // EndpointStatusからNodeStatusへ変換
-        let status = match self.status {
-            EndpointStatus::Online => NodeStatus::Online,
-            EndpointStatus::Pending => NodeStatus::Pending,
-            _ => NodeStatus::Offline,
-        };
-
-        Node {
-            id: self.id,
-            machine_name: self.name.clone(),
-            ip_address,
-            runtime_version: String::new(), // Endpointには相当フィールドなし
-            runtime_port: port.saturating_sub(1), // OpenAI APIポート-1 = runtimeポート（慣例）
-            status,
-            registered_at: self.registered_at,
-            last_seen: self.last_seen.unwrap_or(self.registered_at),
-            online_since: if self.status == EndpointStatus::Online {
-                Some(self.last_seen.unwrap_or(self.registered_at))
-            } else {
-                None
-            },
-            custom_name: Some(self.name.clone()),
-            tags: vec![],
-            notes: self.notes.clone(),
-            loaded_models: models.clone(),
-            loaded_embedding_models: vec![],
-            loaded_asr_models: vec![],
-            loaded_tts_models: vec![],
-            executable_models: models,
-            excluded_models: HashSet::new(),
-            supported_runtimes: vec![],
-            gpu_devices: vec![],
-            gpu_available: false,
-            gpu_count: None,
-            gpu_model: None,
-            gpu_model_name: None,
-            gpu_compute_capability: None,
-            gpu_capability_score: None,
-            node_api_port: Some(port),
-            initializing: false,
-            ready_models: None,
-            sync_state: None,
-            sync_progress: None,
-            sync_updated_at: None,
-        }
     }
+
+    /// オフライン時にレイテンシを無限大にリセット（SPEC-f8e3a1b7）
+    ///
+    /// エンドポイントがオフラインになった場合、負荷分散で最低優先度になるよう
+    /// レイテンシを無限大に設定する。
+    pub fn reset_inference_latency(&mut self) {
+        self.inference_latency_ms = Some(f64::INFINITY);
+    }
+
+    /// 推論レイテンシを取得（ソート用、未計測時は無限大）
+    pub fn get_inference_latency_for_sort(&self) -> f64 {
+        self.inference_latency_ms.unwrap_or(f64::INFINITY)
+    }
+
+    // SPEC-f8e3a1b7: to_legacy_node()は削除されました
+    // Node型は完全に廃止され、Endpoint型に移行しました
 }
 
 /// エンドポイントで利用可能なモデル情報
@@ -447,5 +447,105 @@ mod tests {
         let json = serde_json::to_string(&endpoint).unwrap();
         assert!(!json.contains("secret"));
         assert!(!json.contains("api_key"));
+    }
+
+    // SPEC-f8e3a1b7: レイテンシ計算テスト (T021)
+
+    #[test]
+    fn test_update_inference_latency_initial() {
+        // 初回更新: None → Some(value)
+        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        assert!(endpoint.inference_latency_ms.is_none());
+
+        endpoint.update_inference_latency(100.0);
+        assert_eq!(endpoint.inference_latency_ms, Some(100.0));
+    }
+
+    #[test]
+    fn test_update_inference_latency_ema() {
+        // EMA計算: α=0.2
+        // new_ema = α * new + (1 - α) * old
+        // new_ema = 0.2 * 200 + 0.8 * 100 = 40 + 80 = 120
+        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        endpoint.inference_latency_ms = Some(100.0);
+
+        endpoint.update_inference_latency(200.0);
+        assert_eq!(endpoint.inference_latency_ms, Some(120.0));
+
+        // 続けて更新
+        // new_ema = 0.2 * 100 + 0.8 * 120 = 20 + 96 = 116
+        endpoint.update_inference_latency(100.0);
+        assert_eq!(endpoint.inference_latency_ms, Some(116.0));
+    }
+
+    #[test]
+    fn test_reset_inference_latency() {
+        // オフライン時にINFINITYにリセット
+        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        endpoint.inference_latency_ms = Some(100.0);
+
+        endpoint.reset_inference_latency();
+        assert_eq!(endpoint.inference_latency_ms, Some(f64::INFINITY));
+    }
+
+    #[test]
+    fn test_get_inference_latency_for_sort() {
+        // None → INFINITY
+        let endpoint1 = Endpoint::new("Test1".to_string(), "http://localhost:8080".to_string());
+        assert_eq!(endpoint1.get_inference_latency_for_sort(), f64::INFINITY);
+
+        // Some(value) → value
+        let mut endpoint2 = Endpoint::new("Test2".to_string(), "http://localhost:8081".to_string());
+        endpoint2.inference_latency_ms = Some(50.0);
+        assert_eq!(endpoint2.get_inference_latency_for_sort(), 50.0);
+
+        // Some(INFINITY) → INFINITY
+        let mut endpoint3 = Endpoint::new("Test3".to_string(), "http://localhost:8082".to_string());
+        endpoint3.reset_inference_latency();
+        assert_eq!(endpoint3.get_inference_latency_for_sort(), f64::INFINITY);
+    }
+
+    #[test]
+    fn test_update_inference_latency_from_infinity() {
+        // INFINITY状態からの復帰: 新しい値がそのまま設定される
+        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        endpoint.reset_inference_latency();
+        assert_eq!(endpoint.inference_latency_ms, Some(f64::INFINITY));
+
+        endpoint.update_inference_latency(100.0);
+        assert_eq!(endpoint.inference_latency_ms, Some(100.0));
+    }
+
+    #[test]
+    fn test_device_type_serialization() {
+        assert_eq!(serde_json::to_string(&DeviceType::Cpu).unwrap(), "\"cpu\"");
+        assert_eq!(serde_json::to_string(&DeviceType::Gpu).unwrap(), "\"gpu\"");
+    }
+
+    #[test]
+    fn test_device_info_default() {
+        let info = DeviceInfo::default();
+        assert_eq!(info.device_type, DeviceType::Cpu);
+        assert!(info.gpu_devices.is_empty());
+    }
+
+    #[test]
+    fn test_device_info_serialization() {
+        let info = DeviceInfo {
+            device_type: DeviceType::Gpu,
+            gpu_devices: vec![GpuDevice {
+                name: "NVIDIA RTX 4090".to_string(),
+                total_memory_bytes: 24_000_000_000,
+                used_memory_bytes: 8_000_000_000,
+            }],
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"device_type\":\"gpu\""));
+        assert!(json.contains("NVIDIA RTX 4090"));
+
+        let deserialized: DeviceInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.device_type, DeviceType::Gpu);
+        assert_eq!(deserialized.gpu_devices.len(), 1);
     }
 }

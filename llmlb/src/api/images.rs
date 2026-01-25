@@ -80,6 +80,9 @@ impl ImageBackend {
 
     /// リクエスト履歴用のIPアドレス
     fn ip(&self) -> IpAddr {
+        // フォールバック用のローカルホストアドレス
+        const LOCALHOST: IpAddr = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+
         // base_urlからホスト部分を抽出してパース
         // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
         let host = self
@@ -90,8 +93,7 @@ impl ImageBackend {
             .split(':')
             .next()
             .unwrap_or("127.0.0.1");
-        host.parse::<IpAddr>()
-            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
+        host.parse::<IpAddr>().unwrap_or(LOCALHOST)
     }
 }
 
@@ -374,7 +376,7 @@ pub async fn edits(
         reqwest::multipart::Part::bytes(image_data)
             .file_name(image_name.unwrap_or_else(|| "image.png".to_string()))
             .mime_str("image/png")
-            .unwrap(),
+            .expect("image/png is a valid MIME type"),
     );
 
     if let Some(mask) = mask_data {
@@ -383,7 +385,7 @@ pub async fn edits(
             reqwest::multipart::Part::bytes(mask)
                 .file_name(mask_name.unwrap_or_else(|| "mask.png".to_string()))
                 .mime_str("image/png")
-                .unwrap(),
+                .expect("image/png is a valid MIME type"),
         );
     }
 
@@ -574,7 +576,7 @@ pub async fn variations(
         reqwest::multipart::Part::bytes(image_data)
             .file_name(image_name.unwrap_or_else(|| "image.png".to_string()))
             .mime_str("image/png")
-            .unwrap(),
+            .expect("image/png is a valid MIME type"),
     );
 
     form = form.text("model", model.clone());

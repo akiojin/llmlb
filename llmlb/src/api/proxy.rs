@@ -198,7 +198,17 @@ pub(crate) async fn forward_to_endpoint(
     let status = response.status();
     if !status.is_success() && !stream {
         // 非ストリーミングの場合はエラー内容を取得してログ
-        let error_body = response.text().await.unwrap_or_default();
+        let error_body = match response.text().await {
+            Ok(body) => body,
+            Err(e) => {
+                tracing::debug!(
+                    "Failed to read error body from endpoint {}: {}",
+                    endpoint.name,
+                    e
+                );
+                String::new()
+            }
+        };
         tracing::warn!(
             "Endpoint {} returned error {}: {}",
             endpoint.name,

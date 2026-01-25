@@ -116,6 +116,9 @@ jobs:
         run: |
           echo "🔨 Building xLLM with GPU support..."
 
+          # Clean previous build to avoid stale cache
+          rm -rf xllm/build
+
           # Detect platform and set build options
           if [[ "$OSTYPE" == "darwin"* ]]; then
             echo "Building for macOS with Metal..."

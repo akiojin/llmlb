@@ -3,14 +3,14 @@
 //! `/v0/dashboard/logs/*` エンドポイントを提供する。
 
 use super::error::AppError;
+use crate::common::{
+    error::{LbError, RouterResult},
+    log::{tail_json_logs, LogEntry},
+};
 use crate::{logging, AppState};
 use axum::{
     extract::{Path, Query, State},
     Json,
-};
-use llmlb_common::{
-    error::{LbError, RouterResult},
-    log::{tail_json_logs, LogEntry},
 };
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};

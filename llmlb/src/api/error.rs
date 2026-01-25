@@ -2,8 +2,8 @@
 //!
 //! axum用の共通エラーハンドリング
 
+use crate::common::error::LbError;
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use llmlb_common::error::LbError;
 use serde_json::json;
 
 /// Axum用のエラーレスポンス型

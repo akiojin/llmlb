@@ -26,6 +26,7 @@ pub mod responses;
 pub mod users;
 
 use crate::cloud_metrics;
+use crate::common::auth::ApiKeyScope;
 use crate::AppState;
 use axum::{
     body::Body,
@@ -37,7 +38,6 @@ use axum::{
     Router,
 };
 use include_dir::{include_dir, Dir, File};
-use llmlb_common::auth::ApiKeyScope;
 use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");

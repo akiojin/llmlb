@@ -2,6 +2,11 @@
 //!
 //! このモジュールはEndpointRegistry/Endpoint型を使用しています。
 
+use crate::common::{
+    error::{CommonError, LbError},
+    protocol::{RecordStatus, RequestResponseRecord, RequestType},
+    types::{ModelCapabilities, ModelCapability, VisionCapability},
+};
 use axum::body::Body;
 use axum::{
     extract::{Path, State},
@@ -10,11 +15,6 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use llmlb_common::{
-    error::{CommonError, LbError},
-    protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapabilities, ModelCapability, VisionCapability},
-};
 use reqwest;
 use serde_json::{json, Value};
 use std::{collections::HashMap, net::IpAddr, time::Instant};
@@ -1908,6 +1908,7 @@ fn validation_error(message: impl Into<String>) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::{parse_cloud_model, proxy_openai_cloud_post, proxy_openai_post};
+    use crate::common::protocol::{RecordStatus, RequestType};
     use crate::{
         balancer::LoadManager,
         db::{request_history::RequestHistoryStorage, test_utils::TEST_LOCK},
@@ -1915,7 +1916,6 @@ mod tests {
     };
     use axum::body::to_bytes;
     use axum::http::StatusCode;
-    use llmlb_common::protocol::{RecordStatus, RequestType};
     use serde_json::json;
     use serial_test::serial;
     use sqlx::SqlitePool;
@@ -2411,7 +2411,7 @@ mod tests {
     // TextGeneration capability を持たないモデルで /v1/chat/completions を呼ぶとエラー
     #[test]
     fn test_chat_capability_validation_error_message() {
-        use llmlb_common::types::{ModelCapability, ModelType};
+        use crate::common::types::{ModelCapability, ModelType};
 
         // TTSモデルはTextToSpeechのみ、TextGenerationは非対応
         let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);

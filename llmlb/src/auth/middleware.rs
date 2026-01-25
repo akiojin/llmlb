@@ -1,5 +1,6 @@
 // T047-T049: 認証ミドルウェア実装
 
+use crate::common::auth::{ApiKeyScope, Claims, UserRole};
 use axum::{
     extract::{Request, State},
     http::{header, StatusCode},
@@ -8,7 +9,6 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use jsonwebtoken::decode_header;
-use llmlb_common::auth::{ApiKeyScope, Claims, UserRole};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 

@@ -6,6 +6,7 @@
 
 #![allow(deprecated)] // Using deprecated Node type during EndpointRegistry migration
 
+use crate::common::{error::LbError, protocol::RequestResponseRecord};
 use crate::{config::QueueConfig, AppState};
 use axum::{
     body::Body,
@@ -13,37 +14,31 @@ use axum::{
     response::Response,
 };
 use futures::TryStreamExt;
-use llmlb_common::{error::LbError, protocol::RequestResponseRecord};
 use std::{io, sync::Arc, time::Instant};
 
 use crate::balancer::WaitResult;
 
+/// ラウンドロビンでエンドポイントを選択
+///
+/// llmlbはゲートウェイとしてエンドポイントをブラックボックスとして扱うため、
+/// 負荷分散は単純なラウンドロビン方式を採用しています。
+/// 標準のOpenAI互換APIにはメトリクスエンドポイントがないため、
+/// エンドポイントの内部状態（VRAM、負荷等）を考慮した選択は行いません。
 pub(crate) async fn select_available_node(
     state: &AppState,
-) -> Result<llmlb_common::types::Node, LbError> {
-    let mode = std::env::var("LOAD_BALANCER_MODE").unwrap_or_else(|_| "auto".to_string());
-
-    match mode.as_str() {
-        "metrics" => {
-            // メトリクスベース選択（T014-T015で実装）
-            state.load_manager.select_endpoint_by_metrics().await
-        }
-        _ => {
-            // デフォルト: 既存の高度なロードバランシング
-            let node = state.load_manager.select_endpoint().await?;
-            if node.initializing {
-                return Err(LbError::ServiceUnavailable(
-                    "All nodes are warming up models".into(),
-                ));
-            }
-            Ok(node)
-        }
+) -> Result<crate::common::types::Node, LbError> {
+    let node = state.load_manager.select_endpoint_round_robin().await?;
+    if node.initializing {
+        return Err(LbError::ServiceUnavailable(
+            "All nodes are warming up models".into(),
+        ));
     }
+    Ok(node)
 }
 
 pub(crate) enum QueueSelection {
     Ready {
-        node: Box<llmlb_common::types::Node>,
+        node: Box<crate::common::types::Node>,
         queued_wait_ms: Option<u128>,
     },
     CapacityExceeded,

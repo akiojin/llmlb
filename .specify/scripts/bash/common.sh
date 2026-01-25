@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# Common functions and variables for all scripts
+# 全スクリプト共通の関数と変数
 
-# Get repository root, with fallback for non-git repositories
+# リポジトリルートを取得（非Gitリポジトリのフォールバックあり）
 get_repo_root() {
     if git rev-parse --show-toplevel >/dev/null 2>&1; then
         git rev-parse --show-toplevel
     else
-        # Fall back to script location for non-git repos
+        # 非Gitリポジトリの場合はスクリプト位置にフォールバック
         local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         (cd "$script_dir/../../.." && pwd)
     fi
 }
 
-# Get current branch, with fallback for non-git repositories
+# 現在のブランチを取得（非Gitリポジトリのフォールバックあり）
 get_current_branch() {
-    # First check if SPECIFY_FEATURE environment variable is set
+    # まずSPECIFY_FEATURE環境変数をチェック
     if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
         echo "$SPECIFY_FEATURE"
         return
     fi
 
-    # Then check git if available
+    # 次にgitが利用可能かチェック
     if git rev-parse --abbrev-ref HEAD >/dev/null 2>&1; then
         git rev-parse --abbrev-ref HEAD
         return
     fi
 
-    # For non-git repos, check .specify/.current-feature file
+    # 非Gitリポジトリの場合は.specify/.current-featureファイルをチェック
     local repo_root=$(get_repo_root)
     local current_feature_file="$repo_root/.specify/.current-feature"
 
@@ -38,10 +38,10 @@ get_current_branch() {
         fi
     fi
 
-    echo "main"  # Final fallback
+    echo "main"  # 最終フォールバック
 }
 
-# Check if we have git available
+# gitが利用可能かチェック
 has_git() {
     git rev-parse --show-toplevel >/dev/null 2>&1
 }
@@ -50,66 +50,66 @@ check_feature_branch() {
     local branch="$1"
     local has_git_repo="$2"
 
-    # For non-git repos, we can't enforce branch naming but still provide output
+    # 非Gitリポジトリではブランチ命名規則を強制できないが、出力は提供
     if [[ "$has_git_repo" != "true" ]]; then
-        echo "[specify] Warning: Git repository not detected; skipped branch validation" >&2
+        echo "[specify] 警告: Gitリポジトリが検出されません。ブランチ検証をスキップしました" >&2
         return 0
     fi
 
-    # Check for feature/SPEC-UUID8桁 format (branch & worktree workflow)
+    # feature/SPEC-UUID8桁形式をチェック（ブランチ＆Worktreeワークフロー）
     if [[ "$branch" =~ ^feature/SPEC-[a-z0-9]{8}$ ]]; then
         return 0
     fi
 
-    # Allow main branch
+    # mainブランチを許可
     if [[ "$branch" == "main" ]] || [[ "$branch" == "master" ]]; then
         return 0
     fi
 
-    # Warn but allow other branches
-    echo "[specify] Warning: Branch '$branch' does not match feature/SPEC-[UUID8桁] format, but continuing" >&2
+    # 他のブランチは警告するが続行を許可
+    echo "[specify] 警告: ブランチ '$branch' は feature/SPEC-[UUID8桁] 形式ではありませんが、続行します" >&2
     return 0
 }
 
 get_feature_dir() { echo "$1/specs/$2"; }
 
-# Find feature directory for branch & worktree workflow
-# Extracts SPEC-ID from branch name and finds corresponding worktree
+# ブランチ＆Worktreeワークフロー用の機能ディレクトリを検索
+# ブランチ名からSPEC-IDを抽出し、対応するWorktreeを検索
 find_feature_dir_by_prefix() {
     local repo_root="$1"
     local branch_name="$2"
 
-    # Extract SPEC-ID from feature/SPEC-xxx branch name
+    # feature/SPEC-xxxブランチ名からSPEC-IDを抽出
     if [[ "$branch_name" =~ ^feature/(SPEC-[a-z0-9]{8})$ ]]; then
         local spec_id="${BASH_REMATCH[1]}"
         local worktree_dir="$repo_root/.worktrees/$spec_id"
 
-        # Check if worktree exists
+        # Worktreeが存在するかチェック
         if [[ -d "$worktree_dir" ]]; then
             echo "$worktree_dir/specs/$spec_id"
             return
         fi
 
-        # Fallback to main repo if worktree doesn't exist
+        # Worktreeが存在しない場合はメインリポジトリにフォールバック
         echo "$repo_root/specs/$spec_id"
         return
     fi
 
-    # For main branch or other branches, use main repo specs directory
+    # mainブランチまたは他のブランチの場合はメインリポジトリのspecsディレクトリを使用
     local specs_dir="$repo_root/specs"
 
-    # If branch_name looks like a SPEC-ID directly
+    # branch_nameが直接SPEC-IDに見える場合
     if [[ "$branch_name" =~ ^SPEC-[a-z0-9]{8}$ ]]; then
         echo "$specs_dir/$branch_name"
         return
     fi
 
-    # Fallback: use branch name as-is
+    # フォールバック: ブランチ名をそのまま使用
     echo "$specs_dir/$branch_name"
 }
 
 get_feature_paths() {
-    local spec_id_override="${1:-}"  # Optional SPEC-ID argument
+    local spec_id_override="${1:-}"  # オプションのSPEC-ID引数
     local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
     local has_git_repo="false"
@@ -120,10 +120,10 @@ get_feature_paths() {
 
     local feature_dir
     if [[ -n "$spec_id_override" ]]; then
-        # Use provided SPEC-ID directly
+        # 指定されたSPEC-IDを直接使用
         feature_dir="$repo_root/specs/$spec_id_override"
     else
-        # Use prefix-based lookup to support multiple branches per spec
+        # プレフィックスベースの検索を使用（spec単位で複数ブランチをサポート）
         feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch")
     fi
 
@@ -144,4 +144,3 @@ EOF
 
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
-

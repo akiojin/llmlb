@@ -1,9 +1,9 @@
 // T044-T046: JWT生成と検証（jsonwebtoken実装）
 
+use crate::common::auth::{Claims, UserRole};
+use crate::common::error::LbError;
 use chrono::Utc;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
-use llmlb_common::auth::{Claims, UserRole};
-use llmlb_common::error::LbError;
 
 /// JWT有効期限（24時間）
 const JWT_EXPIRATION_HOURS: i64 = 24;

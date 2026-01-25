@@ -2,6 +2,7 @@
 //!
 //! ログイン、ログアウト、認証情報確認
 
+use crate::common::auth::{Claims, UserRole};
 use crate::{config, AppState};
 use axum::{
     extract::State,
@@ -9,7 +10,6 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use llmlb_common::auth::{Claims, UserRole};
 use serde::{Deserialize, Serialize};
 
 /// ログインリクエスト
@@ -77,7 +77,7 @@ pub async fn login(
         let expires_in = 86400;
         let token = crate::auth::jwt::create_jwt(
             &dev_user_id,
-            llmlb_common::auth::UserRole::Admin,
+            crate::common::auth::UserRole::Admin,
             &app_state.jwt_secret,
         )
         .map_err(|e| {

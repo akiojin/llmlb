@@ -9,8 +9,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
+use llmlb::common::auth::UserRole;
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llmlb_common::auth::UserRole;
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;

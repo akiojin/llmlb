@@ -10,7 +10,7 @@ use axum::{
     Router,
 };
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use llmlb_common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyScope, UserRole};
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;

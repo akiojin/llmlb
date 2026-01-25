@@ -63,6 +63,29 @@ fn get_required_key(provider: &str, env_key: &str, err_msg: &str) -> Result<Stri
     }
 }
 
+/// SPEC-f8e3a1b7: 推論リクエスト成功時にエンドポイントのレイテンシを更新（Fire-and-forget）
+fn update_inference_latency(
+    registry: &crate::registry::endpoints::EndpointRegistry,
+    endpoint_id: Uuid,
+    duration: std::time::Duration,
+) {
+    let registry = registry.clone();
+    let latency_ms = duration.as_millis() as f64;
+    tokio::spawn(async move {
+        if let Err(e) = registry
+            .update_inference_latency(endpoint_id, latency_ms)
+            .await
+        {
+            tracing::debug!(
+                endpoint_id = %endpoint_id,
+                latency_ms = latency_ms,
+                error = %e,
+                "Failed to update inference latency"
+            );
+        }
+    });
+}
+
 fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
     fn redact_data_url(value: &Value) -> Value {
         match value {
@@ -1351,6 +1374,9 @@ async fn proxy_openai_post(
         let duration = start.elapsed();
 
         if stream {
+            // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+            update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
+
             save_request_record(
                 state.request_history.clone(),
                 RequestResponseRecord {
@@ -1382,6 +1408,11 @@ async fn proxy_openai_post(
         let token_usage = response_body_value
             .as_ref()
             .and_then(extract_usage_from_response);
+
+        // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+        if status.is_success() {
+            update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
+        }
 
         save_request_record(
             state.request_history.clone(),

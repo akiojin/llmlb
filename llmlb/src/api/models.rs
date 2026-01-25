@@ -126,9 +126,8 @@ const HF_INFO_CACHE_TTL: Duration = Duration::from_secs(600); // 10分
 
 /// HuggingFace APIからモデル情報を取得（キャッシュ付き）
 async fn fetch_hf_info(http_client: &reqwest::Client, repo: &str) -> Option<HfInfo> {
-    // キャッシュチェック
-    {
-        let cache = HF_INFO_CACHE.read().unwrap();
+    // キャッシュチェック（ロックポイズニング時はスキップ）
+    if let Ok(cache) = HF_INFO_CACHE.read() {
         if let Some(entry) = cache.get(repo) {
             if entry.fetched_at.elapsed() < HF_INFO_CACHE_TTL {
                 return Some(entry.info.clone());
@@ -180,9 +179,8 @@ async fn fetch_hf_info(http_client: &reqwest::Client, repo: &str) -> Option<HfIn
         likes: model_info.likes,
     };
 
-    // キャッシュに保存
-    {
-        let mut cache = HF_INFO_CACHE.write().unwrap();
+    // キャッシュに保存（ロックポイズニング時はスキップ）
+    if let Ok(mut cache) = HF_INFO_CACHE.write() {
         cache.insert(
             repo.to_string(),
             HfInfoCacheEntry {
@@ -1010,12 +1008,12 @@ async fn compute_gpu_warnings(
         }
     }
 
-    if memories.is_empty() {
+    // 安全: max()はSomeを返すことが保証（空でないことを上でチェック済み）
+    let Some(max_mem) = memories.iter().max().copied() else {
         warnings.push("No GPU memory info available from registered endpoints".into());
         return warnings;
-    }
+    };
 
-    let max_mem = *memories.iter().max().unwrap();
     if required_memory > max_mem {
         warnings.push(format!(
             "Model requires {:.1}GB but max endpoint GPU memory is {:.1}GB",
@@ -1188,56 +1186,46 @@ pub async fn get_model_registry_manifest(
     use axum::body::Body;
     use axum::response::Response;
 
+    // エラーレスポンスを作成するヘルパー（Response::builder()はこの用途では失敗しない）
+    fn error_response(status: StatusCode, message: &str) -> Response {
+        Response::builder()
+            .status(status)
+            .body(Body::from(format!("{{\"error\": \"{}\"}}", message)))
+            .expect("Response builder should not fail with valid status and string body")
+    }
+
     if let Err(e) = validate_model_name(&model_name) {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
-            .unwrap();
+        return error_response(StatusCode::BAD_REQUEST, &e.to_string());
     }
 
     let model = match load_registered_model(&state.db_pool, &model_name).await {
         Ok(Some(m)) => m,
         Ok(None) => {
-            return Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from(format!(
-                    "{{\"error\": \"Model not found: {}\"}}",
-                    model_name
-                )))
-                .unwrap();
+            return error_response(
+                StatusCode::NOT_FOUND,
+                &format!("Model not found: {}", model_name),
+            );
         }
         Err(e) => {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
-                .unwrap();
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
         }
     };
 
     let Some(repo) = model.repo.clone() else {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::from("{\"error\": \"repo not set for model\"}"))
-            .unwrap();
+        return error_response(StatusCode::BAD_REQUEST, "repo not set for model");
     };
 
     let siblings = match fetch_repo_siblings(&state.http_client, &repo).await {
         Ok(list) => list,
         Err(e) => {
-            return Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
-                .unwrap();
+            return error_response(StatusCode::BAD_GATEWAY, &e.to_string());
         }
     };
 
     let selection = match resolve_primary_artifact(&siblings, model.filename.clone()) {
         Ok(sel) => sel,
         Err(e) => {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
-                .unwrap();
+            return error_response(StatusCode::BAD_REQUEST, &e.to_string());
         }
     };
 
@@ -1267,10 +1255,7 @@ pub async fn get_model_registry_manifest(
         }
         ArtifactFormat::Safetensors => {
             if let Err(e) = require_safetensors_metadata_files(&siblings) {
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
-                    .unwrap();
+                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
             }
 
             let mut names: Vec<String> =
@@ -1289,10 +1274,7 @@ pub async fn get_model_registry_manifest(
                         }
                     }
                     Err(e) => {
-                        return Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(Body::from(format!("{{\"error\": \"{}\"}}", e)))
-                            .unwrap();
+                        return error_response(StatusCode::BAD_REQUEST, &e.to_string());
                     }
                 }
             }
@@ -1329,7 +1311,7 @@ pub async fn get_model_registry_manifest(
         .status(StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .body(Body::from(body))
-        .unwrap()
+        .expect("Response builder should not fail with valid status and string body")
 }
 
 #[cfg(test)]

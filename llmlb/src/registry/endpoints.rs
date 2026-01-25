@@ -121,17 +121,20 @@ impl EndpointRegistry {
 
     /// 指定した機能を持つオンラインエンドポイントをレイテンシ順で取得
     ///
+    /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2）でソート。
     /// 複数エンドポイントがある場合、レイテンシが低いものを優先する。
     pub async fn list_online_by_capability_sorted(
         &self,
         capability: EndpointCapability,
     ) -> Vec<Endpoint> {
         let mut endpoints = self.list_online_by_capability(capability).await;
-        endpoints.sort_by(|a, b| match (a.latency_ms, b.latency_ms) {
-            (Some(a_lat), Some(b_lat)) => a_lat.cmp(&b_lat),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
+        // SPEC-f8e3a1b7: 推論レイテンシ（inference_latency_ms）でソート
+        endpoints.sort_by(|a, b| {
+            let a_lat = a.get_inference_latency_for_sort();
+            let b_lat = b.get_inference_latency_for_sort();
+            a_lat
+                .partial_cmp(&b_lat)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         endpoints
     }
@@ -163,15 +166,18 @@ impl EndpointRegistry {
     }
 
     /// レイテンシ順でエンドポイントをソート（低レイテンシ優先）
+    ///
+    /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2）を使用してソート。
+    /// レイテンシが同じ場合はラウンドロビンでタイブレーク。
     pub async fn find_by_model_sorted_by_latency(&self, model_id: &str) -> Vec<Endpoint> {
         let mut endpoints = self.find_by_model(model_id).await;
+        // SPEC-f8e3a1b7: 推論レイテンシ（inference_latency_ms）でソート
         endpoints.sort_by(|a, b| {
-            match (a.latency_ms, b.latency_ms) {
-                (Some(a_lat), Some(b_lat)) => a_lat.cmp(&b_lat),
-                (Some(_), None) => std::cmp::Ordering::Less, // レイテンシありを優先
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            }
+            let a_lat = a.get_inference_latency_for_sort();
+            let b_lat = b.get_inference_latency_for_sort();
+            a_lat
+                .partial_cmp(&b_lat)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         endpoints
     }
@@ -261,6 +267,68 @@ impl EndpointRegistry {
         } else {
             false
         }
+    }
+
+    /// エンドポイントの推論レイテンシを更新（DBとキャッシュ両方）（SPEC-f8e3a1b7）
+    ///
+    /// 推論リクエスト完了時に呼び出し、EMA（α=0.2）で平均レイテンシを計算する。
+    /// オフライン時は`reset_inference_latency`を呼び出す。
+    pub async fn update_inference_latency(
+        &self,
+        id: Uuid,
+        new_latency_ms: f64,
+    ) -> Result<bool, sqlx::Error> {
+        // キャッシュを更新（EMA計算はEndpoint内で行う）
+        let inference_latency_ms = {
+            let mut endpoints = self.endpoints.write().await;
+            if let Some(endpoint) = endpoints.get_mut(&id) {
+                endpoint.update_inference_latency(new_latency_ms);
+                endpoint.inference_latency_ms
+            } else {
+                return Ok(false);
+            }
+        };
+
+        // DBを更新
+        db::update_inference_latency(&self.pool, id, inference_latency_ms).await
+    }
+
+    /// エンドポイントの推論レイテンシをリセット（オフライン時）（SPEC-f8e3a1b7）
+    ///
+    /// エンドポイントがオフラインになったときに呼び出し、レイテンシをINFINITYに設定。
+    pub async fn reset_inference_latency(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+        // キャッシュを更新
+        {
+            let mut endpoints = self.endpoints.write().await;
+            if let Some(endpoint) = endpoints.get_mut(&id) {
+                endpoint.reset_inference_latency();
+            }
+        }
+
+        // DBを更新（INFINITYを保存）
+        db::update_inference_latency(&self.pool, id, Some(f64::INFINITY)).await
+    }
+
+    /// エンドポイントのデバイス情報を更新（DBとキャッシュ両方）（SPEC-f8e3a1b7）
+    ///
+    /// /v0/system APIから取得したデバイス情報を保存する。
+    pub async fn update_device_info(
+        &self,
+        id: Uuid,
+        device_info: Option<crate::types::endpoint::DeviceInfo>,
+    ) -> Result<bool, sqlx::Error> {
+        // キャッシュを更新
+        {
+            let mut endpoints = self.endpoints.write().await;
+            if let Some(endpoint) = endpoints.get_mut(&id) {
+                endpoint.device_info = device_info.clone();
+            } else {
+                return Ok(false);
+            }
+        }
+
+        // DBを更新
+        db::update_device_info(&self.pool, id, device_info.as_ref()).await
     }
 
     /// エンドポイントのResponses API対応フラグを更新（DBとキャッシュ両方）

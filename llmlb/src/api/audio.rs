@@ -82,6 +82,9 @@ impl AudioBackend {
 
     /// リクエスト履歴用のIPアドレス
     fn ip(&self) -> IpAddr {
+        // フォールバック用のローカルホストアドレス
+        const LOCALHOST: IpAddr = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+
         // base_urlからホスト部分を抽出してパース
         // 例: "http://192.168.1.100:11434" -> "192.168.1.100"
         let host = self
@@ -92,8 +95,7 @@ impl AudioBackend {
             .split(':')
             .next()
             .unwrap_or("127.0.0.1");
-        host.parse::<IpAddr>()
-            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap())
+        host.parse::<IpAddr>().unwrap_or(LOCALHOST)
     }
 }
 
@@ -253,7 +255,7 @@ pub async fn transcriptions(
         reqwest::multipart::Part::bytes(file_data)
             .file_name(file_name.unwrap_or_else(|| "audio.wav".to_string()))
             .mime_str("audio/wav")
-            .unwrap(),
+            .expect("audio/wav is a valid MIME type"),
     );
 
     form = form.text("model", model.clone());
@@ -430,7 +432,7 @@ pub async fn speech(
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, content_type)
             .body(body)
-            .unwrap()
+            .expect("Response builder should not fail with valid status and body")
             .into_response())
     } else {
         // エラーレスポンスを転送

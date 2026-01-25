@@ -149,7 +149,7 @@ async fn test_dashboard_receives_node_registration_event() {
             runtime_id: node_id,
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
-            status: llmlb::common::types::NodeStatus::Online,
+            status: llmlb::types::endpoint::EndpointStatus::Online,
         });
 
     // Assert: WebSocket client should receive node registration event
@@ -199,10 +199,10 @@ async fn test_dashboard_receives_node_status_change() {
     let node_id = uuid::Uuid::new_v4();
     state
         .event_bus
-        .publish(llmlb::events::DashboardEvent::NodeStatusChanged {
+        .publish(llmlb::events::DashboardEvent::EndpointStatusChanged {
             runtime_id: node_id,
-            old_status: llmlb::common::types::NodeStatus::Online,
-            new_status: llmlb::common::types::NodeStatus::Offline,
+            old_status: llmlb::types::endpoint::EndpointStatus::Online,
+            new_status: llmlb::types::endpoint::EndpointStatus::Offline,
         });
 
     // Assert: WebSocket client should receive status change event
@@ -214,7 +214,7 @@ async fn test_dashboard_receives_node_status_change() {
 
     if let Message::Text(text) = msg {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
-        assert_eq!(json["type"], "NodeStatusChanged");
+        assert_eq!(json["type"], "EndpointStatusChanged");
         assert_eq!(json["data"]["runtime_id"], node_id.to_string());
         assert_eq!(json["data"]["new_status"], "offline");
     } else {

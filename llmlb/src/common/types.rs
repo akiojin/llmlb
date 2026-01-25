@@ -1,17 +1,13 @@
 //! 共通型定義
 //!
-//! Node, HealthMetrics, Request等のコアデータ型
+//! HealthMetrics, Request等のコアデータ型
 //!
-//! # 移行中
+//! # SPEC-f8e3a1b7
 //!
-//! `Node`型と`NodeMetrics`型は廃止予定です。新しい実装では`Endpoint`型を使用してください。
-
-#![allow(deprecated)] // Module contains deprecated Node and NodeMetrics types
+//! Node型は廃止されました。新しい実装では`Endpoint`型を使用してください。
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::net::IpAddr;
 use uuid::Uuid;
 
 /// GPUデバイス情報
@@ -33,119 +29,8 @@ impl GpuDeviceInfo {
     }
 }
 
-/// ノード
-///
-/// # 廃止予定
-///
-/// この型は廃止予定です。新しい実装では `Endpoint` 型を使用してください。
-/// ノードベースのアーキテクチャからエンドポイントベースのアーキテクチャに移行中です。
-#[deprecated(note = "Use Endpoint type instead. Node-based architecture is deprecated.")]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Node {
-    /// 一意識別子
-    pub id: Uuid,
-    /// マシン名
-    pub machine_name: String,
-    /// IPアドレス
-    pub ip_address: IpAddr,
-    /// ランタイムバージョン（llama.cpp）
-    #[serde(rename = "runtime_version", alias = "runtime_version")]
-    pub runtime_version: String,
-    /// ランタイムポート番号（推論用）
-    #[serde(rename = "runtime_port", alias = "runtime_port")]
-    pub runtime_port: u16,
-    /// 状態（オンライン/オフライン）
-    pub status: NodeStatus,
-    /// 登録日時
-    pub registered_at: DateTime<Utc>,
-    /// 最終ヘルスチェック時刻
-    pub last_seen: DateTime<Utc>,
-    /// 直近でオンライン状態に遷移した時刻（オンライン時のみ Some）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub online_since: Option<DateTime<Utc>>,
-    /// カスタム表示名
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_name: Option<String>,
-    /// タグ
-    #[serde(default)]
-    pub tags: Vec<String>,
-    /// メモ
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notes: Option<String>,
-    /// ロード済みモデル一覧
-    #[serde(default)]
-    pub loaded_models: Vec<String>,
-    /// ロード済みEmbeddingモデル一覧
-    #[serde(default)]
-    pub loaded_embedding_models: Vec<String>,
-    /// ロード済みASRモデル一覧 (音声認識)
-    #[serde(default)]
-    pub loaded_asr_models: Vec<String>,
-    /// ロード済みTTSモデル一覧 (音声合成)
-    #[serde(default)]
-    pub loaded_tts_models: Vec<String>,
-    /// 実行可能モデル一覧（ノードが報告した対応モデル）
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub executable_models: Vec<String>,
-    /// 推論失敗により一時除外中のモデル一覧（メモリのみ）
-    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
-    pub excluded_models: HashSet<String>,
-    /// サポートするランタイム一覧
-    #[serde(default)]
-    pub supported_runtimes: Vec<RuntimeType>,
-    /// 搭載GPUの詳細
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub gpu_devices: Vec<GpuDeviceInfo>,
-    /// GPU利用可能フラグ
-    pub gpu_available: bool,
-    /// GPU個数
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_count: Option<u32>,
-    /// GPUモデル名
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_model: Option<String>,
-    /// GPUモデル名（詳細）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_model_name: Option<String>,
-    /// GPU計算能力 (例: "8.9")
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_compute_capability: Option<String>,
-    /// GPU能力スコア (0-10000)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_capability_score: Option<u32>,
-    /// OpenAI互換APIポート（標準は runtime_port+1）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_api_port: Option<u16>,
-    /// モデル起動中フラグ（全対応モデルが揃うまで true）
-    #[serde(default)]
-    pub initializing: bool,
-    /// 起動済みモデル数/総数
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ready_models: Option<(u8, u8)>,
-    /// モデル同期状態
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sync_state: Option<SyncState>,
-    /// モデル同期の進捗
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sync_progress: Option<SyncProgress>,
-    /// 同期状態の最終更新時刻
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sync_updated_at: Option<DateTime<Utc>>,
-}
-
-/// ノード状態
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum NodeStatus {
-    /// 承認待ち
-    Pending,
-    /// オンライン（モデル同期完了）
-    Online,
-    /// 登録中（モデル同期中）
-    Registering,
-    /// オフライン
-    Offline,
-}
+// SPEC-f8e3a1b7: Node型とNodeStatus型は削除されました
+// 新しい実装では Endpoint 型と EndpointStatus 型を使用してください
 
 /// モデル同期状態
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -531,156 +416,15 @@ pub enum RequestStatus {
     Failed,
 }
 
-/// ノードメトリクス
-///
-/// # 廃止予定
-///
-/// この型は廃止予定です。エンドポイントベースのメトリクス収集に移行中です。
-///
-/// ノードから定期的に送信される負荷情報
-#[deprecated(note = "Use endpoint-based metrics instead.")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeMetrics {
-    /// ノードID
-    pub node_id: Uuid,
-    /// CPU使用率（0.0〜100.0）
-    pub cpu_usage: f64,
-    /// メモリ使用率（0.0〜100.0）
-    pub memory_usage: f64,
-    /// アクティブリクエスト数
-    pub active_requests: u32,
-    /// 平均レスポンス時間（ミリ秒）
-    pub avg_response_time_ms: Option<f64>,
-    /// タイムスタンプ
-    pub timestamp: DateTime<Utc>,
-}
+// SPEC-f8e3a1b7: NodeMetrics型は削除されました
+// エンドポイントベースのメトリクス収集を使用してください
 
 #[cfg(test)]
-#[allow(deprecated)] // Testing deprecated Node and NodeMetrics types during migration
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
-    #[test]
-    fn test_node_serialization() {
-        let node = Node {
-            id: Uuid::new_v4(),
-            machine_name: "test-machine".to_string(),
-            ip_address: "192.168.1.100".parse().unwrap(),
-            runtime_version: "0.1.0".to_string(),
-            runtime_port: 32768,
-            status: NodeStatus::Online,
-            registered_at: Utc::now(),
-            last_seen: Utc::now(),
-            online_since: Some(Utc::now()),
-            custom_name: Some("Custom".to_string()),
-            tags: vec!["primary".to_string()],
-            notes: Some("memo".to_string()),
-            loaded_models: vec!["gpt-oss-20b".to_string()],
-            loaded_embedding_models: vec!["nomic-embed-text-v1.5".to_string()],
-            loaded_asr_models: vec!["whisper-large-v3".to_string()],
-            loaded_tts_models: vec!["vibevoice-v1".to_string()],
-            executable_models: vec!["gpt-oss-20b".to_string()],
-            excluded_models: HashSet::new(),
-            supported_runtimes: vec![RuntimeType::LlamaCpp, RuntimeType::WhisperCpp],
-            gpu_devices: vec![GpuDeviceInfo {
-                model: "NVIDIA RTX 4090".to_string(),
-                count: 2,
-                memory: None,
-            }],
-            gpu_available: true,
-            gpu_count: Some(2),
-            gpu_model: Some("NVIDIA RTX 4090".to_string()),
-            gpu_model_name: Some("NVIDIA GeForce RTX 4090".to_string()),
-            gpu_compute_capability: Some("8.9".to_string()),
-            gpu_capability_score: Some(9850),
-            node_api_port: Some(32769),
-            initializing: false,
-            ready_models: Some((1, 1)),
-            sync_state: None,
-            sync_progress: None,
-            sync_updated_at: None,
-        };
-
-        let json = serde_json::to_string(&node).unwrap();
-        let deserialized: Node = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(node, deserialized);
-    }
-
-    #[test]
-    fn test_node_defaults() {
-        let json = r#"{
-            "id": "00000000-0000-0000-0000-000000000000",
-            "machine_name": "machine",
-            "ip_address": "127.0.0.1",
-            "runtime_version": "0.1.0",
-            "runtime_port": 32768,
-            "status": "online",
-            "registered_at": "2025-10-31T00:00:00Z",
-            "last_seen": "2025-10-31T00:00:00Z",
-            "gpu_available": false
-        }"#;
-
-        let node: Node = serde_json::from_str(json).unwrap();
-        assert!(node.custom_name.is_none());
-        assert!(node.tags.is_empty());
-        assert!(node.notes.is_none());
-        assert!(node.loaded_models.is_empty());
-        assert!(node.loaded_embedding_models.is_empty());
-        assert!(node.gpu_devices.is_empty());
-        assert!(!node.gpu_available);
-        assert!(node.gpu_count.is_none());
-        assert!(node.gpu_model.is_none());
-        assert!(node.gpu_model_name.is_none());
-        assert!(node.gpu_compute_capability.is_none());
-        assert!(node.gpu_capability_score.is_none());
-        assert!(node.online_since.is_none());
-        assert!(node.sync_state.is_none());
-        assert!(node.sync_progress.is_none());
-        assert!(node.sync_updated_at.is_none());
-        assert!(node.executable_models.is_empty());
-        assert!(node.excluded_models.is_empty());
-    }
-
-    #[test]
-    fn test_node_runtime_fields() {
-        let json = r#"{
-            "id": "00000000-0000-0000-0000-000000000000",
-            "machine_name": "machine",
-            "ip_address": "127.0.0.1",
-            "runtime_version": "0.1.0",
-            "runtime_port": 32768,
-            "status": "online",
-            "registered_at": "2025-10-31T00:00:00Z",
-            "last_seen": "2025-10-31T00:00:00Z",
-            "gpu_available": false
-        }"#;
-
-        let node: Node = serde_json::from_str(json).unwrap();
-        assert_eq!(node.runtime_version, "0.1.0");
-        assert_eq!(node.runtime_port, 32768);
-    }
-
-    #[test]
-    fn test_node_status_serialization() {
-        assert_eq!(
-            serde_json::to_string(&NodeStatus::Online).unwrap(),
-            "\"online\""
-        );
-        assert_eq!(
-            serde_json::to_string(&NodeStatus::Registering).unwrap(),
-            "\"registering\""
-        );
-        assert_eq!(
-            serde_json::to_string(&NodeStatus::Pending).unwrap(),
-            "\"pending\""
-        );
-        assert_eq!(
-            serde_json::to_string(&NodeStatus::Offline).unwrap(),
-            "\"offline\""
-        );
-    }
+    // SPEC-f8e3a1b7: Node/NodeStatus/NodeMetrics関連のテストは削除されました
+    // Endpoint型のテストは types/endpoint.rs に移動しました
 
     #[test]
     fn test_gpu_device_info_validation() {
@@ -726,57 +470,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_node_metrics_serialization() {
-        let node_id = Uuid::parse_str("12345678-1234-1234-1234-123456789012").unwrap();
-        let timestamp = DateTime::parse_from_rfc3339("2025-11-02T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-
-        let metrics = NodeMetrics {
-            node_id,
-            cpu_usage: 45.5,
-            memory_usage: 60.2,
-            active_requests: 3,
-            avg_response_time_ms: Some(250.5),
-            timestamp,
-        };
-
-        // JSON serialization
-        let json = serde_json::to_string(&metrics).unwrap();
-        assert!(json.contains("\"node_id\":\"12345678-1234-1234-1234-123456789012\""));
-        assert!(json.contains("\"cpu_usage\":45.5"));
-        assert!(json.contains("\"memory_usage\":60.2"));
-        assert!(json.contains("\"active_requests\":3"));
-        assert!(json.contains("\"avg_response_time_ms\":250.5"));
-
-        // JSON deserialization
-        let deserialized: NodeMetrics = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.node_id, node_id);
-        assert_eq!(deserialized.cpu_usage, 45.5);
-        assert_eq!(deserialized.memory_usage, 60.2);
-        assert_eq!(deserialized.active_requests, 3);
-        assert_eq!(deserialized.avg_response_time_ms, Some(250.5));
-        assert_eq!(deserialized.timestamp, timestamp);
-    }
-
-    #[test]
-    fn test_node_metrics_deserialization_without_avg_response_time() {
-        let json = r#"{
-            "node_id": "12345678-1234-1234-1234-123456789012",
-            "cpu_usage": 30.0,
-            "memory_usage": 40.0,
-            "active_requests": 2,
-            "avg_response_time_ms": null,
-            "timestamp": "2025-11-02T10:00:00Z"
-        }"#;
-
-        let metrics: NodeMetrics = serde_json::from_str(json).unwrap();
-        assert_eq!(metrics.cpu_usage, 30.0);
-        assert_eq!(metrics.memory_usage, 40.0);
-        assert_eq!(metrics.active_requests, 2);
-        assert_eq!(metrics.avg_response_time_ms, None);
-    }
+    // SPEC-f8e3a1b7: test_node_metrics_* テストは削除されました
 
     #[test]
     fn test_model_type_serialization() {

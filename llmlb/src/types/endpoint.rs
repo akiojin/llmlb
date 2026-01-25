@@ -279,79 +279,8 @@ impl Endpoint {
         self.inference_latency_ms.unwrap_or(f64::INFINITY)
     }
 
-    /// EndpointからNodeへの変換（NodeRegistry廃止移行用）
-    ///
-    /// LoadManagerのロードバランシングロジックを再利用するための一時的な変換。
-    /// EndpointRegistry完全移行後に削除予定。
-    #[deprecated(
-        note = "This is a temporary bridge for NodeRegistry migration. Will be removed after full EndpointRegistry migration."
-    )]
-    #[allow(deprecated)] // Uses deprecated Node type for migration bridge
-    pub fn to_legacy_node(&self, models: Vec<String>) -> crate::common::types::Node {
-        use crate::common::types::{Node, NodeStatus};
-        use std::collections::HashSet;
-        use std::net::IpAddr;
-
-        // base_urlからホストとポートを抽出
-        let url = reqwest::Url::parse(&self.base_url).ok();
-        let host = url
-            .as_ref()
-            .and_then(|u| u.host_str())
-            .unwrap_or("127.0.0.1");
-        let port = url.as_ref().and_then(|u| u.port()).unwrap_or(8080);
-
-        // IPアドレスをパース（失敗時はローカルホスト）
-        let ip_address: IpAddr = host.parse().unwrap_or_else(|_| {
-            // ホスト名の場合はDNS解決が必要だが、ここでは127.0.0.1にフォールバック
-            "127.0.0.1".parse().unwrap()
-        });
-
-        // EndpointStatusからNodeStatusへ変換
-        let status = match self.status {
-            EndpointStatus::Online => NodeStatus::Online,
-            EndpointStatus::Pending => NodeStatus::Pending,
-            _ => NodeStatus::Offline,
-        };
-
-        Node {
-            id: self.id,
-            machine_name: self.name.clone(),
-            ip_address,
-            runtime_version: String::new(), // Endpointには相当フィールドなし
-            runtime_port: port.saturating_sub(1), // OpenAI APIポート-1 = runtimeポート（慣例）
-            status,
-            registered_at: self.registered_at,
-            last_seen: self.last_seen.unwrap_or(self.registered_at),
-            online_since: if self.status == EndpointStatus::Online {
-                Some(self.last_seen.unwrap_or(self.registered_at))
-            } else {
-                None
-            },
-            custom_name: Some(self.name.clone()),
-            tags: vec![],
-            notes: self.notes.clone(),
-            loaded_models: models.clone(),
-            loaded_embedding_models: vec![],
-            loaded_asr_models: vec![],
-            loaded_tts_models: vec![],
-            executable_models: models,
-            excluded_models: HashSet::new(),
-            supported_runtimes: vec![],
-            gpu_devices: vec![],
-            gpu_available: false,
-            gpu_count: None,
-            gpu_model: None,
-            gpu_model_name: None,
-            gpu_compute_capability: None,
-            gpu_capability_score: None,
-            node_api_port: Some(port),
-            initializing: false,
-            ready_models: None,
-            sync_state: None,
-            sync_progress: None,
-            sync_updated_at: None,
-        }
-    }
+    // SPEC-f8e3a1b7: to_legacy_node()は削除されました
+    // Node型は完全に廃止され、Endpoint型に移行しました
 }
 
 /// エンドポイントで利用可能なモデル情報

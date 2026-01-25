@@ -82,8 +82,9 @@ jobs:
           echo "📥 Downloading LLaVA model..."
           mkdir -p ~/.cache/llmlb/models
 
-          # Install huggingface-hub
+          # Install huggingface-hub and add to PATH
           pip install huggingface-hub
+          export PATH="$HOME/.local/bin:$PATH"
 
           # Download model files
           huggingface-cli download ${{ env.MODEL_REPO }} \

@@ -77,16 +77,16 @@ jobs:
           echo "📥 Downloading LLaVA model..."
           mkdir -p ~/.cache/llmlb/models
 
-          # Install huggingface-hub CLI
+          # Install huggingface-hub
           pip install huggingface-hub
 
-          # Download model files
-          huggingface-cli download ${{ env.MODEL_REPO }} \
+          # Download model files using Python module
+          python -m huggingface_hub download ${{ env.MODEL_REPO }} \
             ${{ env.MODEL_FILE }} \
             --local-dir ~/.cache/llmlb/models \
             --local-dir-use-symlinks False
 
-          huggingface-cli download ${{ env.MODEL_REPO }} \
+          python -m huggingface_hub download ${{ env.MODEL_REPO }} \
             ${{ env.MMPROJ_FILE }} \
             --local-dir ~/.cache/llmlb/models \
             --local-dir-use-symlinks False

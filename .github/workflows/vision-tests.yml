@@ -150,6 +150,16 @@ jobs:
             CMAKE_OPTS="-DGGML_CUDA=ON"
           fi
 
+          # Force ARM64 on Apple Silicon (in case running under Rosetta)
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            # Check actual CPU architecture
+            ACTUAL_ARCH=$(uname -m)
+            echo "Actual architecture: $ACTUAL_ARCH"
+            if [[ "$ACTUAL_ARCH" == "arm64" ]]; then
+              CMAKE_OPTS="$CMAKE_OPTS -DCMAKE_OSX_ARCHITECTURES=arm64"
+            fi
+          fi
+
           cmake -S xllm -B xllm/build \
             -DBUILD_TESTS=OFF \
             $CMAKE_OPTS

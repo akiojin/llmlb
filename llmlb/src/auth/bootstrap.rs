@@ -69,7 +69,7 @@ pub async fn create_admin_interactive(pool: &sqlx::SqlitePool) -> Result<String,
 
     // ユーザー名を入力
     print!("Enter admin username (default: admin): ");
-    io::stdout().flush().unwrap();
+    let _ = io::stdout().flush(); // エラー時は無視（対話的UIで回復不能）
     let mut username = String::new();
     io::stdin()
         .read_line(&mut username)

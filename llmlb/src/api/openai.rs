@@ -2,6 +2,9 @@
 //!
 //! このモジュールはEndpointRegistry/Endpoint型を使用しています。
 
+/// 未指定/仮想IPアドレス（クラウドプロバイダ等、実IPを持たない場合に使用）
+const UNSPECIFIED_IP: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
+
 use crate::common::{
     error::{CommonError, LbError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
@@ -746,15 +749,19 @@ fn parse_cloud_model(model: &str) -> Option<(String, String)> {
 
 /// クラウドプロバイダ用の仮想ノード情報を生成する
 fn cloud_virtual_node(provider: &str) -> (Uuid, String, IpAddr) {
+    // 仮想ノードIDはクラウドプロバイダごとに固定値
     let node_id = match provider {
-        "openai" => Uuid::parse_str("00000000-0000-0000-0000-00000000c001").unwrap(),
-        "google" => Uuid::parse_str("00000000-0000-0000-0000-00000000c002").unwrap(),
-        "anthropic" => Uuid::parse_str("00000000-0000-0000-0000-00000000c003").unwrap(),
-        _ => Uuid::parse_str("00000000-0000-0000-0000-00000000c0ff").unwrap(),
+        "openai" => Uuid::parse_str("00000000-0000-0000-0000-00000000c001")
+            .expect("static UUID string is valid"),
+        "google" => Uuid::parse_str("00000000-0000-0000-0000-00000000c002")
+            .expect("static UUID string is valid"),
+        "anthropic" => Uuid::parse_str("00000000-0000-0000-0000-00000000c003")
+            .expect("static UUID string is valid"),
+        _ => Uuid::parse_str("00000000-0000-0000-0000-00000000c0ff")
+            .expect("static UUID string is valid"),
     };
     let machine_name = format!("cloud:{provider}");
-    let node_ip: IpAddr = "0.0.0.0".parse().unwrap();
-    (node_id, machine_name, node_ip)
+    (node_id, machine_name, UNSPECIFIED_IP)
 }
 
 struct CloudProxyResult {
@@ -880,7 +887,9 @@ async fn proxy_openai_provider(
             resp = resp.header(CONTENT_TYPE, hv);
         }
     }
-    let built = resp.body(Body::from(bytes)).unwrap();
+    let built = resp
+        .body(Body::from(bytes))
+        .expect("Response builder should not fail with valid status and bytes body");
     info!(
         provider = "openai",
         model = payload.get("model").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1321,7 +1330,7 @@ async fn proxy_openai_post(
                         model: model.clone(),
                         node_id: endpoint.id,
                         node_machine_name: endpoint.name.clone(),
-                        node_ip: "0.0.0.0".parse().unwrap(),
+                        node_ip: UNSPECIFIED_IP,
                         client_ip: None,
                         request_body,
                         response_body: None,
@@ -1351,7 +1360,7 @@ async fn proxy_openai_post(
                     model: model.clone(),
                     node_id: endpoint.id,
                     node_machine_name: endpoint.name.clone(),
-                    node_ip: "0.0.0.0".parse().unwrap(),
+                    node_ip: UNSPECIFIED_IP,
                     client_ip: None,
                     request_body,
                     response_body: None,
@@ -1383,7 +1392,7 @@ async fn proxy_openai_post(
                 model: model.clone(),
                 node_id: endpoint.id,
                 node_machine_name: endpoint.name.clone(),
-                node_ip: "0.0.0.0".parse().unwrap(),
+                node_ip: UNSPECIFIED_IP,
                 client_ip: None,
                 request_body,
                 response_body: response_body_value,
@@ -1406,7 +1415,7 @@ async fn proxy_openai_post(
             .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK))
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(body_bytes))
-            .unwrap());
+            .expect("Response builder should not fail with valid status and body"));
     }
 
     // Check if any endpoint has this model
@@ -1450,7 +1459,7 @@ async fn proxy_openai_post(
                         model: model.clone(),
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
-                        node_ip: "0.0.0.0".parse().unwrap(),
+                        node_ip: UNSPECIFIED_IP,
                         client_ip: None,
                         request_body,
                         response_body: None,
@@ -1483,7 +1492,7 @@ async fn proxy_openai_post(
                         model: model.clone(),
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
-                        node_ip: "0.0.0.0".parse().unwrap(),
+                        node_ip: UNSPECIFIED_IP,
                         client_ip: None,
                         request_body,
                         response_body: None,
@@ -1525,7 +1534,7 @@ async fn proxy_openai_post(
                         model: model.clone(),
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
-                        node_ip: "0.0.0.0".parse().unwrap(),
+                        node_ip: UNSPECIFIED_IP,
                         client_ip: None,
                         request_body,
                         response_body: None,
@@ -1552,7 +1561,7 @@ async fn proxy_openai_post(
     let endpoint_name = endpoint.name.clone();
     // RequestResponseRecordの互換性のため、デフォルトIP使用
     // (今後、RequestResponseRecordのフィールドをリネームすべき)
-    let endpoint_host: std::net::IpAddr = "0.0.0.0".parse().unwrap();
+    let endpoint_host: std::net::IpAddr = UNSPECIFIED_IP;
 
     state
         .load_manager

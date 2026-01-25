@@ -121,6 +121,23 @@ jobs:
             echo "Building for macOS with Metal..."
             NPROC=$(sysctl -n hw.ncpu)
             CMAKE_OPTS="-DGGML_METAL=ON"
+
+            # Find OpenSSL from Homebrew (ARM or Intel Mac)
+            if [ -d "/opt/homebrew/opt/openssl@3" ]; then
+              OPENSSL_ROOT="/opt/homebrew/opt/openssl@3"
+            elif [ -d "/opt/homebrew/opt/openssl" ]; then
+              OPENSSL_ROOT="/opt/homebrew/opt/openssl"
+            elif [ -d "/usr/local/opt/openssl@3" ]; then
+              OPENSSL_ROOT="/usr/local/opt/openssl@3"
+            elif [ -d "/usr/local/opt/openssl" ]; then
+              OPENSSL_ROOT="/usr/local/opt/openssl"
+            fi
+
+            if [ -n "$OPENSSL_ROOT" ]; then
+              echo "Found OpenSSL at: $OPENSSL_ROOT"
+              CMAKE_OPTS="$CMAKE_OPTS -DOPENSSL_ROOT_DIR=$OPENSSL_ROOT"
+              export PKG_CONFIG_PATH="$OPENSSL_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
+            fi
           else
             echo "Building for Linux..."
             NPROC=$(nproc)

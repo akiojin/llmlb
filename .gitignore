@@ -156,3 +156,6 @@ cookies.txt
 
 # Unity capture / cache (not used in this project)
 .unity/
+
+# GitHub Actions self-hosted runner (contains credentials)
+actions-runner/

@@ -146,14 +146,25 @@ jobs:
       - name: Check xLLM serve availability
         id: check-serve
         run: |
-          echo "🔍 Checking if xLLM serve is implemented..."
-          if ./xllm/build/xllm serve --help 2>&1 | grep -q "not yet implemented"; then
+          echo "🔍 Checking if xLLM serve is available..."
+
+          # Try to start serve briefly to check for errors
+          timeout 5 ./xllm/build/xllm serve --port 19999 > /tmp/serve-check.log 2>&1 || true
+
+          if grep -q "not yet implemented" /tmp/serve-check.log; then
             echo "⚠️ xLLM serve is not yet implemented - skipping Vision tests"
             echo "available=false" >> $GITHUB_OUTPUT
+            echo "reason=not_implemented" >> $GITHUB_OUTPUT
+          elif grep -q "No GPU detected" /tmp/serve-check.log; then
+            echo "⚠️ No GPU available - skipping Vision tests"
+            echo "available=false" >> $GITHUB_OUTPUT
+            echo "reason=no_gpu" >> $GITHUB_OUTPUT
           else
             echo "✅ xLLM serve is available"
             echo "available=true" >> $GITHUB_OUTPUT
           fi
+
+          cat /tmp/serve-check.log || true
 
       - name: Start xLLM server with LLaVA
         if: steps.check-serve.outputs.available == 'true'
@@ -235,8 +246,15 @@ jobs:
       - name: Skip notice
         if: steps.check-serve.outputs.available != 'true'
         run: |
-          echo "⏭️ Vision tests skipped - xLLM serve command not yet implemented"
-          echo "This is expected behavior. Tests will run once xLLM serve is implemented."
+          REASON="${{ steps.check-serve.outputs.reason }}"
+          if [ "$REASON" = "no_gpu" ]; then
+            echo "⏭️ Vision tests skipped - No GPU available on this runner"
+            echo "Vision tests require a GPU-enabled runner (self-hosted or GPU Actions runner)"
+          else
+            echo "⏭️ Vision tests skipped - xLLM serve command not yet implemented"
+            echo "This is expected behavior. Tests will run once xLLM serve is implemented."
+          fi
+          echo "To run Vision tests locally, use a machine with GPU support."
 
       - name: Upload test results
         if: always()

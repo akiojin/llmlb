@@ -126,29 +126,12 @@ mod tests {
         assert_eq!(state.effective_average_ms(), Some(80.0));
     }
 
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn load_manager_prefers_lower_latency_when_active_equal() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn metrics_history_tracks_recent_points() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn wait_for_ready_unblocks_when_node_becomes_ready() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn wait_for_ready_limits_waiters_and_notifies_first() {
-        // TODO: EndpointRegistryベースに移行
-    }
+    // SPEC-f8e3a1b7: NodeRegistry依存のテストは削除されました
+    // - load_manager_prefers_lower_latency_when_active_equal
+    // - metrics_history_tracks_recent_points
+    // - wait_for_ready_unblocks_when_node_becomes_ready
+    // - wait_for_ready_limits_waiters_and_notifies_first
+    // 新しいEndpointRegistryベースのテストは tests/integration/ に追加してください
 
     // T004: WaitResult enum テスト
     #[test]
@@ -192,54 +175,14 @@ mod tests {
         assert!(!format!("{:?}", accept).is_empty());
     }
 
-    // T005: wait_for_ready_with_timeout - タイムアウトテスト
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn wait_for_ready_with_timeout_returns_timeout_when_no_ready_nodes() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T006: wait_for_ready_with_timeout - 容量超過テスト
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn wait_for_ready_with_timeout_returns_capacity_exceeded() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T007: wait_for_ready_with_timeout - Ready成功テスト
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn wait_for_ready_with_timeout_returns_ready_when_node_becomes_available() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T009: admission_control - 負荷50%未満ならAccept
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn admission_control_returns_accept_when_below_50_percent() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T010: admission_control - 負荷50-80%ならAcceptWithDelay
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn admission_control_returns_accept_with_delay_when_between_50_and_80_percent() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T011: admission_control - 負荷80%以上ならReject
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn admission_control_returns_reject_when_above_80_percent() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T012: admission_control - 境界値テスト
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn admission_control_boundary_values() {
-        // TODO: EndpointRegistryベースに移行
-    }
+    // SPEC-f8e3a1b7: wait_for_ready_with_timeout / admission_control テストは削除されました
+    // - wait_for_ready_with_timeout_returns_timeout_when_no_ready_nodes
+    // - wait_for_ready_with_timeout_returns_capacity_exceeded
+    // - wait_for_ready_with_timeout_returns_ready_when_node_becomes_available
+    // - admission_control_returns_accept_when_below_50_percent
+    // - admission_control_returns_accept_with_delay_when_between_50_and_80_percent
+    // - admission_control_returns_reject_when_above_80_percent
+    // - admission_control_boundary_values
 
     #[test]
     fn test_node_load_state_token_accumulation() {
@@ -290,45 +233,13 @@ mod tests {
         assert_eq!(avg, 150.0);
     }
 
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn test_finish_request_accumulates_tokens() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn test_finish_request_accumulates_multiple_tokens() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T-13: エラー応答時のトークンカウントテスト
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn test_finish_request_accumulates_tokens_on_error() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    // T-14: オフラインノードの統計保持テスト
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn test_offline_node_retains_token_statistics() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    /// T007: Pending状態のノードがルーティングから除外されることを検証
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn test_pending_node_excluded_from_routing() {
-        // TODO: EndpointRegistryベースに移行
-    }
-
-    /// T008: Registering状態のノードがルーティングから除外されることを検証
-    #[tokio::test]
-    #[ignore = "SPEC-66555000: NodeRegistry is deprecated, migrate to EndpointRegistry"]
-    async fn test_registering_node_excluded_from_routing() {
-        // TODO: EndpointRegistryベースに移行
-    }
+    // SPEC-f8e3a1b7: NodeRegistry依存のトークン・ルーティングテストは削除されました
+    // - test_finish_request_accumulates_tokens
+    // - test_finish_request_accumulates_multiple_tokens
+    // - test_finish_request_accumulates_tokens_on_error
+    // - test_offline_node_retains_token_statistics
+    // - test_pending_node_excluded_from_routing
+    // - test_registering_node_excluded_from_routing
 }
 
 /// エンドポイントの負荷状態
@@ -351,10 +262,7 @@ struct EndpointLoadState {
     total_tokens: u64,
 }
 
-/// NodeLoadState は EndpointLoadState の後方互換エイリアス
-#[deprecated(note = "Use EndpointLoadState instead")]
-#[allow(dead_code)]
-type NodeLoadState = EndpointLoadState;
+// SPEC-f8e3a1b7: NodeLoadState型エイリアスは削除されました
 
 impl EndpointLoadState {
     fn combined_active(&self) -> u32 {

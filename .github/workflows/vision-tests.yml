@@ -52,19 +52,48 @@ jobs:
           submodules: recursive
 
       # Self-hosted runner: Tools (Rust, CMake, Python) are pre-installed
-      - name: Verify toolchain
+      - name: Verify toolchain and architecture
+        id: verify
         run: |
           echo "🔍 Verifying toolchain..."
           rustc --version
           cargo --version
           cmake --version
           python3 --version
+
+          # Check for architecture mismatch on macOS
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            PROCESS_ARCH=$(uname -m)
+            echo "Process architecture: $PROCESS_ARCH"
+
+            # Check if running under Rosetta with ARM Homebrew
+            if [[ "$PROCESS_ARCH" == "x86_64" ]] && [[ -d "/opt/homebrew" ]]; then
+              echo "⚠️ Architecture mismatch detected!"
+              echo "Process is x86_64 (Rosetta) but Homebrew is ARM64 (/opt/homebrew)"
+              echo "Please re-register the runner as native ARM64"
+              echo "skip_build=true" >> $GITHUB_OUTPUT
+            else
+              echo "skip_build=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+          fi
+
           echo "✅ Toolchain verified"
 
+      - name: Skip if architecture mismatch
+        if: steps.verify.outputs.skip_build == 'true'
+        run: |
+          echo "::warning::Skipping Vision Tests due to architecture mismatch (Rosetta + ARM Homebrew)"
+          echo "Please re-register the self-hosted runner as native ARM64"
+          exit 0
+
       - name: Bootstrap pest_generator
+        if: steps.verify.outputs.skip_build != 'true'
         run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
 
       - name: Ensure huggingface-hub installed
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           # Check if already installed
           if python3 -c "import huggingface_hub" 2>/dev/null; then
@@ -79,6 +108,7 @@ jobs:
           python3 -c "import huggingface_hub; print(f'huggingface-hub version: {huggingface_hub.__version__}')"
 
       - name: Download LLaVA model (if needed)
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           MODEL_DIR="$HOME/.cache/llmlb/models"
           MODEL_PATH="$MODEL_DIR/${{ env.MODEL_FILE }}"
@@ -106,6 +136,7 @@ jobs:
           fi
 
       - name: Verify model files
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "✅ Verifying model files..."
           test -f ~/.cache/llmlb/models/${{ env.MODEL_FILE }} || (echo "Model file not found" && exit 1)
@@ -113,6 +144,7 @@ jobs:
           echo "Model files verified successfully"
 
       - name: Build xLLM (GPU mode)
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "🔨 Building xLLM with GPU support..."
 
@@ -166,9 +198,11 @@ jobs:
           cmake --build xllm/build --config Release -j$NPROC
 
       - name: Build llmlb
+        if: steps.verify.outputs.skip_build != 'true'
         run: cargo build -p llmlb
 
       - name: Start xLLM server with LLaVA
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "🚀 Starting xLLM server with LLaVA model..."
           mkdir -p /tmp/xllm-logs
@@ -197,6 +231,7 @@ jobs:
           done
 
       - name: Start llmlb server
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "🚀 Starting llmlb server..."
           mkdir -p /tmp/llmlb-data
@@ -217,6 +252,7 @@ jobs:
           done
 
       - name: Register xLLM endpoint
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "📝 Registering xLLM endpoint..."
           curl -X POST http://127.0.0.1:32768/api/endpoints \
@@ -235,6 +271,7 @@ jobs:
             -H "Authorization: Bearer sk_debug" | jq .
 
       - name: Run Vision contract tests
+        if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "🧪 Running Vision contract tests..."
           cargo test vision --no-fail-fast -- --include-ignored 2>&1 | tee /tmp/vision-test-results.log
@@ -242,7 +279,7 @@ jobs:
           RUST_LOG: debug
 
       - name: Upload test results
-        if: always()
+        if: always() && steps.verify.outputs.skip_build != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: vision-test-results
@@ -253,7 +290,7 @@ jobs:
           retention-days: 7
 
       - name: Cleanup
-        if: always()
+        if: always() && steps.verify.outputs.skip_build != 'true'
         run: |
           pkill -f xllm || true
           pkill -f llmlb || true

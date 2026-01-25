@@ -76,26 +76,40 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install huggingface-hub
+        run: pip install huggingface-hub
+
       - name: Download LLaVA model
         if: steps.cache-model.outputs.cache-hit != 'true'
         run: |
           echo "📥 Downloading LLaVA model..."
           mkdir -p ~/.cache/llmlb/models
 
-          # Install huggingface-hub and add to PATH
-          pip install huggingface-hub
-          export PATH="$HOME/.local/bin:$PATH"
+          # Download model files using Python script
+          python << 'PYEOF'
+          from huggingface_hub import hf_hub_download
+          import os
 
-          # Download model files
-          huggingface-cli download ${{ env.MODEL_REPO }} \
-            ${{ env.MODEL_FILE }} \
-            --local-dir ~/.cache/llmlb/models \
-            --local-dir-use-symlinks False
+          model_dir = os.path.expanduser("~/.cache/llmlb/models")
 
-          huggingface-cli download ${{ env.MODEL_REPO }} \
-            ${{ env.MMPROJ_FILE }} \
-            --local-dir ~/.cache/llmlb/models \
-            --local-dir-use-symlinks False
+          print("Downloading model file...")
+          hf_hub_download(
+              repo_id="${{ env.MODEL_REPO }}",
+              filename="${{ env.MODEL_FILE }}",
+              local_dir=model_dir,
+              local_dir_use_symlinks=False
+          )
+
+          print("Downloading mmproj file...")
+          hf_hub_download(
+              repo_id="${{ env.MODEL_REPO }}",
+              filename="${{ env.MMPROJ_FILE }}",
+              local_dir=model_dir,
+              local_dir_use_symlinks=False
+          )
+
+          print("Download complete!")
+          PYEOF
 
           ls -la ~/.cache/llmlb/models/
 

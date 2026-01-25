@@ -51,67 +51,48 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Setup C++ build environment
-        uses: ./.github/actions/setup-cpp
+      # Self-hosted runner: Tools (Rust, CMake, Python) are pre-installed
+      - name: Verify toolchain
+        run: |
+          echo "🔍 Verifying toolchain..."
+          rustc --version
+          cargo --version
+          cmake --version
+          python3 --version
+          echo "✅ Toolchain verified"
 
       - name: Bootstrap pest_generator
         run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
 
-      # LLaVA モデルのキャッシュ（約 4GB）
-      - name: Cache LLaVA model
-        if: ${{ github.event.inputs.skip_model_cache != 'true' }}
-        id: cache-model
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/llmlb/models
-          key: ${{ env.MODEL_CACHE_KEY }}-${{ env.MODEL_FILE }}-${{ env.MMPROJ_FILE }}
+      - name: Ensure huggingface-hub installed
+        run: pip3 install --user huggingface-hub || pip install --user huggingface-hub
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install huggingface-hub
-        run: pip install huggingface-hub
-
-      - name: Download LLaVA model
-        if: steps.cache-model.outputs.cache-hit != 'true'
+      - name: Download LLaVA model (if needed)
         run: |
-          echo "📥 Downloading LLaVA model..."
-          mkdir -p ~/.cache/llmlb/models
+          MODEL_DIR="$HOME/.cache/llmlb/models"
+          MODEL_PATH="$MODEL_DIR/${{ env.MODEL_FILE }}"
+          MMPROJ_PATH="$MODEL_DIR/${{ env.MMPROJ_FILE }}"
 
-          # Download model files using Python script
-          python << 'PYEOF'
+          if [ -f "$MODEL_PATH" ] && [ -f "$MMPROJ_PATH" ]; then
+            echo "✅ Model files already exist"
+            ls -la "$MODEL_DIR"
+          else
+            echo "📥 Downloading LLaVA model..."
+            mkdir -p "$MODEL_DIR"
+            python3 << 'PYEOF'
           from huggingface_hub import hf_hub_download
           import os
 
           model_dir = os.path.expanduser("~/.cache/llmlb/models")
+          repo_id = "${{ env.MODEL_REPO }}"
 
-          print("Downloading model file...")
-          hf_hub_download(
-              repo_id="${{ env.MODEL_REPO }}",
-              filename="${{ env.MODEL_FILE }}",
-              local_dir=model_dir,
-              local_dir_use_symlinks=False
-          )
-
-          print("Downloading mmproj file...")
-          hf_hub_download(
-              repo_id="${{ env.MODEL_REPO }}",
-              filename="${{ env.MMPROJ_FILE }}",
-              local_dir=model_dir,
-              local_dir_use_symlinks=False
-          )
-
+          print(f"Downloading from {repo_id}...")
+          hf_hub_download(repo_id=repo_id, filename="${{ env.MODEL_FILE }}", local_dir=model_dir, local_dir_use_symlinks=False)
+          hf_hub_download(repo_id=repo_id, filename="${{ env.MMPROJ_FILE }}", local_dir=model_dir, local_dir_use_symlinks=False)
           print("Download complete!")
           PYEOF
-
-          ls -la ~/.cache/llmlb/models/
+            ls -la "$MODEL_DIR"
+          fi
 
       - name: Verify model files
         run: |
@@ -119,14 +100,6 @@ jobs:
           test -f ~/.cache/llmlb/models/${{ env.MODEL_FILE }} || (echo "Model file not found" && exit 1)
           test -f ~/.cache/llmlb/models/${{ env.MMPROJ_FILE }} || (echo "MMProj file not found" && exit 1)
           echo "Model files verified successfully"
-
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-ccache-vision-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-vision-
 
       - name: Build xLLM (GPU mode)
         run: |

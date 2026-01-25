@@ -66,6 +66,28 @@
 - [x] 6.8 Integration Test: ノード再起動後のモデル復帰
 - [x] 6.9 E2E Test: Metal専用モデルがCUDAノードにルーティングされないこと
 
+## Phase 7: 自動認識への移行（2026-01-25追加）
+
+### 廃止対応
+
+- [x] 7.1 `xllm/include/models/supported_models_json.h` を削除
+- [x] 7.2 `supported_models.json` 参照箇所を特定・削除（ModelRegistry等）
+- [x] 7.3 `platforms` 属性に基づくフィルタリングを削除
+
+### Core
+
+- [x] **7.4** `config.json` からアーキテクチャを読み込む（既存: `model_storage.cpp` の `extract_architectures_from_config()`）
+- [x] **7.5** GGUFファイルからアーキテクチャを読み込む（既存: llama.cpp の GGUF メタデータ経由）
+- [x] 7.6 `ModelStorage::listModels()` を更新: config.json/GGUFからアーキテクチャ自動検出（既存実装済み）
+- [x] 7.7 `/v1/models` APIを更新: 対応エンジンが存在するモデルのみを返す（既存: main.cppでengine.isModelSupported()でフィルタリング）
+
+### Test
+
+- [ ] [P] 7.8 Unit Test: config.jsonからのアーキテクチャ検出
+- [ ] [P] 7.9 Unit Test: GGUFからのアーキテクチャ検出
+- [ ] [P] 7.10 Unit Test: 未対応アーキテクチャの除外
+- [ ] 7.11 Integration Test: 任意のHuggingFaceモデルの自動認識
+
 ## 凡例
 
 - `[P]` - 並列実行可能なタスク

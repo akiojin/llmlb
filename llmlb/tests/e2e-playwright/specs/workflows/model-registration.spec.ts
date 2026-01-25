@@ -35,21 +35,16 @@ test.describe('Model Registration Workflow', () => {
   });
 
   test.describe('Model Hub API', () => {
-    test('lists supported models from /v0/models/hub', async ({ request }) => {
+    // NOTE: supported_models.json は廃止されました (2026-01-25)
+    // /v0/models/hub は登録済みモデルのみを返すため、空の状態でも正常です
+    test('returns empty array when no models registered', async ({ request }) => {
       const hubModels = await getHubModels(request);
 
-      // Should return at least one supported model
-      expect(hubModels.length).toBeGreaterThan(0);
-
-      // Each model should have required fields
-      const firstModel = hubModels[0];
-      expect(firstModel.id).toBeTruthy();
-      expect(firstModel.name).toBeTruthy();
-      expect(firstModel.repo).toBeTruthy();
-      expect(firstModel.size_bytes).toBeGreaterThan(0);
+      // Should return an array (may be empty if no models registered)
+      expect(Array.isArray(hubModels)).toBe(true);
     });
 
-    test('model hub returns status for each model', async ({ request }) => {
+    test('model hub returns status for each registered model', async ({ request }) => {
       const hubModels = await getHubModels(request);
 
       for (const model of hubModels) {
@@ -59,20 +54,16 @@ test.describe('Model Registration Workflow', () => {
   });
 
   test.describe('API Register', () => {
-    test('registers a supported model (201)', async ({ request }) => {
-      // 1. Get a supported model from hub
-      const hubModels = await getHubModels(request);
-      expect(hubModels.length).toBeGreaterThan(0);
+    // NOTE: supported_models.json は廃止されました
+    // 任意のHuggingFaceモデルを直接登録できます
 
-      const modelToRegister = hubModels.find((m) => m.status === 'available');
-      if (!modelToRegister) {
-        // All models already registered/ready - skip test
-        test.skip();
-        return;
-      }
-
-      // 2. Register the model
-      const result = await registerModel(request, modelToRegister.repo, modelToRegister.recommended_filename);
+    test('registers a HuggingFace model (201)', async ({ request }) => {
+      // 任意のHFリポジトリを直接登録
+      const result = await registerModel(
+        request,
+        'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
+        'qwen2.5-0.5b-instruct-q4_k_m.gguf'
+      );
 
       // 3. Verify response
       expect(result.status).toBe(201);
@@ -88,19 +79,15 @@ test.describe('Model Registration Workflow', () => {
     });
 
     test('model appears in /v1/models after register', async ({ request }) => {
-      // 1. Get a supported model
-      const hubModels = await getHubModels(request);
-      const modelToRegister = hubModels.find((m) => m.status === 'available');
-      if (!modelToRegister) {
-        test.skip();
-        return;
-      }
-
-      // 2. Register the model
-      const result = await registerModel(request, modelToRegister.repo, modelToRegister.recommended_filename);
+      // 1. Register a HuggingFace model directly
+      const result = await registerModel(
+        request,
+        'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
+        'qwen2.5-0.5b-instruct-q4_k_m.gguf'
+      );
       expect(result.status).toBe(201);
 
-      // 3. Verify model appears in list
+      // 2. Verify model appears in list
       const models = await getModels(request);
       const found = models.some((m) => m.name === result.modelName);
       expect(found).toBeTruthy();
@@ -167,22 +154,18 @@ test.describe('Model Registration Workflow', () => {
 
   test.describe('State Consistency', () => {
     test('registered model appears in API list', async ({ request }) => {
-      // 1. Get a model to register
-      const hubModels = await getHubModels(request);
-      const modelToRegister = hubModels.find((m) => m.status === 'available');
-      if (!modelToRegister) {
-        test.skip();
-        return;
-      }
-
-      // 2. Register model
-      const result = await registerModel(request, modelToRegister.repo, modelToRegister.recommended_filename);
+      // 1. Register a HuggingFace model directly
+      const result = await registerModel(
+        request,
+        'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
+        'qwen2.5-0.5b-instruct-q4_k_m.gguf'
+      );
       expect(result.status).toBe(201);
 
-      // 3. Verify in models list
+      // 2. Verify in models list
       const models = await getModels(request);
       // Model should appear with some lifecycle status
-      expect(models.length).toBeGreaterThanOrEqual(0);
+      expect(models.length).toBeGreaterThanOrEqual(1);
     });
 
     test('cleanup removes all models', async ({ request }) => {

@@ -1,13 +1,13 @@
 # タスク: モデル自動解決機能
 
 **機能ID**: `SPEC-48678000`
-**ステータス**: 仕様改定に伴い再計画（2025-12-30）
+**ステータス**: 改定中（自動認識への移行 2026-01-25）
 **入力**: `/specs/SPEC-48678000/` の設計ドキュメント
 
 ## 重要な変更 (Session 2025-12-30)
 
 - 共有パス機能は**廃止**
-- 対象モデルは`supported_models.json`に定義されたもののみ
+- ~~対象モデルは`supported_models.json`に定義されたもののみ~~ **廃止（2026-01-25）**
 - 解決フロー: ローカル → 外部ソース（プロキシは任意）
 
 ## 重要な変更 (Session 2025-12-31)
@@ -15,6 +15,13 @@
 - 対象は全モデル（GGUF / safetensors / Metal 等）
 - Node は外部ソースから直接ダウンロード（ロードバランサーのバイナリ保持は不要）
 - 変換パイプラインは廃止（登録時に変換しない）
+
+## 重要な変更 (Session 2026-01-25)
+
+- `supported_models.json` 依存を**完全廃止**
+- 任意のHuggingFaceモデルを取得可能に変更
+- `config.json` からアーキテクチャを自動検出
+- 対応エンジンが存在するモデルのみ実行可能
 
 ## 追加対応（Session 2025-12-31）
 
@@ -132,11 +139,30 @@ Task T006: エラーハンドリング contract test
 Task T007.1: エッジケース contract test
 ```
 
+## Phase 4: 自動認識への移行（2026-01-25追加）
+
+### 廃止対応
+
+- [x] T026 `supported_models.json` 参照を `config.json` ベースに変更（xllm/llmlb両方で完了）
+- [x] T027 モデル定義チェックを削除（任意のHFモデル対応: llmlb/src/api/models.rs 更新済み）
+
+### Core
+
+- [x] **T028** ダウンロード後の `config.json` からアーキテクチャ自動検出を実装（既存: model_storage.cpp）
+- [x] T029 対応エンジンがない場合のエラーハンドリングを追加（既存: engine.isModelSupported() + EngineRegistry）
+
+### Test
+
+- [x] [P] T030 Unit Test: config.jsonからのアーキテクチャ検出（既存: model_storage_test.cpp）
+- [ ] [P] T031 Unit Test: 未対応アーキテクチャのエラー応答
+
 ## 検証チェックリスト
 
 - [x] auto_repair 関連コードが完全に削除されている (T001-T003)
-- [x] `supported_models.json` の定義に基づく取得が動作する
+- [x] ~~`supported_models.json` の定義に基づく取得が動作する~~ **廃止予定**
 - [x] 外部ソース/プロキシ経由ダウンロードが正常に動作する (Phase 3.3で実装済み)
 - [x] モデル不在時に1秒以内にエラーが返る (テスト: ErrorResponseWithinOneSecond)
 - [x] 外部ダウンロードが許可リストで制御されている (テスト: OriginBlockedTriggersProxyFallback)
 - [x] すべてのテストが実装より先にある (TDD RED完了)
+- [ ] **新規**: config.jsonからアーキテクチャが自動検出される
+- [ ] **新規**: 任意のHuggingFaceモデルが取得可能

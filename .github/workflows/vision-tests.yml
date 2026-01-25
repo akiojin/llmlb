@@ -65,7 +65,18 @@ jobs:
         run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
 
       - name: Ensure huggingface-hub installed
-        run: pip3 install --user huggingface-hub || pip install --user huggingface-hub
+        run: |
+          # Check if already installed
+          if python3 -c "import huggingface_hub" 2>/dev/null; then
+            echo "✅ huggingface-hub already installed"
+          else
+            echo "📦 Installing huggingface-hub..."
+            # Use --break-system-packages for PEP 668 compatibility (Homebrew Python)
+            pip3 install --user huggingface-hub --break-system-packages 2>/dev/null || \
+            pip3 install --user huggingface-hub || \
+            python3 -m pip install --user huggingface-hub --break-system-packages
+          fi
+          python3 -c "import huggingface_hub; print(f'huggingface-hub version: {huggingface_hub.__version__}')"
 
       - name: Download LLaVA model (if needed)
         run: |

@@ -177,7 +177,7 @@ npx @llmlb/mcp-server
 
 ### 前提条件
 
-- Linux/macOS/Windows x64 (GPU推奨、GPUなしは登録不可)
+- Linux/macOS/Windows x64 (GPU推奨、CPU推論も対応)
 - Rust toolchain (nightly不要) と cargo
 - Docker (任意、コンテナ利用時)
 - CUDAドライバ (GPU使用時) - [CUDAセットアップ](#cudaセットアップnvidia-gpu)参照
@@ -416,7 +416,7 @@ Router (OpenAI-compatible)
   - ロードバランサーのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
-- ランタイムは `/v0/runtimes` を介して登録します。ロードバランサーはデフォルトで GPU のないランタイムを拒否します。
+- ランタイムは `/v0/runtimes` を介して登録します。CPU のみのエンドポイントも対応しています。
 - ハートビートには、ロードバランシングに使用される CPU/GPU/メモリメトリクスが含まれます。
 - ダッシュボードには `*_key_present` フラグが表示され、オペレーターはどのクラウドキーが設定されているかを確認できます。
 

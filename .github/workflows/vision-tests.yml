@@ -71,6 +71,11 @@ jobs:
           path: ~/.cache/llmlb/models
           key: ${{ env.MODEL_CACHE_KEY }}-${{ env.MODEL_FILE }}-${{ env.MMPROJ_FILE }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Download LLaVA model
         if: steps.cache-model.outputs.cache-hit != 'true'
         run: |
@@ -80,13 +85,13 @@ jobs:
           # Install huggingface-hub
           pip install huggingface-hub
 
-          # Download model files using Python module
-          python -m huggingface_hub download ${{ env.MODEL_REPO }} \
+          # Download model files
+          huggingface-cli download ${{ env.MODEL_REPO }} \
             ${{ env.MODEL_FILE }} \
             --local-dir ~/.cache/llmlb/models \
             --local-dir-use-symlinks False
 
-          python -m huggingface_hub download ${{ env.MODEL_REPO }} \
+          huggingface-cli download ${{ env.MODEL_REPO }} \
             ${{ env.MMPROJ_FILE }} \
             --local-dir ~/.cache/llmlb/models \
             --local-dir-use-symlinks False

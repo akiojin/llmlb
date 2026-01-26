@@ -19,40 +19,13 @@
         "changelogFile": "CHANGELOG.md"
       }
     ],
-    [
-      "@semantic-release/github",
-      {
-        "assets": [
-          {
-            "path": "dist/xllm-linux-amd64.tar.gz",
-            "label": "xllm-linux-amd64"
-          },
-          {
-            "path": "dist/xllm-macos-arm64.tar.gz",
-            "label": "xllm-macos-arm64"
-          },
-          {
-            "path": "dist/xllm-macos-x64.tar.gz",
-            "label": "xllm-macos-x64"
-          },
-          {
-            "path": "dist/xllm-windows-x64.zip",
-            "label": "xllm-windows-x64"
-          },
-          {
-            "path": "dist/xllm-linux-cuda.tar.gz",
-            "label": "xllm-linux-cuda"
-          }
-        ]
-      }
-    ],
+    "@semantic-release/github",
     [
       "@semantic-release/git",
       {
         "assets": ["CHANGELOG.md", "package.json", "pnpm-lock.yaml"],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
-    ],
-    "@semantic-release/npm"
+    ]
   ]
 }

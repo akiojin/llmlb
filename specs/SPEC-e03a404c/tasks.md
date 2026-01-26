@@ -30,7 +30,7 @@ xLLMはllama.cppのmultimodal supportをラップして使用。
   - ✅ test_chat_completions_with_base64_image (FR-002) - モック検証合格
   - ⏳ test_chat_completions_with_multiple_images (FR-003) `#[ignore]` - 要実モデル
   - ✅ test_supported_image_formats (FR-007: JPEG/PNG/GIF/WebP) - 合格
-  - ⏳ test_vision_streaming_response (FR-005) `#[ignore]` - 要実モデル
+  - ✅ test_vision_streaming_response (FR-005)
 - [x] T003 [P] `llmlb/tests/contract/vision_error_test.rs` にエラーハンドリング契約テスト
   - ✅ test_image_request_to_non_vision_model_returns_400 (FR-004)
   - ✅ test_image_size_limit_exceeded (FR-008: 10MB制限)

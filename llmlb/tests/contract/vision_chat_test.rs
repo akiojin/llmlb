@@ -325,13 +325,9 @@ async fn test_supported_image_formats() {
 }
 
 /// FR-005: システムは、画像付きリクエストのストリーミングレスポンスをサポートする必要がある
-/// TDD RED: stream=true オプションが受け入れられることを確認
-///
-/// NOTE: SPEC-93536000 により、モデル情報はノードの executable_models から取得します。
-/// このテストはノードがVision対応モデルを登録している前提で動作します。
+/// stream=true オプションが受け入れられることを確認
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: requires node with vision model registered (SPEC-93536000)"]
 async fn test_vision_streaming_response() {
     let common::TestApp { app, api_key } = build_app().await;
 

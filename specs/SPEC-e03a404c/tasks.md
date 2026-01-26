@@ -1,7 +1,7 @@
 # タスク: 画像認識モデル対応（Image Understanding）
 
 **機能ID**: `SPEC-e03a404c`
-**ステータス**: 部分完了（11テスト合格、8テストは要実モデルでスキップ）
+**ステータス**: 部分完了（15テスト合格、4テストは要実モデルでスキップ）
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
 **注記**: 基本実装は完了。Vision capabilities契約テスト（4件）とBase64/フォーマット
@@ -43,11 +43,11 @@ xLLMはllama.cppのmultimodal supportをラップして使用。
   - ✅ test_mixed_models_capabilities - 合格
   - ✅ test_models_response_includes_capabilities_field - 合格
 - [ ] T005 `llmlb/tests/integration/vision_api_test.rs` に統合テスト
-  - ⏳ test_vision_chat_with_image_url_integration `#[ignore]` - TDD RED
-  - ⏳ test_vision_chat_with_base64_image_integration `#[ignore]` - TDD RED
-  - ⏳ test_vision_request_to_text_only_model_integration `#[ignore]` - TDD RED
-  - ⏳ test_models_endpoint_shows_vision_capability_integration `#[ignore]` - TDD RED
-  - ⏳ test_vision_processing_performance `#[ignore]` - TDD RED
+  - ✅ test_vision_chat_with_image_url_integration
+  - ✅ test_vision_chat_with_base64_image_integration
+  - ✅ test_vision_request_to_text_only_model_integration
+  - ✅ test_models_endpoint_shows_vision_capability_integration
+  - ⏳ test_vision_processing_performance `#[ignore]` - 要実モデル
 
 ## Phase 3.3: コア実装 - 型定義
 
@@ -133,7 +133,7 @@ Task T004: llmlb/tests/contract/vision_capabilities_test.rs
 
 ## 検証チェックリスト
 
-- [ ] 画像URL付きchat completionsが正常動作（テスト`#[ignore]`中 - 要実モデル）
+- [x] 画像URL付きchat completionsが正常動作（モック検証合格）
 - [x] Base64画像付きリクエストが正常動作（モック検証合格）
 - [ ] 複数画像（最大10枚）が処理可能（テスト`#[ignore]`中 - 要実モデル）
 - [x] Vision非対応モデルへのリクエストが400エラー

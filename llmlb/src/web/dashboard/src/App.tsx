@@ -1,10 +1,40 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { isAuthenticated } from '@/lib/api'
 import Dashboard from '@/pages/Dashboard'
+import EndpointPlayground from '@/pages/EndpointPlayground'
+
+type Route =
+  | { type: 'dashboard' }
+  | { type: 'playground'; endpointId: string }
+
+function parseHash(): Route {
+  const hash = window.location.hash.slice(1) // Remove #
+  if (hash.startsWith('playground/')) {
+    const endpointId = hash.slice('playground/'.length)
+    if (endpointId) {
+      return { type: 'playground', endpointId }
+    }
+  }
+  return { type: 'dashboard' }
+}
 
 function App() {
   const { isLoading } = useAuth()
+  const [route, setRoute] = useState<Route>(parseHash)
+
+  const navigateToDashboard = useCallback(() => {
+    window.location.hash = ''
+    setRoute({ type: 'dashboard' })
+  }, [])
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setRoute(parseHash())
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
 
   useEffect(() => {
     // Redirect to login if not authenticated
@@ -27,7 +57,18 @@ function App() {
     )
   }
 
-  return <Dashboard />
+  switch (route.type) {
+    case 'playground':
+      return (
+        <EndpointPlayground
+          endpointId={route.endpointId}
+          onBack={navigateToDashboard}
+        />
+      )
+    case 'dashboard':
+    default:
+      return <Dashboard />
+  }
 }
 
 export default App

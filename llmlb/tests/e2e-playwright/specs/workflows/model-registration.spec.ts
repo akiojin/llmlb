@@ -94,63 +94,8 @@ test.describe('Model Registration Workflow', () => {
     });
   });
 
-  test.describe('UI Register', () => {
-    test('Dashboard shows Model Hub tab', async ({ page }) => {
-      await ensureDashboardLogin(page);
-
-      // Navigate to Models tab
-      await page.click('button[role="tab"]:has-text("Models")');
-      await page.waitForTimeout(500);
-
-      // Verify Model Hub tab exists
-      const hubTab = page.locator('button[role="tab"]:has-text("Model Hub")');
-      await expect(hubTab).toBeVisible();
-    });
-
-    test('Model Hub tab shows supported models', async ({ page }) => {
-      await ensureDashboardLogin(page);
-
-      // Navigate to Model Hub
-      await page.click('button[role="tab"]:has-text("Models")');
-      await page.waitForTimeout(300);
-      await page.click('button[role="tab"]:has-text("Model Hub")');
-      await page.waitForTimeout(500);
-
-      // Should show some model cards or empty state
-      const modelCards = page.locator('[data-testid="model-card"], .model-card, [data-model-id]');
-      const count = await modelCards.count();
-      // May be 0 if API unavailable or models not loaded yet
-      expect(count).toBeGreaterThanOrEqual(0);
-    });
-
-    test('UI register triggers API call', async ({ page }) => {
-      // 1. Login and navigate
-      await ensureDashboardLogin(page);
-      await page.click('button[role="tab"]:has-text("Models")');
-      await page.waitForTimeout(300);
-      await page.click('button[role="tab"]:has-text("Model Hub")');
-      await page.waitForTimeout(500);
-
-      // 2. Mock register endpoint to track calls
-      let registerCalled = false;
-      await page.route('**/v0/models/register', async (route) => {
-        registerCalled = true;
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({ name: 'test-model', status: 'registered' }),
-        });
-      });
-
-      // 3. Find and click Register button
-      const registerButton = page.locator('button:has-text("Register")').first();
-      if (await registerButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await registerButton.click();
-        await page.waitForTimeout(500);
-        expect(registerCalled).toBe(true);
-      }
-    });
-  });
+  // NOTE: UI Register tests removed - Models tab has been removed from dashboard
+  // Model registration is now done via API or endpoint-specific UI
 
   test.describe('State Consistency', () => {
     test('registered model appears in API list', async ({ request }) => {

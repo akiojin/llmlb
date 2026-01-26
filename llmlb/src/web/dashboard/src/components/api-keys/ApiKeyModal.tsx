@@ -167,8 +167,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
       description: 'OpenAI-compatible API inference access',
     },
     {
-      value: 'node',
-      label: 'node',
+      value: 'endpoint',
+      label: 'endpoint',
       description: 'Endpoint registration and sync',
     },
     {

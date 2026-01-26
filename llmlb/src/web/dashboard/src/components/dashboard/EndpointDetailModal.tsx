@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type DashboardEndpoint, endpointsApi } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Server, Clock, AlertCircle, Save, Play, RefreshCw } from 'lucide-react'
+import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2 } from 'lucide-react'
 
 /**
  * SPEC-66555000: Router-Driven Endpoint Registration System
@@ -72,6 +73,30 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
   const [inferenceTimeout, setInferenceTimeout] = useState(
     endpoint?.inference_timeout_secs?.toString() || '120'
   )
+
+  // Reset form when endpoint changes
+  useEffect(() => {
+    if (endpoint) {
+      setName(endpoint.name || '')
+      setNotes(endpoint.notes || '')
+      setHealthCheckInterval(endpoint.health_check_interval_secs?.toString() || '30')
+      setInferenceTimeout(endpoint.inference_timeout_secs?.toString() || '120')
+    }
+  }, [endpoint])
+
+  // Fetch endpoint models
+  const { data: modelsData, isLoading: isLoadingModels } = useQuery({
+    queryKey: ['endpoint-models', endpoint?.id],
+    queryFn: () => endpointsApi.getModels(endpoint!.id),
+    enabled: !!endpoint?.id && open,
+  })
+
+  const openPlayground = () => {
+    if (endpoint) {
+      window.location.hash = `playground/${endpoint.id}`
+      onOpenChange(false)
+    }
+  }
 
   // Update mutation
   const updateMutation = useMutation({
@@ -230,6 +255,61 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <p className="text-sm text-destructive/80 mt-1">{endpoint.last_error}</p>
             </div>
           )}
+
+          <Separator />
+
+          {/* Models Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Box className="h-4 w-4" />
+                Models ({modelsData?.models?.length || 0})
+              </Label>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={openPlayground}
+                disabled={endpoint.status !== 'online' || !modelsData?.models?.length}
+              >
+                <MessageSquare className="h-4 w-4 mr-1" />
+                Open Playground
+              </Button>
+            </div>
+            <ScrollArea className="h-32 rounded-md border">
+              <div className="p-3 space-y-2">
+                {isLoadingModels ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading models...</span>
+                  </div>
+                ) : modelsData?.models?.length ? (
+                  modelsData.models.map((model) => (
+                    <div
+                      key={model.model_id}
+                      className="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-muted/50"
+                    >
+                      <span className="font-mono text-xs truncate flex-1" title={model.model_id}>
+                        {model.model_id}
+                      </span>
+                      {model.capabilities && model.capabilities.length > 0 && (
+                        <div className="flex gap-1 ml-2">
+                          {model.capabilities.slice(0, 2).map((cap) => (
+                            <Badge key={cap} variant="outline" className="text-xs">
+                              {cap}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No models available
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
 
           <Separator />
 

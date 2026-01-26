@@ -415,40 +415,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         data.push(obj);
     }
 
-    // 登録されたモデルを追加（オンラインノードがなくても表示）
-    for (model_id, m) in &registered_map {
-        if seen_models.contains(model_id) {
-            continue;
-        }
-        seen_models.insert(model_id.clone());
-
-        let ready = available_set.contains(model_id);
-        let supported_apis: Vec<String> = endpoint_model_apis
-            .get(model_id)
-            .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
-            .unwrap_or_else(|| vec!["chat_completions".to_string()]);
-        let caps: ModelCapabilities = m.get_capabilities().into();
-        let obj = json!({
-            "id": m.name,
-            "object": "model",
-            "created": 0,
-            "owned_by": "load balancer",
-            "capabilities": caps,
-            "lifecycle_status": LifecycleStatus::Registered,
-            "download_progress": null,
-            "ready": ready,
-            "repo": m.repo,
-            "filename": m.filename,
-            "size_bytes": m.size,
-            "required_memory_bytes": m.required_memory,
-            "source": m.source,
-            "tags": m.tags,
-            "description": m.description,
-            "chat_template": m.chat_template,
-            "supported_apis": supported_apis,
-        });
-        data.push(obj);
-    }
+    // NOTE: SPEC-6cd7f960 FR-6により、登録済みだがオンラインエンドポイントにないモデルは
+    // /v1/models に含めない（利用可能なモデルのみを返す）
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
 

@@ -273,6 +273,7 @@ jobs:
       - name: Run Vision contract tests
         if: steps.verify.outputs.skip_build != 'true'
         run: |
+          set -o pipefail
           echo "🧪 Running Vision contract tests..."
           cargo test vision --no-fail-fast -- --include-ignored 2>&1 | tee /tmp/vision-test-results.log
         env:

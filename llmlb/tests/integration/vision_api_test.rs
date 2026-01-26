@@ -41,6 +41,7 @@ async fn vision_chat_handler(
     Json(req): Json<Value>,
 ) -> impl IntoResponse {
     let model = req["model"].as_str().unwrap_or("");
+    let is_streaming = req["stream"].as_bool().unwrap_or(false);
     if !state.model_ids.iter().any(|id| id == model) {
         return (
             StatusCode::NOT_FOUND,
@@ -51,6 +52,16 @@ async fn vision_chat_handler(
                 }
             })),
         )
+            .into_response();
+    }
+
+    if is_streaming {
+        let body = "data: {\"id\":\"chatcmpl-vision-stream\",\"choices\":[{\"delta\":{\"content\":\"vision stream\"}}]}\n\n";
+        return axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "text/event-stream")
+            .body(Body::from(body))
+            .expect("build streaming response")
             .into_response();
     }
 
@@ -371,6 +382,62 @@ async fn test_vision_request_to_text_only_model_integration() {
         "Error should mention image/vision: {}",
         error_msg
     );
+
+    node.stop().await;
+    lb.stop().await;
+}
+
+/// US1: Visionストリーミングレスポンスのパススルー
+#[tokio::test]
+#[serial]
+async fn test_vision_streaming_response_integration() {
+    let (lb, node) = setup_lb_with_node().await;
+    let image_url = format!("http://{}/test-image.png", node.addr());
+
+    let client = Client::new();
+    let response = client
+        .post(format!("http://{}/v1/chat/completions", lb.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&json!({
+            "model": VISION_MODEL_ID,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Describe this image"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_url
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 100,
+            "stream": true
+        }))
+        .send()
+        .await
+        .expect("streaming request should succeed");
+
+    assert_eq!(response.status(), ReqStatusCode::OK);
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_type.starts_with("text/event-stream"),
+        "expected event-stream response, got {}",
+        content_type
+    );
+
+    let body = response.text().await.expect("streaming body");
+    assert!(body.contains("vision stream"), "expected streaming body");
 
     node.stop().await;
     lb.stop().await;

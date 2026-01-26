@@ -1,6 +1,7 @@
 # タスク: ロードバランサー主導エンドポイント登録システム
 
 **機能ID**: `SPEC-66555000`
+**ステータス**: 完了（Phase 4 エンドポイントタイプ自動判別 2026-01-27完了）
 **入力**: `/specs/SPEC-66555000/` の設計ドキュメント
 **前提条件**: plan.md, research.md, data-model.md, contracts/endpoints-api.md, quickstart.md
 
@@ -246,8 +247,8 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 
 ### Phase 4.1: セットアップ
 
-- [ ] T100 `llmlb/migrations/` に `YYYYMMDDHHMMSS_add_endpoint_type.sql` マイグレーション追加（endpoint_type列、max_tokens列、model_download_tasksテーブル）
-- [ ] T101 [P] `llmlb/src/types/endpoint.rs` に EndpointType, DownloadStatus, ModelDownloadTask 型定義を追加
+- [x] T100 `llmlb/migrations/` に `YYYYMMDDHHMMSS_add_endpoint_type.sql` マイグレーション追加（endpoint_type列、max_tokens列、model_download_tasksテーブル）
+- [x] T101 [P] `llmlb/src/types/endpoint.rs` に EndpointType, DownloadStatus, ModelDownloadTask 型定義を追加
 
 ### Phase 4.2: テストファースト (TDD) ⚠️ 4.3の前に完了必須
 
@@ -255,84 +256,84 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 
 #### Contract Tests（API契約検証）
 
-- [ ] T102 [P] `llmlb/tests/contract/endpoints_type_filter_test.rs` に GET /v0/endpoints?type=xllm の contract test
-- [ ] T103 [P] `llmlb/tests/contract/endpoints_download_test.rs` に POST /v0/endpoints/:id/download の contract test
-- [ ] T104 [P] `llmlb/tests/contract/endpoints_download_progress_test.rs` に GET /v0/endpoints/:id/download/progress の contract test
-- [ ] T105 [P] `llmlb/tests/contract/endpoints_model_info_test.rs` に GET /v0/endpoints/:id/models/:model/info の contract test
+- [x] T102 [P] `llmlb/tests/contract/endpoints_type_filter_test.rs` に GET /v0/endpoints?type=xllm の contract test
+- [x] T103 [P] `llmlb/tests/contract/endpoints_download_test.rs` に POST /v0/endpoints/:id/download の contract test
+- [x] T104 [P] `llmlb/tests/contract/endpoints_download_progress_test.rs` に GET /v0/endpoints/:id/download/progress の contract test
+- [x] T105 [P] `llmlb/tests/contract/endpoints_model_info_test.rs` に GET /v0/endpoints/:id/models/:model/info の contract test
 
 #### Integration Tests（ユーザーストーリー検証）
 
-- [ ] T106 [P] `llmlb/tests/integration/endpoint_type_detection_test.rs` にUS6: タイプ自動判別のintegration test（xLLM/Ollama/vLLM/OpenAI互換）
-- [ ] T107 [P] `llmlb/tests/integration/endpoint_type_filter_test.rs` にUS7: タイプフィルタリングのintegration test
-- [ ] T108 [P] `llmlb/tests/integration/endpoint_xllm_download_test.rs` にUS8: xLLMモデルダウンロードのintegration test
-- [ ] T109 [P] `llmlb/tests/integration/endpoint_download_reject_test.rs` にUS8: 非xLLMダウンロード拒否のintegration test
-- [ ] T110 [P] `llmlb/tests/integration/endpoint_model_metadata_test.rs` にUS9: モデルメタデータ取得のintegration test
-- [ ] T111 [P] `llmlb/tests/integration/endpoint_type_manual_override_test.rs` にUS11: 手動タイプ指定のintegration test
+- [x] T106 [P] `llmlb/tests/integration/endpoint_type_detection_test.rs` にUS6: タイプ自動判別のintegration test（xLLM/Ollama/vLLM/OpenAI互換）
+- [x] T107 [P] `llmlb/tests/integration/endpoint_type_filter_test.rs` にUS7: タイプフィルタリングのintegration test
+- [x] T108 [P] `llmlb/tests/integration/endpoint_xllm_download_test.rs` にUS8: xLLMモデルダウンロードのintegration test
+- [x] T109 [P] `llmlb/tests/integration/endpoint_download_reject_test.rs` にUS8: 非xLLMダウンロード拒否のintegration test
+- [x] T110 [P] `llmlb/tests/integration/endpoint_model_metadata_test.rs` にUS9: モデルメタデータ取得のintegration test
+- [x] T111 [P] `llmlb/tests/integration/endpoint_type_manual_override_test.rs` にUS11: 手動タイプ指定のintegration test
 
 ### Phase 4.3: コア実装（テストが失敗した後のみ）
 
 #### タイプ判別ロジック
 
-- [ ] T112 `llmlb/src/detection/mod.rs` にエンドポイントタイプ判別モジュールを作成
-- [ ] T113 `llmlb/src/detection/xllm.rs` にxLLM判別ロジック実装（GET /v0/system → xllm_version）
-- [ ] T114 `llmlb/src/detection/ollama.rs` にOllama判別ロジック実装（GET /api/tags）
-- [ ] T115 `llmlb/src/detection/vllm.rs` にvLLM判別ロジック実装（Server header）
-- [ ] T116 `llmlb/src/detection/mod.rs` に判別優先順位ロジック実装（xLLM > Ollama > vLLM > OpenAI互換）
+- [x] T112 `llmlb/src/detection/mod.rs` にエンドポイントタイプ判別モジュールを作成
+- [x] T113 `llmlb/src/detection/xllm.rs` にxLLM判別ロジック実装（GET /v0/system → xllm_version）
+- [x] T114 `llmlb/src/detection/ollama.rs` にOllama判別ロジック実装（GET /api/tags）
+- [x] T115 `llmlb/src/detection/vllm.rs` にvLLM判別ロジック実装（Server header）
+- [x] T116 `llmlb/src/detection/mod.rs` に判別優先順位ロジック実装（xLLM > Ollama > vLLM > OpenAI互換）
 
 #### DB層拡張
 
-- [ ] T117 `llmlb/src/db/endpoints.rs` にendpoint_type列のCRUD対応追加
-- [ ] T118 `llmlb/src/db/endpoints.rs` にmax_tokens列の更新処理追加
-- [ ] T119 `llmlb/src/db/download_tasks.rs` にModelDownloadTaskStorage CRUD実装
+- [x] T117 `llmlb/src/db/endpoints.rs` にendpoint_type列のCRUD対応追加
+- [x] T118 `llmlb/src/db/endpoints.rs` にmax_tokens列の更新処理追加
+- [x] T119 `llmlb/src/db/download_tasks.rs` にModelDownloadTaskStorage CRUD実装
 
 #### APIハンドラー拡張
 
-- [ ] T120 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints でタイプ自動判別を統合
-- [ ] T121 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints?type=xxx フィルタリング対応
-- [ ] T122 `llmlb/src/api/endpoints.rs` にPUT /v0/endpoints/:id でタイプ手動変更対応
-- [ ] T123 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints/:id/download ハンドラー（xLLMタイプ検証）
-- [ ] T124 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id/download/progress ハンドラー
-- [ ] T125 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id/models/:model/info ハンドラー
+- [x] T120 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints でタイプ自動判別を統合
+- [x] T121 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints?type=xxx フィルタリング対応
+- [x] T122 `llmlb/src/api/endpoints.rs` にPUT /v0/endpoints/:id でタイプ手動変更対応
+- [x] T123 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints/:id/download ハンドラー（xLLMタイプ検証）
+- [x] T124 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id/download/progress ハンドラー
+- [x] T125 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id/models/:model/info ハンドラー
 
 #### xLLMダウンロード連携
 
-- [ ] T126 `llmlb/src/xllm/mod.rs` にxLLMクライアントモジュールを作成
-- [ ] T127 `llmlb/src/xllm/download.rs` にモデルダウンロード要求・進捗取得実装（POST /v0/models/download, GET /v0/download/progress）
+- [x] T126 `llmlb/src/xllm/mod.rs` にxLLMクライアントモジュールを作成
+- [x] T127 `llmlb/src/xllm/download.rs` にモデルダウンロード要求・進捗取得実装（POST /v0/models/download, GET /v0/download/progress）
 
 #### モデルメタデータ取得
 
-- [ ] T128 `llmlb/src/metadata/mod.rs` にモデルメタデータ取得モジュールを作成
-- [ ] T129 `llmlb/src/metadata/xllm.rs` にxLLMメタデータ取得実装（GET /v0/models/:model/info → context_length）
-- [ ] T130 `llmlb/src/metadata/ollama.rs` にOllamaメタデータ取得実装（POST /api/show → parameters.num_ctx）
+- [x] T128 `llmlb/src/metadata/mod.rs` にモデルメタデータ取得モジュールを作成
+- [x] T129 `llmlb/src/metadata/xllm.rs` にxLLMメタデータ取得実装（GET /v0/models/:model/info → context_length）
+- [x] T130 `llmlb/src/metadata/ollama.rs` にOllamaメタデータ取得実装（POST /api/show → parameters.num_ctx）
 
 ### Phase 4.4: 統合
 
 #### 登録フロー統合
 
-- [ ] T131 `llmlb/src/api/endpoints.rs` のPOST /v0/endpointsにタイプ判別フロー統合（オフライン時はunknown）
-- [ ] T132 `llmlb/src/health/endpoint_checker.rs` にタイプ再判別ロジック追加（unknown→オンライン時に再判別）
+- [x] T131 `llmlb/src/api/endpoints.rs` のPOST /v0/endpointsにタイプ判別フロー統合（オフライン時はunknown）
+- [x] T132 `llmlb/src/health/endpoint_checker.rs` にタイプ再判別ロジック追加（unknown→オンライン時に再判別）
 
 #### モデル同期拡張
 
-- [ ] T133 `llmlb/src/sync/mod.rs` にmax_tokens取得・保存を追加（xLLM/Ollamaのみ）
+- [x] T133 `llmlb/src/sync/mod.rs` にmax_tokens取得・保存を追加（xLLM/Ollamaのみ）
 
 ### Phase 4.5: ダッシュボード統合
 
-- [ ] T134 [P] `llmlb/src/web/dashboard/src/lib/api.ts` にendpointsApiにタイプフィルタ・ダウンロード・メタデータAPIを追加
-- [ ] T135 [P] `llmlb/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` にタイプ列を追加
-- [ ] T136 [P] `llmlb/src/web/dashboard/src/components/dashboard/EndpointDetailModal.tsx` にタイプ表示・ダウンロードUI追加
-- [ ] T137 [P] `llmlb/src/web/dashboard/src/components/dashboard/ModelDownloadDialog.tsx` を新規作成（xLLMエンドポイント用）
+- [x] T134 [P] `llmlb/src/web/dashboard/src/lib/api.ts` にendpointsApiにタイプフィルタ・ダウンロード・メタデータAPIを追加
+- [x] T135 [P] `llmlb/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` にタイプ列を追加
+- [x] T136 [P] `llmlb/src/web/dashboard/src/components/dashboard/EndpointDetailModal.tsx` にタイプ表示・ダウンロードUI追加
+- [x] T137 [P] `llmlb/src/web/dashboard/src/components/dashboard/ModelDownloadDialog.tsx` を新規作成（xLLMエンドポイント用）
 
 ### Phase 4.6: Unit Tests
 
-- [ ] T138 [P] `llmlb/tests/unit/endpoint_type_detection_test.rs` にタイプ判別ロジックのunit test
-- [ ] T139 [P] `llmlb/tests/unit/endpoint_type_enum_test.rs` にEndpointType列挙型のシリアライズ/デシリアライズtest
-- [ ] T140 [P] `llmlb/tests/unit/download_status_test.rs` にDownloadStatus遷移のunit test
+- [x] T138 [P] `llmlb/tests/unit/endpoint_type_detection_test.rs` にタイプ判別ロジックのunit test
+- [x] T139 [P] `llmlb/tests/unit/endpoint_type_enum_test.rs` にEndpointType列挙型のシリアライズ/デシリアライズtest
+- [x] T140 [P] `llmlb/tests/unit/download_status_test.rs` にDownloadStatus遷移のunit test
 
 ### Phase 4.7: 検証・ドキュメント
 
-- [ ] T141 `specs/SPEC-66555000/quickstart.md` にタイプ判別の検証ステップを追加・実行
-- [ ] T142 `README.ja.md` にエンドポイントタイプとxLLM連携の説明を追加
+- [x] T141 `specs/SPEC-66555000/quickstart.md` にタイプ判別の検証ステップを追加・実行
+- [x] T142 `README.ja.md` にエンドポイントタイプとxLLM連携の説明を追加
 
 ## 追加要件の依存関係
 

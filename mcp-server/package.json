@@ -45,7 +45,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "hono": "^4.11.5",
     "yaml": "^2.4.0",
     "zod": "^3.23.0"
   },

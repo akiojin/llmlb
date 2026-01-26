@@ -499,6 +499,65 @@ std::optional<std::string> infer_quantization_from_filename(const std::string& f
     return std::nullopt;
 }
 
+std::string strip_gguf_extension(std::string filename) {
+    const std::string suffix = ".gguf";
+    if (ends_with_case_insensitive(filename, suffix) && filename.size() > suffix.size()) {
+        filename.erase(filename.size() - suffix.size());
+    }
+    return filename;
+}
+
+std::string strip_quantization_suffix(std::string stem, const std::string& quant) {
+    if (quant.empty()) return stem;
+    const auto lower = xllm::toLowerAscii(stem);
+    const auto quant_lower = xllm::toLowerAscii(quant);
+    if (lower.size() <= quant_lower.size() + 1) return stem;
+    const size_t pos = lower.rfind(quant_lower);
+    if (pos == std::string::npos) return stem;
+    if (pos + quant_lower.size() != lower.size()) return stem;
+    const char sep = lower[pos - 1];
+    if (sep != '-' && sep != '.') return stem;
+    return stem.substr(0, pos - 1);
+}
+
+std::string infer_mmproj_base_key(const std::string& main_filename) {
+    auto file = main_filename;
+    auto slash = file.find_last_of("/\\");
+    if (slash != std::string::npos) {
+        file = file.substr(slash + 1);
+    }
+    file = strip_gguf_extension(file);
+    if (auto quant = infer_quantization_from_filename(main_filename)) {
+        file = strip_quantization_suffix(file, *quant);
+    }
+    return file;
+}
+
+std::optional<std::string> find_mmproj_artifact(const std::vector<std::string>& siblings,
+                                                const std::string& main_filename) {
+    std::vector<std::string> candidates;
+    candidates.reserve(siblings.size());
+    for (const auto& name : siblings) {
+        if (!is_gguf_filename(name)) continue;
+        const auto lower = xllm::toLowerAscii(name);
+        if (lower.find("mmproj") == std::string::npos) continue;
+        candidates.push_back(name);
+    }
+    if (candidates.empty()) return std::nullopt;
+
+    const auto base_key = xllm::toLowerAscii(infer_mmproj_base_key(main_filename));
+    if (!base_key.empty()) {
+        for (const auto& candidate : candidates) {
+            if (xllm::toLowerAscii(candidate).find(base_key) != std::string::npos) {
+                return candidate;
+            }
+        }
+    }
+
+    std::sort(candidates.begin(), candidates.end());
+    return candidates.front();
+}
+
 std::string get_hf_base_url() {
     const char* base = std::getenv("HF_BASE_URL");
     if (!base || !*base) {
@@ -834,6 +893,11 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
             manifest["quantization"] = *quant;
         }
         push_file("model.gguf", build_hf_resolve_url(base_url, model_id, selection));
+        if (auto mmproj = find_mmproj_artifact(siblings, selection)) {
+            if (*mmproj != selection) {
+                push_file(*mmproj, build_hf_resolve_url(base_url, model_id, *mmproj));
+            }
+        }
     } else if (format && *format == Format::Safetensors) {
         manifest["format"] = "safetensors";
         std::vector<std::string> names = {"config.json", "tokenizer.json", selection};

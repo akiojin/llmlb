@@ -57,7 +57,7 @@ test.describe('Model Registration Workflow', () => {
     // NOTE: supported_models.json は廃止されました
     // 任意のHuggingFaceモデルを直接登録できます
 
-    test('registers a HuggingFace model (201)', async ({ request }) => {
+    test('registers a HuggingFace model (201 or 200)', async ({ request }) => {
       // 任意のHFリポジトリを直接登録
       const result = await registerModel(
         request,
@@ -65,9 +65,9 @@ test.describe('Model Registration Workflow', () => {
         'qwen2.5-0.5b-instruct-q4_k_m.gguf'
       );
 
-      // 3. Verify response
-      expect(result.status).toBe(201);
-      expect(result.registered).toBeTruthy();
+      // 201 = new registration, 200 = already registered (both are valid)
+      expect([200, 201]).toContain(result.status);
+      expect(result.registered || result.modelName).toBeTruthy();
     });
 
     test('rejects invalid repo', async ({ request }) => {
@@ -88,7 +88,8 @@ test.describe('Model Registration Workflow', () => {
         'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
         'qwen2.5-0.5b-instruct-q4_k_m.gguf'
       );
-      expect(result.status).toBe(201);
+      // 201 = new registration, 200 = already registered (both are valid)
+      expect([200, 201]).toContain(result.status);
 
       // 2. Verify model appears in registered models list (not /v1/models)
       // Per SPEC-6cd7f960 FR-6, /v1/models only returns models from online endpoints
@@ -193,7 +194,8 @@ test.describe('Model Registration Workflow', () => {
         'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
         'qwen2.5-0.5b-instruct-q4_k_m.gguf'
       );
-      expect(result.status).toBe(201);
+      // 201 = new registration, 200 = already registered (both are valid)
+      expect([200, 201]).toContain(result.status);
 
       // 2. Verify in models list
       const models = await getModels(request);

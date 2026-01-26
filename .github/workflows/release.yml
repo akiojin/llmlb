@@ -1,10 +1,14 @@
+# Release Workflow
+# LLM主導のリリースフロー（gwt スタイル）
+# トリガー: chore(release): コミット または手動実行
+# フロー: バージョン読み取り → タグ作成 → GitHub Release作成 → publish.yml が配布
+
 name: Release
 
 on:
   push:
     branches:
       - main
-      - develop
   workflow_dispatch:
 
 concurrency:
@@ -16,48 +20,81 @@ permissions:
   pull-requests: write
 
 jobs:
-  semantic-release:
+  create-tag:
+    name: Create Tag and Release
     runs-on: ubuntu-latest
+    # chore(release): コミット または手動実行時のみ実行
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'chore(release):') ||
+      contains(github.event.head_commit.message, 'from akiojin/release/')
+    outputs:
+      tag_name: ${{ steps.tag.outputs.tag_name }}
+      version: ${{ steps.tag.outputs.version }}
+      created: ${{ steps.check-tag.outputs.created }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
+      - uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Get version from Cargo.toml
+        id: tag
+        run: |
+          VERSION=$(grep -A5 '\[workspace.package\]' Cargo.toml | grep '^version = ' | sed 's/version = "\(.*\)"/\1/')
+          TAG_NAME="v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION, Tag: $TAG_NAME"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          TAG_NAME="${{ steps.tag.outputs.tag_name }}"
+          git fetch --tags
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG_NAME already exists, skipping"
+          else
+            echo "created=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG_NAME does not exist, will create"
+          fi
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.20.0
+      - name: Create and push tag
+        if: steps.check-tag.outputs.created == 'true'
+        run: |
+          TAG_NAME="${{ steps.tag.outputs.tag_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin "$TAG_NAME"
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Semantic Release
-        id: semantic-release
+      - name: Create GitHub Release
+        if: steps.check-tag.outputs.created == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          HUSKY: '0'
-        run: pnpm exec semantic-release
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.tag_name }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          # CHANGELOG.md からこのバージョンのノートを抽出
+          if [ -f CHANGELOG.md ]; then
+            NOTES=$(sed -n "/## \[${VERSION}\]/,/## \[/p" CHANGELOG.md | head -n -1)
+            if [ -z "$NOTES" ]; then
+              NOTES="Release $TAG_NAME"
+            fi
+          else
+            NOTES="Release $TAG_NAME"
+          fi
+
+          gh release create "$TAG_NAME" \
+            --title "$TAG_NAME" \
+            --notes "$NOTES" \
+            --draft=false
 
   publish-mcp-server:
     name: Publish MCP Server to npm
-    needs: semantic-release
+    needs: create-tag
+    if: needs.create-tag.outputs.created == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -70,18 +107,11 @@ jobs:
         with:
           version: 10.20.0
 
-      - name: Get release version
-        id: version
-        run: |
-          git fetch --tags
-          VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Check if version already published
         id: check
         working-directory: mcp-server
         env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_VERSION: ${{ needs.create-tag.outputs.version }}
         run: |
           if npm view "@llmlb/mcp-server@${RELEASE_VERSION}" version 2>/dev/null; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -104,8 +134,8 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         working-directory: mcp-server
         env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        run: npm version "$RELEASE_VERSION" --no-git-tag-version
+          RELEASE_VERSION: ${{ needs.create-tag.outputs.version }}
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
         if: steps.check.outputs.skip != 'true'

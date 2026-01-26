@@ -551,6 +551,32 @@ For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quick
 - Docker (optional)
 - CUDA Driver (for NVIDIA GPU) - see [CUDA Setup](#cuda-setup-nvidia-gpu)
 
+### Pre-built Binaries
+
+Download platform-specific binaries from [GitHub Releases](https://github.com/akiojin/llmlb/releases).
+
+| Platform | Files |
+|----------|-------|
+| Linux x86_64 | `llmlb-linux-x86_64.tar.gz` |
+| macOS ARM64 (Apple Silicon) | `llmlb-macos-arm64.tar.gz`, `llmlb-macos-arm64.pkg` |
+| macOS x86_64 (Intel) | `llmlb-macos-x86_64.tar.gz`, `llmlb-macos-x86_64.pkg` |
+| Windows x86_64 | `llmlb-windows-x86_64.zip`, `llmlb-windows-x86_64.msi` |
+
+#### macOS Notes
+
+The macOS `.pkg` installers are not code-signed, so you'll see a security warning on first run.
+
+**To install:**
+
+1. Right-click the `.pkg` file in Finder → Select "Open"
+2. Click "Open" to proceed
+
+**Or remove the quarantine attribute via Terminal:**
+
+```bash
+sudo xattr -d com.apple.quarantine llmlb-macos-*.pkg
+```
+
 ### CUDA Setup (NVIDIA GPU)
 
 For NVIDIA GPU acceleration, you need:

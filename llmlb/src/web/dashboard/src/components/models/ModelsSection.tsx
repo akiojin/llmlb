@@ -21,8 +21,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Box, Search, Plus, Trash2, Loader2, Store, Cloud } from 'lucide-react'
-import { ModelHubTab } from './ModelHubTab'
+import { Box, Search, Plus, Trash2, Loader2, Cloud } from 'lucide-react'
+// NOTE: ModelHubTab は SPEC-6cd7f960 により廃止されました（supported_models.json 廃止に伴う）
 
 function formatGb(value?: number | null): string {
   if (value == null || Number.isNaN(value)) return '—'
@@ -228,10 +228,6 @@ export function ModelsSection() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="hub" className="gap-2">
-                <Store className="h-4 w-4" />
-                Model Hub
-              </TabsTrigger>
               {openaiModels && openaiModels.length > 0 && (
                 <TabsTrigger value="openai" className="gap-2">
                   <Cloud className="h-4 w-4 text-green-600" />
@@ -294,7 +290,7 @@ export function ModelsSection() {
                   <Box className="h-8 w-8" />
                   <p>No local models</p>
                   <p className="text-sm">
-                    Register from the Model Hub or add a Hugging Face repo
+                    Register a model from Hugging Face using the Register button
                   </p>
                 </div>
               ) : (
@@ -337,11 +333,6 @@ export function ModelsSection() {
                   ))}
                 </div>
               )}
-            </TabsContent>
-
-            {/* Model Hub Tab */}
-            <TabsContent value="hub">
-              <ModelHubTab />
             </TabsContent>
 
             {/* OpenAI Tab */}

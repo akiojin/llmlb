@@ -256,7 +256,7 @@ jobs:
         if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "📝 Registering xLLM endpoint..."
-          curl -X POST http://127.0.0.1:32768/api/endpoints \
+          curl -X POST http://127.0.0.1:32768/v0/endpoints \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer sk_debug" \
             -d '{

@@ -173,7 +173,9 @@ void init(const std::string& level,
     auto logger = std::make_shared<spdlog::logger>("xllm", sinks.begin(), sinks.end());
     spdlog::set_default_logger(logger);
 
-    spdlog::set_pattern(pattern);
+    if (!pattern.empty()) {
+        spdlog::set_pattern(pattern);
+    }
     spdlog::set_level(parse_level(level));
     spdlog::flush_on(spdlog::level::info);
 }
@@ -213,10 +215,8 @@ void init_from_env() {
     file_sink->set_pattern(R"({"ts":"%Y-%m-%dT%H:%M:%S.%e","level":"%l","msg":"%v"})");
     sinks.push_back(file_sink);
 
-    // Use stdout pattern as default (file sink has its own pattern)
-    std::string pattern = "[%Y-%m-%d %T.%e] [%l] %v";
-
-    init(level, pattern, "", sinks);
+    // Preserve per-sink patterns (stdout human-readable, file JSON).
+    init(level, "", "", sinks);
 
     spdlog::info("Node logs initialized: {}", log_path);
 }

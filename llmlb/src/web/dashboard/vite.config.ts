@@ -18,7 +18,6 @@ export default defineConfig({
         main: path.resolve(__dirname, 'index.html'),
         login: path.resolve(__dirname, 'login.html'),
         register: path.resolve(__dirname, 'register.html'),
-        playground: path.resolve(__dirname, 'playground.html'),
       },
       output: {
         // Ensure consistent file names for Rust include_dir!

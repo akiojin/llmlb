@@ -146,7 +146,7 @@ async fn build_app() -> TestApp {
         "node-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Runtime],
+        vec![ApiKeyScope::Endpoint],
     )
     .await
     .expect("create node api key")

@@ -120,84 +120,8 @@ test.describe('Model Registration Workflow', () => {
     });
   });
 
-  test.describe('UI Register', () => {
-    // NOTE: Model Hub タブは SPEC-6cd7f960 により廃止されました
-    // supported_models.json が廃止され、エンドポイント側でモデル認識を行う方針に変更
-    // 以下は Local タブでの登録ダイアログを使用するテストに変更
-
-    test('Dashboard shows Local tab and Register button', async ({ page }) => {
-      await ensureDashboardLogin(page);
-
-      // Navigate to Models tab
-      await page.click('button[role="tab"]:has-text("Models")');
-      await page.waitForTimeout(500);
-
-      // Verify Local tab is active (default) and Register button exists
-      const localTab = page.locator('button[role="tab"]:has-text("Local")');
-      await expect(localTab).toBeVisible();
-      await expect(localTab).toHaveAttribute('data-state', 'active');
-
-      const registerButton = page.locator('#register-model');
-      await expect(registerButton).toBeVisible();
-    });
-
-    test('Register button opens registration dialog', async ({ page }) => {
-      await ensureDashboardLogin(page);
-
-      // Navigate to Models tab
-      await page.click('button[role="tab"]:has-text("Models")');
-      await page.waitForTimeout(300);
-
-      // Click Register button
-      const registerButton = page.locator('#register-model');
-      await registerButton.click();
-      await page.waitForTimeout(500);
-
-      // Registration dialog should be visible
-      const dialog = page.locator('#register-modal');
-      await expect(dialog).toBeVisible();
-
-      // Should have repo input field
-      const repoInput = page.locator('#register-repo');
-      await expect(repoInput).toBeVisible();
-    });
-
-    test('UI register triggers API call', async ({ page }) => {
-      // 1. Login and navigate
-      await ensureDashboardLogin(page);
-      await page.click('button[role="tab"]:has-text("Models")');
-      await page.waitForTimeout(300);
-
-      // 2. Mock register endpoint to track calls
-      let registerCalled = false;
-      await page.route('**/v0/models/register', async (route) => {
-        registerCalled = true;
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            name: 'test-model',
-            lifecycle_status: 'registered',
-          }),
-        });
-      });
-
-      // 3. Open register dialog
-      const openDialogButton = page.locator('#register-model');
-      await openDialogButton.click();
-      await page.waitForTimeout(300);
-
-      // 4. Fill in repo and submit
-      const repoInput = page.locator('#register-repo');
-      await repoInput.fill('test-org/test-model');
-
-      const submitButton = page.locator('#register-submit');
-      await submitButton.click();
-      await page.waitForTimeout(500);
-
-      expect(registerCalled).toBe(true);
-    });
-  });
+  // NOTE: UI Register tests removed - Models tab has been removed from dashboard
+  // Model registration is now done via API or endpoint-specific UI
 
   test.describe('State Consistency', () => {
     test('registered model appears in API list', async ({ request }, testInfo) => {

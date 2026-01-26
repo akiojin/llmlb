@@ -25,7 +25,7 @@ const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
 fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
     match request_key {
         DEBUG_API_KEY_ALL => Some(ApiKeyScope::all()),
-        DEBUG_API_KEY_RUNTIME => Some(vec![ApiKeyScope::Runtime]),
+        DEBUG_API_KEY_RUNTIME => Some(vec![ApiKeyScope::Endpoint]),
         DEBUG_API_KEY_API => Some(vec![ApiKeyScope::Api]),
         DEBUG_API_KEY_ADMIN => Some(vec![ApiKeyScope::Admin]),
         _ => None,
@@ -410,13 +410,13 @@ pub async fn admin_or_runtime_middleware(
     let api_key = extract_api_key(&request)?;
     let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
 
-    // Admin または Runtime スコープを許可
+    // Admin または Endpoint スコープを許可
     let has_admin = auth_context.scopes.contains(&ApiKeyScope::Admin);
-    let has_runtime = auth_context.scopes.contains(&ApiKeyScope::Runtime);
-    if !has_admin && !has_runtime {
+    let has_endpoint = auth_context.scopes.contains(&ApiKeyScope::Endpoint);
+    if !has_admin && !has_endpoint {
         return Err((
             StatusCode::FORBIDDEN,
-            "Admin or Runtime scope required".to_string(),
+            "Admin or Endpoint scope required".to_string(),
         )
             .into_response());
     }

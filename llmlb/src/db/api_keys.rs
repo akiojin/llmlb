@@ -31,16 +31,18 @@ pub async fn create(
     let id = Uuid::new_v4();
     let key = generate_api_key();
     let key_hash = hash_with_sha256(&key);
+    let key_prefix = key.chars().take(10).collect::<String>();
     let created_at = Utc::now();
 
     let scopes_json = serialize_scopes(&scopes)?;
 
     sqlx::query(
-        "INSERT INTO api_keys (id, key_hash, name, created_by, created_at, expires_at, scopes)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO api_keys (id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(&key_hash)
+    .bind(&key_prefix)
     .bind(name)
     .bind(created_by.to_string())
     .bind(created_at.to_rfc3339())
@@ -53,6 +55,7 @@ pub async fn create(
     Ok(ApiKeyWithPlaintext {
         id,
         key,
+        key_prefix,
         name: name.to_string(),
         created_at,
         expires_at,
@@ -72,7 +75,7 @@ pub async fn create(
 /// * `Err(LbError)` - 検索失敗
 pub async fn find_by_hash(pool: &SqlitePool, key_hash: &str) -> Result<Option<ApiKey>, LbError> {
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE key_hash = ?"
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE key_hash = ?"
     )
     .bind(key_hash)
     .fetch_optional(pool)
@@ -92,7 +95,7 @@ pub async fn find_by_hash(pool: &SqlitePool, key_hash: &str) -> Result<Option<Ap
 /// * `Err(LbError)` - 取得失敗
 pub async fn list(pool: &SqlitePool) -> Result<Vec<ApiKey>, LbError> {
     let rows = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, name, created_by, created_at, expires_at, scopes FROM api_keys ORDER BY created_at DESC"
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes FROM api_keys ORDER BY created_at DESC"
     )
     .fetch_all(pool)
     .await
@@ -133,7 +136,7 @@ pub async fn update(
 
     // 更新後のAPIキーを取得
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE id = ?",
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE id = ?",
     )
     .bind(id.to_string())
     .fetch_optional(pool)
@@ -199,6 +202,7 @@ fn hash_with_sha256(input: &str) -> String {
 struct ApiKeyRow {
     id: String,
     key_hash: String,
+    key_prefix: Option<String>,
     name: String,
     created_by: String,
     created_at: String,
@@ -224,6 +228,7 @@ impl ApiKeyRow {
         ApiKey {
             id,
             key_hash: self.key_hash,
+            key_prefix: self.key_prefix,
             name: self.name,
             created_by,
             created_at,

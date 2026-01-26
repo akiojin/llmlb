@@ -34,8 +34,8 @@ mod models_api_test;
 #[path = "contract/chat_modal_embed.rs"]
 mod chat_modal_embed;
 
-#[path = "contract/chat_page_spec.rs"]
-mod chat_page_spec;
+// NOTE: chat_page_spec.rs は削除されました
+// Playground機能はダッシュボード内のエンドポイント別Playgroundに移行 (#playground/:endpointId)
 
 #[path = "contract/audio_transcriptions_test.rs"]
 mod audio_transcriptions_test;

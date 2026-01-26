@@ -182,6 +182,32 @@ npx @llmlb/mcp-server
 - Docker (任意、コンテナ利用時)
 - CUDAドライバ (GPU使用時) - [CUDAセットアップ](#cudaセットアップnvidia-gpu)参照
 
+### ビルド済みバイナリのインストール
+
+[GitHub Releases](https://github.com/akiojin/llmlb/releases) からプラットフォーム別のバイナリをダウンロードできます。
+
+| プラットフォーム | ファイル |
+|-----------------|---------|
+| Linux x86_64 | `llmlb-linux-x86_64.tar.gz` |
+| macOS ARM64 (Apple Silicon) | `llmlb-macos-arm64.tar.gz`, `llmlb-macos-arm64.pkg` |
+| macOS x86_64 (Intel) | `llmlb-macos-x86_64.tar.gz`, `llmlb-macos-x86_64.pkg` |
+| Windows x86_64 | `llmlb-windows-x86_64.zip`, `llmlb-windows-x86_64.msi` |
+
+#### macOS での注意事項
+
+macOS の `.pkg` インストーラーは署名されていないため、初回実行時にセキュリティ警告が表示されます。
+
+**インストール方法:**
+
+1. Finder で `.pkg` ファイルを右クリック → 「開く」を選択
+2. 「開く」ボタンをクリックして続行
+
+**または、ターミナルで quarantine 属性を削除:**
+
+```bash
+sudo xattr -d com.apple.quarantine llmlb-macos-*.pkg
+```
+
 ### CUDAセットアップ（NVIDIA GPU）
 
 NVIDIA GPU を使用する場合に必要なコンポーネント：

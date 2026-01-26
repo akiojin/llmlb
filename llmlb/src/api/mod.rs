@@ -174,6 +174,17 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/endpoints/:id/models",
             get(endpoints::list_endpoint_models),
+        )
+        // SPEC-66555000: ダウンロードAPI
+        .route("/endpoints/:id/download", post(endpoints::download_model))
+        .route(
+            "/endpoints/:id/download/progress",
+            get(endpoints::download_progress),
+        )
+        // SPEC-66555000: モデルメタデータAPI
+        .route(
+            "/endpoints/:id/models/:model/info",
+            get(endpoints::get_model_info),
         );
 
     let endpoint_routes = if auth_disabled {

@@ -416,18 +416,20 @@ async fn test_models_endpoint_shows_vision_capability_integration() {
 }
 
 /// パフォーマンス: 1024x1024画像の処理が5秒以内に完了する
-/// TDD RED: Vision機能が未実装のため失敗する
+/// NOTE: テスト環境では実画像の代わりに大きめのBase64データで近似する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision performance test requires implementation"]
 async fn test_vision_processing_performance() {
-    let node = spawn_vision_node(&[VISION_MODEL_ID]).await;
+    let (lb, node) = setup_lb_with_node().await;
+    let large_base64 = "A".repeat(1024 * 1024);
+    let image_url = format!("data:image/png;base64,{}", large_base64);
 
     let client = Client::new();
     let start = std::time::Instant::now();
 
     let response = client
-        .post(format!("http://{}/v1/chat/completions", node.addr()))
+        .post(format!("http://{}/v1/chat/completions", lb.addr()))
+        .header("x-api-key", "sk_debug")
         .json(&json!({
             "model": VISION_MODEL_ID,
             "messages": [
@@ -441,7 +443,7 @@ async fn test_vision_processing_performance() {
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": "https://example.com/1024x1024-image.jpg"
+                                "url": image_url
                             }
                         }
                     ]
@@ -463,4 +465,5 @@ async fn test_vision_processing_performance() {
     );
 
     node.stop().await;
+    lb.stop().await;
 }

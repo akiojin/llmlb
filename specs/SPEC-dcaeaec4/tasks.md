@@ -1,5 +1,7 @@
 # SPEC-dcaeaec4 タスク一覧
 
+**ステータス**: 完了
+
 ## 概要
 
 LLM-Load Balancer独自モデルストレージの実装タスク。

@@ -4,19 +4,29 @@
 
 use crate::support;
 use axum::{
+    body::Body,
+    http::header,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use base64::{engine::general_purpose, Engine};
+use llmlb::{
+    common::types::ModelCapability, db::models::ModelStorage, registry::models::ModelInfo,
+};
 use reqwest::{Client, StatusCode as ReqStatusCode};
 use serde_json::{json, Value};
+use sqlx::SqlitePool;
+
+const VISION_MODEL_ID: &str = "vision-model";
 
 async fn spawn_vision_stub() -> support::http::TestServer {
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_handler))
         .route("/v1/models", get(models_handler))
-        .route("/api/health", post(|| async { StatusCode::OK }));
+        .route("/v0/health", get(|| async { StatusCode::OK }))
+        .route("/test-image.png", get(test_image_handler));
     support::http::spawn_lb(app).await
 }
 
@@ -48,42 +58,95 @@ async fn models_handler() -> impl IntoResponse {
         Json(json!({
             "object": "list",
             "data": [
-                { "id": "vision-model" }
+                { "id": VISION_MODEL_ID }
             ]
         })),
     )
         .into_response()
 }
 
-async fn register_vision_node(lb: &support::http::TestServer, node: &support::http::TestServer) {
-    let response =
-        support::lb::register_node_with_runtimes(lb.addr(), node.addr(), vec!["llama_cpp"])
-            .await
-            .expect("register node should succeed");
-    let (status, _body) = support::lb::approve_node_from_register_response(lb.addr(), response)
+async fn test_image_handler() -> impl IntoResponse {
+    let bytes = general_purpose::STANDARD
+        .decode(support::images::TEST_IMAGE_1X1_TRANSPARENT_PNG)
+        .expect("decode test image");
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/png")
+        .body(Body::from(bytes))
+        .expect("build image response")
+}
+
+async fn register_models(db_pool: &SqlitePool) {
+    let storage = ModelStorage::new(db_pool.clone());
+    let vision_model = ModelInfo::with_capabilities(
+        VISION_MODEL_ID.to_string(),
+        0,
+        "vision test model".to_string(),
+        0,
+        vec![],
+        vec![ModelCapability::TextGeneration, ModelCapability::Vision],
+    );
+    storage
+        .save_model(&vision_model)
         .await
-        .expect("approve node should succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("save vision model");
+}
+
+async fn register_and_sync_endpoint(
+    lb: &support::http::TestServer,
+    node: &support::http::TestServer,
+) {
+    let endpoint_id = support::lb::register_endpoint_with_capabilities(
+        lb.addr(),
+        node.addr(),
+        "Vision Endpoint",
+        &["chat_completion"],
+    )
+    .await
+    .expect("register endpoint should succeed");
+
+    let response = Client::new()
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("sync should succeed");
+
+    assert!(
+        response.status().is_success(),
+        "sync should return success (status: {})",
+        response.status()
+    );
+}
+
+async fn setup_lb_with_node() -> (support::http::TestServer, support::http::TestServer) {
+    let node = spawn_vision_stub().await;
+    let (lb, db_pool) = support::lb::spawn_test_lb_with_db().await;
+    register_models(&db_pool).await;
+    register_and_sync_endpoint(&lb, &node).await;
+    (lb, node)
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: vision E2E not yet implemented"]
 async fn e2e_vision_chat_with_image_url_returns_text() {
-    let node = spawn_vision_stub().await;
-    let lb = support::lb::spawn_test_lb().await;
-    register_vision_node(&lb, &node).await;
+    let (lb, node) = setup_lb_with_node().await;
+    let image_url = format!("http://{}/test-image.png", node.addr());
 
     let response = Client::new()
         .post(format!("http://{}/v1/chat/completions", lb.addr()))
         .header("x-api-key", "sk_debug")
         .json(&json!({
-            "model": "vision-model",
+            "model": VISION_MODEL_ID,
             "messages": [
                 {
                     "role": "user",
                     "content": [
                         { "type": "text", "text": "What is in this image?" },
-                        { "type": "image_url", "image_url": { "url": "https://example.com/test.jpg" } }
+                        { "type": "image_url", "image_url": { "url": image_url } }
                     ]
                 }
             ],
@@ -105,24 +168,22 @@ async fn e2e_vision_chat_with_image_url_returns_text() {
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: vision multi-image E2E not yet implemented"]
 async fn e2e_vision_chat_with_multiple_images_returns_text() {
-    let node = spawn_vision_stub().await;
-    let lb = support::lb::spawn_test_lb().await;
-    register_vision_node(&lb, &node).await;
+    let (lb, node) = setup_lb_with_node().await;
+    let image_url = format!("http://{}/test-image.png", node.addr());
 
     let response = Client::new()
         .post(format!("http://{}/v1/chat/completions", lb.addr()))
         .header("x-api-key", "sk_debug")
         .json(&json!({
-            "model": "vision-model",
+            "model": VISION_MODEL_ID,
             "messages": [
                 {
                     "role": "user",
                     "content": [
                         { "type": "text", "text": "Compare these images." },
-                        { "type": "image_url", "image_url": { "url": "https://example.com/one.jpg" } },
-                        { "type": "image_url", "image_url": { "url": "https://example.com/two.jpg" } }
+                        { "type": "image_url", "image_url": { "url": image_url } },
+                        { "type": "image_url", "image_url": { "url": image_url } }
                     ]
                 }
             ],

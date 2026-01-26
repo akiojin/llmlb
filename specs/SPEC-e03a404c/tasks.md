@@ -1,7 +1,7 @@
 # タスク: 画像認識モデル対応（Image Understanding）
 
 **機能ID**: `SPEC-e03a404c`
-**ステータス**: 部分完了（15テスト合格、4テストは要実モデルでスキップ）
+**ステータス**: 部分完了（18テスト合格、1テストは要実モデルでスキップ）
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
 **注記**: 基本実装は完了。Vision capabilities契約テスト（4件）とBase64/フォーマット
@@ -26,9 +26,9 @@ xLLMはllama.cppのmultimodal supportをラップして使用。
 ## Phase 3.2: テストファースト (TDD RED)
 
 - [x] T002 [P] `llmlb/tests/contract/vision_chat_test.rs` に画像付きchat completions契約テスト
-  - ⏳ test_chat_completions_with_image_url (FR-001) `#[ignore]` - 要実モデル
+  - ✅ test_chat_completions_with_image_url (FR-001)
   - ✅ test_chat_completions_with_base64_image (FR-002) - モック検証合格
-  - ⏳ test_chat_completions_with_multiple_images (FR-003) `#[ignore]` - 要実モデル
+  - ✅ test_chat_completions_with_multiple_images (FR-003)
   - ✅ test_supported_image_formats (FR-007: JPEG/PNG/GIF/WebP) - 合格
   - ✅ test_vision_streaming_response (FR-005)
 - [x] T003 [P] `llmlb/tests/contract/vision_error_test.rs` にエラーハンドリング契約テスト
@@ -135,7 +135,7 @@ Task T004: llmlb/tests/contract/vision_capabilities_test.rs
 
 - [x] 画像URL付きchat completionsが正常動作（モック検証合格）
 - [x] Base64画像付きリクエストが正常動作（モック検証合格）
-- [ ] 複数画像（最大10枚）が処理可能（テスト`#[ignore]`中 - 要実モデル）
+- [x] 複数画像（最大10枚）が処理可能（モック検証合格）
 - [x] Vision非対応モデルへのリクエストが400エラー
 - [x] `/v1/models` に `image_understanding` capability表示（テスト合格）
 - [ ] ストリーミングレスポンス対応（テスト`#[ignore]`中 - 要実モデル）

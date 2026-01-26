@@ -4,9 +4,9 @@
 
 use crate::common::auth::{Claims, UserRole};
 use crate::db::endpoints as db;
+use crate::sync::{self, SyncError};
 use crate::types::endpoint::{
     DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus, GpuDevice,
-    SupportedAPI,
 };
 use crate::AppState;
 use axum::{
@@ -993,8 +993,6 @@ pub async fn sync_endpoint_models(
         return e.into_response();
     }
 
-    use std::collections::HashSet;
-
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
@@ -1021,129 +1019,71 @@ pub async fn sync_endpoint_models(
         }
     };
 
-    // 既存モデルを取得して比較用にIDセットを作成
-    let existing_models: HashSet<String> = match db::list_endpoint_models(&state.db_pool, id).await
-    {
-        Ok(models) => models.into_iter().map(|m| m.model_id).collect(),
-        Err(_) => HashSet::new(),
-    };
-
-    // GET /v1/models でモデル一覧を取得
-    let url = format!("{}/v1/models", endpoint.base_url.trim_end_matches('/'));
-
-    let mut request = state.http_client.get(&url);
-    if let Some(ref api_key) = endpoint.api_key {
-        request = request.header("Authorization", format!("Bearer {}", api_key));
-    }
-
-    let result = request
-        .timeout(std::time::Duration::from_secs(
-            endpoint.inference_timeout_secs as u64,
-        ))
-        .send()
-        .await;
+    let result = sync::sync_models(
+        &state.db_pool,
+        &state.http_client,
+        id,
+        &endpoint.base_url,
+        endpoint.api_key.as_deref(),
+        endpoint.inference_timeout_secs as u64,
+    )
+    .await;
 
     match result {
-        Ok(response) => {
-            if !response.status().is_success() {
-                return (
-                    StatusCode::BAD_GATEWAY,
-                    Json(ErrorResponse {
-                        error: format!("Endpoint returned HTTP {}", response.status()),
-                        code: "ENDPOINT_ERROR".to_string(),
-                    }),
-                )
-                    .into_response();
-            }
-
-            let json: serde_json::Value = match response.json().await {
-                Ok(j) => j,
-                Err(e) => {
-                    return (
-                        StatusCode::BAD_GATEWAY,
-                        Json(ErrorResponse {
-                            error: format!("Failed to parse response: {}", e),
-                            code: "PARSE_ERROR".to_string(),
-                        }),
-                    )
-                        .into_response()
-                }
-            };
-
-            // 既存モデルを削除
-            let _ = db::delete_all_endpoint_models(&state.db_pool, id).await;
-
-            // 新しいモデルを追加
-            let now = chrono::Utc::now();
-            let mut synced_models = Vec::new();
-            let mut new_model_ids: HashSet<String> = HashSet::new();
-
-            // OpenAI形式: { "data": [{ "id": "model-name", ... }] }
-            if let Some(data) = json["data"].as_array() {
-                for model in data {
-                    if let Some(model_id) = model["id"].as_str() {
-                        new_model_ids.insert(model_id.to_string());
-                        let ep_model = EndpointModel {
-                            endpoint_id: id,
-                            model_id: model_id.to_string(),
-                            capabilities: None,
-                            last_checked: Some(now),
-                            supported_apis: vec![SupportedAPI::ChatCompletions],
-                        };
-                        let _ = db::add_endpoint_model(&state.db_pool, &ep_model).await;
-                        synced_models.push(EndpointModelResponse::from(ep_model));
-                    }
-                }
-            }
-            // Ollama形式: { "models": [{ "name": "...", "model": "..." }] }
-            else if let Some(models) = json["models"].as_array() {
-                for model in models {
-                    let model_id = model["name"]
-                        .as_str()
-                        .or(model["model"].as_str())
-                        .unwrap_or_default();
-                    if !model_id.is_empty() {
-                        new_model_ids.insert(model_id.to_string());
-                        let ep_model = EndpointModel {
-                            endpoint_id: id,
-                            model_id: model_id.to_string(),
-                            capabilities: None,
-                            last_checked: Some(now),
-                            supported_apis: vec![SupportedAPI::ChatCompletions],
-                        };
-                        let _ = db::add_endpoint_model(&state.db_pool, &ep_model).await;
-                        synced_models.push(EndpointModelResponse::from(ep_model));
-                    }
-                }
-            }
-
+        Ok(result) => {
             // EndpointRegistryキャッシュをリロードしてモデルマッピングを更新
             let _ = state.endpoint_registry.reload().await;
 
-            // 変更カウントを計算
-            let added = new_model_ids.difference(&existing_models).count();
-            let removed = existing_models.difference(&new_model_ids).count();
-            let updated = new_model_ids.intersection(&existing_models).count();
+            let synced_models = result
+                .models
+                .into_iter()
+                .map(EndpointModelResponse::from)
+                .collect();
 
             (
                 StatusCode::OK,
                 Json(SyncModelsResponse {
                     synced_models,
-                    added,
-                    removed,
-                    updated,
+                    added: result.added,
+                    removed: result.removed,
+                    updated: result.updated,
                 }),
             )
                 .into_response()
         }
-        Err(e) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                error: format!("Failed to connect: {}", e),
-                code: "CONNECTION_ERROR".to_string(),
-            }),
-        )
-            .into_response(),
+        Err(err) => {
+            let (status, error, code) = match err {
+                SyncError::ConnectionError(msg) => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("Failed to connect: {}", msg),
+                    "CONNECTION_ERROR",
+                ),
+                SyncError::HttpError(status, _) => (
+                    StatusCode::BAD_GATEWAY,
+                    format!("Endpoint returned HTTP {}", status),
+                    "ENDPOINT_ERROR",
+                ),
+                SyncError::ParseError(msg) => (
+                    StatusCode::BAD_GATEWAY,
+                    format!("Failed to parse response: {}", msg),
+                    "PARSE_ERROR",
+                ),
+                SyncError::DbError(msg) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to update models: {}", msg),
+                    "DB_ERROR",
+                ),
+            };
+
+            (
+                status,
+                Json(ErrorResponse {
+                    error,
+                    code: code.to_string(),
+                }),
+            )
+                .into_response()
+        }
     }
 }
 

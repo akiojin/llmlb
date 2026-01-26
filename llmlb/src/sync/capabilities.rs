@@ -53,19 +53,20 @@ impl std::fmt::Display for Capability {
 /// ```
 pub fn detect_capabilities(model_name: &str) -> Vec<Capability> {
     let lower = model_name.to_lowercase();
+    let leaf = lower.rsplit('/').next().unwrap_or(&lower);
 
     // embedで始まる、または-embedを含む場合はembeddings
-    if lower.starts_with("embed") || lower.contains("-embed") || lower.contains("_embed") {
+    if leaf.starts_with("embed") || leaf.contains("-embed") || leaf.contains("_embed") {
         return vec![Capability::Embeddings];
     }
 
     // Vision model detection by name pattern
-    let is_vision = lower.starts_with("llava")
-        || lower.starts_with("qwen-vl")
-        || lower.starts_with("qwen2-vl")
-        || lower.contains("-vision")
-        || lower.contains("_vision")
-        || lower.contains("-vl-");
+    let is_vision = leaf.starts_with("llava")
+        || leaf.starts_with("qwen-vl")
+        || leaf.starts_with("qwen2-vl")
+        || leaf.contains("-vision")
+        || leaf.contains("_vision")
+        || leaf.contains("-vl-");
 
     if is_vision {
         vec![Capability::Chat, Capability::Vision]
@@ -189,11 +190,17 @@ mod tests {
         assert!(caps.contains(&Capability::Chat));
         assert!(caps.contains(&Capability::Vision));
 
+        let caps = detect_capabilities("second-state/llava-v1.5-7b-gguf");
+        assert!(caps.contains(&Capability::Vision));
+
         let caps = detect_capabilities("llava-1.6-34b");
         assert!(caps.contains(&Capability::Vision));
 
         // Qwen-VL models
         let caps = detect_capabilities("qwen-vl-7b");
+        assert!(caps.contains(&Capability::Vision));
+
+        let caps = detect_capabilities("qwen/qlora-qwen2-vl-7b-instruct");
         assert!(caps.contains(&Capability::Vision));
 
         let caps = detect_capabilities("qwen2-vl-7b-instruct");

@@ -583,6 +583,7 @@ mod tests {
             endpoint_id,
             model_id: "llama3:8b".to_string(),
             capabilities: Some(vec!["chat".to_string()]),
+            max_tokens: None,
             last_checked: Some(chrono::Utc::now()),
             supported_apis: vec![SupportedAPI::ChatCompletions],
         };

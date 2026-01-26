@@ -1087,6 +1087,7 @@ pub async fn sync_endpoint_models(
                             endpoint_id: id,
                             model_id: model_id.to_string(),
                             capabilities: None,
+                            max_tokens: None,
                             last_checked: Some(now),
                             supported_apis: vec![SupportedAPI::ChatCompletions],
                         };
@@ -1108,6 +1109,7 @@ pub async fn sync_endpoint_models(
                             endpoint_id: id,
                             model_id: model_id.to_string(),
                             capabilities: None,
+                            max_tokens: None,
                             last_checked: Some(now),
                             supported_apis: vec![SupportedAPI::ChatCompletions],
                         };

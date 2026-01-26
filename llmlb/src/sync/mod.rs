@@ -154,6 +154,7 @@ pub async fn sync_models(
             endpoint_id,
             model_id: (*model_id).clone(),
             capabilities: caps_vec,
+            max_tokens: None,
             last_checked: Some(now),
             supported_apis: vec![SupportedAPI::ChatCompletions],
         };
@@ -177,6 +178,7 @@ pub async fn sync_models(
             endpoint_id,
             model_id: (*model_id).clone(),
             capabilities: caps_vec,
+            max_tokens: None,
             last_checked: Some(now),
             supported_apis: vec![SupportedAPI::ChatCompletions],
         };

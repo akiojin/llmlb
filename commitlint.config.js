@@ -22,6 +22,8 @@ module.exports = {
   rules: {
     'header-max-length': [2, 'always', 72],
     'subject-full-stop': [2, 'never', '.'],
+    // Disable subject-case to allow acronyms (LLM, API, CLI, etc.) and non-Latin text
+    'subject-case': [0],
     'scope-case': [2, 'always', ['kebab-case', 'lower-case', 'camel-case']],
     'type-enum': [
       2,

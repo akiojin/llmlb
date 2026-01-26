@@ -47,6 +47,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.ref }}
+          submodules: recursive
 
       - name: Derive release version (Unix)
         if: runner.os != 'Windows'

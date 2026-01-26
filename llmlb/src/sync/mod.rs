@@ -130,12 +130,24 @@ pub async fn sync_models(
         let _ = db::delete_endpoint_model(pool, endpoint_id, model_id).await;
     }
 
-    // 新しいモデルを追加（capabilitiesを自動判定）
+    // 新しいモデルを追加（capabilitiesを自動判定 + エンドポイントからの情報を使用）
     let now = Utc::now();
     let mut synced_models = Vec::new();
 
+    // Build a lookup map for has_vision from parsed models
+    let vision_lookup: std::collections::HashMap<String, bool> = parsed_models
+        .iter()
+        .map(|m| (m.id.clone(), m.has_vision))
+        .collect();
+
     for model_id in &added_ids {
-        let caps = detect_capabilities(model_id);
+        let mut caps = detect_capabilities(model_id);
+        // If endpoint reports vision capability, add it
+        if let Some(&has_vision) = vision_lookup.get(*model_id) {
+            if has_vision && !caps.contains(&Capability::Vision) {
+                caps.push(Capability::Vision);
+            }
+        }
         let caps_vec = Some(capabilities_to_strings(&caps));
 
         let model = EndpointModel {
@@ -152,7 +164,13 @@ pub async fn sync_models(
 
     // 既存モデルのlast_checkedを更新
     for model_id in &updated_ids {
-        let caps = detect_capabilities(model_id);
+        let mut caps = detect_capabilities(model_id);
+        // If endpoint reports vision capability, add it
+        if let Some(&has_vision) = vision_lookup.get(*model_id) {
+            if has_vision && !caps.contains(&Capability::Vision) {
+                caps.push(Capability::Vision);
+            }
+        }
         let caps_vec = Some(capabilities_to_strings(&caps));
 
         let model = EndpointModel {

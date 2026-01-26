@@ -89,12 +89,17 @@ mod common {
     }
 
     /// テスト用のVision対応モデルを登録する
-    /// TDD RED: capabilities.image_understanding が実装されていないため、
-    /// この関数が呼ばれても実際には capabilities は設定されない
+    /// Vision capability を設定し、image_understanding が true になるようにする
     pub async fn register_vision_model(db_pool: &SqlitePool, name: &str) {
-        let model = ModelInfo::new(name.to_string(), 4, "test".to_string(), 0, vec![]);
-        // TODO: Vision capability を設定する必要がある
-        // model.capabilities.push(ModelCapability::ImageUnderstanding);
+        use llmlb::common::types::ModelCapability;
+        let model = ModelInfo::with_capabilities(
+            name.to_string(),
+            4,
+            "test".to_string(),
+            0,
+            vec![],
+            vec![ModelCapability::TextGeneration, ModelCapability::Vision],
+        );
         let storage = ModelStorage::new(db_pool.clone());
         storage.save_model(&model).await.unwrap();
     }
@@ -111,10 +116,8 @@ mod common {
 use common::{build_app, register_text_only_model, register_vision_model};
 
 /// FR-006: /v1/models レスポンスに image_understanding capability を含める
-/// TDD RED: capabilities フィールドが未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image_understanding capability not yet implemented"]
 async fn test_vision_model_has_image_understanding_capability() {
     let common::TestApp {
         app,
@@ -158,10 +161,8 @@ async fn test_vision_model_has_image_understanding_capability() {
 }
 
 /// FR-006: テキストのみ対応モデルは image_understanding が false
-/// TDD RED: capabilities フィールドが未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image_understanding capability not yet implemented"]
 async fn test_text_model_has_no_image_understanding_capability() {
     let common::TestApp {
         app,
@@ -207,10 +208,8 @@ async fn test_text_model_has_no_image_understanding_capability() {
 }
 
 /// FR-006: 複数モデルの capabilities が正しく区別される
-/// TDD RED: capabilities フィールドが未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image_understanding capability not yet implemented"]
 async fn test_mixed_models_capabilities() {
     let common::TestApp {
         app,
@@ -277,10 +276,8 @@ async fn test_mixed_models_capabilities() {
 }
 
 /// capabilities オブジェクトが /v1/models レスポンスに含まれる
-/// TDD RED: capabilities フィールド自体が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision capabilities field not yet implemented"]
 async fn test_models_response_includes_capabilities_field() {
     let common::TestApp {
         app,

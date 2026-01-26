@@ -18,7 +18,7 @@ test:
 	cargo test -- --test-threads=1
 
 markdownlint:
-	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!**/build/**" "!xllm/third_party" "!node/third_party"
+	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!**/build/**" "!xllm/third_party" "!node/third_party" "!actions-runner"
 
 specify-tasks:
 	@bash -lc 'TASKS_LIST="$${TASKS:-}"; \

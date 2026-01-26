@@ -5,7 +5,8 @@
 use crate::common::auth::{Claims, UserRole};
 use crate::db::endpoints as db;
 use crate::types::endpoint::{
-    Endpoint, EndpointCapability, EndpointModel, EndpointStatus, SupportedAPI,
+    DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus, GpuDevice,
+    SupportedAPI,
 };
 use crate::AppState;
 use axum::{
@@ -16,6 +17,7 @@ use axum::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::time::Duration;
 use uuid::Uuid;
 
 /// Option<Option<T>>のデシリアライズヘルパー
@@ -60,6 +62,98 @@ fn default_health_check_interval() -> u32 {
 
 fn default_inference_timeout() -> u32 {
     120
+}
+
+/// /v0/system APIレスポンス（SPEC-f8e3a1b7）
+///
+/// xLLM固有のシステム情報API。OpenAI互換エンドポイントでは利用不可。
+#[derive(Debug, Deserialize)]
+struct SystemInfoResponse {
+    /// デバイス情報
+    #[serde(default)]
+    device: Option<SystemDeviceInfo>,
+}
+
+/// /v0/system APIのデバイス情報
+#[derive(Debug, Deserialize)]
+struct SystemDeviceInfo {
+    /// デバイスタイプ（"cpu" / "gpu"）
+    #[serde(default)]
+    device_type: String,
+    /// GPUデバイス一覧
+    #[serde(default)]
+    gpu_devices: Vec<SystemGpuDevice>,
+}
+
+/// /v0/system APIのGPUデバイス情報
+#[derive(Debug, Deserialize)]
+struct SystemGpuDevice {
+    /// デバイス名
+    #[serde(default)]
+    name: String,
+    /// 総メモリ（バイト）
+    #[serde(default)]
+    total_memory_bytes: u64,
+    /// 使用中メモリ（バイト）
+    #[serde(default)]
+    used_memory_bytes: u64,
+}
+
+/// /v0/system APIを呼び出してデバイス情報を取得（SPEC-f8e3a1b7）
+///
+/// エンドポイント登録時に呼び出し、デバイス情報を取得する。
+/// 応答がない場合（タイムアウト、404等）はNoneを返す。
+async fn fetch_system_info(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> Option<DeviceInfo> {
+    let url = format!("{}/v0/system", base_url.trim_end_matches('/'));
+
+    let mut request = client.get(&url).timeout(Duration::from_secs(5));
+
+    if let Some(key) = api_key {
+        request = request.bearer_auth(key);
+    }
+
+    match request.send().await {
+        Ok(response) if response.status().is_success() => {
+            match response.json::<SystemInfoResponse>().await {
+                Ok(info) => info.device.map(|d| DeviceInfo {
+                    device_type: if d.device_type.to_lowercase() == "gpu" {
+                        DeviceType::Gpu
+                    } else {
+                        DeviceType::Cpu
+                    },
+                    gpu_devices: d
+                        .gpu_devices
+                        .into_iter()
+                        .map(|g| GpuDevice {
+                            name: g.name,
+                            total_memory_bytes: g.total_memory_bytes,
+                            used_memory_bytes: g.used_memory_bytes,
+                        })
+                        .collect(),
+                }),
+                Err(e) => {
+                    tracing::debug!(url = %url, error = %e, "Failed to parse /v0/system response");
+                    None
+                }
+            }
+        }
+        Ok(response) => {
+            tracing::debug!(
+                url = %url,
+                status = %response.status(),
+                "Endpoint does not support /v0/system API"
+            );
+            None
+        }
+        Err(e) => {
+            tracing::debug!(url = %url, error = %e, "Failed to call /v0/system API");
+            None
+        }
+    }
 }
 
 /// エンドポイント更新リクエスト
@@ -114,6 +208,9 @@ pub struct EndpointResponse {
     pub notes: Option<String>,
     /// Responses API対応フラグ（SPEC-24157000）
     pub supports_responses_api: bool,
+    /// デバイス情報（SPEC-f8e3a1b7: /v0/systemから取得）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_info: Option<crate::types::endpoint::DeviceInfo>,
     /// モデル数（一覧取得時）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_count: Option<usize>,
@@ -138,6 +235,7 @@ impl From<Endpoint> for EndpointResponse {
             registered_at: ep.registered_at.to_rfc3339(),
             notes: ep.notes,
             supports_responses_api: ep.supports_responses_api,
+            device_info: ep.device_info,
             model_count: None,
             models: None,
         }
@@ -349,6 +447,38 @@ pub async fn create_endpoint(
         Ok(()) => {
             // EndpointRegistryキャッシュも更新（DBは既に保存済みなのでキャッシュのみ）
             state.endpoint_registry.add_to_cache(endpoint.clone()).await;
+
+            // SPEC-f8e3a1b7: /v0/system APIを呼び出してデバイス情報を取得
+            let endpoint_id = endpoint.id;
+            let base_url = endpoint.base_url.clone();
+            let api_key = endpoint.api_key.clone();
+            let registry = state.endpoint_registry.clone();
+            let http_client = state.http_client.clone();
+
+            // Fire-and-forget: デバイス情報取得は非同期で行う（レスポンスをブロックしない）
+            tokio::spawn(async move {
+                if let Some(device_info) =
+                    fetch_system_info(&http_client, &base_url, api_key.as_deref()).await
+                {
+                    tracing::info!(
+                        endpoint_id = %endpoint_id,
+                        device_type = ?device_info.device_type,
+                        gpu_count = device_info.gpu_devices.len(),
+                        "Retrieved device info from /v0/system"
+                    );
+                    if let Err(e) = registry
+                        .update_device_info(endpoint_id, Some(device_info))
+                        .await
+                    {
+                        tracing::warn!(
+                            endpoint_id = %endpoint_id,
+                            error = %e,
+                            "Failed to save device info"
+                        );
+                    }
+                }
+            });
+
             (StatusCode::CREATED, Json(EndpointResponse::from(endpoint))).into_response()
         }
         Err(e) => {

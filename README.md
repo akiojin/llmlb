@@ -413,7 +413,7 @@ curl http://lb:32768/v1/responses -d '...'
   - manifest-based selection from the load balancer (`GET /v0/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
-- Runtimes register via `/v0/runtimes`; load balancer rejects runtimes without GPUs by default.
+- Runtimes register via `/v0/runtimes`; CPU-only endpoints are also supported.
 - Heartbeats carry CPU/GPU/memory metrics used for load balancing.
 - Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
 
@@ -443,8 +443,7 @@ curl http://lb:32768/v1/responses -d '...'
 
 ```
 llmlb/
-├── common/              # Shared library (types, protocol, errors)
-├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy)
+├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy, common types)
 ├── xllm/                # C++ xLLM inference engine (llama.cpp, OpenAI-compatible /v1/*)
 ├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)

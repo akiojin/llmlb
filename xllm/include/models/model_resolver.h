@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -54,6 +55,21 @@ public:
     // Get maximum concurrent downloads (default: 1 per node)
     int getMaxConcurrentDownloads() const;
 
+    // Register explicit model path (for CLI --model option)
+    // @param model_name: Model identifier
+    // @param path: Full path to the model file
+    void registerExplicitPath(const std::string& model_name, const std::string& path);
+
+    // Register mmproj path for vision models (for CLI --mmproj option)
+    // @param model_name: Model identifier
+    // @param path: Full path to the mmproj file
+    void registerMmprojPath(const std::string& model_name, const std::string& path);
+
+    // Get registered mmproj path for a model (if any)
+    // @param model_name: Model identifier
+    // @return Path to mmproj file, or empty string if not registered
+    std::string getMmprojPath(const std::string& model_name) const;
+
 private:
     std::string local_path_;
     std::string router_url_;
@@ -66,6 +82,10 @@ private:
     mutable std::mutex download_mutex_;
     std::condition_variable download_cv_;
     std::unordered_set<std::string> active_downloads_;
+
+    // Explicit path mappings for CLI-specified models
+    std::unordered_map<std::string, std::string> explicit_paths_;
+    std::unordered_map<std::string, std::string> mmproj_paths_;
 
     // Check if model exists in local cache
     std::string findLocal(const std::string& model_name);

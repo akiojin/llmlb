@@ -1,9 +1,9 @@
 //! ダッシュボードイベントバス
 //!
-//! ノード登録・状態変化・メトリクス更新などのイベントを
+//! エンドポイント登録・状態変化・メトリクス更新などのイベントを
 //! WebSocketクライアントにブロードキャストするための基盤
 
-use crate::common::types::NodeStatus;
+use crate::types::endpoint::EndpointStatus;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -27,16 +27,16 @@ pub enum DashboardEvent {
         /// IPアドレス
         ip_address: String,
         /// ステータス
-        status: NodeStatus,
+        status: EndpointStatus,
     },
     /// ノード状態変化イベント
-    NodeStatusChanged {
+    EndpointStatusChanged {
         /// ランタイムID
         runtime_id: Uuid,
         /// 旧ステータス
-        old_status: NodeStatus,
+        old_status: EndpointStatus,
         /// 新ステータス
-        new_status: NodeStatus,
+        new_status: EndpointStatus,
     },
     /// メトリクス更新イベント
     MetricsUpdated {
@@ -119,7 +119,7 @@ mod tests {
             runtime_id: Uuid::new_v4(),
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
-            status: NodeStatus::Online,
+            status: EndpointStatus::Online,
         };
 
         bus.publish(event.clone());

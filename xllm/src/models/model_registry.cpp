@@ -32,4 +32,18 @@ void ModelRegistry::setGpuBackend(GpuBackend backend) {
     backend_ = backend;
 }
 
+void ModelRegistry::setVisionCapable(const std::string& model_name, bool capable) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (capable) {
+        vision_models_.insert(model_name);
+    } else {
+        vision_models_.erase(model_name);
+    }
+}
+
+bool ModelRegistry::hasVisionCapability(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return vision_models_.count(model_name) > 0;
+}
+
 }  // namespace xllm

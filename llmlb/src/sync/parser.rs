@@ -9,6 +9,8 @@ use serde::Deserialize;
 pub struct ParsedModel {
     /// モデルID/名前
     pub id: String,
+    /// Vision capability (image understanding)
+    pub has_vision: bool,
 }
 
 /// OpenAI形式のモデルレスポンス
@@ -80,8 +82,19 @@ pub fn parse_models_response(json: &serde_json::Value) -> (Vec<ParsedModel>, Res
     if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
         let models = data
             .iter()
-            .filter_map(|model| model.get("id").and_then(|id| id.as_str()))
-            .map(|id| ParsedModel { id: id.to_string() })
+            .filter_map(|model| {
+                let id = model.get("id").and_then(|id| id.as_str())?;
+                // Extract image_understanding capability if present
+                let has_vision = model
+                    .get("capabilities")
+                    .and_then(|caps| caps.get("image_understanding"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Some(ParsedModel {
+                    id: id.to_string(),
+                    has_vision,
+                })
+            })
             .collect();
         return (models, ResponseFormat::OpenAi);
     }
@@ -96,9 +109,12 @@ pub fn parse_models_response(json: &serde_json::Value) -> (Vec<ParsedModel>, Res
                     .get("name")
                     .and_then(|n| n.as_str())
                     .or_else(|| model.get("model").and_then(|m| m.as_str()));
-                id.filter(|s| !s.is_empty())
+                let id = id.filter(|s| !s.is_empty())?;
+                Some(ParsedModel {
+                    id: id.to_string(),
+                    has_vision: false, // Ollama doesn't report vision capability
+                })
             })
-            .map(|id| ParsedModel { id: id.to_string() })
             .collect();
         return (models, ResponseFormat::Ollama);
     }
@@ -137,7 +153,42 @@ mod tests {
         assert_eq!(format, ResponseFormat::OpenAi);
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].id, "gpt-4");
+        assert!(!models[0].has_vision);
         assert_eq!(models[1].id, "gpt-3.5-turbo");
+        assert!(!models[1].has_vision);
+    }
+
+    #[test]
+    fn test_parse_openai_format_with_vision() {
+        let json = json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "llava-v1.5-7b",
+                    "object": "model",
+                    "capabilities": {
+                        "image_understanding": true,
+                        "chat_completion": true
+                    }
+                },
+                {
+                    "id": "llama-3.1-8b",
+                    "object": "model",
+                    "capabilities": {
+                        "image_understanding": false,
+                        "chat_completion": true
+                    }
+                }
+            ]
+        });
+
+        let (models, format) = parse_models_response(&json);
+        assert_eq!(format, ResponseFormat::OpenAi);
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "llava-v1.5-7b");
+        assert!(models[0].has_vision);
+        assert_eq!(models[1].id, "llama-3.1-8b");
+        assert!(!models[1].has_vision);
     }
 
     #[test]
@@ -153,7 +204,9 @@ mod tests {
         assert_eq!(format, ResponseFormat::Ollama);
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].id, "llama3:latest");
+        assert!(!models[0].has_vision);
         assert_eq!(models[1].id, "mistral:7b");
+        assert!(!models[1].has_vision);
     }
 
     #[test]
@@ -169,6 +222,7 @@ mod tests {
         assert_eq!(format, ResponseFormat::Ollama);
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "codellama:7b");
+        assert!(!models[0].has_vision);
     }
 
     #[test]
@@ -218,6 +272,7 @@ mod tests {
         assert_eq!(format, ResponseFormat::Ollama);
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "llama3");
+        assert!(!models[0].has_vision);
     }
 
     #[test]

@@ -90,6 +90,12 @@ void ModelResolver::setSyncReporter(ModelSync* sync_reporter) {
 }
 
 std::string ModelResolver::findLocal(const std::string& model_name) {
+    // Check explicit paths first (CLI --model option)
+    auto it = explicit_paths_.find(model_name);
+    if (it != explicit_paths_.end()) {
+        return it->second;
+    }
+
     if (local_path_.empty()) return "";
 
     ModelStorage storage(local_path_);
@@ -216,6 +222,22 @@ int ModelResolver::getDownloadTimeoutMs() const {
 
 int ModelResolver::getMaxConcurrentDownloads() const {
     return max_concurrent_downloads_;
+}
+
+void ModelResolver::registerExplicitPath(const std::string& model_name, const std::string& path) {
+    explicit_paths_[model_name] = path;
+}
+
+void ModelResolver::registerMmprojPath(const std::string& model_name, const std::string& path) {
+    mmproj_paths_[model_name] = path;
+}
+
+std::string ModelResolver::getMmprojPath(const std::string& model_name) const {
+    auto it = mmproj_paths_.find(model_name);
+    if (it != mmproj_paths_.end()) {
+        return it->second;
+    }
+    return "";
 }
 
 }  // namespace xllm

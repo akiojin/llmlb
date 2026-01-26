@@ -177,6 +177,32 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         }
     });
 
+    // SPEC-f8e3a1b7: /v0/system - System info endpoint for llmlb integration
+    // Returns device information in the format expected by llmlb
+    server.Get("/v0/system", [this](const httplib::Request&, httplib::Response& res) {
+        // Build GPU devices array in llmlb-expected format
+        nlohmann::json gpu_devices_json = nlohmann::json::array();
+        for (const auto& dev : gpu_devices_) {
+            gpu_devices_json.push_back({
+                {"name", dev.name},
+                {"total_memory_bytes", dev.memory_bytes},
+                {"used_memory_bytes", dev.memory_bytes > dev.free_memory_bytes
+                    ? dev.memory_bytes - dev.free_memory_bytes : 0}
+            });
+        }
+
+        // Determine device type based on GPU availability
+        std::string device_type = gpu_devices_.empty() ? "cpu" : "gpu";
+
+        nlohmann::json body = {
+            {"device", {
+                {"device_type", device_type},
+                {"gpu_devices", gpu_devices_json}
+            }}
+        };
+        res.set_content(body.dump(), "application/json");
+    });
+
     server.Get("/metrics", [this](const httplib::Request&, httplib::Response& res) {
         auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time_).count();

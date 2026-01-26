@@ -525,7 +525,24 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
         body["object"] = "list";
         body["data"] = json::array();
         for (const auto& id : registry_.listExecutableModels()) {
-            body["data"].push_back({{"id", id}, {"object", "model"}});
+            bool has_vision = registry_.hasVisionCapability(id);
+            json model_entry = {
+                {"id", id},
+                {"object", "model"},
+                {"owned_by", "load balancer"},
+                {"capabilities", {
+                    {"chat_completion", true},
+                    {"completion", true},
+                    {"embeddings", false},
+                    {"fine_tune", false},
+                    {"image_generation", false},
+                    {"image_understanding", has_vision},
+                    {"inference", true},
+                    {"speech_to_text", false},
+                    {"text_to_speech", false}
+                }}
+            };
+            body["data"].push_back(model_entry);
         }
         setJson(res, body);
     });

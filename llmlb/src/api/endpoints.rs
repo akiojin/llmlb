@@ -208,6 +208,9 @@ pub struct EndpointResponse {
     pub notes: Option<String>,
     /// Responses API対応フラグ（SPEC-24157000）
     pub supports_responses_api: bool,
+    /// デバイス情報（SPEC-f8e3a1b7: /v0/systemから取得）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_info: Option<crate::types::endpoint::DeviceInfo>,
     /// モデル数（一覧取得時）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_count: Option<usize>,
@@ -232,6 +235,7 @@ impl From<Endpoint> for EndpointResponse {
             registered_at: ep.registered_at.to_rfc3339(),
             notes: ep.notes,
             supports_responses_api: ep.supports_responses_api,
+            device_info: ep.device_info,
             model_count: None,
             models: None,
         }

@@ -60,5 +60,9 @@ mod responses_streaming_test;
 #[path = "integration/models_api_test.rs"]
 mod models_api_test;
 
+// SPEC-f8e3a1b7: /v0/system API統合テスト
+#[path = "integration/v0_system_test.rs"]
+mod v0_system_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

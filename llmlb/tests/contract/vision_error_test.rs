@@ -1,7 +1,6 @@
 //! Contract Test: Vision Error Handling (SPEC-e03a404c)
 //!
-//! TDD RED: These tests define error handling behavior for vision API.
-//! All tests should FAIL until the vision feature is implemented.
+//! Vision API のエラーハンドリング契約テスト。
 //!
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
@@ -105,10 +104,8 @@ mod common {
 use common::{build_app, register_text_only_model};
 
 /// FR-004: Vision非対応モデルへの画像付きリクエストを400エラーで拒否
-/// TDD RED: capabilities検証が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision capability validation not yet implemented"]
 async fn test_image_request_to_non_vision_model_returns_400() {
     let common::TestApp {
         app,
@@ -178,10 +175,8 @@ async fn test_image_request_to_non_vision_model_returns_400() {
 }
 
 /// FR-008: 画像サイズ制限 (最大10MB) を超えた場合のエラー
-/// TDD RED: サイズ検証が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image size validation not yet implemented"]
 async fn test_image_size_limit_exceeded() {
     let common::TestApp { app, api_key, .. } = build_app().await;
 
@@ -247,10 +242,8 @@ async fn test_image_size_limit_exceeded() {
 }
 
 /// FR-009: 1リクエストあたりの画像枚数制限 (最大10枚)
-/// TDD RED: 枚数制限検証が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image count validation not yet implemented"]
 async fn test_image_count_limit_exceeded() {
     let common::TestApp { app, api_key, .. } = build_app().await;
 
@@ -316,10 +309,8 @@ async fn test_image_count_limit_exceeded() {
 }
 
 /// エッジケース: 不正なBase64エンコード
-/// TDD RED: Base64検証が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision base64 validation not yet implemented"]
 async fn test_invalid_base64_encoding() {
     let common::TestApp { app, api_key, .. } = build_app().await;
 
@@ -383,10 +374,8 @@ async fn test_invalid_base64_encoding() {
 }
 
 /// エッジケース: サポートされていない画像形式 (TIFF)
-/// TDD RED: 形式検証が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision image format validation not yet implemented"]
 async fn test_unsupported_image_format() {
     let common::TestApp { app, api_key, .. } = build_app().await;
 

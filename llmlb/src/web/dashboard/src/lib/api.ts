@@ -499,6 +499,74 @@ export const endpointsApi = {
     fetchWithAuth<ModelMetadata>(
       `/v0/endpoints/${id}/models/${encodeURIComponent(model)}/info`
     ),
+
+  /** Proxy chat completions to endpoint (JWT authenticated) */
+  chatCompletions: async (
+    id: string,
+    request: {
+      model: string
+      messages: Array<{ role: string; content: string | Array<unknown> }>
+      stream?: boolean
+      temperature?: number
+      max_tokens?: number
+    },
+    onChunk?: (chunk: string) => void
+  ) => {
+    const token = localStorage.getItem('jwt_token')
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    const response = await fetch(`${API_BASE}/v0/endpoints/${id}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText)
+    }
+
+    if (request.stream && onChunk) {
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            if (data === '[DONE]') continue
+            try {
+              const parsed = JSON.parse(data)
+              const content = parsed.choices?.[0]?.delta?.content
+              if (content) {
+                onChunk(content)
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+
+      return null
+    }
+
+    return response.json()
+  },
 }
 
 // Models API

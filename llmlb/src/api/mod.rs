@@ -185,6 +185,10 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/endpoints/:id/models/:model/info",
             get(endpoints::get_model_info),
+        )
+        .route(
+            "/endpoints/:id/chat/completions",
+            post(endpoints::proxy_chat_completions),
         );
 
     let endpoint_routes = if auth_disabled {

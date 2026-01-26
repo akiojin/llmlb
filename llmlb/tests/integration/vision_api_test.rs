@@ -180,7 +180,7 @@ async fn test_vision_chat_with_image_url_integration() {
     // Vision対応ノードを起動
     let node = spawn_vision_node("llava-v1.5-7b", true).await;
 
-    // NOTE: 実際のテストでは、ルーターを起動してノードを登録する必要がある
+    // NOTE: 実際のテストでは、llmlbを起動してノードを登録する必要がある
     // ここではモックノードへの直接リクエストでAPIを検証
 
     let client = Client::new();

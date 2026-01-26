@@ -17,7 +17,7 @@ MCP Playwrightツールを使用して、LLM Router PlaygroundのE2Eテストを
 
 ## Prerequisites
 
-- ルーターサーバーが `http://localhost:8080` で起動していること
+- llmlbサーバーが `http://localhost:8080` で起動していること
 - サーバーが起動していない場合は、別ターミナルで `cargo run --release -p llmlb` を実行
 
 ## Test Scenarios

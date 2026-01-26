@@ -24,12 +24,7 @@ test.describe('Dashboard Header Controls @dashboard', () => {
     expect(theme2).toBe(initialTheme);
   });
 
-  test('H-02: Playground button opens Playground in new tab', async ({ context }) => {
-    // Playground opens in a new tab, not a modal
-    const playgroundPage = await dashboard.openPlayground();
-    expect(playgroundPage.url()).toContain('playground');
-    await playgroundPage.close();
-  });
+  // H-02 は削除済み: Playgroundボタンはエンドポイント別に移行
 
   test('H-03: API Keys button opens API Keys modal', async ({ page }) => {
     // Click the API Keys button

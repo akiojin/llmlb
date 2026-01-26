@@ -80,7 +80,7 @@ pub enum LifecycleStatus {
     Pending,
     /// ダウンロード・変換中（キャッシュ処理中）
     Caching,
-    /// ルーターにキャッシュ完了（ノードがアクセス可能）
+    /// llmlbにキャッシュ完了（ノードがアクセス可能）
     Registered,
     /// エラー発生
     Error,
@@ -1028,7 +1028,7 @@ async fn compute_gpu_warnings(
 /// POST /v0/models/register - HFモデルを対応モデルに登録（メタデータのみ）
 ///
 /// 方針:
-/// - ルーターは変換・バイナリ保存を行わない
+/// - llmlbは変換・バイナリ保存を行わない
 /// - `filename` を指定するとそのアーティファクトを主として登録
 /// - 未指定の場合、リポジトリ内のアーティファクトが一意であれば自動選択
 /// - safetensors では `config.json` / `tokenizer.json` が必須

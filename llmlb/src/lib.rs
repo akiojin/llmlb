@@ -41,6 +41,9 @@ pub mod gui;
 /// 設定管理（環境変数ヘルパー）
 pub mod config;
 
+/// エンドポイントタイプ自動判別
+pub mod detection;
+
 /// JWT秘密鍵管理
 pub mod jwt_secret;
 

@@ -154,7 +154,11 @@ Task T007.1: エッジケース contract test
 ### Test
 
 - [x] [P] T030 Unit Test: config.jsonからのアーキテクチャ検出（既存: model_storage_test.cpp）
-- [ ] [P] T031 Unit Test: 未対応アーキテクチャのエラー応答
+- [x] [P] T031 Unit Test: 未対応アーキテクチャのエラー応答
+  - IsModelSupportedReturnsFalseForUnsupportedArchitecture
+  - IsModelSupportedReturnsTrueForSupportedArchitecture
+  - LoadModelUnsupportedArchitectureReturnsProperErrorFormat
+  - LoadModelRejectsUnsupportedArchitecture（既存テスト）
 
 ## 検証チェックリスト
 
@@ -164,5 +168,5 @@ Task T007.1: エッジケース contract test
 - [x] モデル不在時に1秒以内にエラーが返る (テスト: ErrorResponseWithinOneSecond)
 - [x] 外部ダウンロードが許可リストで制御されている (テスト: OriginBlockedTriggersProxyFallback)
 - [x] すべてのテストが実装より先にある (TDD RED完了)
-- [ ] **新規**: config.jsonからアーキテクチャが自動検出される
-- [ ] **新規**: 任意のHuggingFaceモデルが取得可能
+- [x] **新規**: config.jsonからアーキテクチャが自動検出される（SPEC-93536000で完了）
+- [x] **新規**: 任意のHuggingFaceモデルが取得可能（llmlb/src/api/models.rsで実装済み）

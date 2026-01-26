@@ -67,14 +67,19 @@
 - [x] 4.1 `llmlb/src/supported_models.json` を削除
 - [x] 4.2 `REGISTERED_MODELS` 定数を削除（`SUPPORTED_MODELS_JSON`, `SupportedModel`, `load_supported_models()`）
 - [x] 4.3 `/v0/models/hub` APIを登録済みモデルのみ返すよう変更
-- [ ] 4.4 Model Hub タブをUIから削除（またはエンドポイント集約表示に変更）
+- [x] 4.4 Model Hub タブをUIから削除（ModelHubTab.tsx削除、ModelsSection.tsxからModel Hubタブ削除）
 
 ### Core
 
-- [ ] 4.5 `/v1/models` をエンドポイント集約のみに変更
+- [x] 4.5 `/v1/models` をエンドポイント集約のみに変更
+  - 登録済みだがオンラインエンドポイントにないモデルは/v1/modelsに含めない（FR-6準拠）
+  - openai.rsから登録済みモデル追加部分を削除
 - [x] 4.6 モデル登録フローからsupported_models.jsonチェックを削除（登録は任意のHFモデル対応済み）
 
 ### Test
 
-- [ ] [P] 4.7 Unit Test: エンドポイント集約動作
-- [ ] [P] 4.8 Integration Test: 任意のHFモデル登録
+- [x] [P] 4.7 Unit Test: エンドポイント集約動作
+  - v1_models_aggregates_multiple_endpoints（複数エンドポイントのモデル集約）
+  - v1_models_excludes_models_not_on_endpoints（エンドポイントにないモデルは除外）
+- [x] [P] 4.8 Integration Test: 任意のHFモデル登録
+  - test_register_model_contract（任意のHFリポジトリ登録、既存テストで対応済み）

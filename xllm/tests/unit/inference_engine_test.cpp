@@ -1005,3 +1005,117 @@ TEST(TokenTimeoutTest, AbortCallbackInInferenceParamsDefaultsToNull) {
     EXPECT_EQ(params.abort_callback, nullptr);
     EXPECT_EQ(params.abort_callback_ctx, nullptr);
 }
+
+// =============================================================================
+// SPEC-48678000 T031: 未対応アーキテクチャのエラー応答テスト
+// =============================================================================
+
+TEST(InferenceEngineTest, IsModelSupportedReturnsFalseForUnsupportedArchitecture) {
+    TempDir tmp;
+    const std::string model_name = "test/unsupported-arch";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    // Create safetensors model with unknown architecture
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["UnknownCustomForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    // Register engine that only supports "llama" architecture
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "llama_engine";
+    reg.engine_version = "test";
+    reg.formats = {"safetensors"};
+    reg.architectures = {"llama"};  // Only supports llama
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("safetensors_cpp", "llama", nullptr, true, false),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    // Get the model descriptor
+    auto desc = storage.resolveDescriptor(model_name);
+    ASSERT_TRUE(desc.has_value());
+
+    // isModelSupported should return false for unsupported architecture
+    EXPECT_FALSE(engine.isModelSupported(*desc));
+}
+
+TEST(InferenceEngineTest, IsModelSupportedReturnsTrueForSupportedArchitecture) {
+    TempDir tmp;
+    const std::string model_name = "test/supported-arch";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    // Create GGUF model with llama architecture (no GPU dependency for basic support check)
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["LlamaForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.gguf") << "dummy";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    // Register engine that supports "llama" architecture with GGUF format
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "llama_engine";
+    reg.engine_version = "test";
+    reg.formats = {"gguf"};
+    reg.architectures = {"llama"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("llama_cpp", "llama", nullptr, true, false),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    // Get the model descriptor
+    auto desc = storage.resolveDescriptor(model_name);
+    ASSERT_TRUE(desc.has_value());
+
+    // isModelSupported should return true for supported architecture
+    EXPECT_TRUE(engine.isModelSupported(*desc));
+}
+
+TEST(InferenceEngineTest, LoadModelUnsupportedArchitectureReturnsProperErrorFormat) {
+    TempDir tmp;
+    const std::string model_name = "test/unknown-arch";
+    const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["MambaForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    // Register engine that only supports qwen and llama
+    auto registry = std::make_unique<EngineRegistry>();
+    EngineRegistration reg;
+    reg.engine_id = "text_engine";
+    reg.engine_version = "test";
+    reg.formats = {"safetensors"};
+    reg.architectures = {"qwen", "llama"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<RecordingEngine>("safetensors_cpp", "text", nullptr, true, false),
+        reg,
+        nullptr));
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    auto result = engine.loadModel(model_name);
+
+    // Verify error response format
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
+    // Error message should indicate architecture issue
+    EXPECT_NE(result.error_message.find("architecture"), std::string::npos);
+    // Error message should mention the model or unsupported status
+    EXPECT_FALSE(result.error_message.empty());
+}

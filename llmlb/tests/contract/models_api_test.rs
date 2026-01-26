@@ -324,7 +324,8 @@ async fn test_register_model_contract() {
 
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // /v1/models はオンラインノードの実行可能モデルのみ返すため、未登録ノードでは含まれない
+    // SPEC-6cd7f960 FR-6: /v1/models はオンラインエンドポイントの実行可能モデルのみ返す
+    // 登録しただけでエンドポイントがない場合は含まれない
     let models_res = app
         .clone()
         .oneshot(
@@ -343,8 +344,8 @@ async fn test_register_model_contract() {
         .as_array()
         .expect("'data' must be an array on /v1/models");
     assert!(
-        data.iter().any(|m| m["id"] == "test/repo"),
-        "/v1/models should include registered model without online nodes"
+        !data.iter().any(|m| m["id"] == "test/repo"),
+        "/v1/models should NOT include registered model without online endpoints (FR-6)"
     );
 
     // 重複登録は400
@@ -581,6 +582,8 @@ async fn test_delete_model_removes_from_list() {
     let storage = ModelStorage::new(db_pool.clone());
     storage.save_model(&model).await.unwrap();
 
+    // SPEC-6cd7f960 FR-6: /v1/models はオンラインエンドポイントの実行可能モデルのみ返す
+    // 登録しただけでエンドポイントがない場合は含まれない
     let models_res = app
         .clone()
         .oneshot(
@@ -598,9 +601,9 @@ async fn test_delete_model_removes_from_list() {
     assert!(
         body["data"]
             .as_array()
-            .map(|arr| arr.iter().any(|m| m["id"] == model_name))
-            .unwrap_or(false),
-        "model should appear in /v1/models even without online nodes"
+            .map(|arr| !arr.iter().any(|m| m["id"] == model_name))
+            .unwrap_or(true),
+        "model should NOT appear in /v1/models without online endpoints (FR-6)"
     );
 
     let delete_res = app

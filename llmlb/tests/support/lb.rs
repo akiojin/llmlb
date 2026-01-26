@@ -68,7 +68,7 @@ pub fn test_jwt_secret() -> String {
     "test-jwt-secret-key-for-testing-only".to_string()
 }
 
-/// ルーターサーバーをテスト用に起動する
+/// llmlbサーバーをテスト用に起動する
 #[allow(dead_code)]
 pub async fn spawn_test_lb() -> TestServer {
     // テスト用に一時ディレクトリを設定
@@ -106,7 +106,7 @@ pub async fn spawn_test_lb() -> TestServer {
     spawn_lb(app).await
 }
 
-/// 指定したルーターにノードを登録する
+/// 指定したllmlbにノードを登録する
 #[allow(dead_code)]
 pub async fn register_node(
     lb_addr: SocketAddr,
@@ -120,7 +120,7 @@ pub async fn register_node(
 /// このヘルパー関数は後方互換性のために残されていますが、
 /// 新しいテストは Endpoints API を使用してください。
 ///
-/// 指定したルーターにノードを登録する（ランタイムタイプ指定可能）
+/// 指定したllmlbにノードを登録する（ランタイムタイプ指定可能）
 /// レスポンスのボディには {"runtime_id": "...", "token": "..."} 形式が含まれます
 pub async fn register_node_with_runtimes(
     lb_addr: SocketAddr,
@@ -400,7 +400,7 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
     key_data["key"].as_str().unwrap().to_string()
 }
 
-/// ルーターサーバーをテスト用に起動する（DBプールも返す）
+/// llmlbサーバーをテスト用に起動する（DBプールも返す）
 #[allow(dead_code)]
 pub async fn spawn_test_lb_with_db() -> (TestServer, SqlitePool) {
     // テスト用に一時ディレクトリを設定

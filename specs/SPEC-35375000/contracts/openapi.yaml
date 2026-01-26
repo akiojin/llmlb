@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: LLM Router Load Optimization API
   description: |
-    ルーター負荷最適化に関連するAPI仕様。
+    llmlb負荷最適化に関連するAPI仕様。
 
     既存の `/v1/chat/completions` エンドポイントに対して、
     バックプレッシャー制御とタイムアウト処理を追加する。

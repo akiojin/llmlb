@@ -1,6 +1,6 @@
 //! エンドポイント管理API
 //!
-//! SPEC-66555000: ルーター主導エンドポイント登録システム
+//! SPEC-66555000: llmlb主導エンドポイント登録システム
 
 use crate::common::auth::{Claims, UserRole};
 use crate::db::endpoints as db;
@@ -1197,6 +1197,139 @@ pub async fn list_endpoint_models(
                 Json(ErrorResponse {
                     error: "Failed to list models".to_string(),
                     code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// POST /v0/endpoints/:id/chat/completions - エンドポイントへのチャットプロキシ
+///
+/// ダッシュボードのPlayground用。JWT認証済みユーザーが直接エンドポイントと通信できる。
+/// リクエストをそのままエンドポイントの`/v1/chat/completions`に転送する。
+pub async fn proxy_chat_completions(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    // エンドポイントを取得
+    let endpoint = match db::get_endpoint(&state.db_pool, id).await {
+        Ok(Some(ep)) => ep,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Endpoint not found".to_string(),
+                    code: "NOT_FOUND".to_string(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get endpoint for proxy: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to get endpoint".to_string(),
+                    code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // エンドポイントがオンラインか確認
+    if endpoint.status != EndpointStatus::Online {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: format!("Endpoint is not online (status: {:?})", endpoint.status),
+                code: "ENDPOINT_UNAVAILABLE".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // リクエストを転送
+    let url = format!(
+        "{}/v1/chat/completions",
+        endpoint.base_url.trim_end_matches('/')
+    );
+
+    let mut request = state
+        .http_client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .body(body.to_vec());
+
+    if let Some(ref api_key) = endpoint.api_key {
+        request = request.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let result = request
+        .timeout(Duration::from_secs(endpoint.inference_timeout_secs as u64))
+        .send()
+        .await;
+
+    match result {
+        Ok(response) => {
+            // reqwest::StatusCode -> axum::http::StatusCode
+            let status_code = StatusCode::from_u16(response.status().as_u16())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/json")
+                .to_string();
+
+            // ストリーミングレスポンスの場合
+            if content_type.contains("text/event-stream") {
+                let stream = response.bytes_stream();
+                let body = axum::body::Body::from_stream(stream);
+                return axum::response::Response::builder()
+                    .status(status_code)
+                    .header("Content-Type", "text/event-stream")
+                    .header("Cache-Control", "no-cache")
+                    .header("Connection", "keep-alive")
+                    .body(body)
+                    .unwrap()
+                    .into_response();
+            }
+
+            // 通常のJSONレスポンス
+            match response.bytes().await {
+                Ok(bytes) => axum::response::Response::builder()
+                    .status(status_code)
+                    .header("Content-Type", content_type)
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap()
+                    .into_response(),
+                Err(e) => (
+                    StatusCode::BAD_GATEWAY,
+                    Json(ErrorResponse {
+                        error: format!("Failed to read response: {}", e),
+                        code: "PROXY_ERROR".to_string(),
+                    }),
+                )
+                    .into_response(),
+            }
+        }
+        Err(e) => {
+            let error_msg = if e.is_timeout() {
+                "Request timed out".to_string()
+            } else if e.is_connect() {
+                "Failed to connect to endpoint".to_string()
+            } else {
+                format!("Proxy error: {}", e)
+            };
+
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(ErrorResponse {
+                    error: error_msg,
+                    code: "PROXY_ERROR".to_string(),
                 }),
             )
                 .into_response()

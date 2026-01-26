@@ -67,7 +67,7 @@ paths:
 
   /v0/health:
     post:
-      summary: ヘルスチェック送信（ノード→ルーター）
+      summary: ヘルスチェック送信（ノード→llmlb）
       description: `X-Node-Token` で認証し、ノード状態/メトリクスを送信する
       operationId: reportHealth
       tags:
@@ -205,7 +205,7 @@ components:
           description: ノードの OpenAI互換API ポート（`runtime_port+1`）
         node_token:
           type: string
-          description: ノード→ルーター通信用トークン（`X-Node-Token`）
+          description: ノード→llmlb通信用トークン（`X-Node-Token`）
 
     HealthCheckRequest:
       type: object

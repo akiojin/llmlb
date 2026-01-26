@@ -97,16 +97,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   const [systemPrompt, setSystemPrompt] = useState('')
   const [streamEnabled, setStreamEnabled] = useState(true)
   const [temperature, setTemperature] = useState(0.7)
-  const [maxTokens, setMaxTokens] = useState(2048)
-  const [apiKey, setApiKey] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('llmlb-api-key')
-      if (stored) return stored
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-      if (isLocal) return 'sk_debug'
-    }
-    return ''
-  })
+  const [maxTokens, setMaxTokens] = useState(16384)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -155,12 +146,6 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  // Save API key
-  const handleApiKeyChange = (value: string) => {
-    setApiKey(value)
-    localStorage.setItem('llmlb-api-key', value)
-  }
 
   // Reset chat
   const resetChat = () => {
@@ -254,96 +239,47 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
         : newMessages.map(transformMessage)
 
       if (streamEnabled) {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        }
-        if (apiKey) {
-          headers['Authorization'] = `Bearer ${apiKey}`
-        }
+        // ストリーミングモード: エンドポイントプロキシAPIを使用（JWT認証）
+        let assistantContent = ''
+        setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
-        const response = await fetch('/v1/chat/completions', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
+        await endpointsApi.chatCompletions(
+          endpointId,
+          {
             model: selectedModel,
             messages: requestMessages,
             stream: true,
             temperature,
             max_tokens: maxTokens,
-          }),
-          signal: abortControllerRef.current.signal,
-        })
-
-        if (!response.ok) {
-          throw new Error(getErrorMessage(response.status))
-        }
-
-        const reader = response.body?.getReader()
-        if (!reader) throw new Error('No response body')
-
-        const decoder = new TextDecoder()
-        let assistantContent = ''
-
-        setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n').filter((line) => line.startsWith('data: '))
-
-          for (const line of lines) {
-            const data = line.slice(6)
-            if (data === '[DONE]') continue
-
-            try {
-              const parsed = JSON.parse(data)
-              const delta = parsed.choices?.[0]?.delta?.content || ''
-              assistantContent += delta
-
-              setMessages((prev) => {
-                const updated = [...prev]
-                updated[updated.length - 1] = {
-                  role: 'assistant',
-                  content: assistantContent,
-                }
-                return updated
-              })
-            } catch {
-              // Skip invalid JSON
-            }
+          },
+          (chunk) => {
+            assistantContent += chunk
+            setMessages((prev) => {
+              const updated = [...prev]
+              updated[updated.length - 1] = {
+                role: 'assistant',
+                content: assistantContent,
+              }
+              return updated
+            })
           }
-        }
+        )
       } else {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        }
-        if (apiKey) {
-          headers['Authorization'] = `Bearer ${apiKey}`
-        }
-
-        const response = await fetch('/v1/chat/completions', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
+        // 非ストリーミングモード: エンドポイントプロキシAPIを使用（JWT認証）
+        const data = await endpointsApi.chatCompletions(
+          endpointId,
+          {
             model: selectedModel,
             messages: requestMessages,
             stream: false,
             temperature,
             max_tokens: maxTokens,
-          }),
-          signal: abortControllerRef.current.signal,
-        })
+          }
+        )
 
-        if (!response.ok) {
-          throw new Error(getErrorMessage(response.status))
-        }
-
-        const data = await response.json()
         const assistantMessage: Message = {
           role: 'assistant',
-          content: data.choices?.[0]?.message?.content || '',
+          content: data?.choices?.[0]?.message?.content || '',
         }
 
         setMessages((prev) => [...prev, assistantMessage])
@@ -370,16 +306,16 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
     setIsStreaming(false)
   }
 
-  // Generate cURL command
+  // Generate cURL command (エンドポイントに直接リクエスト)
   const generateCurl = () => {
     const requestMessages = systemPrompt
       ? [{ role: 'system', content: systemPrompt }, ...messages]
       : messages
 
-    const authHeader = apiKey ? `\n  -H 'Authorization: Bearer ${apiKey}' \\` : ''
+    const baseUrl = endpoint?.base_url?.replace(/\/$/, '') || 'http://localhost:11434'
 
-    return `curl -X POST 'http://localhost:32768/v1/chat/completions' \\
-  -H 'Content-Type: application/json' \\${authHeader}
+    return `curl -X POST '${baseUrl}/v1/chat/completions' \\
+  -H 'Content-Type: application/json' \\
   -d '${JSON.stringify(
     {
       model: selectedModel,
@@ -790,19 +726,6 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>API Key</Label>
-              <Input
-                type="password"
-                placeholder="sk-..."
-                value={apiKey}
-                onChange={(e) => handleApiKeyChange(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Required for OpenAI compatible API authentication
-              </p>
-            </div>
-            <Separator />
             <div className="space-y-2">
               <Label>System Prompt</Label>
               <Textarea

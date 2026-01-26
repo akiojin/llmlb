@@ -21,7 +21,6 @@ import {
   Sun,
   User,
   Users,
-  MessageSquare,
   RefreshCw,
   Ticket,
 } from 'lucide-react'
@@ -44,10 +43,6 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
   const handleRefresh = () => {
     setIsRefreshing(true)
     window.location.reload()
-  }
-
-  const openPlayground = () => {
-    window.open('/dashboard/playground.html', '_blank')
   }
 
   return (
@@ -100,18 +95,6 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            {/* Playground Button */}
-            <Button
-              id="chat-open"
-              variant="outline"
-              size="sm"
-              onClick={openPlayground}
-              className="hidden sm:inline-flex"
-            >
-              <MessageSquare className="mr-2 h-4 w-4" />
-              Playground
-            </Button>
-
             {/* API Keys Button */}
             <Button
               id="api-keys-button"
@@ -165,13 +148,6 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
                 <DropdownMenuSeparator />
 
                 {/* Mobile-only items */}
-                <DropdownMenuItem
-                  onClick={openPlayground}
-                  className="sm:hidden"
-                >
-                  <MessageSquare className="mr-2 h-4 w-4" />
-                  Playground
-                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setApiKeyModalOpen(true)}
                   className="sm:hidden"

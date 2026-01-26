@@ -18,7 +18,7 @@ paths:
       summary: チャット完了リクエスト
       description: |
         OpenAI互換のチャット完了API。
-        ルーターが自動的に最適なノードを選択してリクエストを転送する。
+        llmlbが自動的に最適なノードを選択してリクエストを転送する。
       operationId: createChatCompletion
       tags:
         - Chat

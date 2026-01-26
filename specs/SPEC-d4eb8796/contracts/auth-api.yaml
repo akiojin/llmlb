@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: ルーター認証API
+  title: llmlb認証API
   description: ユーザー認証とセッション管理API
   version: 1.0.0
 

@@ -679,7 +679,7 @@ async fn prepare_vision_payload(
         .await
         .map_err(|err| openai_error_response(err.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
     let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
-        // 未登録モデル（クラウド等）はルーター側の検証をスキップ
+        // 未登録モデル（クラウド等）はllmlb側の検証をスキップ
         return Ok(payload);
     };
     if !model_info.has_capability(ModelCapability::Vision) {

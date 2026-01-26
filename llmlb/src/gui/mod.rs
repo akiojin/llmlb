@@ -2,5 +2,5 @@
 
 #![cfg(any(target_os = "windows", target_os = "macos"))]
 
-/// ルーター用システムトレイ機能。
+/// llmlb用システムトレイ機能。
 pub mod tray;

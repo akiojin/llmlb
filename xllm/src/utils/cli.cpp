@@ -52,9 +52,12 @@ std::string getServeHelpMessage() {
     oss << "    xllm serve [OPTIONS]\n";
     oss << "\n";
     oss << "OPTIONS:\n";
-    oss << "    --port <PORT>    Server port (default: 32769, or XLLM_PORT)\n";
-    oss << "    --host <HOST>    Bind address (default: 0.0.0.0)\n";
-    oss << "    -h, --help       Print help\n";
+    oss << "    --port <PORT>         Server port (default: 32769, or XLLM_PORT)\n";
+    oss << "    --host <HOST>         Bind address (default: 0.0.0.0)\n";
+    oss << "    --model <PATH>        Path to model file (e.g., model.gguf)\n";
+    oss << "    --mmproj <PATH>       Path to multimodal projector for vision models\n";
+    oss << "    --ctx-size <SIZE>     Context size (default: 2048)\n";
+    oss << "    -h, --help            Print help\n";
     oss << "\n";
     oss << "ENVIRONMENT VARIABLES:\n";
     oss << "    XLLM_PORT                HTTP server port (default: 32769)\n";
@@ -314,6 +317,12 @@ CliResult parseCliArgs(int argc, char* argv[]) {
                 result.serve_options.port = static_cast<uint16_t>(std::stoi(argv[++i]));
             } else if (std::strcmp(argv[i], "--host") == 0 && i + 1 < argc) {
                 result.serve_options.host = argv[++i];
+            } else if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
+                result.serve_options.model = argv[++i];
+            } else if (std::strcmp(argv[i], "--mmproj") == 0 && i + 1 < argc) {
+                result.serve_options.mmproj = argv[++i];
+            } else if (std::strcmp(argv[i], "--ctx-size") == 0 && i + 1 < argc) {
+                result.serve_options.ctx_size = std::stoi(argv[++i]);
             }
         }
         return result;

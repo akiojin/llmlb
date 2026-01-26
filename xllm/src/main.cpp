@@ -339,6 +339,29 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
                 }
                 initial_models.push_back(desc.name);
             }
+
+            // Register CLI-specified model if provided
+            if (!cfg.cli_model_path.empty()) {
+                std::filesystem::path model_p(cfg.cli_model_path);
+                if (std::filesystem::exists(model_p)) {
+                    std::string model_name = model_p.stem().string();
+                    // Avoid duplicates
+                    if (std::find(initial_models.begin(), initial_models.end(), model_name) == initial_models.end()) {
+                        initial_models.push_back(model_name);
+                        spdlog::info("Registered CLI model: {} ({})", model_name, cfg.cli_model_path);
+                    }
+                    // Register model path mapping in model resolver
+                    model_resolver->registerExplicitPath(model_name, cfg.cli_model_path);
+                    // If mmproj is specified, register it as well
+                    if (!cfg.cli_mmproj_path.empty() && std::filesystem::exists(cfg.cli_mmproj_path)) {
+                        model_resolver->registerMmprojPath(model_name, cfg.cli_mmproj_path);
+                        spdlog::info("Registered CLI mmproj for {}: {}", model_name, cfg.cli_mmproj_path);
+                    }
+                } else {
+                    spdlog::warn("CLI model path does not exist: {}", cfg.cli_model_path);
+                }
+            }
+
             registry.setModels(initial_models);
             spdlog::info("Model scan: found {} supported models out of {} total",
                          initial_models.size(), local_descriptors.size());
@@ -705,6 +728,15 @@ int main(int argc, char* argv[]) {
             }
             if (!cli_result.serve_options.host.empty()) {
                 cfg.bind_address = cli_result.serve_options.host;
+            }
+            if (!cli_result.serve_options.model.empty()) {
+                cfg.cli_model_path = cli_result.serve_options.model;
+            }
+            if (!cli_result.serve_options.mmproj.empty()) {
+                cfg.cli_mmproj_path = cli_result.serve_options.mmproj;
+            }
+            if (cli_result.serve_options.ctx_size > 0) {
+                cfg.cli_ctx_size = cli_result.serve_options.ctx_size;
             }
             return run_node(cfg, /*single_iteration=*/false);
         }

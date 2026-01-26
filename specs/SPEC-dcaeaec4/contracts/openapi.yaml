@@ -3,7 +3,7 @@ info:
   title: LLM-Router Model Storage API
   description: |
     モデルストレージ管理API。
-    ルーターは登録メタデータとマニフェストのみを提供し、
+    llmlbは登録メタデータとマニフェストのみを提供し、
     モデルバイナリはNodeが外部ソースから直接取得する。
   version: 1.0.0
 

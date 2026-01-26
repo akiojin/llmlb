@@ -435,7 +435,7 @@ Router (OpenAI-compatible)
 
 ### モデル同期（push配布なし）
 
-- ルーターからランタイムへの push 配布は行いません。
+- llmlbからランタイムへの push 配布は行いません。
 - ランタイムはモデルをオンデマンドで次の順に解決します。
   - ローカルキャッシュ（`LLM_RUNTIME_MODELS_DIR`）
   - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_RUNTIME_ORIGIN_ALLOWLIST`）
@@ -459,7 +459,7 @@ Router (OpenAI-compatible)
 - プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
 
 ### ポート競合で起動しない
-- ルーター: `LLMLB_PORT` を変更（例: `LLMLB_PORT=18080`）
+- llmlb: `LLMLB_PORT` を変更（例: `LLMLB_PORT=18080`）
 - ランタイム: `LLM_RUNTIME_PORT` または `--port` で変更
 
 ### SQLite ファイル作成に失敗

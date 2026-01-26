@@ -17,7 +17,7 @@ paths:
     post:
       summary: ハートビート送信
       description: |
-        ノードからルーターへのハートビート送信。
+        ノードからllmlbへのハートビート送信。
         メトリクス情報を含めて送信し、ノードの生存を通知する。
       operationId: sendHeartbeat
       tags:

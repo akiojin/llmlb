@@ -67,7 +67,7 @@ pub async fn get_lb_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRespon
 /// # 廃止予定
 ///
 /// このAPIは廃止予定です。ノードベースのログ取得はエンドポイントベースに移行されます。
-/// エンドポイントが `/v0/logs` を提供している場合、ルーターはそこにリクエストを転送します。
+/// エンドポイントが `/v0/logs` を提供している場合、llmlbはそこにリクエストを転送します。
 #[deprecated(note = "Use endpoint-based log fetching instead. Node-based routing is deprecated.")]
 #[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_node_logs(

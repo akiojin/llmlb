@@ -51,7 +51,7 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
     "/dashboard_assets_build_stamp.txt"
 ));
 
-/// APIルーターを作成
+/// APIllmlbを作成
 #[allow(deprecated)] // NodeRegistry migration in progress - legacy APIs still registered
 pub fn create_app(state: AppState) -> Router {
     let auth_disabled = crate::config::is_auth_disabled();

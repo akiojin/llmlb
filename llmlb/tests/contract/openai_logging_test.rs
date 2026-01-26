@@ -113,7 +113,7 @@ async fn test_node_selection_failure_returns_error() {
 #[tokio::test]
 #[serial]
 async fn test_node_selection_failure_saves_request_history() {
-    // spawn_test_lb_with_db()でルーターとDBプールを取得
+    // spawn_test_lb_with_db()でllmlbとDBプールを取得
     let (lb, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
 

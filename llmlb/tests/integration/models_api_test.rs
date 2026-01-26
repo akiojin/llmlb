@@ -87,7 +87,7 @@ async fn v1_models_includes_supported_apis_field() {
     };
     let stub = spawn_model_node(node_state).await;
 
-    // ルーターを起動
+    // llmlbを起動
     let lb = spawn_test_lb().await;
 
     // エンドポイントを登録（支援関数を使用）
@@ -152,7 +152,7 @@ async fn v1_models_excludes_responses_api_for_non_supporting_endpoint() {
     };
     let stub = spawn_model_node(node_state).await;
 
-    // ルーターを起動
+    // llmlbを起動
     let lb = spawn_test_lb().await;
 
     // エンドポイントを登録

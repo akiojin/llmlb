@@ -188,7 +188,7 @@ async fn speech_with_optional_params() {
 #[tokio::test]
 #[serial]
 async fn speech_empty_input_returns_400() {
-    // ノードを登録しなくても400を返すことを検証（入力検証はルーター側で行う）
+    // ノードを登録しなくても400を返すことを検証（入力検証はllmlb側で行う）
     let coordinator = spawn_test_lb().await;
 
     let client = Client::new();
@@ -264,7 +264,7 @@ async fn speech_no_available_node_returns_503() {
 #[tokio::test]
 #[serial]
 async fn speech_input_too_long_returns_400() {
-    // ノードを登録しなくても400を返すことを検証（入力検証はルーター側で行う）
+    // ノードを登録しなくても400を返すことを検証（入力検証はllmlb側で行う）
     let coordinator = spawn_test_lb().await;
 
     // 4097文字のテキスト

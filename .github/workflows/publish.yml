@@ -27,6 +27,7 @@ jobs:
       RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
       RELEASE_VERSION: ${{ (github.event.inputs.release_tag != '' && github.event.inputs.release_tag) || github.ref_name }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -208,13 +209,17 @@ jobs:
             Write-Error "Release version is not available."
             exit 1
           }
+          # MSI only supports x.x.x.x format - strip prerelease suffix
+          # e.g., "3.0.0-alpha.4" -> "3.0.0.0"
+          $msiVersion = $version -replace '-.*$', '.0'
+          Write-Host "Original version: $version, MSI version: $msiVersion"
           $binaryDir = Join-Path $PWD "target/${{ matrix.target }}/release"
           $lbWxs = Join-Path $PWD "installers/windows/llmlb.wxs"
           $lbObj = "llmlb.wixobj"
           $lbMsi = "llmlb-${{ matrix.artifact }}.msi"
           $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
           $env:PATH = "$wixPath;$env:PATH"
-          candle.exe $lbWxs -out $lbObj -dBinariesDir="$binaryDir" -dProductVersion="$version"
+          candle.exe $lbWxs -out $lbObj -dBinariesDir="$binaryDir" -dProductVersion="$msiVersion"
           light.exe $lbObj -out $lbMsi -sice:ICE03
           "lb_msi=$lbMsi" >> $env:GITHUB_OUTPUT
 

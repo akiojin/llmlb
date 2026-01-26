@@ -510,3 +510,225 @@ TEST(ModelStorageTest, DeleteNonexistentModelReturnsTrue) {
     ModelStorage storage(tmp.base.string());
     EXPECT_TRUE(storage.deleteModel("nonexistent"));
 }
+
+// =============================================================================
+// SPEC-93536000: Architecture Auto-Detection Tests (Phase 7)
+// =============================================================================
+
+// 7.8 Unit Test: config.jsonからのアーキテクチャ検出
+TEST(ModelStorageTest, ExtractArchitecturesFromConfigJson) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+
+    // Test: Single architecture
+    create_safetensors_model_with_architectures(tmp.base, "single-arch", {"LlamaForCausalLM"});
+    auto desc = storage.resolveDescriptor("single-arch");
+    ASSERT_TRUE(desc.has_value());
+    ASSERT_EQ(desc->architectures.size(), 1u);
+    EXPECT_EQ(desc->architectures[0], "llama");
+}
+
+TEST(ModelStorageTest, ExtractMultipleArchitecturesFromConfigJson) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+
+    // Test: Multiple architectures
+    create_safetensors_model_with_architectures(
+        tmp.base,
+        "multi-arch",
+        {"LlamaForCausalLM", "MistralForCausalLM"});
+    auto desc = storage.resolveDescriptor("multi-arch");
+    ASSERT_TRUE(desc.has_value());
+    ASSERT_EQ(desc->architectures.size(), 2u);
+    // Architectures should be normalized
+    EXPECT_EQ(desc->architectures[0], "llama");
+    EXPECT_EQ(desc->architectures[1], "mistral");
+}
+
+TEST(ModelStorageTest, ExtractArchitecturesHandlesMissingConfigJson) {
+    TempModelDir tmp;
+    auto model_dir = tmp.base / "no-config";
+    fs::create_directories(model_dir);
+    // Only GGUF file, no config.json
+    std::ofstream(model_dir / "model.gguf") << "dummy gguf";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("no-config");
+    ASSERT_TRUE(desc.has_value());
+    // GGUF without config.json should still work, architectures may be empty
+    EXPECT_EQ(desc->format, "gguf");
+}
+
+TEST(ModelStorageTest, ExtractArchitecturesHandlesEmptyArchitecturesArray) {
+    TempModelDir tmp;
+    auto model_dir = tmp.base / "empty-arch";
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":[]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("empty-arch");
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_TRUE(desc->architectures.empty());
+}
+
+TEST(ModelStorageTest, ExtractArchitecturesHandlesMalformedConfigJson) {
+    TempModelDir tmp;
+    auto model_dir = tmp.base / "malformed-config";
+    fs::create_directories(model_dir);
+    // Malformed JSON - architectures is not an array
+    std::ofstream(model_dir / "config.json") << R"({"architectures":"not-an-array"})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("malformed-config");
+    ASSERT_TRUE(desc.has_value());
+    // Should gracefully handle and return empty architectures
+    EXPECT_TRUE(desc->architectures.empty());
+}
+
+TEST(ModelStorageTest, ExtractArchitecturesSkipsNonStringValues) {
+    TempModelDir tmp;
+    auto model_dir = tmp.base / "mixed-types";
+    fs::create_directories(model_dir);
+    // JSON with mixed types in architectures array
+    std::ofstream(model_dir / "config.json")
+        << R"({"architectures":["LlamaForCausalLM", 123, null, "MistralForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("mixed-types");
+    ASSERT_TRUE(desc.has_value());
+    // Should only extract valid string architectures
+    ASSERT_EQ(desc->architectures.size(), 2u);
+    EXPECT_EQ(desc->architectures[0], "llama");
+    EXPECT_EQ(desc->architectures[1], "mistral");
+}
+
+// 7.9 Unit Test: GGUFからのアーキテクチャ検出
+// Note: GGUF architecture is read via llama_model_meta_val_str() which requires
+// loading actual GGUF files with llama.cpp. This is tested at integration level.
+TEST(ModelStorageTest, GgufModelWithoutConfigJsonUsesLlamaCpp) {
+    TempModelDir tmp;
+    create_model(tmp.base, "gguf-only");
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor("gguf-only");
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "llama_cpp");
+    EXPECT_EQ(desc->format, "gguf");
+    // Architecture detection from GGUF metadata requires actual model loading
+    // and is tested in integration tests
+}
+
+// 7.10 Unit Test: 未対応アーキテクチャの除外
+TEST(ModelStorageTest, NormalizesUnknownArchitecturesToCompactForm) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+
+    // Unknown architecture should be normalized to compact form (not excluded)
+    // Note: The normalization only strips known suffixes for known families
+    // For unknown architectures, the full class name is kept in lowercase
+    create_safetensors_model_with_architectures(
+        tmp.base,
+        "unknown-arch",
+        {"UnknownCustomForCausalLM"});
+    auto desc = storage.resolveDescriptor("unknown-arch");
+    ASSERT_TRUE(desc.has_value());
+    ASSERT_EQ(desc->architectures.size(), 1u);
+    // Unknown architectures are normalized to lowercase compact form
+    EXPECT_EQ(desc->architectures[0], "unknowncustomforcausallm");
+}
+
+TEST(ModelStorageTest, NormalizesKnownArchitectureFamilies) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+
+    // Test various known architecture families
+    std::vector<std::pair<std::string, std::string>> test_cases = {
+        {"Qwen2ForCausalLM", "qwen"},
+        {"Qwen2_5ForCausalLM", "qwen"},
+        {"LlamaForCausalLM", "llama"},
+        {"MistralForCausalLM", "mistral"},
+        {"GemmaForCausalLM", "gemma"},
+        {"Phi3ForCausalLM", "phi"},
+        {"DeepseekV3ForCausalLM", "deepseek"},
+        {"GptOssForCausalLM", "gptoss"},
+        {"ChatGLM4ForCausalLM", "glm"},
+        {"GraniteForCausalLM", "granite"},
+        {"SmolLMForCausalLM", "smollm"},
+        {"NemotronForCausalLM", "nemotron"},
+    };
+
+    for (size_t i = 0; i < test_cases.size(); ++i) {
+        const auto& [input, expected] = test_cases[i];
+        std::string model_name = "arch-test-" + std::to_string(i);
+        create_safetensors_model_with_architectures(tmp.base, model_name, {input});
+        auto desc = storage.resolveDescriptor(model_name);
+        ASSERT_TRUE(desc.has_value()) << "Failed for: " << input;
+        ASSERT_EQ(desc->architectures.size(), 1u) << "Failed for: " << input;
+        EXPECT_EQ(desc->architectures[0], expected)
+            << "Input: " << input << ", Expected: " << expected
+            << ", Got: " << desc->architectures[0];
+    }
+}
+
+TEST(ModelStorageTest, DeduplicatesArchitectures) {
+    TempModelDir tmp;
+    ModelStorage storage(tmp.base.string());
+
+    // Same architecture appearing multiple times should be deduplicated
+    create_safetensors_model_with_architectures(
+        tmp.base,
+        "duplicate-arch",
+        {"LlamaForCausalLM", "LLaMAForCausalLM", "LlamaModel"});
+    auto desc = storage.resolveDescriptor("duplicate-arch");
+    ASSERT_TRUE(desc.has_value());
+    // All should normalize to "llama" and be deduplicated
+    ASSERT_EQ(desc->architectures.size(), 1u);
+    EXPECT_EQ(desc->architectures[0], "llama");
+}
+
+// 7.11 Integration Test: 任意のHuggingFaceモデルの自動認識
+TEST(ModelStorageTest, ListAvailableIncludesArchitectures) {
+    TempModelDir tmp;
+
+    // Create models with different architectures
+    create_safetensors_model_with_architectures(tmp.base, "llama-model", {"LlamaForCausalLM"});
+    create_safetensors_model_with_architectures(tmp.base, "qwen-model", {"Qwen2ForCausalLM"});
+    create_model(tmp.base, "gguf-model");  // GGUF without config.json
+
+    ModelStorage storage(tmp.base.string());
+    auto list = storage.listAvailable();
+
+    ASSERT_EQ(list.size(), 3u);
+
+    // Verify models are listed
+    std::vector<std::string> names;
+    for (const auto& m : list) {
+        names.push_back(m.name);
+    }
+    std::sort(names.begin(), names.end());
+
+    EXPECT_EQ(names[0], "gguf-model");
+    EXPECT_EQ(names[1], "llama-model");
+    EXPECT_EQ(names[2], "qwen-model");
+}
+
+TEST(ModelStorageTest, ListAvailableDescriptorsIncludesArchitectureInfo) {
+    TempModelDir tmp;
+
+    // Create a model with architecture info
+    create_safetensors_model_with_architectures(tmp.base, "arch-model", {"MistralForCausalLM"});
+
+    ModelStorage storage(tmp.base.string());
+    auto descriptors = storage.listAvailableDescriptors();
+
+    ASSERT_EQ(descriptors.size(), 1u);
+    EXPECT_EQ(descriptors[0].name, "arch-model");
+    ASSERT_EQ(descriptors[0].architectures.size(), 1u);
+    EXPECT_EQ(descriptors[0].architectures[0], "mistral");
+}

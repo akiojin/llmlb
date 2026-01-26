@@ -54,9 +54,9 @@ async function fetchWithAuth<T>(
   }
 
   const token = getToken()
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   }
 
   if (token) {
@@ -428,6 +428,17 @@ export const endpointsApi = {
     fetchWithAuth<{ synced_models: number }>(`/v0/endpoints/${id}/sync`, {
       method: 'POST',
     }),
+
+  /** Get endpoint models */
+  getModels: (id: string) =>
+    fetchWithAuth<{
+      endpoint_id: string
+      models: Array<{
+        model_id: string
+        capabilities?: string[]
+        last_checked?: string
+      }>
+    }>(`/v0/endpoints/${id}/models`),
 }
 
 // Models API
@@ -544,43 +555,12 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
   }
 }
 
-// NOTE: AvailableModelView, AvailableModelsResponse, ConvertTask は廃止
-// HFカタログは直接 https://huggingface.co を参照
+// NOTE: Model Hub機能は廃止されました
+// モデル管理はエンドポイント側の責任（ゲートウェイ設計方針）
 // ダウンロード状態は /v1/models の lifecycle_status で確認
 
-// SPEC-6cd7f960: 対応モデル定義
-export interface SupportedModel {
-  id: string
-  name: string
-  description: string
-  repo: string
-  recommended_filename: string
-  size_bytes: number
-  required_memory_bytes: number
-  tags: string[]
-  capabilities: string[]
-  quantization?: string
-  parameter_count?: string
-}
-
-// SPEC-6cd7f960: HuggingFace動的情報
-export interface HfInfo {
-  downloads?: number
-  likes?: number
-}
-
-// SPEC-6cd7f960: モデル状態
-export type ModelStatus = 'available' | 'downloading' | 'downloaded'
-
-// SPEC-6cd7f960: 対応モデル + 状態
-export interface ModelWithStatus extends SupportedModel {
-  status: ModelStatus
-  lifecycle_status?: LifecycleStatus
-  download_progress?: DownloadProgress | null
-  hf_info?: HfInfo
-}
-
 export const modelsApi = {
+  /** OpenAI互換の登録済みモデル一覧を取得 */
   getRegistered: async (): Promise<RegisteredModelView[]> => {
     // /v1/models - OpenAI-compatible model list (includes lifecycle_status)
     // Requires API key auth, using API key from localStorage
@@ -600,32 +580,6 @@ export const modelsApi = {
     // Convert from OpenAI format to RegisteredModelView format
     return json.data.map(toRegisteredModelView)
   },
-
-  getHub: () => fetchWithAuth<ModelWithStatus[]>('/v0/models/hub'),
-
-  register: (data: {
-    repo: string
-    filename?: string
-    display_name?: string
-    chat_template?: string
-  }) =>
-    fetchWithAuth<unknown>('/v0/models/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  discoverGguf: (model: string) =>
-    fetchWithAuth<DiscoverGgufResponse>('/v0/models/discover-gguf', {
-      method: 'POST',
-      body: JSON.stringify({ model }),
-    }),
-
-  delete: (modelName: string) =>
-    fetchWithAuth<void>(`/v0/models/${encodeURIComponent(modelName)}`, {
-      method: 'DELETE',
-    }),
-
-  // ダウンロード状態は getRegistered の lifecycle_status で確認
 }
 
 // API Keys API

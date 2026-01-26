@@ -69,6 +69,15 @@
 - [x] **PR作成権限**
 - [x] **GitHub Actions** が有効
 
+## LLM前提の運用ルール
+
+- すべての操作は LLM（Claude Code / Codex CLI など）が実行する前提で、
+  手順はコマンド単位で完結させる
+- リリース開始は `/release` または `./scripts/prepare-release.sh` のみで開始し、
+  手動のタグ作成やバージョン編集は行わない
+- 進捗確認は `gh` の run / pr / release コマンドで行い、URL・PR番号・タグを必ず記録する
+- 失敗時は再実行より先に原因を特定し、workflow のログを確認してから再試行する
+
 ## シナリオ1: 日常開発とアルファ版リリース
 
 **所要時間**: 5分以内でアルファ版リリース完了
@@ -150,7 +159,7 @@ cat CHANGELOG.md
 - ✅ アルファ版リリース（v1.2.3-alpha.N）が作成される
 - ✅ CHANGELOG.md が自動更新される
 - ✅ Cargo.toml のバージョンが更新される
-- ❌ バイナリは添付されない（developブランチでは省略）
+- ℹ️ アルファ版は prerelease として公開される（タグ v1.2.3-alpha.N）
 
 ## シナリオ2: 正式リリースの開始
 
@@ -170,7 +179,7 @@ gh release list
 cat CHANGELOG.md
 ```
 
-### 2. リリースブランチ作成（/releaseコマンド使用）
+### 2. リリース準備の開始（/releaseコマンド使用）
 
 **Claude Codeを使用する場合**:
 
@@ -181,47 +190,50 @@ cat CHANGELOG.md
 **または直接スクリプト実行**:
 
 ```bash
-./scripts/create-release-branch.sh
+./scripts/prepare-release.sh
 
 # 実行内容:
 # ✅ gh / 認証状態を確認
-# ✅ create-release.yml をトリガー
-# ✅ semantic-releaseのドライランで次バージョンを算出
-# ✅ release/vX.Y.Z ブランチを作成してpush
-
-# 出力例:
-# ✓ Release branch created
-# Branch : release/v1.3.0
-# Version: v1.3.0
-# → releaseブランチのpushを契機に release.yml が起動します
+# ✅ prepare-release.yml を develop で実行
+# ✅ develop → main のリリースPRを作成
 ```
 
-### 3. release.yml による自動マージ
+**リリースPRの確認とマージ**:
 
 ```bash
-# releaseブランチがpushされると release.yml が自動実行
-# 1. semantic-release: バージョン計算、タグ・CHANGELOG・Cargo.toml更新
-# 2. mainへの自動マージ (--no-ff)
-# 3. developへのバックマージ
-# 4. releaseブランチ削除
+# PRを確認
+gh pr list --base main --head develop
+gh pr view <PR_NUMBER>
+
+# auto-mergeが設定されていない場合は手動でマージ
+gh pr merge <PR_NUMBER> --merge --admin
+```
+
+### 3. release.yml による自動リリース
+
+```bash
+# PRがmainにマージされると release.yml が自動実行
+# 1. semantic-release: バージョン計算、タグ作成、CHANGELOG更新
+# 2. GitHub Release 作成（xllmアセット添付）
 
 # 進捗確認（例）
-gh run watch \$(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-
-# すべてのステップ完了で main / develop が最新バージョンに揃います
+gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 ```
 
 ### 4. publish.yml でのバイナリ添付と確認
 
 ```bash
-# mainへのマージと同時に publish.yml が自動実行（20-30分）
-# 1. 最新タグを検出
-# 2. release-binaries.yml を呼び出し、5プラットフォームのバイナリをビルド
+# release.yml が vX.Y.Z タグを作成すると publish.yml が自動実行（20-30分）
+# 1. llmlb バイナリをビルド
+# 2. 各OS向けアーカイブ/インストーラを作成
 #    - Linux x86_64
 #    - Windows x86_64
 #    - macOS x86_64
 #    - macOS ARM64
-# 3. 生成物をGitHub Releaseへ添付
+# 3. 生成物を GitHub Release へ添付
+
+# 進捗確認（例）
+gh run watch $(gh run list --workflow=publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 
 # リリースを確認
 gh release view v1.3.0
@@ -239,7 +251,7 @@ cat CHANGELOG.md
 **期待結果**:
 
 - ✅ 正式版リリース（v1.3.0形式）が作成される
-- ✅ 5プラットフォームのバイナリが添付される
+- ✅ 4プラットフォームのアーカイブとインストーラが添付される
 - ✅ CHANGELOG.md が更新される
 - ✅ Cargo.toml のバージョンが更新される
 
@@ -364,8 +376,7 @@ gh release view v1.2.4
 **期待結果**:
 
 - ✅ パッチ版リリース（v1.2.4形式）が作成される
-- ✅ 5プラットフォームのバイナリが添付される
-- ✅ mainとdevelopが同期される（自動）
+- ✅ 4プラットフォームのアーカイブとインストーラが添付される
 
 ## トラブルシューティング
 
@@ -413,33 +424,33 @@ git push --force-with-lease
 
 ### Q3. バイナリがリリースに添付されない
 
-**原因**: developブランチではアルファ版のみ（バイナリなし）
+**原因**: publish.yml が失敗した、またはタグが作成されていない
 
 **解決策**:
 
 ```bash
-# 正式版のバイナリが必要な場合は release ブランチ経由で実行
+# タグとリリースの存在を確認
+gh release view vX.Y.Z
 
-./scripts/create-release-branch.sh
-# → create-release.yml → release.yml → publish.yml が自動で動作
-# → publish.yml が GitHub Release にバイナリを添付
+# publish.yml の最新実行を確認
+gh run list --workflow=publish.yml --limit 3
+
+# 必要なら手動で実行（タグを指定）
+gh workflow run publish.yml -f release_tag=vX.Y.Z
 ```
 
-### Q4. create-release-branch.sh が "release/vX.Y.Z が既に存在" エラー
+### Q4. prepare-release.yml がPRを作成しない / 既存PRがある
 
-**原因**: 同名の release ブランチが既に作成済み
+**原因**: 既に develop → main のPRが存在する、または権限不足
 
 **解決策**:
 
 ```bash
-# 現在のreleaseブランチを確認
-git branch -r | grep 'origin/release/'
+# 既存PRを確認
+gh pr list --base main --head develop
 
-# 不要なブランチがあれば削除（メンテナのみ実施）
-git push origin --delete release/v1.3.0
-
-# または既存のワークフロー完了を待ってから再実行
-./scripts/create-release-branch.sh
+# PRがない場合はワークフローのログを確認
+gh run list --workflow=prepare-release.yml --limit 3
 ```
 
 ### Q5. ホットフィックスブランチ作成失敗
@@ -776,4 +787,4 @@ git push origin --delete hotfix/fix-critical-bug
 
 ---
 
-*クイックスタートガイド - 最終更新: 2025-11-06 (v1.0.0リリース成功、ホットフィックス手順追加)*
+*クイックスタートガイド - 最終更新: 2026-01-26 (LLM前提フローへ更新)*

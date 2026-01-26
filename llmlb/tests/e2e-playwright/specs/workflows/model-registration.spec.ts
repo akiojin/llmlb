@@ -95,32 +95,45 @@ test.describe('Model Registration Workflow', () => {
   });
 
   test.describe('UI Register', () => {
-    test('Dashboard shows Model Hub tab', async ({ page }) => {
+    // NOTE: Model Hub タブは SPEC-6cd7f960 により廃止されました
+    // supported_models.json が廃止され、エンドポイント側でモデル認識を行う方針に変更
+    // 以下は Local タブでの登録ダイアログを使用するテストに変更
+
+    test('Dashboard shows Local tab and Register button', async ({ page }) => {
       await ensureDashboardLogin(page);
 
       // Navigate to Models tab
       await page.click('button[role="tab"]:has-text("Models")');
       await page.waitForTimeout(500);
 
-      // Verify Model Hub tab exists
-      const hubTab = page.locator('button[role="tab"]:has-text("Model Hub")');
-      await expect(hubTab).toBeVisible();
+      // Verify Local tab is active (default) and Register button exists
+      const localTab = page.locator('button[role="tab"]:has-text("Local")');
+      await expect(localTab).toBeVisible();
+      await expect(localTab).toHaveAttribute('data-state', 'active');
+
+      const registerButton = page.locator('#register-model');
+      await expect(registerButton).toBeVisible();
     });
 
-    test('Model Hub tab shows supported models', async ({ page }) => {
+    test('Register button opens registration dialog', async ({ page }) => {
       await ensureDashboardLogin(page);
 
-      // Navigate to Model Hub
+      // Navigate to Models tab
       await page.click('button[role="tab"]:has-text("Models")');
       await page.waitForTimeout(300);
-      await page.click('button[role="tab"]:has-text("Model Hub")');
+
+      // Click Register button
+      const registerButton = page.locator('#register-model');
+      await registerButton.click();
       await page.waitForTimeout(500);
 
-      // Should show some model cards or empty state
-      const modelCards = page.locator('[data-testid="model-card"], .model-card, [data-model-id]');
-      const count = await modelCards.count();
-      // May be 0 if API unavailable or models not loaded yet
-      expect(count).toBeGreaterThanOrEqual(0);
+      // Registration dialog should be visible
+      const dialog = page.locator('#register-modal');
+      await expect(dialog).toBeVisible();
+
+      // Should have repo input field
+      const repoInput = page.locator('#register-repo');
+      await expect(repoInput).toBeVisible();
     });
 
     test('UI register triggers API call', async ({ page }) => {
@@ -128,8 +141,6 @@ test.describe('Model Registration Workflow', () => {
       await ensureDashboardLogin(page);
       await page.click('button[role="tab"]:has-text("Models")');
       await page.waitForTimeout(300);
-      await page.click('button[role="tab"]:has-text("Model Hub")');
-      await page.waitForTimeout(500);
 
       // 2. Mock register endpoint to track calls
       let registerCalled = false;
@@ -138,17 +149,27 @@ test.describe('Model Registration Workflow', () => {
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
-          body: JSON.stringify({ name: 'test-model', status: 'registered' }),
+          body: JSON.stringify({
+            name: 'test-model',
+            lifecycle_status: 'registered',
+          }),
         });
       });
 
-      // 3. Find and click Register button
-      const registerButton = page.locator('button:has-text("Register")').first();
-      if (await registerButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await registerButton.click();
-        await page.waitForTimeout(500);
-        expect(registerCalled).toBe(true);
-      }
+      // 3. Open register dialog
+      const openDialogButton = page.locator('#register-model');
+      await openDialogButton.click();
+      await page.waitForTimeout(300);
+
+      // 4. Fill in repo and submit
+      const repoInput = page.locator('#register-repo');
+      await repoInput.fill('test-org/test-model');
+
+      const submitButton = page.locator('#register-submit');
+      await submitButton.click();
+      await page.waitForTimeout(500);
+
+      expect(registerCalled).toBe(true);
     });
   });
 

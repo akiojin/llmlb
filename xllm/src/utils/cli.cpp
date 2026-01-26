@@ -55,6 +55,7 @@ std::string getServeHelpMessage() {
     oss << "    --port <PORT>         Server port (default: 32769, or XLLM_PORT)\n";
     oss << "    --host <HOST>         Bind address (default: 0.0.0.0)\n";
     oss << "    --model <PATH>        Path to model file (e.g., model.gguf)\n";
+    oss << "    --model-name <NAME>   Model name/identifier (default: filename stem)\n";
     oss << "    --mmproj <PATH>       Path to multimodal projector for vision models\n";
     oss << "    --ctx-size <SIZE>     Context size (default: 2048)\n";
     oss << "    -h, --help            Print help\n";
@@ -319,6 +320,8 @@ CliResult parseCliArgs(int argc, char* argv[]) {
                 result.serve_options.host = argv[++i];
             } else if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
                 result.serve_options.model = argv[++i];
+            } else if (std::strcmp(argv[i], "--model-name") == 0 && i + 1 < argc) {
+                result.serve_options.model_name = argv[++i];
             } else if (std::strcmp(argv[i], "--mmproj") == 0 && i + 1 < argc) {
                 result.serve_options.mmproj = argv[++i];
             } else if (std::strcmp(argv[i], "--ctx-size") == 0 && i + 1 < argc) {

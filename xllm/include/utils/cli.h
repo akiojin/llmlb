@@ -30,6 +30,7 @@ struct ServeOptions {
     uint16_t port{32769};
     std::string host{"0.0.0.0"};
     std::string model;       // Path to model file (e.g., --model path/to/model.gguf)
+    std::string model_name;  // Model name/identifier (e.g., --model-name llava-v1.5-7b)
     std::string mmproj;      // Path to multimodal projector (e.g., --mmproj path/to/mmproj.gguf)
     int ctx_size{2048};      // Context size (e.g., --ctx-size 4096)
 };

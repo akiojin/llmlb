@@ -28,6 +28,7 @@ struct NodeConfig {
     std::string bind_address{"0.0.0.0"};
     std::string default_embedding_model{"nomic-embed-text-v1.5"};
     std::string cli_model_path;   // Model path from --model CLI option
+    std::string cli_model_name;   // Model name from --model-name CLI option
     std::string cli_mmproj_path;  // MMProj path from --mmproj CLI option
     int cli_ctx_size{0};          // Context size from --ctx-size CLI option (0 = use default)
 };

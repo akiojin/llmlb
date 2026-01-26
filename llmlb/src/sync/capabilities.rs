@@ -9,6 +9,8 @@ pub enum Capability {
     Chat,
     /// 埋め込みベクトル生成
     Embeddings,
+    /// 画像理解/Vision
+    Vision,
 }
 
 impl Capability {
@@ -17,6 +19,7 @@ impl Capability {
         match self {
             Self::Chat => "chat",
             Self::Embeddings => "embeddings",
+            Self::Vision => "vision",
         }
     }
 }
@@ -31,6 +34,7 @@ impl std::fmt::Display for Capability {
 ///
 /// # ルール
 /// - `embed*` または `*-embed*` → embeddings
+/// - `llava*`, `qwen-vl*`, `*-vision*` → chat + vision
 /// - それ以外 → chat
 ///
 /// # Examples
@@ -43,13 +47,28 @@ impl std::fmt::Display for Capability {
 ///
 /// let caps = detect_capabilities("llama3.2");
 /// assert_eq!(caps, vec![Capability::Chat]);
+///
+/// let caps = detect_capabilities("llava-v1.5-7b");
+/// assert!(caps.contains(&Capability::Vision));
 /// ```
 pub fn detect_capabilities(model_name: &str) -> Vec<Capability> {
     let lower = model_name.to_lowercase();
 
     // embedで始まる、または-embedを含む場合はembeddings
     if lower.starts_with("embed") || lower.contains("-embed") || lower.contains("_embed") {
-        vec![Capability::Embeddings]
+        return vec![Capability::Embeddings];
+    }
+
+    // Vision model detection by name pattern
+    let is_vision = lower.starts_with("llava")
+        || lower.starts_with("qwen-vl")
+        || lower.starts_with("qwen2-vl")
+        || lower.contains("-vision")
+        || lower.contains("_vision")
+        || lower.contains("-vl-");
+
+    if is_vision {
+        vec![Capability::Chat, Capability::Vision]
     } else {
         vec![Capability::Chat]
     }
@@ -68,6 +87,7 @@ pub fn capability_from_str(s: &str) -> Option<Capability> {
     match s.to_lowercase().as_str() {
         "chat" => Some(Capability::Chat),
         "embeddings" => Some(Capability::Embeddings),
+        "vision" => Some(Capability::Vision),
         _ => None,
     }
 }
@@ -151,6 +171,7 @@ mod tests {
             capability_from_str("embeddings"),
             Some(Capability::Embeddings)
         );
+        assert_eq!(capability_from_str("vision"), Some(Capability::Vision));
         assert_eq!(capability_from_str("unknown"), None);
     }
 
@@ -158,5 +179,39 @@ mod tests {
     fn test_capability_as_str() {
         assert_eq!(Capability::Chat.as_str(), "chat");
         assert_eq!(Capability::Embeddings.as_str(), "embeddings");
+        assert_eq!(Capability::Vision.as_str(), "vision");
+    }
+
+    #[test]
+    fn test_detect_capabilities_vision_models() {
+        // LLaVA models
+        let caps = detect_capabilities("llava-v1.5-7b");
+        assert!(caps.contains(&Capability::Chat));
+        assert!(caps.contains(&Capability::Vision));
+
+        let caps = detect_capabilities("llava-1.6-34b");
+        assert!(caps.contains(&Capability::Vision));
+
+        // Qwen-VL models
+        let caps = detect_capabilities("qwen-vl-7b");
+        assert!(caps.contains(&Capability::Vision));
+
+        let caps = detect_capabilities("qwen2-vl-7b-instruct");
+        assert!(caps.contains(&Capability::Vision));
+
+        // Generic vision models
+        let caps = detect_capabilities("model-vision-v2");
+        assert!(caps.contains(&Capability::Vision));
+    }
+
+    #[test]
+    fn test_detect_capabilities_non_vision_models() {
+        // Regular LLM should not have vision capability
+        let caps = detect_capabilities("llama-3.1-8b");
+        assert!(caps.contains(&Capability::Chat));
+        assert!(!caps.contains(&Capability::Vision));
+
+        let caps = detect_capabilities("mistral-7b");
+        assert!(!caps.contains(&Capability::Vision));
     }
 }

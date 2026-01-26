@@ -209,6 +209,7 @@ jobs:
 
           ./xllm/build/xllm serve \
             --model ~/.cache/llmlb/models/${{ env.MODEL_FILE }} \
+            --model-name llava-v1.5-7b \
             --mmproj ~/.cache/llmlb/models/${{ env.MMPROJ_FILE }} \
             --host 127.0.0.1 \
             --port 8080 \

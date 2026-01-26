@@ -344,7 +344,10 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
             if (!cfg.cli_model_path.empty()) {
                 std::filesystem::path model_p(cfg.cli_model_path);
                 if (std::filesystem::exists(model_p)) {
-                    std::string model_name = model_p.stem().string();
+                    // Use --model-name if provided, otherwise use filename stem
+                    std::string model_name = cfg.cli_model_name.empty()
+                        ? model_p.stem().string()
+                        : cfg.cli_model_name;
                     // Avoid duplicates
                     if (std::find(initial_models.begin(), initial_models.end(), model_name) == initial_models.end()) {
                         initial_models.push_back(model_name);
@@ -352,10 +355,11 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
                     }
                     // Register model path mapping in model resolver
                     model_resolver->registerExplicitPath(model_name, cfg.cli_model_path);
-                    // If mmproj is specified, register it as well
+                    // If mmproj is specified, register it as well and mark as vision-capable
                     if (!cfg.cli_mmproj_path.empty() && std::filesystem::exists(cfg.cli_mmproj_path)) {
                         model_resolver->registerMmprojPath(model_name, cfg.cli_mmproj_path);
-                        spdlog::info("Registered CLI mmproj for {}: {}", model_name, cfg.cli_mmproj_path);
+                        registry.setVisionCapable(model_name, true);
+                        spdlog::info("Registered CLI mmproj for {}: {} (vision enabled)", model_name, cfg.cli_mmproj_path);
                     }
                 } else {
                     spdlog::warn("CLI model path does not exist: {}", cfg.cli_model_path);
@@ -731,6 +735,9 @@ int main(int argc, char* argv[]) {
             }
             if (!cli_result.serve_options.model.empty()) {
                 cfg.cli_model_path = cli_result.serve_options.model;
+            }
+            if (!cli_result.serve_options.model_name.empty()) {
+                cfg.cli_model_name = cli_result.serve_options.model_name;
             }
             if (!cli_result.serve_options.mmproj.empty()) {
                 cfg.cli_mmproj_path = cli_result.serve_options.mmproj;

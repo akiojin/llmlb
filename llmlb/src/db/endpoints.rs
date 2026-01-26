@@ -193,6 +193,77 @@ pub async fn list_endpoints_by_status(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
+/// タイプでフィルタしてエンドポイント一覧を取得（SPEC-66555000）
+pub async fn list_endpoints_by_type(
+    pool: &SqlitePool,
+    endpoint_type: crate::types::endpoint::EndpointType,
+) -> Result<Vec<Endpoint>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, EndpointRow>(
+        r#"
+        SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               health_check_interval_secs, inference_timeout_secs,
+               latency_ms, last_seen, last_error, error_count,
+               registered_at, notes, supports_responses_api, capabilities,
+               device_info, inference_latency_ms
+        FROM endpoints
+        WHERE endpoint_type = ?
+        ORDER BY registered_at DESC
+        "#,
+    )
+    .bind(endpoint_type.as_str())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| r.into()).collect())
+}
+
+/// タイプとステータスでフィルタしてエンドポイント一覧を取得（SPEC-66555000）
+pub async fn list_endpoints_by_type_and_status(
+    pool: &SqlitePool,
+    endpoint_type: crate::types::endpoint::EndpointType,
+    status: EndpointStatus,
+) -> Result<Vec<Endpoint>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, EndpointRow>(
+        r#"
+        SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               health_check_interval_secs, inference_timeout_secs,
+               latency_ms, last_seen, last_error, error_count,
+               registered_at, notes, supports_responses_api, capabilities,
+               device_info, inference_latency_ms
+        FROM endpoints
+        WHERE endpoint_type = ? AND status = ?
+        ORDER BY registered_at DESC
+        "#,
+    )
+    .bind(endpoint_type.as_str())
+    .bind(status.as_str())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| r.into()).collect())
+}
+
+/// エンドポイントのタイプを更新（SPEC-66555000）
+pub async fn update_endpoint_type(
+    pool: &SqlitePool,
+    id: Uuid,
+    endpoint_type: crate::types::endpoint::EndpointType,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE endpoints SET
+            endpoint_type = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(endpoint_type.as_str())
+    .bind(id.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 /// エンドポイントのステータスを更新
 pub async fn update_endpoint_status(
     pool: &SqlitePool,

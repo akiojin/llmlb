@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 
 #include "api/http_server.h"
 #include "api/openai_endpoints.h"
@@ -24,7 +25,9 @@ TEST(NodeEndpointsTest, PullAndHealth) {
     auto health = cli.Get("/health");
     ASSERT_TRUE(health);
     EXPECT_EQ(health->status, 200);
-    EXPECT_NE(health->body.find("ok"), std::string::npos);
+    auto body = nlohmann::json::parse(health->body);
+    EXPECT_EQ(body["status"], "ok");
+    EXPECT_TRUE(body["supports_responses_api"].get<bool>());
 
     server.stop();
 }

@@ -110,7 +110,10 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Get("/health", [this](const httplib::Request&, httplib::Response& res) {
-        nlohmann::json body = {{"status", health_status_}};
+        nlohmann::json body = {
+            {"status", health_status_},
+            {"supports_responses_api", true}
+        };
         res.set_content(body.dump(), "application/json");
     });
 

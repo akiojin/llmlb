@@ -477,3 +477,31 @@ TEST(OpenAIEndpointsTest, LogprobsMatchesModelOutput) {
 
     server.stop();
 }
+
+TEST(OpenAIEndpointsTest, ResponsesReturnsUsage) {
+    xllm::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
+    NodeEndpoints node;
+    HttpServer server(18111, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18111);
+    std::string body = R"({"model":"gpt-oss-7b","input":"hello"})";
+    auto res = cli.Post("/v1/responses", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = nlohmann::json::parse(res->body);
+    EXPECT_EQ(j["object"], "response");
+    ASSERT_TRUE(j.contains("usage"));
+    EXPECT_GT(j["usage"]["input_tokens"].get<int>(), 0);
+    EXPECT_GT(j["usage"]["output_tokens"].get<int>(), 0);
+    EXPECT_EQ(j["usage"]["total_tokens"].get<int>(),
+              j["usage"]["input_tokens"].get<int>() +
+                  j["usage"]["output_tokens"].get<int>());
+
+    server.stop();
+}

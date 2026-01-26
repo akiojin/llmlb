@@ -516,6 +516,161 @@ bool parseChatMessages(const json& body, ParsedChatMessages& out, std::string& e
     return true;
 }
 
+struct ParsedResponsesInput {
+    std::vector<ChatMessage> messages;
+    std::vector<std::string> image_urls;
+};
+
+bool parseResponsesInput(const json& body, ParsedResponsesInput& out, std::string& error) {
+    out.messages.clear();
+    out.image_urls.clear();
+
+    if (!body.contains("input")) {
+        error = "input is required";
+        return false;
+    }
+
+    auto parse_content = [&](const json& content, std::string& content_out) -> bool {
+        if (content.is_null()) {
+            return true;
+        }
+        if (content.is_string()) {
+            content_out += content.get<std::string>();
+            return true;
+        }
+        if (!content.is_array()) {
+            error = "content must be a string or array";
+            return false;
+        }
+
+        for (const auto& part : content) {
+            if (!part.is_object()) {
+                error = "content part must be an object";
+                return false;
+            }
+            std::string type = part.value("type", "");
+            if (type == "text" || type == "input_text") {
+                content_out += part.value("text", "");
+                continue;
+            }
+            if (type == "image_url" || type == "input_image") {
+                std::string url;
+                if (part.contains("image_url")) {
+                    const auto& image_url = part["image_url"];
+                    if (image_url.is_object()) {
+                        url = image_url.value("url", "");
+                    } else if (image_url.is_string()) {
+                        url = image_url.get<std::string>();
+                    }
+                } else if (part.contains("url") && part["url"].is_string()) {
+                    url = part["url"].get<std::string>();
+                }
+                if (url.empty()) {
+                    error = "image_url.url is required";
+                    return false;
+                }
+                out.image_urls.push_back(url);
+                if (out.image_urls.size() > kMaxImageCount) {
+                    error = "too many images in request";
+                    return false;
+                }
+                content_out += kVisionMarker;
+                continue;
+            }
+            error = "unsupported content type: " + type;
+            return false;
+        }
+        return true;
+    };
+
+    auto add_message = [&](const std::string& role, const json& content) -> bool {
+        std::string text;
+        if (!parse_content(content, text)) {
+            return false;
+        }
+        out.messages.push_back({role, text});
+        return true;
+    };
+
+    const auto& input = body["input"];
+    if (input.is_string()) {
+        std::string text = input.get<std::string>();
+        if (trimAscii(text).empty()) {
+            error = "input must not be empty";
+            return false;
+        }
+        out.messages.push_back({"user", text});
+        return true;
+    }
+
+    json input_array = input;
+    if (input.is_object()) {
+        input_array = json::array({input});
+    }
+    if (!input_array.is_array() || input_array.empty()) {
+        error = "input must be a string or array";
+        return false;
+    }
+
+    if (input_array[0].is_string()) {
+        std::string merged;
+        for (const auto& entry : input_array) {
+            if (!entry.is_string()) {
+                error = "input array must contain only strings";
+                return false;
+            }
+            if (!merged.empty()) merged += "\n";
+            merged += entry.get<std::string>();
+        }
+        if (trimAscii(merged).empty()) {
+            error = "input must not be empty";
+            return false;
+        }
+        out.messages.push_back({"user", merged});
+        return true;
+    }
+
+    if (!input_array[0].is_object()) {
+        error = "input array must contain objects";
+        return false;
+    }
+
+    const bool looks_like_messages = input_array[0].contains("role");
+    const bool looks_like_parts = input_array[0].contains("type");
+    if (looks_like_messages) {
+        for (const auto& msg : input_array) {
+            if (!msg.is_object()) {
+                error = "message must be an object";
+                return false;
+            }
+            std::string role = msg.value("role", "");
+            if (role.empty()) {
+                error = "message.role is required";
+                return false;
+            }
+            if (!msg.contains("content") || msg["content"].is_null()) {
+                out.messages.push_back({role, ""});
+                continue;
+            }
+            if (!add_message(role, msg["content"])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (looks_like_parts) {
+        json parts_wrapper = json::array();
+        for (const auto& part : input_array) {
+            parts_wrapper.push_back(part);
+        }
+        return add_message("user", parts_wrapper);
+    }
+
+    error = "input array must contain messages or content parts";
+    return false;
+}
+
 OpenAIEndpoints::OpenAIEndpoints(ModelRegistry& registry, InferenceEngine& engine, const NodeConfig& config, GpuBackend backend)
     : registry_(registry), engine_(engine), config_(config), backend_(backend) {}
 
@@ -699,6 +854,152 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                     {"prompt_tokens", prompt_tokens},
                     {"completion_tokens", total_completion_tokens},
                     {"total_tokens", prompt_tokens + total_completion_tokens}
+                }}
+            };
+            setJson(res, resp);
+        } catch (const std::exception& e) {
+            respondError(res, 400, "bad_request", std::string("error: ") + e.what());
+        } catch (...) {
+            respondError(res, 400, "bad_request", "invalid JSON body");
+        }
+    });
+
+    server.Post("/v1/responses", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!checkReady(res)) return;
+        auto guard = RequestGuard::try_acquire();
+        if (!guard) {
+            respondError(res, 429, "too_many_requests", "Node is busy");
+            return;
+        }
+        try {
+            auto body = json::parse(req.body);
+            std::string model = body.value("model", "");
+            if (!validateModel(model, "text", res)) return;
+
+            ParsedResponsesInput parsed;
+            std::string parse_error;
+            if (!parseResponsesInput(body, parsed, parse_error)) {
+                respondError(res, 400, "invalid_request", parse_error);
+                return;
+            }
+
+            std::string instructions = body.value("instructions", "");
+            if (!instructions.empty()) {
+                parsed.messages.insert(parsed.messages.begin(), {"system", instructions});
+            }
+
+            std::string param_error;
+            if (!validateSamplingParams(body, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
+            InferenceParams params;
+            if (!parseInferenceParams(body, params, param_error)) {
+                respondError(res, 400, "invalid_request", param_error);
+                return;
+            }
+            if (body.contains("max_output_tokens")) {
+                if (!body["max_output_tokens"].is_number_integer()) {
+                    respondError(res, 400, "invalid_request", "max_output_tokens must be an integer");
+                    return;
+                }
+                int max_output_tokens = body["max_output_tokens"].get<int>();
+                if (max_output_tokens > 0) {
+                    params.max_tokens = static_cast<size_t>(max_output_tokens);
+                }
+            }
+
+            std::string prompt_text;
+            for (const auto& msg : parsed.messages) {
+                prompt_text += msg.role + ": " + msg.content + "\n";
+            }
+            int input_tokens = static_cast<int>(prompt_text.length() / 4);
+
+            bool stream = body.value("stream", false);
+            if (stream) {
+                auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
+                std::string output;
+                if (!parsed.image_urls.empty()) {
+                    output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
+                } else {
+                    output = engine_.generateChat(parsed.messages, model, params);
+                }
+                output = applyStopSequences(std::move(output), params.stop_sequences);
+                output = sanitize_utf8_lossy(output);
+
+                int output_tokens = static_cast<int>(output.length() / 4);
+                json response = {
+                    {"id", generate_response_id("resp")},
+                    {"object", "response"},
+                    {"created_at", get_current_timestamp()},
+                    {"model", model},
+                    {"output", json::array({{
+                        {"type", "message"},
+                        {"role", "assistant"},
+                        {"content", json::array({{
+                            {"type", "output_text"},
+                            {"text", output}
+                        }})}
+                    }})},
+                    {"usage", {
+                        {"input_tokens", input_tokens},
+                        {"output_tokens", output_tokens},
+                        {"total_tokens", input_tokens + output_tokens}
+                    }}
+                };
+
+                json delta = {
+                    {"type", "response.output_text.delta"},
+                    {"delta", output}
+                };
+                json completed = {
+                    {"type", "response.completed"},
+                    {"response", response}
+                };
+
+                res.set_chunked_content_provider("text/event-stream",
+                    [delta, completed, guard_ptr](size_t offset, httplib::DataSink& sink) {
+                        if (offset == 0) {
+                            std::string chunk = "event: response.output_text.delta\n";
+                            chunk += "data: " + delta.dump() + "\n\n";
+                            sink.write(chunk.data(), chunk.size());
+                            std::string done = "event: response.completed\n";
+                            done += "data: " + completed.dump() + "\n\n";
+                            sink.write(done.data(), done.size());
+                            sink.done();
+                        }
+                        return true;
+                    });
+                return;
+            }
+
+            std::string output;
+            if (!parsed.image_urls.empty()) {
+                output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
+            } else {
+                output = engine_.generateChat(parsed.messages, model, params);
+            }
+            output = applyStopSequences(std::move(output), params.stop_sequences);
+            output = sanitize_utf8_lossy(output);
+
+            int output_tokens = static_cast<int>(output.length() / 4);
+            json resp = {
+                {"id", generate_response_id("resp")},
+                {"object", "response"},
+                {"created_at", get_current_timestamp()},
+                {"model", model},
+                {"output", json::array({{
+                    {"type", "message"},
+                    {"role", "assistant"},
+                    {"content", json::array({{
+                        {"type", "output_text"},
+                        {"text", output}
+                    }})}
+                }})},
+                {"usage", {
+                    {"input_tokens", input_tokens},
+                    {"output_tokens", output_tokens},
+                    {"total_tokens", input_tokens + output_tokens}
                 }}
             };
             setJson(res, resp);

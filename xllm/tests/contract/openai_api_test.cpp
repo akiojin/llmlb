@@ -377,3 +377,48 @@ TEST_F(OpenAIContractFixture, NParameterOutOfRangeReturns400) {
     ASSERT_TRUE(res2);
     EXPECT_EQ(res2->status, 400);
 }
+
+TEST_F(OpenAIContractFixture, ResponsesReturnsResponseObject) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","input":"ping"})";
+    auto res = cli.Post("/v1/responses", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    EXPECT_EQ(j["object"], "response");
+    EXPECT_EQ(j["output"][0]["role"], "assistant");
+    EXPECT_NE(j["output"][0]["content"][0]["text"].get<std::string>().find("Response to"),
+              std::string::npos);
+}
+
+TEST_F(OpenAIContractFixture, ResponsesSupportsStreamingSSE) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b","input":"stream","stream":true})";
+    auto res = cli.Post("/v1/responses", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    EXPECT_EQ(res->get_header_value("Content-Type"), "text/event-stream");
+    EXPECT_NE(res->body.find("response.output_text.delta"), std::string::npos);
+    EXPECT_NE(res->body.find("response.completed"), std::string::npos);
+}
+
+TEST_F(OpenAIContractFixture, ResponsesRequiresInput) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({"model":"gpt-oss-7b"})";
+    auto res = cli.Post("/v1/responses", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 400);
+}
+
+TEST_F(OpenAIContractFixture, ResponsesAcceptsArrayInput) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body =
+        R"({"model":"gpt-oss-7b","input":[{"role":"user","content":"hello"}]})";
+    auto res = cli.Post("/v1/responses", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    EXPECT_EQ(j["object"], "response");
+    EXPECT_NE(j["output"][0]["content"][0]["text"].get<std::string>().find("hello"),
+              std::string::npos);
+}

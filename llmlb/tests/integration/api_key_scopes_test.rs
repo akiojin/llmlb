@@ -89,7 +89,7 @@ async fn v0_nodes_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Runtime]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
     let api_key =
         create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
@@ -159,7 +159,7 @@ async fn v1_inference_requires_api_inference_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Runtime]).await;
+        create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
     let api_key =
         create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
@@ -231,7 +231,7 @@ async fn admin_scope_allows_dashboard_overview() {
 async fn v0_health_requires_node_register_scope() {
     let (app, db_pool) = build_app().await;
 
-    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Runtime]).await;
+    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
     let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let payload = node_payload(32769);

@@ -583,7 +583,7 @@ export const modelsApi = {
 }
 
 // API Keys API
-export type ApiKeyScope = 'node' | 'api' | 'admin'
+export type ApiKeyScope = 'endpoint' | 'api' | 'admin'
 
 export interface ApiKey {
   id: string

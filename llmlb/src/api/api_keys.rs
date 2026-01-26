@@ -29,6 +29,8 @@ pub struct CreateApiKeyRequest {
 pub struct ApiKeyResponse {
     /// APIキーID
     pub id: String,
+    /// キーの先頭部分（表示用）
+    pub key_prefix: Option<String>,
     /// キーの名前
     pub name: String,
     /// 作成者のユーザーID
@@ -45,6 +47,7 @@ impl From<ApiKey> for ApiKeyResponse {
     fn from(api_key: ApiKey) -> Self {
         ApiKeyResponse {
             id: api_key.id.to_string(),
+            key_prefix: api_key.key_prefix,
             name: api_key.name,
             created_by: api_key.created_by.to_string(),
             created_at: api_key.created_at.to_rfc3339(),
@@ -61,6 +64,8 @@ pub struct CreateApiKeyResponse {
     pub id: String,
     /// 平文のAPIキー（発行時のみ表示）
     pub key: String,
+    /// キーの先頭部分（表示用）
+    pub key_prefix: String,
     /// キーの名前
     pub name: String,
     /// 作成日時
@@ -76,6 +81,7 @@ impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
         CreateApiKeyResponse {
             id: api_key.id.to_string(),
             key: api_key.key,
+            key_prefix: api_key.key_prefix,
             name: api_key.name,
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),

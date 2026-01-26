@@ -39,5 +39,12 @@
   "workspaces": [
     "mcp-server",
     "llmlb/src/web/dashboard"
-  ]
+  ],
+  "pnpm": {
+    "overrides": {
+      "esbuild": "^0.25.0",
+      "hono": "^4.11.5",
+      "lodash": "^4.17.23"
+    }
+  }
 }

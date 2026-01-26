@@ -187,6 +187,24 @@ pub fn create_app(state: AppState) -> Router {
         ))
     };
 
+    // Playground用プロキシ（JWT認証のみ、APIキー不可）
+    // ダッシュボードにログインしているユーザーのみがエンドポイントに直接リクエストを転送できる
+    let playground_proxy_routes = Router::new().route(
+        "/endpoints/:id/chat/completions",
+        post(endpoints::proxy_chat_completions),
+    );
+
+    let playground_proxy_routes = if auth_disabled {
+        playground_proxy_routes.layer(middleware::from_fn(
+            crate::auth::middleware::inject_dummy_admin_claims,
+        ))
+    } else {
+        playground_proxy_routes.layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
+        ))
+    };
+
     // モデル配布レジストリ（Runtimeスコープが必要）
     // SPEC-66555000: POST /v0/nodes（ノード自己登録）は廃止されました
     // 新しい実装は POST /v0/endpoints を使用してください
@@ -298,6 +316,7 @@ pub fn create_app(state: AppState) -> Router {
                 .merge(auth_routes)
                 .merge(admin_routes)
                 .merge(endpoint_routes)
+                .merge(playground_proxy_routes)
                 .merge(model_registry_routes)
                 .merge(models_list_routes)
                 // デバッグ用テストエンドポイント

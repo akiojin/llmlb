@@ -1051,25 +1051,25 @@ TEST(InferenceEngineTest, IsModelSupportedReturnsTrueForSupportedArchitecture) {
     const std::string model_name = "test/supported-arch";
     const auto model_dir = tmp.path / ModelStorage::modelNameToDir(model_name);
     fs::create_directories(model_dir);
-    // Create safetensors model with llama architecture
+    // Create GGUF model with llama architecture (no GPU dependency for basic support check)
     std::ofstream(model_dir / "config.json") << R"({"architectures":["LlamaForCausalLM"]})";
     std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
-    std::ofstream(model_dir / "model.safetensors") << "dummy";
+    std::ofstream(model_dir / "model.gguf") << "dummy";
 
     LlamaManager llama(tmp.path.string());
     ModelStorage storage(tmp.path.string());
     InferenceEngine engine(llama, storage);
 
-    // Register engine that supports "llama" architecture
+    // Register engine that supports "llama" architecture with GGUF format
     auto registry = std::make_unique<EngineRegistry>();
     EngineRegistration reg;
     reg.engine_id = "llama_engine";
     reg.engine_version = "test";
-    reg.formats = {"safetensors"};
+    reg.formats = {"gguf"};
     reg.architectures = {"llama"};
     reg.capabilities = {"text"};
     ASSERT_TRUE(registry->registerEngine(
-        std::make_unique<RecordingEngine>("safetensors_cpp", "llama", nullptr, true, false),
+        std::make_unique<RecordingEngine>("llama_cpp", "llama", nullptr, true, false),
         reg,
         nullptr));
     engine.setEngineRegistryForTest(std::move(registry));

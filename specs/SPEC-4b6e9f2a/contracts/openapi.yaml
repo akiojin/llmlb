@@ -134,7 +134,7 @@ paths:
   /v0/status:
     get:
       summary: ステータス取得（クラウドプロバイダー情報含む）
-      description: ルーターのステータスとクラウドプロバイダーの設定状態を取得します。
+      description: llmlbのステータスとクラウドプロバイダーの設定状態を取得します。
       operationId: getStatus
       tags:
         - Status

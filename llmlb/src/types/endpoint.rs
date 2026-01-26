@@ -1,6 +1,6 @@
 //! エンドポイント型定義
 //!
-//! SPEC-66555000: ルーター主導エンドポイント登録システム
+//! SPEC-66555000: llmlb主導エンドポイント登録システム
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

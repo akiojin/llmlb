@@ -51,7 +51,7 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
     "/dashboard_assets_build_stamp.txt"
 ));
 
-/// APIルーターを作成
+/// APIllmlbを作成
 #[allow(deprecated)] // NodeRegistry migration in progress - legacy APIs still registered
 pub fn create_app(state: AppState) -> Router {
     let auth_disabled = crate::config::is_auth_disabled();
@@ -185,10 +185,6 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/endpoints/:id/models/:model/info",
             get(endpoints::get_model_info),
-        )
-        .route(
-            "/endpoints/:id/chat/completions",
-            post(endpoints::proxy_chat_completions),
         );
 
     let endpoint_routes = if auth_disabled {
@@ -199,6 +195,24 @@ pub fn create_app(state: AppState) -> Router {
         endpoint_routes.layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::authenticated_middleware,
+        ))
+    };
+
+    // Playground用プロキシ（JWT認証のみ、APIキー不可）
+    // ダッシュボードにログインしているユーザーのみがエンドポイントに直接リクエストを転送できる
+    let playground_proxy_routes = Router::new().route(
+        "/endpoints/:id/chat/completions",
+        post(endpoints::proxy_chat_completions),
+    );
+
+    let playground_proxy_routes = if auth_disabled {
+        playground_proxy_routes.layer(middleware::from_fn(
+            crate::auth::middleware::inject_dummy_admin_claims,
+        ))
+    } else {
+        playground_proxy_routes.layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
         ))
     };
 
@@ -313,6 +327,7 @@ pub fn create_app(state: AppState) -> Router {
                 .merge(auth_routes)
                 .merge(admin_routes)
                 .merge(endpoint_routes)
+                .merge(playground_proxy_routes)
                 .merge(model_registry_routes)
                 .merge(models_list_routes)
                 // デバッグ用テストエンドポイント

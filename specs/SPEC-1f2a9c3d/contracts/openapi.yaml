@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Log Retrieval API
   version: 1.0.0
-  description: ノードおよびルーター経由のログ取得API
+  description: ノードおよびllmlb経由のログ取得API
 
 paths:
   /v0/logs:
@@ -41,7 +41,7 @@ paths:
 
   /v0/nodes/{node_id}/logs:
     get:
-      summary: ノードログ取得（ルーター経由）
+      summary: ノードログ取得（llmlb経由）
       description: 指定ノードのログをプロキシして取得する
       operationId: getNodeLogsByRouter
       parameters:

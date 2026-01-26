@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 /// エンドポイントのダッシュボード表示用サマリー
 ///
-/// SPEC-66555000: ルーター主導エンドポイント登録システム
+/// SPEC-66555000: llmlb主導エンドポイント登録システム
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardEndpoint {
     /// エンドポイントID
@@ -134,7 +134,7 @@ pub async fn get_nodes(State(state): State<AppState>) -> Json<Vec<DashboardEndpo
 
 /// GET /v0/dashboard/endpoints
 ///
-/// SPEC-66555000: ルーター主導エンドポイント登録システム
+/// SPEC-66555000: llmlb主導エンドポイント登録システム
 pub async fn get_endpoints(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
     Json(collect_endpoints(&state).await)
 }
@@ -271,7 +271,7 @@ pub async fn get_monthly_token_stats(
 
 /// エンドポイント一覧を収集
 ///
-/// SPEC-66555000: ルーター主導エンドポイント登録システム
+/// SPEC-66555000: llmlb主導エンドポイント登録システム
 async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
     let endpoint_registry = &state.endpoint_registry;
     let endpoints = endpoint_registry.list().await;

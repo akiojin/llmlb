@@ -1,6 +1,6 @@
 //! エンドポイント管理API
 //!
-//! SPEC-66555000: ルーター主導エンドポイント登録システム
+//! SPEC-66555000: llmlb主導エンドポイント登録システム
 
 use crate::common::auth::{Claims, UserRole};
 use crate::db::{download_tasks as tasks_db, endpoints as db};

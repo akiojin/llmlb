@@ -21,7 +21,7 @@ pub struct MockNodeServer {
 impl MockNodeServer {
     /// モックノードサーバーを起動
     ///
-    /// ルーターは runtime_port + 1 をAPIポートとして使用するため、
+    /// llmlbは runtime_port + 1 をAPIポートとして使用するため、
     /// runtime_port = mock_port - 1 を返します。
     pub async fn start() -> Self {
         let server = MockServer::start().await;

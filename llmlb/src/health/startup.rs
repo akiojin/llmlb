@@ -1,4 +1,4 @@
-//! ルーター起動時のヘルスチェック
+//! llmlb起動時のヘルスチェック
 //!
 //! 起動時に全エンドポイントを並列チェック
 
@@ -6,7 +6,7 @@ use super::EndpointHealthChecker;
 use crate::registry::endpoints::EndpointRegistry;
 use tracing::info;
 
-/// ルーター起動時の初期ヘルスチェック
+/// llmlb起動時の初期ヘルスチェック
 ///
 /// 全エンドポイントを並列にヘルスチェックし、
 /// 正確な状態を把握してからルーティングを開始する。

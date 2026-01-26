@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type DashboardEndpoint, endpointsApi } from '@/lib/api'
+import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2 } from 'lucide-react'
+import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2, Download } from 'lucide-react'
+import { ModelDownloadDialog } from './ModelDownloadDialog'
 
 /**
  * SPEC-66555000: Router-Driven Endpoint Registration System
@@ -63,6 +64,37 @@ function getStatusLabel(status: DashboardEndpoint['status']): string {
   }
 }
 
+function getTypeLabel(type: EndpointType | undefined): string {
+  switch (type) {
+    case 'xllm':
+      return 'xLLM'
+    case 'ollama':
+      return 'Ollama'
+    case 'vllm':
+      return 'vLLM'
+    case 'openai_compatible':
+      return 'OpenAI Compatible'
+    case 'unknown':
+      return 'Unknown'
+    default:
+      return '-'
+  }
+}
+
+function getTypeBadgeVariant(
+  type: EndpointType | undefined
+): 'default' | 'secondary' | 'outline' {
+  switch (type) {
+    case 'xllm':
+      return 'default'
+    case 'ollama':
+    case 'vllm':
+      return 'secondary'
+    default:
+      return 'outline'
+  }
+}
+
 export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDetailModalProps) {
   const queryClient = useQueryClient()
   const [name, setName] = useState(endpoint?.name || '')
@@ -73,6 +105,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
   const [inferenceTimeout, setInferenceTimeout] = useState(
     endpoint?.inference_timeout_secs?.toString() || '120'
   )
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false)
 
   // Reset form when endpoint changes
   useEffect(() => {
@@ -192,6 +225,9 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <Badge variant={getStatusBadgeVariant(endpoint.status)}>
                 {getStatusLabel(endpoint.status)}
               </Badge>
+              <Badge variant={getTypeBadgeVariant(endpoint.endpoint_type)}>
+                {getTypeLabel(endpoint.endpoint_type)}
+              </Badge>
               {endpoint.supports_responses_api && (
                 <Badge variant="outline">Responses API</Badge>
               )}
@@ -265,15 +301,28 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
                 <Box className="h-4 w-4" />
                 Models ({modelsData?.models?.length || 0})
               </Label>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={openPlayground}
-                disabled={endpoint.status !== 'online' || !modelsData?.models?.length}
-              >
-                <MessageSquare className="h-4 w-4 mr-1" />
-                Open Playground
-              </Button>
+              <div className="flex items-center gap-2">
+                {endpoint.endpoint_type === 'xllm' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDownloadDialogOpen(true)}
+                    disabled={endpoint.status !== 'online'}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Download Model
+                  </Button>
+                )}
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={openPlayground}
+                  disabled={endpoint.status !== 'online' || !modelsData?.models?.length}
+                >
+                  <MessageSquare className="h-4 w-4 mr-1" />
+                  Open Playground
+                </Button>
+              </div>
             </div>
             <ScrollArea className="h-32 rounded-md border">
               <div className="p-3 space-y-2">
@@ -291,15 +340,22 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
                       <span className="font-mono text-xs truncate flex-1" title={model.model_id}>
                         {model.model_id}
                       </span>
-                      {model.capabilities && model.capabilities.length > 0 && (
-                        <div className="flex gap-1 ml-2">
-                          {model.capabilities.slice(0, 2).map((cap) => (
-                            <Badge key={cap} variant="outline" className="text-xs">
-                              {cap}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2 ml-2">
+                        {model.max_tokens && (
+                          <span className="text-xs text-muted-foreground">
+                            {(model.max_tokens / 1024).toFixed(0)}K ctx
+                          </span>
+                        )}
+                        {model.capabilities && model.capabilities.length > 0 && (
+                          <div className="flex gap-1">
+                            {model.capabilities.slice(0, 2).map((cap) => (
+                              <Badge key={cap} variant="outline" className="text-xs">
+                                {cap}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -379,6 +435,13 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* xLLM Model Download Dialog */}
+      <ModelDownloadDialog
+        endpoint={endpoint}
+        open={downloadDialogOpen}
+        onOpenChange={setDownloadDialogOpen}
+      />
     </Dialog>
   )
 }

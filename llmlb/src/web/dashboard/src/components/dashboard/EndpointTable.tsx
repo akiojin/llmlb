@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { type DashboardEndpoint, endpointsApi } from '@/lib/api'
+import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
 import { formatRelativeTime, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -102,12 +102,51 @@ function getStatusLabel(status: DashboardEndpoint['status']): string {
   }
 }
 
+/** SPEC-66555000: Get display label for endpoint type */
+function getTypeLabel(type: EndpointType): string {
+  switch (type) {
+    case 'xllm':
+      return 'xLLM'
+    case 'ollama':
+      return 'Ollama'
+    case 'vllm':
+      return 'vLLM'
+    case 'openai_compatible':
+      return 'OpenAI'
+    case 'unknown':
+      return 'Unknown'
+    default:
+      return type
+  }
+}
+
+/** SPEC-66555000: Get badge variant for endpoint type */
+function getTypeBadgeVariant(
+  type: EndpointType
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (type) {
+    case 'xllm':
+      return 'default'
+    case 'ollama':
+      return 'secondary'
+    case 'vllm':
+      return 'secondary'
+    case 'openai_compatible':
+      return 'outline'
+    case 'unknown':
+      return 'outline'
+    default:
+      return 'outline'
+  }
+}
+
 export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'online' | 'pending' | 'offline' | 'error'
   >('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | EndpointType>('all')
   const [sortField, setSortField] = useState<SortField>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [currentPage, setCurrentPage] = useState(1)
@@ -193,9 +232,10 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
         endpoint.name.toLowerCase().includes(search.toLowerCase()) ||
         endpoint.base_url.toLowerCase().includes(search.toLowerCase())
       const matchesStatus = statusFilter === 'all' || endpoint.status === statusFilter
-      return matchesSearch && matchesStatus
+      const matchesType = typeFilter === 'all' || endpoint.endpoint_type === typeFilter
+      return matchesSearch && matchesStatus && matchesType
     })
-  }, [endpoints, search, statusFilter])
+  }, [endpoints, search, statusFilter, typeFilter])
 
   const sortedEndpoints = useMemo(() => {
     return [...filteredEndpoints].sort((a, b) => {
@@ -306,15 +346,35 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 setCurrentPage(1)
               }}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="online">Online</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="offline">Offline</SelectItem>
                 <SelectItem value="error">Error</SelectItem>
+              </SelectContent>
+            </Select>
+            {/* SPEC-66555000: Type filter */}
+            <Select
+              value={typeFilter}
+              onValueChange={(value: typeof typeFilter) => {
+                setTypeFilter(value)
+                setCurrentPage(1)
+              }}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="xllm">xLLM</SelectItem>
+                <SelectItem value="ollama">Ollama</SelectItem>
+                <SelectItem value="vllm">vLLM</SelectItem>
+                <SelectItem value="openai_compatible">OpenAI</SelectItem>
+                <SelectItem value="unknown">Unknown</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -332,6 +392,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     <SortIcon field="name" />
                   </TableHead>
                   <TableHead>URL</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleSort('status')}
@@ -360,7 +421,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               <TableBody>
                 {paginatedEndpoints.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       {search || statusFilter !== 'all'
                         ? 'No endpoints match the filter criteria'
                         : 'No endpoints registered'}
@@ -383,6 +444,11 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                         <span className="text-muted-foreground font-mono text-sm">
                           {endpoint.base_url}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getTypeBadgeVariant(endpoint.endpoint_type)}>
+                          {getTypeLabel(endpoint.endpoint_type)}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStatusBadgeVariant(endpoint.status)}>

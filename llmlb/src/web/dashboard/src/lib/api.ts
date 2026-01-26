@@ -211,11 +211,14 @@ export interface DashboardNode {
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
+export type EndpointType = 'xllm' | 'ollama' | 'vllm' | 'openai_compatible' | 'unknown'
+
 export interface DashboardEndpoint {
   id: string
   name: string
   base_url: string
   status: 'pending' | 'online' | 'offline' | 'error'
+  endpoint_type: EndpointType
   health_check_interval_secs: number
   inference_timeout_secs: number
   latency_ms?: number
@@ -226,6 +229,32 @@ export interface DashboardEndpoint {
   notes?: string
   supports_responses_api: boolean
   model_count: number
+}
+
+/**
+ * SPEC-66555000: Model download task for xLLM endpoints
+ */
+export interface DownloadTask {
+  task_id: string
+  model: string
+  status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  speed_mbps?: number
+  eta_seconds?: number
+  error?: string
+  filename?: string
+}
+
+/**
+ * SPEC-66555000: Model metadata from endpoint
+ */
+export interface ModelMetadata {
+  model: string
+  context_length?: number
+  size_bytes?: number
+  quantization?: string
+  family?: string
+  parameter_size?: string
 }
 
 export interface RequestHistoryItem {
@@ -378,6 +407,12 @@ export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/v0/dashboard/endpoints'),
 
+  /** SPEC-66555000: List endpoints by type */
+  listByType: (type: EndpointType) =>
+    fetchWithAuth<DashboardEndpoint[]>('/v0/endpoints', {
+      params: { type },
+    }),
+
   /** Create endpoint */
   create: (data: {
     name: string
@@ -386,6 +421,7 @@ export const endpointsApi = {
     health_check_interval_secs?: number
     inference_timeout_secs?: number
     notes?: string
+    endpoint_type?: EndpointType
   }) =>
     fetchWithAuth<DashboardEndpoint>('/v0/endpoints', {
       method: 'POST',
@@ -405,6 +441,7 @@ export const endpointsApi = {
       health_check_interval_secs?: number
       inference_timeout_secs?: number
       notes?: string
+      endpoint_type?: EndpointType
     }
   ) =>
     fetchWithAuth<DashboardEndpoint>(`/v0/endpoints/${id}`, {
@@ -436,9 +473,32 @@ export const endpointsApi = {
       models: Array<{
         model_id: string
         capabilities?: string[]
+        max_tokens?: number
         last_checked?: string
       }>
     }>(`/v0/endpoints/${id}/models`),
+
+  /** SPEC-66555000: Download model (xLLM only) */
+  downloadModel: (
+    id: string,
+    data: { model: string; filename?: string }
+  ) =>
+    fetchWithAuth<{ task_id: string }>(`/v0/endpoints/${id}/download`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** SPEC-66555000: Get download progress (xLLM only) */
+  getDownloadProgress: (id: string) =>
+    fetchWithAuth<{ tasks: DownloadTask[] }>(
+      `/v0/endpoints/${id}/download/progress`
+    ),
+
+  /** SPEC-66555000: Get model metadata */
+  getModelInfo: (id: string, model: string) =>
+    fetchWithAuth<ModelMetadata>(
+      `/v0/endpoints/${id}/models/${encodeURIComponent(model)}/info`
+    ),
 }
 
 // Models API

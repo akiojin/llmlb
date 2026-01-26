@@ -42,7 +42,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm dlx semantic-release
+        run: pnpm exec semantic-release
 
   publish-mcp-server:
     name: Publish MCP Server to npm

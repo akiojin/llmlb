@@ -78,7 +78,10 @@ test.describe('Model Registration Workflow', () => {
       expect(result.error).toBeTruthy();
     });
 
-    test('model appears in /v1/models after register', async ({ request }) => {
+    // NOTE: SPEC-6cd7f960 FR-6 により、/v1/models はオンラインエンドポイントのモデルのみを返す
+    // 登録しただけではエンドポイントに紐付かないため、/v1/models には表示されない
+    // このテストは /v0/models/registered で確認するように変更
+    test('model appears in /v0/models/registered after register', async ({ request }) => {
       // 1. Register a HuggingFace model directly
       const result = await registerModel(
         request,
@@ -87,9 +90,18 @@ test.describe('Model Registration Workflow', () => {
       );
       expect(result.status).toBe(201);
 
-      // 2. Verify model appears in list
-      const models = await getModels(request);
-      const found = models.some((m) => m.name === result.modelName);
+      // 2. Verify model appears in registered models list (not /v1/models)
+      // Per SPEC-6cd7f960 FR-6, /v1/models only returns models from online endpoints
+      const response = await request.get('/v0/models/registered', {
+        headers: {
+          Authorization: 'Bearer sk_debug',
+        },
+      });
+      expect(response.ok()).toBeTruthy();
+      const registeredModels = await response.json();
+      const found = registeredModels.some(
+        (m: { name: string }) => m.name === result.modelName
+      );
       expect(found).toBeTruthy();
     });
   });

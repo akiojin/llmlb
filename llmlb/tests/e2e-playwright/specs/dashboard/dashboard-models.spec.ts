@@ -141,7 +141,10 @@ test.describe('Dashboard Models Tab @dashboard', () => {
     });
 
     test('M-12: Registered models list fetches from /v0/models/registered', async ({ page }) => {
-      // Intercept the API call
+      // Navigate first, then set up route for subsequent requests
+      await page.reload();
+
+      // Intercept the API call after reload
       let apiCalled = false;
       await page.route('**/v0/models/registered', async (route) => {
         apiCalled = true;
@@ -160,8 +163,7 @@ test.describe('Dashboard Models Tab @dashboard', () => {
         });
       });
 
-      // Navigate to force re-fetch
-      await page.reload();
+      // Navigate to Models tab to trigger API call
       await dashboard.gotoModels();
       await page.waitForTimeout(1000);
 

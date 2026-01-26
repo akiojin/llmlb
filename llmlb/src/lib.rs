@@ -44,6 +44,12 @@ pub mod config;
 /// エンドポイントタイプ自動判別
 pub mod detection;
 
+/// xLLMクライアント（ダウンロード・メタデータ）
+pub mod xllm;
+
+/// モデルメタデータ取得
+pub mod metadata;
+
 /// JWT秘密鍵管理
 pub mod jwt_secret;
 

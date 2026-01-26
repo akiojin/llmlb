@@ -421,6 +421,31 @@ pub async fn update_endpoint_model(
     Ok(result.rows_affected() > 0)
 }
 
+/// モデルのmax_tokensのみを更新（SPEC-66555000）
+///
+/// メタデータ取得後にcontext_lengthをmax_tokensとして保存する。
+pub async fn update_model_max_tokens(
+    pool: &SqlitePool,
+    endpoint_id: Uuid,
+    model_id: &str,
+    max_tokens: u32,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE endpoint_models
+        SET max_tokens = ?
+        WHERE endpoint_id = ? AND model_id = ?
+        "#,
+    )
+    .bind(max_tokens as i32)
+    .bind(endpoint_id.to_string())
+    .bind(model_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 /// エンドポイントのモデル一覧を取得
 pub async fn list_endpoint_models(
     pool: &SqlitePool,

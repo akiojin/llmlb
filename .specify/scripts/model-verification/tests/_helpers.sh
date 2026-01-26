@@ -44,17 +44,17 @@ run_with_timeout() {
   wait "$pid"
 }
 
-run_llm_node() {
+run_xllm() {
   local timeout_secs="${VERIFY_TIMEOUT_SECS:-120}"
-  if [[ -z "${LLM_NODE:-}" ]]; then
-    echo "FAIL: LLM_NODE is not set" >&2
+  if [[ -z "${XLLM_BIN:-}" ]]; then
+    echo "FAIL: XLLM_BIN is not set" >&2
     exit 1
   fi
-  if [[ ! -x "$LLM_NODE" ]]; then
-    echo "FAIL: llm-node not found: $LLM_NODE" >&2
+  if [[ ! -x "$XLLM_BIN" ]]; then
+    echo "FAIL: xLLM not found: $XLLM_BIN" >&2
     exit 1
   fi
-  run_with_timeout "$timeout_secs" "$LLM_NODE" "$@"
+  run_with_timeout "$timeout_secs" "$XLLM_BIN" "$@"
 }
 
 infer_command() {
@@ -76,7 +76,7 @@ infer_command() {
     return $?
   fi
 
-  run_llm_node --model "$MODEL" --n-predict "$n_predict" --prompt "$prompt" "$@"
+  run_xllm --model "$MODEL" --n-predict "$n_predict" --prompt "$prompt" "$@"
 }
 
 format_chat_prompt() {

@@ -1,16 +1,16 @@
-# LLM Router
+# LLM Load Balancer
 
-A centralized management system for coordinating LLM inference nodes across multiple machines
+A centralized management system for coordinating LLM inference runtimes across multiple machines
 
 English | [日本語](./README.ja.md)
 
 ## Overview
 
-LLM Router is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference nodes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
+LLM Load Balancer is a powerful centralized system that provides unified management and a single API endpoint for multiple LLM inference runtimes running across different machines. It features intelligent load balancing, automatic failure detection, real-time monitoring capabilities, and seamless integration for enhanced scalability.
 
 ### Vision
 
-LLM Router is designed to serve three primary use cases:
+LLM Load Balancer is designed to serve three primary use cases:
 
 1. **Private LLM Server** - For individuals and small teams who want to run their own LLM infrastructure with full control over their data and models
 2. **Enterprise Gateway** - For organizations requiring centralized management, access control, and monitoring of LLM resources across departments
@@ -18,48 +18,88 @@ LLM Router is designed to serve three primary use cases:
 
 ### Multi-Engine Architecture
 
-LLM Router supports a pluggable multi-engine architecture:
+LLM Load Balancer uses a manager-based multi-engine architecture:
 
 | Engine | Status | Models | Hardware |
 |--------|--------|--------|----------|
 | **llama.cpp** | Production | GGUF format (LLaMA, Mistral, etc.) | CPU, CUDA, Metal |
-| **GPT-OSS** | Production (Metal), WIP (DirectML) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
+| **GPT-OSS** | Production (Metal/CUDA) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
 | **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
 | **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
 | **Nemotron** | Validation | Safetensors format | CUDA |
 
+Manager-based runtimes replace the legacy plugin system. See `docs/manager-migration.md`
+for migration steps.
+
+**Engine Selection Policy**:
+
+- **Models with GGUF available** → Use llama.cpp (Metal/CUDA ready)
+- **Models with safetensors only** → Implement built-in engine (Metal/CUDA support required)
+
+### Safetensors Architecture Support (Implementation-Aligned)
+
+| Architecture | Status | Notes |
+|-------------|--------|-------|
+| **gpt-oss (MoE + MXFP4)** | Implemented | Uses `mlp.router.*` and `mlp.experts.*_(blocks\|scales\|bias)` with MoE forward |
+| **nemotron3 (Mamba-Transformer MoE)** | Staged (not wired) | Not connected to the forward pass yet |
+
+See `specs/SPEC-69549000/spec.md` for the authoritative list and updates.
+
+### GGUF Architecture Coverage (llama.cpp, Examples)
+
+These are representative examples of model families supported via GGUF/llama.cpp. This list is
+non-exhaustive and follows upstream llama.cpp compatibility.
+
+| Architecture | Example models | Notes |
+|-------------|----------------|-------|
+| **llama** | Llama 3.1, Llama 3.2, Llama 3.3, DeepSeek-R1-Distill-Llama | Meta Llama family |
+| **mistral** | Mistral, Mistral-Nemo | Mistral AI family |
+| **gemma** | Gemma3, Gemma3n, Gemma3-QAT, FunctionGemma, EmbeddingGemma | Google Gemma family |
+| **qwen** | Qwen2.5, Qwen3, QwQ, Qwen3-VL, Qwen3-Coder, Qwen3-Embedding, Qwen3-Reranker | Alibaba Qwen family |
+| **phi** | Phi-4 | Microsoft Phi family |
+| **nemotron** | Nemotron | NVIDIA Nemotron family |
+| **deepseek** | DeepSeek-V3.2, DeepCoder-Preview | DeepSeek family |
+| **gpt-oss** | GPT-OSS, GPT-OSS-Safeguard | OpenAI GPT-OSS family |
+| **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite family |
+| **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM family |
+| **kimi** | Kimi-K2 | Moonshot Kimi family |
+| **moondream** | Moondream2 | Moondream vision family |
+| **devstral** | Devstral-Small | Mistral derivative (coding-focused) |
+| **magistral** | Magistral-Small-3.2 | Mistral derivative (multimodal) |
+
 ### Multimodal Support
 
-Beyond text generation, LLM Router provides OpenAI-compatible APIs for:
+Beyond text generation, LLM Load Balancer provides OpenAI-compatible APIs for:
 
 - **Text-to-Speech (TTS)**: `/v1/audio/speech` - Generate natural speech from text
 - **Speech-to-Text (ASR)**: `/v1/audio/transcriptions` - Transcribe audio to text
 - **Image Generation**: `/v1/images/generations` - Generate images from text prompts
 - **Image Understanding**: `/v1/chat/completions` - Analyze images via `image_url` content parts (Vision models)
 
+Text generation should use the **Responses API** (`/v1/responses`) by default. Chat Completions remains
+available for compatibility.
+
 ## Key Features
 
 - **Unified API Endpoint**: Access multiple LLM runtime instances through a single URL
-- **Automatic Load Balancing**: Intelligently distribute requests across available nodes
-- **Automatic Failure Detection**: Detect offline nodes and exclude them from routing
-- **Real-time Monitoring**: Comprehensive visualization of node states and performance metrics via web dashboard
+- **Automatic Load Balancing**: Latency-based request distribution across available endpoints
+- **Endpoint Management**: Centralized management of Ollama, vLLM, xLLM and other OpenAI-compatible servers
+- **Model Sync**: Automatic model discovery via `GET /v1/models` from registered endpoints
+- **Automatic Failure Detection**: Detect offline endpoints and exclude them from routing
+- **Real-time Monitoring**: Comprehensive visualization of endpoint states and performance metrics via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention
-- **Self-registering Nodes**: Nodes automatically register with the Router
-- **Node-driven Model Sync**: Nodes pull metadata via `/v0/models` + manifest and download directly from Hugging Face
-- **WebUI Management**: Manage node settings, monitoring, and control through
-  browser-based dashboard
+- **WebUI Management**: Manage endpoints, monitoring, and control through browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
-- **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities
-  and availability
-- **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the
-  model name to proxy to the corresponding cloud provider while keeping the
-  same OpenAI-compatible endpoint.
+- **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
+- **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the model name to proxy to the corresponding cloud provider while keeping the same OpenAI-compatible endpoint.
 
 ## MCP Server for LLM Assistants
 
-LLM assistants (like Claude Code) can interact with LLM Router through a dedicated
+LLM assistants (like Claude Code) can interact with LLM Load Balancer through a dedicated
 MCP server. This is the recommended approach over using Bash with curl commands
 directly.
+The MCP server is installed and run with npm/npx; the repository root uses pnpm
+for workspace tasks.
 
 ### Why MCP Server over Bash + curl?
 
@@ -76,9 +116,9 @@ directly.
 ### Installation
 
 ```bash
-npm install -g @llm-router/mcp-server
+npm install -g @llmlb/mcp-server
 # or
-npx @llm-router/mcp-server
+npx @llmlb/mcp-server
 ```
 
 ### Configuration (.mcp.json)
@@ -86,13 +126,13 @@ npx @llm-router/mcp-server
 ```json
 {
   "mcpServers": {
-    "llm-router": {
+    "llmlb": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@llm-router/mcp-server"],
+      "args": ["-y", "@llmlb/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:32768",
-        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+        "LLMLB_URL": "http://localhost:32768",
+        "LLMLB_API_KEY": "sk_your_api_key"
       }
     }
   }
@@ -103,14 +143,14 @@ For detailed documentation, see [mcp-server/README.md](./mcp-server/README.md).
 
 ## Quick Start
 
-### Router (llm-router)
+### Router (llmlb)
 
 ```bash
 # Build
-cargo build --release -p llm-router
+cargo build --release -p llmlb
 
 # Run
-./target/release/llm-router
+./target/release/llmlb
 # Default: http://0.0.0.0:32768
 
 # Access dashboard
@@ -121,26 +161,26 @@ cargo build --release -p llm-router
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address |
-| `LLM_ROUTER_PORT` | `32768` | Listen port |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level |
-| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username |
-| `LLM_ROUTER_ADMIN_PASSWORD` | (required) | Initial admin password |
+| `LLMLB_HOST` | `0.0.0.0` | Bind address |
+| `LLMLB_PORT` | `32768` | Listen port |
+| `LLMLB_LOG_LEVEL` | `info` | Log level |
+| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret |
+| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
+| `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
 
-**Backward compatibility:** Legacy env var names (`ROUTER_PORT` etc.) are supported but deprecated.
+**Backward compatibility:** Legacy env var names (`LLMLB_PORT` etc.) are supported but deprecated.
 
 **System Tray (Windows/macOS only):**
 
-On Windows 10+ and macOS 12+, the router displays a system tray icon.
+On Windows 10+ and macOS 12+, the load balancer displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 
 ### CLI Reference
 
-The router CLI currently exposes only basic flags (`--help`, `--version`).
+the load balancer CLI currently exposes only basic flags (`--help`, `--version`).
 Day-to-day management is done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
 
-### Node (C++)
+### Runtime (C++)
 
 **Prerequisites:**
 
@@ -159,32 +199,32 @@ sudo apt install cmake build-essential
 
 ```bash
 # Build (Metal is enabled by default on macOS)
-npm run build:node
+npm run build:xllm
 
 # Build (Linux / CUDA)
-npm run build:node:cuda
+npm run build:xllm:cuda
 
 # Run
-npm run start:node
+npm run start:xllm
 
 # Or manually:
-# cd node && cmake -B build -S . && cmake --build build --config Release
+# cd xllm && cmake -B build -S . && cmake --build build --config Release
 # # Linux / CUDA:
-# # cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
-# LLM_ROUTER_URL=http://localhost:32768 ./node/build/llm-node
+# # cd xllm && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
+# LLMLB_URL=http://localhost:32768 ./xllm/build/xllm
 ```
 
 **Environment Variables:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with |
-| `LLM_NODE_PORT` | `32769` | Node listen port |
-| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory |
-| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
-| `LLM_NODE_LOG_LEVEL` | `info` | Log level |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | Load balancer URL to register with |
+| `LLM_RUNTIME_PORT` | `32769` | Runtime listen port |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory |
+| `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
+| `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address |
+| `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
+| `LLM_RUNTIME_LOG_LEVEL` | `info` | Log level |
 
 **Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
 
@@ -192,28 +232,28 @@ npm run start:node
 
 ```bash
 # Build
-docker build --build-arg CUDA=cpu -t llm-node:latest node/
+docker build --build-arg CUDA=cpu -t xllm:latest xllm/
 
 # Run
 docker run --rm -p 32769:32769 \
-  -e LLM_ROUTER_URL=http://host.docker.internal:32768 \
-  llm-node:latest
+  -e LLMLB_URL=http://host.docker.internal:32768 \
+  xllm:latest
 ```
 
 ## Load Balancing
 
-LLM Router supports multiple load balancing strategies to optimize request distribution across nodes.
+LLM Load Balancer supports multiple load balancing strategies to optimize request distribution across runtimes.
 
 ### Strategies
 
 #### 1. Metrics-Based Load Balancing (Recommended)
 
-Selects nodes based on real-time metrics (CPU usage, memory usage, active requests). This intelligent mode provides optimal performance by dynamically routing requests to the least loaded node, ensuring efficient resource utilization.
+Selects runtimes based on real-time metrics (CPU usage, memory usage, active requests). This intelligent mode provides optimal performance by dynamically routing requests to the least loaded runtime, ensuring efficient resource utilization.
 
 **Configuration:**
 ```bash
 # Enable metrics-based load balancing
-LLM_ROUTER_LOAD_BALANCER_MODE=metrics cargo run -p llm-router
+LLMLB_LOAD_BALANCER_MODE=metrics cargo run -p llmlb
 ```
 
 **Load Score Calculation:**
@@ -221,36 +261,36 @@ LLM_ROUTER_LOAD_BALANCER_MODE=metrics cargo run -p llm-router
 score = cpu_usage + memory_usage + (active_requests × 10)
 ```
 
-The node with the **lowest score** is selected. If all nodes have CPU usage > 80%, the system automatically falls back to round-robin.
+The runtime with the **lowest score** is selected. If all runtimes have CPU usage > 80%, the system automatically falls back to round-robin.
 
 **Example:**
-- Node A: CPU 20%, Memory 30%, Active 1 → Score = 60 ✓ Selected
-- Node B: CPU 70%, Memory 50%, Active 5 → Score = 170
+- Runtime A: CPU 20%, Memory 30%, Active 1 → Score = 60 ✓ Selected
+- Runtime B: CPU 70%, Memory 50%, Active 5 → Score = 170
 
 #### 2. Advanced Load Balancing (Default)
 
-Combines multiple factors including response time, active requests, and CPU usage to provide sophisticated node selection with adaptive performance optimization.
+Combines multiple factors including response time, active requests, and CPU usage to provide sophisticated runtime selection with adaptive performance optimization.
 
 **Configuration:**
 ```bash
 # Use default advanced load balancing (or omit LOAD_BALANCER_MODE)
-LLM_ROUTER_LOAD_BALANCER_MODE=auto cargo run -p llm-router
+LLMLB_LOAD_BALANCER_MODE=auto cargo run -p llmlb
 ```
 
 ### Health / Metrics API
 
-Nodes report health + metrics to the Router for node status and load balancing decisions.
+Runtimes report health + metrics to the load balancer for runtime status and load balancing decisions.
 
-**Endpoint:** `POST /v0/health` (requires `X-Node-Token` + API key with `node`)
+**Endpoint:** `POST /v0/health` (requires `X-Runtime-Token` + API key with `runtime`)
 
 **Headers:**
 - `Authorization: Bearer <api_key>`
-- `X-Node-Token: <node_token>`
+- `X-Runtime-Token: <runtime_token>`
 
 **Request:**
 ```json
 {
-  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
   "cpu_usage": 45.5,
   "memory_usage": 60.2,
   "active_requests": 3,
@@ -266,13 +306,13 @@ Nodes report health + metrics to the Router for node status and load balancing d
 
 ## Architecture
 
-LLM Router coordinates local llama.cpp nodes and optionally proxies to cloud LLM providers via model prefixes.
+LLM Load Balancer coordinates local llama.cpp runtimes and optionally proxies to cloud LLM providers via model prefixes.
 
 ### Components
 - **Router (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
-- **Local Nodes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the router.
-- **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the router forwards to the corresponding cloud API.
-- **Storage**: SQLite for router metadata; model files live on each node.
+- **Local Runtimes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the load balancer.
+- **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the load balancer forwards to the corresponding cloud API.
+- **Storage**: SQLite for load balancer metadata; model files live on each runtime.
 - **Observability**: Prometheus metrics, structured logs, dashboard stats.
 
 ### System Overview
@@ -288,138 +328,189 @@ Client
   ▼
 Router (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
-  └─ No prefix → Scheduler → Local Node
+  └─ No prefix → Scheduler → Local Runtime
                        └─ llama.cpp inference → Response
 ```
 
 ### Communication Flow (Proxy Pattern)
 
-LLM Router uses a **Proxy Pattern** - clients only need to know the Router URL.
+LLM Load Balancer uses a **Proxy Pattern** - clients only need to know the load balancer URL.
 
 #### Traditional Method (Without Router)
 ```bash
-# Direct access to each node API (default: node_port=32769)
-curl http://machine1:32769/v1/chat/completions -d '...'
-curl http://machine2:32769/v1/chat/completions -d '...'
-curl http://machine3:32769/v1/chat/completions -d '...'
+# Direct access to each runtime API (default: runtime_port=32769)
+curl http://machine1:32769/v1/responses -d '...'
+curl http://machine2:32769/v1/responses -d '...'
+curl http://machine3:32769/v1/responses -d '...'
 ```
 
 #### With Router (Proxy)
 ```bash
-# Unified access to Router - automatic routing to the optimal node
-curl http://router:32768/v1/chat/completions -d '...'
-curl http://router:32768/v1/chat/completions -d '...'
-curl http://router:32768/v1/chat/completions -d '...'
+# Unified access to Router - automatic routing to the optimal runtime
+curl http://lb:32768/v1/responses -d '...'
+curl http://lb:32768/v1/responses -d '...'
+curl http://lb:32768/v1/responses -d '...'
 ```
 
 **Detailed Request Flow:**
 
 1. **Client → Router**
    ```
-   POST http://router:32768/v1/chat/completions
+   POST http://lb:32768/v1/responses
    Content-Type: application/json
 
-   {"model": "llama2", "messages": [...]}
+   {"model": "llama2", "input": "Hello!"}
    ```
 
 2. **Router Internal Processing**
-   - Select optimal node (Load Balancing)
-   - Forward request to selected node via HTTP client
+   - Select optimal runtime (Load Balancing)
+   - Forward request to selected runtime via HTTP client
 
-3. **Router → Node (Internal Communication)**
+3. **Router → Runtime (Internal Communication)**
    ```
-   POST http://node1:32769/v1/chat/completions
+   POST http://runtime1:32769/v1/responses
    Content-Type: application/json
 
-   {"model": "llama2", "messages": [...]}
+   {"model": "llama2", "input": "Hello!"}
    ```
 
-4. **Node Local Processing**
-   - Node loads model on-demand (from local cache or router-provided source)
-   - Node runs llama.cpp inference and returns an OpenAI-compatible response
+4. **Runtime Local Processing**
+   - Runtime loads model on-demand (from local cache or load-balancer-provided source)
+   - Runtime runs llama.cpp inference and returns an OpenAI-compatible response
 
 5. **Router → Client (Return Response)**
    ```json
-   {
-     "id": "chatcmpl-xxx",
-     "object": "chat.completion",
-     "choices": [{
-       "index": 0,
-       "message": {"role": "assistant", "content": "..."},
-       "finish_reason": "stop"
-     }]
-   }
+  {
+    "id": "resp_123",
+    "object": "response",
+    "output": [
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          { "type": "output_text", "text": "Hello!" }
+        ]
+      }
+    ]
+  }
    ```
 
-> **Note**: LLM Router exclusively supports **OpenAI-compatible API format**.
-> All responses follow the OpenAI Chat Completions API specification.
+> **Note**: LLM Load Balancer supports OpenAI-compatible APIs and **recommends** the
+> Responses API (`/v1/responses`). Chat Completions remains available for
+> compatibility.
 
 **From Client's Perspective**:
 - Router appears as the only OpenAI-compatible API server
-- No need to be aware of multiple internal nodes
+- No need to be aware of multiple internal runtimes
 - Complete with a single HTTP request
 
 ### Model Sync (No Push Distribution)
 
-- The router never pushes models to nodes.
-- Nodes resolve models on-demand in this order:
-  - local cache (`LLM_NODE_MODELS_DIR`)
-  - allowlisted origin download (Hugging Face, etc.; configure via `LLM_NODE_ORIGIN_ALLOWLIST`)
-  - manifest-based selection from the router (`GET /v0/models/registry/:model_name/manifest.json`)
+- the load balancer never pushes models to runtimes.
+- Runtimes resolve models on-demand in this order:
+  - local cache (`LLM_RUNTIME_MODELS_DIR`)
+  - allowlisted origin download (Hugging Face, etc.; configure via `LLM_RUNTIME_ORIGIN_ALLOWLIST`)
+  - manifest-based selection from the load balancer (`GET /v0/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
-- Nodes register via `/v0/nodes`; router rejects nodes without GPUs by default.
+- Runtimes register via `/v0/runtimes`; CPU-only endpoints are also supported.
 - Heartbeats carry CPU/GPU/memory metrics used for load balancing.
 - Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
 
 ### Benefits of Proxy Pattern
 
 1. **Unified Endpoint**
-   - Clients only need to know the Router URL
-   - No need to know each node location
+   - Clients only need to know the load balancer URL
+   - No need to know each runtime location
 
 2. **Transparent Load Balancing**
-   - Router automatically selects the optimal node
+   - Router automatically selects the optimal runtime
    - Clients benefit from load distribution without awareness
 
 3. **Automatic Retry on Failure**
-   - If Node1 fails → Router automatically tries Node2
+   - If Runtime1 fails → Router automatically tries Runtime2
    - No re-request needed from client
 
 4. **Security**
-   - Node IP addresses not exposed to clients
+   - Runtime IP addresses not exposed to clients
    - Only Router needs to be publicly accessible
 
 5. **Scalability**
-   - Adding nodes automatically increases processing capacity
+   - Adding runtimes automatically increases processing capacity
    - No changes needed on client side
 
 ## Project Structure
 
 ```
-llm-router/
-├── common/              # Shared library (types, protocol, errors)
-├── router/              # Rust router (HTTP APIs, dashboard, proxy)
-├── node/                # C++ node (llama.cpp, OpenAI-compatible /v1/*)
+llmlb/
+├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy, common types)
+├── xllm/                # C++ xLLM inference engine (llama.cpp, OpenAI-compatible /v1/*)
 ├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
 ```
 
 ## Dashboard
 
-The dashboard is served by the router at `/dashboard`.
-Use it to monitor nodes, view request history, inspect logs, and manage models.
+The dashboard is served by the load balancer at `/dashboard`.
+Use it to monitor endpoints, view request history, inspect logs, and manage models.
 
 ### Quick usage
 
-1. Start the router:
+1. Start the load balancer:
    ```bash
-   cargo run -p llm-router
+   cargo run -p llmlb
    ```
-2. Open:
-   ```
+1. Open:
+   ```text
    http://localhost:32768/dashboard
    ```
+
+## Endpoint Management
+
+the load balancer centrally manages external inference servers (Ollama, vLLM, xLLM, etc.) as "endpoints".
+
+### Supported Endpoints
+
+| Type | Description | Health Check |
+|------|-------------|--------------|
+| **xLLM** | In-house inference server (llama.cpp/whisper.cpp) | `GET /v1/models` |
+| **Ollama** | Ollama server | `GET /v1/models` |
+| **vLLM** | vLLM inference server | `GET /v1/models` |
+| **OpenAI-compatible** | Other OpenAI-compatible APIs | `GET /v1/models` |
+
+### Registration via Dashboard
+
+1. Dashboard → Sidebar "Endpoints"
+2. Click "New Endpoint"
+3. Enter name and base URL (e.g., `http://192.168.1.100:11434`)
+4. "Connection Test" → "Save"
+
+### Registration via REST API
+
+```bash
+# Register endpoint
+curl -X POST http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Ollama Server A", "base_url": "http://192.168.1.100:11434"}'
+
+# List endpoints
+curl http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key"
+
+# Sync models
+curl -X POST http://localhost:32768/v0/endpoints/{id}/sync \
+  -H "Authorization: Bearer sk_your_api_key"
+```
+
+### Status Transitions
+
+- **pending**: Just registered (awaiting health check)
+- **online**: Health check successful
+- **offline**: Health check failed
+- **error**: Connection error
+
+For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quickstart.md).
 
 ## Hugging Face registration (safetensors / GGUF)
 
@@ -428,8 +519,8 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - Dashboard → **Models** → **Register**
   - Choose `format`: `safetensors` (native engines) or `gguf` (llama.cpp fallback).
     - If the repo contains both `safetensors` and `.gguf`, `format` is required.
-    - Safetensors text generation is available only when a native engine exists
-      (gpt-oss on Metal, DirectML is in progress). Use `gguf` for GGUF-only models.
+    - Safetensors text generation is available only when the safetensors.cpp engine is enabled
+      (Metal/CUDA). Use `gguf` for GGUF-only models.
   - Enter a Hugging Face repo or file URL (e.g. `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`).
   - For `format=gguf`:
     - Either specify an exact `.gguf` `filename`, or choose `gguf_policy` (`quality` / `memory` / `speed`)
@@ -437,21 +528,19 @@ Use it to monitor nodes, view request history, inspect logs, and manage models.
   - For `format=safetensors`:
     - The HF snapshot must include `config.json` and `tokenizer.json`.
     - Sharded weights must include an `.index.json`.
-    - gpt-oss prefers official GPU artifacts when present:
-      `model.metal.bin` (Metal) / `model.directml.bin` or `model.dml.bin` (DirectML).
-    - Windows (DirectML) uses `gptoss_directml.dll` (and `nemotron_directml.dll` for Nemotron).
-      - Built as part of the Windows build; place it next to the model dir (e.g. `<model_dir>/gptoss_directml.dll`), or
-      - set `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` to an absolute path.
+    - If official GPU artifacts are provided (for example `model.metal.bin`), they may be used as
+      execution cache when supported. Otherwise, safetensors are used directly.
+    - Windows requires CUDA builds (`BUILD_WITH_CUDA=ON`). DirectML is not supported.
   - Router stores **metadata + manifest only** (no binary download).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
-  - Nodes pull models on-demand via the model registry endpoints:
+  - Runtimes pull models on-demand via the model registry endpoints:
     - `GET /v0/models/registry/:model_name/manifest.json`
     - `GET /v0/models/registry/:model_name/files/:file_name`
     - (Legacy) `GET /v0/models/blob/:model_name` for single-file GGUF.
 - API:
   - `POST /v0/models/register` with `repo` and optional `filename`.
-- `/v1/models` lists registered models; `ready` reflects node sync status.
+- `/v1/models` lists registered models; `ready` reflects runtime sync status.
 
 ## Installation
 
@@ -484,7 +573,7 @@ If `nvidia-smi` shows your GPU, the driver is installed.
 
 #### Installing CUDA Toolkit (Build Environment Only)
 
-Required only for building the node with CUDA support (`BUILD_WITH_CUDA=ON`).
+Required only for building the runtime with CUDA support (`BUILD_WITH_CUDA=ON`).
 
 **Windows:**
 
@@ -512,34 +601,34 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 nvcc --version
 ```
 
-**Note:** Runtime environments (nodes running pre-built binaries) only need the CUDA
+**Note:** Runtime environments (runtimes running pre-built binaries) only need the CUDA
 Driver, not the full Toolkit.
 
 ### 1) Build from Rust source (Recommended)
 ```bash
-git clone https://github.com/akiojin/llm-router.git
-cd llm-router
+git clone https://github.com/akiojin/llmlb.git
+cd llmlb
 make quality-checks   # fmt/clippy/test/markdownlint
-cargo build -p llm-router --release
+cargo build -p llmlb --release
 ```
-Artifact: `target/release/llm-router`
+Artifact: `target/release/llmlb`
 
 ### 2) Run with Docker
 ```bash
-docker build -t llm-router:latest .
+docker build -t llmlb:latest .
 docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
-  llm-router:latest
+  llmlb:latest
 ```
 If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
 
-### 3) C++ Node Build
-See [Node (C++)](#node-c) section in Quick Start.
+### 3) C++ Runtime Build
+See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 ### Requirements
 
 - **Router**: Rust toolchain (stable)
-- **Node**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
+- **Runtime**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
 
 ## Usage
 
@@ -547,40 +636,39 @@ See [Node (C++)](#node-c) section in Quick Start.
 
 1. **Start Router**
    ```bash
-   ./target/release/llm-router
+   ./target/release/llmlb
    # Default: http://0.0.0.0:32768
    ```
 
-2. **Start Nodes on Multiple Machines**
+2. **Start Runtimes on Multiple Machines**
    ```bash
    # Machine 1
-   LLM_ROUTER_URL=http://router:32768 \
-   # Replace with your actual API key (scope: node)
-   LLM_NODE_API_KEY=sk_your_node_register_key \
-   ./node/build/llm-node
+   LLMLB_URL=http://lb:32768 \
+   # Replace with your actual API key (scope: runtime)
+   LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
+   ./xllm/build/xllm
 
    # Machine 2
-   LLM_ROUTER_URL=http://router:32768 \
-   # Replace with your actual API key (scope: node)
-   LLM_NODE_API_KEY=sk_your_node_register_key \
-   ./node/build/llm-node
+   LLMLB_URL=http://lb:32768 \
+   # Replace with your actual API key (scope: runtime)
+   LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
+   ./xllm/build/xllm
    ```
 
-3. **Send Inference Requests to Router (OpenAI-compatible)**
+3. **Send Inference Requests to Router (OpenAI-compatible, Responses API recommended)**
    ```bash
-   curl http://router:32768/v1/chat/completions \
+   curl http://lb:32768/v1/responses \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
        "model": "gpt-oss-20b",
-       "messages": [{"role": "user", "content": "Hello!"}],
-       "stream": false
+       "input": "Hello!"
      }'
    ```
 
    **Image generation example**
    ```bash
-   curl http://router:32768/v1/images/generations \
+   curl http://lb:32768/v1/images/generations \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -594,7 +682,7 @@ See [Node (C++)](#node-c) section in Quick Start.
 
    **Image understanding example**
    ```bash
-   curl http://router:32768/v1/chat/completions \
+   curl http://lb:32768/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk_your_api_key" \
      -d '{
@@ -611,33 +699,33 @@ See [Node (C++)](#node-c) section in Quick Start.
        "max_tokens": 300
      }'
    ```
-4. **List Registered Nodes**
+4. **List Registered Runtimes**
    ```bash
-   curl http://router:32768/v0/nodes \
+   curl http://lb:32768/v0/runtimes \
      # Replace with your actual API key (scope: admin)
      -H "Authorization: Bearer sk_your_admin_key"
    ```
 
 ### Environment Variables
 
-#### Router (llm-router)
+#### Router (llmlb)
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | Bind address | `ROUTER_HOST` |
-| `LLM_ROUTER_PORT` | `32768` | Listen port | `ROUTER_PORT` |
-| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | Database URL | `DATABASE_URL` |
-| `LLM_ROUTER_DATA_DIR` | `~/.llm-router` | Base directory for DB/log defaults | - |
-| `LLM_ROUTER_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
-| `LLM_ROUTER_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
-| `LLM_ROUTER_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
-| `LLM_ROUTER_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
-| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | Node health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
-| `LLM_ROUTER_NODE_TIMEOUT` | `60` | Node request timeout (seconds) | `NODE_TIMEOUT` |
-| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
-| `ROUTER_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
+| `LLMLB_HOST` | `0.0.0.0` | Bind address | `LLMLB_HOST` |
+| `LLMLB_PORT` | `32768` | Listen port | `LLMLB_PORT` |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/lb.db` | Database URL | `DATABASE_URL` |
+| `LLMLB_DATA_DIR` | `~/.llmlb` | Base directory for DB/log defaults | - |
+| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
+| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
+| `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
+| `LLMLB_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
+| `LLMLB_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
+| `LLMLB_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
+| `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | Runtime health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |
+| `LLMLB_NODE_TIMEOUT` | `60` | Runtime request timeout (seconds) | `NODE_TIMEOUT` |
+| `LLMLB_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
+| `LLMLB_MAX_WAITERS` | `1024` | Admission queue limit | mainly for tests |
 | `LLM_QUANTIZE_BIN` | - | Path to `llama-quantize` binary | optional |
 
 Cloud / external services:
@@ -651,49 +739,50 @@ Cloud / external services:
 | `ANTHROPIC_API_KEY` | - | API key for `anthropic:` models | required |
 | `ANTHROPIC_API_BASE_URL` | `https://api.anthropic.com` | Override Anthropic base URL | optional |
 | `HF_TOKEN` | - | Hugging Face token for model pulls | optional |
-| `LLM_ROUTER_API_KEY` | - | API key used by e2e tests/clients | client/test use |
+| `LLMLB_API_KEY` | - | API key used by e2e tests/clients | client/test use |
 
-#### Node (llm-node)
+#### Runtime (llm-runtime)
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | Router URL to register with | - |
-| `LLM_NODE_API_KEY` | - | API key for node registration / model registry download | scope: `node` |
-| `LLM_NODE_PORT` | `32769` | Node listen port | - |
-| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | Model storage directory | `LLM_MODELS_DIR` |
-| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
-| `LLM_NODE_ENGINE_PLUGINS_DIR` | (unset) | Engine plugin directory (optional) | - |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
-| `LLM_NODE_IP` | auto-detected | Node IP reported to router | - |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
-| `LLM_NODE_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
-| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | Log directory | `LLM_LOG_DIR` |
-| `LLM_NODE_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
-| `LLM_NODE_CONFIG` | `~/.llm-router/config.json` | Path to node config file | - |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | Load balancer URL to register with | - |
+| `LLM_RUNTIME_API_KEY` | - | API key for runtime registration / model registry download | scope: `runtime` |
+| `LLM_RUNTIME_PORT` | `32769` | Runtime listen port | - |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory | `LLM_MODELS_DIR` |
+| `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) | `LLM_ORIGIN_ALLOWLIST` |
+| `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address | `LLM_BIND_ADDRESS` |
+| `LLM_RUNTIME_IP` | auto-detected | Runtime IP reported to load balancer | - |
+| `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) | `LLM_HEARTBEAT_SECS` |
+| `LLM_RUNTIME_LOG_LEVEL` | `info` | Log level | `LLM_LOG_LEVEL`, `LOG_LEVEL` |
+| `LLM_RUNTIME_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` |
+| `LLM_RUNTIME_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
+| `LLM_RUNTIME_CONFIG` | `~/.llmlb/config.json` | Path to runtime config file | - |
 | `LLM_MODEL_IDLE_TIMEOUT` | unset | Seconds before unloading idle models | enabled when set |
 | `LLM_MAX_LOADED_MODELS` | unset | Cap on simultaneously loaded models | enabled when set |
 | `LLM_MAX_MEMORY_BYTES` | unset | Max memory for loaded models | enabled when set |
 
 **Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
 
+Note: Engine plugins were removed in favor of built-in managers. See `docs/migrations/plugin-to-manager.md`.
+
 ## Troubleshooting
 
 ### GPU not found at startup
 - Check: `nvidia-smi` or `CUDA_VISIBLE_DEVICES`
-- Disable via env var: Node side `LLM_ALLOW_NO_GPU=true` (disabled by default)
+- Disable via env var: Runtime side `LLM_ALLOW_NO_GPU=true` (disabled by default)
 - If it still fails, check for NVML library presence
 
 ### Cloud models return 401/400
-- Check if `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` are set on the router side
+- Check if `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` are set on the load balancer side
 - If `*_key_present` is false in Dashboard `/v0/dashboard/stats`, it's not set
 - Models without prefixes are routed locally, so do not add a prefix if you don't have cloud keys
 
 ### Port conflict
-- Router: Change `LLM_ROUTER_PORT` (e.g., `LLM_ROUTER_PORT=18080`)
-- Node: Change `LLM_NODE_PORT` or use `--port`
+- Router: Change `LLMLB_PORT` (e.g., `LLMLB_PORT=18080`)
+- Runtime: Change `LLM_RUNTIME_PORT` or use `--port`
 
 ### SQLite file creation failed
-- Check write permissions for the directory in `LLM_ROUTER_DATABASE_URL` path
+- Check write permissions for the directory in `LLMLB_DATABASE_URL` path
 - On Windows, check if the path contains spaces
 
 ### Dashboard does not appear
@@ -702,35 +791,21 @@ Cloud / external services:
 - Check static delivery settings for `/dashboard/*` if using a reverse proxy
 
 ### OpenAI compatible API returns 503 / Model not registered
-- Returns 503 if all nodes are `initializing`. Wait for node model load or check status at `/v0/dashboard/nodes`
-- If specified model does not exist locally, wait for node to auto-pull
+- Returns 503 if all runtimes are `initializing`. Wait for runtime model load or check status at `/v0/dashboard/runtimes`
+- If specified model does not exist locally, wait for runtime to auto-pull
 
 ### Too many / too few logs
-- Control via `LLM_ROUTER_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLM_ROUTER_LOG_LEVEL=info` or `RUST_LOG=or_router=debug`)
-- Node logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
+- Control via `LLMLB_LOG_LEVEL` or `RUST_LOG` env var (e.g., `LLMLB_LOG_LEVEL=info` or `RUST_LOG=llmlb=debug`)
+- Runtime logs use `spdlog`. Structured logs can be configured via `tracing_subscriber`
 
 ## Development
 
-### Commit Hooks
-
-Install the JavaScript tooling once per clone to enable Husky-managed commit hooks:
-
-```bash
-pnpm install
-```
-
-- Runs the `prepare` script and configures Husky's Git hook directory.
-- Adds a `commit-msg` hook that executes `commitlint --edit "$1"` so invalid messages fail locally instead of in CI.
-- Use `pnpm run lint:commits` to lint a range manually (defaults to `origin/main..HEAD`).
-
-### Running Tests
+For detailed development guidelines, testing procedures, and contribution workflow, see
+[CLAUDE.md](./CLAUDE.md).
 
 ```bash
-# Full quality gate (fmt, clippy, workspace tests, specify checks, markdownlint, OpenAI proxy)
+# Full quality gate
 make quality-checks
-
-# (Optional) Run only the OpenAI-compatible proxy regression suite
-make openai-tests
 ```
 
 ### PoCs
@@ -738,11 +813,11 @@ make openai-tests
 - gpt-oss (auto): `make poc-gptoss`
 - gpt-oss (macOS / Metal): `make poc-gptoss-metal`
 - gpt-oss (Linux / CUDA via GGUF, experimental): `make poc-gptoss-cuda`
-  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (router/node logs, request JSON, etc.)
+  - Logs/workdir are created under `tmp/poc-gptoss-cuda/` (lb/runtime logs, request JSON, etc.)
 
 Notes:
 - gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
-- GPU is required. Supported backends: macOS (Metal) and Windows (DirectML). Linux/CUDA is experimental.
+- GPU is required. Supported backends: macOS (Metal) and Windows (CUDA). Linux/CUDA is experimental.
 
 ### Spec-Driven Development
 
@@ -804,7 +879,7 @@ Hook tests are automatically executed in CI/CD:
 
 ## Request History
 
-LLM Router automatically logs all requests and responses for debugging,
+LLM Load Balancer automatically logs all requests and responses for debugging,
 auditing, and analysis purposes.
 
 ### Features
@@ -815,13 +890,13 @@ response bodies, and metadata
 - **Web Dashboard**: View, filter, and search request history through the
 web interface
 - **Export Capabilities**: Export history as CSV
-- **Filtering Options**: Filter by model, node, status, and time range
+- **Filtering Options**: Filter by model, runtime, status, and time range
 
 ### Accessing Request History
 
 #### Via Web Dashboard
 
-1. Open the router dashboard: `http://localhost:32768/dashboard`
+1. Open the load balancer dashboard: `http://localhost:32768/dashboard`
 2. Navigate to the "Request History" section
 3. Use filters to narrow down specific requests
 4. Click on any request to view full details including request/response bodies
@@ -846,8 +921,8 @@ GET /v0/dashboard/request-responses/export
 ### Storage
 
 Request history is stored in SQLite at:
-- Linux/macOS: `~/.llm-router/router.db`
-- Windows: `%USERPROFILE%\.llm-router\router.db`
+- Linux/macOS: `~/.llmlb/lb.db`
+- Windows: `%USERPROFILE%\.llmlb\lb.db`
 
 Legacy `request_history.json` files (if present) are automatically imported on startup and renamed
 to `.migrated`.
@@ -877,11 +952,12 @@ to `.migrated`.
 
 | Scope | Grants |
 |-------|--------|
-| `node` | Node registration + health + model sync (`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) |
-| `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via node token) |
-| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
+| `endpoints` | Endpoint management (`/v0/endpoints/*`) |
+| `runtime` | Runtime registration + health + model sync (`POST /v0/runtimes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) - Legacy |
+| `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via runtime token) |
+| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/runtimes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
 
-Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
+Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
 
 #### User Management Endpoints
 
@@ -901,23 +977,35 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | PUT | `/v0/api-keys/:id` | Update API key | JWT+Admin or API key (admin) |
 | DELETE | `/v0/api-keys/:id` | Delete API key | JWT+Admin or API key (admin) |
 
-#### Node Management Endpoints
+#### Endpoint Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/nodes` | Register node (GPU required) | API key (node) |
-| GET | `/v0/nodes` | List nodes | JWT+Admin or API key (admin) |
-| DELETE | `/v0/nodes/:node_id` | Delete node | JWT+Admin or API key (admin) |
-| POST | `/v0/nodes/:node_id/disconnect` | Force node offline | JWT+Admin or API key (admin) |
-| PUT | `/v0/nodes/:node_id/settings` | Update node settings | JWT+Admin or API key (admin) |
-| GET | `/v0/nodes/metrics` | List node metrics | JWT+Admin or API key (admin) |
+| POST | `/v0/endpoints` | Register endpoint | JWT+Admin or API key (admin) |
+| GET | `/v0/endpoints` | List endpoints | JWT+Admin/Viewer or API key (admin/endpoints) |
+| GET | `/v0/endpoints/:id` | Get endpoint details | JWT+Admin/Viewer or API key (admin/endpoints) |
+| PUT | `/v0/endpoints/:id` | Update endpoint | JWT+Admin or API key (admin) |
+| DELETE | `/v0/endpoints/:id` | Delete endpoint | JWT+Admin or API key (admin) |
+| POST | `/v0/endpoints/:id/test` | Connection test | JWT+Admin or API key (admin) |
+| POST | `/v0/endpoints/:id/sync` | Sync models | JWT+Admin or API key (admin) |
+
+#### Runtime Management Endpoints (Legacy)
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v0/runtimes` | Register runtime (GPU required) | API key (runtime) |
+| GET | `/v0/runtimes` | List runtimes | JWT+Admin or API key (admin) |
+| DELETE | `/v0/runtimes/:runtime_id` | Delete runtime | JWT+Admin or API key (admin) |
+| POST | `/v0/runtimes/:runtime_id/disconnect` | Force runtime offline | JWT+Admin or API key (admin) |
+| PUT | `/v0/runtimes/:runtime_id/settings` | Update runtime settings | JWT+Admin or API key (admin) |
+| GET | `/v0/runtimes/metrics` | List runtime metrics | JWT+Admin or API key (admin) |
 | GET | `/v0/metrics/summary` | System statistics summary | JWT+Admin or API key (admin) |
 
 #### Health Check Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/health` | Receive health check from node | Node Token + API key (node) |
+| POST | `/v0/health` | Receive health check from runtime | Runtime Token + API key (runtime) |
 
 #### OpenAI-Compatible Endpoints
 
@@ -926,27 +1014,27 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | POST | `/v1/chat/completions` | Chat completions API | API Key |
 | POST | `/v1/completions` | Text completions API | API Key |
 | POST | `/v1/embeddings` | Embeddings API | API Key |
-| GET | `/v1/models` | List models (Azure-style capabilities) | API Key / Node Token |
-| GET | `/v1/models/:model_id` | Get specific model info | API Key / Node Token |
+| GET | `/v1/models` | List models (Azure-style capabilities) | API Key / Runtime Token |
+| GET | `/v1/models/:model_id` | Get specific model info | API Key / Runtime Token |
 
 #### Model Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/models` | List registered models (node sync) | API key (node or admin) |
+| GET | `/v0/models` | List registered models (runtime sync) | API key (runtime or admin) |
 | POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
 | DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
-| GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (node or admin) |
+| GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (runtime or admin) |
 
 #### Dashboard Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/nodes` | Node info list | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/runtimes` | Runtime info list | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/stats` | System statistics | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-history` | Request history | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/metrics/:node_id` | Node metrics history | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/metrics/:runtime_id` | Runtime metrics history | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin) |
 | GET | `/v0/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin) |
@@ -955,8 +1043,8 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/logs/router` | Router logs | JWT+Admin or API key (admin) |
-| GET | `/v0/nodes/:node_id/logs` | Node logs | JWT+Admin or API key (admin) |
+| GET | `/v0/dashboard/logs/lb` | Load balancer logs | JWT+Admin or API key (admin) |
+| GET | `/v0/runtimes/:runtime_id/logs` | Runtime logs | JWT+Admin or API key (admin) |
 
 #### Static Files & Metrics
 
@@ -968,7 +1056,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | GET | `/playground/*path` | Playground static files | None |
 | GET | `/v0/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin) |
 
-### Node API (C++)
+### Runtime API (C++)
 
 #### OpenAI-Compatible Endpoints
 
@@ -979,7 +1067,7 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | POST | `/v1/completions` | Text completions |
 | POST | `/v1/embeddings` | Embeddings generation |
 
-#### Node Management Endpoints
+#### Runtime Management Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -987,20 +1075,20 @@ Debug builds accept `sk_debug`, `sk_debug_node`, `sk_debug_api`, `sk_debug_admin
 | GET | `/startup` | Startup status check |
 | GET | `/metrics` | Metrics (JSON format) |
 | GET | `/metrics/prom` | Prometheus metrics |
-| GET | `/v0/logs?tail=200` | Tail node logs (JSON) |
+| GET | `/v0/logs?tail=200` | Tail runtime logs (JSON) |
 | GET | `/log/level` | Get current log level |
 | POST | `/log/level` | Change log level |
 | GET | `/internal-error` | Intentional error (debug) |
 
 ### Request/Response Examples
 
-#### POST /v0/nodes
+#### POST /v0/runtimes
 
-Register a node.
+Register a runtime.
 
 **Request:**
 
-**Headers:** `Authorization: Bearer <node_api_key>`
+**Headers:** `Authorization: Bearer <runtime_api_key>`
 
 ```json
 {
@@ -1019,10 +1107,10 @@ Register a node.
 
 ```json
 {
-  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "registered",
-  "node_api_port": 32769,
-  "node_token": "nt_xxx"
+  "runtime_api_port": 32769,
+  "runtime_token": "nt_xxx"
 }
 ```
 
@@ -1040,7 +1128,7 @@ List available models with Azure OpenAI-style capabilities.
       "id": "meta-llama/llama-3.1-8b",
       "object": "model",
       "created": 0,
-      "owned_by": "router",
+      "owned_by": "lb",
       "capabilities": {
         "chat_completion": true,
         "completion": true,
@@ -1058,19 +1146,18 @@ List available models with Azure OpenAI-style capabilities.
 ```
 
 > **Note**: `capabilities` uses Azure OpenAI-style boolean object format.
-> `ready` is a router extension derived from node sync state.
+> `ready` is a load balancer extension derived from runtime sync state.
 
-#### POST /v1/chat/completions
+#### POST /v1/responses
 
-Chat completions API (OpenAI-compatible).
+Responses API (recommended).
 
 **Request:**
 
 ```json
 {
   "model": "gpt-oss-20b",
-  "messages": [{"role": "user", "content": "Hello!"}],
-  "stream": false
+  "input": "Hello!"
 }
 ```
 
@@ -1078,17 +1165,22 @@ Chat completions API (OpenAI-compatible).
 
 ```json
 {
-  "id": "chatcmpl-xxx",
-  "object": "chat.completion",
-  "choices": [{
-    "index": 0,
-    "message": {"role": "assistant", "content": "Hello! How can I help you?"},
-    "finish_reason": "stop"
-  }]
+  "id": "resp_123",
+  "object": "response",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        { "type": "output_text", "text": "Hello! How can I help you?" }
+      ]
+    }
+  ]
 }
 ```
 
-> **Important**: LLM Router only supports OpenAI-compatible response format.
+> **Compatibility**: `/v1/chat/completions` remains available for legacy clients.
+> **Important**: LLM Load Balancer only supports OpenAI-compatible response format.
 
 ## License
 

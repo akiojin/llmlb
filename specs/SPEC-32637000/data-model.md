@@ -41,7 +41,7 @@ pub struct ModelInfo {
     /// 対応するAPI機能（Noneの場合はmodel_typeから推定）
     pub capabilities: Option<Vec<ModelCapability>>,
     /// ノードID（このモデルをホストするノード）
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     /// 作成日時
     pub created_at: DateTime<Utc>,
 }

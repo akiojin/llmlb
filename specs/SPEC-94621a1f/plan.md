@@ -6,7 +6,7 @@
 
 ## 概要
 
-ノードは起動時にルーターへ自己登録し、`node_token` を受け取る。以降は定期的にヘルスチェック（ハートビート＋メトリクス）を送信し、ルーターはノード状態（Online/Offline/initializing 等）と負荷情報を更新する。
+ノードは起動時にロードバランサーへ自己登録し、`runtime_token` を受け取る。以降は定期的にヘルスチェック（ハートビート＋メトリクス）を送信し、ロードバランサーはノード状態（Online/Offline/initializing 等）と負荷情報を更新する。
 
 ## API（実装済み）
 
@@ -25,15 +25,15 @@
   - ノードの OpenAI互換API を `http://{ip}:{runtime_port+1}` とみなし、`GET /v1/models` で疎通確認
   - テスト実行時（`cfg!(test)`）のみスキップ
 - **レスポンス**:
-  - `node_id`（UUID）
-  - `node_token`（以降の `/v0/health` 用）
+  - `runtime_id`（UUID）
+  - `runtime_token`（以降の `/v0/health` 用）
 
 ### ヘルスチェック（POST /v0/health）
 
 - **認証**:
   - ヘッダー `X-Node-Token: <token>`
 - **ボディ**:
-  - `HealthCheckRequest`（`node_id`、CPU/メモリ/GPU、`loaded_models`、`initializing` など）
+  - `HealthCheckRequest`（`runtime_id`、CPU/メモリ/GPU、`loaded_models`、`initializing` など）
 - **動作**:
   - `last_seen` 更新
   - ロードマネージャーにメトリクス記録
@@ -41,10 +41,10 @@
 ## 主要コード
 
 - `common/src/protocol.rs`: `RegisterRequest`, `RegisterResponse`, `HealthCheckRequest`
-- `router/src/api/nodes.rs`: `register_node`, `list_nodes`
-- `router/src/api/health.rs`: `health_check`
-- `router/src/registry/mod.rs`: ノード状態管理（DB同期）
-- `router/src/auth/middleware.rs`: `node_token_auth_middleware`（`X-Node-Token`）
+- `llmlb/src/api/nodes.rs`: `register_node`, `list_nodes`
+- `llmlb/src/api/health.rs`: `health_check`
+- `llmlb/src/registry/mod.rs`: ノード状態管理（DB同期）
+- `llmlb/src/auth/middleware.rs`: `runtime_token_auth_middleware`（`X-Node-Token`）
 - `node/src/api/router_client.cpp`: `/v0/nodes` 登録 + `/v0/health` 送信
 
 ## リクエスト例
@@ -68,13 +68,13 @@
 
 Headers:
 
-- `X-Node-Token: <node_token>`
+- `X-Node-Token: <runtime_token>`
 
 Body:
 
 ```json
 {
-  "node_id": "123e4567-e89b-12d3-a456-426614174000",
+  "runtime_id": "123e4567-e89b-12d3-a456-426614174000",
   "cpu_usage": 12.3,
   "memory_usage": 45.6,
   "active_requests": 0,

@@ -2,14 +2,14 @@
 
 ## CLI構造定義
 
-### Router CLI (Rust/clap)
+### Load Balancer CLI (Rust/clap)
 
 ```rust
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "llm-router")]
-#[command(version, about = "LLM Router - OpenAI-compatible API gateway")]
+#[command(name = "llmlb")]
+#[command(version, about = "LLM Load Balancer - OpenAI-compatible API gateway")]
 pub struct Cli {
     // 引数なしでサーバー起動（デフォルト動作）
 }
@@ -28,29 +28,29 @@ CliOptions parse_args(int argc, char** argv);
 
 ## 環境変数定義
 
-### Router環境変数
+### Load Balancer環境変数
 
 | 環境変数 | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
-| `LLM_ROUTER_PORT` | u16 | 8080 | 待受ポート |
-| `LLM_ROUTER_HOST` | String | 0.0.0.0 | 待受アドレス |
-| `LLM_ROUTER_LOG_LEVEL` | String | info | ログレベル |
-| `LLM_ROUTER_JWT_SECRET` | String | (自動生成) | JWT署名キー |
-| `LLM_ROUTER_ADMIN_USERNAME` | String | admin | 初期管理者名 |
-| `LLM_ROUTER_ADMIN_PASSWORD` | String | (必須) | 初期管理者パスワード |
+| `LLMLB_PORT` | u16 | 8080 | 待受ポート |
+| `LLMLB_HOST` | String | 0.0.0.0 | 待受アドレス |
+| `LLMLB_LOG_LEVEL` | String | info | ログレベル |
+| `LLMLB_JWT_SECRET` | String | (自動生成) | JWT署名キー |
+| `LLMLB_ADMIN_USERNAME` | String | admin | 初期管理者名 |
+| `LLMLB_ADMIN_PASSWORD` | String | (必須) | 初期管理者パスワード |
 
 ### Node環境変数
 
 | 環境変数 | 型 | デフォルト | 説明 |
 |----------|-----|-----------|------|
-| `LLM_ROUTER_URL` | String | `http://127.0.0.1:8080` | ルーターURL |
-| `LLM_NODE_PORT` | u16 | 11435 | 待受ポート |
-| `LLM_NODE_IP` | String | (自動検出) | ノードIP |
-| `LLM_NODE_MODELS_DIR` | Path | ~/.runtime/models | モデル保存先 |
-| `LLM_NODE_LOG_LEVEL` | String | info | ログレベル |
-| `LLM_NODE_LOG_DIR` | Path | ~/.llm-node/logs | ログディレクトリ |
-| `LLM_NODE_HEARTBEAT_SECS` | u64 | 10 | ハートビート間隔 |
-| `LLM_NODE_BIND_ADDRESS` | String | 0.0.0.0 | バインドアドレス |
+| `LLMLB_URL` | String | `http://127.0.0.1:8080` | ロードバランサーURL |
+| `XLLM_PORT` | u16 | 11435 | 待受ポート |
+| `XLLM_IP` | String | (自動検出) | ノードIP |
+| `XLLM_MODELS_DIR` | Path | ~/.runtime/models | モデル保存先 |
+| `XLLM_LOG_LEVEL` | String | info | ログレベル |
+| `XLLM_LOG_DIR` | Path | ~/.llmlb/logs | ログディレクトリ |
+| `XLLM_HEARTBEAT_SECS` | u64 | 10 | ハートビート間隔 |
+| `XLLM_BIND_ADDRESS` | String | 0.0.0.0 | バインドアドレス |
 
 ## JWT_SECRET永続化
 
@@ -58,7 +58,7 @@ CliOptions parse_args(int argc, char** argv);
 
 ```rust
 pub struct JwtSecretConfig {
-    pub file_path: PathBuf,  // ~/.llm-router/jwt_secret
+    pub file_path: PathBuf,  // ~/.llmlb/jwt_secret
     pub permissions: u32,    // 0o600
 }
 ```
@@ -74,14 +74,14 @@ pub struct JwtSecretConfig {
 ```rust
 fn load_jwt_secret() -> String {
     // 1. 環境変数を確認
-    if let Ok(secret) = std::env::var("LLM_ROUTER_JWT_SECRET") {
+    if let Ok(secret) = std::env::var("LLMLB_JWT_SECRET") {
         return secret;
     }
 
     // 2. ファイルを確認
     let path = dirs::home_dir()
         .unwrap()
-        .join(".llm-router/jwt_secret");
+        .join(".llmlb/jwt_secret");
     if let Ok(secret) = std::fs::read_to_string(&path) {
         return secret.trim().to_string();
     }
@@ -98,52 +98,52 @@ fn load_jwt_secret() -> String {
 
 ## ヘルプ出力形式
 
-### Router
+### Load Balancer
 
 ```text
-LLM Router - OpenAI-compatible API gateway
+LLM Load Balancer - OpenAI-compatible API gateway
 
-Usage: llm-router [OPTIONS]
+Usage: llmlb [OPTIONS]
 
 Options:
   -h, --help     Print help information
   -V, --version  Print version information
 
 Environment Variables:
-  LLM_ROUTER_PORT              Server port (default: 8080)
-  LLM_ROUTER_HOST              Server host (default: 0.0.0.0)
-  LLM_ROUTER_LOG_LEVEL         Log level (default: info)
-  LLM_ROUTER_JWT_SECRET        JWT signing secret (auto-generated)
-  LLM_ROUTER_ADMIN_USERNAME    Initial admin username (default: admin)
-  LLM_ROUTER_ADMIN_PASSWORD    Initial admin password (required on first run)
+  LLMLB_PORT              Server port (default: 8080)
+  LLMLB_HOST              Server host (default: 0.0.0.0)
+  LLMLB_LOG_LEVEL         Log level (default: info)
+  LLMLB_JWT_SECRET        JWT signing secret (auto-generated)
+  LLMLB_ADMIN_USERNAME    Initial admin username (default: admin)
+  LLMLB_ADMIN_PASSWORD    Initial admin password (required on first run)
 ```
 
 ### Node
 
 ```text
-LLM Node - Inference engine for LLM Router
+LLM Node - Inference engine for LLM Load Balancer
 
-Usage: llm-node [OPTIONS]
+Usage: xllm [OPTIONS]
 
 Options:
   -h, --help     Print help information
   -V, --version  Print version information
 
 Environment Variables:
-  LLM_ROUTER_URL               Router URL (default: http://127.0.0.1:8080)
-  LLM_NODE_PORT                Node listen port (default: 11435)
-  LLM_NODE_MODELS_DIR          Model storage directory
-  LLM_NODE_LOG_LEVEL           Log level (default: info)
+  LLMLB_URL               Load Balancer URL (default: http://127.0.0.1:8080)
+  XLLM_PORT                Node listen port (default: 11435)
+  XLLM_MODELS_DIR          Model storage directory
+  XLLM_LOG_LEVEL           Log level (default: info)
 ```
 
 ## バージョン出力形式
 
 ```text
-llm-router 2.1.0
+llmlb 2.1.0
 ```
 
 ```text
-llm-node 0.1.0
+xllm 0.1.0
 ```
 
 ## 終了コード

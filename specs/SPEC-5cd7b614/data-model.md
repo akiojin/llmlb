@@ -56,7 +56,7 @@ pub struct GpuCapability {
 
 ```rust
 pub struct NodeRegistration {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub node_ip: String,
     pub port: u16,
     /// GPU情報（必須、空配列は拒否）
@@ -72,7 +72,7 @@ pub struct NodeRegistration {
 
 ```json
 {
-  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "registered",
   "gpu_devices": [
     {"model": "NVIDIA GeForce RTX 4090", "count": 1, "vendor": "nvidia"}

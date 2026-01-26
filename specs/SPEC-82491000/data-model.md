@@ -159,7 +159,7 @@ fn parse_anthropic_created_at(created_at: Option<&str>) -> i64 {
 
 ### 既存のモデル情報構造（参考）
 
-`router/src/api/openai.rs` の `list_models()` で使用される既存構造:
+`llmlb/src/api/openai.rs` の `list_models()` で使用される既存構造:
 
 ```rust
 // 既存のローカルモデル情報（変更なし）
@@ -167,7 +167,7 @@ fn parse_anthropic_created_at(created_at: Option<&str>) -> i64 {
     "id": "llama-3.2",
     "object": "model",
     "created": 0,
-    "owned_by": "router",
+    "owned_by": "lb",
     "capabilities": { ... },
     "lifecycle_status": "registered",
     "ready": true
@@ -181,7 +181,7 @@ fn parse_anthropic_created_at(created_at: Option<&str>) -> i64 {
     "object": "list",
     "data": [
         // ローカルモデル（既存）
-        {"id": "llama-3.2", "owned_by": "router", ...},
+        {"id": "llama-3.2", "owned_by": "lb", ...},
         // クラウドモデル（新規追加）
         {"id": "openai:gpt-4o", "owned_by": "openai", ...},
         {"id": "google:gemini-2.0-flash", "owned_by": "google", ...},

@@ -6,17 +6,17 @@
 ## 前提条件
 
 - Rust（`cargo`）がインストールされている
-- ルーターが起動している（`cargo run -p llm-router`）
+- ロードバランサーが起動している（`cargo run -p llmlb`）
 
 ## ノード登録（curlで確認）
 
-> NOTE: ルーターは登録時にノードの OpenAI互換API（`runtime_port+1`）へ疎通確認を行います。
-> 実際のノード（llm-node）が起動している必要があります。
+> NOTE: ロードバランサーは登録時にノードの OpenAI互換API（`runtime_port+1`）へ疎通確認を行います。
+> 実際のノード（xllm）が起動している必要があります。
 
-### 1. ルーター起動
+### 1. ロードバランサー起動
 
 ```bash
-cargo run -p llm-router
+cargo run -p llmlb
 ```
 
 ### 2. ノード登録
@@ -55,7 +55,7 @@ JWT_TOKEN=$(echo "$LOGIN_RES" | jq -r .token)
 ### 4. ノード承認
 
 ```bash
-NODE_ID=$(echo "$REGISTER_RES" | jq -r .node_id)
+NODE_ID=$(echo "$REGISTER_RES" | jq -r .runtime_id)
 
 curl -sS http://localhost:32768/v0/nodes/${NODE_ID}/approve \
   -H "Content-Type: application/json" \
@@ -70,17 +70,17 @@ curl -sS http://localhost:32768/v0/nodes | jq .
 
 ## ヘルスチェック送信（curlで確認）
 
-`POST /v0/nodes` のレスポンスに含まれる `node_token` を使って `POST /v0/health` を呼び出します。
+`POST /v0/nodes` のレスポンスに含まれる `runtime_token` を使って `POST /v0/health` を呼び出します。
 
 ```bash
-NODE_ID=$(echo "$REGISTER_RES" | jq -r .node_id)
-NODE_TOKEN=$(echo "$REGISTER_RES" | jq -r .node_token)
+NODE_ID=$(echo "$REGISTER_RES" | jq -r .runtime_id)
+NODE_TOKEN=$(echo "$REGISTER_RES" | jq -r .runtime_token)
 
 curl -sS http://localhost:32768/v0/health \
   -H "Content-Type: application/json" \
   -H "X-Node-Token: ${NODE_TOKEN}" \
   -d "{
-    \"node_id\": \"${NODE_ID}\",
+    \"runtime_id\": \"${NODE_ID}\",
     \"cpu_usage\": 12.3,
     \"memory_usage\": 45.6,
     \"active_requests\": 0,

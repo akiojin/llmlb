@@ -20,12 +20,12 @@
 
 **実装方針**:
 ```rust
-// router/migrations/001_init.sql
+// llmlb/migrations/001_init.sql
 CREATE TABLE IF NOT EXISTS users (...);
 CREATE TABLE IF NOT EXISTS api_keys (...);
-CREATE TABLE IF NOT EXISTS node_tokens (...);
+CREATE TABLE IF NOT EXISTS runtime_tokens (...);
 
-// router/src/db/mod.rs
+// llmlb/src/db/mod.rs
 pub async fn init_database() -> Result<SqlitePool> {
     let pool = SqlitePool::connect(&db_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
@@ -34,7 +34,7 @@ pub async fn init_database() -> Result<SqlitePool> {
 ```
 
 **JSONインポート戦略**:
-1. 起動時に `~/.llm-router/nodes.json` の存在確認
+1. 起動時に `~/.llmlb/nodes.json` の存在確認
 2. 存在する場合、SQLiteにデータが未移行かチェック
 3. トランザクション内でJSONをパース→SQLiteに挿入
 4. 成功後、`nodes.json.migrated` にリネーム（バックアップ）
@@ -50,7 +50,7 @@ pub async fn init_database() -> Result<SqlitePool> {
 - パフォーマンス: cost=12で約200-300ms（許容範囲）
 
 **検討した代替案**:
-- **argon2**: より新しいが、llm-routerの規模ではオーバースペック
+- **argon2**: より新しいが、llmlbの規模ではオーバースペック
 - **scrypt**: 標準化が不十分
 - **SHA-256**: ハッシュアルゴリズムであり、パスワードハッシュ専用ではない（不適切）
 
@@ -141,7 +141,7 @@ pub fn verify_jwt(token: &str) -> Result<Claims> {
 - Axumの標準的なミドルウェア実装パターン
 - AppState共有が容易（JWTシークレット等）
 - 型安全なエラーハンドリング
-- ルーター階層で柔軟に適用可能
+- ロードバランサー階層で柔軟に適用可能
 
 **検討した代替案**:
 - **tower::layer**: より低レベル、複雑
@@ -179,8 +179,8 @@ async fn jwt_auth_middleware<B>(
     Ok(next.run(req).await)
 }
 
-// ルーターへの適用
-Router::new()
+// ロードバランサーへの適用
+Load Balancer::new()
     .route("/v0/nodes", get(list_nodes))
     .layer(middleware::from_fn_with_state(state.clone(), jwt_auth_middleware))
 ```
@@ -219,7 +219,7 @@ if env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
 use uuid::Uuid;
 use sha2::{Sha256, Digest};
 
-pub fn generate_node_token() -> (String, String) {
+pub fn generate_runtime_token() -> (String, String) {
     let token = format!("nt_{}", Uuid::new_v4());
     let token_hash = hash_token(&token);
     (token, token_hash)
@@ -231,7 +231,7 @@ fn hash_token(token: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn verify_node_token(token: &str, stored_hash: &str) -> bool {
+pub fn verify_runtime_token(token: &str, stored_hash: &str) -> bool {
     hash_token(token) == stored_hash
 }
 ```
@@ -241,7 +241,7 @@ pub fn verify_node_token(token: &str, stored_hash: &str) -> bool {
 - プレフィックスでAPIキーと区別
 
 **ノード側の実装**:
-- トークンを `~/.llm-node/token` に保存
+- トークンを `~/.llmlb/token` に保存
 - 全HTTPリクエストに `X-Node-Token: nt_...` ヘッダーを追加
 
 ## まとめ

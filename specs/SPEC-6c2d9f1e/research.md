@@ -59,7 +59,7 @@ pub enum RuntimeType {
 
 ```json
 {
-  "node_id": "uuid",
+  "runtime_id": "uuid",
   "supported_runtimes": ["llama_cpp", "whisper"],
   "loaded_models": {
     "llm": ["llama-3.1-8b"],
@@ -96,7 +96,7 @@ pub enum RuntimeType {
   "object": "model",
   "ready": true,
   "nodes": [
-    {"node_id": "...", "ready": true}
+    {"runtime_id": "...", "ready": true}
   ]
 }
 ```
@@ -109,7 +109,7 @@ pub enum RuntimeType {
 [DELETE /v1/models/:name]
      |
      v
-[ルーター登録情報削除]
+[ロードバランサー登録情報削除]
      |
      v
 [ノードへ削除通知] --> [ノードがローカルキャッシュ削除]
@@ -118,9 +118,9 @@ pub enum RuntimeType {
 [200 OK]
 ```
 
-### 重要: ルーターはバイナリを保持しない
+### 重要: ロードバランサーはバイナリを保持しない
 
-- ルーター: メタデータのみ管理
+- ロードバランサー: メタデータのみ管理
 - ノード: モデルバイナリをローカルキャッシュ
 
 ## 参考資料

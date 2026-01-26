@@ -5,7 +5,7 @@
 
 ## Phase 3.1: セットアップ
 
-- [x] T001 既存のcommon/src/types.rsとrouter/src/api/構造を確認
+- [x] T001 既存のcommon/src/types.rsとllmlb/src/api/構造を確認
 
 ## Phase 3.2: テストファースト (TDD) - 3.3の前に完了必須
 
@@ -22,19 +22,19 @@
 
 ### API capabilities検証テスト
 
-- [x] T004 [P] `router/src/api/audio.rs` に TTS capabilities検証テスト追加
+- [x] T004 [P] `llmlb/src/api/audio.rs` に TTS capabilities検証テスト追加
   - テスト: TextToSpeech capability を持たないモデルで `/v1/audio/speech` を呼ぶとエラー
   - 期待エラー: "Model 'X' does not support text-to-speech"
 
-- [x] T005 [P] `router/src/api/audio.rs` に ASR capabilities検証テスト追加
+- [x] T005 [P] `llmlb/src/api/audio.rs` に ASR capabilities検証テスト追加
   - テスト: SpeechToText capability を持たないモデルで `/v1/audio/transcriptions` を呼ぶとエラー
   - 期待エラー: "Model 'X' does not support speech-to-text"
 
-- [x] T006 [P] `router/src/api/openai.rs` に chat capabilities検証テスト追加
+- [x] T006 [P] `llmlb/src/api/openai.rs` に chat capabilities検証テスト追加
   - テスト: TextGeneration capability を持たないモデルで `/v1/chat/completions` を呼ぶとエラー
   - 期待エラー: "Model 'X' does not support text generation"
 
-- [x] T007 [P] `router/src/api/images.rs` に 画像生成 capabilities検証テスト追加
+- [x] T007 [P] `llmlb/src/api/images.rs` に 画像生成 capabilities検証テスト追加
   - テスト: ImageGeneration capability を持たないモデルで `/v1/images/generations` を呼ぶとエラー
   - 期待エラー: "Model 'X' does not support image generation"
 
@@ -56,22 +56,22 @@
 
 ### API capabilities検証実装
 
-- [x] T010 `router/src/api/audio.rs` の speech ハンドラーに TextToSpeech 検証追加
+- [x] T010 `llmlb/src/api/audio.rs` の speech ハンドラーに TextToSpeech 検証追加
   - モデル取得 → capabilities確認 → 非対応ならエラー返却
 
-- [x] T011 `router/src/api/audio.rs` の transcriptions ハンドラーに SpeechToText 検証追加
+- [x] T011 `llmlb/src/api/audio.rs` の transcriptions ハンドラーに SpeechToText 検証追加
 
-- [x] T012 `router/src/api/openai.rs` の chat_completions ハンドラーに TextGeneration 検証追加
+- [x] T012 `llmlb/src/api/openai.rs` の chat_completions ハンドラーに TextGeneration 検証追加
 
-- [x] T013 `router/src/api/images.rs` の generations ハンドラーに ImageGeneration 検証追加
+- [x] T013 `llmlb/src/api/images.rs` の generations ハンドラーに ImageGeneration 検証追加
 
 ## Phase 3.4: 統合
 
-- [x] T014 `router/src/registry/models.rs` に ModelInfo.capabilities フィールド追加
+- [x] T014 `llmlb/src/registry/models.rs` に ModelInfo.capabilities フィールド追加
   - 型: `Vec<ModelCapability>`
   - デフォルト: ModelType から自動推定
 
-- [x] T015 `router/src/api/models.rs` の `/v1/models` レスポンスに capabilities を含める
+- [x] T015 `llmlb/src/api/models.rs` の `/v1/models` レスポンスに capabilities を含める
   - 各モデルのcapabilitiesをレスポンスに追加
 
 ## Phase 3.5: 仕上げ
@@ -110,10 +110,10 @@ Task: "common/src/types.rs に ModelCapability serialization テスト"
 Task: "common/src/types.rs に ModelCapability::from_model_type テスト"
 
 # T004-T007 を一緒に起動 (API テスト):
-Task: "router/src/api/audio.rs に TTS capabilities検証テスト"
-Task: "router/src/api/audio.rs に ASR capabilities検証テスト"
-Task: "router/src/api/openai.rs に chat capabilities検証テスト"
-Task: "router/src/api/images.rs に 画像生成 capabilities検証テスト"
+Task: "llmlb/src/api/audio.rs に TTS capabilities検証テスト"
+Task: "llmlb/src/api/audio.rs に ASR capabilities検証テスト"
+Task: "llmlb/src/api/openai.rs に chat capabilities検証テスト"
+Task: "llmlb/src/api/images.rs に 画像生成 capabilities検証テスト"
 ```
 
 ## 注意事項

@@ -6,6 +6,7 @@
 name: Test
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - develop
@@ -18,6 +19,7 @@ jobs:
     outputs:
       cpp: ${{ steps.filter.outputs.cpp }}
       rust: ${{ steps.filter.outputs.rust }}
+      e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -25,14 +27,18 @@ jobs:
         with:
           filters: |
             cpp:
-              - 'node/**'
+              - 'xllm/**'
               - 'package.json'
               - '.github/actions/setup-cpp/**'
               - '.github/workflows/test.yml'
             rust:
-              - 'router/**'
+              - 'llmlb/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
+              - '.github/workflows/test.yml'
+            e2e:
+              - 'llmlb/tests/e2e-playwright/**'
+              - 'llmlb/src/dashboard/**'
               - '.github/workflows/test.yml'
 
   tasks-check:
@@ -77,6 +83,10 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
+      - name: Bootstrap pest_generator
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+        shell: bash
+
       - name: Run Rust tests
         run: |
           echo "🧪 Running Rust tests on ${{ matrix.os }}..."
@@ -101,10 +111,90 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Bootstrap pest_generator
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+
       - name: Run OpenAI proxy tests
         run: |
           echo "🤖 Running OpenAI-compatible API tests..."
           make openai-tests
+
+  playwright-e2e:
+    # 要件: E2Eテスト（ダッシュボード・Playground）
+    # 目的: Playwright によるブラウザE2Eテスト
+    name: Playwright E2E Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Bootstrap pest_generator
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+
+      - name: Build llmlb
+        # Use debug build to enable sk_debug API key for E2E tests
+        run: cargo build -p llmlb
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Install Playwright dependencies
+        working-directory: llmlb/tests/e2e-playwright
+        run: |
+          pnpm install
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Start llmlb server
+        run: |
+          mkdir -p llmlb/tests/e2e-playwright/.llmlb/logs
+          LLMLB_DATABASE_URL=sqlite:llmlb/tests/e2e-playwright/.llmlb/router.db \
+          LLMLB_LOG_DIR=llmlb/tests/e2e-playwright/.llmlb/logs \
+          ADMIN_USERNAME=admin \
+          ADMIN_PASSWORD=test \
+          ./target/debug/llmlb &
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:32768/health > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run Playwright tests
+        working-directory: llmlb/tests/e2e-playwright
+        run: pnpm exec playwright test --reporter=list
+        env:
+          SKIP_SERVER: '1'
+          BASE_URL: 'http://127.0.0.1:32768'
+          CI: 'true'
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: llmlb/tests/e2e-playwright/reports/
+          retention-days: 7
 
   cpp-tests:
     # C++ノードのビルドとテスト
@@ -112,6 +202,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
@@ -131,14 +222,14 @@ jobs:
             ${{ runner.os }}-ccache-test-
 
       - name: Configure C++ project
-        run: cmake -S node -B node/build -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON
+        run: cmake -S xllm -B xllm/build -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON
 
       - name: Build C++ project
-        run: cmake --build node/build --config Release
+        run: cmake --build xllm/build --config Release
 
       - name: Show ccache stats
         run: ccache -s
 
       - name: Run C++ tests
-        run: ctest --output-on-failure
-        working-directory: node/build
+        run: ctest --output-on-failure --timeout 300 --verbose
+        working-directory: xllm/build

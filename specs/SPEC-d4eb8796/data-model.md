@@ -121,12 +121,12 @@ pub struct ApiKeyWithPlaintext {
 
 ### 3. NodeToken (ノードトークン)
 
-**説明**: ノードがルーターと安全に通信するための認証情報
+**説明**: ノードがロードバランサーと安全に通信するための認証情報
 
 **フィールド**:
 | フィールド | 型 | 制約 | 説明 |
 |-----------|-----|------|------|
-| node_id | UUID | PRIMARY KEY | ノードID |
+| runtime_id | UUID | PRIMARY KEY | ノードID |
 | token_hash | String | UNIQUE, NOT NULL | SHA-256ハッシュ化されたトークン本体 |
 | created_at | DateTime<Utc> | NOT NULL | 発行日時 |
 
@@ -134,14 +134,14 @@ pub struct ApiKeyWithPlaintext {
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct NodeToken {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub token_hash: String,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NodeTokenWithPlaintext {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub token: String,  // 平文トークン（発行時のみ）
     pub created_at: DateTime<Utc>,
 }
@@ -169,7 +169,7 @@ pub struct NodeTokenWithPlaintext {
 **説明**: 登録されたノード（既存のエンティティに認証トークンのリレーションを追加）
 
 **追加されるリレーションシップ**:
-- `Node.id` ← `NodeToken.node_id` (1:1)
+- `Node.id` ← `NodeToken.runtime_id` (1:1)
 
 **変更なし**: 既存のフィールド（machine_name, ip_address, gpu_devices等）は維持
 
@@ -189,7 +189,7 @@ Node (1) --- (1) NodeToken
 
 ## SQLiteスキーマ
 
-**マイグレーションファイル**: `router/migrations/001_auth_init.sql`
+**マイグレーションファイル**: `llmlb/migrations/001_auth_init.sql`
 
 ```sql
 -- ユーザーテーブル
@@ -219,13 +219,13 @@ CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX idx_api_keys_created_by ON api_keys(created_by);
 
 -- ノードトークンテーブル
-CREATE TABLE IF NOT EXISTS node_tokens (
-    node_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS runtime_tokens (
+    runtime_id TEXT PRIMARY KEY,
     token_hash TEXT UNIQUE NOT NULL,
     created_at TEXT NOT NULL,
 );
 
-CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
+CREATE INDEX idx_runtime_tokens_hash ON runtime_tokens(token_hash);
 
 -- ノードテーブル（既存）
 -- 既存のnodesテーブルはそのまま維持
@@ -243,18 +243,18 @@ CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
 
 1. **外部キー制約**:
    - `api_keys.created_by` → `users.id` (CASCADE DELETE)
-   - `node_tokens.node_id` → `nodes.id` (conceptual 1:1)
+   - `runtime_tokens.runtime_id` → `nodes.id` (conceptual 1:1)
 
 2. **ユニーク制約**:
    - `users.username`
    - `api_keys.key_hash`
-   - `node_tokens.token_hash`
+   - `runtime_tokens.token_hash`
 
 3. **NOT NULL制約**:
    - すべてのPRIMARY KEY
    - `users.password_hash`, `users.role`
    - `api_keys.key_hash`, `api_keys.name`, `api_keys.created_by`
-   - `node_tokens.token_hash`
+   - `runtime_tokens.token_hash`
 
 4. **CHECK制約**:
    - `users.role` は `admin` または `viewer`
@@ -274,8 +274,8 @@ CREATE INDEX idx_node_tokens_hash ON node_tokens(token_hash);
 ## JSONからSQLiteへのマイグレーション
 
 **既存データ**:
-- `~/.llm-router/nodes.json` → `nodes` テーブル
-- `~/.llm-router/request_history.json` → `request_history` テーブル（新規作成）
+- `~/.llmlb/nodes.json` → `nodes` テーブル
+- `~/.llmlb/request_history.json` → `request_history` テーブル（新規作成）
 
 **マイグレーション手順**:
 1. 既存のJSONファイルをパース

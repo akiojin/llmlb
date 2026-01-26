@@ -42,7 +42,7 @@ case "$CAPABILITY" in
       exit 77
     fi
     set +e
-    OUTPUT=$(run_llm_node --model "$MODEL" --embedding --prompt "test" 2>/dev/null)
+    OUTPUT=$(run_xllm --model "$MODEL" --embedding --prompt "test" 2>/dev/null)
     EXIT_CODE=$?
     set -e
     if [[ $EXIT_CODE -eq 0 && -n "$OUTPUT" ]]; then

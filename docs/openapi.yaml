@@ -172,11 +172,11 @@ components:
     DashboardStats:
       type: object
       properties:
-        total_nodes:
+        total_runtimes:
           type: integer
-        online_nodes:
+        online_runtimes:
           type: integer
-        offline_nodes:
+        offline_runtimes:
           type: integer
         total_requests:
           type: integer

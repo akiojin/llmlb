@@ -1,6 +1,12 @@
 {
-  "branches": ["main"],
-  "repositoryUrl": "https://github.com/akiojin/llm-router",
+  "branches": [
+    "main",
+    {
+      "name": "develop",
+      "prerelease": "alpha"
+    }
+  ],
+  "repositoryUrl": "https://github.com/akiojin/llmlb",
   "tagFormat": "v${version}",
   "npmPublish": false,
   "tarballDir": false,
@@ -18,24 +24,24 @@
       {
         "assets": [
           {
-            "path": "dist/llm-node-linux-amd64.tar.gz",
-            "label": "llm-node-linux-amd64"
+            "path": "dist/xllm-linux-amd64.tar.gz",
+            "label": "xllm-linux-amd64"
           },
           {
-            "path": "dist/llm-node-macos-arm64.tar.gz",
-            "label": "llm-node-macos-arm64"
+            "path": "dist/xllm-macos-arm64.tar.gz",
+            "label": "xllm-macos-arm64"
           },
           {
-            "path": "dist/llm-node-macos-x64.tar.gz",
-            "label": "llm-node-macos-x64"
+            "path": "dist/xllm-macos-x64.tar.gz",
+            "label": "xllm-macos-x64"
           },
           {
-            "path": "dist/llm-node-windows-x64.zip",
-            "label": "llm-node-windows-x64"
+            "path": "dist/xllm-windows-x64.zip",
+            "label": "xllm-windows-x64"
           },
           {
-            "path": "dist/llm-node-linux-cuda.tar.gz",
-            "label": "llm-node-linux-cuda"
+            "path": "dist/xllm-linux-cuda.tar.gz",
+            "label": "xllm-linux-cuda"
           }
         ]
       }

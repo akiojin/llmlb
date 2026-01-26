@@ -2,21 +2,21 @@
 # E2E tests for OpenAI-compatible API with local LLM
 #
 # Prerequisites:
-#   - Router running (LLM_ROUTER_URL, default: http://localhost:32768)
+#   - Router running (LLMLB_URL, default: http://localhost:32768)
 #   - Node running with at least one model available
-#   - API key set (LLM_ROUTER_API_KEY)
+#   - API key set (LLMLB_API_KEY)
 #
 # Usage:
-#   LLM_ROUTER_URL=http://localhost:8081 \
-#   LLM_ROUTER_API_KEY=sk_xxx \
+#   LLMLB_URL=http://localhost:8081 \
+#   LLMLB_API_KEY=sk_xxx \
 #   npx bats tests/e2e/test-openai-api.bats
 
 setup() {
-    ROUTER_URL="${LLM_ROUTER_URL:-http://localhost:32768}"
-    API_KEY="${LLM_ROUTER_API_KEY}"
+    ROUTER_URL="${LLMLB_URL:-http://localhost:32768}"
+    API_KEY="${LLMLB_API_KEY}"
 
     if [[ -z "$API_KEY" ]]; then
-        skip "LLM_ROUTER_API_KEY is not set"
+        skip "LLMLB_API_KEY is not set"
     fi
 }
 
@@ -49,7 +49,14 @@ check_router() {
 }
 
 # Helper to get first available model
+# Prefers LLM_TEST_MODEL env var, then local models, then any model
 get_model() {
+    # Use explicit model if specified
+    if [[ -n "${LLM_TEST_MODEL:-}" ]]; then
+        echo "$LLM_TEST_MODEL"
+        return
+    fi
+    # Otherwise get first model from list
     api_request "/v1/models" | jq -r '.data[0].id // empty'
 }
 

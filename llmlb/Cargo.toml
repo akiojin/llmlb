@@ -1,0 +1,80 @@
+[package]
+name = "llmlb"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[dependencies]
+# 非同期ランタイム
+tokio = { workspace = true }
+
+# Webフレームワーク
+axum = { workspace = true, features = ["multipart", "ws"] }
+tower = { workspace = true }
+tower-http = { workspace = true }
+include_dir = "0.7"
+mime_guess = "2.0"
+
+# シリアライゼーション
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTPクライアント
+reqwest = { workspace = true }
+futures = "0.3"
+prometheus = "0.13"
+once_cell = "1.19"
+anyhow = "1.0"
+tokio-util = { version = "0.7", features = ["io"] }
+
+# ログ
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+
+# その他
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+sysinfo = { workspace = true }
+csv = "1.3"
+base64 = "0.22"
+
+# 認証機能
+sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
+bcrypt = "0.15"
+jsonwebtoken = "9.2"
+sha2 = "0.10"
+rand = "0.8"
+rpassword = "7.3"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Progress parsing
+regex = "1.10"
+
+# Token counting
+tiktoken-rs = "0.9.1"
+
+[build-dependencies]
+winresource = "0.1.27"
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+tray-icon = "0.21.2"
+winit = "0.30"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3.8"
+once_cell = "1.21"
+wiremock = "0.6.5"
+criterion = { version = "0.5", features = ["async_tokio"] }
+sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
+serial_test = "3.0"
+serde_urlencoded = "0.7"
+tokio-tungstenite = "0.24"

@@ -5,7 +5,7 @@
 ### ノードメトリクス
 
 ```rust
-// router/src/balancer/metrics.rs
+// llmlb/src/balancer/metrics.rs
 
 use std::time::Instant;
 
@@ -13,7 +13,7 @@ use std::time::Instant;
 #[derive(Debug, Clone)]
 pub struct NodeMetrics {
     /// ノードID
-    pub node_id: String,
+    pub runtime_id: String,
 
     /// GPU使用率（0-100%）
     pub gpu_usage: f64,
@@ -43,7 +43,7 @@ pub struct NodeMetrics {
 impl Default for NodeMetrics {
     fn default() -> Self {
         Self {
-            node_id: String::new(),
+            runtime_id: String::new(),
             gpu_usage: 0.0,
             vram_usage: 0.0,
             gpu_temperature: None,
@@ -60,7 +60,7 @@ impl Default for NodeMetrics {
 ### GPU能力スコア
 
 ```rust
-// router/src/balancer/gpu_score.rs
+// llmlb/src/balancer/gpu_score.rs
 
 /// GPUの能力スコア（0-10000）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -96,7 +96,7 @@ pub struct GpuInfo {
 ### ロードバランサー
 
 ```rust
-// router/src/balancer/mod.rs
+// llmlb/src/balancer/mod.rs
 
 use std::sync::Arc;
 use dashmap::DashMap;
@@ -123,10 +123,10 @@ pub struct LoadBalancer {
     /// 現在のモード
     mode: LoadBalancerMode,
 
-    /// ノードメトリクス（node_id -> metrics）
+    /// ノードメトリクス（runtime_id -> metrics）
     metrics: Arc<DashMap<String, NodeMetrics>>,
 
-    /// メトリクス履歴（node_id -> 履歴）
+    /// メトリクス履歴（runtime_id -> 履歴）
     history: Arc<DashMap<String, VecDeque<MetricsPoint>>>,
 
     /// ラウンドロビンのインデックス
@@ -153,14 +153,14 @@ pub struct MetricsPoint {
 ### ノード選択結果
 
 ```rust
-// router/src/balancer/selection.rs
+// llmlb/src/balancer/selection.rs
 
 /// ノード選択結果
 #[derive(Debug, Clone)]
 pub enum NodeSelectionResult {
     /// ノードが選択された
     Selected {
-        node_id: String,
+        runtime_id: String,
         reason: SelectionReason,
     },
 
@@ -169,7 +169,7 @@ pub enum NodeSelectionResult {
 
     /// すべてのノードが高負荷
     AllNodesOverloaded {
-        fallback_node_id: String,
+        fallback_runtime_id: String,
     },
 }
 
@@ -196,7 +196,7 @@ pub enum SelectionReason {
 ### 負荷判定
 
 ```rust
-// router/src/balancer/load_check.rs
+// llmlb/src/balancer/load_check.rs
 
 /// 負荷状態
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -298,26 +298,26 @@ impl Default for LoadThresholds {
 LOAD_BALANCER_MODE=metrics  # metrics | round_robin
 
 # 負荷閾値
-LLM_ROUTER_GPU_THRESHOLD=80      # GPU使用率閾値（%）
-LLM_ROUTER_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
-LLM_ROUTER_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
+LLMLB_GPU_THRESHOLD=80      # GPU使用率閾値（%）
+LLMLB_VRAM_THRESHOLD=90     # VRAM使用率閾値（%）
+LLMLB_ACTIVE_REQ_THRESHOLD=10  # アクティブリクエスト閾値
 ```
 
 ## メトリクス形式
 
 ```text
 # 選択統計
-llm_router_node_selections_total{node_id="node-1",reason="lowest_gpu"} 1500
-llm_router_node_selections_total{node_id="node-2",reason="round_robin"} 500
+llmlb_node_selections_total{runtime_id="node-1",reason="lowest_gpu"} 1500
+llmlb_node_selections_total{runtime_id="node-2",reason="round_robin"} 500
 
 # ノード負荷
-llm_router_node_gpu_usage{node_id="node-1"} 45.5
-llm_router_node_vram_usage{node_id="node-1"} 78.2
-llm_router_node_active_requests{node_id="node-1"} 3
+llmlb_node_gpu_usage{runtime_id="node-1"} 45.5
+llmlb_node_vram_usage{runtime_id="node-1"} 78.2
+llmlb_node_active_requests{runtime_id="node-1"} 3
 
 # 選択時間
-llm_router_node_selection_duration_seconds_bucket{le="0.001"} 9500
-llm_router_node_selection_duration_seconds_bucket{le="0.01"} 10000
-llm_router_node_selection_duration_seconds_sum 5.2
-llm_router_node_selection_duration_seconds_count 10000
+llmlb_node_selection_duration_seconds_bucket{le="0.001"} 9500
+llmlb_node_selection_duration_seconds_bucket{le="0.01"} 10000
+llmlb_node_selection_duration_seconds_sum 5.2
+llmlb_node_selection_duration_seconds_count 10000
 ```

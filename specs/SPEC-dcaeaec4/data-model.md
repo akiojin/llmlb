@@ -1,4 +1,4 @@
-# データモデル: LLM-Router独自モデルストレージ
+# データモデル: LLM-Load Balancer独自モデルストレージ
 
 ## エンティティ定義
 
@@ -53,10 +53,10 @@ private:
 };
 ```
 
-### Router側（Rust）
+### Load Balancer側（Rust）
 
 ```rust
-// router/src/models/storage.rs
+// llmlb/src/models/storage.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -117,7 +117,7 @@ pub struct RegisteredModel {
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                        Router                                │
+│                        Load Balancer                                │
 │  ┌─────────────────┐    ┌──────────────────┐                │
 │  │ RegisteredModel │───→│  ModelManifest   │                │
 │  │ (SQLite)        │    │  (API Response)  │                │
@@ -137,7 +137,7 @@ pub struct RegisteredModel {
 │  └─────────────────┘    └──────────────────┘                 │
 │          │                                                    │
 │          ↓                                                    │
-│  ~/.llm-router/models/<model_id>/                            │
+│  ~/.llmlb/models/<model_id>/                            │
 │      ├── model.gguf                                          │
 │      ├── model.safetensors                                   │
 │      └── metadata.json (optional)                            │
@@ -147,9 +147,9 @@ pub struct RegisteredModel {
 ## ディレクトリ構造
 
 ```text
-~/.llm-router/
+~/.llmlb/
 ├── config.json                    # グローバル設定
-├── router.db                      # ルーターDB（SQLite）
+├── lb.db                      # ロードバランサーDB（SQLite）
 └── models/                        # モデルストレージ
     ├── llama-3.2-1b/
     │   ├── model.gguf             # GGUFモデル

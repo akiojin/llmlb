@@ -1,6 +1,6 @@
 # PoC: openai/gpt-oss-20b (Metal / Apple Silicon)
 
-このPoCは、`openai/gpt-oss-20b` を **llm-router + llm-node (Metal)** で実際にロードして `chat/completions` が返ることを確認します。
+このPoCは、`openai/gpt-oss-20b` を **llmlb + xllm (Metal)** で実際にロードして `chat/completions` が返ることを確認します。
 
 このPoCの推論は safetensors を直接ロードするのではなく、Hugging Face の `metal/model.bin`（Routerでは `model.metal.bin` としてキャッシュ）を gpt-oss Metal エンジンで実行します。
 
@@ -15,10 +15,10 @@
 まずビルド:
 
 ```bash
-cmake -S node -B node/build
+cmake -S xllm -B xllm/build
 cmake --build node/build -j
 
-cargo build -p llm-router
+cargo build -p llmlb
 ```
 
 PoC実行:
@@ -62,7 +62,7 @@ STREAM=1 ./poc/gpt-oss-metal/run.sh
 ### プロセス制御/ログ
 
 - `tmp/poc-gptoss-metal/` にログと作業用ディレクトリを作成します
-- `KEEP_RUNNING=1` を指定すると、PoC終了後も router/node を停止しません（デバッグ用）
+- `KEEP_RUNNING=1` を指定すると、PoC終了後も llmlb/xllm を停止しません（デバッグ用）
 
 ### 注意
 

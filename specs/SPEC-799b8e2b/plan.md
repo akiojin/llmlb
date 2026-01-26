@@ -2,13 +2,13 @@
 
 ## 現状分析
 
-### Router (Rust)
+### Load Balancer (Rust)
 
-- **ファイル**: `router/src/logging.rs`
-- **出力先**: `~/.llm-router/logs/router.log.jsonl`（ファイルのみ）
+- **ファイル**: `llmlb/src/logging.rs`
+- **出力先**: `~/.llmlb/logs/router.log.jsonl`（ファイルのみ）
 - **形式**: JSON Lines（tracing-subscriber fmt::layer().json()）
 - **ローテーション**: なし（append）
-- **環境変数**: `ROUTER_LOG_LEVEL`, `RUST_LOG`, `LLM_ROUTER_DATA_DIR`
+- **環境変数**: `LLMLB_LOG_LEVEL`, `RUST_LOG`, `LLMLB_DATA_DIR`
 
 ### Node (C++)
 
@@ -23,23 +23,23 @@
 ### ログディレクトリ構造
 
 ```text
-~/.llm-router/
+~/.llmlb/
 └── logs/
-    ├── llm-router.jsonl.2025-11-28
-    ├── llm-router.jsonl.2025-11-27
-    ├── llm-node.jsonl.2025-11-28
-    └── llm-node.jsonl.2025-11-27
+    ├── llmlb.jsonl.2025-11-28
+    ├── llmlb.jsonl.2025-11-27
+    ├── xllm.jsonl.2025-11-28
+    └── xllm.jsonl.2025-11-27
 ```
 
 ### 環境変数（統一）
 
 | 変数名 | 説明 | デフォルト値 |
 |--------|------|-------------|
-| `LLM_LOG_DIR` | ログディレクトリ | `~/.llm-router/logs` |
+| `LLM_LOG_DIR` | ログディレクトリ | `~/.llmlb/logs` |
 | `LLM_LOG_LEVEL` | ログレベル | `info` |
 | `LLM_LOG_RETENTION_DAYS` | 保持日数 | `7` |
 
-既存の環境変数（`ROUTER_LOG_LEVEL`, `LOG_LEVEL`等）も後方互換として維持。
+既存の環境変数（`LLMLB_LOG_LEVEL`, `LOG_LEVEL`等）も後方互換として維持。
 
 ### ログエントリ形式（共通）
 
@@ -47,16 +47,16 @@
 {"ts":"2025-11-28T12:00:00.000Z","level":"info","category":"api","msg":"Request received"}
 ```
 
-## Router側修正
+## Load Balancer側修正
 
 ### 修正ファイル
 
-- `router/src/logging.rs`
+- `llmlb/src/logging.rs`
 
 ### 変更内容
 
-1. ログディレクトリを `~/.llm-router/logs/` に変更
-2. ファイル名を `llm-router.jsonl.YYYY-MM-DD` に変更
+1. ログディレクトリを `~/.llmlb/logs/` に変更
+2. ファイル名を `llmlb.jsonl.YYYY-MM-DD` に変更
 3. 日付ベースローテーション実装（tracing-appender::rolling::daily）
 4. 起動時に7日超の古いファイル削除
 5. `target`フィールドを`category`として出力するカスタムフォーマッタ
@@ -78,7 +78,7 @@ chrono = "0.4"
 
 ### 変更内容
 
-1. デフォルト出力先を `~/.llm-router/logs/llm-node.jsonl.YYYY-MM-DD` に変更
+1. デフォルト出力先を `~/.llmlb/logs/xllm.jsonl.YYYY-MM-DD` に変更
 2. stdout出力を削除
 3. 日付ベースローテーション実装（spdlog::sinks::daily_file_sink）
 4. 起動時に7日超の古いファイル削除
@@ -102,7 +102,7 @@ spdlogの既存機能で対応可能（daily_file_sink_mtを使用）。
 
 ## 実装順序（TDD）
 
-### Phase 1: Router側
+### Phase 1: Load Balancer側
 
 1. テスト作成（ローテーション、フォーマット、古いファイル削除）
 2. `logging.rs`修正
@@ -116,5 +116,5 @@ spdlogの既存機能で対応可能（daily_file_sink_mtを使用）。
 
 ### Phase 3: 統合確認
 
-1. Router/Node両方を起動してログ出力確認
+1. Load Balancer/Node両方を起動してログ出力確認
 2. `GET /v0/logs` エンドポイント動作確認

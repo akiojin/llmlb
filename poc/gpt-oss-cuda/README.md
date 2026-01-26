@@ -1,6 +1,9 @@
 # PoC: gpt-oss-20b (CUDA / llama.cpp GGUF)
 
-このPoCは、`gpt-oss-20b` を **llm-router + llm-node (CUDA / llama.cpp)** でロードして `chat/completions` が返ることを確認します。
+> **注意**: このPoCは参考用であり、仕様・実装の正ではありません。\
+> CUDA DLL（`gptoss_cuda.dll` / `nemotron_cuda.dll`）の管理ソースは `xllm/engines/gptoss/cuda/` と `xllm/engines/nemotron/cuda/` に移行中です。
+
+このPoCは、`gpt-oss-20b` を **llmlb + xllm (CUDA / llama.cpp)** でロードして `chat/completions` が返ることを確認します。
 
 このPoCは **safetensors を直接ロードしません**。CUDA向けの公式safetensors実行エンジンは未対応のため、Hugging Face の **GGUF版**（例: `ggml-org/gpt-oss-20b-GGUF`）を利用します。
 
@@ -8,18 +11,18 @@
 
 - Linux (NVIDIA GPU)
 - CUDA Toolkit + Driver (`nvidia-smi` が成功すること)
-- Nodeは CUDA 有効でビルドしていること（下記）
+- xLLM は CUDA 有効でビルドしていること（下記）
 
 ## ビルド
 
 ```bash
-cmake -S node -B node/build -DBUILD_WITH_CUDA=ON
-cmake --build node/build -j
+cmake -S xllm -B xllm/build -DBUILD_WITH_CUDA=ON
+cmake --build xllm/build -j
 
 # または:
-# npm run build:node:cuda
+# npm run build:xllm:cuda
 
-cargo build -p llm-router
+cargo build -p llmlb
 ```
 
 ## 実行
@@ -63,4 +66,4 @@ STREAM=1 ./poc/gpt-oss-cuda/run.sh
 ### プロセス制御/ログ
 
 - `tmp/poc-gptoss-cuda/` にログと作業用ディレクトリを作成します
-- `KEEP_RUNNING=1` を指定すると、PoC終了後も router/node を停止しません（デバッグ用）
+- `KEEP_RUNNING=1` を指定すると、PoC終了後も llmlb/xllm を停止しません（デバッグ用）

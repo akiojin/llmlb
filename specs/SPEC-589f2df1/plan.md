@@ -1,7 +1,7 @@
 # 実装計画: ロードバランシングシステム
 
 **機能ID**: `SPEC-589f2df1` | **日付**: 2025-10-30（部分実装） | **仕様**: [spec.md](./spec.md)
-**入力**: `/llm-router/specs/SPEC-589f2df1/spec.md`の機能仕様
+**入力**: `/llmlb/specs/SPEC-589f2df1/spec.md`の機能仕様
 **ステータス**: 🚧 **部分実装** (Phase 1: ラウンドロビン完了、Phase 2: メトリクスベース未実装)
 
 ## 概要
@@ -72,7 +72,7 @@ pub async fn select_node(&self) -> Option<Node> {
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeMetrics {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub cpu_usage: f32,          // 0.0-100.0
     pub memory_usage: f32,       // 0.0-100.0
     pub active_requests: usize,
@@ -127,8 +127,8 @@ pub async fn update_metrics(
     Json(metrics): Json<NodeMetrics>,
 ) -> Result<StatusCode, AppError> {
     let mut metrics_map = state.registry.metrics.write().await;
-    let node_id = metrics.node_id;
-    metrics_map.insert(node_id, metrics);
+    let runtime_id = metrics.runtime_id;
+    metrics_map.insert(runtime_id, metrics);
     Ok(StatusCode::NO_CONTENT)
 }
 ```

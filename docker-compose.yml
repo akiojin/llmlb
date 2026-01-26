@@ -1,13 +1,13 @@
 services:
-  llm-router:
+  llmlb:
     build:
       context: .
-    container_name: llm-router
+    container_name: llmlb
     mem_limit: 16g
     mem_reservation: 13g
     memswap_limit: 18g
     volumes:
-      - .:/llm-router
+      - .:/llmlb
       - bash-history:/root/.bash_history_dir
       - ./.docker/bash_history:/root/.bash_history
       - claude-config:/root/.claude
@@ -34,12 +34,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${ROUTER_PORT:-32768}:32768"
+      - "${LLMLB_PORT:-32768}:32768"
       - "8081:8081"
       - "32768-32774:32768-32774"
     stdin_open: true
     tty: true
-    working_dir: /llm-router
+    working_dir: /llmlb
 
 volumes:
   bash-history: {}

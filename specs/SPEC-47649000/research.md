@@ -11,7 +11,7 @@
 
 ### 決定
 
-既存の認証データベース（router.db）にモデルテーブルを追加。
+既存の認証データベース（lb.db）にモデルテーブルを追加。
 
 ### 理由
 
@@ -31,7 +31,7 @@
 ### 実装方法
 
 ```sql
--- 既存router.dbにマイグレーション追加
+-- 既存lb.dbにマイグレーション追加
 -- migration: 20250101_create_models_table.sql
 
 CREATE TABLE models (

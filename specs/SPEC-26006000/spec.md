@@ -2,8 +2,8 @@
 
 **機能ID**: `SPEC-26006000`
 **作成日**: 2024-12-14
-**ステータス**: 下書き
-**入力**: ユーザー説明: "音声モデル対応（TTS + ASR）- llm-routerに音声モデル（TTS: Text-to-Speech、ASR: Speech-to-Text）対応を追加する。OpenAI API互換のエンドポイント（/v1/audio/speech, /v1/audio/transcriptions）を実装する。"
+**ステータス**: ✅ 実装完了（55/55タスク完了）
+**入力**: ユーザー説明: "音声モデル対応（TTS + ASR）- llmlbに音声モデル（TTS: Text-to-Speech、ASR: Speech-to-Text）対応を追加する。TTS用にONNX Runtime、ASR用にwhisper.cppを使用し、OpenAI API互換のエンドポイント（/v1/audio/speech, /v1/audio/transcriptions）を実装する。"
 
 ## ユーザーシナリオ＆テスト *(必須)*
 
@@ -95,7 +95,7 @@
 - **ASR出力形式**: ハイブリッド方式（デフォルトはOpenAI互換`verbose_json`、クエリパラメータでwhisper.cppネイティブ形式も選択可能）
 - **30分超の音声**: 即座にHTTP 413 Payload Too Largeを返却（自動分割・切り捨ては行わない）
 - **ASRストリーミング**: WebSocket経由のリアルタイム音声認識をスコープ内に追加
-- **フォーマット変換**: ノード側で実施（ルーターは変換しない。MP3→WAV等はNodeがFFmpeg等でネイティブ変換）
+- **フォーマット変換**: ノード側で実施（ロードバランサーは変換しない。MP3→WAV等はNodeがFFmpeg等でネイティブ変換）
 - **GPU排他制御**: カテゴリ別制御（LLMとTTS/ASRは排他、TTS同士やASR同士は並列可）
 
 ### Session 2025-12-30 (追加)
@@ -115,19 +115,13 @@
 
 内蔵エンジンインタビューにより以下が確定（詳細は `SPEC-3fc2c1e4` を参照）:
 
-- **プラグインインターフェース統一**: TTS/ASR/画像生成もLLMと同じEngineインターフェースを使用
+- **エンジンインターフェース統一**: TTS/ASR/画像生成もLLMと同じEngineインターフェースを使用
   - 全モダリティで共通の抽象インターフェース
   - 入出力はモダリティ別メソッド（generate_text(), generate_image(), transcribe(), synthesize()等）で分離
-- **エンジンプラグイン**: whisper.cpp、ONNX Runtime等も動的プラグイン（.so/.dylib/.dll）として実装
+- **内蔵エンジン実装**: whisper.cpp、ONNX Runtime等も in-process 実装として統合
 - **ログ統合**: 全エンジンのstdout/stderrをノードがキャプチャして統合ログへ
 
 ---
-
-### Session 2025-12-24
-
-- ASR/TTSは**新エンジン**で実装し、Node実行時はPython依存なし
-- safetensorsを正本として利用し、GGUFは「safetensorsが存在しない場合のみ」のフォールバック
-- Whisper公式 `.pt` はPythonで safetensors 化し、それを正本とする（取得元はHugging Face）
 
 ## 要件 *(必須)*
 
@@ -151,7 +145,7 @@
 - **FR-016**: システムはASR出力形式としてOpenAI互換（`verbose_json`）とwhisper.cppネイティブ形式の両方をサポートし、クエリパラメータで切り替え可能にする必要がある
 - **FR-017**: システムは30分を超える音声ファイルに対してHTTP 413 Payload Too Largeを即座に返却する必要がある
 - **FR-018**: システムはWebSocket経由のリアルタイム音声認識（ASRストリーミング）をサポートする必要がある
-- **FR-019**: 音声ファイルのフォーマット変換（MP3→WAV等）はノード側で実施し、ルーターは変換を行わない
+- **FR-019**: 音声ファイルのフォーマット変換（MP3→WAV等）はノード側で実施し、ロードバランサーは変換を行わない
 - **FR-020**: LLMとTTS/ASRは同一GPU上で排他的に実行し、TTS同士やASR同士は並列実行を許可する
 
 ### 主要エンティティ
@@ -177,10 +171,8 @@
 
 ## 技術制約 *(該当する場合)*
 
-- ASR/TTSは新エンジンでsafetensorsを直接読み込む
-- GGUFはsafetensorsが存在しない場合のみフォールバックとして使用する
-- Node実行時はPython依存を導入しない
-- Whisper公式 `.pt` はPythonで safetensors 化し、safetensorsを正本とする
+- 音声認識はwhisper.cppがサポートするモデル形式に限定される
+- 音声合成はONNX形式のモデルに限定される
 - GPUメモリを共有する場合、テキスト生成と音声処理の同時実行に制限がある可能性がある
 
 ---
@@ -197,11 +189,15 @@
 
 ## 依存関係 *(該当する場合)*
 
-この機能は以下に依存します:
+### 前提条件（このSPECが依存するもの）
 
-- 既存のモデル管理システム（登録・削除・一覧）
-- 既存のノード管理システム（登録・ヘルスチェック・ロードバランシング）
-- 既存の認証・認可システム
+- 既存モデル管理システム（登録・削除・一覧）✅ 実装済み
+- 既存ノード管理システム（登録・ヘルスチェック・ロードバランシング）✅ 実装済み
+- **SPEC-d4eb8796**: 認証・アクセス制御 ✅ 実装済み
+
+### 依存元（このSPECに依存するもの）
+
+- なし
 
 ---
 

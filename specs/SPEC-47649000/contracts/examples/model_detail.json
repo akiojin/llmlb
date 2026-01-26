@@ -5,7 +5,7 @@
   "description": "Llama 3.2 1B Instruct model optimized for chat",
   "required_memory": 2147483648,
   "source": "hf_gguf",
-  "path": "/home/user/.llm-router/models/llama-3.2-1b/model.gguf",
+  "path": "/home/user/.llmlb/models/llama-3.2-1b/model.gguf",
   "repo_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
   "tags": ["chat", "instruct"],
   "artifacts": [

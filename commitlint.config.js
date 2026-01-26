@@ -1,10 +1,23 @@
+const getFirstLine = (message) =>
+  message.split('\n')[0].replace(/^\uFEFF/, '').trim();
+
+const legacyMessages = new Set([
+  'Use config-based runtime hint for safetensors',
+  'Update specs for Windows CUDA primary',
+  'Fix Nemotron VRAM size compilation error',
+  'Fix Windows test config reading and MSVC llama.cpp patch',
+  'chore: remove gh-fix-ci skill files including LICENSE.txt, SKILL.md, and inspect_pr_checks.py as part of the cleanup process.',
+]);
+
 module.exports = {
   extends: ['@commitlint/config-conventional'],
   ignores: [
-    // Merge commits
-    (message) => message.startsWith('Merge '),
+    // Merge commits (handle BOM/leading whitespace)
+    (message) => getFirstLine(message).startsWith('Merge '),
     // GitHub squash merge commits (e.g., "feature/branch-name (#123)")
-    (message) => /\(#\d+\)$/.test(message.split('\n')[0]),
+    (message) => /\(#\d+\)$/.test(getFirstLine(message)),
+    // Legacy non-conventional commits already in history
+    (message) => legacyMessages.has(getFirstLine(message)),
   ],
   rules: {
     'header-max-length': [2, 'always', 72],

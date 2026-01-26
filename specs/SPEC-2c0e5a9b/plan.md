@@ -1,65 +1,54 @@
-# SPEC-2c0e5a9b: Plan
+﻿# SPEC-2c0e5a9b: Plan
 
 ## 方針
-
-- gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する
-- エンジン選択は既存の抽象化（`SPEC-d7feaa2c`）を利用し、登録時の `format` と `config.json` 等の HF 由来メタデータに従う。
-- gpt-oss 実行エンジンは **プラグイン形式（動的ロード）** で提供する。
-- `chat_template` の解釈は C++ Node に寄せず、Router 側で Jinja 互換レンダリングを行い、Node には最終プロンプト（テキスト）を渡す方針を前提とする。
+- gpt-oss 用 runtime を内蔵ランタイムとして追加し、GPU 実行（Metal/CUDA）を提供する。
+- エンジン選択は既存の抽象化（`SPEC-d7feaa2c`）を利用し、登録時の `format` と HF 由来メタデータ（`config.json` 等）に従う。
+- `chat_template` の解釈は Load Balancer 側で行い、Node には最終プロンプト（テキスト）を渡す。
 - Node は Python 依存なしで動作する（必須）。
-- Nemotron 推論エンジンは本件では扱わない（別SPECで後日）。
-- 実行の優先順位:
-  - 公式のGPU最適化アーティファクト（バックエンド依存、許可リスト対象）
-  - safetensors（正本）
-- 対応OS/GPU: macOS=Metal、Windows=CUDA、Linuxは非対応。DirectMLは実験扱い。
+- Nemotron 推論エンジンは本件では扱わない（別 SPEC で後回し）。
+- 公式 GPU 最適化アーティファクトがある場合は「実行キャッシュ」として優先利用する。
+- 対応 OS/GPU は macOS=Metal / Windows=CUDA。Linux は非対応、DirectML は凍結。
 
-## 対象モデルとアーティファクト（前提）
+## 対象モデル / アーティファクト
 - 対象: `openai/gpt-oss-20b`
-- 前提（HFスナップショット）:
-  - `config.json`, `tokenizer.json`（必須）
+- 必須ファイル
+  - `config.json`, `tokenizer.json`
   - `model.safetensors.index.json` + `model-*.safetensors`（シャーディング）
   - `chat_template.jinja`（任意）
-- 備考: モデルによっては公式のGPU最適化アーティファクト（例: `metal/model.bin`）が提供される場合がある。
-  - safetensors は常に正本として保持する。
-- 実行は「バックエンドに一致する公式最適化アーティファクトが利用可能なら優先、無ければ safetensors」を基本とする（登録形式は変えない）。
+- 公式最適化アーティファクト（任意）
+  - Metal: `model.metal.bin`
+  - CUDA: `model.cuda.bin` または `cuda/model.bin`
 
-## 実装スコープ（設計）
+## 実装スコープ
 
-### Router（登録・配布）
-- `format=safetensors` 登録時:
-  - 必須メタデータ検証（`config.json`, `tokenizer.json`）
-  - index/shards の整合検証（欠損があれば失敗）
-- Node が必要とするファイル一覧（マニフェスト）を確定
-- 公式のGPU最適化アーティファクトが利用可能な場合は**実行キャッシュとして**マニフェストへ含める（登録形式は変えない）
-  - 追加アーティファクトは対応モデル定義（supported_models.json の artifacts）で指定する
-- ルーターは事前キャッシュ前提を廃止し、**マニフェストの提示のみ**を担当する（取得はNode主導）
-- `chat_template` が無い場合のデフォルトテンプレートを提供
+### Load Balancer（登録・配布）
+- `format=safetensors` での登録を前提。
+- `config.json` / `tokenizer.json` / index+shards の整合性検証。
+- Node が必要とするファイル一覧（manifest）を生成。
+- 公式最適化アーティファクトが利用可能な場合は manifest に含める（登録形式は変えない）。
+- 取得元は許可リストで制御（例: `openai/*`, `nvidia/*`）。
 
 ### Node（取得・検証・実行）
-- ModelStorage:
-  - gpt-oss を `config.json` から検出し、対応 runtime を決定できる
-  - safetensors（index + shards）を 1 モデルとして検証できる
-- Engine:
-  - gpt-oss 用 runtime をプラグインとして追加し、GPU 実行（Metal/CUDA）を提供する
-- 公式最適化アーティファクトがローカルにある場合はそれを優先してロードする
-  - WindowsはCUDA、macOSはMetalの最小経路を先に確立する
-  - 対応不可の場合は明確に未対応として扱い、ready 一覧から除外できる
+- ModelStorage: safetensors の必須ファイル検証。
+- ModelResolver/Sync: GPU バックエンドに応じて最適化アーティファクトを優先選択。
+- EngineRegistry/EngineHost: `GptOssCpp` を解決し、対応不可なら ready 対象から除外。
+- エラー: DLL 未配置 / アーティファクト欠落を明確に報告。
+- GPU 前提: macOS=Metal / Windows=CUDA、Linux/WSL2 は対象外。
 
-## 決定事項（設計合意）
-- 「公式最適化アーティファクト」は、同一 publisher org（例: `openai`, `nvidia`）配下の別リポジトリに存在してよい。
-- 取得元は許可リストで管理する（許可リスト外は無視）。
-- 許可リスト初期値: `openai/*`, `nvidia/*`
-- 登録形式は常に `format=safetensors` を維持し、公式最適化アーティファクトは実行キャッシュとして扱う。
+### Engine（gpt-oss runtime）
+- 公式最適化アーティファクトがある場合はそれを優先ロード。
+- 無い場合は safetensors をロード。
+- Windows CUDA は `gptoss_cuda.dll` の存在を必須とする。
 
-## 主要な要明確化（実装前に決めること）
-- Windows CUDA 実行の実装範囲（初期は最小機能で成立させる）。
-- 公式GPU最適化アーティファクトの「自動利用 / 明示 opt-in」方針。
-- プラグイン ABI の固定方針（バージョン更新ルール）。
-
-## テスト方針（TDD）
-- Contract: Router API（登録/一覧）と Node API（chat/completions）の契約を増やす
-- Integration: gpt-oss-20b を `format=safetensors` で登録 → Node がロード → 生成成功、を最小経路で確認
-- E2E: ダッシュボードからの登録 → チャット疎通（可能なら）
+## テスト
+- Unit: アーティファクト選択（Metal/CUDA）、DLL 不足のエラー確認。
+- Integration: safetensors 登録 → ready 表示（Metal/CUDA）。
+- E2E: `POST /v1/chat/completions` の疎通（通常/ストリーミング）。
 
 ## ドキュメント
-- README に「safetensorsを正本として登録する」「gpt-oss-20b の前提ファイル」「未対応時の挙動」を追記する。
+- Quickstart に必要ファイル・環境変数・アーティファクトの配置例を追記。
+- DirectML は凍結、Windows は CUDA 主経路であることを明記。
+
+## 未確定事項
+- CUDA DLL の提供元 / ビルド手順。
+- CUDA 最適化アーティファクトの生成 / 配布経路。

@@ -117,17 +117,17 @@ setInterval(async () => {
 
 **実装詳細**:
 ```rust
-use axum::{Router, routing::get};
+use axum::{Load Balancer, routing::get};
 use tower_http::services::ServeDir;
 
-let app = Router::new()
+let app = Load Balancer::new()
     // API エンドポイント
     .route("/v0/dashboard/nodes", get(get_nodes))
     .route("/v0/dashboard/stats", get(get_stats))
     // 静的ファイル配信
-    .nest_service("/dashboard", ServeDir::new("router/src/dashboard/static"))
+    .nest_service("/dashboard", ServeDir::new("llmlb/src/dashboard/static"))
     // フォールバック: /dashboard/ → /dashboard/index.html
-    .fallback_service(ServeDir::new("router/src/dashboard/static").fallback(ServeFile::new("router/src/dashboard/static/index.html")));
+    .fallback_service(ServeDir::new("llmlb/src/dashboard/static").fallback(ServeFile::new("llmlb/src/dashboard/static/index.html")));
 ```
 
 **Cargo.toml追加**:

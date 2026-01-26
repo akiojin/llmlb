@@ -1,4 +1,4 @@
-# クイックスタート: Node/Router Log Retrieval API
+# クイックスタート: Node/Load Balancer Log Retrieval API
 
 ## 概要
 
@@ -26,21 +26,21 @@ curl "http://localhost:11435/v0/logs?tail=50" | jq '.entries | length'
     {
       "timestamp": "2025-01-02T10:30:00.123Z",
       "level": "INFO",
-      "target": "llm_node::api",
+      "target": "xllm::api",
       "message": "Server started on port 11435"
     },
     {
       "timestamp": "2025-01-02T10:30:01.456Z",
       "level": "INFO",
-      "target": "llm_node::api::router_client",
+      "target": "xllm::api::openai_endpoints",
       "message": "Registered with router"
     }
   ],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llmlb/logs/current.jsonl"
 }
 ```
 
-## ルーター経由でノードログ取得
+## ロードバランサー経由でノードログ取得
 
 ### 特定ノードのログを取得
 
@@ -125,7 +125,7 @@ curl http://localhost:11435/v0/logs
 ```json
 {
   "entries": [],
-  "path": "/home/user/.llm-node/logs/current.jsonl"
+  "path": "/home/user/.llmlb/logs/current.jsonl"
 }
 ```
 
@@ -154,9 +154,9 @@ const { entries } = await response.json();
 
 ### ログが空で返ってくる
 
-1. ログファイルパスを確認: `~/.llm-node/logs/`
-2. ノードのログ設定を確認: `LLM_NODE_LOG_DIR`
-3. ログレベルを確認: `LLM_NODE_LOG_LEVEL`
+1. ログファイルパスを確認: `~/.llmlb/logs/`
+2. ノードのログ設定を確認: `XLLM_LOG_DIR`
+3. ログレベルを確認: `XLLM_LOG_LEVEL`
 
 ### タイムアウトが発生する
 

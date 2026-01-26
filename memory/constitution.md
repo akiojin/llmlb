@@ -1,4 +1,4 @@
-# LLM Router 開発憲章
+# LLM Load Balancer 開発憲章
 
 ## 基本原則
 
@@ -9,7 +9,7 @@
   - **API**: HTTP エンドポイント処理
   - **Proxy**: リクエストのルーティング
   - **Monitor**: ヘルスチェックとメトリクス収集
-- **SQLiteストレージ**: `~/.llm-router/router.db` を使用
+- **SQLiteストレージ**: `~/.llmlb/router.db` を使用
 - **新しい機能は必ず独立したモジュールとして実装**
 
 ### II. Rust エコシステムの活用

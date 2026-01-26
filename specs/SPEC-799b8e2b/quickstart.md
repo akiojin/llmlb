@@ -4,7 +4,7 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | ビルド済み（C++） |
 | ログディレクトリ | 書き込み権限あり |
 
@@ -13,8 +13,8 @@
 ### 環境変数によるログ設定
 
 ```bash
-# ログディレクトリの指定（デフォルト: ~/.llm-router/logs）
-export LLM_LOG_DIR=/var/log/llm-router
+# ログディレクトリの指定（デフォルト: ~/.llmlb/logs）
+export LLM_LOG_DIR=/var/log/llmlb
 
 # ログレベルの設定（trace, debug, info, warn, error）
 export LLM_LOG_LEVEL=debug
@@ -23,24 +23,24 @@ export LLM_LOG_LEVEL=debug
 export LLM_LOG_RETENTION_DAYS=14
 ```
 
-### ルーター起動
+### ロードバランサー起動
 
 ```bash
 # デフォルト設定で起動
-llm-router
+llmlb
 
 # デバッグログを有効にして起動
-LLM_LOG_LEVEL=debug llm-router
+LLM_LOG_LEVEL=debug llmlb
 ```
 
 ### ノード起動
 
 ```bash
 # デフォルト設定で起動
-llm-node
+xllm
 
 # トレースログを有効にして起動
-LLM_LOG_LEVEL=trace llm-node
+LLM_LOG_LEVEL=trace xllm
 ```
 
 ## ログファイルの確認
@@ -48,27 +48,27 @@ LLM_LOG_LEVEL=trace llm-node
 ### ファイル構造
 
 ```text
-~/.llm-router/logs/
-├── llm-router.jsonl.2025-12-01    # ルーターログ（日付別）
-├── llm-router.jsonl.2025-12-02
-├── llm-node.jsonl.2025-12-01      # ノードログ（日付別）
-└── llm-node.jsonl.2025-12-02
+~/.llmlb/logs/
+├── llmlb.jsonl.2025-12-01    # ロードバランサーログ（日付別）
+├── llmlb.jsonl.2025-12-02
+├── xllm.jsonl.2025-12-01      # ノードログ（日付別）
+└── xllm.jsonl.2025-12-02
 ```
 
 ### ログの閲覧
 
 ```bash
-# 最新のルーターログを表示
-tail -f ~/.llm-router/logs/llm-router.jsonl.$(date +%Y-%m-%d)
+# 最新のロードバランサーログを表示
+tail -f ~/.llmlb/logs/llmlb.jsonl.$(date +%Y-%m-%d)
 
 # エラーログのみをフィルタ
-cat ~/.llm-router/logs/llm-router.jsonl.* | jq 'select(.level == "error")'
+cat ~/.llmlb/logs/llmlb.jsonl.* | jq 'select(.level == "error")'
 
 # 特定カテゴリのログを表示
-cat ~/.llm-router/logs/llm-router.jsonl.* | jq 'select(.category == "api")'
+cat ~/.llmlb/logs/llmlb.jsonl.* | jq 'select(.category == "api")'
 
 # リクエストIDでトレース
-cat ~/.llm-router/logs/*.jsonl.* | jq 'select(.request_id == "abc123")'
+cat ~/.llmlb/logs/*.jsonl.* | jq 'select(.request_id == "abc123")'
 ```
 
 ### Python でのログ解析
@@ -78,7 +78,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-LOG_DIR = Path.home() / ".llm-router" / "logs"
+LOG_DIR = Path.home() / ".llmlb" / "logs"
 
 def read_logs(date: str = None, level: str = None, category: str = None):
     """ログを読み込んでフィルタリング"""
@@ -230,10 +230,10 @@ curl "http://localhost:8080/v0/logs?level=error&category=api&limit=50" \
 echo $LLM_LOG_LEVEL
 
 # ディレクトリの権限を確認
-ls -la ~/.llm-router/logs/
+ls -la ~/.llmlb/logs/
 
 # ディスク容量を確認
-df -h ~/.llm-router/
+df -h ~/.llmlb/
 ```
 
 ### ログファイルが大きすぎる
@@ -243,7 +243,7 @@ df -h ~/.llm-router/
 export LLM_LOG_RETENTION_DAYS=3
 
 # 手動で古いログを削除
-find ~/.llm-router/logs/ -name "*.jsonl.*" -mtime +7 -delete
+find ~/.llmlb/logs/ -name "*.jsonl.*" -mtime +7 -delete
 ```
 
 ## 次のステップ

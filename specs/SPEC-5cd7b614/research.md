@@ -6,7 +6,7 @@
 
 ## 調査目的
 
-LLM RouterのNodeが起動時にGPUを自動検出する方法を確立する。
+LLM Load BalancerのNodeが起動時にGPUを自動検出する方法を確立する。
 当初実装した `runtime ps` ベースの検出が、モデル非実行時にはGPU情報を返さないことが判明したため、代替手段を検証する。
 
 ## 問題の発見
@@ -207,7 +207,7 @@ LLM runtimeの実装 (`/gpu/cpu_common.go`):
 
 1. **E2Eテスト**
    - Node起動時の自動登録フロー
-   - GPU情報がRouterに正しく送信されることを確認
+   - GPU情報がLoad Balancerに正しく送信されることを確認
 
 ## 参考資料
 

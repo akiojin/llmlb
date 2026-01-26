@@ -11,11 +11,11 @@
 
 ### 決定
 
-**プロキシパターン**（ルーターが仲介）を採用
+**プロキシパターン**（ロードバランサーが仲介）を採用
 
 ### 理由
 
-- ルーターがすべてのリクエストを一元管理でき、ログ・メトリクス収集が容易
+- ロードバランサーがすべてのリクエストを一元管理でき、ログ・メトリクス収集が容易
 - クライアントは単一エンドポイントのみ知っていればよい
 - APIキーをクライアント側に露出させない
 
@@ -23,14 +23,14 @@
 
 | パターン | 説明 | メリット | デメリット |
 |---------|------|---------|-----------|
-| プロキシ | ルーター経由で転送 | 一元管理、セキュリティ | レイテンシ追加 |
+| プロキシ | ロードバランサー経由で転送 | 一元管理、セキュリティ | レイテンシ追加 |
 | リダイレクト | 302でクラウドURLを返す | レイテンシ最小 | APIキー露出リスク |
 | SDK統合 | 各SDKを内包 | 型安全、エラー詳細 | 依存肥大化 |
 
 ### 実装方法
 
 ```rust
-// router/src/cloud/mod.rs
+// llmlb/src/cloud/mod.rs
 
 pub enum CloudProvider {
     OpenAI,
@@ -86,7 +86,7 @@ impl CloudProvider {
 ### 実装方法
 
 ```rust
-// router/src/cloud/streaming.rs
+// llmlb/src/cloud/streaming.rs
 
 use axum::response::sse::{Event, Sse};
 use futures::Stream;
@@ -146,7 +146,7 @@ pub async fn proxy_stream(
 ### 実装方法
 
 ```rust
-// router/src/cloud/config.rs
+// llmlb/src/cloud/config.rs
 
 #[derive(Debug, Clone)]
 pub struct CloudConfig {
@@ -189,11 +189,11 @@ impl CloudConfig {
 
 - クライアントがエラー詳細を把握しやすい
 - リトライ判断をクライアントに委ねる
-- ルーター側での複雑なリトライロジックを回避
+- ロードバランサー側での複雑なリトライロジックを回避
 
 ### エラーマッピング
 
-| クラウドステータス | ルーター応答 | 対応 |
+| クラウドステータス | ロードバランサー応答 | 対応 |
 |-------------------|-------------|------|
 | 401 Unauthorized | 401 | APIキー無効 |
 | 403 Forbidden | 403 | 権限不足 |
@@ -205,7 +205,7 @@ impl CloudConfig {
 ### 実装方法
 
 ```rust
-// router/src/cloud/error.rs
+// llmlb/src/cloud/error.rs
 
 use axum::http::StatusCode;
 
@@ -239,19 +239,19 @@ impl CloudError {
 ### メトリクス設計
 
 ```rust
-// router/src/cloud/metrics.rs
+// llmlb/src/cloud/metrics.rs
 
 use prometheus::{Counter, Histogram, register_counter_vec, register_histogram_vec};
 
 lazy_static! {
     pub static ref CLOUD_REQUESTS: CounterVec = register_counter_vec!(
-        "llm_router_cloud_requests_total",
+        "llmlb_cloud_requests_total",
         "Total cloud API requests",
         &["provider", "model", "status"]
     ).unwrap();
 
     pub static ref CLOUD_LATENCY: HistogramVec = register_histogram_vec!(
-        "llm_router_cloud_latency_seconds",
+        "llmlb_cloud_latency_seconds",
         "Cloud API request latency",
         &["provider"],
         vec![0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]

@@ -10,7 +10,7 @@
 
 ### 決定
 
-**静的JSONファイル（supported_models.json）** をルーターに組み込む方式を採用
+**静的JSONファイル（supported_models.json）** をロードバランサーに組み込む方式を採用
 
 ### 理由
 
@@ -135,12 +135,12 @@ enum WsEvent {
     },
     // ノード状態更新
     NodeStatusChanged {
-        node_id: String,
+        runtime_id: String,
         status: NodeStatus,
     },
     // メトリクス更新
     MetricsUpdated {
-        node_id: String,
+        runtime_id: String,
         metrics: NodeMetrics,
     },
 }

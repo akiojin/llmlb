@@ -1,0 +1,226 @@
+# Vision Tests Workflow
+# 機能ID: SPEC-f8e3a1b7, SPEC-e03a404c
+# 目的: Vision API テストの実行（LLaVA モデルを使用）
+# 要件: T028 (モデルダウンロード), T030 (Vision テスト有効化)
+
+name: Vision Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_variant:
+        description: 'LLaVA model variant'
+        required: false
+        default: 'Q4_K_M'
+        type: choice
+        options:
+          - Q4_K_M
+          - Q8_0
+      skip_model_cache:
+        description: 'Skip model cache (re-download)'
+        required: false
+        default: false
+        type: boolean
+  # Vision関連ファイルの変更時にも実行
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - 'llmlb/src/models/image.rs'
+      - 'llmlb/src/api/openai.rs'
+      - 'llmlb/tests/**/vision*.rs'
+      - 'xllm/src/core/vision_processor.cpp'
+      - '.github/workflows/vision-tests.yml'
+
+env:
+  # LLaVA-1.5-7B GGUF model from HuggingFace
+  MODEL_REPO: "mys/ggml_llava-v1.5-7b"
+  MODEL_FILE: "ggml-model-q4_k.gguf"
+  MMPROJ_FILE: "mmproj-model-f16.gguf"
+  MODEL_CACHE_KEY: "llava-1.5-7b-q4_k-v2"
+
+jobs:
+  vision-test:
+    name: Vision API Tests
+    runs-on: [self-hosted, gpu]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Self-hosted runner: Tools (Rust, CMake, Python) are pre-installed
+      - name: Verify toolchain
+        run: |
+          echo "🔍 Verifying toolchain..."
+          rustc --version
+          cargo --version
+          cmake --version
+          python3 --version
+          echo "✅ Toolchain verified"
+
+      - name: Bootstrap pest_generator
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+
+      - name: Ensure huggingface-hub installed
+        run: |
+          # Check if already installed
+          if python3 -c "import huggingface_hub" 2>/dev/null; then
+            echo "✅ huggingface-hub already installed"
+          else
+            echo "📦 Installing huggingface-hub..."
+            # Use --break-system-packages for PEP 668 compatibility (Homebrew Python)
+            pip3 install --user huggingface-hub --break-system-packages 2>/dev/null || \
+            pip3 install --user huggingface-hub || \
+            python3 -m pip install --user huggingface-hub --break-system-packages
+          fi
+          python3 -c "import huggingface_hub; print(f'huggingface-hub version: {huggingface_hub.__version__}')"
+
+      - name: Download LLaVA model (if needed)
+        run: |
+          MODEL_DIR="$HOME/.cache/llmlb/models"
+          MODEL_PATH="$MODEL_DIR/${{ env.MODEL_FILE }}"
+          MMPROJ_PATH="$MODEL_DIR/${{ env.MMPROJ_FILE }}"
+
+          if [ -f "$MODEL_PATH" ] && [ -f "$MMPROJ_PATH" ]; then
+            echo "✅ Model files already exist"
+            ls -la "$MODEL_DIR"
+          else
+            echo "📥 Downloading LLaVA model..."
+            mkdir -p "$MODEL_DIR"
+            python3 << 'PYEOF'
+          from huggingface_hub import hf_hub_download
+          import os
+
+          model_dir = os.path.expanduser("~/.cache/llmlb/models")
+          repo_id = "${{ env.MODEL_REPO }}"
+
+          print(f"Downloading from {repo_id}...")
+          hf_hub_download(repo_id=repo_id, filename="${{ env.MODEL_FILE }}", local_dir=model_dir, local_dir_use_symlinks=False)
+          hf_hub_download(repo_id=repo_id, filename="${{ env.MMPROJ_FILE }}", local_dir=model_dir, local_dir_use_symlinks=False)
+          print("Download complete!")
+          PYEOF
+            ls -la "$MODEL_DIR"
+          fi
+
+      - name: Verify model files
+        run: |
+          echo "✅ Verifying model files..."
+          test -f ~/.cache/llmlb/models/${{ env.MODEL_FILE }} || (echo "Model file not found" && exit 1)
+          test -f ~/.cache/llmlb/models/${{ env.MMPROJ_FILE }} || (echo "MMProj file not found" && exit 1)
+          echo "Model files verified successfully"
+
+      - name: Build xLLM (GPU mode)
+        run: |
+          echo "🔨 Building xLLM with GPU support..."
+
+          # Detect platform and set build options
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "Building for macOS with Metal..."
+            NPROC=$(sysctl -n hw.ncpu)
+            CMAKE_OPTS="-DGGML_METAL=ON"
+          else
+            echo "Building for Linux..."
+            NPROC=$(nproc)
+            CMAKE_OPTS="-DGGML_CUDA=ON"
+          fi
+
+          cmake -S xllm -B xllm/build \
+            -DBUILD_TESTS=OFF \
+            $CMAKE_OPTS
+          cmake --build xllm/build --config Release -j$NPROC
+
+      - name: Build llmlb
+        run: cargo build -p llmlb
+
+      - name: Start xLLM server with LLaVA
+        run: |
+          echo "🚀 Starting xLLM server with LLaVA model..."
+          mkdir -p /tmp/xllm-logs
+
+          ./xllm/build/xllm serve \
+            --model ~/.cache/llmlb/models/${{ env.MODEL_FILE }} \
+            --mmproj ~/.cache/llmlb/models/${{ env.MMPROJ_FILE }} \
+            --host 127.0.0.1 \
+            --port 8080 \
+            --ctx-size 2048 \
+            > /tmp/xllm-logs/server.log 2>&1 &
+
+          # Wait for xLLM to be ready
+          echo "Waiting for xLLM server..."
+          for i in {1..90}; do
+            if curl -s http://127.0.0.1:8080/v1/models > /dev/null 2>&1; then
+              echo "xLLM server is ready"
+              break
+            fi
+            if [ $i -eq 90 ]; then
+              echo "xLLM server failed to start"
+              cat /tmp/xllm-logs/server.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Start llmlb server
+        run: |
+          echo "🚀 Starting llmlb server..."
+          mkdir -p /tmp/llmlb-data
+
+          LLMLB_DATABASE_URL=sqlite:/tmp/llmlb-data/router.db \
+          LLMLB_LOG_DIR=/tmp/llmlb-data/logs \
+          ADMIN_USERNAME=admin \
+          ADMIN_PASSWORD=test \
+          ./target/debug/llmlb &
+
+          # Wait for llmlb to be ready
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:32768/health > /dev/null 2>&1; then
+              echo "llmlb server is ready"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Register xLLM endpoint
+        run: |
+          echo "📝 Registering xLLM endpoint..."
+          curl -X POST http://127.0.0.1:32768/api/endpoints \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer sk_debug" \
+            -d '{
+              "name": "xllm-vision",
+              "base_url": "http://127.0.0.1:8080"
+            }'
+
+          # Wait for model sync
+          sleep 5
+
+          # Verify models are registered
+          curl -s http://127.0.0.1:32768/v1/models \
+            -H "Authorization: Bearer sk_debug" | jq .
+
+      - name: Run Vision contract tests
+        run: |
+          echo "🧪 Running Vision contract tests..."
+          cargo test vision --no-fail-fast -- --include-ignored 2>&1 | tee /tmp/vision-test-results.log
+        env:
+          RUST_LOG: debug
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-test-results
+          path: |
+            /tmp/vision-test-results.log
+            /tmp/xllm-logs/
+            /tmp/llmlb-data/logs/
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -f xllm || true
+          pkill -f llmlb || true

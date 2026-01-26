@@ -55,7 +55,7 @@
 ```text
 [Client] ←SSE→ [Router] ←SSE→ [Node]
 
-1. Router はノードからのチャンク受信を即座に転送
+1. Load Balancer はノードからのチャンク受信を即座に転送
 2. Content-Type: text/event-stream を維持
 3. Transfer-Encoding: chunked を使用
 4. 接続が切れた場合は適切にクリーンアップ
@@ -64,7 +64,7 @@
 ### ストリーミングフロー
 
 ```text
-Client                Router                Node
+Client                Load Balancer                Node
   |                     |                     |
   |-- POST stream=true→ |                     |
   |                     |-- POST stream=true→ |
@@ -143,7 +143,7 @@ impl ProxyService {
 
 ```text
                     ┌─────────────┐
-                    │   Router    │
+                    │   Load Balancer    │
                     │ (100 slots) │
                     └──────┬──────┘
            ┌───────────────┼───────────────┐

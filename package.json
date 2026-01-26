@@ -1,26 +1,26 @@
 {
-  "name": "llm-router-release",
+  "name": "llmlb-release",
   "version": "2.3.1",
-  "description": "Centralized management system for routing LLM inference nodes across multiple machines.",
+  "description": "Centralized management system for routing LLM inference runtimes across multiple machines.",
   "private": true,
   "packageManager": "pnpm@10.20.0",
   "scripts": {
     "prepare": "husky",
-    "build": "npm run build:router && npm run build:node && npm run build:mcp",
-    "build:router": "cargo build --release -p llm-router",
-    "build:router:target": "cargo build --release -p llm-router --target",
-    "build:node": "cd node && cmake -B build -S . && cmake --build build --config Release --parallel",
-    "build:node:cuda": "cd node && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release --parallel",
-    "build:node:clean": "cd node && rm -rf build && cmake -B build -S . && cmake --build build --config Release --parallel",
-    "build:node:ci": "cd node && rm -rf build && cmake -B build -S . -DPORTABLE_BUILD=ON && cmake --build build --config Release",
-    "build:node:coverage": "cd node && rm -rf build && cmake -B build -S . -DBUILD_TESTS=ON -DCMAKE_CXX_FLAGS='--coverage' -DCMAKE_EXE_LINKER_FLAGS='--coverage' && cmake --build build --config Release --parallel",
-    "build:node:coverage:ci": "cd node && rm -rf build && cmake -B build -S . -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON -DCMAKE_CXX_FLAGS='--coverage' -DCMAKE_EXE_LINKER_FLAGS='--coverage' && cmake --build build --config Release",
-    "build:mcp": "pnpm --filter @llm-router/mcp-server build",
-    "test:node": "cd node/build && ctest --output-on-failure",
-    "test:mcp": "pnpm --filter @llm-router/mcp-server test",
-    "start:router": "./target/release/llm-router",
-    "start:node": "./node/build/llm-node",
-    "clean": "rm -rf target node/build mcp-server/dist",
+    "build": "npm run build:lb && npm run build:xllm && npm run build:mcp",
+    "build:lb": "cargo build --release -p llmlb",
+    "build:lb:target": "cargo build --release -p llmlb --target",
+    "build:xllm": "cd xllm && cmake -B build -S . && cmake --build build --config Release --parallel",
+    "build:xllm:cuda": "cd xllm && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release --parallel",
+    "build:xllm:clean": "cd xllm && rm -rf build && cmake -B build -S . && cmake --build build --config Release --parallel",
+    "build:xllm:ci": "cd xllm && rm -rf build && cmake -B build -S . -DPORTABLE_BUILD=ON && cmake --build build --config Release",
+    "build:xllm:coverage": "cd xllm && rm -rf build && cmake -B build -S . -DBUILD_TESTS=ON -DCMAKE_CXX_FLAGS='--coverage' -DCMAKE_EXE_LINKER_FLAGS='--coverage' && cmake --build build --config Release --parallel",
+    "build:xllm:coverage:ci": "cd xllm && rm -rf build && cmake -B build -S . -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON -DCMAKE_CXX_FLAGS='--coverage' -DCMAKE_EXE_LINKER_FLAGS='--coverage' && cmake --build build --config Release",
+    "build:mcp": "pnpm --filter @llmlb/mcp-server build",
+    "test:xllm": "cd xllm/build && ctest --output-on-failure",
+    "test:mcp": "pnpm --filter @llmlb/mcp-server test",
+    "start:lb": "./target/release/llmlb",
+    "start:xllm": "./xllm/build/xllm",
+    "clean": "rm -rf target xllm/build mcp-server/dist",
     "lint:commits": "commitlint --from origin/main --to HEAD",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\" \"!.git\" \"!.github\" \"!.worktrees\""
   },
@@ -38,6 +38,13 @@
   },
   "workspaces": [
     "mcp-server",
-    "router/src/web/dashboard"
-  ]
+    "llmlb/src/web/dashboard"
+  ],
+  "pnpm": {
+    "overrides": {
+      "esbuild": "^0.25.0",
+      "hono": "^4.11.5",
+      "lodash": "^4.17.23"
+    }
+  }
 }

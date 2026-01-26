@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import type { Resource } from "@modelcontextprotocol/sdk/types.js";
 
-const OPENAPI_URI = "llm-router://api/openapi";
+const OPENAPI_URI = "llmlb://api/openapi";
 
 /**
  * Get OpenAPI resource definition
@@ -10,7 +10,7 @@ const OPENAPI_URI = "llm-router://api/openapi";
 export function getOpenApiResource(): Resource {
   return {
     uri: OPENAPI_URI,
-    name: "llm-router-openapi",
+    name: "llmlb-openapi",
     description:
       "OpenAPI specification for LLM Router API. Contains all endpoint definitions, request/response schemas, and authentication requirements.",
     mimeType: "application/json",

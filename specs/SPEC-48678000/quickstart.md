@@ -2,7 +2,7 @@
 
 ## 前提条件
 
-- LLM Router Node がインストール済み
+- LLM Load Balancer Node がインストール済み
 - `supported_models.json` が設定済み
 - ネットワーク接続（HuggingFaceへのアクセス）
 
@@ -149,7 +149,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 export HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxx"
 
 # または設定ファイル
-echo "HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx" >> ~/.llm-router/.env
+echo "HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx" >> ~/.llmlb/.env
 ```
 
 ## 制限事項表
@@ -171,6 +171,6 @@ echo "HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx" >> ~/.llm-router/.env
 
 ### ダウンロードが途中で止まる
 
-1. ディスク容量を確認（`df -h ~/.llm-router/models/`）
-2. ロックファイルを確認（`ls ~/.llm-router/models/.locks/`）
+1. ディスク容量を確認（`df -h ~/.llmlb/models/`）
+2. ロックファイルを確認（`ls ~/.llmlb/models/.locks/`）
 3. タイムアウト設定を確認

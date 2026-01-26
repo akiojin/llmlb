@@ -1,16 +1,16 @@
 groups:
-  - name: llm-node
+  - name: llm-runtime
     rules:
-      - alert: LLM runtimeNodeDown
-        expr: up{job="llm-node"} == 0
+      - alert: LLM RuntimeDown
+        expr: up{job="llm-runtime"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "LLM runtime node is down"
-          description: "LLM runtime node exporter is not responding for more than 1 minute."
+          summary: "LLM runtime is down"
+          description: "LLM runtime exporter is not responding for more than 1 minute."
 
-      - alert: LLM runtimeNodeNoPulls
+      - alert: LLM RuntimeNoPulls
         expr: rate(runtime_node_pulls_total[10m]) == 0
         for: 10m
         labels:

@@ -1,10 +1,10 @@
-# クイックスタート: ルーター負荷最適化
+# クイックスタート: ロードバランサー負荷最適化
 
 ## 前提条件
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | 1台以上のオンラインノード |
 | 負荷テストツール | wrk, hey, k6 など（オプション） |
 
@@ -14,20 +14,20 @@
 
 ```bash
 # 待機キュー設定
-export LLM_ROUTER_MAX_WAITING=100        # 最大待機数
-export LLM_ROUTER_WAIT_TIMEOUT_SECS=30   # タイムアウト（秒）
+export LLMLB_MAX_WAITING=100        # 最大待機数
+export LLMLB_WAIT_TIMEOUT_SECS=30   # タイムアウト（秒）
 
 # バックプレッシャー設定
-export LLM_ROUTER_WARNING_THRESHOLD=0.5    # 警告閾値（50%）
-export LLM_ROUTER_OVERLOAD_THRESHOLD=0.8   # 過負荷閾値（80%）
+export LLMLB_WARNING_THRESHOLD=0.5    # 警告閾値（50%）
+export LLMLB_OVERLOAD_THRESHOLD=0.8   # 過負荷閾値（80%）
 
 # 接続プール設定
-export LLM_ROUTER_POOL_MAX_IDLE=32         # 最大アイドル接続数
-export LLM_ROUTER_POOL_IDLE_TIMEOUT_SECS=90  # アイドルタイムアウト
+export LLMLB_POOL_MAX_IDLE=32         # 最大アイドル接続数
+export LLMLB_POOL_IDLE_TIMEOUT_SECS=90  # アイドルタイムアウト
 
 # ノードキャッシュ設定
-export LLM_ROUTER_CACHE_MAX_CAPACITY=1000  # 最大キャッシュエントリ
-export LLM_ROUTER_CACHE_TTL_SECS=5         # キャッシュTTL
+export LLMLB_CACHE_MAX_CAPACITY=1000  # 最大キャッシュエントリ
+export LLMLB_CACHE_TTL_SECS=5         # キャッシュTTL
 ```
 
 ### config.toml
@@ -102,17 +102,17 @@ curl http://localhost:8080/metrics
 
 ```text
 # 待機キューサイズ
-llm_router_queue_size 45
+llmlb_queue_size 45
 
 # リクエスト処理時間（p95）
-llm_router_request_duration_seconds{quantile="0.95"} 0.085
+llmlb_request_duration_seconds{quantile="0.95"} 0.085
 
 # バックプレッシャー拒否数
-llm_router_backpressure_rejections_total 12
+llmlb_backpressure_rejections_total 12
 
 # キャッシュヒット率
-llm_router_cache_hits_total 9500
-llm_router_cache_misses_total 500
+llmlb_cache_hits_total 9500
+llmlb_cache_misses_total 500
 # ヒット率: 9500 / (9500 + 500) = 95%
 ```
 
@@ -134,8 +134,8 @@ def get_metrics():
     return metrics
 
 metrics = get_metrics()
-print(f"Queue Size: {metrics.get('llm_router_queue_size', 0)}")
-print(f"Rejections: {metrics.get('llm_router_backpressure_rejections_total', 0)}")
+print(f"Queue Size: {metrics.get('llmlb_queue_size', 0)}")
+print(f"Rejections: {metrics.get('llmlb_backpressure_rejections_total', 0)}")
 ```
 
 ## エラーハンドリング
@@ -257,7 +257,7 @@ ttl_secs = 2             # TTLを短縮
 |------|------|
 | 最大待機数 | 1000リクエスト |
 | タイムアウト | 1〜300秒 |
-| 分散構成 | 非対応（単一ルーター） |
+| 分散構成 | 非対応（単一ロードバランサー） |
 | 外部キュー | 非対応（Redis等） |
 | 優先度制御 | 非対応 |
 

@@ -1,4 +1,4 @@
-# 技術リサーチ: LLM-Router独自モデルストレージ
+# 技術リサーチ: LLM-Load Balancer独自モデルストレージ
 
 ## リサーチ課題
 
@@ -14,7 +14,7 @@
 シンプルなディレクトリベース構造を採用。
 
 ```text
-~/.llm-router/models/<model-name>/<artifacts>
+~/.llmlb/models/<model-name>/<artifacts>
 ```
 
 ### 理由

@@ -2,7 +2,7 @@
 
 ## 調査目的
 
-LLM Router Web UIの全画面構成と画面遷移を把握し、索引ドキュメントとして整理する。
+LLM Load Balancer Web UIの全画面構成と画面遷移を把握し、索引ドキュメントとして整理する。
 
 ## 画面構成の調査
 
@@ -28,7 +28,7 @@ LLM Router Web UIの全画面構成と画面遷移を把握し、索引ドキュ
 2. **StatsCards (SEC-002)**: ノード数、リクエスト数などの統計
 3. **NodeTable (SEC-003)**: ノード一覧・状態・GPU情報
 4. **RequestHistoryTable (SEC-004)**: ページネーション付きリクエスト履歴
-5. **LogViewer (SEC-005)**: ルーターログ表示
+5. **LogViewer (SEC-005)**: ロードバランサーログ表示
 6. **ModelsSection (SEC-006)**: モデル一覧・割り当て・登録
 7. **CloudProvidersSection (SEC-007)**: クラウドプロバイダー状況
 

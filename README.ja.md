@@ -1,14 +1,14 @@
-# LLM Router
+# LLM Load Balancer
 
 [English](./README.md) | 日本語
 
 ## 概要
 
-LLM Router は、複数マシンに配置した推論ノードを統合し、単一の OpenAI 互換 API（`/v1/*`）を提供する Rust 製ルーターです。テキスト生成だけでなく、音声認識・音声合成・画像生成などマルチモーダルな AI 機能を統一されたインターフェースで提供します。
+LLM Load Balancer は、複数マシンに配置した推論ランタイムを統合し、単一の OpenAI 互換 API（`/v1/*`）を提供する Rust 製ロードバランサーです。テキスト生成だけでなく、音声認識・音声合成・画像生成などマルチモーダルな AI 機能を統一されたインターフェースで提供します。
 
 ### ビジョン
 
-LLM Router は以下の3つの主要なユースケースに対応します：
+LLM Load Balancer は以下の3つの主要なユースケースに対応します：
 
 1. **プライベート LLM サーバー** - 個人やチームが、データとモデルを完全にコントロールしながら独自の LLM インフラを運用
 2. **エンタープライズゲートウェイ** - 企業内での一元管理、アクセス制御、部門横断的な LLM リソースの監視
@@ -16,15 +16,53 @@ LLM Router は以下の3つの主要なユースケースに対応します：
 
 ### マルチエンジンアーキテクチャ
 
-LLM Router はプラグイン可能なマルチエンジン構成をサポートします：
+LLM Load Balancer はマネージャ方式のマルチエンジン構成をサポートします：
 
 | エンジン | ステータス | モデル | ハードウェア |
 |---------|-----------|--------|------------|
 | **llama.cpp** | 本番稼働 | GGUF形式（LLaMA、Mistral等） | CPU、CUDA、Metal |
-| **GPT-OSS** | 本番稼働（Metal）/ DirectMLは進行中 | Safetensors（公式GPUアーティファクト） | Apple Silicon、Windows |
+| **GPT-OSS** | 本番稼働（Metal/CUDA） | Safetensors（公式GPUアーティファクト） | Apple Silicon、Windows |
 | **Whisper** | 本番稼働 | 音声認識（ASR） | CPU、CUDA、Metal |
 | **Stable Diffusion** | 本番稼働 | 画像生成 | CUDA、Metal |
 | **Nemotron** | 検証中 | Safetensors形式 | CUDA |
+
+**エンジン選択方針**:
+
+- **正本がsafetensorsのモデル**（gpt-oss, Nemotron 3等）:
+  - safetensors.cppで動作必須（Metal/CUDA対応必須）
+  - GGUF版も動作可能（llama.cpp、サードパーティ変換版）
+- **正本がGGUFのモデル**（Llama, Mistral等）:
+  - llama.cppで対応（Metal/CUDA対応済み）
+
+### safetensors 対応アーキテクチャ（実装反映）
+
+| アーキテクチャ | 状態 | 備考 |
+|--------------|------|------|
+| **gpt-oss (MoE + MXFP4)** | 実装済み | `mlp.router.*` と `mlp.experts.*_(blocks\|scales\|bias)` を読み込む |
+| **nemotron3 (Mamba-Transformer MoE)** | 準備済み（未統合） | まだforwardパスに接続されていない |
+
+詳細・更新履歴は `specs/SPEC-69549000/spec.md` を参照。
+
+### GGUF アーキテクチャ例（llama.cpp）
+
+GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅的ではなく、上流の llama.cpp 互換性に準拠します。
+
+| アーキテクチャ | 対応モデル例 | 備考 |
+|--------------|-------------|------|
+| **llama** | Llama 3.1, Llama 3.2, Llama 3.3, DeepSeek-R1-Distill-Llama | Meta Llama 系 |
+| **mistral** | Mistral, Mistral-Nemo | Mistral AI 系 |
+| **gemma** | Gemma3, Gemma3n, Gemma3-QAT, FunctionGemma, EmbeddingGemma | Google Gemma 系 |
+| **qwen** | Qwen2.5, Qwen3, QwQ, Qwen3-VL, Qwen3-Coder, Qwen3-Embedding, Qwen3-Reranker | Alibaba Qwen 系 |
+| **phi** | Phi-4 | Microsoft Phi 系 |
+| **nemotron** | Nemotron | NVIDIA Nemotron 系 |
+| **deepseek** | DeepSeek-V3.2, DeepCoder-Preview | DeepSeek 系 |
+| **gpt-oss** | GPT-OSS, GPT-OSS-Safeguard | OpenAI GPT-OSS 系 |
+| **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite 系 |
+| **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM 系 |
+| **kimi** | Kimi-K2 | Moonshot Kimi 系 |
+| **moondream** | Moondream2 | Moondream 系（Vision） |
+| **devstral** | Devstral-Small | Mistral 派生（コーディング特化） |
+| **magistral** | Magistral-Small-3.2 | Mistral 派生（マルチモーダル） |
 
 ### マルチモーダル対応
 
@@ -35,34 +73,84 @@ LLM Router はプラグイン可能なマルチエンジン構成をサポート
 - **画像生成**: `/v1/images/generations` - テキストプロンプトから画像を生成
 - **画像認識**: `/v1/chat/completions` - image_url を含むVisionリクエスト
 
+テキスト生成は **Responses API**（`/v1/responses`）を推奨します。Chat Completions は互換用途で残します。
+
 ## 主な特徴
 
-- OpenAI 互換 API: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
-- ロードバランシング: 利用可能なノードへ自動ルーティング
-- ダッシュボード: `/dashboard` でノード、リクエスト履歴、ログ、モデルを管理
-- ノード自己登録: ノードは起動時にルーターへ登録し、ハートビートを送信
-- ノード主導モデル同期: ノードは `/v0/models` + マニフェストを参照し、
-  HFから直接ダウンロードして同期（ルーターからの push 配布なし）
+- OpenAI 互換 API: `/v1/responses`（推奨）, `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
+- ロードバランシング: 利用可能なエンドポイントへレイテンシベースで自動ルーティング
+- ダッシュボード: `/dashboard` でエンドポイント、リクエスト履歴、ログ、モデルを管理
+- エンドポイント管理: Ollama、vLLM、xLLM等の外部推論サーバーをロードバランサーから一元管理
+- モデル同期: 登録エンドポイントから `GET /v1/models` でモデル一覧を自動同期
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 
 ## ダッシュボード
 
-ルーターが `/dashboard` で提供します。
+ロードバランサーが `/dashboard` で提供します。
 
-```
+```text
 http://localhost:32768/dashboard
 ```
 
+## エンドポイント管理
+
+ロードバランサーは外部の推論サーバー（Ollama、vLLM、xLLM等）を「エンドポイント」として一元管理します。
+
+### 対応エンドポイント
+
+| タイプ | 説明 | ヘルスチェック |
+|-------|------|---------------|
+| **xLLM** | 自社推論サーバー（llama.cpp/whisper.cpp等） | `GET /v1/models` |
+| **Ollama** | Ollamaサーバー | `GET /v1/models` |
+| **vLLM** | vLLM推論サーバー | `GET /v1/models` |
+| **OpenAI互換** | その他のOpenAI互換API | `GET /v1/models` |
+
+### ダッシュボードからの登録
+
+1. ダッシュボード → サイドメニュー「エンドポイント」
+2. 「新規エンドポイント」をクリック
+3. 名前とベースURLを入力（例: `http://192.168.1.100:11434`）
+4. 「接続テスト」で疎通確認 → 「保存」
+
+### REST APIからの登録
+
+```bash
+# エンドポイント登録
+curl -X POST http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "OllamaサーバーA", "base_url": "http://192.168.1.100:11434"}'
+
+# エンドポイント一覧
+curl http://localhost:32768/v0/endpoints \
+  -H "Authorization: Bearer sk_your_api_key"
+
+# モデル同期
+curl -X POST http://localhost:32768/v0/endpoints/{id}/sync \
+  -H "Authorization: Bearer sk_your_api_key"
+```
+
+### ステータス遷移
+
+- **pending**: 登録直後（ヘルスチェック待ち）
+- **online**: ヘルスチェック成功
+- **offline**: ヘルスチェック失敗
+- **error**: 接続エラー
+
+詳細は [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quickstart.md) を参照。
+
 ## LLM アシスタント向け MCP サーバー
 
-LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Router と連携できます。
+LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Load Balancer と連携できます。
+
+MCP ????? npm/npx ??????????????????????? pnpm ??????
 
 ### インストール
 
 ```bash
-npm install -g @llm-router/mcp-server
+npm install -g @llmlb/mcp-server
 # または
-npx @llm-router/mcp-server
+npx @llmlb/mcp-server
 ```
 
 ### 設定例 (.mcp.json)
@@ -70,13 +158,13 @@ npx @llm-router/mcp-server
 ```json
 {
   "mcpServers": {
-    "llm-router": {
+    "llmlb": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@llm-router/mcp-server"],
+      "args": ["-y", "@llmlb/mcp-server"],
       "env": {
-        "LLM_ROUTER_URL": "http://localhost:32768",
-        "LLM_ROUTER_API_KEY": "sk_your_api_key"
+        "LLMLB_URL": "http://localhost:32768",
+        "LLMLB_API_KEY": "sk_your_api_key"
       }
     }
   }
@@ -89,7 +177,7 @@ npx @llm-router/mcp-server
 
 ### 前提条件
 
-- Linux/macOS/Windows x64 (GPU推奨、GPUなしは登録不可)
+- Linux/macOS/Windows x64 (GPU推奨、CPU推論も対応)
 - Rust toolchain (nightly不要) と cargo
 - Docker (任意、コンテナ利用時)
 - CUDAドライバ (GPU使用時) - [CUDAセットアップ](#cudaセットアップnvidia-gpu)参照
@@ -116,7 +204,7 @@ nvidia-smi
 
 #### CUDA Toolkitのインストール（ビルド環境のみ）
 
-CUDA対応ノードのビルド（`BUILD_WITH_CUDA=ON`）にのみ必要です。
+CUDA対応ランタイムのビルド（`BUILD_WITH_CUDA=ON`）にのみ必要です。
 
 **Windows:**
 
@@ -149,96 +237,98 @@ CUDA Toolkitは不要です。
 
 ### 1) Rustソースからビルド（推奨）
 ```bash
-git clone https://github.com/akiojin/llm-router.git
-cd llm-router
+git clone https://github.com/akiojin/llmlb.git
+cd llmlb
 make quality-checks   # fmt/clippy/test/markdownlint 一式
-cargo build -p llm-router --release
+cargo build -p llmlb --release
 ```
-生成物: `target/release/llm-router`
+生成物: `target/release/llmlb`
 
 ### 2) Docker で起動
 ```bash
-docker build -t llm-router:latest .
+docker build -t llmlb:latest .
 docker run --rm -p 32768:32768 --gpus all \
   -e OPENAI_API_KEY=... \
-  llm-router:latest
+  llmlb:latest
 ```
 GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
 
-### 3) C++ Node ビルド
+### 3) C++ Runtime ビルド
 
 ```bash
-npm run build:node
+npm run build:xllm
 
 # Linux / CUDA の場合
-npm run build:node:cuda
+npm run build:xllm:cuda
 
 # 手動でビルドする場合:
-cd node
+cd xllm
 cmake -B build -S .
 cmake --build build --config Release
 ```
 
-生成物: `node/build/llm-node`
+生成物: `xllm/build/xllm`
 
 ### 4) 基本設定
 
-#### ルーター（Rust）環境変数
+#### ロードバランサー（Rust）環境変数
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_HOST` | `0.0.0.0` | バインドアドレス |
-| `LLM_ROUTER_PORT` | `32768` | リッスンポート |
-| `LLM_ROUTER_DATABASE_URL` | `sqlite:~/.llm-router/router.db` | データベースURL |
-| `LLM_ROUTER_JWT_SECRET` | 自動生成 | JWT署名シークレット |
-| `LLM_ROUTER_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
-| `LLM_ROUTER_ADMIN_PASSWORD` | - | 初期管理者パスワード |
-| `LLM_ROUTER_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_ROUTER_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
-| `LLM_ROUTER_NODE_TIMEOUT` | `60` | ノードタイムアウト（秒） |
-| `LLM_ROUTER_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
+| `LLMLB_HOST` | `0.0.0.0` | バインドアドレス |
+| `LLMLB_PORT` | `32768` | リッスンポート |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/lb.db` | データベースURL |
+| `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
+| `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
+| `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
+| `LLMLB_LOG_LEVEL` | `info` | ログレベル |
+| `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
+| `LLMLB_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |
+| `LLMLB_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
 | `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
 
 クラウドAPI:
 
 - `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 
-#### ノード（C++）環境変数
+#### ランタイム（C++）環境変数
 
 | 環境変数 | デフォルト | 説明 |
 |---------|-----------|------|
-| `LLM_ROUTER_URL` | `http://127.0.0.1:32768` | ルーターURL |
-| `LLM_NODE_API_KEY` | - | ノード登録/モデルレジストリ取得用APIキー（スコープ: `node`） |
-| `LLM_NODE_PORT` | `32769` | HTTPサーバーポート |
-| `LLM_NODE_MODELS_DIR` | `~/.llm-router/models` | モデルディレクトリ |
-| `LLM_NODE_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
-| `LLM_NODE_ENGINE_PLUGINS_DIR` | (未設定) | エンジンプラグインディレクトリ（任意） |
-| `LLM_NODE_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
-| `LLM_NODE_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_NODE_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_NODE_LOG_DIR` | `~/.llm-router/logs` | ログディレクトリ |
+| `LLMLB_URL` | `http://127.0.0.1:32768` | ロードバランサーURL |
+| `LLM_RUNTIME_API_KEY` | - | ランタイム登録/モデルレジストリ取得用APIキー（スコープ: `runtime`） |
+| `LLM_RUNTIME_PORT` | `32769` | HTTPサーバーポート |
+| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | モデルディレクトリ |
+| `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
+| `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
+| `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
+| `LLM_RUNTIME_LOG_LEVEL` | `info` | ログレベル |
+| `LLM_RUNTIME_LOG_DIR` | `~/.llmlb/logs` | ログディレクトリ |
 
-**注意**: 旧環境変数名（`ROUTER_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
+**注意**: 旧環境変数名（`LLMLB_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
 新しい環境変数名を使用してください。
+
+**注記**: エンジンプラグインは廃止しました。移行手順は `docs/migrations/plugin-to-manager.md` を参照してください。
 
 ### 5) 起動例
 ```bash
-# ルーター
-cargo run -p llm-router
+# ロードバランサー
+cargo run -p llmlb
 
-# ノード (別シェル)
-LLM_NODE_API_KEY=sk_node_register_key ./node/build/llm-node
+# ランタイム (別シェル)
+LLM_RUNTIME_API_KEY=sk_runtime_register_key ./xllm/build/xllm
 ```
 
 ### 6) 動作確認
 - ダッシュボード: `http://localhost:32768/dashboard`
-- 健康チェック: `curl -H "Authorization: Bearer sk_node_register_key" -H "X-Node-Token: <node_token>" http://localhost:32768/v0/health`
+- 健康チェック: `curl -H "Authorization: Bearer sk_runtime_register_key" -H "X-Runtime-Token: <runtime_token>" http://localhost:32768/v0/health`
 - OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:32768/v1/models`
 
 ## 利用方法（OpenAI互換エンドポイント）
 
 ### 基本
-- `POST /v1/chat/completions`
+- `POST /v1/responses`（推奨）
+- `POST /v1/chat/completions`（互換）
 - `POST /v1/completions`
 - `POST /v1/embeddings`
 
@@ -291,13 +381,13 @@ curl http://localhost:32768/v1/chat/completions \
 
 ## アーキテクチャ
 
-LLM Router は、ローカルの llama.cpp ノードを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
+LLM Load Balancer は、ローカルの llama.cpp ランタイムを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
 
 ### コンポーネント
 - **Router (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
-- **Local Nodes (C++ / llama.cpp)**: GGUF モデルを提供します。ルーターに登録し、ハートビートを送信します。
-- **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ルーターは対応するクラウド API に転送します。
-- **Storage**: ルーターのメタデータ用の SQLite。モデルファイルは各ノードに存在します。
+- **Local Runtimes (C++ / llama.cpp)**: GGUF モデルを提供します。ロードバランサーに登録し、ハートビートを送信します。
+- **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ロードバランサーは対応するクラウド API に転送します。
+- **Storage**: ロードバランサーのメタデータ用の SQLite。モデルファイルは各ランタイムに存在します。
 - **Observability**: Prometheus メトリクス、構造化ログ、ダッシュボード統計。
 
 ### システム構成
@@ -313,20 +403,20 @@ Client
   ▼
 Router (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
-  └─ No prefix → Scheduler → Local Node
+  └─ No prefix → Scheduler → Local Runtime
                        └─ llama.cpp inference → Response
 ```
 
 ### モデル同期（push配布なし）
 
-- ルーターからノードへの push 配布は行いません。
-- ノードはモデルをオンデマンドで次の順に解決します。
-  - ローカルキャッシュ（`LLM_NODE_MODELS_DIR`）
-  - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_NODE_ORIGIN_ALLOWLIST`）
-  - ルーターのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
+- ルーターからランタイムへの push 配布は行いません。
+- ランタイムはモデルをオンデマンドで次の順に解決します。
+  - ローカルキャッシュ（`LLM_RUNTIME_MODELS_DIR`）
+  - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_RUNTIME_ORIGIN_ALLOWLIST`）
+  - ロードバランサーのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
-- ノードは `/v0/nodes` を介して登録します。ルーターはデフォルトで GPU のないノードを拒否します。
+- ランタイムは `/v0/runtimes` を介して登録します。CPU のみのエンドポイントも対応しています。
 - ハートビートには、ロードバランシングに使用される CPU/GPU/メモリメトリクスが含まれます。
 - ダッシュボードには `*_key_present` フラグが表示され、オペレーターはどのクラウドキーが設定されているかを確認できます。
 
@@ -334,20 +424,20 @@ Router (OpenAI-compatible)
 
 ### 起動時に GPU が見つからない
 - 確認: `nvidia-smi` または `CUDA_VISIBLE_DEVICES`
-- 環境変数で無効化: ノード側 `LLM_ALLOW_NO_GPU=true`（デフォルトは禁止）
+- 環境変数で無効化: ランタイム側 `LLM_ALLOW_NO_GPU=true`（デフォルトは禁止）
 - それでも失敗する場合は NVML ライブラリの有無を確認
 
 ### クラウドモデルが 401/400 を返す
-- ルーター側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
+- ロードバランサー側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
 - ダッシュボード `/v0/dashboard/stats` の `*_key_present` が false なら未設定
 - プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
 
 ### ポート競合で起動しない
-- ルーター: `LLM_ROUTER_PORT` を変更（例: `LLM_ROUTER_PORT=18080`）
-- ノード: `LLM_NODE_PORT` または `--port` で変更
+- ルーター: `LLMLB_PORT` を変更（例: `LLMLB_PORT=18080`）
+- ランタイム: `LLM_RUNTIME_PORT` または `--port` で変更
 
 ### SQLite ファイル作成に失敗
-- `LLM_ROUTER_DATABASE_URL` のパス先ディレクトリの書き込み権限を確認
+- `LLMLB_DATABASE_URL` のパス先ディレクトリの書き込み権限を確認
 - Windows の場合はパスにスペースが含まれていないか確認
 
 ### ダッシュボードが表示されない
@@ -356,12 +446,12 @@ Router (OpenAI-compatible)
 - リバースプロキシ経由の場合は `/dashboard/*` の静的配信設定を確認
 
 ### OpenAI互換APIで 503 / モデル未登録
-- 全ノードが `initializing` の場合 503 を返すことがあります。ノードのモデルロードを待つか、`/v0/dashboard/nodes` で状態を確認
-- モデル指定がローカルに存在しない場合、ノードが自動プルするまで待機
+- 全ランタイムが `initializing` の場合 503 を返すことがあります。ランタイムのモデルロードを待つか、`/v0/dashboard/runtimes` で状態を確認
+- モデル指定がローカルに存在しない場合、ランタイムが自動プルするまで待機
 
 ### ログが多すぎる / 少なすぎる
-- 環境変数 `LLM_ROUTER_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLM_ROUTER_LOG_LEVEL=info` または `RUST_LOG=or_router=debug`）
-- ノードのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
+- 環境変数 `LLMLB_LOG_LEVEL` または `RUST_LOG` で制御（例: `LLMLB_LOG_LEVEL=info` または `RUST_LOG=llmlb=debug`）
+- ランタイムのログは `spdlog` で出力。構造化ログは `tracing_subscriber` でJSON設定可
 
 ## モデル管理（Hugging Face, safetensors / GGUF）
 
@@ -371,7 +461,7 @@ Router (OpenAI-compatible)
   - `format` を選択します: `safetensors`（ネイティブエンジン） または `gguf`（llama.cpp フォールバック）
     - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
     - safetensors のテキスト生成はネイティブエンジンがある場合のみ対応します
-      （gpt-ossはMetal対応済み、DirectMLは進行中）。GGUFのみのモデルは `gguf` を選択してください。
+      （safetensors.cppはMetal/CUDA対応）。GGUFのみのモデルは `gguf` を選択してください。
   - Hugging Face repo（例: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`）またはファイルURLを入力します。
   - `format=gguf` の場合:
     - 目的の `.gguf` を `filename` で直接指定するか、`gguf_policy`（`quality` / `memory` / `speed`）で siblings から自動選択します。
@@ -379,18 +469,16 @@ Router (OpenAI-compatible)
     - HFスナップショットに `config.json` と `tokenizer.json` が必要です。
     - シャーディングされている場合は `.index.json` が必要です。
     - gpt-oss は公式GPUアーティファクトを優先します:
-      `model.metal.bin`（Metal）/ `model.directml.bin` または `model.dml.bin`（DirectML）。
-    - Windows?DirectML?? `gptoss_directml.dll`?Nemotron? `nemotron_directml.dll`????????
-      - Windows?????????DLL???????????: `<model_dir>/gptoss_directml.dll`?????
-      - `LLM_NODE_GPTOSS_DML_LIB` / `LLM_NODE_NEMOTRON_DML_LIB` ???????????????
-  - ルーターは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
+      `model.metal.bin` などが提供されている場合は、対応バックエンドで実行キャッシュとして利用します。
+    - Windows は CUDA ビルド（`BUILD_WITH_CUDA=ON`）が必須です。DirectML は非対応です。
+  - ロードバランサーは **メタデータ + マニフェストのみ** を保持します（バイナリは保持しません）。
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
-  - ノードはモデルをプッシュ配布されず、オンデマンドで取得します:
+  - ランタイムはモデルをプッシュ配布されず、オンデマンドで取得します:
   - `GET /v0/models/registry/:model_name/manifest.json`
 - API:
   - `POST /v0/models/register` (`repo` と任意の `filename`)
-- `/v1/models` は登録済みモデルを返し、`ready` はノード同期に基づきます。
+- `/v1/models` は登録済みモデルを返し、`ready` はランタイム同期に基づきます。
 
 ## API 仕様
 
@@ -407,57 +495,68 @@ Router (OpenAI-compatible)
 
 | スコープ | 目的 |
 |---------|------|
-| `node` | ノード登録 + ヘルスチェック + モデル同期（`POST /v0/nodes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`） |
+| `endpoints` | エンドポイント管理（`/v0/endpoints/*`） |
+| `runtime` | ランタイム登録 + ヘルスチェック + モデル同期（`POST /v0/runtimes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`）※レガシー |
 | `api` | OpenAI 互換推論 API（`/v1/*`） |
-| `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/nodes/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
+| `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/runtimes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
 
 **補足**:
-- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`node`）+ `X-Node-Token` 必須。
+- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
-### ルーター（Router）
+### ロードバランサー（Load Balancer）
 
 #### OpenAI 互換（API キー認証）
 
 - POST `/v1/chat/completions`
 - POST `/v1/completions`
 - POST `/v1/embeddings`
-- GET `/v1/models`（API キーまたは `X-Node-Token`）
-- GET `/v1/models/:model_id`（API キーまたは `X-Node-Token`）
+- GET `/v1/models`（API キーまたは `X-Runtime-Token`）
+- GET `/v1/models/:model_id`（API キーまたは `X-Runtime-Token`）
 
-#### ノード管理
+#### エンドポイント管理
 
-- POST `/v0/nodes`（登録、APIキー: `node`）
-- GET `/v0/nodes`（一覧、admin権限）
-- DELETE `/v0/nodes/:node_id`（admin権限）
-- POST `/v0/nodes/:node_id/disconnect`（admin権限）
-- PUT `/v0/nodes/:node_id/settings`（admin権限）
-- POST `/v0/health`（ノードからのヘルス/メトリクス送信、APIキー: `node` + `X-Node-Token`）
-- GET `/v0/nodes/:node_id/logs`（admin権限）
+- POST `/v0/endpoints`（登録、admin権限）
+- GET `/v0/endpoints`（一覧、admin/viewer権限）
+- GET `/v0/endpoints/:id`（詳細、admin/viewer権限）
+- PUT `/v0/endpoints/:id`（更新、admin権限）
+- DELETE `/v0/endpoints/:id`（削除、admin権限）
+- POST `/v0/endpoints/:id/test`（接続テスト、admin権限）
+- POST `/v0/endpoints/:id/sync`（モデル同期、admin権限）
+
+#### ランタイム管理（レガシー）
+
+- POST `/v0/runtimes`（登録、APIキー: `runtime`）
+- GET `/v0/runtimes`（一覧、admin権限）
+- DELETE `/v0/runtimes/:runtime_id`（admin権限）
+- POST `/v0/runtimes/:runtime_id/disconnect`（admin権限）
+- PUT `/v0/runtimes/:runtime_id/settings`（admin権限）
+- POST `/v0/health`（ランタイムからのヘルス/メトリクス送信、APIキー: `runtime` + `X-Runtime-Token`）
+- GET `/v0/runtimes/:runtime_id/logs`（admin権限）
 
 #### モデル管理
 
-- GET `/v0/models`（登録済みモデル一覧、APIキー: `node` または `admin`）
+- GET `/v0/models`（登録済みモデル一覧、APIキー: `runtime` または `admin`）
 - POST `/v0/models/register`（admin権限）
 - DELETE `/v0/models/*model_name`（admin権限）
-- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `node`）
+- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `runtime`）
 
 #### ダッシュボード/監視
 
 - GET `/v0/dashboard/overview`（admin権限）
 - GET `/v0/dashboard/stats`（admin権限）
-- GET `/v0/dashboard/nodes`（admin権限）
-- GET `/v0/dashboard/metrics/:node_id`（admin権限）
+- GET `/v0/dashboard/runtimes`（admin権限）
+- GET `/v0/dashboard/metrics/:runtime_id`（admin権限）
 - GET `/v0/dashboard/request-history`（admin権限）
 - GET `/v0/dashboard/request-responses`（admin権限）
 - GET `/v0/dashboard/request-responses/:id`（admin権限）
 - GET `/v0/dashboard/request-responses/export`（admin権限）
-- GET `/v0/dashboard/logs/router`（admin権限）
+- GET `/v0/dashboard/logs/lb`（admin権限）
 - GET `/v0/metrics/cloud`（admin権限）
 - GET `/dashboard/*`
 - GET `/playground/*`
 
-### ノード（Node）
+### ランタイム（Runtime）
 
 #### OpenAI 互換
 
@@ -478,7 +577,10 @@ Router (OpenAI-compatible)
 
 ## 開発
 
+詳細な開発ガイドライン、テスト手順、貢献フローについては [CLAUDE.md](./CLAUDE.md) を参照。
+
 ```bash
+# 品質チェック一式
 make quality-checks
 ```
 
@@ -491,13 +593,13 @@ make quality-checks
 
 補足:
 - gpt-oss-20b は safetensors（index + shards + config/tokenizer）を正本とします。
-- GPU必須（macOS=Metal / Windows=DirectML）。Linux/CUDAは実験扱いです。
+- GPU必須（macOS=Metal / Windows=CUDA）。Linux/CUDAは実験扱いです。
 
 Dashboard を更新する場合:
 
 ```bash
 pnpm install
-pnpm --filter @llm-router/dashboard build
+pnpm --filter @llmlb/dashboard build
 ```
 
 ## ライセンス

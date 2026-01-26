@@ -4,12 +4,11 @@ Sample calls for the OpenAI-compatible router with cloud prefixes.
 
 ## curl
 ```bash
-curl -X POST http://localhost:32768/v1/chat/completions \
+curl -X POST http://localhost:32768/v1/responses \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai:gpt-4o",
-    "messages": [{"role": "user", "content": "Hello"}],
-    "stream": false
+    "input": "Hello"
   }'
 ```
 
@@ -19,31 +18,26 @@ import requests
 
 payload = {
     "model": "google:gemini-1.5-pro",
-    "messages": [{"role": "user", "content": "Say hi in JSON"}],
-    "stream": False,
+    "input": "Say hi in JSON",
 }
-resp = requests.post("http://localhost:32768/v1/chat/completions", json=payload)
+resp = requests.post("http://localhost:32768/v1/responses", json=payload)
 resp.raise_for_status()
 print(resp.json())
 ```
 
 ## Node.js (fetch)
 ```javascript
-import fetch from "node-fetch";
-
 const body = {
   model: "anthropic:claude-3-opus",
-  messages: [{ role: "user", content: "Give me three bullets" }],
-  stream: true,
+  input: "Give me three bullets",
 };
 
-const res = await fetch("http://localhost:32768/v1/chat/completions", {
+const res = await fetch("http://localhost:32768/v1/responses", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify(body),
 });
 
-for await (const chunk of res.body) {
-  process.stdout.write(chunk);
-}
+const data = await res.json();
+console.log(data);
 ```

@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-83825900`
 **作成日**: 2025-12-24
-**ステータス**: 実装待ち
+**ステータス**: ✅ 実装完了
 **入力**: ユーザー説明: "Nemotron CUDA PoC: safetensorsから直接GPU（CUDA）で推論を実行するPoCを作成する。目的は、llama.cppに依存せずにsafetensors形式のNemotronモデルをCUDAで直接ロード・推論し、テキスト生成が成立することを検証すること。Metal対応は別途（本PoCはCUDA限定）。"
 
 ## Clarifications
@@ -98,7 +98,7 @@ LLM runtimeの開発者として、CUDA推論の基礎的な性能データ（�
 - KVキャッシュの最適化
 - 量子化モデルのサポート
 - マルチGPU対応
-- llm-router Nodeへの統合
+- llmlb Nodeへの統合
 
 ---
 

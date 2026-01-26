@@ -1,14 +1,15 @@
 /**
  * @file engine_api.h
- * @brief LLM-Router Engine Plugin C ABI Definition
+ * @brief LLM-Router Legacy Engine Plugin C ABI Definition
  * @version 1.0
+ * @note Legacy: plugin ABI removed; kept for reference only.
  *
  * このヘッダーファイルはエンジンプラグインのC ABIを定義します。
  * すべてのプラグインはこのインターフェースを実装する必要があります。
  */
 
-#ifndef LLM_ROUTER_ENGINE_API_H
-#define LLM_ROUTER_ENGINE_API_H
+#ifndef LLMLB_ENGINE_API_H
+#define LLMLB_ENGINE_API_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -220,4 +221,4 @@ ENGINE_API const char* engine_get_last_error(void);
 }
 #endif
 
-#endif /* LLM_ROUTER_ENGINE_API_H */
+#endif /* LLMLB_ENGINE_API_H */

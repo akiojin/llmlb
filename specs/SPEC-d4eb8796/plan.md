@@ -1,4 +1,4 @@
-# 実装計画: ルーター認証・アクセス制御
+# 実装計画: ロードバランサー認証・アクセス制御
 
 **機能ID**: `SPEC-d4eb8796` | **日付**: 2025-11-17 | **仕様**: [spec.md](./spec.md)
 **入力**: `/specs/SPEC-d4eb8796/spec.md`の機能仕様
@@ -18,7 +18,7 @@
 
 ## 概要
 
-ルーターに認証・アクセス制御機能を追加し、管理APIとAI機能APIを保護します。
+ロードバランサーに認証・アクセス制御機能を追加し、管理APIとAI機能APIを保護します。
 主要な要件：
 
 - 初回起動時の管理者アカウント作成（対話式または環境変数）
@@ -46,7 +46,7 @@
 - シリアライゼーション: serde 1.0, serde_json 1.0
 
 **ストレージ**: SQLite (既存のJSONファイルベースから移行)
-- データベースファイル: `~/.llm-router/router.db`
+- データベースファイル: `~/.llmlb/lb.db`
 - 自動マイグレーション機能（初回起動時にJSONからインポート）
 
 **テスト**: cargo test
@@ -84,14 +84,14 @@
 - パターン回避? **はい** (Repository/UoWパターン不使用、直接的なDB操作) ✓
 
 **アーキテクチャ**:
-- すべての機能をライブラリとして? **はい** (router/src/lib.rs経由で公開)
+- すべての機能をライブラリとして? **はい** (llmlb/src/lib.rs経由で公開)
 - ライブラリリスト:
   - `router` - サーバー本体（認証、API、ルーティング）
   - `node` - ノード実行ファイル
   - `common` - 共有型定義・エラー定義
 - ライブラリごとのCLI:
   - router: `--help`, `--version`, `--port`, `--host`
-  - node: `--help`, `--version`, `--router-url`
+  - node: `--help`, `--version`, `--lb-url`
 - ライブラリドキュメント: README.md + CLAUDE.md (llms.txt形式を検討) ✓
 
 **テスト (妥協不可)**:
@@ -135,7 +135,7 @@ specs/SPEC-d4eb8796/
 ### ソースコード (リポジトリルート)
 
 ```
-router/
+llmlb/
 ├── src/
 │   ├── auth/           # 新規: 認証モジュール
 │   │   ├── mod.rs
@@ -148,7 +148,7 @@ router/
 │   │   ├── migrations.rs # 新規: マイグレーション
 │   │   ├── users.rs    # 新規: ユーザーDB操作
 │   │   ├── api_keys.rs # 新規: APIキーDB操作
-│   │   └── node_tokens.rs # 新規: ノードトークンDB操作
+│   │   └── runtime_tokens.rs # 新規: ノードトークンDB操作
 │   ├── api/            # 既存: APIルーティング
 │   │   ├── mod.rs      # 変更: 認証ミドルウェア追加
 │   │   ├── auth.rs     # 新規: 認証エンドポイント
@@ -208,7 +208,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 4. **Axum認証ミドルウェアパターン**:
    - `tower::middleware::from_fn_with_state`の使用
    - エラーハンドリング（401 Unauthorized）
-   - ルーター階層でのミドルウェア適用
+   - ロードバランサー階層でのミドルウェア適用
 
 5. **ノードトークン生成**:
    - セキュアなランダム生成（`uuid::Uuid::new_v4`）
@@ -242,7 +242,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
   - expires_at: Option<DateTime<Utc>>
 
 - **NodeToken**: ノード通信用トークン
-  - node_id: UUID (PRIMARY KEY, FOREIGN KEY → Node.id)
+  - runtime_id: UUID (PRIMARY KEY, FOREIGN KEY → Node.id)
   - token_hash: String (UNIQUE, NOT NULL)
   - created_at: DateTime<Utc>
 
@@ -278,7 +278,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - `DELETE /v0/api-keys/:id` - APIキー削除（Admin専用）
 
 **ノード登録API** (既存、変更):
-- `POST /v0/nodes` - レスポンスに `node_token` フィールド追加
+- `POST /v0/nodes` - レスポンスに `runtime_token` フィールド追加
 
 ### 3. 契約テスト生成
 
@@ -312,7 +312,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - 認証無効化モードでの全API許可
 - 認証有効化モードでの認証要求
 
-**ユーザーストーリー5** → `integration/node_token_test.rs`:
+**ユーザーストーリー5** → `integration/runtime_token_test.rs`:
 - ノード登録時のトークン発行
 - トークン付きヘルスチェック成功
 - トークンなしヘルスチェック拒否
@@ -371,7 +371,7 @@ cargo run --bin router
 **Phase 1設計ドキュメントからタスクを生成:**
 
 1. **Setup タスク** (並列実行可能 [P]):
-   - [ ] SQLiteスキーマファイル作成 `router/migrations/001_init.sql` [P]
+   - [ ] SQLiteスキーマファイル作成 `llmlb/migrations/001_init.sql` [P]
    - [ ] Cargo.toml に依存関係追加（bcrypt, jsonwebtoken, sqlx） [P]
    - [ ] 環境変数設定（AUTH_DISABLED, JWT_SECRET等） [P]
 
@@ -389,46 +389,46 @@ cargo run --bin router
 
 4. **Database Migration タスク** (TDD: Integration Test):
    - [ ] マイグレーションテスト作成（`tests/integration/migration_test.rs`） → **RED**
-   - [ ] SQLiteマイグレーション実装（`router/src/db/migrations.rs`） → **GREEN**
+   - [ ] SQLiteマイグレーション実装（`llmlb/src/db/migrations.rs`） → **GREEN**
    - [ ] JSONインポート機能実装（既存データ移行）→ **GREEN**
 
 5. **Authentication Core タスク** (TDD: Unit Test):
    - [ ] パスワードハッシュ化テスト作成（`tests/unit/password_test.rs`） → **RED**
-   - [ ] パスワードハッシュ化実装（`router/src/auth/password.rs`） → **GREEN**
+   - [ ] パスワードハッシュ化実装（`llmlb/src/auth/password.rs`） → **GREEN**
    - [ ] JWT生成・検証テスト作成（`tests/unit/jwt_test.rs`） → **RED**
-   - [ ] JWT生成・検証実装（`router/src/auth/jwt.rs`） → **GREEN**
+   - [ ] JWT生成・検証実装（`llmlb/src/auth/jwt.rs`） → **GREEN**
 
 6. **Middleware タスク** (TDD: Integration Test):
    - [ ] JWT認証ミドルウェアテスト作成 → **RED**
-   - [ ] JWT認証ミドルウェア実装（`router/src/auth/middleware.rs`） → **GREEN**
+   - [ ] JWT認証ミドルウェア実装（`llmlb/src/auth/middleware.rs`） → **GREEN**
    - [ ] APIキー認証ミドルウェアテスト作成 → **RED**
    - [ ] APIキー認証ミドルウェア実装 → **GREEN**
    - [ ] ノードトークン認証ミドルウェアテスト作成 → **RED**
    - [ ] ノードトークン認証ミドルウェア実装 → **GREEN**
 
 7. **API Implementation タスク** (TDD: Contract Test → GREEN):
-   - [ ] 認証APIエンドポイント実装（`router/src/api/auth.rs`） → 契約テスト **GREEN**
-   - [ ] ユーザー管理APIエンドポイント実装（`router/src/api/users.rs`） → 契約テスト **GREEN**
-   - [ ] APIキー管理APIエンドポイント実装（`router/src/api/api_keys.rs`） → 契約テスト **GREEN**
-   - [ ] ノード登録API修正（node_token追加） → 既存テスト **GREEN**
+   - [ ] 認証APIエンドポイント実装（`llmlb/src/api/auth.rs`） → 契約テスト **GREEN**
+   - [ ] ユーザー管理APIエンドポイント実装（`llmlb/src/api/users.rs`） → 契約テスト **GREEN**
+   - [ ] APIキー管理APIエンドポイント実装（`llmlb/src/api/api_keys.rs`） → 契約テスト **GREEN**
+   - [ ] ノード登録API修正（runtime_token追加） → 既存テスト **GREEN**
 
 8. **Database Operations タスク**:
-   - [ ] ユーザーDB操作実装（`router/src/db/users.rs`）
-   - [ ] APIキーDB操作実装（`router/src/db/api_keys.rs`）
-   - [ ] ノードトークンDB操作実装（`router/src/db/node_tokens.rs`）
+   - [ ] ユーザーDB操作実装（`llmlb/src/db/users.rs`）
+   - [ ] APIキーDB操作実装（`llmlb/src/db/api_keys.rs`）
+   - [ ] ノードトークンDB操作実装（`llmlb/src/db/runtime_tokens.rs`）
 
 9. **Bootstrap タスク** (TDD: Integration Test):
    - [ ] 初回起動時管理者作成テスト → **RED**
-   - [ ] 初回起動時管理者作成実装（`router/src/auth/bootstrap.rs`） → **GREEN**
+   - [ ] 初回起動時管理者作成実装（`llmlb/src/auth/bootstrap.rs`） → **GREEN**
 
-10. **Router Integration タスク**:
-    - [ ] 認証ミドルウェアをルーターに適用（`router/src/api/mod.rs`）
+10. **Load Balancer Integration タスク**:
+    - [ ] 認証ミドルウェアをロードバランサーに適用（`llmlb/src/api/mod.rs`）
     - [ ] 認証無効化モード実装（環境変数チェック）
 
 11. **Frontend タスク** (並列実行可能 [P]):
-    - [ ] ログイン画面実装（`router/src/web/static/login.html`） [P]
-    - [ ] APIキー管理画面実装（`router/src/web/static/api-keys.js`） [P]
-    - [ ] ユーザー管理画面実装（`router/src/web/static/users.js`） [P]
+    - [ ] ログイン画面実装（`llmlb/src/web/static/login.html`） [P]
+    - [ ] APIキー管理画面実装（`llmlb/src/web/static/api-keys.js`） [P]
+    - [ ] ユーザー管理画面実装（`llmlb/src/web/static/users.js`） [P]
     - [ ] 認証状態管理実装（localStorage、JWT送信）
 
 12. **Node Integration タスク**:
@@ -458,7 +458,7 @@ cargo run --bin router
 7. Database Operations
 8. API Implementation (Contract Tests → GREEN)
 9. Bootstrap
-10. Router Integration
+10. Load Balancer Integration
 11. Frontend (並列)
 12. Node Integration
 13. E2E Tests

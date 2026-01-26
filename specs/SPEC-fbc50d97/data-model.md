@@ -33,7 +33,7 @@ pub struct RequestResponseRecord {
     pub model: String,
 
     /// 処理したノードのID
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
 
     /// ノードのマシン名
     pub node_machine_name: String,
@@ -84,7 +84,7 @@ pub enum RecordStatus {
 | `timestamp` | `DateTime<Utc>` | Yes | リクエスト受信時刻（UTCタイムゾーン） |
 | `request_type` | `RequestType` | Yes | "chat" または "generate" |
 | `model` | `String` | Yes | モデル名（例: "llama2", "codellama"） |
-| `node_id` | `Uuid` | Yes | ノードID（Node構造体のidと一致） |
+| `runtime_id` | `Uuid` | Yes | ノードID（Node構造体のidと一致） |
 | `node_machine_name` | `String` | Yes | ノードのマシン名（表示用） |
 | `node_ip` | `IpAddr` | Yes | ノードのIPアドレス（デバッグ用） |
 | `request_body` | `serde_json::Value` | Yes | リクエスト本文全体をJSON Value として保存 |
@@ -145,7 +145,7 @@ pub enum RecordStatus {
 
 **説明**:
 - 1つの Node は複数の RequestResponseRecord を処理する
-- RequestResponseRecord は `node_id` で Node を参照する
+- RequestResponseRecord は `runtime_id` で Node を参照する
 - 外部キー制約なし（JSONファイルベースのため）
 
 **参照整合性**:
@@ -155,7 +155,7 @@ pub enum RecordStatus {
 **図**:
 ```
 Node (1) ----< (N) RequestResponseRecord
-  id                  node_id (参照)
+  id                  runtime_id (参照)
   machine_name        node_machine_name (非正規化)
   ip_address          node_ip (非正規化)
 ```
@@ -167,10 +167,10 @@ Node (1) ----< (N) RequestResponseRecord
 ### ファイルパス
 
 ```
-~/.llm-router/request_history.json
+~/.llmlb/request_history.json
 ```
 
-環境変数 `LLM_ROUTER_DATA_DIR` で変更可能。
+環境変数 `LLMLB_DATA_DIR` で変更可能。
 
 ### JSON構造
 
@@ -182,7 +182,7 @@ Node (1) ----< (N) RequestResponseRecord
     "timestamp": "2025-11-03T10:30:00Z",
     "request_type": "chat",
     "model": "llama2",
-    "node_id": "123e4567-e89b-12d3-a456-426614174000",
+    "runtime_id": "123e4567-e89b-12d3-a456-426614174000",
     "node_machine_name": "gpu-server-01",
     "node_ip": "192.168.1.10",
     "request_body": {
@@ -208,7 +208,7 @@ Node (1) ----< (N) RequestResponseRecord
     "timestamp": "2025-11-03T10:31:00Z",
     "request_type": "generate",
     "model": "codellama",
-    "node_id": "123e4567-e89b-12d3-a456-426614174000",
+    "runtime_id": "123e4567-e89b-12d3-a456-426614174000",
     "node_machine_name": "gpu-server-01",
     "node_ip": "192.168.1.10",
     "request_body": {

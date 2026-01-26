@@ -3,9 +3,9 @@ name: CI
 
 on:
   push:
-    branches: [develop, main]
+    branches: [main]
   pull_request:
-    branches: [develop, main]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}-${{ github.event.pull_request.number || github.run_id }}
@@ -26,12 +26,12 @@ jobs:
         with:
           filters: |
             cpp:
-              - 'node/**'
+              - 'xllm/**'
               - 'package.json'
               - '.github/actions/setup-cpp/**'
               - '.github/workflows/ci.yml'
             rust:
-              - 'router/**'
+              - 'llmlb/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - '.github/workflows/ci.yml'
@@ -67,6 +67,9 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+      - name: Bootstrap pest_generator
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+        shell: bash
       - name: Cargo fmt
         run: cargo fmt --all -- --check
         shell: bash
@@ -108,12 +111,12 @@ jobs:
         run: npm run test:node
       - name: clang-tidy (sources only)
         run: |
-          cd node
+          cd xllm
           FILES=$(find src include -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' \))
           run-clang-tidy -p build $FILES -quiet || (cat /tmp/run-clang-tidy.log || true; exit 1)
       - name: cppcheck (warnings)
         run: |
-          cd node
+          cd xllm
           cppcheck --enable=warning --inline-suppr --std=c++20 \
             -I include -I third_party/nlohmann-json/include -I third_party/cpp-httplib \
             --suppress=missingIncludeSystem \
@@ -131,7 +134,7 @@ jobs:
         with:
           version: 10.20.0
       - name: Run markdownlint
-        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!node/third_party" "!node/build"
+        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!xllm/third_party" "!xllm/build"
 
   coverage-rust:
     name: Coverage (Rust)
@@ -146,6 +149,8 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+      - name: Bootstrap pest_generator
+        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
       - name: Install cargo-llvm-cov
         run: |
           rustup component add llvm-tools-preview
@@ -216,9 +221,9 @@ jobs:
       - name: gcovr lcov report
         run: |
           mkdir -p coverage-cpp
-          gcovr -r node \
-            --exclude 'node/third_party' \
-            --exclude 'node/build/third_party' \
+          gcovr -r xllm \
+            --exclude 'xllm/third_party' \
+            --exclude 'xllm/build/third_party' \
             --gcov-ignore-parse-errors \
             -x coverage-cpp/coverage.xml -s
       - name: Upload coverage artifact

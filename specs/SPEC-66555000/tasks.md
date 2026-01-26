@@ -1,0 +1,241 @@
+# タスク: ロードバランサー主導エンドポイント登録システム
+
+**機能ID**: `SPEC-66555000`
+**入力**: `/specs/SPEC-66555000/` の設計ドキュメント
+**前提条件**: plan.md, research.md, data-model.md, contracts/endpoints-api.md, quickstart.md
+
+## 実行フロー
+
+```text
+1. データベースマイグレーション追加
+2. 型定義・モデル作成
+3. Contract Tests作成（RED）→ 実装（GREEN）
+4. Integration Tests作成（RED）→ 実装（GREEN）
+5. ヘルスチェッカー実装
+6. ルーティング統合
+7. 旧コード削除
+8. ドキュメント更新
+```
+
+## フォーマット: `[ID] [P?] 説明`
+
+- **[P]**: 並列実行可能（異なるファイル、依存関係なし）
+
+## Phase 3.1: セットアップ
+
+- [x] T001 `llmlb/migrations/` に `YYYYMMDDHHMMSS_add_endpoints.sql` マイグレーション追加（endpoints, endpoint_models, endpoint_health_checks）
+- [x] T002 [P] `llmlb/src/types/endpoint.rs` に型定義を作成（Endpoint, EndpointStatus, EndpointModel, EndpointHealthCheck）
+- [x] T003 [P] `llmlb/src/db/mod.rs` に `endpoints` モジュールを追加
+- [x] T004 [P] `llmlb/src/api/mod.rs` に `endpoints` モジュールを追加
+
+## Phase 3.2: テストファースト (TDD) ⚠️ 3.3の前に完了必須
+
+**重要: これらのテストは記述され、実装前に失敗する必要がある**
+
+### Contract Tests（API契約検証）✅ RED完了
+
+- [x] T005 [P] `llmlb/tests/contract/endpoints_post_test.rs` に POST /v0/endpoints の contract test
+- [x] T006 [P] `llmlb/tests/contract/endpoints_get_list_test.rs` に GET /v0/endpoints の contract test
+- [x] T007 [P] `llmlb/tests/contract/endpoints_get_detail_test.rs` に GET /v0/endpoints/:id の contract test
+- [x] T008 [P] `llmlb/tests/contract/endpoints_put_test.rs` に PUT /v0/endpoints/:id の contract test
+- [x] T009 [P] `llmlb/tests/contract/endpoints_delete_test.rs` に DELETE /v0/endpoints/:id の contract test
+- [x] T010 [P] `llmlb/tests/contract/endpoints_test_test.rs` に POST /v0/endpoints/:id/test の contract test
+- [x] T011 [P] `llmlb/tests/contract/endpoints_sync_test.rs` に POST /v0/endpoints/:id/sync の contract test
+
+### Integration Tests（ユーザーストーリー検証）✅ RED完了
+
+- [x] T012 [P] `llmlb/tests/integration/endpoint_registration_test.rs` にUS1: エンドポイント登録のintegration test
+- [x] T013 [P] `llmlb/tests/integration/endpoint_health_check_test.rs` にUS2: 稼働状況監視のintegration test
+- [x] T014 [P] `llmlb/tests/integration/endpoint_model_sync_test.rs` にUS3: モデル同期のintegration test
+- [x] T015 [P] `llmlb/tests/integration/endpoint_connection_test_test.rs` にUS4: 接続テストのintegration test
+- [x] T016 [P] `llmlb/tests/integration/endpoint_management_test.rs` にUS5: 管理操作のintegration test
+- [x] T016a [P] `llmlb/tests/integration/endpoint_name_uniqueness_test.rs` に名前重複検証のintegration test
+- [x] T016b [P] `llmlb/tests/integration/endpoint_latency_routing_test.rs` にレイテンシベースルーティングのintegration test
+- [x] T016c [P] `llmlb/tests/integration/endpoint_auto_recovery_test.rs` に自動復旧のintegration test
+- [x] T016d [P] `llmlb/tests/integration/endpoint_viewer_access_test.rs` にviewerロール制限のintegration test
+
+## Phase 3.3: コア実装（テストが失敗した後のみ） ✅ GREEN完了
+
+### DB層
+
+- [x] T017 `llmlb/src/db/endpoints.rs` にEndpointStorage CRUD実装（name UNIQUE制約、latency_ms含む）
+- [x] T018 `llmlb/src/db/endpoints.rs` にEndpointModelStorage CRUD実装（endpoints.rsに統合）
+- [x] T018a `llmlb/src/db/endpoints.rs` にEndpointHealthCheckStorage実装（履歴保存・30日クリーンアップ、endpoints.rsに統合）
+
+### レジストリ層
+
+- [x] T019 `llmlb/src/registry/endpoints.rs` にEndpointRegistry実装（インメモリキャッシュ）
+
+### APIハンドラー
+
+- [x] T020 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints ハンドラー
+- [x] T021 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints ハンドラー
+- [x] T022 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id ハンドラー
+- [x] T023 `llmlb/src/api/endpoints.rs` にPUT /v0/endpoints/:id ハンドラー
+- [x] T024 `llmlb/src/api/endpoints.rs` にDELETE /v0/endpoints/:id ハンドラー
+- [x] T025 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints/:id/test ハンドラー
+- [x] T026 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints/:id/sync ハンドラー
+
+### APIルーティング
+
+- [x] T027 `llmlb/src/api/mod.rs` にエンドポイントAPIルートを追加
+
+## Phase 3.4: 統合
+
+### ヘルスチェッカー
+
+- [x] T028 `llmlb/src/health/endpoint_checker.rs` にプル型ヘルスチェッカー実装（レイテンシ計測、履歴保存）
+- [x] T029 `llmlb/src/health/mod.rs` にEndpointHealthCheckerをエクスポート
+- [x] T030 `llmlb/src/main.rs` または `llmlb/src/server.rs` にヘルスチェッカー起動処理追加
+- [x] T030a `llmlb/src/health/startup.rs` にロードバランサー起動時の全エンドポイント並列チェック実装
+
+### モデル同期
+
+- [x] T031 `llmlb/src/sync/mod.rs` にモデル同期ロジック実装（GET /v1/models）
+- [x] T031a `llmlb/src/sync/parser.rs` にOpenAI/Ollama両形式のレスポンスパーサー実装
+- [x] T031b `llmlb/src/sync/capabilities.rs` にモデル名プレフィックスからのcapabilities自動判定実装
+- [x] T031c `llmlb/src/sync/mod.rs` にモデル削除同期（差分計算）を追加
+
+### ルーティング統合
+
+- [x] T032 `llmlb/src/api/openai.rs` にEndpointRegistryを利用したルーティング変更
+- [x] T032a `llmlb/src/api/openai.rs` にレイテンシベースのエンドポイント選択実装
+- [x] T033 `llmlb/src/api/proxy.rs` にエンドポイントへのプロキシ処理追加
+
+### 認可
+
+- [x] T033a `llmlb/src/auth/middleware.rs` および `llmlb/src/api/endpoints.rs` にviewerロール制限を実装（authenticated_middleware + ensure_admin）
+
+## Phase 3.5: 仕上げ
+
+### Unit Tests
+
+- [x] T034 [P] `llmlb/tests/unit/endpoint_status_test.rs` にEndpointStatus遷移のunit test（pending→offline即時遷移含む）
+- [x] T035 [P] `llmlb/tests/unit/endpoint_validation_test.rs` にエンドポイントバリデーションのunit test（name UNIQUE含む）
+- [x] T035a [P] capabilities自動判定のunit test（`llmlb/src/sync/capabilities.rs`内のinline testsで対応）
+- [x] T035b [P] OpenAI/Ollamaレスポンスパーサーのunit test（`llmlb/src/sync/parser.rs`内のinline testsで対応）
+- [x] T035c [P] `llmlb/tests/unit/latency_routing_test.rs` にレイテンシベースルーティング選択のunit test
+
+### 旧コード削除
+
+**注意**: T036-T040の完全削除にはダッシュボードの移行が必要。
+現在ダッシュボードが `/v0/nodes/*` APIを使用しているため、
+以下は段階的に実行する:
+
+**Phase A: 廃止APIの削除（SPEC-94621a1f, SPEC-443acc8c対応）**
+
+- [x] T036a `api/error.rs` を作成しAppErrorを移動（nodes.rsから分離）
+- [x] T036b POST /v0/nodes ルートを削除（ノード自己登録廃止）
+- [x] T036c POST /v0/health ルートを削除（プッシュ型ヘルスチェック廃止）
+
+**Phase B-0: ダッシュボードのEndpoints API移行**
+
+- [x] T035d `llmlb/src/api/dashboard.rs` に DashboardEndpoint 型と collect_endpoints 関数を追加
+- [x] T035e `llmlb/src/web/dashboard/src/lib/api.ts` に endpointsApi を追加し nodesApi を deprecate
+- [x] T035f `llmlb/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` を新規作成
+- [x] T035g `llmlb/src/web/dashboard/src/components/dashboard/EndpointDetailModal.tsx` を新規作成
+- [x] T035h `llmlb/src/web/dashboard/src/components/dashboard/LogViewer.tsx` を endpoints対応に更新（ロードバランサーログのみに簡素化）
+
+**Phase B: 完全削除（ダッシュボード移行後）**
+
+以下はPhase B-0完了後に実行:
+
+- [x] T036 `llmlb/src/db/nodes.rs` を削除（NodeStorage廃止）✅ 2026-01-19完了
+- [x] T037 `llmlb/src/db/node_tokens.rs` を削除（NodeToken廃止）
+- [x] T038 `llmlb/src/registry/mod.rs` からNodeRegistry関連コードを削除 ✅ 2026-01-19完了
+- [x] T039 `llmlb/src/api/nodes.rs` を削除（旧ノードAPI廃止）✅ 2026-01-19完了
+- [x] T040 `common/src/protocol.rs` からRegisterRequest/RegisterResponse/HealthCheckRequest削除 ✅ 2026-01-19完了
+
+**完了（2026-01-19）**: xLLMはOpenAI互換APIを提供するため、通常のEndpointとして登録可能。
+新規アーキテクチャは不要と判断し、NodeRegistry関連の残存コードをすべて削除完了。
+
+**削除完了項目**:
+- `llmlb/src/db/nodes.rs` - 削除済み（NodeStorage）
+- `llmlb/src/api/nodes.rs` - 削除済み（旧ノードAPI）
+- `llmlb/src/registry/nodes.rs` - 削除済み（NodeRegistry実装）
+- `common/src/protocol.rs` - RegisterRequest/RegisterResponse/RegisterStatus/HealthCheckRequest削除
+- `llmlb/benches/loadbalancer_bench.rs` - 削除済み（NodeRegistry依存ベンチマーク）
+
+### ドキュメント・検証
+
+- [x] T041 `specs/SPEC-66555000/quickstart.md` の検証ステップを実行
+- [x] T042 `README.md` または `README.ja.md` にエンドポイント管理の説明追加
+
+## 依存関係
+
+```text
+T001 → T002-T004（マイグレーション後に型・モジュール作成）
+T002-T004 → T005-T016d（構造が整ってからテスト作成）
+T005-T016d → T017-T027（テスト失敗後に実装）
+T017-T019 → T020-T027（DB・レジストリ後にAPI）
+T017-T027 → T028-T033a（コア完了後に統合）
+T028-T033a → T034-T035c（統合後にunit test）
+T017-T033a → T036-T040（新機能動作後に旧コード削除）
+T036-T040 → T041-T042（削除後に検証・ドキュメント）
+```
+
+## 並列実行例
+
+```text
+# Phase 3.1 セットアップ（T002-T004は並列可能）
+T001 → [T002, T003, T004]
+
+# Phase 3.2 Contract Tests（すべて並列可能）
+[T005, T006, T007, T008, T009, T010, T011]
+
+# Phase 3.2 Integration Tests（すべて並列可能）
+[T012, T013, T014, T015, T016, T016a, T016b, T016c, T016d]
+
+# Phase 3.5 Unit Tests（すべて並列可能）
+[T034, T035, T035a, T035b, T035c]
+```
+
+## 検証チェックリスト
+
+- [x] すべてのAPI契約（7エンドポイント）に対応するcontract testがある
+- [x] すべてのユーザーストーリー（5件+追加4件）に対応するintegration testがある
+- [x] すべてのテストが実装より先にある（TDD遵守）
+- [x] 並列タスクは本当に独立している（異なるファイル）
+- [x] 各タスクは正確なファイルパスを指定
+- [x] 同じファイルを変更する[P]タスクがない
+
+## タスクサマリー
+
+| Phase | タスク数 | 並列可能 |
+|-------|---------|---------|
+| 3.1 Setup | 4 | 3 |
+| 3.2 Tests | 16 | 16 |
+| 3.3 Core | 12 | 0 |
+| 3.4 Integration | 12 | 0 |
+| 3.5 Polish | 12 | 5 |
+| **合計** | **56** | **24** |
+
+---
+
+*TDD必須 - テストが失敗することを確認してから実装を開始*
+
+---
+
+## 完了サマリー（2026-01-18）
+
+### 機能実装: ✅ 完了
+
+本SPECの主要機能は全て実装完了:
+
+| 機能 | 状態 |
+|------|------|
+| エンドポイント登録API（CRUD） | ✅ |
+| ヘルスチェック（プル型） | ✅ |
+| モデル同期（/v1/models） | ✅ |
+| 接続テスト | ✅ |
+| レイテンシベースルーティング | ✅ |
+| EndpointCapability基盤 | ✅ |
+| ダッシュボード統合 | ✅ |
+| 認可（viewerロール制限） | ✅ |
+
+### 旧コード削除（クリーンアップ）: ⏸️ 将来対応
+
+T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリーンアップタスク。
+これらはxLLMがEndpointとして登録される新しいアーキテクチャが整った後に対応。
+
+**本SPECの機能要件は100%達成済み。**

@@ -23,7 +23,7 @@ pub enum RuntimeType {
 
 ```rust
 pub struct NodeRegistration {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub node_ip: String,
     pub port: u16,
     pub supported_runtimes: Vec<RuntimeType>,
@@ -45,7 +45,7 @@ pub struct LoadedModels {
 
 ```rust
 pub struct NodeHeartbeat {
-    pub node_id: Uuid,
+    pub runtime_id: Uuid,
     pub supported_runtimes: Vec<RuntimeType>,
     pub loaded_models: LoadedModels,
     pub status: NodeStatus,
@@ -133,13 +133,13 @@ pub enum NotReadyReason {
 Request
   |
   v
-Router: モデル検索
+Load Balancer: モデル検索
   |
   v
-Router: 登録情報削除
+Load Balancer: 登録情報削除
   |
   v
-Router: 全ノードへ削除通知 (並列)
+Load Balancer: 全ノードへ削除通知 (並列)
   |
   v
 Node: ローカルキャッシュ削除
@@ -154,7 +154,7 @@ Response: 200 OK / 404 Not Found
 
 ```json
 {
-  "node_id": "550e8400-e29b-41d4-a716-446655440000",
+  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
   "supported_runtimes": ["llama_cpp", "whisper"],
   "loaded_models": {
     "llm": ["llama-3.1-8b"],

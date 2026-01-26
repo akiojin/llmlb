@@ -5,7 +5,7 @@
 ### プロキシリクエスト
 
 ```rust
-// router/src/api/proxy.rs
+// llmlb/src/api/proxy.rs
 
 use serde::{Deserialize, Serialize};
 
@@ -53,7 +53,7 @@ pub struct ChatMessage {
 ### プロキシレスポンス
 
 ```rust
-// router/src/api/proxy.rs
+// llmlb/src/api/proxy.rs
 
 /// チャット完了レスポンス（OpenAI互換）
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -108,7 +108,7 @@ pub struct Usage {
 ### ストリーミングチャンク
 
 ```rust
-// router/src/api/streaming.rs
+// llmlb/src/api/streaming.rs
 
 /// ストリーミングチャンク（SSE）
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -158,7 +158,7 @@ pub struct ChunkDelta {
 ### Embeddings
 
 ```rust
-// router/src/api/embeddings.rs
+// llmlb/src/api/embeddings.rs
 
 /// Embeddingsリクエスト
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -228,7 +228,7 @@ pub struct EmbeddingUsage {
 ### プロキシ設定
 
 ```rust
-// router/src/proxy/config.rs
+// llmlb/src/proxy/config.rs
 
 use std::time::Duration;
 
@@ -263,7 +263,7 @@ impl Default for ProxyConfig {
 ### プロキシエラー
 
 ```rust
-// router/src/api/error.rs
+// llmlb/src/api/error.rs
 
 /// プロキシエラー
 #[derive(Debug, Clone)]
@@ -273,7 +273,7 @@ pub enum ProxyError {
 
     /// ノードへの接続失敗
     NodeConnectionFailed {
-        node_id: String,
+        runtime_id: String,
         reason: String,
     },
 
@@ -284,7 +284,7 @@ pub enum ProxyError {
 
     /// ノードからのエラーレスポンス
     NodeError {
-        node_id: String,
+        runtime_id: String,
         status: u16,
         body: String,
     },
@@ -373,27 +373,27 @@ impl ProxyError {
 
 ```bash
 # プロキシタイムアウト
-LLM_ROUTER_REQUEST_TIMEOUT=60     # リクエストタイムアウト（秒）
-LLM_ROUTER_CONNECT_TIMEOUT=5      # 接続タイムアウト（秒）
+LLMLB_REQUEST_TIMEOUT=60     # リクエストタイムアウト（秒）
+LLMLB_CONNECT_TIMEOUT=5      # 接続タイムアウト（秒）
 
 # 同時リクエスト制限
-LLM_ROUTER_MAX_CONCURRENT=100     # 最大同時リクエスト数
+LLMLB_MAX_CONCURRENT=100     # 最大同時リクエスト数
 ```
 
 ## メトリクス形式
 
 ```text
 # プロキシリクエスト
-llm_router_proxy_requests_total{endpoint="/v1/chat/completions",status="200"} 5000
-llm_router_proxy_requests_total{endpoint="/v1/embeddings",status="200"} 1000
-llm_router_proxy_requests_total{endpoint="/v1/chat/completions",status="503"} 50
+llmlb_proxy_requests_total{endpoint="/v1/chat/completions",status="200"} 5000
+llmlb_proxy_requests_total{endpoint="/v1/embeddings",status="200"} 1000
+llmlb_proxy_requests_total{endpoint="/v1/chat/completions",status="503"} 50
 
 # レイテンシ
-llm_router_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="1"} 2000
-llm_router_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="5"} 4500
-llm_router_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="30"} 5000
+llmlb_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="1"} 2000
+llmlb_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="5"} 4500
+llmlb_proxy_duration_seconds_bucket{endpoint="/v1/chat/completions",le="30"} 5000
 
 # ストリーミング
-llm_router_streaming_connections_active 15
-llm_router_streaming_chunks_total{node_id="node-1"} 50000
+llmlb_streaming_connections_active 15
+llmlb_streaming_chunks_total{runtime_id="node-1"} 50000
 ```

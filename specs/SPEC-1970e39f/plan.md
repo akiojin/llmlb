@@ -5,7 +5,7 @@
 
 ## 概要
 
-ルーターとノードのHTTPリクエスト/レスポンスを構造化ログとして出力し、
+ロードバランサーとノードのHTTPリクエスト/レスポンスを構造化ログとして出力し、
 デバッグと監視を容易にする。既存のtracing(Rust)/spdlog(C++)を活用する。
 
 主要な修正点:
@@ -17,9 +17,9 @@
 
 ## 技術コンテキスト
 
-**言語/バージョン**: Rust 1.75+ (Router), C++17 (Node)
+**言語/バージョン**: Rust 1.75+ (Load Balancer), C++17 (Node)
 **主要依存関係**: tracing + tracing-subscriber (Rust), spdlog (C++)
-**ストレージ**: JSON files (`~/.llm-router/logs/`, `~/.llm-router/request_history.json`)
+**ストレージ**: JSON files (`~/.llmlb/logs/`, `~/.llmlb/request_history.json`)
 **テスト**: cargo test, contract tests
 **対象プラットフォーム**: macOS, Linux
 **プロジェクトタイプ**: single (router + node)
@@ -46,7 +46,7 @@
 **可観測性**: PASS - 本機能の主目的
 
 - 構造化ロギング: YES (JSON形式)
-- エラーコンテキスト: YES (request_id, endpoint, model, node_id)
+- エラーコンテキスト: YES (request_id, endpoint, model, runtime_id)
 
 **バージョニング**: N/A - バグ修正、新バージョン不要
 
@@ -64,11 +64,11 @@ specs/SPEC-1970e39f/
 ### 対象ソースコード
 
 ```text
-router/src/api/openai.rs        # ログ追加、履歴保存修正
-router/src/api/proxy.rs         # save_request_record関数
-router/src/convert.rs           # ノードポート修正
-router/src/registry/models.rs   # HfOnnxバリアント追加
-router/tests/contract/          # 新規テスト追加
+llmlb/src/api/openai.rs        # ログ追加、履歴保存修正
+llmlb/src/api/proxy.rs         # save_request_record関数
+llmlb/src/convert.rs           # ノードポート修正
+llmlb/src/registry/models.rs   # HfOnnxバリアント追加
+llmlb/tests/contract/          # 新規テスト追加
 ```
 
 ## Phase 0: リサーチ (完了)
@@ -99,7 +99,7 @@ pub struct RequestResponseRecord {
     pub timestamp: DateTime<Utc>,
     pub request_type: RequestType,
     pub model: String,
-    pub node_id: Uuid,           // Uuid::nil() for no node
+    pub runtime_id: Uuid,           // Uuid::nil() for no node
     pub node_machine_name: String,
     pub node_ip: IpAddr,
     pub client_ip: Option<IpAddr>,
@@ -116,14 +116,14 @@ pub struct RequestResponseRecord {
 | イベント | レベル | 必須フィールド |
 |----------|--------|----------------|
 | リクエスト受信 | INFO | endpoint, model, request_id |
-| ノード選択成功 | INFO | node_id, node_ip |
+| ノード選択成功 | INFO | runtime_id, node_ip |
 | ノード選択失敗 | ERROR | error, request_id |
-| プロキシエラー | WARN | status_code, node_id, error |
+| プロキシエラー | WARN | status_code, runtime_id, error |
 
 ### 契約テスト設計
 
 ```text
-router/tests/contract/
+llmlb/tests/contract/
 ├── openai_logging_test.rs      # 新規: ログ出力検証
 └── models_source_test.rs       # 新規: HfOnnx検証
 ```

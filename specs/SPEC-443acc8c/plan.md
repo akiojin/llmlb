@@ -1,7 +1,7 @@
 # 実装計画: ヘルスチェックシステム
 
 **機能ID**: `SPEC-443acc8c` | **日付**: 2025-10-30（実装完了日） | **仕様**: [spec.md](./spec.md)
-**入力**: `/llm-router/specs/SPEC-443acc8c/spec.md`の機能仕様
+**入力**: `/llmlb/specs/SPEC-443acc8c/spec.md`の機能仕様
 **ステータス**: ✅ **実装済み** (PR #1でマージ済み)
 
 ## 概要
@@ -23,7 +23,7 @@
 ## 憲章チェック
 
 **シンプルさ**: ✅
-- パッシブヘルスチェック: ✅ ハートビートベース（ルーターからポーリングなし）
+- パッシブヘルスチェック: ✅ ハートビートベース（ロードバランサーからポーリングなし）
 - 単一データモデル: ✅ Nodeモデル再利用、statusフィールド使用
 - パターン回避: ✅ シンプルなタイムアウト判定ロジック
 
@@ -42,12 +42,12 @@
 
 ```rust
 // ハートビート受信時にlast_heartbeatを更新、自動的にOnlineに
-pub async fn heartbeat(&self, node_id: Uuid) -> Result<()> {
+pub async fn heartbeat(&self, runtime_id: Uuid) -> Result<()> {
     let mut nodes = self.nodes.write().await;
-    if let Some(node) = nodes.get_mut(&node_id) {
+    if let Some(node) = nodes.get_mut(&runtime_id) {
         node.last_heartbeat = Utc::now();
         node.status = NodeStatus::Online; // 自動復旧
-        tracing::info!("Node {} heartbeat received", node_id);
+        tracing::info!("Node {} heartbeat received", runtime_id);
     }
     Ok(())
 }
@@ -83,7 +83,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 
 ### 決定1: パッシブヘルスチェック（ハートビートベース）
 
-**選択**: ルーターはポーリングせず、ノードからのハートビート受信のみで判定
+**選択**: ロードバランサーはポーリングせず、ノードからのハートビート受信のみで判定
 
 **理由**:
 - シンプル: 能動的なHTTPリクエスト不要
@@ -92,7 +92,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 - パフォーマンス: プロキシ処理に影響なし
 
 **代替案検討**:
-- **Active polling**: ルーターからノードへHTTPポーリング → ネットワーク負荷高、複雑
+- **Active polling**: ロードバランサーからノードへHTTPポーリング → ネットワーク負荷高、複雑
 
 ### 決定2: 60秒タイムアウト
 
@@ -105,7 +105,7 @@ pub async fn start_timeout_monitor(&self, interval: Duration, timeout: Duration)
 
 ### 決定3: 環境変数設定可能化
 
-**選択**: `LLM_ROUTER_NODE_TIMEOUT`（フォールバック: `NODE_TIMEOUT`）環境変数でタイムアウト設定可能
+**選択**: `LLMLB_NODE_TIMEOUT`（フォールバック: `NODE_TIMEOUT`）環境変数でタイムアウト設定可能
 
 **理由**:
 - 柔軟性: 環境に応じてチューニング可能

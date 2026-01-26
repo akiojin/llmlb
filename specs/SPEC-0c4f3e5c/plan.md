@@ -33,10 +33,10 @@ C++ NodeのLlamaManagerがLLM runtimeのネイティブモデルストレージ�
 
 ## 方針変更
 
-SPEC-dcaeaec4「LLM-Router独自モデルストレージ」にて以下の決定:
+SPEC-dcaeaec4「LLM-Load Balancer独自モデルストレージ」にて以下の決定:
 
 - LLM runtime固有形式への暗黙フォールバックは禁止
-- 独自ディレクトリ構造 `~/.llm-router/models/` を採用
+- 独自ディレクトリ構造 `~/.llmlb/models/` を採用
 - manifest/blob解析ロジックは削除対象
 
 **結論**: 本SPECは実装せず、SPEC-dcaeaec4に統合

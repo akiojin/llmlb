@@ -101,7 +101,7 @@ Docker for Mac環境でも、`lscpu` と `/proc/cpuinfo` を使用してApple Si
 
 ## 統合方針
 
-このPoCで有効性が確認できた検出方法を、Node側のGPU検出ロジック（例: `node/src/system/gpu_detector.*`）に統合します。
+このPoCで有効性が確認できた検出方法を、Node側のGPU検出ロジック（例: `xllm/src/system/gpu_detector.*`）に統合します。
 
 ### 変更内容
 

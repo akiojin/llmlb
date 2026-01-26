@@ -2,7 +2,7 @@
 
 ## 前提条件
 
-- LLM Router Node がビルド済み
+- LLM Load Balancer Node がビルド済み
 - gptossアーキテクチャのGGUFモデルファイル
 
 ## 基本的な使用例
@@ -14,14 +14,14 @@
 llm-runtime pull gpt-oss:20b
 
 # または直接GGUFファイルを配置
-cp gpt-oss-20b.gguf ~/.llm-router/models/
+cp gpt-oss-20b.gguf ~/.llmlb/models/
 ```
 
 ### 2. モデルのロード確認
 
 ```bash
 # Nodeを起動
-./llm-router-node --model gpt-oss-20b
+./llmlb-node --model gpt-oss-20b
 
 # ログ出力
 # [INFO] Loading model: gpt-oss-20b
@@ -125,7 +125,7 @@ llama-cli --info gpt-oss-20b.gguf | grep architecture
 1. Nodeログで詳細エラーを確認
 
 ```bash
-./llm-router-node --model gpt-oss-20b --verbose
+./llmlb-node --model gpt-oss-20b --verbose
 ```
 
 ### パフォーマンスが遅い

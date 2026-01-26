@@ -4,27 +4,27 @@
 
 | 項目 | 要件 |
 |------|------|
-| ルーター | ビルド済み（Rust） |
+| ロードバランサー | ビルド済み（Rust） |
 | ノード | 1台以上のノード |
 | ノードトークン | 登録時に発行されたトークン |
 
 ## 基本設定
 
-### ルーター側環境変数
+### ロードバランサー側環境変数
 
 ```bash
 # 監視設定
-export LLM_ROUTER_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
-export LLM_ROUTER_NODE_TIMEOUT=60           # タイムアウト（秒）
+export LLMLB_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
+export LLMLB_NODE_TIMEOUT=60           # タイムアウト（秒）
 ```
 
 ### ノード側環境変数
 
 ```bash
 # ハートビート設定
-export LLM_NODE_HEARTBEAT_SECS=30    # 送信間隔（秒）
-export LLM_NODE_TOKEN=<node-token>   # ノードトークン
-export LLM_ROUTER_URL=http://localhost:8080  # ルーターURL
+export XLLM_HEARTBEAT_SECS=30    # 送信間隔（秒）
+export XLLM_TOKEN=<node-token>   # ノードトークン
+export LLMLB_URL=http://localhost:8080  # ロードバランサーURL
 ```
 
 ## 動作確認
@@ -59,7 +59,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 ### ハートビート送信（手動テスト）
 
 ```bash
-# ノードからルーターへハートビート送信
+# ノードからロードバランサーへハートビート送信
 curl -X POST http://localhost:8080/v0/health \
   -H "X-Node-Token: <node-token>" \
   -H "Content-Type: application/json" \
@@ -98,11 +98,11 @@ curl http://localhost:8080/metrics | grep -E "(heartbeat|node_state|timeout)"
 **出力例**:
 
 ```text
-llm_router_heartbeats_received_total{node_id="node-1"} 100
-llm_router_heartbeats_received_total{node_id="node-2"} 95
-llm_router_node_state{node_id="node-1",state="online"} 1
-llm_router_node_state{node_id="node-2",state="offline"} 1
-llm_router_node_timeouts_total{node_id="node-2"} 1
+llmlb_heartbeats_received_total{node_id="node-1"} 100
+llmlb_heartbeats_received_total{node_id="node-2"} 95
+llmlb_node_state{node_id="node-1",state="online"} 1
+llmlb_node_state{node_id="node-2",state="offline"} 1
+llmlb_node_timeouts_total{node_id="node-2"} 1
 ```
 
 ## Python での利用
@@ -115,8 +115,8 @@ import time
 import threading
 
 class HeartbeatSender:
-    def __init__(self, router_url: str, node_token: str, node_id: str):
-        self.router_url = router_url
+    def __init__(self, lb_url: str, node_token: str, node_id: str):
+        self.lb_url = lb_url
         self.node_token = node_token
         self.node_id = node_id
         self.running = False
@@ -124,7 +124,7 @@ class HeartbeatSender:
     def send_heartbeat(self, metrics: dict):
         """単一のハートビートを送信"""
         response = httpx.post(
-            f"{self.router_url}/v0/health",
+            f"{self.lb_url}/v0/health",
             headers={"X-Node-Token": self.node_token},
             json={
                 "node_id": self.node_id,
@@ -163,7 +163,7 @@ class HeartbeatSender:
 
 # 使用例
 sender = HeartbeatSender(
-    router_url="http://localhost:8080",
+    lb_url="http://localhost:8080",
     node_token="your-node-token",
     node_id="node-1"
 )
@@ -233,7 +233,7 @@ for alert in alerts:
 
 ```bash
 # 1. ノードを停止
-pkill -f llm-node
+pkill -f xllm
 
 # 2. 60秒後にオフライン状態を確認
 sleep 60
@@ -245,7 +245,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 
 ```bash
 # 1. ノードを再起動
-./llm-node --router-url http://localhost:8080
+./xllm --lb-url http://localhost:8080
 
 # 2. 即座にオンライン状態を確認
 curl -X GET http://localhost:8080/v0/nodes \
@@ -297,7 +297,7 @@ curl http://localhost:8080/metrics | grep heartbeats
 ```bash
 # 原因: タイムアウトが短すぎる
 # 対策: タイムアウトを延長
-export LLM_ROUTER_NODE_TIMEOUT=120  # 2分に延長
+export LLMLB_NODE_TIMEOUT=120  # 2分に延長
 ```
 
 ### 復旧が遅い
@@ -305,7 +305,7 @@ export LLM_ROUTER_NODE_TIMEOUT=120  # 2分に延長
 ```bash
 # 原因: ハートビート間隔が長い
 # 対策: ノード側で間隔を短縮
-export LLM_NODE_HEARTBEAT_SECS=10  # 10秒に短縮
+export XLLM_HEARTBEAT_SECS=10  # 10秒に短縮
 ```
 
 ## 制限事項

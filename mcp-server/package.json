@@ -1,11 +1,11 @@
 {
-  "name": "@llm-router/mcp-server",
+  "name": "@llmlb/mcp-server",
   "version": "0.0.0-development",
-  "description": "MCP server for LLM Router API operations via curl execution",
+  "description": "MCP server for llmlb (LLM Load Balancer) API operations via curl execution",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "llm-router-mcp": "dist/index.js"
+    "llmlb-mcp": "dist/index.js"
   },
   "files": [
     "dist",
@@ -23,7 +23,8 @@
   },
   "keywords": [
     "mcp",
-    "llm-router",
+    "llmlb",
+    "llm-load-balancer",
     "model-context-protocol",
     "claude",
     "llm",
@@ -33,18 +34,19 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/akiojin/llm-router.git",
+    "url": "https://github.com/akiojin/llmlb.git",
     "directory": "mcp-server"
   },
-  "homepage": "https://github.com/akiojin/llm-router/tree/main/mcp-server#readme",
+  "homepage": "https://github.com/akiojin/llmlb/tree/main/mcp-server#readme",
   "bugs": {
-    "url": "https://github.com/akiojin/llm-router/issues"
+    "url": "https://github.com/akiojin/llmlb/issues"
   },
   "publishConfig": {
     "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "hono": "^4.11.5",
     "yaml": "^2.4.0",
     "zod": "^3.23.0"
   },

@@ -16,8 +16,9 @@
     "**/vendor/**",
     "tmp/**",
     "**/tmp/**",
-    "node/third_party/**",
-    "node/build/**",
-    "node/build-*/**"
+    "xllm/third_party/**",
+    "xllm/build/**",
+    "xllm/build-*/**",
+    "PLANS.md"
   ]
 }

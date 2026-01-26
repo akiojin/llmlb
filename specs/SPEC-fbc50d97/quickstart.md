@@ -5,21 +5,21 @@
 
 ## 概要
 
-この機能は、ルーターが受信するリクエストとノードから返される
+この機能は、ロードバランサーが受信するリクエストとノードから返される
 レスポンスを自動的に保存し、Webダッシュボードで確認できるようにします。
 
 ## 前提条件
 
 - Rust 1.75+ がインストールされていること
-- LLM Router が起動していること
+- LLM Load Balancer が起動していること
 - 1つ以上のノードが登録されていること
 
 ## 5分で試す
 
-### 1. ルーターを起動
+### 1. ロードバランサーを起動
 
 ```bash
-cargo run -p llm-router
+cargo run -p llmlb
 ```
 
 デフォルトで `http://localhost:32768` で起動します。
@@ -83,7 +83,7 @@ curl "http://localhost:32768/v0/dashboard/request-responses/export?format=csv" \
 ### 5. 保存ファイルを確認
 
 ```bash
-cat ~/.llm-router/request_history.json | jq
+cat ~/.llmlb/request_history.json | jq
 ```
 
 レコードがJSON配列形式で保存されていることを確認できます。
@@ -95,7 +95,7 @@ cat ~/.llm-router/request_history.json | jq
 **目的**: オペレーターがリクエストの処理状況を監視できること
 
 **検証手順**:
-1. ルーターを起動
+1. ロードバランサーを起動
 2. 複数のリクエストを送信（成功・失敗を含む）
 3. ダッシュボードの履歴タブを開く
 
@@ -211,14 +211,14 @@ head history.csv
 **確認方法**:
 ```bash
 # ファイルの存在確認
-ls -lh ~/.llm-router/request_history.json
+ls -lh ~/.llmlb/request_history.json
 
 # ファイルの内容確認
-cat ~/.llm-router/request_history.json | jq
+cat ~/.llmlb/request_history.json | jq
 ```
 
 **対処方法**:
-- ルーターのログを確認（`tracing` で出力）
+- ロードバランサーのログを確認（`tracing` で出力）
 - ストレージディレクトリの書き込み権限を確認
 
 ---
@@ -246,11 +246,11 @@ curl -v "http://localhost:32768/v0/dashboard/request-responses/export?format=inv
 **確認方法**:
 ```bash
 # ファイルサイズ確認
-du -h ~/.llm-router/request_history.json
+du -h ~/.llmlb/request_history.json
 ```
 
 **対処方法**:
-- ルーターを再起動（起動時にクリーンアップ実行）
+- ロードバランサーを再起動（起動時にクリーンアップ実行）
 - 手動でファイルを編集（古いレコードを削除）
 
 ---

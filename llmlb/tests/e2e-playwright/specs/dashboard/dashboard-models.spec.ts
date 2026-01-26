@@ -141,10 +141,7 @@ test.describe('Dashboard Models Tab @dashboard', () => {
     });
 
     test('M-12: Registered models list fetches from /v0/models/registered', async ({ page }) => {
-      // Navigate first, then set up route for subsequent requests
-      await page.reload();
-
-      // Intercept the API call after reload
+      // Set up route interception BEFORE any navigation
       let apiCalled = false;
       await page.route('**/v0/models/registered', async (route) => {
         apiCalled = true;
@@ -163,8 +160,21 @@ test.describe('Dashboard Models Tab @dashboard', () => {
         });
       });
 
-      // Navigate to Models tab to trigger API call
-      await dashboard.gotoModels();
+      // Now navigate to dashboard and models tab (this triggers the API call)
+      await page.goto('/dashboard');
+      await page.waitForLoadState('load');
+
+      // Handle login if needed
+      const loginForm = page.locator('form').filter({ hasText: 'Sign in' });
+      if (await loginForm.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await page.fill('#username', 'admin');
+        await page.fill('#password', 'test');
+        await page.click('button[type="submit"]');
+        await page.waitForFunction(() => !window.location.href.includes('login'), { timeout: 10000 });
+      }
+
+      // Navigate to Models tab
+      await page.click('button[role="tab"]:has-text("Models")');
       await page.waitForTimeout(1000);
 
       expect(apiCalled).toBe(true);

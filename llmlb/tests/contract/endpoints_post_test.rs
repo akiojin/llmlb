@@ -128,7 +128,8 @@ async fn test_create_endpoint_with_optional_fields() {
 
     let payload = json!({
         "name": "Production vLLM",
-        "base_url": "http://192.168.1.100:8000",
+        // 外部ネットワークに依存するとCI/ローカルでハングし得るため、到達不能でも即時に失敗するローカルURLを使う
+        "base_url": "http://127.0.0.1:18000",
         "api_key": "sk-secret-key",
         "health_check_interval_secs": 60,
         "notes": "Production server"

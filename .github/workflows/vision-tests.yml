@@ -235,6 +235,8 @@ jobs:
         if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "🚀 Starting llmlb server..."
+          # Clean up previous database to avoid migration version mismatch
+          rm -rf /tmp/llmlb-data
           mkdir -p /tmp/llmlb-data
 
           LLMLB_DATABASE_URL=sqlite:/tmp/llmlb-data/router.db \

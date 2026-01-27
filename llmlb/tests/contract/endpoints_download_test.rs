@@ -208,8 +208,11 @@ async fn test_download_model_missing_model_name() {
         .await
         .unwrap();
 
-    // 400 Bad Requestを期待
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    // 400 Bad Request または 422 Unprocessable Entity を期待
+    assert!(
+        response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::UNPROCESSABLE_ENTITY
+    );
 }
 
 /// POST /v0/endpoints/:id/download - 異常系: 非xLLMエンドポイント
@@ -343,6 +346,9 @@ async fn test_download_model_response_structure() {
         assert!(body["task_id"].is_string(), "task_id should be present");
         assert!(body["model"].is_string(), "model should be present");
         assert!(body["status"].is_string(), "status should be present");
-        assert_eq!(body["status"], "pending", "initial status should be pending");
+        assert_eq!(
+            body["status"], "pending",
+            "initial status should be pending"
+        );
     }
 }

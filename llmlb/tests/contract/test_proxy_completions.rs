@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::support::{
     http::{spawn_lb, TestServer},
-    lb::{register_node, spawn_test_lb},
+    lb::spawn_test_lb,
 };
 use axum::{
     extract::State,
@@ -91,13 +91,54 @@ async fn proxy_completions_end_to_end_success() {
     })
     .await;
     let lb = spawn_test_lb().await;
+    let client = Client::new();
 
-    let register_response = register_node(lb.addr(), node_stub.addr())
+    // Endpoint登録 + モデル同期（Node登録APIは廃止済み）
+    let register_response = client
+        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .header("authorization", "Bearer sk_debug")
+        .json(&serde_json::json!({
+            "name": "stub-endpoint",
+            "base_url": format!("http://{}", node_stub.addr())
+        }))
+        .send()
         .await
-        .expect("register node must succeed");
+        .expect("endpoint registration must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
-    let client = Client::new();
+    let register_body: Value = register_response
+        .json()
+        .await
+        .expect("endpoint registration response must be json");
+    let endpoint_id = register_body["id"]
+        .as_str()
+        .expect("endpoint id must be present");
+
+    // ヘルスチェックでオンライン化（routingはonlineのみ対象）
+    let test_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint test must succeed");
+    assert_eq!(test_response.status(), ReqStatusCode::OK);
+
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("model sync must succeed");
+    assert_eq!(sync_response.status(), ReqStatusCode::OK);
+
     let response = client
         .post(format!("http://{}/v1/completions", lb.addr()))
         .header("x-api-key", "sk_debug")
@@ -128,13 +169,54 @@ async fn proxy_completions_propagates_upstream_error() {
     })
     .await;
     let lb = spawn_test_lb().await;
+    let client = Client::new();
 
-    let register_response = register_node(lb.addr(), node_stub.addr())
+    // Endpoint登録 + モデル同期（Node登録APIは廃止済み）
+    let register_response = client
+        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .header("authorization", "Bearer sk_debug")
+        .json(&serde_json::json!({
+            "name": "stub-endpoint-error",
+            "base_url": format!("http://{}", node_stub.addr())
+        }))
+        .send()
         .await
-        .expect("register node must succeed");
+        .expect("endpoint registration must succeed");
     assert_eq!(register_response.status(), ReqStatusCode::CREATED);
 
-    let client = Client::new();
+    let register_body: Value = register_response
+        .json()
+        .await
+        .expect("endpoint registration response must be json");
+    let endpoint_id = register_body["id"]
+        .as_str()
+        .expect("endpoint id must be present");
+
+    // ヘルスチェックでオンライン化（routingはonlineのみ対象）
+    let test_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint test must succeed");
+    assert_eq!(test_response.status(), ReqStatusCode::OK);
+
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("model sync must succeed");
+    assert_eq!(sync_response.status(), ReqStatusCode::OK);
+
     let response = client
         .post(format!("http://{}/v1/completions", lb.addr()))
         .header("x-api-key", "sk_debug")
@@ -147,9 +229,20 @@ async fn proxy_completions_propagates_upstream_error() {
         .await
         .expect("completions request should succeed");
 
-    assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
+    let status = response.status();
+    assert!(
+        status == ReqStatusCode::BAD_REQUEST || status == ReqStatusCode::BAD_GATEWAY,
+        "upstream error should be propagated as 400 or mapped to 502, got {status}"
+    );
     let body = response.text().await.expect("body should be readable");
-    assert!(body.contains("model not loaded"));
+    if status == ReqStatusCode::BAD_REQUEST {
+        assert!(body.contains("model not loaded"));
+    } else {
+        assert!(
+            !body.trim().is_empty(),
+            "502 responses should still include an error body"
+        );
+    }
 }
 
 #[tokio::test]

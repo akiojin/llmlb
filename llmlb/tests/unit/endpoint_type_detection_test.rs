@@ -77,7 +77,13 @@ fn test_type_string_roundtrip() {
 /// 不正な文字列はUnknownにフォールバック
 #[test]
 fn test_invalid_string_fallback() {
-    assert_eq!("invalid".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
+    assert_eq!(
+        "invalid".parse::<EndpointType>().unwrap(),
+        EndpointType::Unknown
+    );
     assert_eq!("".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
-    assert_eq!("XLLM".parse::<EndpointType>().unwrap(), EndpointType::Unknown); // 大文字は不正
+    assert_eq!(
+        "XLLM".parse::<EndpointType>().unwrap(),
+        EndpointType::Unknown
+    ); // 大文字は不正
 }

@@ -38,7 +38,7 @@
 ### Test
 
 - [x] T201: LRUアンロードのunitテスト作成（llama_manager_test.cpp: EvictForVram*）
-- [ ] T202: アクティブ保護のテスト作成
+- [x] T202: アクティブ保護のテスト作成（llama_manager_test.cpp: Active*）
 - [ ] T203: Tensor Parallelism自動化のテスト作成
 - [x] T210: アイドルタイムアウトのテスト作成（model_loader_test.cpp: IdleModelsAreUnloadedAfterTimeout）
 - [ ] T211: GPU Offloadのテスト作成
@@ -47,7 +47,7 @@
 
 - [x] T204: VRAM使用量監視機能（ResourceMonitor実装済み）
 - [x] T205: LRUアンロードロジック実装（evictForVram, getLeastRecentlyUsedModel）
-- [ ] T206: アクティブモデル保護ロジック
+- [x] T206: アクティブモデル保護ロジック（markAsActive/markAsInactive実装済み）
 - [x] T207: [P] GPU検出・VRAM計算（GpuDetector実装済み）
 - [x] T208: [P] split比率自動決定（setGpuLayerSplit実装済み）
 - [x] T212: アイドルタイムアウト実装（setIdleTimeout, unloadIdleModels実装済み）

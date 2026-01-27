@@ -7,10 +7,9 @@
 
 namespace xllm {
 
-/// Subcommand types for llmlb CLI
+/// Subcommand types for xllm CLI
 enum class Subcommand {
     None,           // No subcommand (legacy server mode)
-    // Direct commands (formerly node subcommands)
     Serve,          // serve
     Run,            // run <model>
     Pull,           // pull <model>
@@ -19,10 +18,6 @@ enum class Subcommand {
     Rm,             // rm <model>
     Stop,           // stop <model>
     Ps,             // ps
-    // Router subcommands
-    RouterEndpoints,  // router endpoints
-    RouterModels,     // router models
-    RouterStatus,     // router status
 };
 
 /// Options for serve command
@@ -108,9 +103,6 @@ std::string getHelpMessage();
 ///
 /// @return Version message string
 std::string getVersionMessage();
-
-/// Get help message for router subcommands
-std::string getRouterHelpMessage();
 
 /// Convert subcommand enum to string
 std::string subcommandToString(Subcommand cmd);

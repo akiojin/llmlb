@@ -245,9 +245,6 @@ add_library(cli_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/rm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/stop.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/ps.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_endpoints.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_models.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_status.cpp
 )
 target_include_directories(cli_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(cli_lib PUBLIC

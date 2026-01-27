@@ -8,7 +8,6 @@
 namespace xllm {
 
 // Forward declarations for help messages
-std::string getRouterHelpMessage();
 std::string getServeHelpMessage();
 std::string getRunHelpMessage();
 std::string getPullHelpMessage();
@@ -34,7 +33,6 @@ std::string getHelpMessage() {
     oss << "    rm         Delete a model\n";
     oss << "    stop       Unload a running model\n";
     oss << "    ps         List running models\n";
-    oss << "    router     Router commands (endpoints, models, status)\n";
     oss << "\n";
     oss << "OPTIONS:\n";
     oss << "    -h, --help       Print help information\n";
@@ -68,22 +66,6 @@ std::string getServeHelpMessage() {
     oss << "    HF_TOKEN                     HuggingFace API token (for gated models)\n";
     return oss.str();
 }
-
-std::string getRouterHelpMessage() {
-    std::ostringstream oss;
-    oss << "xllm router - Router subcommands\n";
-    oss << "\n";
-    oss << "USAGE:\n";
-    oss << "    xllm router <SUBCOMMAND>\n";
-    oss << "\n";
-    oss << "SUBCOMMANDS:\n";
-    oss << "    endpoints  Manage cluster endpoints\n";
-    oss << "    models     Manage cluster models\n";
-    oss << "    status     Show cluster status\n";
-    return oss.str();
-}
-
-
 
 std::string getRunHelpMessage() {
     std::ostringstream oss;
@@ -223,54 +205,6 @@ bool hasHelpFlag(int argc, char* argv[], int start) {
         }
     }
     return false;
-}
-
-
-
-// Parse router subcommands
-CliResult parseRouterSubcommand(int argc, char* argv[], int argIndex) {
-    CliResult result;
-
-    if (argIndex >= argc) {
-        result.should_exit = true;
-        result.exit_code = 0;
-        result.output = getRouterHelpMessage();
-        return result;
-    }
-
-    const char* subcommand = argv[argIndex];
-
-    // Check for help
-    if (std::strcmp(subcommand, "-h") == 0 || std::strcmp(subcommand, "--help") == 0) {
-        result.should_exit = true;
-        result.exit_code = 0;
-        result.output = getRouterHelpMessage();
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "endpoints") == 0) {
-        result.subcommand = Subcommand::RouterEndpoints;
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "models") == 0) {
-        result.subcommand = Subcommand::RouterModels;
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "status") == 0) {
-        result.subcommand = Subcommand::RouterStatus;
-        return result;
-    }
-
-    // Unknown subcommand
-    result.should_exit = true;
-    result.exit_code = 1;
-    std::ostringstream oss;
-    oss << "Error: Unknown router subcommand '" << subcommand << "'\n\n";
-    oss << getRouterHelpMessage();
-    result.output = oss.str();
-    return result;
 }
 
 CliResult parseCliArgs(int argc, char* argv[]) {
@@ -520,11 +454,6 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         return result;
     }
 
-    // Router subcommands
-    if (std::strcmp(command, "router") == 0) {
-        return parseRouterSubcommand(argc, argv, 2);
-    }
-
     // Check for unknown flags (starting with - or --)
     if (command[0] == '-') {
         result.should_exit = true;
@@ -557,9 +486,6 @@ std::string subcommandToString(Subcommand subcommand) {
         case Subcommand::Rm: return "rm";
         case Subcommand::Stop: return "stop";
         case Subcommand::Ps: return "ps";
-        case Subcommand::RouterEndpoints: return "router endpoints";
-        case Subcommand::RouterModels: return "router models";
-        case Subcommand::RouterStatus: return "router status";
         default: return "unknown";
     }
 }

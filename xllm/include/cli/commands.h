@@ -46,18 +46,6 @@ int stop(const ModelOptions& options);
 /// @return Exit code (0=success, 1=error, 2=connection error)
 int ps();
 
-/// Execute the 'router endpoints' command
-/// @return Exit code (0=success, 1=error)
-int router_endpoints();
-
-/// Execute the 'router models' command
-/// @return Exit code (0=success, 1=error)
-int router_models();
-
-/// Execute the 'router status' command
-/// @return Exit code (0=success, 1=error)
-int router_status();
-
 }  // namespace commands
 }  // namespace cli
 }  // namespace xllm

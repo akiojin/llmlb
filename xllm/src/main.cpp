@@ -783,15 +783,6 @@ int main(int argc, char* argv[]) {
         case xllm::Subcommand::Ps:
             return xllm::cli::commands::ps();
 
-        case xllm::Subcommand::RouterEndpoints:
-            return xllm::cli::commands::router_endpoints();
-
-        case xllm::Subcommand::RouterModels:
-            return xllm::cli::commands::router_models();
-
-        case xllm::Subcommand::RouterStatus:
-            return xllm::cli::commands::router_status();
-
         case xllm::Subcommand::None:
         default:
             // Default to serve (legacy behavior for backward compatibility)

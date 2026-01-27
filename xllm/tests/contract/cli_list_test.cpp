@@ -40,6 +40,12 @@ TEST_F(CliListTest, DISABLED_OutputFormat) {
     EXPECT_TRUE(false);
 }
 
+// Contract: node list shows quantization via NAME suffix when available
+TEST_F(CliListTest, DISABLED_ShowsQuantizationSuffixInNameColumn) {
+    // Example: quantized models appear as `name:<quantization>` in NAME.
+    EXPECT_TRUE(false);
+}
+
 // Contract: node list shows ollama models with "ollama:" prefix
 TEST_F(CliListTest, DISABLED_ShowsOllamaModelsWithPrefix) {
     // When ~/.ollama/models/ contains models, they should appear

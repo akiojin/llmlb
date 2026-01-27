@@ -89,6 +89,13 @@ TEST_F(CliShowTest, ShowHelp) {
     EXPECT_NE(result.output.find("show"), std::string::npos);
 }
 
+// Contract: node show displays quantization in Details when available
+TEST_F(CliShowTest, DISABLED_ShowsQuantizationInDetails) {
+    // Example: `xllm show model:kv_int8` should include
+    // "Quantization: kv_int8" in the Details section.
+    EXPECT_TRUE(false);
+}
+
 // Contract: node show for ollama model shows read-only info
 TEST_F(CliShowTest, DISABLED_ShowsOllamaModelInfo) {
     // Shows "Source: ollama (read-only)" for ollama: prefixed models

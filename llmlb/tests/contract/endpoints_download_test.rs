@@ -121,7 +121,7 @@ async fn test_download_model_request() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(&format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -200,7 +200,7 @@ async fn test_download_model_missing_model_name() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(&format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -253,7 +253,7 @@ async fn test_download_model_non_xllm_endpoint() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(&format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -330,7 +330,7 @@ async fn test_download_model_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(&format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),

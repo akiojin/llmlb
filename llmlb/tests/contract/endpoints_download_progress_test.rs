@@ -116,7 +116,7 @@ async fn test_get_download_progress_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!("/v0/endpoints/{}/download/progress", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download/progress", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -169,7 +169,7 @@ async fn test_download_progress_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!("/v0/endpoints/{}/download/progress", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download/progress", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )

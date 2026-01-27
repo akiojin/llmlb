@@ -35,6 +35,18 @@ Ollama/vLLM等の外部OpenAI互換APIも統一的に管理できるようにな
 - プッシュ型ハートビート（POST /v0/health）→ プル型ヘルスチェック
 - GPU必須要件 → 外部エンドポイントはGPU情報不問
 
+### 追加要件（2026-01-26）: エンドポイントタイプ自動判別
+
+エンドポイント登録時にサーバータイプ（xLLM/Ollama/vLLM/OpenAI互換）を自動判別し、
+タイプに応じた機能制御を行う。
+
+**追加変更点**:
+
+- エンドポイント登録時にタイプを自動判別・永続化
+- タイプに基づくAPIフィルタリング機能
+- xLLMエンドポイント専用：モデルダウンロード機能
+- xLLM/Ollamaエンドポイント：モデルメタデータ（最大トークン数）取得
+
 ## 技術コンテキスト
 
 **言語/バージョン**: Rust 1.75+, TypeScript 5.x (ダッシュボード)
@@ -153,6 +165,51 @@ llmlb/
 
 **出力**: すべての要明確化が解決されたresearch.md
 
+### 追加リサーチ（2026-01-26）: エンドポイントタイプ判別
+
+**タイプ判別方法**:
+
+| タイプ | 判別方法 | 根拠 |
+|--------|----------|------|
+| xLLM | `GET /v0/system` レスポンスに `xllm_version` | 本プロジェクト独自エンドポイント |
+| Ollama | `GET /api/tags` が有効、または `Ollama` ヘッダー | Ollama標準API |
+| vLLM | `GET /v1/models` + `vllm` in Server header | vLLM標準動作 |
+| OpenAI互換 | 上記いずれにも該当しない | フォールバック |
+
+**判別優先順位**: xLLM > Ollama > vLLM > OpenAI互換
+
+**タイプ固有機能**:
+
+| 機能 | xLLM | Ollama | vLLM | OpenAI互換 |
+|------|------|--------|------|-----------|
+| モデルダウンロード | ✅ | ❌ | ❌ | ❌ |
+| 最大トークン数取得 | ✅ | ✅ | ❌ | ❌ |
+| モデル一覧同期 | ✅ | ✅ | ✅ | ✅ |
+| ヘルスチェック | ✅ | ✅ | ✅ | ✅ |
+
+**xLLMモデルダウンロードAPI**:
+
+```
+POST /v0/endpoints/:id/download
+{
+  "model": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+  "filename": "qwen2.5-7b-instruct-q4_k_m.gguf"
+}
+
+GET /v0/endpoints/:id/download/progress
+{
+  "model": "...",
+  "progress": 45.2,
+  "speed_mbps": 120.5,
+  "eta_seconds": 180
+}
+```
+
+**モデルメタデータ取得**:
+
+- xLLM: `GET /v0/models/:model/info` → `context_length`
+- Ollama: `POST /api/show` → `parameters.num_ctx`
+
 ## Phase 1: 設計＆契約
 
 *前提条件: research.md完了*
@@ -163,9 +220,11 @@ llmlb/
 
 **主要エンティティ**:
 
-- `Endpoint`: エンドポイント情報（name, url, status, api_key等）
-- `EndpointModel`: エンドポイントで利用可能なモデル情報
+- `Endpoint`: エンドポイント情報（name, url, status, api_key, **endpoint_type**等）
+- `EndpointModel`: エンドポイントで利用可能なモデル情報（**max_tokens**追加）
 - `EndpointStatus`: pending, online, offline, error
+- `EndpointType`: xllm, ollama, vllm, openai_compatible, unknown（追加）
+- `ModelDownloadTask`: モデルダウンロードタスク（xLLM専用、追加）
 
 ### 2. API契約
 
@@ -173,13 +232,20 @@ llmlb/
 
 ```text
 # エンドポイント管理API（認証必須）
-POST   /v0/endpoints              # 登録
-GET    /v0/endpoints              # 一覧
-GET    /v0/endpoints/:id          # 詳細
-PUT    /v0/endpoints/:id          # 更新
+POST   /v0/endpoints              # 登録（タイプ自動判別）
+GET    /v0/endpoints              # 一覧（?type=xllm でフィルタ可能）
+GET    /v0/endpoints/:id          # 詳細（タイプ情報含む）
+PUT    /v0/endpoints/:id          # 更新（タイプ手動変更可能）
 DELETE /v0/endpoints/:id          # 削除
-POST   /v0/endpoints/:id/test     # 接続テスト
+POST   /v0/endpoints/:id/test     # 接続テスト（タイプ再判別）
 POST   /v0/endpoints/:id/sync     # モデル同期
+
+# xLLM専用API（タイプ=xllmのみ許可）
+POST   /v0/endpoints/:id/download          # モデルダウンロード開始
+GET    /v0/endpoints/:id/download/progress # ダウンロード進捗
+
+# モデルメタデータAPI（xLLM/Ollamaのみ）
+GET    /v0/endpoints/:id/models/:model/info  # モデル情報（max_tokens等）
 ```
 
 ### 3. 契約テスト
@@ -193,6 +259,11 @@ POST   /v0/endpoints/:id/sync     # モデル同期
 - エンドポイント登録 → ヘルスチェック → オンライン遷移
 - エンドポイント停止 → オフライン検知
 - モデル同期 → モデル一覧更新
+- エンドポイント登録 → タイプ自動判別（xLLM/Ollama/vLLM/OpenAI互換）
+- タイプフィルタリング → 指定タイプのみ取得
+- xLLMへモデルダウンロード → 進捗取得 → 完了確認
+- 非xLLMへモデルダウンロード → エラー（サポート外）
+- xLLM/Ollamaからモデルメタデータ取得 → max_tokens確認
 
 ### 5. クイックスタート
 
@@ -221,12 +292,19 @@ POST   /v0/endpoints/:id/sync     # モデル同期
 4. **Integration**: ヘルスチェッカー、モデル同期
 5. **Polish**: ダッシュボード統合、ドキュメント
 
+**追加タスク（エンドポイントタイプ機能）**:
+
+- **Type Detection**: タイプ判別ロジック実装
+- **xLLM Integration**: モデルダウンロードAPI
+- **Metadata**: モデルメタデータ取得API
+- **Dashboard**: タイプ表示UI
+
 **並列実行マーク**:
 
 - [P] 独立したファイル作成タスク
 - [P] 独立したテスト作成タスク
 
-**推定タスク数**: 25-30個
+**推定タスク数**: 35-40個（追加要件含む）
 
 **重要**: このフェーズは/speckit.tasksコマンドで実行、/speckit.planではない
 
@@ -250,6 +328,18 @@ POST   /v0/endpoints/:id/sync     # モデル同期
 - [x] Phase 3: Tasks生成済み (/speckit.tasks コマンド)
 - [ ] Phase 4: 実装完了
 - [ ] Phase 5: 検証合格
+
+**追加要件ステータス（2026-01-26）**:
+
+- [x] エンドポイントタイプ判別リサーチ完了
+- [x] タイプ固有機能設計完了
+- [ ] タイプ判別テスト作成
+- [ ] タイプ判別実装
+- [ ] xLLMモデルダウンロードテスト作成
+- [ ] xLLMモデルダウンロード実装
+- [ ] モデルメタデータ取得テスト作成
+- [ ] モデルメタデータ取得実装
+- [ ] ダッシュボードタイプ表示
 
 **ゲートステータス**:
 

@@ -8,8 +8,9 @@
 //! - `/v0/health`が失敗した場合は`/v1/models`にフォールバック
 
 use crate::db::endpoints as db;
+use crate::detection::detect_endpoint_type_with_client;
 use crate::registry::endpoints::EndpointRegistry;
-use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus};
+use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus, EndpointType};
 use chrono::Utc;
 use reqwest::Client;
 
@@ -251,6 +252,36 @@ impl EndpointHealthChecker {
                     info.active_requests,
                 )
                 .await;
+        }
+
+        // SPEC-66555000: タイプ再判別（Unknown→オンライン時に再判別）
+        if success && endpoint.endpoint_type == EndpointType::Unknown {
+            let detected_type = detect_endpoint_type_with_client(
+                &self.client,
+                &endpoint.base_url,
+                endpoint.api_key.as_deref(),
+            )
+            .await;
+
+            if detected_type != EndpointType::Unknown {
+                info!(
+                    endpoint_id = %endpoint.id,
+                    endpoint_name = %endpoint.name,
+                    detected_type = %detected_type.as_str(),
+                    "Endpoint type re-detected on health check"
+                );
+                if let Err(e) = self
+                    .registry
+                    .update_endpoint_type(endpoint.id, detected_type)
+                    .await
+                {
+                    warn!(
+                        endpoint_id = %endpoint.id,
+                        error = %e,
+                        "Failed to update endpoint type"
+                    );
+                }
+            }
         }
 
         // ヘルスチェック履歴を記録

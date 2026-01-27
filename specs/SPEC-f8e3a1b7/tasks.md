@@ -1,5 +1,7 @@
 # SPEC-f8e3a1b7: タスク一覧
 
+**ステータス**: 完了
+
 ## Phase 1: Node→Endpoint移行 + SQLite移行（最優先）
 
 ### Setup

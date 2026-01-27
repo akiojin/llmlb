@@ -1,5 +1,7 @@
 # タスク: Nemotron CUDA PoC
 
+**ステータス**: 完了
+
 **入力**: `/specs/SPEC-83825900/`の設計ドキュメント
 **前提条件**: plan.md, research.md
 
@@ -98,6 +100,8 @@ T033 → T034 → T035
 
 ```bash
 # Phase 3.1 並列タスク:
+
+**ステータス**: 完了
 Task: "poc/nemotron-cuda-cpp/include/config.h に共通定義を作成"
 Task: "poc/nemotron-cuda-cpp/include/cuda_utils.h にCUDAエラーチェックマクロを作成"
 

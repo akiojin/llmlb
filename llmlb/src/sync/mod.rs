@@ -11,12 +11,14 @@ pub use capabilities::{
 pub use parser::{parse_models_response, ParsedModel, ResponseFormat};
 
 use crate::db::endpoints as db;
-use crate::types::endpoint::{EndpointModel, SupportedAPI};
+use crate::metadata;
+use crate::types::endpoint::{EndpointModel, EndpointType, SupportedAPI};
 use chrono::Utc;
 use reqwest::Client;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
 use std::time::Duration;
+use tracing::debug;
 use uuid::Uuid;
 
 /// 同期結果
@@ -68,6 +70,7 @@ impl std::error::Error for SyncError {}
 /// 3. 既存モデルと比較（差分計算）
 /// 4. DBを更新（削除→追加）
 /// 5. capabilitiesを自動判定
+/// 6. xLLM/Ollamaの場合はmax_tokensを取得
 pub async fn sync_models(
     pool: &SqlitePool,
     client: &Client,
@@ -75,6 +78,37 @@ pub async fn sync_models(
     base_url: &str,
     api_key: Option<&str>,
     timeout_secs: u64,
+) -> Result<SyncResult, SyncError> {
+    // エンドポイントタイプを指定せずに同期（max_tokens取得なし）
+    sync_models_with_type(
+        pool,
+        client,
+        endpoint_id,
+        base_url,
+        api_key,
+        timeout_secs,
+        None,
+    )
+    .await
+}
+
+/// エンドポイントからモデル一覧を取得してDBと同期（タイプ指定版）
+///
+/// # 処理フロー
+/// 1. GET /v1/models でモデル一覧を取得
+/// 2. OpenAI/Ollama形式をパース
+/// 3. 既存モデルと比較（差分計算）
+/// 4. DBを更新（削除→追加）
+/// 5. capabilitiesを自動判定
+/// 6. xLLM/Ollamaの場合はmax_tokensを取得（SPEC-66555000）
+pub async fn sync_models_with_type(
+    pool: &SqlitePool,
+    client: &Client,
+    endpoint_id: Uuid,
+    base_url: &str,
+    api_key: Option<&str>,
+    timeout_secs: u64,
+    endpoint_type: Option<EndpointType>,
 ) -> Result<SyncResult, SyncError> {
     // 既存モデルを取得
     let existing_models: HashSet<String> = match db::list_endpoint_models(pool, endpoint_id).await {
@@ -154,6 +188,7 @@ pub async fn sync_models(
             endpoint_id,
             model_id: (*model_id).clone(),
             capabilities: caps_vec,
+            max_tokens: None,
             last_checked: Some(now),
             supported_apis: vec![SupportedAPI::ChatCompletions],
         };
@@ -177,12 +212,64 @@ pub async fn sync_models(
             endpoint_id,
             model_id: (*model_id).clone(),
             capabilities: caps_vec,
+            max_tokens: None,
             last_checked: Some(now),
             supported_apis: vec![SupportedAPI::ChatCompletions],
         };
 
         let _ = db::update_endpoint_model(pool, &model).await;
         synced_models.push(model);
+    }
+
+    // SPEC-66555000: xLLM/Ollamaの場合はmax_tokensを取得
+    if let Some(ep_type) = endpoint_type {
+        if ep_type == EndpointType::Xllm || ep_type == EndpointType::Ollama {
+            // 非同期でmax_tokensを取得（同期をブロックしない）
+            let models_to_update: Vec<_> =
+                synced_models.iter().map(|m| m.model_id.clone()).collect();
+            for model_id in models_to_update {
+                match metadata::get_model_metadata(client, base_url, api_key, &ep_type, &model_id)
+                    .await
+                {
+                    Ok(meta) => {
+                        if let Some(context_length) = meta.context_length {
+                            // max_tokensをDBに更新
+                            if let Err(e) = db::update_model_max_tokens(
+                                pool,
+                                endpoint_id,
+                                &model_id,
+                                context_length,
+                            )
+                            .await
+                            {
+                                debug!(
+                                    endpoint_id = %endpoint_id,
+                                    model_id = %model_id,
+                                    error = %e,
+                                    "Failed to update max_tokens"
+                                );
+                            } else {
+                                // synced_modelsも更新
+                                for model in &mut synced_models {
+                                    if model.model_id == model_id {
+                                        model.max_tokens = Some(context_length);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        debug!(
+                            endpoint_id = %endpoint_id,
+                            model_id = %model_id,
+                            error = %e,
+                            "Failed to fetch model metadata for max_tokens"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     Ok(SyncResult {

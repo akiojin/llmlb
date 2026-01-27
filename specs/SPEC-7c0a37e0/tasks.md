@@ -1,5 +1,7 @@
 # タスク: SPEC-k5mdhprl APIキースコープ & /v0 認証強化
 
+**ステータス**: 完了
+
 ## 方針
 - TDD順で進める（Contract → Integration → E2E → Unit）。
 - 既存テストの更新もTDDの一部として扱う。

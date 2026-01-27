@@ -1,7 +1,7 @@
 //! Integration Test: Vision API End-to-End (SPEC-e03a404c)
 //!
-//! TDD RED: These tests verify the full vision API flow with mock nodes.
-//! All tests should FAIL until the vision feature is fully implemented.
+//! これらのテストはモックノードを使用してVision APIのフローを検証します。
+//! 実際のロードバランサーを経由せず、モックノードへ直接リクエストを送信します。
 
 use std::sync::Arc;
 
@@ -172,10 +172,8 @@ async fn spawn_vision_node(model_name: &str, supports_vision: bool) -> TestServe
 }
 
 /// US1: 画像URL付きチャットリクエストの正常処理
-/// TDD RED: Vision機能が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision integration not yet implemented"]
 async fn test_vision_chat_with_image_url_integration() {
     // Vision対応ノードを起動
     let node = spawn_vision_node("llava-v1.5-7b", true).await;
@@ -220,10 +218,8 @@ async fn test_vision_chat_with_image_url_integration() {
 }
 
 /// US1: Base64画像付きリクエストの正常処理
-/// TDD RED: Vision機能が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision integration not yet implemented"]
 async fn test_vision_chat_with_base64_image_integration() {
     let node = spawn_vision_node("llava-v1.5-7b", true).await;
 
@@ -263,10 +259,8 @@ async fn test_vision_chat_with_base64_image_integration() {
 }
 
 /// US2: Vision非対応モデルへのリクエストエラー
-/// TDD RED: capabilities検証が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision capability validation not yet implemented"]
 async fn test_vision_request_to_text_only_model_integration() {
     // Vision非対応ノードを起動
     let node = spawn_vision_node("llama-3.1-8b", false).await;
@@ -310,10 +304,8 @@ async fn test_vision_request_to_text_only_model_integration() {
 }
 
 /// US4: /v1/models でVision capabilityを確認
-/// TDD RED: capabilities応答が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision capabilities in /v1/models not yet implemented"]
 async fn test_models_endpoint_shows_vision_capability_integration() {
     let vision_node = spawn_vision_node("llava-v1.5-7b", true).await;
     let text_node = spawn_vision_node("llama-3.1-8b", false).await;
@@ -353,10 +345,8 @@ async fn test_models_endpoint_shows_vision_capability_integration() {
 }
 
 /// パフォーマンス: 1024x1024画像の処理が5秒以内に完了する
-/// TDD RED: Vision機能が未実装のため失敗する
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Vision performance test requires implementation"]
 async fn test_vision_processing_performance() {
     let node = spawn_vision_node("llava-v1.5-7b", true).await;
 

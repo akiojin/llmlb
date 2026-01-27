@@ -3,7 +3,9 @@
 //! エンドポイントの状態をメモリ内で管理し、SQLiteと同期
 
 use crate::db::endpoints as db;
-use crate::types::endpoint::{Endpoint, EndpointCapability, EndpointModel, EndpointStatus};
+use crate::types::endpoint::{
+    Endpoint, EndpointCapability, EndpointModel, EndpointStatus, EndpointType,
+};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -267,6 +269,29 @@ impl EndpointRegistry {
         } else {
             false
         }
+    }
+
+    /// エンドポイントのタイプを更新（DBとキャッシュ両方）（SPEC-66555000）
+    ///
+    /// ヘルスチェック時にUnknownタイプのエンドポイントがオンラインになった場合に、
+    /// タイプを再判別して更新する。
+    pub async fn update_endpoint_type(
+        &self,
+        id: Uuid,
+        endpoint_type: EndpointType,
+    ) -> Result<bool, sqlx::Error> {
+        // DBを更新
+        let updated = db::update_endpoint_type(&self.pool, id, endpoint_type).await?;
+
+        if updated {
+            // キャッシュを更新
+            let mut endpoints = self.endpoints.write().await;
+            if let Some(endpoint) = endpoints.get_mut(&id) {
+                endpoint.endpoint_type = endpoint_type;
+            }
+        }
+
+        Ok(updated)
     }
 
     /// エンドポイントの推論レイテンシを更新（DBとキャッシュ両方）（SPEC-f8e3a1b7）
@@ -583,6 +608,7 @@ mod tests {
             endpoint_id,
             model_id: "llama3:8b".to_string(),
             capabilities: Some(vec!["chat".to_string()]),
+            max_tokens: None,
             last_checked: Some(chrono::Utc::now()),
             supported_apis: vec![SupportedAPI::ChatCompletions],
         };

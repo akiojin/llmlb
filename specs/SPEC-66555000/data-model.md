@@ -26,6 +26,7 @@
 | error_count | u32 | Yes | 連続エラー回数 |
 | registered_at | DateTime | Yes | 登録日時 |
 | notes | String? | No | メモ |
+| endpoint_type | EndpointType | Yes | エンドポイントタイプ（追加 2026-01-26） |
 
 **検証ルール**:
 
@@ -57,7 +58,29 @@
         error
 ```
 
-### 3. EndpointModel（エンドポイントモデル）
+### 3. EndpointType（エンドポイントタイプ）（追加 2026-01-26）
+
+エンドポイントの種別を表す列挙型。
+
+**値**:
+
+| 値 | 説明 | 判別条件 |
+|----|------|---------|
+| `xllm` | 本プロジェクト独自エンジン | GET /v0/system に xllm_version |
+| `ollama` | Ollamaサーバー | GET /api/tags が有効 |
+| `vllm` | vLLMサーバー | Server headerに vllm |
+| `openai_compatible` | その他OpenAI互換 | 上記いずれにも該当しない |
+| `unknown` | 判別不能 | エンドポイントオフライン時 |
+
+**タイプ固有機能**:
+
+| 機能 | xllm | ollama | vllm | openai_compatible |
+|------|------|--------|------|-------------------|
+| モデルダウンロード | ✅ | ❌ | ❌ | ❌ |
+| モデルメタデータ取得 | ✅ | ✅ | ❌ | ❌ |
+| モデル一覧同期 | ✅ | ✅ | ✅ | ✅ |
+
+### 4. EndpointModel（エンドポイントモデル）
 
 エンドポイントで利用可能なモデル情報。
 
@@ -68,11 +91,42 @@
 | endpoint_id | UUID | Yes | エンドポイントID（FK） |
 | model_id | String | Yes | モデル識別子 |
 | capabilities | Vec\<String\>? | No | 能力（chat, embeddings等） |
+| max_tokens | u32? | No | 最大トークン数（追加 2026-01-26） |
 | last_checked | DateTime? | No | 最終確認時刻 |
 
 **複合主キー**: (endpoint_id, model_id)
 
-### 4. EndpointHealthCheck（ヘルスチェック履歴）
+### 5. ModelDownloadTask（モデルダウンロードタスク）（追加 2026-01-26）
+
+xLLMエンドポイントへのモデルダウンロード要求を追跡するエンティティ。
+
+**フィールド**:
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| id | UUID | Yes | タスク識別子 |
+| endpoint_id | UUID | Yes | 対象エンドポイントID（FK） |
+| model | String | Yes | モデル名（例: "Qwen/Qwen2.5-7B-Instruct-GGUF"） |
+| filename | String? | No | ダウンロードファイル名 |
+| status | DownloadStatus | Yes | ダウンロード状態 |
+| progress | f32 | Yes | 進捗（0.0-100.0） |
+| speed_mbps | f32? | No | 転送速度 |
+| eta_seconds | u32? | No | 残り時間 |
+| error_message | String? | No | エラーメッセージ |
+| started_at | DateTime | Yes | 開始時刻 |
+| completed_at | DateTime? | No | 完了時刻 |
+
+**DownloadStatus値**:
+
+| 値 | 説明 |
+|----|------|
+| `pending` | 待機中 |
+| `downloading` | ダウンロード中 |
+| `completed` | 完了 |
+| `failed` | 失敗 |
+| `cancelled` | キャンセル |
+
+### 6. EndpointHealthCheck（ヘルスチェック履歴）
 
 ヘルスチェックの履歴を記録するエンティティ。
 
@@ -102,6 +156,7 @@ CREATE TABLE endpoints (
     base_url TEXT NOT NULL UNIQUE,
     api_key_encrypted TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
+    endpoint_type TEXT NOT NULL DEFAULT 'unknown',
     health_check_interval_secs INTEGER NOT NULL DEFAULT 30,
     inference_timeout_secs INTEGER NOT NULL DEFAULT 120,
     latency_ms INTEGER,
@@ -114,6 +169,7 @@ CREATE TABLE endpoints (
 
 CREATE INDEX idx_endpoints_status ON endpoints(status);
 CREATE INDEX idx_endpoints_name ON endpoints(name);
+CREATE INDEX idx_endpoints_type ON endpoints(endpoint_type);
 ```
 
 ### endpoint_models テーブル
@@ -123,6 +179,7 @@ CREATE TABLE endpoint_models (
     endpoint_id TEXT NOT NULL,
     model_id TEXT NOT NULL,
     capabilities TEXT,  -- JSON: ["chat", "embeddings"]
+    max_tokens INTEGER,
     last_checked TEXT,
     PRIMARY KEY (endpoint_id, model_id),
     FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
@@ -150,6 +207,28 @@ CREATE INDEX idx_health_checks_endpoint ON endpoint_health_checks(endpoint_id);
 CREATE INDEX idx_health_checks_checked_at ON endpoint_health_checks(checked_at);
 ```
 
+### model_download_tasks テーブル（追加 2026-01-26）
+
+```sql
+CREATE TABLE model_download_tasks (
+    id TEXT PRIMARY KEY NOT NULL,
+    endpoint_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    filename TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    progress REAL NOT NULL DEFAULT 0.0,
+    speed_mbps REAL,
+    eta_seconds INTEGER,
+    error_message TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_download_tasks_endpoint ON model_download_tasks(endpoint_id);
+CREATE INDEX idx_download_tasks_status ON model_download_tasks(status);
+```
+
 ## Rust構造体定義
 
 ```rust
@@ -168,6 +247,16 @@ pub enum EndpointStatus {
     Error,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointType {
+    Xllm,
+    Ollama,
+    Vllm,
+    OpenaiCompatible,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Endpoint {
     pub id: Uuid,
@@ -176,6 +265,7 @@ pub struct Endpoint {
     #[serde(skip_serializing)]
     pub api_key: Option<String>,
     pub status: EndpointStatus,
+    pub endpoint_type: EndpointType,
     pub health_check_interval_secs: u32,
     pub inference_timeout_secs: u32,
     pub latency_ms: Option<u32>,
@@ -191,7 +281,33 @@ pub struct EndpointModel {
     pub endpoint_id: Uuid,
     pub model_id: String,
     pub capabilities: Option<Vec<String>>,
+    pub max_tokens: Option<u32>,
     pub last_checked: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadStatus {
+    Pending,
+    Downloading,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelDownloadTask {
+    pub id: Uuid,
+    pub endpoint_id: Uuid,
+    pub model: String,
+    pub filename: Option<String>,
+    pub status: DownloadStatus,
+    pub progress: f32,
+    pub speed_mbps: Option<f32>,
+    pub eta_seconds: Option<u32>,
+    pub error_message: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

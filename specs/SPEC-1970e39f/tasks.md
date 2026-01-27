@@ -1,5 +1,7 @@
 # タスク: 構造化ロギング強化
 
+**ステータス**: 完了
+
 **入力**: `/specs/SPEC-1970e39f/`の設計ドキュメント
 **前提条件**: plan.md (完了), spec.md (完了)
 
@@ -100,6 +102,8 @@ T011-T015 (polish)
 
 ```text
 # T002-T005 を一緒に起動 (異なるテストファイル):
+
+**ステータス**: 完了
 Task: "llmlb/tests/contract/openai_logging_test.rs に test_chat_completions_logs_request_received"
 Task: "llmlb/tests/contract/openai_logging_test.rs に test_node_selection_failure_logs_error"
 Task: "llmlb/tests/contract/openai_logging_test.rs に test_node_selection_failure_saves_request_history"

@@ -27,7 +27,7 @@ namespace {
     }
 
     constexpr const char* LOG_FILE_BASE = "xllm.jsonl";
-    constexpr const char* DEFAULT_DATA_DIR = ".llmlb";
+    constexpr const char* DEFAULT_DATA_DIR = ".xllm";
     constexpr const char* LOG_SUBDIR = "logs";
     constexpr int DEFAULT_RETENTION_DAYS = 7;
 
@@ -88,7 +88,7 @@ std::string get_log_dir() {
         return env;
     }
 
-    // Default: ~/.llmlb/logs
+    // Default: ~/.xllm/logs
     return (fs::path(get_home_dir()) / DEFAULT_DATA_DIR / LOG_SUBDIR).string();
 }
 

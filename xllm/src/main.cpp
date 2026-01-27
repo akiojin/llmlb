@@ -211,7 +211,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
 
         // Determine models directory
         std::string models_dir = cfg.models_dir.empty()
-                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.llmlb/models"
+                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.xllm/models"
                                      : cfg.models_dir;
 
         // Initialize LlamaManager and ModelStorage for inference engine

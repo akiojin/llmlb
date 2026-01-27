@@ -28,7 +28,7 @@ struct ModelResolveResult {
 class ModelResolver {
 public:
     // Constructor
-    // @param local_path: Local cache directory (e.g., ~/.llmlb/models)
+    // @param local_path: Local cache directory (e.g., ~/.xllm/models)
     // @param router_url: Router API base URL for model manifest
     // @param router_api_key: API key for router manifest download (node scope)
     ModelResolver(std::string local_path, std::string router_url, std::string router_api_key = {});

@@ -74,7 +74,7 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
     bool used_file = false;
     bool used_env = false;
 
-    // Optional JSON config file: path from LLM_DL_CONFIG or ~/.llmlb/config.json
+    // Optional JSON config file: path from LLM_DL_CONFIG or ~/.xllm/config.json
     auto load_from_file = [&](const std::filesystem::path& path) {
         if (!std::filesystem::exists(path)) return false;
         try {
@@ -105,7 +105,7 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
     } else {
         try {
             std::filesystem::path home = getEnvValue("HOME").value_or("");
-            auto path = home / std::filesystem::path(".llmlb/config.json");
+            auto path = home / std::filesystem::path(".xllm/config.json");
             if (load_from_file(path)) {
                 used_file = true;
             }
@@ -174,7 +174,7 @@ namespace {
 std::filesystem::path defaultConfigPath() {
     try {
         std::filesystem::path home = getEnvValue("HOME").value_or("");
-        if (!home.empty()) return home / ".llmlb/config.json";
+        if (!home.empty()) return home / ".xllm/config.json";
     } catch (...) {
     }
     return std::filesystem::path();
@@ -205,9 +205,9 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     bool used_env = false;
     bool used_file = false;
 
-    // defaults: ~/.llmlb/models/
+    // defaults: ~/.xllm/models/
     cfg.models_dir = defaultConfigPath().empty()
-                         ? ".llmlb/models"
+                         ? ".xllm/models"
                          : (defaultConfigPath().parent_path() / "models").string();
     cfg.origin_allowlist = splitAllowlistCsv("huggingface.co/*,cdn-lfs.huggingface.co/*");
 

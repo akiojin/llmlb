@@ -1,6 +1,6 @@
 // SPEC-dcaeaec4: ModelStorage - Simple model file management
 // Replaces legacy compat layer with simpler directory structure:
-// ~/.llmlb/models/<model_name>/model.gguf
+// ~/.xllm/models/<model_name>/model.gguf
 #pragma once
 
 #include <string>

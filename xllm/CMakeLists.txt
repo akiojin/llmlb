@@ -237,7 +237,6 @@ add_library(cli_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/repl_session.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/progress_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/ollama_compat.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/serve.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/run.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/pull.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/list.cpp

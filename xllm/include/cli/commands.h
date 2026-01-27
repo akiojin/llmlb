@@ -7,10 +7,8 @@ namespace xllm {
 namespace cli {
 namespace commands {
 
-/// Execute the 'serve' command
-/// @param options Server options (port, host)
-/// @return Exit code (0=success, 1=error)
-int serve(const ServeOptions& options);
+// Note: 'serve' command is implemented directly in main.cpp as it requires
+// access to the run_node() function and server infrastructure.
 
 /// Execute the 'run' command (REPL)
 /// @param options Run options (model, think flags)

@@ -11,3 +11,5 @@ xllm/third_party/
 xllm/build/
 tmp/
 **/tmp/**
+actions-runner/
+.worktrees/

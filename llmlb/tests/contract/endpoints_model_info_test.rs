@@ -116,7 +116,7 @@ async fn test_get_model_info() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!(
+                .uri(format!(
                     "/v0/endpoints/{}/models/llama3:8b/info",
                     endpoint_id
                 ))
@@ -169,7 +169,7 @@ async fn test_model_info_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!(
+                .uri(format!(
                     "/v0/endpoints/{}/models/llama3:8b/info",
                     endpoint_id
                 ))
@@ -256,7 +256,7 @@ async fn test_model_info_model_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!(
+                .uri(format!(
                     "/v0/endpoints/{}/models/nonexistent-model/info",
                     endpoint_id
                 ))
@@ -327,7 +327,7 @@ async fn test_model_info_unsupported_endpoint_type() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!(
+                .uri(format!(
                     "/v0/endpoints/{}/models/some-model/info",
                     endpoint_id
                 ))

@@ -8,14 +8,32 @@
 - xllmがGPUバックエンドでビルドされていること
 - safetensorsモデルを利用可能であること
 
-## 手順（暫定）
+## 手順
 
-1. 量子化方式を決定する（research.mdの結果に従う）
-2. safetensorsモデルを取得する
-3. 量子化方式を指定して推論を実行する
-4. `xllm show` / `xllm list` で量子化情報を確認する
+1. safetensorsモデルを取得する
 
-> 注: 具体的な指定方法（CLI/API/設定）は設計確定後に更新する。
+```bash
+xllm pull openai/gpt-oss-20b
+```
+
+1. KVキャッシュ量子化を指定して推論する（`kv_int8` / `kv_fp8`）
+
+```bash
+curl -sS http://127.0.0.1:32769/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-oss-20b:kv_int8",
+    "messages": [{"role": "user", "content": "Say hello briefly."}],
+    "temperature": 0
+  }'
+```
+
+1. 量子化状態を確認する
+
+```bash
+xllm show openai/gpt-oss-20b:kv_int8
+xllm list
+```
 
 ## 確認ポイント
 

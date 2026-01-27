@@ -165,9 +165,20 @@ std::optional<std::string> load_manifest_quantization(const fs::path& model_dir)
     }
 }
 
+bool is_safetensors_kv_quantization(const std::string& quantization) {
+    return quantization == "kv_int8" || quantization == "kv_fp8";
+}
+
+bool is_safetensors_kv_request(const std::optional<std::string>& quantization) {
+    return quantization.has_value() && is_safetensors_kv_quantization(*quantization);
+}
+
 void apply_manifest_quantization(ModelDescriptor& desc, const fs::path& model_dir) {
     auto quant = load_manifest_quantization(model_dir);
     if (!quant) return;
+    if (desc.format == "safetensors" && !is_safetensors_kv_quantization(*quant)) {
+        return;
+    }
     if (!desc.metadata.has_value() || !desc.metadata->is_object()) {
         desc.metadata = nlohmann::json::object();
     }
@@ -187,6 +198,17 @@ void apply_quantization_request(ModelDescriptor& desc, const std::optional<std::
         desc.metadata = nlohmann::json::object();
     }
     (*desc.metadata)["quantization_request"] = *effective;
+}
+
+void apply_safetensors_kv_quantization(ModelDescriptor& desc, const std::string& quantization) {
+    if (!is_safetensors_kv_quantization(quantization)) return;
+    if (!desc.metadata.has_value() || !desc.metadata->is_object()) {
+        desc.metadata = nlohmann::json::object();
+    }
+    (*desc.metadata)["quantization"] = quantization;
+    (*desc.metadata)["quantization_request"] = quantization;
+    (*desc.metadata)["quantization_target"] = "kv_cache";
+    (*desc.metadata)["quantization_backend"] = desc.runtime;
 }
 
 std::optional<fs::path> resolve_gguf_for_quantization(
@@ -773,9 +795,55 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
     const auto model_dir = fs::path(models_dir_) / dir_name;
 
     const auto manifest_formats = load_manifest_formats(model_dir);
+    const bool safetensors_kv_request = is_safetensors_kv_request(parsed->quantization);
+
+    auto make_safetensors_descriptor = [&](const fs::path& primary) -> std::optional<ModelDescriptor> {
+        std::vector<std::string> architectures;
+        auto rt = detect_runtime_from_config(model_dir, &architectures);
+        if (!rt) return std::nullopt;
+
+        ModelDescriptor desc;
+        desc.name = model_name;
+        desc.runtime = *rt;
+        desc.format = "safetensors";
+        desc.primary_path = primary.string();
+        desc.model_dir = model_dir.string();
+        desc.architectures = std::move(architectures);
+        desc.capabilities = capabilities_for_runtime(desc.runtime);
+        if (auto meta = build_safetensors_metadata(model_dir, primary)) {
+            desc.metadata = std::move(*meta);
+        }
+
+        apply_manifest_quantization(desc, model_dir);
+        apply_quantization_request(desc, parsed->quantization);
+
+        if (parsed->quantization && is_safetensors_kv_quantization(*parsed->quantization)) {
+            apply_safetensors_kv_quantization(desc, *parsed->quantization);
+        } else if (desc.metadata && desc.metadata->is_object()) {
+            const auto quant = desc.metadata->value("quantization", "");
+            if (is_safetensors_kv_quantization(quant)) {
+                apply_safetensors_kv_quantization(desc, quant);
+            }
+        }
+
+        return desc;
+    };
+
     if (!manifest_formats.empty()) {
         if (parsed->quantization.has_value()) {
-            if (std::find(manifest_formats.begin(), manifest_formats.end(), "gguf") == manifest_formats.end()) {
+            if (safetensors_kv_request) {
+                if (std::find(manifest_formats.begin(), manifest_formats.end(), "safetensors") ==
+                    manifest_formats.end()) {
+                    return std::nullopt;
+                }
+                if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+                    return make_safetensors_descriptor(*primary);
+                }
+                return std::nullopt;
+            }
+
+            if (std::find(manifest_formats.begin(), manifest_formats.end(), "gguf") ==
+                manifest_formats.end()) {
                 return std::nullopt;
             }
             if (auto gguf_path = resolve_gguf_path(model_dir, parsed->base, *parsed->quantization)) {
@@ -809,23 +877,16 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
                 }
             } else if (fmt == "safetensors") {
                 if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-                    std::vector<std::string> architectures;
-                    auto rt = detect_runtime_from_config(model_dir, &architectures);
-                    if (!rt) return std::nullopt;
-                    ModelDescriptor desc;
-                    desc.name = model_name;
-                    desc.runtime = *rt;
-                    desc.format = "safetensors";
-                    desc.primary_path = primary->string();
-                    desc.model_dir = model_dir.string();
-                    desc.architectures = std::move(architectures);
-                    desc.capabilities = capabilities_for_runtime(desc.runtime);
-                    if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
-                        desc.metadata = std::move(*meta);
-                    }
-                    return desc;
+                    return make_safetensors_descriptor(*primary);
                 }
             }
+        }
+        return std::nullopt;
+    }
+
+    if (safetensors_kv_request) {
+        if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
+            return make_safetensors_descriptor(*primary);
         }
         return std::nullopt;
     }
@@ -845,21 +906,7 @@ std::optional<ModelDescriptor> ModelStorage::resolveDescriptor(const std::string
 
     if (!parsed->quantization.has_value()) {
         if (auto primary = resolve_safetensors_primary_in_dir(model_dir)) {
-            std::vector<std::string> architectures;
-            auto rt = detect_runtime_from_config(model_dir, &architectures);
-            if (!rt) return std::nullopt;
-            ModelDescriptor desc;
-            desc.name = model_name;
-            desc.runtime = *rt;
-            desc.format = "safetensors";
-            desc.primary_path = primary->string();
-            desc.model_dir = model_dir.string();
-            desc.architectures = std::move(architectures);
-            desc.capabilities = capabilities_for_runtime(desc.runtime);
-            if (auto meta = build_safetensors_metadata(model_dir, *primary)) {
-                desc.metadata = std::move(*meta);
-            }
-            return desc;
+            return make_safetensors_descriptor(*primary);
         }
     }
 
@@ -872,9 +919,18 @@ bool ModelStorage::validateModel(const std::string& model_name) const {
     const std::string dir_name = modelNameToDir(parsed->base);
     const auto model_dir = fs::path(models_dir_) / dir_name;
     auto manifest_formats = load_manifest_formats(model_dir);
+    const bool safetensors_kv_request = is_safetensors_kv_request(parsed->quantization);
     if (!manifest_formats.empty()) {
         if (parsed->quantization.has_value()) {
-            if (std::find(manifest_formats.begin(), manifest_formats.end(), "gguf") == manifest_formats.end()) {
+            if (safetensors_kv_request) {
+                if (std::find(manifest_formats.begin(), manifest_formats.end(), "safetensors") ==
+                    manifest_formats.end()) {
+                    return false;
+                }
+                return resolve_safetensors_primary_in_dir(model_dir).has_value();
+            }
+            if (std::find(manifest_formats.begin(), manifest_formats.end(), "gguf") ==
+                manifest_formats.end()) {
                 return false;
             }
             return resolve_gguf_path(model_dir, parsed->base, *parsed->quantization).has_value();
@@ -888,6 +944,9 @@ bool ModelStorage::validateModel(const std::string& model_name) const {
             }
         }
         return false;
+    }
+    if (safetensors_kv_request) {
+        return resolve_safetensors_primary_in_dir(model_dir).has_value();
     }
     if (resolve_gguf_path(model_dir, parsed->base, parsed->quantization.value_or("")).has_value()) return true;
     if (!parsed->quantization.has_value()) {

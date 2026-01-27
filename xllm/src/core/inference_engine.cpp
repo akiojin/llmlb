@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <thread>
 #include <type_traits>
@@ -372,6 +373,20 @@ std::string buildChatMLPrompt(const std::vector<ChatMessage>& messages) {
 }
 
 namespace {
+
+bool is_safetensors_kv_quantization(const std::string& quantization) {
+    return quantization == "kv_int8" || quantization == "kv_fp8";
+}
+
+std::string unsupported_quantization_message(const std::string& quantization,
+                                             const ModelDescriptor& descriptor) {
+    if (descriptor.runtime == "safetensors_cpp") {
+        return "Unsupported quantization '" + quantization +
+               "' for safetensors (supported: kv_int8, kv_fp8)";
+    }
+    return "Unsupported quantization '" + quantization +
+           "' for runtime: " + descriptor.runtime;
+}
 
 // 制御トークンを除去してトリム
 static std::string stripControlTokens(std::string text) {
@@ -1121,7 +1136,8 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
         return result;
     }
 
-    if (!ModelStorage::parseModelName(model_name).has_value()) {
+    auto parsed = ModelStorage::parseModelName(model_name);
+    if (!parsed.has_value()) {
         result.error_message = "Invalid model name (invalid quantization format): " + model_name;
         result.error_code = EngineErrorCode::kUnsupported;
         return result;
@@ -1129,8 +1145,24 @@ ModelLoadResult InferenceEngine::loadModel(const std::string& model_name, const 
 
     auto desc = resolve_descriptor(model_storage_, model_name);
     if (!desc) {
+        if (parsed->quantization.has_value()) {
+            auto base_desc = resolve_descriptor(model_storage_, parsed->base);
+            if (base_desc) {
+                result.error_message = unsupported_quantization_message(*parsed->quantization, *base_desc);
+                result.error_code = EngineErrorCode::kUnsupported;
+                return result;
+            }
+        }
         result.error_message = "Model not found: " + model_name;
         result.error_code = EngineErrorCode::kLoadFailed;
+        return result;
+    }
+
+    if (parsed->quantization.has_value() &&
+        is_safetensors_kv_quantization(*parsed->quantization) &&
+        desc->runtime != "safetensors_cpp") {
+        result.error_message = unsupported_quantization_message(*parsed->quantization, *desc);
+        result.error_code = EngineErrorCode::kUnsupported;
         return result;
     }
 

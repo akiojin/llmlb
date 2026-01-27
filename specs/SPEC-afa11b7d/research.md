@@ -10,6 +10,37 @@
 - 量子化指定は現状GGUF向けのみで、safetensorsには適用されない
 - safetensors_cppはGPUバックエンド必須（CPU推論は不可）
 
+## safetensors.cppの量子化API実態
+
+- safetensors.cppのC APIは**重み量子化の選択**を受け取らない
+- 量子化として外部から制御できるのは**KVキャッシュ量子化**のみ
+  - `stcpp_context_params.kv_cache_quant`（bool）
+  - `stcpp_context_params.kv_quant_type`（enum）
+    - `STCPP_KV_QUANT_INT8`
+    - `STCPP_KV_QUANT_FP8`
+- したがって本SPECでいう「safetensors量子化」は
+  **KVキャッシュ量子化（VRAM最適化）**を指す
+
+## 対応方式（本SPECの確定方針）
+
+### 量子化方式一覧（safetensors）
+
+- `kv_int8`: KVキャッシュをINT8量子化
+- `kv_fp8`: KVキャッシュをFP8量子化
+- 量子化未指定: 従来どおり非量子化（KV量子化なし）
+
+### バックエンド制約
+
+- safetensors_cppはGPUバックエンド（Metal/CUDA/ROCm/Vulkan）前提
+- KVキャッシュ量子化も同じ前提で扱う（CPU向けの特例は設けない）
+
+### 指定の入口（最小構成）
+
+- 量子化指定は**モデル名サフィックス**で受け付ける
+  - 例: `model:kv_int8`, `model:kv_fp8`
+- 既存のGGUF量子化指定（`model:Q4_K_M`）と共存させる
+  - `kv_*`はsafetensors専用の予約トークンとして扱う
+
 ## 調査項目
 
 1. **safetensors.cppの量子化対応状況**
@@ -36,11 +67,9 @@
 ## 既知の候補・前提
 
 - gpt-oss系モデルはMXFP4などの低精度表現を含む可能性がある（SPEC-69549000の記述に基づく）
-- 量子化方式の候補はsafetensors.cppの対応状況に依存
+- safetensors.cppの公開API上、外部指定できる量子化はKVキャッシュのみ
 
-## 未解決の決定
+## 未解決の決定（残タスク）
 
-- 対応する量子化方式の一覧
-- 量子化指定の正規化ルール（命名と表記）
-- 量子化方式とモデルアーキテクチャの互換条件
-- 量子化が失敗した場合のエラー文言/コード
+- 量子化指定時のエラー文言（CLI/API）をどこまで揃えるか
+- KV量子化の実計測手順（VRAM差分の受け入れ基準）

@@ -490,8 +490,22 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
         // Initialize OllamaCompat for reading ~/.ollama/models/
         xllm::cli::OllamaCompat ollama_compat;
 
+        auto quantization_level_for = [](const xllm::ModelDescriptor& desc) -> std::string {
+            if (!desc.metadata || !desc.metadata->is_object()) {
+                return "";
+            }
+            const auto& meta = *desc.metadata;
+            if (meta.contains("quantization") && meta["quantization"].is_string()) {
+                return meta["quantization"].get<std::string>();
+            }
+            if (meta.contains("quantization_request") && meta["quantization_request"].is_string()) {
+                return meta["quantization_request"].get<std::string>();
+            }
+            return "";
+        };
+
         // Ollama-compatible API: GET /api/tags - list all available models
-        server.getServer().Get("/api/tags", [&model_storage, &ollama_compat, &engine](const httplib::Request&, httplib::Response& res) {
+        server.getServer().Get("/api/tags", [&model_storage, &ollama_compat, &engine, &quantization_level_for](const httplib::Request&, httplib::Response& res) {
             nlohmann::json models_array = nlohmann::json::array();
 
             // List llmlb models
@@ -510,7 +524,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
                 model_obj["details"]["format"] = desc.format;
                 model_obj["details"]["family"] = "";
                 model_obj["details"]["parameter_size"] = "";
-                model_obj["details"]["quantization_level"] = "";
+                model_obj["details"]["quantization_level"] = quantization_level_for(desc);
                 models_array.push_back(model_obj);
             }
 
@@ -570,7 +584,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("Ollama-compatible endpoint registered: GET /api/ps");
 
         // Ollama-compatible API: POST /api/show - show model information
-        server.getServer().Post("/api/show", [&model_storage, &ollama_compat](const httplib::Request& req, httplib::Response& res) {
+        server.getServer().Post("/api/show", [&model_storage, &ollama_compat, &quantization_level_for](const httplib::Request& req, httplib::Response& res) {
             auto body = nlohmann::json::parse(req.body, nullptr, false);
             if (body.is_discarded() || !body.contains("name")) {
                 res.status = 400;
@@ -613,7 +627,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
                 response["details"]["format"] = descriptor->format;
                 response["details"]["family"] = "";
                 response["details"]["parameter_size"] = "";
-                response["details"]["quantization_level"] = "";
+                response["details"]["quantization_level"] = quantization_level_for(*descriptor);
                 response["model_info"] = nlohmann::json::object();
                 response["model_info"]["name"] = descriptor->name;
                 response["model_info"]["path"] = descriptor->primary_path;

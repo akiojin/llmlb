@@ -37,26 +37,26 @@
 
 ### Test
 
-- [ ] T201: LRUアンロードのunitテスト作成
+- [x] T201: LRUアンロードのunitテスト作成（llama_manager_test.cpp: EvictForVram*）
 - [ ] T202: アクティブ保護のテスト作成
 - [ ] T203: Tensor Parallelism自動化のテスト作成
-- [ ] T210: アイドルタイムアウトのテスト作成
+- [x] T210: アイドルタイムアウトのテスト作成（model_loader_test.cpp: IdleModelsAreUnloadedAfterTimeout）
 - [ ] T211: GPU Offloadのテスト作成
 
 ### Core
 
-- [ ] T204: VRAM使用量監視機能
-- [ ] T205: LRUアンロードロジック実装
+- [x] T204: VRAM使用量監視機能（ResourceMonitor実装済み）
+- [x] T205: LRUアンロードロジック実装（evictForVram, getLeastRecentlyUsedModel）
 - [ ] T206: アクティブモデル保護ロジック
-- [ ] T207: [P] GPU検出・VRAM計算
-- [ ] T208: [P] split比率自動決定
-- [ ] T212: アイドルタイムアウト実装（config.yamlで設定可能）
-- [ ] T213: GPU Offload実装（n_gpu_layers自動調整）
+- [x] T207: [P] GPU検出・VRAM計算（GpuDetector実装済み）
+- [x] T208: [P] split比率自動決定（setGpuLayerSplit実装済み）
+- [x] T212: アイドルタイムアウト実装（setIdleTimeout, unloadIdleModels実装済み）
+- [x] T213: GPU Offload実装（n_gpu_layers自動設定）
 
 ### Integration
 
 - [ ] T209: 複数モデルロード→VRAM枯渇→LRUアンロードの統合テスト
-- [ ] T214: アイドル→自動アンロードの統合テスト
+- [x] T214: アイドル→自動アンロードの統合テスト（model_lifecycle_test.cpp）
 
 ## Phase 3: マルチモーダル強化
 

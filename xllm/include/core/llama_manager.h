@@ -127,6 +127,13 @@ public:
     // LRU: 最も古くアクセスされたモデルを取得
     std::optional<std::string> getLeastRecentlyUsedModel() const;
 
+    // T202/T206: アクティブ保護（推論中のモデルはLRU evictionから保護）
+    // 推論開始時にmarkAsActive、終了時にmarkAsInactiveを呼び出す
+    void markAsActive(const std::string& model_path);
+    void markAsInactive(const std::string& model_path);
+    bool isActive(const std::string& model_path) const;
+    size_t activeCount() const;
+
 private:
     std::string models_dir_;
     mutable std::mutex mutex_;
@@ -146,6 +153,9 @@ private:
 
     // アクセス時刻追跡
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_access_;
+
+    // T202/T206: アクティブ保護（推論中のモデル）
+    std::unordered_set<std::string> active_models_;
 
     // 正規化されたパスを取得
     std::string canonicalizePath(const std::string& path) const;

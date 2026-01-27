@@ -412,6 +412,7 @@ std::optional<std::chrono::steady_clock::time_point> LlamaManager::getLastAccess
 }
 
 // LRU: 最も古くアクセスされたモデルを取得
+// T206: アクティブなモデル（推論中）はスキップ
 std::optional<std::string> LlamaManager::getLeastRecentlyUsedModel() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -423,6 +424,11 @@ std::optional<std::string> LlamaManager::getLeastRecentlyUsedModel() const {
     std::chrono::steady_clock::time_point oldest_time = std::chrono::steady_clock::time_point::max();
 
     for (const auto& pair : loaded_models_) {
+        // T206: アクティブなモデルはLRU候補から除外
+        if (active_models_.count(pair.first) > 0) {
+            continue;
+        }
+
         auto it = last_access_.find(pair.first);
         if (it != last_access_.end()) {
             if (it->second < oldest_time) {
@@ -565,6 +571,35 @@ size_t LlamaManager::evictForVram(size_t required_vram) {
 
     spdlog::info("VRAM recovery: freed {}B (requested {}B)", freed, required_vram);
     return freed;
+}
+
+// =============================================================================
+// T202/T206: アクティブ保護（推論中のモデルはLRU evictionから保護）
+// =============================================================================
+
+void LlamaManager::markAsActive(const std::string& model_path) {
+    std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    active_models_.insert(canonical);
+    spdlog::debug("Model marked as active: {}", canonical);
+}
+
+void LlamaManager::markAsInactive(const std::string& model_path) {
+    std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    active_models_.erase(canonical);
+    spdlog::debug("Model marked as inactive: {}", canonical);
+}
+
+bool LlamaManager::isActive(const std::string& model_path) const {
+    std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    return active_models_.count(canonical) > 0;
+}
+
+size_t LlamaManager::activeCount() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return active_models_.size();
 }
 
 }  // namespace xllm

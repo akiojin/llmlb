@@ -120,11 +120,12 @@ TEST(OpenAIEndpointsTest, AcceptsLoraParameter) {
     server.start();
 
     httplib::Client cli("127.0.0.1", 18097);
-    std::string body = R\"({\"model\":\"gpt-oss-7b\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"lora\":[{\"lora\":\"adapter.gguf\",\"scale\":0.7}]})\";
+    std::string body =
+        R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"hello"}],"lora":[{"lora":"adapter.gguf","scale":0.7}]})";
     auto chat = cli.Post("/v1/chat/completions", body, "application/json");
     ASSERT_TRUE(chat);
     EXPECT_EQ(chat->status, 200);
-    EXPECT_NE(chat->body.find(\"Response to\"), std::string::npos);
+    EXPECT_NE(chat->body.find("Response to"), std::string::npos);
 
     server.stop();
 }

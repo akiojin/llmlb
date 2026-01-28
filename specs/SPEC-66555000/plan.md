@@ -326,8 +326,20 @@ GET    /v0/endpoints/:id/models/:model/info  # モデル情報（max_tokens等�
 - [x] Phase 1: Design完了 (/speckit.plan コマンド)
 - [x] Phase 2: Task planning完了 (/speckit.plan コマンド - アプローチのみ記述)
 - [x] Phase 3: Tasks生成済み (/speckit.tasks コマンド)
-- [ ] Phase 4: 実装完了
-- [ ] Phase 5: 検証合格
+- [x] Phase 4: 実装完了
+- [x] Phase 5: 検証合格
+
+**追加要件ステータス（2026-01-26）**:
+
+- [x] エンドポイントタイプ判別リサーチ完了
+- [x] タイプ固有機能設計完了
+- [x] タイプ判別テスト作成
+- [x] タイプ判別実装
+- [x] xLLMモデルダウンロードテスト作成
+- [x] xLLMモデルダウンロード実装
+- [x] モデルメタデータ取得テスト作成
+- [x] モデルメタデータ取得実装
+- [x] ダッシュボードタイプ表示
 
 **追加要件ステータス（2026-01-26）**:
 

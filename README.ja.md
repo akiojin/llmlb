@@ -467,7 +467,7 @@ curl http://localhost:32768/v1/chat/completions \
 LLM Load Balancer は、ローカルの llama.cpp ランタイムを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
 
 ### コンポーネント
-- **Router (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
+- **LLM Load Balancer (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
 - **Local Runtimes (C++ / llama.cpp)**: GGUF モデルを提供します。ロードバランサーに登録し、ハートビートを送信します。
 - **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ロードバランサーは対応するクラウド API に転送します。
 - **Storage**: ロードバランサーのメタデータ用の SQLite。モデルファイルは各ランタイムに存在します。
@@ -484,7 +484,7 @@ Draw.ioソース: `docs/diagrams/architecture.drawio`（Page: システム構成
 Client
   │ POST /v1/chat/completions
   ▼
-Router (OpenAI-compatible)
+LLM Load Balancer (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
   └─ No prefix → Scheduler → Local Runtime
                        └─ llama.cpp inference → Response

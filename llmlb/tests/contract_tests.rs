@@ -28,6 +28,19 @@ mod endpoints_test_test;
 #[path = "contract/endpoints_sync_test.rs"]
 mod endpoints_sync_test;
 
+// SPEC-66555000: エンドポイントタイプ関連の契約テスト
+#[path = "contract/endpoints_type_filter_test.rs"]
+mod endpoints_type_filter_test;
+
+#[path = "contract/endpoints_download_test.rs"]
+mod endpoints_download_test;
+
+#[path = "contract/endpoints_download_progress_test.rs"]
+mod endpoints_download_progress_test;
+
+#[path = "contract/endpoints_model_info_test.rs"]
+mod endpoints_model_info_test;
+
 #[path = "contract/models_api_test.rs"]
 mod models_api_test;
 

@@ -462,23 +462,62 @@ mod tests {
     #[tokio::test]
     #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_nodes_endpoint_returns_json() {
-        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
-        unimplemented!("Migrate to EndpointRegistry-based test")
+        let state = test_state().await;
+        let mut app = create_app(state);
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/v0/dashboard/endpoints")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
     #[tokio::test]
     #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_overview_endpoint_returns_all_sections() {
-        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
-        unimplemented!("Migrate to EndpointRegistry-based test")
+        let state = test_state().await;
+        let mut app = create_app(state);
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/v0/dashboard/overview")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
     #[tokio::test]
     #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_metrics_endpoint_returns_history() {
-        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
-        unimplemented!("Migrate to EndpointRegistry-based test")
+        let state = test_state().await;
+        let mut app = create_app(state);
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/v0/dashboard/request-history")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

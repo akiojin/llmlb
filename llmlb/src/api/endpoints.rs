@@ -303,6 +303,8 @@ pub struct EndpointModelResponse {
     pub model_id: String,
     /// 能力（chat, embeddings等）
     pub capabilities: Option<Vec<String>>,
+    /// 最大トークン数（xLLM/Ollamaで取得される場合がある）
+    pub max_tokens: Option<u32>,
     /// 最終確認時刻
     pub last_checked: Option<String>,
 }
@@ -312,6 +314,7 @@ impl From<EndpointModel> for EndpointModelResponse {
         EndpointModelResponse {
             model_id: m.model_id,
             capabilities: m.capabilities,
+            max_tokens: m.max_tokens,
             last_checked: m.last_checked.map(|dt| dt.to_rfc3339()),
         }
     }

@@ -52,10 +52,7 @@ async fn test_download_reject_unknown_type() {
 
     let error_body: Value = download_response.json().await.unwrap();
     assert!(
-        error_body["error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("xLLM"),
+        error_body["error"].as_str().unwrap_or("").contains("xLLM"),
         "Error message should mention xLLM requirement"
     );
 }

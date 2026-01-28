@@ -232,7 +232,7 @@ async fn run_server(config: ServerConfig) {
         .await
         .expect("Failed to bind to address");
 
-    info!("Router server listening on {}", bind_addr);
+    info!("LLM Load Balancer server listening on {}", bind_addr);
 
     axum::serve(
         listener,

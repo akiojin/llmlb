@@ -8,13 +8,14 @@
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::support::lb::spawn_test_lb;
+use crate::support::{lb::spawn_test_lb, xllm::spawn_mock_xllm};
 
 /// US8-シナリオ1: xLLMエンドポイントでモデルダウンロードをリクエスト
 #[tokio::test]
 #[ignore = "ダウンロードAPI未実装 - T123で実装後に有効化"]
 async fn test_xllm_model_download_request() {
     let server = spawn_test_lb().await;
+    let xllm = spawn_mock_xllm().await;
     let client = Client::new();
 
     // xLLMタイプのエンドポイントを登録（モックが必要）
@@ -23,7 +24,7 @@ async fn test_xllm_model_download_request() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:8080"  // xLLMモックサーバー
+            "base_url": format!("http://{}", xllm.addr())
         }))
         .send()
         .await
@@ -61,6 +62,7 @@ async fn test_xllm_model_download_request() {
 #[ignore = "ダウンロードAPI未実装 - T124で実装後に有効化"]
 async fn test_xllm_model_download_progress() {
     let server = spawn_test_lb().await;
+    let xllm = spawn_mock_xllm().await;
     let client = Client::new();
 
     // エンドポイント登録
@@ -69,7 +71,7 @@ async fn test_xllm_model_download_progress() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:8080"
+            "base_url": format!("http://{}", xllm.addr())
         }))
         .send()
         .await
@@ -126,6 +128,7 @@ async fn test_xllm_model_download_progress() {
 #[ignore = "ダウンロードAPI未実装 - T123-T124で実装後に有効化"]
 async fn test_xllm_model_download_multiple() {
     let server = spawn_test_lb().await;
+    let xllm = spawn_mock_xllm().await;
     let client = Client::new();
 
     // エンドポイント登録
@@ -134,7 +137,7 @@ async fn test_xllm_model_download_multiple() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:8080"
+            "base_url": format!("http://{}", xllm.addr())
         }))
         .send()
         .await
@@ -183,6 +186,7 @@ async fn test_xllm_model_download_multiple() {
 #[ignore = "ダウンロードAPI未実装 - 全タスク実装後に有効化"]
 async fn test_xllm_model_download_completion() {
     let server = spawn_test_lb().await;
+    let xllm = spawn_mock_xllm().await;
     let client = Client::new();
 
     // エンドポイント登録
@@ -191,7 +195,7 @@ async fn test_xllm_model_download_completion() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:8080"
+            "base_url": format!("http://{}", xllm.addr())
         }))
         .send()
         .await

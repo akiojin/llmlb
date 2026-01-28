@@ -8,13 +8,14 @@
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::support::lb::spawn_test_lb;
+use crate::support::{lb::spawn_test_lb, ollama::spawn_mock_ollama, xllm::spawn_mock_xllm};
 
 /// US9-シナリオ1: xLLMエンドポイントからモデルメタデータを取得
 #[tokio::test]
 #[ignore = "メタデータAPI未実装 - T125, T129で実装後に有効化"]
 async fn test_xllm_model_metadata_retrieval() {
     let server = spawn_test_lb().await;
+    let xllm = spawn_mock_xllm().await;
     let client = Client::new();
 
     // xLLMエンドポイント登録（モックが必要）
@@ -23,7 +24,7 @@ async fn test_xllm_model_metadata_retrieval() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:8080"
+            "base_url": format!("http://{}", xllm.addr())
         }))
         .send()
         .await
@@ -31,6 +32,19 @@ async fn test_xllm_model_metadata_retrieval() {
 
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
+
+    // モデル同期を実行してモデルを登録
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sync_response.status().as_u16(), 200);
 
     // モデルメタデータ取得
     let metadata_response = client
@@ -66,6 +80,7 @@ async fn test_xllm_model_metadata_retrieval() {
 #[ignore = "メタデータAPI未実装 - T125, T130で実装後に有効化"]
 async fn test_ollama_model_metadata_retrieval() {
     let server = spawn_test_lb().await;
+    let ollama = spawn_mock_ollama().await;
     let client = Client::new();
 
     // Ollamaエンドポイント登録（モックが必要）
@@ -74,7 +89,7 @@ async fn test_ollama_model_metadata_retrieval() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Server",
-            "base_url": "http://localhost:11434"
+            "base_url": format!("http://{}", ollama.addr())
         }))
         .send()
         .await
@@ -82,6 +97,19 @@ async fn test_ollama_model_metadata_retrieval() {
 
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
+
+    // モデル同期を実行してモデルを登録
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sync_response.status().as_u16(), 200);
 
     // モデルメタデータ取得
     let metadata_response = client
@@ -113,6 +141,7 @@ async fn test_ollama_model_metadata_retrieval() {
 #[ignore = "メタデータAPI未実装 - T133で実装後に有効化"]
 async fn test_model_sync_retrieves_max_tokens() {
     let server = spawn_test_lb().await;
+    let xllm = spawn_mock_xllm().await;
     let client = Client::new();
 
     // xLLMエンドポイント登録（モックが必要）
@@ -121,7 +150,7 @@ async fn test_model_sync_retrieves_max_tokens() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:8080"
+            "base_url": format!("http://{}", xllm.addr())
         }))
         .send()
         .await
@@ -206,8 +235,7 @@ async fn test_vllm_metadata_not_supported() {
 
     // 400 Bad Request または 404 Not Foundを期待
     assert!(
-        metadata_response.status().as_u16() == 400
-            || metadata_response.status().as_u16() == 404,
+        metadata_response.status().as_u16() == 400 || metadata_response.status().as_u16() == 404,
         "vLLM should not support metadata retrieval"
     );
 }
@@ -217,6 +245,7 @@ async fn test_vllm_metadata_not_supported() {
 #[ignore = "メタデータAPI未実装 - T125で実装後に有効化"]
 async fn test_nonexistent_model_metadata() {
     let server = spawn_test_lb().await;
+    let xllm = spawn_mock_xllm().await;
     let client = Client::new();
 
     // エンドポイント登録
@@ -225,7 +254,7 @@ async fn test_nonexistent_model_metadata() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Server",
-            "base_url": "http://localhost:8080"
+            "base_url": format!("http://{}", xllm.addr())
         }))
         .send()
         .await
@@ -233,6 +262,19 @@ async fn test_nonexistent_model_metadata() {
 
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
+
+    // モデル同期を実行してモデルを登録
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sync_response.status().as_u16(), 200);
 
     // 存在しないモデルのメタデータ取得
     let metadata_response = client

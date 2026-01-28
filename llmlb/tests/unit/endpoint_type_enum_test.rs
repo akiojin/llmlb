@@ -3,26 +3,55 @@
 //! T139: EndpointType列挙型のunit test
 
 use llmlb::types::endpoint::EndpointType;
-use serde_json;
 
 /// JSON シリアライズ: snake_case形式
 #[test]
 fn test_json_serialization() {
-    assert_eq!(serde_json::to_string(&EndpointType::Xllm).unwrap(), "\"xllm\"");
-    assert_eq!(serde_json::to_string(&EndpointType::Ollama).unwrap(), "\"ollama\"");
-    assert_eq!(serde_json::to_string(&EndpointType::Vllm).unwrap(), "\"vllm\"");
-    assert_eq!(serde_json::to_string(&EndpointType::OpenaiCompatible).unwrap(), "\"openai_compatible\"");
-    assert_eq!(serde_json::to_string(&EndpointType::Unknown).unwrap(), "\"unknown\"");
+    assert_eq!(
+        serde_json::to_string(&EndpointType::Xllm).unwrap(),
+        "\"xllm\""
+    );
+    assert_eq!(
+        serde_json::to_string(&EndpointType::Ollama).unwrap(),
+        "\"ollama\""
+    );
+    assert_eq!(
+        serde_json::to_string(&EndpointType::Vllm).unwrap(),
+        "\"vllm\""
+    );
+    assert_eq!(
+        serde_json::to_string(&EndpointType::OpenaiCompatible).unwrap(),
+        "\"openai_compatible\""
+    );
+    assert_eq!(
+        serde_json::to_string(&EndpointType::Unknown).unwrap(),
+        "\"unknown\""
+    );
 }
 
 /// JSON デシリアライズ: snake_case形式
 #[test]
 fn test_json_deserialization() {
-    assert_eq!(serde_json::from_str::<EndpointType>("\"xllm\"").unwrap(), EndpointType::Xllm);
-    assert_eq!(serde_json::from_str::<EndpointType>("\"ollama\"").unwrap(), EndpointType::Ollama);
-    assert_eq!(serde_json::from_str::<EndpointType>("\"vllm\"").unwrap(), EndpointType::Vllm);
-    assert_eq!(serde_json::from_str::<EndpointType>("\"openai_compatible\"").unwrap(), EndpointType::OpenaiCompatible);
-    assert_eq!(serde_json::from_str::<EndpointType>("\"unknown\"").unwrap(), EndpointType::Unknown);
+    assert_eq!(
+        serde_json::from_str::<EndpointType>("\"xllm\"").unwrap(),
+        EndpointType::Xllm
+    );
+    assert_eq!(
+        serde_json::from_str::<EndpointType>("\"ollama\"").unwrap(),
+        EndpointType::Ollama
+    );
+    assert_eq!(
+        serde_json::from_str::<EndpointType>("\"vllm\"").unwrap(),
+        EndpointType::Vllm
+    );
+    assert_eq!(
+        serde_json::from_str::<EndpointType>("\"openai_compatible\"").unwrap(),
+        EndpointType::OpenaiCompatible
+    );
+    assert_eq!(
+        serde_json::from_str::<EndpointType>("\"unknown\"").unwrap(),
+        EndpointType::Unknown
+    );
 }
 
 /// JSON ラウンドトリップ
@@ -47,19 +76,37 @@ fn test_json_roundtrip() {
 #[test]
 fn test_from_str_valid() {
     assert_eq!("xllm".parse::<EndpointType>().unwrap(), EndpointType::Xllm);
-    assert_eq!("ollama".parse::<EndpointType>().unwrap(), EndpointType::Ollama);
+    assert_eq!(
+        "ollama".parse::<EndpointType>().unwrap(),
+        EndpointType::Ollama
+    );
     assert_eq!("vllm".parse::<EndpointType>().unwrap(), EndpointType::Vllm);
-    assert_eq!("openai_compatible".parse::<EndpointType>().unwrap(), EndpointType::OpenaiCompatible);
-    assert_eq!("unknown".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
+    assert_eq!(
+        "openai_compatible".parse::<EndpointType>().unwrap(),
+        EndpointType::OpenaiCompatible
+    );
+    assert_eq!(
+        "unknown".parse::<EndpointType>().unwrap(),
+        EndpointType::Unknown
+    );
 }
 
 /// FromStr: 不正値はUnknownにフォールバック
 #[test]
 fn test_from_str_invalid_fallback() {
-    assert_eq!("invalid_type".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
+    assert_eq!(
+        "invalid_type".parse::<EndpointType>().unwrap(),
+        EndpointType::Unknown
+    );
     assert_eq!("".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
-    assert_eq!("XLLM".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
-    assert_eq!("Ollama".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
+    assert_eq!(
+        "XLLM".parse::<EndpointType>().unwrap(),
+        EndpointType::Unknown
+    );
+    assert_eq!(
+        "Ollama".parse::<EndpointType>().unwrap(),
+        EndpointType::Unknown
+    );
 }
 
 /// Display: as_str()と一致
@@ -100,7 +147,7 @@ fn test_default() {
 fn test_clone_copy() {
     let t1 = EndpointType::Xllm;
     let t2 = t1; // Copy
-    let t3 = t1.clone(); // Clone
+    let t3 = t1; // Copy
 
     assert_eq!(t1, t2);
     assert_eq!(t1, t3);

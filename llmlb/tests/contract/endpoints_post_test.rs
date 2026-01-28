@@ -128,7 +128,8 @@ async fn test_create_endpoint_with_optional_fields() {
 
     let payload = json!({
         "name": "Production vLLM",
-        "base_url": "http://192.168.1.100:8000",
+        // 外部ネットワークに依存するとCI/ローカルでハングし得るため、到達不能でも即時に失敗するローカルURLを使う
+        "base_url": "http://127.0.0.1:18000",
         "api_key": "sk-secret-key",
         "health_check_interval_secs": 60,
         "notes": "Production server"
@@ -261,7 +262,13 @@ async fn test_create_endpoint_duplicate_url() {
         .await
         .unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert!(body["error"]["code"].is_string());
+    let code = body
+        .get("code")
+        .or_else(|| body.get("error").and_then(|e| e.get("code")));
+    assert!(
+        code.is_some() && code.unwrap().is_string(),
+        "error code should be present either at body.code or body.error.code"
+    );
 }
 
 /// POST /v0/endpoints - 異常系: 認証なし

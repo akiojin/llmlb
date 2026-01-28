@@ -1,5 +1,7 @@
 # タスク: SPEC-11106000 Hugging Face URL 登録（変換なし）
 
+**ステータス**: 完了
+
 ## 方針
 - TDD順で進める。契約→Integration→E2E→Unitの順。
 - Web/CLI/Load Balancerの3面を並列化できるところは[P]マーク。

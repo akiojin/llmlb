@@ -1,5 +1,7 @@
 # タスク: ロードバランサー負荷最適化
 
+**ステータス**: 完了
+
 **入力**: `/specs/SPEC-35375000/`の設計ドキュメント
 **前提条件**: plan.md (必須)
 
@@ -137,6 +139,8 @@ T022 → T023 → T024 → T025 (仕上げ)
 
 ```text
 # T016-T020 を並列実行:
+
+**ステータス**: 完了
 Task: "llmlb/src/api/proxy.rs の Client::new() を置換"
 Task: "llmlb/src/api/openai.rs の Client::new() を置換"
 Task: "llmlb/src/api/models.rs の Client::new() を置換"

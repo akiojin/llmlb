@@ -4,8 +4,9 @@
 **ステータス**: 完了（実モデル検証済み、性能はモック近似）
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
-**注記**: 基本実装とテストは完了。実モデル検証（llmlb→xLLM, base64/URL/複数/stream）
-を実施。性能はモック近似のまま。xLLMはllama.cppのmultimodal supportをラップして使用。
+**注記**: Vision API実装完了。契約テスト・統合テスト合格。
+実モデル検証（llmlb→xLLM, base64/URL/複数/stream）を実施。
+性能はモック近似のまま。xLLMはllama.cppのmultimodal supportをラップして使用。
 
 ## 技術スタック
 
@@ -31,11 +32,11 @@
   - ✅ test_supported_image_formats (FR-007: JPEG/PNG/GIF/WebP) - 合格
   - ✅ test_vision_streaming_response (FR-005)
 - [x] T003 [P] `llmlb/tests/contract/vision_error_test.rs` にエラーハンドリング契約テスト
-  - ✅ test_image_request_to_non_vision_model_returns_400 (FR-004)
-  - ✅ test_image_size_limit_exceeded (FR-008: 10MB制限)
-  - ✅ test_image_count_limit_exceeded (FR-009: 10枚制限)
-  - ✅ test_invalid_base64_encoding (エッジケース)
-  - ✅ test_unsupported_image_format (エッジケース: TIFF等)
+  - ✅ test_image_request_to_non_vision_model_returns_400 (FR-004) - 合格
+  - ✅ test_image_size_limit_exceeded (FR-008: 10MB制限) - 合格（413も許容）
+  - ✅ test_image_count_limit_exceeded (FR-009: 10枚制限) - 合格
+  - ✅ test_invalid_base64_encoding (エッジケース) - 合格
+  - ✅ test_unsupported_image_format (エッジケース: TIFF等) - 合格
 - [x] T004 [P] `llmlb/tests/contract/vision_capabilities_test.rs` にcapabilities契約テスト
   - ✅ test_vision_model_has_image_understanding_capability (FR-006) - 合格
   - ✅ test_text_model_has_no_image_understanding_capability - 合格
@@ -137,8 +138,11 @@ Task T004: llmlb/tests/contract/vision_capabilities_test.rs
 - [x] 画像URL付きchat completionsが正常動作（実モデル確認）
 - [x] Base64画像付きリクエストが正常動作（実モデル確認）
 - [x] 複数画像（最大10枚）が処理可能（実モデル確認: 2枚）
-- [x] Vision非対応モデルへのリクエストが400エラー
+- [x] Vision非対応モデルへのリクエストが400エラー（契約テスト合格）
 - [x] `/v1/models` に `image_understanding` capability表示（テスト合格）
+- [x] 画像サイズ制限（10MB）が検証される（契約テスト合格、413も許容）
+- [x] 画像フォーマット検証（TIFF等は拒否）（契約テスト合格）
+- [x] Base64エンコード検証（不正値は拒否）（契約テスト合格）
 - [x] ストリーミングレスポンス対応（実モデルSSEで検証）
 - [x] 1024x1024画像の処理が5秒以内（モック近似）
 - [x] すべてのテストが実装より先にある (TDD RED完了)

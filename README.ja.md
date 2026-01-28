@@ -105,6 +105,63 @@ http://localhost:32768/dashboard
 | **vLLM** | vLLM推論サーバー | `GET /v1/models` |
 | **OpenAI互換** | その他のOpenAI互換API | `GET /v1/models` |
 
+### エンドポイントタイプ自動判別
+
+エンドポイント登録時に、サーバータイプが自動的に判別されます。
+
+**判別優先度:**
+
+1. **xLLM**: `GET /v0/system` で `xllm_version` フィールドを検出
+2. **Ollama**: `GET /api/tags` が成功
+3. **vLLM**: Server ヘッダーに "vllm" が含まれる
+4. **OpenAI互換**: `GET /v1/models` が成功
+5. **Unknown**: 判別不能（エンドポイントがオフラインの場合）
+
+**タイプ別機能:**
+
+| 機能 | xLLM | Ollama | vLLM | OpenAI互換 |
+|------|------|--------|------|-----------|
+| モデルダウンロード | ✓ | - | - | - |
+| モデルメタデータ取得 | ✓ | ✓ | - | - |
+| max_tokens自動取得 | ✓ | ✓ | - | - |
+
+### xLLM連携（モデルダウンロード）
+
+xLLMタイプのエンドポイントでは、ロードバランサーからモデルのダウンロードを指示できます。
+
+```bash
+# ダウンロード開始
+curl -X POST http://localhost:32768/v0/endpoints/{id}/download \
+  -H "Authorization: Bearer sk_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama-3.2-1b"}'
+
+# 進捗確認
+curl "http://localhost:32768/v0/endpoints/{id}/download/progress?model=llama-3.2-1b" \
+  -H "Authorization: Bearer sk_your_api_key"
+```
+
+ダッシュボードからも「Download Model」ボタンでダウンロードを開始できます。
+
+### モデルメタデータ取得
+
+xLLMおよびOllamaエンドポイントでは、モデルのコンテキスト長などのメタデータを取得できます。
+
+```bash
+curl http://localhost:32768/v0/endpoints/{id}/models/{model_id}/info \
+  -H "Authorization: Bearer sk_your_api_key"
+```
+
+**レスポンス例:**
+
+```json
+{
+  "model": "llama-3.2-1b",
+  "context_length": 131072,
+  "capabilities": ["text"]
+}
+```
+
 ### ダッシュボードからの登録
 
 1. ダッシュボード → サイドメニュー「エンドポイント」
@@ -410,7 +467,7 @@ curl http://localhost:32768/v1/chat/completions \
 LLM Load Balancer は、ローカルの llama.cpp ランタイムを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
 
 ### コンポーネント
-- **Router (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
+- **LLM Load Balancer (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
 - **Local Runtimes (C++ / llama.cpp)**: GGUF モデルを提供します。ロードバランサーに登録し、ハートビートを送信します。
 - **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ロードバランサーは対応するクラウド API に転送します。
 - **Storage**: ロードバランサーのメタデータ用の SQLite。モデルファイルは各ランタイムに存在します。
@@ -427,7 +484,7 @@ Draw.ioソース: `docs/diagrams/architecture.drawio`（Page: システム構成
 Client
   │ POST /v1/chat/completions
   ▼
-Router (OpenAI-compatible)
+LLM Load Balancer (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
   └─ No prefix → Scheduler → Local Runtime
                        └─ llama.cpp inference → Response
@@ -544,11 +601,15 @@ Router (OpenAI-compatible)
 
 - POST `/v0/endpoints`（登録、admin権限）
 - GET `/v0/endpoints`（一覧、admin/viewer権限）
+- GET `/v0/endpoints?type=xllm`（タイプフィルター、admin/viewer権限）
 - GET `/v0/endpoints/:id`（詳細、admin/viewer権限）
 - PUT `/v0/endpoints/:id`（更新、admin権限）
 - DELETE `/v0/endpoints/:id`（削除、admin権限）
 - POST `/v0/endpoints/:id/test`（接続テスト、admin権限）
 - POST `/v0/endpoints/:id/sync`（モデル同期、admin権限）
+- POST `/v0/endpoints/:id/download`（モデルダウンロード、xLLMのみ、admin権限）
+- GET `/v0/endpoints/:id/download/progress`（ダウンロード進捗、admin権限）
+- GET `/v0/endpoints/:id/models/:model/info`（モデルメタデータ、xLLM/Ollamaのみ、admin権限）
 
 #### ランタイム管理（レガシー）
 

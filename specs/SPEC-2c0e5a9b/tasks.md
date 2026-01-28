@@ -1,5 +1,7 @@
 # SPEC-2c0e5a9b: Tasks
 
+**ステータス**: 完了
+
 ## 更新メモ（共有用）
 - 2025-12-24: gpt-oss-20b は **safetensors 直読エンジンを主経路**とし、公式GPU最適化アーティファクトは**実行キャッシュ**として扱う。
 - 2025-12-28: 対応OS/GPUを **macOS=Metal / Windows=CUDA** に変更。Linuxは当面非対応（CUDAは実験扱い）。

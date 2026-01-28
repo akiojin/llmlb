@@ -3,10 +3,12 @@
 //! SPEC-66555000: llmlb主導エンドポイント登録システム
 
 use crate::common::auth::{Claims, UserRole};
-use crate::db::endpoints as db;
+use crate::db::{download_tasks as tasks_db, endpoints as db};
+use crate::detection::detect_endpoint_type_with_client;
 use crate::sync::{self, SyncError};
 use crate::types::endpoint::{
-    DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus, GpuDevice,
+    DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus,
+    EndpointType, GpuDevice, ModelDownloadTask,
 };
 use crate::AppState;
 use axum::{
@@ -54,6 +56,10 @@ pub struct CreateEndpointRequest {
     /// エンドポイントの機能一覧（画像生成、音声認識等）
     #[serde(default)]
     pub capabilities: Vec<EndpointCapability>,
+    /// エンドポイントタイプ（手動指定、SPEC-66555000）
+    /// 指定しない場合は自動判別
+    #[serde(default)]
+    pub endpoint_type: Option<EndpointType>,
 }
 
 fn default_health_check_interval() -> u32 {
@@ -177,6 +183,9 @@ pub struct UpdateEndpointRequest {
     /// メモ（None=未指定, Some(None)=削除, Some(Some(v))=設定）
     #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub notes: Option<Option<String>>,
+    /// エンドポイントタイプ（手動変更、SPEC-66555000）
+    #[serde(default)]
+    pub endpoint_type: Option<EndpointType>,
 }
 
 /// エンドポイントレスポンス
@@ -190,6 +199,8 @@ pub struct EndpointResponse {
     pub base_url: String,
     /// 現在の状態
     pub status: String,
+    /// エンドポイントタイプ（SPEC-66555000）
+    pub endpoint_type: String,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -226,6 +237,7 @@ impl From<Endpoint> for EndpointResponse {
             name: ep.name,
             base_url: ep.base_url,
             status: ep.status.as_str().to_string(),
+            endpoint_type: ep.endpoint_type.as_str().to_string(),
             health_check_interval_secs: ep.health_check_interval_secs,
             inference_timeout_secs: ep.inference_timeout_secs,
             latency_ms: ep.latency_ms,
@@ -257,6 +269,10 @@ pub struct ListEndpointsQuery {
     /// ステータスでフィルタ（pending, online, offline, error）
     #[serde(default)]
     pub status: Option<String>,
+    /// タイプでフィルタ（xllm, ollama, vllm, openai_compatible, unknown）
+    /// SPEC-66555000
+    #[serde(default, rename = "type")]
+    pub endpoint_type: Option<String>,
 }
 
 /// モデル一覧レスポンス
@@ -288,6 +304,8 @@ pub struct EndpointModelResponse {
     pub model_id: String,
     /// 能力（chat, embeddings等）
     pub capabilities: Option<Vec<String>>,
+    /// 最大トークン数（xLLM/Ollamaで取得される場合がある）
+    pub max_tokens: Option<u32>,
     /// 最終確認時刻
     pub last_checked: Option<String>,
 }
@@ -297,6 +315,7 @@ impl From<EndpointModel> for EndpointModelResponse {
         EndpointModelResponse {
             model_id: m.model_id,
             capabilities: m.capabilities,
+            max_tokens: m.max_tokens,
             last_checked: m.last_checked.map(|dt| dt.to_rfc3339()),
         }
     }
@@ -323,6 +342,75 @@ pub struct TestConnectionResponse {
     /// エンドポイント情報（成功時のみ）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint_info: Option<EndpointTestInfo>,
+}
+
+// --- SPEC-66555000: ダウンロード・メタデータ関連型 ---
+
+/// ダウンロードリクエスト（SPEC-66555000）
+#[derive(Debug, Deserialize)]
+pub struct DownloadModelRequest {
+    /// ダウンロードするモデル名
+    pub model: String,
+}
+
+/// ダウンロードタスクレスポンス（SPEC-66555000）
+#[derive(Debug, Serialize)]
+pub struct DownloadTaskResponse {
+    /// タスクID
+    pub task_id: String,
+    /// モデル名
+    pub model: String,
+    /// ステータス
+    pub status: String,
+    /// 進捗（0.0-100.0）
+    pub progress: f64,
+    /// ダウンロード速度（MB/s）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed_mbps: Option<f64>,
+    /// 残り時間（秒）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eta_seconds: Option<u32>,
+    /// エラーメッセージ
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
+impl From<ModelDownloadTask> for DownloadTaskResponse {
+    fn from(task: ModelDownloadTask) -> Self {
+        DownloadTaskResponse {
+            task_id: task.id,
+            model: task.model,
+            status: task.status.as_str().to_string(),
+            progress: task.progress,
+            speed_mbps: task.speed_mbps,
+            eta_seconds: task.eta_seconds,
+            error_message: task.error_message,
+        }
+    }
+}
+
+/// ダウンロード進捗一覧レスポンス（SPEC-66555000）
+#[derive(Debug, Serialize)]
+pub struct DownloadProgressResponse {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// ダウンロードタスク一覧
+    pub tasks: Vec<DownloadTaskResponse>,
+}
+
+/// モデル情報レスポンス（SPEC-66555000）
+#[derive(Debug, Serialize)]
+pub struct ModelInfoResponse {
+    /// モデルID
+    pub model_id: String,
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// 最大トークン数（コンテキスト長）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    /// 最終確認時刻
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_checked: Option<String>,
 }
 
 /// エラーレスポンス
@@ -434,14 +522,32 @@ pub async fn create_endpoint(
         Ok(None) => {} // OK - 名前は一意
     }
 
-    let mut endpoint = Endpoint::new(req.name, req.base_url);
-    endpoint.api_key = req.api_key;
+    // SPEC-66555000: 手動指定があればバリデーション
+    if let Some(ref manual_type) = req.endpoint_type {
+        // EndpointType::Unknown以外の不正な値はDeserializeで弾かれるのでここでは追加チェック不要
+        tracing::debug!(
+            endpoint_type = %manual_type.as_str(),
+            "Manual endpoint type specified"
+        );
+    }
+
+    let mut endpoint = Endpoint::new(req.name, req.base_url.clone());
+    endpoint.api_key = req.api_key.clone();
     endpoint.health_check_interval_secs = req.health_check_interval_secs;
     endpoint.inference_timeout_secs = req.inference_timeout_secs;
     endpoint.notes = req.notes;
     if !req.capabilities.is_empty() {
         endpoint.capabilities = req.capabilities;
     }
+
+    // SPEC-66555000: タイプ判別（手動指定優先）
+    endpoint.endpoint_type = if let Some(manual_type) = req.endpoint_type {
+        manual_type
+    } else {
+        // 自動判別（非同期で行うとレスポンスが遅くなるが、登録時は同期で判別）
+        detect_endpoint_type_with_client(&state.http_client, &req.base_url, req.api_key.as_deref())
+            .await
+    };
 
     match db::create_endpoint(&state.db_pool, &endpoint).await {
         Ok(()) => {
@@ -515,7 +621,7 @@ pub async fn list_endpoints(
     match db::list_endpoints(&state.db_pool).await {
         Ok(endpoints) => {
             // ステータスでフィルタ
-            let filtered_endpoints: Vec<Endpoint> = if let Some(ref status) = query.status {
+            let mut filtered_endpoints: Vec<Endpoint> = if let Some(ref status) = query.status {
                 endpoints
                     .into_iter()
                     .filter(|ep| ep.status.as_str() == status)
@@ -523,6 +629,11 @@ pub async fn list_endpoints(
             } else {
                 endpoints
             };
+
+            // SPEC-66555000: タイプでフィルタ
+            if let Some(ref endpoint_type) = query.endpoint_type {
+                filtered_endpoints.retain(|ep| ep.endpoint_type.as_str() == endpoint_type);
+            }
 
             let total = filtered_endpoints.len();
             let mut response_endpoints = Vec::with_capacity(total);
@@ -715,6 +826,11 @@ pub async fn update_endpoint(
     // notes: None=未指定(そのまま), Some(None)=削除, Some(Some(v))=設定
     if let Some(notes_value) = req.notes {
         updated.notes = notes_value;
+    }
+
+    // SPEC-66555000: エンドポイントタイプの手動変更
+    if let Some(endpoint_type) = req.endpoint_type {
+        updated.endpoint_type = endpoint_type;
     }
 
     match db::update_endpoint(&state.db_pool, &updated).await {
@@ -1270,6 +1386,225 @@ pub async fn proxy_chat_completions(
                 Json(ErrorResponse {
                     error: error_msg,
                     code: "PROXY_ERROR".to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+// --- SPEC-66555000: ダウンロード・メタデータ関連ハンドラー ---
+
+/// POST /v0/endpoints/:id/download - モデルダウンロードリクエスト（xLLMのみ）
+pub async fn download_model(
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<DownloadModelRequest>,
+) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
+    // エンドポイント取得
+    let endpoint = match db::get_endpoint(&state.db_pool, id).await {
+        Ok(Some(ep)) => ep,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Endpoint not found".to_string(),
+                    code: "NOT_FOUND".to_string(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get endpoint: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to get endpoint".to_string(),
+                    code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // SPEC-66555000: xLLMタイプのみダウンロード許可
+    if !endpoint.endpoint_type.supports_model_download() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Model download is only supported for xLLM endpoints".to_string(),
+                code: "DOWNLOAD_NOT_SUPPORTED".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // ダウンロードタスク作成
+    let task = ModelDownloadTask::new(id, req.model);
+    match tasks_db::create_download_task(&state.db_pool, &task).await {
+        Ok(()) => (StatusCode::ACCEPTED, Json(DownloadTaskResponse::from(task))).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to create download task: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to create download task".to_string(),
+                    code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// GET /v0/endpoints/:id/download/progress - ダウンロード進捗一覧
+pub async fn download_progress(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    // エンドポイント存在確認
+    match db::get_endpoint(&state.db_pool, id).await {
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Endpoint not found".to_string(),
+                    code: "NOT_FOUND".to_string(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get endpoint: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to get endpoint".to_string(),
+                    code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Ok(Some(_)) => {}
+    }
+
+    // ダウンロードタスク一覧取得
+    match tasks_db::list_download_tasks(&state.db_pool, id).await {
+        Ok(tasks) => (
+            StatusCode::OK,
+            Json(DownloadProgressResponse {
+                endpoint_id: id,
+                tasks: tasks.into_iter().map(DownloadTaskResponse::from).collect(),
+            }),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("Failed to list download tasks: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to list download tasks".to_string(),
+                    code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// モデル情報取得のパスパラメータ
+#[derive(Debug, Deserialize)]
+pub struct ModelInfoPath {
+    /// エンドポイントID
+    pub id: Uuid,
+    /// モデルID
+    pub model: String,
+}
+
+/// GET /v0/endpoints/:id/models/:model/info - モデルメタデータ取得
+pub async fn get_model_info(
+    State(state): State<AppState>,
+    Path(params): Path<ModelInfoPath>,
+) -> impl IntoResponse {
+    let ModelInfoPath { id, model } = params;
+
+    // エンドポイント取得
+    let endpoint = match db::get_endpoint(&state.db_pool, id).await {
+        Ok(Some(ep)) => ep,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Endpoint not found".to_string(),
+                    code: "NOT_FOUND".to_string(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to get endpoint: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to get endpoint".to_string(),
+                    code: "DB_ERROR".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // SPEC-66555000: メタデータ取得はxLLM/Ollamaのみサポート
+    if !endpoint.endpoint_type.supports_model_metadata() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Model metadata retrieval is not supported for this endpoint type"
+                    .to_string(),
+                code: "METADATA_NOT_SUPPORTED".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // モデル一覧からモデルを検索
+    match db::list_endpoint_models(&state.db_pool, id).await {
+        Ok(models) => {
+            if let Some(found) = models.into_iter().find(|m| m.model_id == model) {
+                (
+                    StatusCode::OK,
+                    Json(ModelInfoResponse {
+                        model_id: found.model_id,
+                        endpoint_id: id,
+                        max_tokens: found.max_tokens,
+                        last_checked: found.last_checked.map(|dt| dt.to_rfc3339()),
+                    }),
+                )
+                    .into_response()
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: format!("Model '{}' not found on this endpoint", model),
+                        code: "MODEL_NOT_FOUND".to_string(),
+                    }),
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to list endpoint models: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to get model info".to_string(),
+                    code: "DB_ERROR".to_string(),
                 }),
             )
                 .into_response()

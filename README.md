@@ -143,7 +143,7 @@ For detailed documentation, see [mcp-server/README.md](./mcp-server/README.md).
 
 ## Quick Start
 
-### Router (llmlb)
+### LLM Load Balancer (llmlb)
 
 ```bash
 # Build
@@ -333,7 +333,7 @@ Runtimes report health + metrics to the load balancer for runtime status and loa
 LLM Load Balancer coordinates local llama.cpp runtimes and optionally proxies to cloud LLM providers via model prefixes.
 
 ### Components
-- **Router (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
+- **LLM Load Balancer (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
 - **Local Runtimes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the load balancer.
 - **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the load balancer forwards to the corresponding cloud API.
 - **Storage**: SQLite for load balancer metadata; model files live on each runtime.
@@ -350,7 +350,7 @@ Draw.io source: `docs/diagrams/architecture.drawio` (Page: System Overview (READ
 Client
   │ POST /v1/chat/completions
   ▼
-Router (OpenAI-compatible)
+LLM Load Balancer (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
   └─ No prefix → Scheduler → Local Runtime
                        └─ llama.cpp inference → Response
@@ -360,7 +360,7 @@ Router (OpenAI-compatible)
 
 LLM Load Balancer uses a **Proxy Pattern** - clients only need to know the load balancer URL.
 
-#### Traditional Method (Without Router)
+#### Traditional Method (Without LLM Load Balancer)
 ```bash
 # Direct access to each runtime API (default: runtime_port=32769)
 curl http://machine1:32769/v1/responses -d '...'
@@ -368,9 +368,9 @@ curl http://machine2:32769/v1/responses -d '...'
 curl http://machine3:32769/v1/responses -d '...'
 ```
 
-#### With Router (Proxy)
+#### With LLM Load Balancer (Proxy)
 ```bash
-# Unified access to Router - automatic routing to the optimal runtime
+# Unified access to LLM Load Balancer - automatic routing to the optimal runtime
 curl http://lb:32768/v1/responses -d '...'
 curl http://lb:32768/v1/responses -d '...'
 curl http://lb:32768/v1/responses -d '...'
@@ -378,7 +378,7 @@ curl http://lb:32768/v1/responses -d '...'
 
 **Detailed Request Flow:**
 
-1. **Client → Router**
+1. **Client → LLM Load Balancer**
    ```
    POST http://lb:32768/v1/responses
    Content-Type: application/json
@@ -386,11 +386,11 @@ curl http://lb:32768/v1/responses -d '...'
    {"model": "llama2", "input": "Hello!"}
    ```
 
-2. **Router Internal Processing**
+2. **LLM Load Balancer Internal Processing**
    - Select optimal runtime (Load Balancing)
    - Forward request to selected runtime via HTTP client
 
-3. **Router → Runtime (Internal Communication)**
+3. **LLM Load Balancer → Runtime (Internal Communication)**
    ```
    POST http://runtime1:32769/v1/responses
    Content-Type: application/json
@@ -402,7 +402,7 @@ curl http://lb:32768/v1/responses -d '...'
    - Runtime loads model on-demand (from local cache or load-balancer-provided source)
    - Runtime runs llama.cpp inference and returns an OpenAI-compatible response
 
-5. **Router → Client (Return Response)**
+5. **LLM Load Balancer → Client (Return Response)**
    ```json
   {
     "id": "resp_123",
@@ -424,7 +424,7 @@ curl http://lb:32768/v1/responses -d '...'
 > compatibility.
 
 **From Client's Perspective**:
-- Router appears as the only OpenAI-compatible API server
+- LLM Load Balancer appears as the only OpenAI-compatible API server
 - No need to be aware of multiple internal runtimes
 - Complete with a single HTTP request
 
@@ -448,16 +448,16 @@ curl http://lb:32768/v1/responses -d '...'
    - No need to know each runtime location
 
 2. **Transparent Load Balancing**
-   - Router automatically selects the optimal runtime
+  - LLM Load Balancer automatically selects the optimal runtime
    - Clients benefit from load distribution without awareness
 
 3. **Automatic Retry on Failure**
-   - If Runtime1 fails → Router automatically tries Runtime2
+  - If Runtime1 fails → LLM Load Balancer automatically tries Runtime2
    - No re-request needed from client
 
 4. **Security**
    - Runtime IP addresses not exposed to clients
-   - Only Router needs to be publicly accessible
+  - Only LLM Load Balancer needs to be publicly accessible
 
 5. **Scalability**
    - Adding runtimes automatically increases processing capacity
@@ -555,7 +555,7 @@ For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quick
     - If official GPU artifacts are provided (for example `model.metal.bin`), they may be used as
       execution cache when supported. Otherwise, safetensors are used directly.
     - Windows requires CUDA builds (`BUILD_WITH_CUDA=ON`). DirectML is not supported.
-  - Router stores **metadata + manifest only** (no binary download).
+  - LLM Load Balancer stores **metadata + manifest only** (no binary download).
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
   - Runtimes pull models on-demand via the model registry endpoints:
@@ -677,14 +677,14 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 ### Requirements
 
-- **Router**: Rust toolchain (stable)
+- **LLM Load Balancer**: Rust toolchain (stable)
 - **Runtime**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
 
 ## Usage
 
 ### Basic Usage
 
-1. **Start Router**
+1. **Start LLM Load Balancer**
    ```bash
    ./target/release/llmlb
    # Default: http://0.0.0.0:32768
@@ -705,7 +705,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
    ./xllm/build/xllm
    ```
 
-3. **Send Inference Requests to Router (OpenAI-compatible, Responses API recommended)**
+3. **Send Inference Requests to LLM Load Balancer (OpenAI-compatible, Responses API recommended)**
    ```bash
    curl http://lb:32768/v1/responses \
      -H "Content-Type: application/json" \
@@ -758,7 +758,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 
 ### Environment Variables
 
-#### Router (llmlb)
+#### LLM Load Balancer (llmlb)
 
 | Variable | Default | Description | Legacy / Notes |
 |----------|---------|-------------|----------------|
@@ -828,7 +828,7 @@ Note: Engine plugins were removed in favor of built-in managers. See `docs/migra
 - Models without prefixes are routed locally, so do not add a prefix if you don't have cloud keys
 
 ### Port conflict
-- Router: Change `LLMLB_PORT` (e.g., `LLMLB_PORT=18080`)
+- LLM Load Balancer: Change `LLMLB_PORT` (e.g., `LLMLB_PORT=18080`)
 - Runtime: Change `LLM_RUNTIME_PORT` or use `--port`
 
 ### SQLite file creation failed
@@ -979,7 +979,7 @@ to `.migrated`.
 
 ## API Specification
 
-### Router API
+### LLM Load Balancer API
 
 #### Authentication Endpoints
 

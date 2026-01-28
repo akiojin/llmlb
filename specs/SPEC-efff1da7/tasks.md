@@ -1,5 +1,7 @@
 # SPEC-efff1da7: Tasks
 
+**ステータス**: 完了
+
 ## Setup
 - [x] PoC ディレクトリ作成（`poc/nemotron-safetensors-cpp`）
 - [x] safetensors-cpp の `safetensors.hh` を取得

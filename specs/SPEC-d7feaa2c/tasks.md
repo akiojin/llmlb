@@ -1,5 +1,7 @@
 # SPEC-d7feaa2c: Tasks
 
+**ステータス**: 完了
+
 ## Phase 0: Spec alignment
 - [x] T000 Update spec/plan/data-model to manager approach.
 

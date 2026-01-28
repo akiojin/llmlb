@@ -1,6 +1,7 @@
 # Tasks: safetensors.cpp
 
 **機能ID**: SPEC-69549000
+**ステータス**: 完了
 **日付**: 2026-01-06
 **仕様**: [spec.md](./spec.md) | **計画**: [plan.md](./plan.md)
 

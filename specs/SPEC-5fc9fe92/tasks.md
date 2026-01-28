@@ -1,5 +1,7 @@
 # タスク: Playground Chat マルチモーダル対応
 
+**ステータス**: 完了
+
 **入力**: `/specs/SPEC-5fc9fe92/` の設計ドキュメント  
 **前提条件**: plan.md, research.md, data-model.md, contracts/, quickstart.md
 

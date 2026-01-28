@@ -23,7 +23,8 @@ async fn test_endpoint_registration_appears_in_list() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production Ollama",
-            "base_url": "http://192.168.1.100:11434",
+            // 外部ネットワーク依存を避け、到達不能でも即時に失敗するローカルURLを使う
+            "base_url": "http://127.0.0.1:18134",
             "notes": "Main production server"
         }))
         .send()
@@ -150,7 +151,8 @@ async fn test_endpoint_registration_with_api_key() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "OpenAI Compatible",
-            "base_url": "https://api.example.com",
+            // 外部ドメインへの接続待ちでハングし得るため、ローカルURLで代替
+            "base_url": "http://127.0.0.1:18080",
             "api_key": "sk-secret-key-12345"
         }))
         .send()

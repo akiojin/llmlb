@@ -22,6 +22,7 @@ struct Counter {
 class PrometheusExporter {
   public:
     void set_gauge(const std::string& name, double value, const std::string& help = "");
+    void set_counter(const std::string& name, double value, const std::string& help = "");
     void inc_counter(const std::string& name, double delta = 1.0, const std::string& help = "");
     std::string render() const;
 

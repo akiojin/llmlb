@@ -8,6 +8,7 @@
 #include <mutex>
 #include <chrono>
 #include <optional>
+#include <cstdint>
 
 // llama.cpp forward declarations
 struct llama_model;
@@ -134,6 +135,15 @@ public:
     bool isActive(const std::string& model_path) const;
     size_t activeCount() const;
 
+#ifdef XLLM_TESTING
+    // テスト専用: ロード済みモデルを実体なしで注入する
+    void addLoadedModelForTest(const std::string& model_path,
+                               size_t model_size_bytes,
+                               std::optional<std::chrono::steady_clock::time_point> last_access = std::nullopt);
+    void setLastAccessForTest(const std::string& model_path,
+                              std::chrono::steady_clock::time_point last_access);
+#endif
+
 private:
     std::string models_dir_;
     mutable std::mutex mutex_;
@@ -156,6 +166,11 @@ private:
 
     // T202/T206: アクティブ保護（推論中のモデル）
     std::unordered_set<std::string> active_models_;
+
+#ifdef XLLM_TESTING
+    // テスト専用: llama_model_sizeの代わりに使うモデルサイズ
+    std::unordered_map<std::string, uint64_t> test_model_sizes_;
+#endif
 
     // 正規化されたパスを取得
     std::string canonicalizePath(const std::string& path) const;

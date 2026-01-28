@@ -260,8 +260,16 @@ bool LlamaManager::unloadModel(const std::string& model_path) {
     }
 
     // メモリ使用量を減算
+    uint64_t model_size = 0;
     if (it->second->model) {
-        uint64_t model_size = llama_model_size(it->second->model);
+        model_size = llama_model_size(it->second->model);
+    }
+#ifdef XLLM_TESTING
+    else if (auto sz_it = test_model_sizes_.find(canonical); sz_it != test_model_sizes_.end()) {
+        model_size = sz_it->second;
+    }
+#endif
+    if (model_size > 0) {
         if (memory_bytes_ >= model_size) {
             memory_bytes_ -= model_size;
         } else {
@@ -272,6 +280,9 @@ bool LlamaManager::unloadModel(const std::string& model_path) {
     spdlog::info("Unloading model: {}", canonical);
     loaded_models_.erase(it);
     model_gpu_ids_.erase(canonical);
+#ifdef XLLM_TESTING
+    test_model_sizes_.erase(canonical);
+#endif
     return true;
 }
 
@@ -558,6 +569,11 @@ size_t LlamaManager::evictForVram(size_t required_vram) {
             if (it != loaded_models_.end() && it->second->model) {
                 model_size = llama_model_size(it->second->model);
             }
+#ifdef XLLM_TESTING
+            else if (auto sz_it = test_model_sizes_.find(lru.value()); sz_it != test_model_sizes_.end()) {
+                model_size = static_cast<size_t>(sz_it->second);
+            }
+#endif
         }
 
         spdlog::info("Evicting model for VRAM recovery: {} ({}B)", lru.value(), model_size);
@@ -601,5 +617,40 @@ size_t LlamaManager::activeCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return active_models_.size();
 }
+
+#ifdef XLLM_TESTING
+void LlamaManager::addLoadedModelForTest(
+    const std::string& model_path,
+    size_t model_size_bytes,
+    std::optional<std::chrono::steady_clock::time_point> last_access) {
+    const std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (loaded_models_.count(canonical) > 0) {
+        return;
+    }
+
+    auto llama_ctx = std::make_unique<LlamaContext>();
+    llama_ctx->model_path = canonical;
+    llama_ctx->gpu_layers = gpu_layers_;
+    loaded_models_[canonical] = std::move(llama_ctx);
+
+    const uint64_t size_u64 = static_cast<uint64_t>(model_size_bytes);
+    memory_bytes_ += size_u64;
+    test_model_sizes_[canonical] = size_u64;
+    last_access_[canonical] = last_access.value_or(std::chrono::steady_clock::now());
+}
+
+void LlamaManager::setLastAccessForTest(
+    const std::string& model_path,
+    std::chrono::steady_clock::time_point last_access) {
+    const std::string canonical = canonicalizePath(model_path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (loaded_models_.count(canonical) == 0) {
+        return;
+    }
+    last_access_[canonical] = last_access;
+}
+#endif
 
 }  // namespace xllm

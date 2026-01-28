@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -128,6 +129,14 @@ public:
     std::optional<std::chrono::steady_clock::time_point> getLastAccessTime(
         const std::string& model_path) const;
 
+#ifdef XLLM_TESTING
+    using ImageGenerateHook = std::function<std::vector<ImageGenerationResult>(
+        const std::string& model_path,
+        const ImageGenParams& params)>;
+
+    void setGenerateHookForTest(ImageGenerateHook hook);
+#endif
+
 private:
     std::string models_dir_;
     mutable std::mutex mutex_;
@@ -140,6 +149,10 @@ private:
     // Access time tracking
     std::unordered_map<std::string, std::chrono::steady_clock::time_point>
         last_access_;
+
+#ifdef XLLM_TESTING
+    ImageGenerateHook generate_hook_{};
+#endif
 
     // Canonicalize path
     std::string canonicalizePath(const std::string& path) const;

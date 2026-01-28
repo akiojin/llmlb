@@ -7,10 +7,12 @@
 #include <cctype>
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <random>
 #include <sstream>
 #include <iomanip>
 #include "models/model_registry.h"
+#include "models/modelfile.h"
 #include "core/inference_engine.h"
 #include "runtime/state.h"
 #include "utils/utf8.h"
@@ -26,6 +28,7 @@ bool checkReady(httplib::Response& res) {
         res.status = 503;
         nlohmann::json err = {
             {"error", {
+                {"code", "service_unavailable"},
                 {"type", "service_unavailable"},
                 {"message", "Node is syncing models with router. Please wait."}
             }}
@@ -34,6 +37,50 @@ bool checkReady(httplib::Response& res) {
         return false;
     }
     return true;
+}
+
+std::chrono::milliseconds get_request_queue_timeout() {
+    constexpr int64_t kDefaultTimeoutMs = 1000;
+    if (const char* env = std::getenv("XLLM_REQUEST_QUEUE_TIMEOUT_MS")) {
+        try {
+            int64_t value = std::stoll(env);
+            if (value > 0) {
+                return std::chrono::milliseconds(value);
+            }
+        } catch (...) {
+        }
+    }
+    return std::chrono::milliseconds(kDefaultTimeoutMs);
+}
+
+const char* get_json_grammar() {
+    static const char* kJsonGrammar = R"GRAMMAR(
+root   ::= object
+value  ::= object | array | string | number | ("true" | "false" | "null") ws
+
+object ::=
+  "{" ws (
+            string ":" ws value
+    ("," ws string ":" ws value)*
+  )? "}" ws
+
+array  ::=
+  "[" ws (
+            value
+    ("," ws value)*
+  )? "]" ws
+
+string ::=
+  "\"" (
+    [^"\\\x7F\x00-\x1F] |
+    "\\" (["\\bfnrt] | "u" [0-9a-fA-F]{4})
+  )* "\"" ws
+
+number ::= ("-"? ([0-9] | [1-9] [0-9]{0,15})) ("." [0-9]+)? ([eE] [-+]? [0-9] [1-9]{0,15})? ws
+
+ws ::= | " " | "\n" [ \t]{0,20}
+)GRAMMAR";
+    return kJsonGrammar;
 }
 
 std::string trimAscii(const std::string& s) {
@@ -290,6 +337,267 @@ bool validateSamplingParams(const nlohmann::json& body, std::string& error) {
             return false;
         }
     }
+    if (body.contains("draft_model")) {
+        if (!body["draft_model"].is_string()) {
+            error = "draft_model must be a string";
+            return false;
+        }
+        const std::string name = body["draft_model"].get<std::string>();
+        if (name.empty()) {
+            error = "draft_model must not be empty";
+            return false;
+        }
+    }
+    if (body.contains("speculative")) {
+        const auto& speculative = body["speculative"];
+        if (!(speculative.is_boolean() || speculative.is_object())) {
+            error = "speculative must be a boolean or object";
+            return false;
+        }
+        if (speculative.is_object()) {
+            if (speculative.contains("max_tokens") && !speculative["max_tokens"].is_number_integer()) {
+                error = "speculative.max_tokens must be an integer";
+                return false;
+            }
+            if (speculative.contains("min_tokens") && !speculative["min_tokens"].is_number_integer()) {
+                error = "speculative.min_tokens must be an integer";
+                return false;
+            }
+            if (speculative.contains("max_tokens")) {
+                const int v = speculative["max_tokens"].get<int>();
+                if (v < 0) {
+                    error = "speculative.max_tokens must be >= 0";
+                    return false;
+                }
+            }
+            if (speculative.contains("min_tokens")) {
+                const int v = speculative["min_tokens"].get<int>();
+                if (v < 0) {
+                    error = "speculative.min_tokens must be >= 0";
+                    return false;
+                }
+            }
+        }
+        if (!body.contains("draft_model")) {
+            if (!(speculative.is_boolean() && speculative.get<bool>() == false)) {
+                error = "draft_model is required for speculative decoding";
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+constexpr int kDefaultDraftMaxTokens = 16;
+
+bool parseSpeculativeParams(const nlohmann::json& body, InferenceParams& parsed, std::string& error) {
+    if (body.contains("draft_model")) {
+        parsed.draft_model = body["draft_model"].get<std::string>();
+    }
+
+    if (!body.contains("speculative")) {
+        if (!parsed.draft_model.empty() && parsed.draft_max_tokens == 0) {
+            parsed.draft_max_tokens = kDefaultDraftMaxTokens;
+        }
+        return true;
+    }
+
+    const auto& speculative = body["speculative"];
+    if (speculative.is_boolean()) {
+        const bool enabled = speculative.get<bool>();
+        if (enabled && parsed.draft_model.empty()) {
+            error = "draft_model is required for speculative decoding";
+            return false;
+        }
+        if (enabled && parsed.draft_max_tokens == 0) {
+            parsed.draft_max_tokens = kDefaultDraftMaxTokens;
+        }
+        return true;
+    }
+
+    if (!speculative.is_object()) {
+        error = "speculative must be a boolean or object";
+        return false;
+    }
+
+    if (parsed.draft_model.empty()) {
+        error = "draft_model is required for speculative decoding";
+        return false;
+    }
+
+    if (speculative.contains("max_tokens")) {
+        parsed.draft_max_tokens = speculative["max_tokens"].get<int>();
+    }
+    if (speculative.contains("min_tokens")) {
+        parsed.draft_min_tokens = speculative["min_tokens"].get<int>();
+    }
+    if (parsed.draft_max_tokens < 0) {
+        error = "speculative.max_tokens must be >= 0";
+        return false;
+    }
+    if (parsed.draft_min_tokens < 0) {
+        error = "speculative.min_tokens must be >= 0";
+        return false;
+    }
+    if (parsed.draft_max_tokens == 0) {
+        parsed.draft_max_tokens = kDefaultDraftMaxTokens;
+    }
+    if (parsed.draft_min_tokens > parsed.draft_max_tokens) {
+        error = "speculative.min_tokens must be <= speculative.max_tokens";
+        return false;
+    }
+    return true;
+}
+
+std::optional<Modelfile> loadModelfile(const std::string& model, std::string& error) {
+    return Modelfile::loadForModel(model, error);
+}
+
+bool parse_double(const std::string& value, double& out) {
+    try {
+        size_t idx = 0;
+        out = std::stod(value, &idx);
+        return idx == value.size();
+    } catch (...) {
+        return false;
+    }
+}
+
+bool parse_int(const std::string& value, int& out) {
+    try {
+        size_t idx = 0;
+        long long v = std::stoll(value, &idx);
+        if (idx != value.size()) return false;
+        if (v < std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max()) return false;
+        out = static_cast<int>(v);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+std::vector<std::string> parse_stop_sequences(const std::string& value) {
+    std::vector<std::string> out;
+    std::string trimmed = trimAscii(value);
+    if (trimmed.empty()) return out;
+    if (trimmed.front() == '[' && trimmed.back() == ']') {
+        auto parsed = json::parse(trimmed, nullptr, false);
+        if (parsed.is_array()) {
+            for (const auto& item : parsed) {
+                if (item.is_string()) {
+                    out.push_back(item.get<std::string>());
+                }
+            }
+            return out;
+        }
+    }
+    std::stringstream ss(trimmed);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        token = trimAscii(token);
+        if (!token.empty()) out.push_back(token);
+    }
+    if (out.empty() && !trimmed.empty()) {
+        out.push_back(trimmed);
+    }
+    return out;
+}
+
+bool applyModelfileDefaults(const nlohmann::json& body,
+                            const Modelfile& modelfile,
+                            InferenceParams& params,
+                            std::vector<ChatMessage>& messages,
+                            std::string& error) {
+    if (!modelfile.system_prompt.empty()) {
+        messages.insert(messages.begin(), ChatMessage{"system", modelfile.system_prompt});
+    }
+    if (!modelfile.messages.empty()) {
+        messages.insert(messages.begin() + (modelfile.system_prompt.empty() ? 0 : 1),
+                        modelfile.messages.begin(),
+                        modelfile.messages.end());
+    }
+    if (!modelfile.template_text.empty() && params.chat_template.empty()) {
+        params.chat_template = modelfile.template_text;
+    }
+
+    for (const auto& [key, value] : modelfile.parameters) {
+        if (key == "temperature") {
+            if (body.contains("temperature")) continue;
+            double v;
+            if (!parse_double(value, v)) {
+                error = "Modelfile PARAMETER temperature is invalid";
+                return false;
+            }
+            params.temperature = static_cast<float>(v);
+        } else if (key == "top_p") {
+            if (body.contains("top_p")) continue;
+            double v;
+            if (!parse_double(value, v)) {
+                error = "Modelfile PARAMETER top_p is invalid";
+                return false;
+            }
+            params.top_p = static_cast<float>(v);
+        } else if (key == "top_k") {
+            if (body.contains("top_k")) continue;
+            int v;
+            if (!parse_int(value, v)) {
+                error = "Modelfile PARAMETER top_k is invalid";
+                return false;
+            }
+            params.top_k = v;
+        } else if (key == "repeat_penalty") {
+            if (body.contains("repeat_penalty")) continue;
+            double v;
+            if (!parse_double(value, v)) {
+                error = "Modelfile PARAMETER repeat_penalty is invalid";
+                return false;
+            }
+            params.repeat_penalty = static_cast<float>(v);
+        } else if (key == "presence_penalty") {
+            if (body.contains("presence_penalty")) continue;
+            double v;
+            if (!parse_double(value, v)) {
+                error = "Modelfile PARAMETER presence_penalty is invalid";
+                return false;
+            }
+            params.presence_penalty = static_cast<float>(v);
+        } else if (key == "frequency_penalty") {
+            if (body.contains("frequency_penalty")) continue;
+            double v;
+            if (!parse_double(value, v)) {
+                error = "Modelfile PARAMETER frequency_penalty is invalid";
+                return false;
+            }
+            params.frequency_penalty = static_cast<float>(v);
+        } else if (key == "num_predict" || key == "max_tokens") {
+            if (body.contains("max_tokens")) continue;
+            int v;
+            if (!parse_int(value, v)) {
+                error = "Modelfile PARAMETER max_tokens is invalid";
+                return false;
+            }
+            if (v > 0) params.max_tokens = static_cast<size_t>(v);
+        } else if (key == "seed") {
+            if (body.contains("seed")) continue;
+            int v;
+            if (!parse_int(value, v)) {
+                error = "Modelfile PARAMETER seed is invalid";
+                return false;
+            }
+            if (v > 0) params.seed = static_cast<uint32_t>(v);
+        } else if (key == "stop") {
+            if (body.contains("stop")) continue;
+            auto sequences = parse_stop_sequences(value);
+            if (sequences.empty()) {
+                error = "Modelfile PARAMETER stop is invalid";
+                return false;
+            }
+            params.stop_sequences = std::move(sequences);
+        } else if (key == "draft_model") {
+            if (body.contains("draft_model")) continue;
+            params.draft_model = value;
+        }
+    }
     return true;
 }
 
@@ -328,6 +636,85 @@ bool parseStopSequences(const nlohmann::json& body, std::vector<std::string>& ou
     return false;
 }
 
+bool parseLoraEntry(const nlohmann::json& entry,
+                    std::vector<LoraRequest>& out,
+                    std::string& error) {
+    if (entry.is_string()) {
+        LoraRequest req;
+        std::string value = entry.get<std::string>();
+        if (value.empty()) {
+            error = "lora name must not be empty";
+            return false;
+        }
+        if (std::filesystem::path(value).is_absolute()) {
+            req.path = value;
+            req.name = std::filesystem::path(value).filename().string();
+        } else {
+            req.name = value;
+        }
+        out.push_back(std::move(req));
+        return true;
+    }
+
+    if (entry.is_object()) {
+        LoraRequest req;
+        if (entry.contains("path")) {
+            if (!entry["path"].is_string()) {
+                error = "lora.path must be a string";
+                return false;
+            }
+            req.path = entry["path"].get<std::string>();
+        }
+        if (entry.contains("lora")) {
+            if (!entry["lora"].is_string()) {
+                error = "lora.lora must be a string";
+                return false;
+            }
+            req.name = entry["lora"].get<std::string>();
+        } else if (entry.contains("name")) {
+            if (!entry["name"].is_string()) {
+                error = "lora.name must be a string";
+                return false;
+            }
+            req.name = entry["name"].get<std::string>();
+        }
+        if (entry.contains("scale")) {
+            if (!entry["scale"].is_number()) {
+                error = "lora.scale must be a number";
+                return false;
+            }
+            req.scale = entry["scale"].get<float>();
+        }
+        if (req.name.empty() && req.path.empty()) {
+            error = "lora entry must include name or path";
+            return false;
+        }
+        out.push_back(std::move(req));
+        return true;
+    }
+
+    error = "lora must be a string, object, or array";
+    return false;
+}
+
+bool parseLoraParams(const nlohmann::json& body,
+                     std::vector<LoraRequest>& out,
+                     std::string& error) {
+    if (!body.contains("lora")) {
+        return true;
+    }
+    const auto& lora = body["lora"];
+    if (lora.is_array()) {
+        for (const auto& entry : lora) {
+            if (!parseLoraEntry(entry, out, error)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return parseLoraEntry(lora, out, error);
+}
+
 bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, std::string& error) {
     InferenceParams parsed;
 
@@ -355,6 +742,10 @@ bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, s
         }
     }
 
+    if (body.contains("draft_model") && body["draft_model"].is_string()) {
+        parsed.draft_model = body["draft_model"].get<std::string>();
+    }
+
     // T025-T026: Parse presence_penalty and frequency_penalty
     if (body.contains("presence_penalty") && body["presence_penalty"].is_number()) {
         parsed.presence_penalty = body["presence_penalty"].get<float>();
@@ -366,6 +757,10 @@ bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, s
     // T035: Parse n parameter
     if (body.contains("n") && body["n"].is_number_integer()) {
         parsed.n = body["n"].get<int>();
+    }
+
+    if (!parseSpeculativeParams(body, parsed, error)) {
+        return false;
     }
 
     // Parse logprobs settings
@@ -386,6 +781,107 @@ bool parseInferenceParams(const nlohmann::json& body, InferenceParams& params, s
 
     if (!parseStopSequences(body, parsed.stop_sequences, error)) {
         return false;
+    }
+
+    if (!parseLoraParams(body, parsed.loras, error)) {
+        return false;
+    }
+
+    // Parse tools / function calling
+    auto parse_tool_entry = [&](const json& function, std::vector<ToolDefinition>& out) -> bool {
+        if (!function.is_object()) {
+            error = "function definition must be an object";
+            return false;
+        }
+        if (!function.contains("name") || !function["name"].is_string()) {
+            error = "function name is required";
+            return false;
+        }
+        ToolDefinition tool;
+        tool.name = function["name"].get<std::string>();
+        if (function.contains("description") && function["description"].is_string()) {
+            tool.description = function["description"].get<std::string>();
+        }
+        if (function.contains("parameters")) {
+            if (function["parameters"].is_object()) {
+                tool.parameters_json = function["parameters"].dump();
+            } else if (function["parameters"].is_string()) {
+                tool.parameters_json = function["parameters"].get<std::string>();
+            } else {
+                error = "function parameters must be an object or string";
+                return false;
+            }
+        }
+        out.push_back(std::move(tool));
+        return true;
+    };
+
+    if (body.contains("tools")) {
+        if (!body["tools"].is_array()) {
+            error = "tools must be an array";
+            return false;
+        }
+        for (const auto& tool : body["tools"]) {
+            if (!tool.is_object()) {
+                error = "tools entry must be an object";
+                return false;
+            }
+            std::string type = tool.value("type", "function");
+            if (type != "function") {
+                error = "only function tools are supported";
+                return false;
+            }
+            if (!tool.contains("function")) {
+                error = "tool.function is required";
+                return false;
+            }
+            if (!parse_tool_entry(tool["function"], parsed.tools)) {
+                return false;
+            }
+        }
+    }
+
+    if (body.contains("functions")) {
+        if (!body["functions"].is_array()) {
+            error = "functions must be an array";
+            return false;
+        }
+        for (const auto& func : body["functions"]) {
+            if (!parse_tool_entry(func, parsed.tools)) {
+                return false;
+            }
+        }
+    }
+
+    if (body.contains("tool_choice")) {
+        const auto& choice = body["tool_choice"];
+        if (choice.is_string()) {
+            std::string mode = choice.get<std::string>();
+            if (mode == "none") {
+                parsed.tools.clear();
+                parsed.forced_tool_name.clear();
+            } else if (mode != "auto") {
+                error = "tool_choice must be 'auto', 'none', or an object";
+                return false;
+            }
+        } else if (choice.is_object()) {
+            std::string type = choice.value("type", "function");
+            if (type != "function" || !choice.contains("function") ||
+                !choice["function"].is_object() ||
+                !choice["function"].contains("name") ||
+                !choice["function"]["name"].is_string()) {
+                error = "tool_choice.function.name is required";
+                return false;
+            }
+            parsed.forced_tool_name = choice["function"]["name"].get<std::string>();
+        } else {
+            error = "tool_choice must be a string or object";
+            return false;
+        }
+    }
+
+    if (!parsed.tools.empty()) {
+        parsed.grammar = get_json_grammar();
     }
 
     params = std::move(parsed);
@@ -704,7 +1200,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
-        auto guard = RequestGuard::try_acquire();
+        auto guard = RequestGuard::acquire_with_timeout(get_request_queue_timeout());
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
             return;
@@ -741,10 +1237,37 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
             }
+            std::string modelfile_error;
+            auto modelfile = loadModelfile(model, modelfile_error);
+            if (!modelfile_error.empty() && !modelfile) {
+                respondError(res, 400, "invalid_request", modelfile_error);
+                return;
+            }
+            if (!params.draft_model.empty()) {
+                if (!validateModel(params.draft_model, "text", res)) return;
+            }
             LogprobsRequest logprobs_req;
             if (!parseLogprobsRequest(body, logprobs_req, param_error)) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
+            }
+            std::vector<ChatMessage> messages_for_generation = parsed.messages;
+            if (modelfile) {
+                if (!applyModelfileDefaults(body, *modelfile, params, messages_for_generation, modelfile_error)) {
+                    respondError(res, 400, "invalid_request", modelfile_error);
+                    return;
+                }
+            }
+            if (!params.draft_model.empty()) {
+                if (!validateModel(params.draft_model, "text", res)) return;
+            }
+            if (!params.tools.empty()) {
+                std::string tool_prompt = formatToolsForPrompt(params.tools);
+                if (!tool_prompt.empty()) {
+                    messages_for_generation.insert(
+                        messages_for_generation.begin(),
+                        ChatMessage{"system", tool_prompt});
+                }
             }
 
             if (stream) {
@@ -760,9 +1283,9 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 // ストリーミング用に生成
                 std::string output;
                 if (!parsed.image_urls.empty()) {
-                    output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
+                    output = engine_.generateChatWithImages(messages_for_generation, parsed.image_urls, model, params);
                 } else {
-                    output = engine_.generateChat(parsed.messages, model, params);
+                    output = engine_.generateChat(messages_for_generation, model, params);
                 }
                 output = applyStopSequences(std::move(output), params.stop_sequences);
                 output = sanitize_utf8_lossy(output);
@@ -800,7 +1323,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
             // T019: Build prompt from messages for token counting
             std::string prompt_text;
-            for (const auto& msg : parsed.messages) {
+            for (const auto& msg : messages_for_generation) {
                 prompt_text += msg.role + ": " + msg.content + "\n";
             }
             int prompt_tokens = static_cast<int>(prompt_text.length() / 4);  // Approximate tokenization
@@ -808,6 +1331,8 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             // T037: n回の生成ループでchoices配列を構築
             json choices = json::array();
             int total_completion_tokens = 0;
+            bool tool_choice_failed = false;
+            std::string tool_choice_error;
             for (int i = 0; i < params.n; ++i) {
                 // T050: Prepare logprobs output buffer if requested
                 std::vector<TokenLogprob> logprobs_out;
@@ -819,9 +1344,9 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
                 std::string gen_output;
                 if (!parsed.image_urls.empty()) {
-                    gen_output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
+                    gen_output = engine_.generateChatWithImages(messages_for_generation, parsed.image_urls, model, params);
                 } else {
-                    gen_output = engine_.generateChat(parsed.messages, model, params);
+                    gen_output = engine_.generateChat(messages_for_generation, model, params);
                 }
                 gen_output = applyStopSequences(std::move(gen_output), params.stop_sequences);
                 gen_output = sanitize_utf8_lossy(gen_output);
@@ -831,6 +1356,41 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                     {"message", {{"role", "assistant"}, {"content", gen_output}}},
                     {"finish_reason", "stop"}
                 };
+
+                if (!params.tools.empty()) {
+                    auto tool_calls = detectToolCalls(gen_output);
+                    if (!params.forced_tool_name.empty()) {
+                        std::vector<ToolCall> filtered;
+                        for (const auto& call : tool_calls) {
+                            if (call.function_name == params.forced_tool_name) {
+                                filtered.push_back(call);
+                            }
+                        }
+                        tool_calls = std::move(filtered);
+                        if (tool_calls.empty()) {
+                            tool_choice_failed = true;
+                            tool_choice_error = "model did not call required tool";
+                            break;
+                        }
+                    }
+
+                    if (!tool_calls.empty()) {
+                        json tool_calls_json = json::array();
+                        for (const auto& call : tool_calls) {
+                            tool_calls_json.push_back({
+                                {"id", call.id},
+                                {"type", "function"},
+                                {"function", {
+                                    {"name", call.function_name},
+                                    {"arguments", call.arguments_json}
+                                }}
+                            });
+                        }
+                        choice["message"]["content"] = nullptr;
+                        choice["message"]["tool_calls"] = tool_calls_json;
+                        choice["finish_reason"] = "tool_calls";
+                    }
+                }
                 if (logprobs_req.enabled) {
                     // T050-T051: Use real logprobs if available, otherwise fallback
                     if (!logprobs_out.empty()) {
@@ -841,6 +1401,11 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 }
                 choices.push_back(choice);
                 total_completion_tokens += static_cast<int>(gen_output.length() / 4);
+            }
+
+            if (tool_choice_failed) {
+                respondError(res, 400, "invalid_response", tool_choice_error);
+                return;
             }
 
             // T019, T021, T023: Add usage, dynamic ID, and current timestamp
@@ -866,7 +1431,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/responses", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
-        auto guard = RequestGuard::try_acquire();
+        auto guard = RequestGuard::acquire_with_timeout(get_request_queue_timeout());
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
             return;
@@ -898,6 +1463,18 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
             }
+            std::string modelfile_error;
+            auto modelfile = loadModelfile(model, modelfile_error);
+            if (!modelfile_error.empty() && !modelfile) {
+                respondError(res, 400, "invalid_request", modelfile_error);
+                return;
+            }
+            if (!modelfile) {
+                modelfile_error.clear();
+            }
+            if (!params.draft_model.empty()) {
+                if (!validateModel(params.draft_model, "text", res)) return;
+            }
             if (body.contains("max_output_tokens")) {
                 if (!body["max_output_tokens"].is_number_integer()) {
                     respondError(res, 400, "invalid_request", "max_output_tokens must be an integer");
@@ -910,7 +1487,17 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             }
 
             std::string prompt_text;
-            for (const auto& msg : parsed.messages) {
+            std::vector<ChatMessage> messages_for_generation = parsed.messages;
+            if (modelfile) {
+                if (!applyModelfileDefaults(body, *modelfile, params, messages_for_generation, modelfile_error)) {
+                    respondError(res, 400, "invalid_request", modelfile_error);
+                    return;
+                }
+            }
+            if (!params.draft_model.empty()) {
+                if (!validateModel(params.draft_model, "text", res)) return;
+            }
+            for (const auto& msg : messages_for_generation) {
                 prompt_text += msg.role + ": " + msg.content + "\n";
             }
             int input_tokens = static_cast<int>(prompt_text.length() / 4);
@@ -920,9 +1507,9 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
                 auto guard_ptr = std::make_shared<RequestGuard>(std::move(*guard));
                 std::string output;
                 if (!parsed.image_urls.empty()) {
-                    output = engine_.generateChatWithImages(parsed.messages, parsed.image_urls, model, params);
+                    output = engine_.generateChatWithImages(messages_for_generation, parsed.image_urls, model, params);
                 } else {
-                    output = engine_.generateChat(parsed.messages, model, params);
+                    output = engine_.generateChat(messages_for_generation, model, params);
                 }
                 output = applyStopSequences(std::move(output), params.stop_sequences);
                 output = sanitize_utf8_lossy(output);
@@ -1012,7 +1599,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
-        auto guard = RequestGuard::try_acquire();
+        auto guard = RequestGuard::acquire_with_timeout(get_request_queue_timeout());
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
             return;
@@ -1039,6 +1626,22 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
             if (!parseInferenceParams(body, params, param_error)) {
                 respondError(res, 400, "invalid_request", param_error);
                 return;
+            }
+            std::string modelfile_error;
+            auto modelfile = loadModelfile(model, modelfile_error);
+            if (!modelfile_error.empty() && !modelfile) {
+                respondError(res, 400, "invalid_request", modelfile_error);
+                return;
+            }
+            std::vector<ChatMessage> dummy_messages;
+            if (modelfile) {
+                if (!applyModelfileDefaults(body, *modelfile, params, dummy_messages, modelfile_error)) {
+                    respondError(res, 400, "invalid_request", modelfile_error);
+                    return;
+                }
+            }
+            if (!params.draft_model.empty()) {
+                if (!validateModel(params.draft_model, "text", res)) return;
             }
             LogprobsRequest logprobs_req;
             if (!parseLogprobsRequest(body, logprobs_req, param_error)) {
@@ -1102,7 +1705,7 @@ void OpenAIEndpoints::registerRoutes(httplib::Server& server) {
 
     server.Post("/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
         if (!checkReady(res)) return;
-        auto guard = RequestGuard::try_acquire();
+        auto guard = RequestGuard::acquire_with_timeout(get_request_queue_timeout());
         if (!guard) {
             respondError(res, 429, "too_many_requests", "Node is busy");
             return;
@@ -1173,7 +1776,15 @@ void OpenAIEndpoints::setJson(httplib::Response& res, const nlohmann::json& body
 
 void OpenAIEndpoints::respondError(httplib::Response& res, int status, const std::string& code, const std::string& message) {
     res.status = status;
-    setJson(res, {{"error", code}, {"message", message}});
+    std::string type = "invalid_request_error";
+    if (status >= 500) {
+        type = "internal_error";
+    } else if (status == 429) {
+        type = "rate_limit_error";
+    } else if (status == 503) {
+        type = "service_unavailable";
+    }
+    setJson(res, {{"error", {{"message", message}, {"type", type}, {"code", code}}}});
 }
 
 bool OpenAIEndpoints::validateModel(const std::string& model,

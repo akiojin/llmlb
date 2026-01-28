@@ -4,6 +4,9 @@
 #include <fstream>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include <chrono>
+#include <optional>
+#include <thread>
 
 #include "api/http_server.h"
 #include "api/openai_endpoints.h"
@@ -40,6 +43,43 @@ void write_text(const fs::path& path, const std::string& content) {
     std::ofstream ofs(path);
     ofs << content;
 }
+
+class EnvGuard {
+public:
+    EnvGuard(const std::string& key, const std::string& value) : key_(key) {
+        const char* prev = std::getenv(key.c_str());
+        if (prev) {
+            had_prev_ = true;
+            prev_value_ = prev;
+        }
+#ifdef _WIN32
+        _putenv_s(key.c_str(), value.c_str());
+#else
+        setenv(key.c_str(), value.c_str(), 1);
+#endif
+    }
+
+    ~EnvGuard() {
+#ifdef _WIN32
+        if (had_prev_) {
+            _putenv_s(key_.c_str(), prev_value_.c_str());
+        } else {
+            _putenv_s(key_.c_str(), "");
+        }
+#else
+        if (had_prev_) {
+            setenv(key_.c_str(), prev_value_.c_str(), 1);
+        } else {
+            unsetenv(key_.c_str());
+        }
+#endif
+    }
+
+private:
+    std::string key_;
+    bool had_prev_{false};
+    std::string prev_value_;
+};
 }  // namespace
 
 TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
@@ -64,6 +104,27 @@ TEST(OpenAIEndpointsTest, ListsModelsAndRespondsToChat) {
     ASSERT_TRUE(chat);
     EXPECT_EQ(chat->status, 200);
     EXPECT_NE(chat->body.find("Response to"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, AcceptsLoraParameter) {
+    xllm::set_ready(true);  // Ensure node is ready
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
+    NodeEndpoints node;
+    HttpServer server(18097, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18097);
+    std::string body = R\"({\"model\":\"gpt-oss-7b\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"lora\":[{\"lora\":\"adapter.gguf\",\"scale\":0.7}]})\";
+    auto chat = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(chat);
+    EXPECT_EQ(chat->status, 200);
+    EXPECT_NE(chat->body.find(\"Response to\"), std::string::npos);
 
     server.stop();
 }
@@ -128,6 +189,95 @@ TEST(OpenAIEndpointsTest, Returns400OnInvalidTopP) {
     EXPECT_EQ(res->status, 400);
     EXPECT_NE(res->body.find("top_p"), std::string::npos);
 
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, ChatCompletionsReturnsToolCallsWhenDetected) {
+    xllm::set_ready(true);
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
+    NodeEndpoints node;
+    HttpServer server(18123, openai, node);
+    server.start();
+
+    httplib::Client cli("127.0.0.1", 18123);
+    std::string body = R"({
+        "model":"gpt-oss-7b",
+        "messages":[{"role":"user","content":"{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Tokyo\"}}"}],
+        "tools":[{"type":"function","function":{"name":"get_weather","description":"get weather","parameters":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}}}]
+    })";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = nlohmann::json::parse(res->body);
+    ASSERT_TRUE(j.contains("choices"));
+    auto message = j["choices"][0]["message"];
+    ASSERT_TRUE(message.contains("tool_calls"));
+    EXPECT_EQ(message["tool_calls"][0]["function"]["name"], "get_weather");
+
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, QueuesRequestsUntilSlotAvailable) {
+    using namespace std::chrono_literals;
+    xllm::set_ready(true);
+    EnvGuard queue_timeout("XLLM_REQUEST_QUEUE_TIMEOUT_MS", "200");
+
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
+    NodeEndpoints node;
+    HttpServer server(18121, openai, node);
+    server.start();
+
+    auto hold = RequestGuard::try_acquire();
+    ASSERT_TRUE(hold.has_value());
+    auto guard_holder = std::make_shared<std::optional<RequestGuard>>(std::move(*hold));
+    std::thread releaser([guard_holder]() {
+        std::this_thread::sleep_for(50ms);
+        guard_holder->reset();
+    });
+
+    httplib::Client cli("127.0.0.1", 18121);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"hello"}]})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+
+    releaser.join();
+    server.stop();
+}
+
+TEST(OpenAIEndpointsTest, Returns429WhenQueueTimeoutExceeded) {
+    using namespace std::chrono_literals;
+    xllm::set_ready(true);
+    EnvGuard queue_timeout("XLLM_REQUEST_QUEUE_TIMEOUT_MS", "50");
+
+    ModelRegistry registry;
+    registry.setModels({"gpt-oss-7b"});
+    InferenceEngine engine;
+    NodeConfig config;
+    OpenAIEndpoints openai(registry, engine, config, GpuBackend::Cpu);
+    NodeEndpoints node;
+    HttpServer server(18122, openai, node);
+    server.start();
+
+    auto hold = RequestGuard::try_acquire();
+    ASSERT_TRUE(hold.has_value());
+    auto guard_holder = std::make_shared<std::optional<RequestGuard>>(std::move(*hold));
+
+    httplib::Client cli("127.0.0.1", 18122);
+    std::string body = R"({"model":"gpt-oss-7b","messages":[{"role":"user","content":"hello"}]})";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 429);
+
+    guard_holder->reset();
     server.stop();
 }
 

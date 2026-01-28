@@ -44,6 +44,24 @@ int stop(const ModelOptions& options);
 /// @return Exit code (0=success, 1=error, 2=connection error)
 int ps();
 
+/// Execute the 'profile' command
+int profile(const ProfileOptions& options);
+
+/// Execute the 'benchmark' command
+int benchmark(const BenchmarkOptions& options);
+
+/// Execute the 'compare' command
+int compare(const CompareOptions& options);
+
+/// Execute the 'convert' command
+int convert(const ConvertOptions& options);
+
+/// Execute the 'export' command
+int exportModel(const ExportOptions& options);
+
+/// Execute the 'import' command
+int importModel(const ImportOptions& options);
+
 }  // namespace commands
 }  // namespace cli
 }  // namespace xllm

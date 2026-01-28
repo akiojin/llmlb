@@ -10,7 +10,7 @@
 
 using namespace xllm;
 
-TEST(NodePrometheusTest, MetricsEndpointReturnsText) {
+TEST(NodePrometheusTest, MetricsEndpointReturnsPrometheusText) {
     ModelRegistry registry;
     InferenceEngine engine;
     NodeConfig config;
@@ -20,12 +20,14 @@ TEST(NodePrometheusTest, MetricsEndpointReturnsText) {
     server.start();
 
     httplib::Client cli("127.0.0.1", 18090);
-    auto resp = cli.Get("/metrics/prom");
+    auto resp = cli.Get("/v0/metrics");
     ASSERT_TRUE(resp);
     EXPECT_EQ(resp->status, 200);
     EXPECT_EQ(resp->get_header_value("Content-Type"), "text/plain");
     EXPECT_NE(resp->body.find("xllm_uptime_seconds"), std::string::npos);
     EXPECT_NE(resp->body.find("xllm_gpu_devices"), std::string::npos);
+    EXPECT_NE(resp->body.find("xllm_tokens_total"), std::string::npos);
+    EXPECT_NE(resp->body.find("xllm_vram_used_bytes"), std::string::npos);
 
     server.stop();
 }

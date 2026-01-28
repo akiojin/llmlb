@@ -4,6 +4,7 @@
 #include "core/text_manager.h"
 #include "core/request_watchdog.h"
 #include "core/vision_processor.h"
+#include "core/kv_cache_utils.h"
 #include "include/llama.h"
 #include "models/model_descriptor.h"
 #include "models/model_resolver.h"
@@ -11,6 +12,7 @@
 #include "models/model_sync.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
+#include "metrics/metrics_state.h"
 #include "utils/stop_sequences.h"
 #include "runtime/state.h"
 #include "system/gpu_detector.h"
@@ -24,6 +26,7 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -36,6 +39,35 @@ namespace {
 
 // T182: トークン間タイムアウトのデフォルト値（5秒）
 constexpr auto kDefaultInterTokenTimeout = std::chrono::milliseconds(5000);
+
+#ifdef XLLM_TESTING
+void persist_stub_kv_cache_for_test(const std::vector<ChatMessage>& messages,
+                                    const std::string& model_name) {
+    if (std::getenv("XLLM_KV_CACHE_DIR") == nullptr) {
+        return;
+    }
+    const std::string prompt = buildChatMLPrompt(messages);
+    std::string error;
+    const std::string cache_dir = get_default_kv_cache_dir();
+    if (!ensure_kv_cache_dir(cache_dir, error)) {
+        return;
+    }
+    auto cache_path = build_kv_cache_path(model_name, prompt, cache_dir);
+    if (cache_path.empty()) {
+        return;
+    }
+    bool cache_exists = std::filesystem::exists(cache_path);
+    if (!cache_exists) {
+        std::ofstream ofs(cache_path);
+        ofs << "stub";
+    } else {
+        auto hit_path = cache_path;
+        hit_path += ".hit";
+        std::ofstream ofs(hit_path);
+        ofs << "hit";
+    }
+}
+#endif
 
 #ifdef XLLM_TESTING
 std::mutex g_inter_token_timeout_mutex;
@@ -219,6 +251,7 @@ void report_token_metrics(const TokenMetricsState& state, const std::string& mod
         metrics.ttft_ms,
         metrics.token_count,
         metrics.tokens_per_second);
+    metrics::record_token_metrics(metrics);
 #ifdef XLLM_TESTING
     std::function<void(const TokenMetrics&)> hook;
     {
@@ -357,6 +390,25 @@ std::optional<ModelDescriptor> resolve_descriptor(
     if (desc) return desc;
 
     return std::nullopt;
+}
+
+void resolve_draft_descriptor(const ModelStorage* storage,
+                              const ModelDescriptor& target,
+                              InferenceParams& params) {
+    if (params.draft_model.empty()) {
+        return;
+    }
+    auto draft_desc = resolve_descriptor(storage, params.draft_model);
+    if (!draft_desc) {
+        throw std::runtime_error("Draft model not found: " + params.draft_model);
+    }
+    if (draft_desc->runtime != target.runtime) {
+        throw std::runtime_error("Draft model runtime must match target runtime");
+    }
+    if (draft_desc->primary_path.empty()) {
+        throw std::runtime_error("Draft model path is empty: " + params.draft_model);
+    }
+    params.draft_model_path = draft_desc->primary_path;
 }
 
 }  // namespace
@@ -748,6 +800,9 @@ std::string InferenceEngine::generateChat(
 
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode");
+#ifdef XLLM_TESTING
+        persist_stub_kv_cache_for_test(messages, model);
+#endif
         if (messages.empty()) return "";
         return apply_stop_sequences_to_output("Response to: " + messages.back().content, params.stop_sequences);
     }
@@ -771,6 +826,7 @@ std::string InferenceEngine::generateChat(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
+        resolve_draft_descriptor(model_storage_, *desc, params_with_metrics);
 
         RetryConfig retry_config;
         auto output = with_retry([&]() { return engine->generateChat(messages, *desc, params_with_metrics); },
@@ -788,6 +844,10 @@ std::string InferenceEngine::generateChatWithImages(
 
     if (image_urls.empty()) {
         return generateChat(messages, model_name, params);
+    }
+
+    if (!params.draft_model.empty()) {
+        spdlog::warn("Speculative decoding is not supported for vision requests; ignoring draft_model");
     }
 
     if (!isInitialized()) {
@@ -1016,6 +1076,7 @@ std::string InferenceEngine::generateCompletion(
         InferenceParams params_with_metrics = params;
         params_with_metrics.on_token_callback = &token_metrics_callback;
         params_with_metrics.on_token_callback_ctx = &metrics;
+        resolve_draft_descriptor(model_storage_, *desc, params_with_metrics);
 
         RetryConfig retry_config;
         auto output = with_retry([&]() { return engine->generateCompletion(prompt, *desc, params_with_metrics); },
@@ -1033,6 +1094,9 @@ std::vector<std::string> InferenceEngine::generateChatStream(
 
     if (!isInitialized()) {
         spdlog::warn("InferenceEngine not initialized, using stub mode for streaming");
+#ifdef XLLM_TESTING
+        persist_stub_kv_cache_for_test(messages, model);
+#endif
         std::string text = messages.empty() ? "" : "Response to: " + messages.back().content;
         auto tokens = split_tokens(text, params.max_tokens);
         for (const auto& t : tokens) {
@@ -1071,6 +1135,7 @@ std::vector<std::string> InferenceEngine::generateChatStream(
         params_with_watchdog.on_token_callback_ctx = &watchdog_context;
         params_with_watchdog.abort_callback = &inter_token_abort_check;
         params_with_watchdog.abort_callback_ctx = &watchdog_context;
+        resolve_draft_descriptor(model_storage_, *desc, params_with_watchdog);
 
         try {
             auto output = engine->generateChatStream(messages, *desc, params_with_watchdog, on_token);

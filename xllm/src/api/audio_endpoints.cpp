@@ -6,6 +6,9 @@
 #include <spdlog/spdlog.h>
 #include <cstring>
 #include <algorithm>
+#include <cstddef>
+#include <chrono>
+#include <cstdlib>
 
 #define MINIAUDIO_IMPLEMENTATION
 #define MA_NO_DEVICE_IO
@@ -16,6 +19,22 @@
 #include "vendor/miniaudio/miniaudio.h"
 
 namespace xllm {
+
+namespace {
+std::chrono::milliseconds get_request_queue_timeout() {
+    constexpr int64_t kDefaultTimeoutMs = 1000;
+    if (const char* env = std::getenv("XLLM_REQUEST_QUEUE_TIMEOUT_MS")) {
+        try {
+            int64_t value = std::stoll(env);
+            if (value > 0) {
+                return std::chrono::milliseconds(value);
+            }
+        } catch (...) {
+        }
+    }
+    return std::chrono::milliseconds(kDefaultTimeoutMs);
+}
+}  // namespace
 
 AudioEndpoints::AudioEndpoints(AudioManager& audio_manager)
     : audio_manager_(audio_manager), tts_manager_(nullptr) {
@@ -65,7 +84,7 @@ void AudioEndpoints::registerRoutes(httplib::Server& server) {
 void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::Response& res) {
     spdlog::debug("Handling transcription request");
 
-    auto guard = RequestGuard::try_acquire();
+    auto guard = RequestGuard::acquire_with_timeout(get_request_queue_timeout());
     if (!guard) {
         respondError(res, 429, "too_many_requests", "Node is busy");
         return;
@@ -208,10 +227,38 @@ void AudioEndpoints::handleTranscriptions(const httplib::Request& req, httplib::
     spdlog::info("Transcription completed: {} chars", result.text.size());
 }
 
+namespace {
+
+// T304: 内部バッファ満杯相当（時間ベース）でチャンクサイズを決定する
+size_t computeStreamingChunkBytes(const SpeechResult& result) {
+    // フォーマット情報が不十分な場合は固定サイズにフォールバック
+    if (result.sample_rate <= 0 || result.channels <= 0 || result.bits_per_sample <= 0) {
+        return 16 * 1024;
+    }
+
+    const size_t bytes_per_sample = static_cast<size_t>(result.bits_per_sample / 8);
+    if (bytes_per_sample == 0) {
+        return 16 * 1024;
+    }
+
+    const size_t bytes_per_second =
+        static_cast<size_t>(result.sample_rate) *
+        static_cast<size_t>(result.channels) *
+        bytes_per_sample;
+
+    // 200ms相当のバッファで送る（小さすぎ/大きすぎを避ける）
+    const size_t by_duration = bytes_per_second / 5;
+    constexpr size_t kMinChunk = 4 * 1024;
+    constexpr size_t kMaxChunk = 64 * 1024;
+    return std::clamp(by_duration, kMinChunk, kMaxChunk);
+}
+
+}  // namespace
+
 void AudioEndpoints::handleSpeech(const httplib::Request& req, httplib::Response& res) {
     spdlog::debug("Handling speech request");
 
-    auto guard = RequestGuard::try_acquire();
+    auto guard = RequestGuard::acquire_with_timeout(get_request_queue_timeout());
     if (!guard) {
         respondError(res, 429, "too_many_requests", "Node is busy");
         return;
@@ -283,6 +330,8 @@ void AudioEndpoints::handleSpeech(const httplib::Request& req, httplib::Response
         }
     }
 
+    const bool stream = body.value("stream", false);
+
     // モデルのオンデマンドロード
     if (!tts_manager_->loadModelIfNeeded(model_name)) {
         respondError(res, 500, "model_load_failed",
@@ -323,14 +372,45 @@ void AudioEndpoints::handleSpeech(const httplib::Request& req, httplib::Response
         content_type = "audio/pcm";
     }
 
-    // バイナリレスポンス
-    res.set_content(
-        std::string(reinterpret_cast<const char*>(result.audio_data.data()),
-                    result.audio_data.size()),
-        content_type);
+    const size_t audio_bytes = result.audio_data.size();
+
+    if (stream) {
+        // T301/T305: チャンク単位でのストリーミング送信（chunked transfer）
+        res.set_header("Content-Type", content_type);
+
+        const size_t chunk_bytes = computeStreamingChunkBytes(result);
+        auto audio = std::make_shared<std::vector<uint8_t>>(std::move(result.audio_data));
+        auto guard_ptr = std::make_shared<decltype(guard)>(std::move(guard));
+
+        res.set_chunked_content_provider(
+            content_type,
+            [audio, guard_ptr, chunk_bytes](size_t offset, httplib::DataSink& sink) {
+                (void)guard_ptr;  // keep guard alive for the duration of the stream
+
+                if (offset >= audio->size()) {
+                    sink.done();
+                    return true;
+                }
+
+                const size_t remaining = audio->size() - offset;
+                const size_t to_write = std::min(chunk_bytes, remaining);
+                sink.write(reinterpret_cast<const char*>(audio->data() + offset), to_write);
+
+                if (offset + to_write >= audio->size()) {
+                    sink.done();
+                }
+                return true;
+            });
+    } else {
+        // バイナリレスポンス（非ストリーミング）
+        res.set_content(
+            std::string(reinterpret_cast<const char*>(result.audio_data.data()),
+                        result.audio_data.size()),
+            content_type);
+    }
 
     spdlog::info("Speech synthesis completed: {} bytes, format={}",
-                 result.audio_data.size(), output_format);
+                 audio_bytes, output_format);
 }
 
 int AudioEndpoints::decodeAudioToFloat(const std::string& audio_data,

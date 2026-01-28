@@ -235,6 +235,42 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
             }
             if (!list.empty()) cfg.origin_allowlist = std::move(list);
         }
+        if (j.contains("cors") && j["cors"].is_object()) {
+            const auto& cors = j["cors"];
+            if (cors.contains("enabled") && cors["enabled"].is_boolean()) {
+                cfg.cors_enabled = cors["enabled"].get<bool>();
+            }
+            if (cors.contains("allow_origin") && cors["allow_origin"].is_string()) {
+                cfg.cors_allow_origin = cors["allow_origin"].get<std::string>();
+            }
+            if (cors.contains("allow_methods") && cors["allow_methods"].is_string()) {
+                cfg.cors_allow_methods = cors["allow_methods"].get<std::string>();
+            }
+            if (cors.contains("allow_headers") && cors["allow_headers"].is_string()) {
+                cfg.cors_allow_headers = cors["allow_headers"].get<std::string>();
+            }
+        }
+        if (j.contains("cors_allow_origin") && j["cors_allow_origin"].is_string()) {
+            cfg.cors_allow_origin = j["cors_allow_origin"].get<std::string>();
+        }
+        if (j.contains("cors_allow_methods") && j["cors_allow_methods"].is_string()) {
+            cfg.cors_allow_methods = j["cors_allow_methods"].get<std::string>();
+        }
+        if (j.contains("cors_allow_headers") && j["cors_allow_headers"].is_string()) {
+            cfg.cors_allow_headers = j["cors_allow_headers"].get<std::string>();
+        }
+        if (j.contains("cors_enabled") && j["cors_enabled"].is_boolean()) {
+            cfg.cors_enabled = j["cors_enabled"].get<bool>();
+        }
+        if (j.contains("gzip") && j["gzip"].is_object()) {
+            const auto& gzip = j["gzip"];
+            if (gzip.contains("enabled") && gzip["enabled"].is_boolean()) {
+                cfg.gzip_enabled = gzip["enabled"].get<bool>();
+            }
+        }
+        if (j.contains("gzip_enabled") && j["gzip_enabled"].is_boolean()) {
+            cfg.gzip_enabled = j["gzip_enabled"].get<bool>();
+        }
     };
 
     // file

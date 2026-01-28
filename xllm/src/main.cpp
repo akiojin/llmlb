@@ -18,6 +18,7 @@
 #include "models/model_resolver.h"
 #include "models/model_registry.h"
 #include "models/model_storage.h"
+#include "models/modelfile.h"
 #include "core/llama_manager.h"
 #include "core/inference_engine.h"
 #include "api/openai_endpoints.h"
@@ -377,6 +378,11 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
         node_endpoints.setGpuDevices(gpus);
         xllm::HttpServer server(node_port, openai, node_endpoints, bind_address);
+        server.enableCors(cfg.cors_enabled);
+        server.setCorsOrigin(cfg.cors_allow_origin);
+        server.setCorsMethods(cfg.cors_allow_methods);
+        server.setCorsHeaders(cfg.cors_allow_headers);
+        server.enableCompression(cfg.gzip_enabled);
 
 #ifdef USE_WHISPER
         // Register audio endpoints for ASR (and TTS if available)
@@ -620,9 +626,17 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
             // Check llmlb models
             auto descriptor = model_storage.resolveDescriptor(model_name);
             if (descriptor) {
+                std::string modelfile_error;
+                auto modelfile = xllm::Modelfile::loadForModel(model_name, modelfile_error);
                 response["modelfile"] = "";
                 response["parameters"] = "";
                 response["template"] = "";
+                if (modelfile) {
+                    response["modelfile"] = modelfile->raw_text;
+                    if (!modelfile->template_text.empty()) {
+                        response["template"] = modelfile->template_text;
+                    }
+                }
                 response["details"] = nlohmann::json::object();
                 response["details"]["format"] = descriptor->format;
                 response["details"]["family"] = "";
@@ -782,6 +796,24 @@ int main(int argc, char* argv[]) {
 
         case xllm::Subcommand::Ps:
             return xllm::cli::commands::ps();
+
+        case xllm::Subcommand::Profile:
+            return xllm::cli::commands::profile(cli_result.profile_options);
+
+        case xllm::Subcommand::Benchmark:
+            return xllm::cli::commands::benchmark(cli_result.benchmark_options);
+
+        case xllm::Subcommand::Compare:
+            return xllm::cli::commands::compare(cli_result.compare_options);
+
+        case xllm::Subcommand::Convert:
+            return xllm::cli::commands::convert(cli_result.convert_options);
+
+        case xllm::Subcommand::Export:
+            return xllm::cli::commands::exportModel(cli_result.export_options);
+
+        case xllm::Subcommand::Import:
+            return xllm::cli::commands::importModel(cli_result.import_options);
 
         case xllm::Subcommand::None:
         default:

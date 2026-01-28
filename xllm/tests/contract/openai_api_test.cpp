@@ -175,6 +175,42 @@ TEST_F(OpenAIContractFixture, ChatCompletionsAppliesStopSequence) {
     EXPECT_EQ(content, "Response to: ping ");
 }
 
+TEST_F(OpenAIContractFixture, ChatCompletionsReturnsToolCallsWhenDetected) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({
+        "model":"gpt-oss-7b",
+        "messages":[{"role":"user","content":"{\"name\":\"get_weather\",\"arguments\":{\"location\":\"Tokyo\"}}"}],
+        "tools":[{"type":"function","function":{"name":"get_weather","description":"get weather","parameters":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}}}]
+    })";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    ASSERT_TRUE(j.contains("choices"));
+    auto message = j["choices"][0]["message"];
+    ASSERT_TRUE(message.contains("tool_calls"));
+    ASSERT_TRUE(message["tool_calls"].is_array());
+    EXPECT_FALSE(message["tool_calls"].empty());
+    EXPECT_EQ(message["tool_calls"][0]["type"], "function");
+    EXPECT_EQ(message["tool_calls"][0]["function"]["name"], "get_weather");
+    EXPECT_EQ(j["choices"][0]["finish_reason"], "tool_calls");
+}
+
+TEST_F(OpenAIContractFixture, ChatCompletionsAcceptsSpeculativeDecoding) {
+    httplib::Client cli("127.0.0.1", 18090);
+    std::string body = R"({
+        "model":"gpt-oss-7b",
+        "messages":[{"role":"user","content":"hello"}],
+        "draft_model":"gpt-oss-7b",
+        "speculative":{"max_tokens":8,"min_tokens":1}
+    })";
+    auto res = cli.Post("/v1/chat/completions", body, "application/json");
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    auto j = json::parse(res->body);
+    EXPECT_EQ(j["choices"][0]["message"]["content"], "Response to: hello");
+}
+
 TEST_F(OpenAIContractFixture, CompletionsAppliesStopSequenceArray) {
     httplib::Client cli("127.0.0.1", 18090);
     std::string body = R"({"model":"gpt-oss-7b","prompt":"hello STOP world","stop":["STOP","END"]})";

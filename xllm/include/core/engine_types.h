@@ -31,6 +31,12 @@ struct ToolCall {
     std::string arguments_json;
 };
 
+struct LoraRequest {
+    std::string name;
+    std::string path;
+    float scale{1.0f};
+};
+
 using OnTokenCallback = void (*)(void* ctx, uint32_t token_id, uint64_t timestamp_ns);
 /// T182: Callback to check if generation should abort (returns true to abort)
 using AbortCallback = bool (*)(void* ctx);
@@ -51,6 +57,14 @@ struct InferenceParams {
     uint32_t seed{0};
     std::vector<std::string> stop_sequences;
     std::vector<ToolDefinition> tools;  // Function calling tools
+    std::string forced_tool_name;       // tool_choiceで指定された関数名（空なら未指定）
+    std::string grammar;                // llama.cpp GBNF grammar (empty = no constraint)
+    std::string draft_model;            // Speculative decoding: draft model name
+    std::string draft_model_path;       // Speculative decoding: resolved draft model path
+    int draft_max_tokens{0};            // Speculative decoding: max draft tokens (0 = default)
+    int draft_min_tokens{0};            // Speculative decoding: min draft tokens
+    std::string chat_template;          // Modelfile chat template (Jinja2)
+    std::vector<LoraRequest> loras;     // Dynamic LoRA adapters to apply
     OnTokenCallback on_token_callback{nullptr};
     void* on_token_callback_ctx{nullptr};
     /// T182: Abort callback for inter-token timeout

@@ -11,10 +11,13 @@ set(UNIT_TEST_SOURCES
     model_storage_test.cpp
     inference_engine_test.cpp
     llama_engine_kv_cache_test.cpp
+    lora_utils_test.cpp
+    kv_cache_utils_test.cpp
     engine_registry_test.cpp
     text_manager_test.cpp
     model_converter_test.cpp
     model_resolver_test.cpp
+    modelfile_test.cpp
     llama_manager_test.cpp
     model_pool_test.cpp
     model_loader_test.cpp
@@ -31,11 +34,15 @@ set(UNIT_TEST_SOURCES
     utils_utf8_test.cpp
     request_guard_test.cpp
     resource_monitor_test.cpp
+    logger_rotation_test.cpp
+    pgp_verify_test.cpp
     cli_test.cpp
     progress_renderer_test.cpp
     ollama_compat_test.cpp
     repl_session_test.cpp
+    tensor_parallelism_test.cpp
     ../../src/utils/cli.cpp
+    ../../src/utils/pgp.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
     ../../src/models/model_storage.cpp
@@ -47,6 +54,8 @@ set(UNIT_TEST_SOURCES
     ../../src/core/engine_registry.cpp
     ../../src/core/continuous_batch_scheduler.cpp
     ../../src/core/llama_engine.cpp
+    ../../src/core/lora_utils.cpp
+    ../../src/core/kv_cache_utils.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/text_manager.cpp
     ../../src/core/inference_cache.cpp
@@ -63,6 +72,8 @@ set(UNIT_TEST_SOURCES
     ../../src/api/node_endpoints.cpp
     ../../src/api/http_server.cpp
     ../../src/models/model_registry.cpp
+    ../../src/models/modelfile.cpp
+    ../../src/metrics/metrics_state.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/whisper_manager.cpp
     ../../src/core/onnx_tts_manager.cpp
@@ -92,6 +103,8 @@ else()
     list(APPEND UNIT_TEST_SOURCES ../../src/system/resource_monitor.cpp)
 endif()
 
+list(APPEND UNIT_TEST_SOURCES ../../src/system/tensor_parallelism.cpp)
+
 add_executable(xllm-unit-tests
     ${UNIT_TEST_SOURCES}
 )
@@ -106,6 +119,7 @@ target_link_libraries(xllm-unit-tests
         utils_lib
         OpenSSL::SSL
         OpenSSL::Crypto
+        ZLIB::ZLIB
 )
 
 if(BUILD_WITH_WHISPER)

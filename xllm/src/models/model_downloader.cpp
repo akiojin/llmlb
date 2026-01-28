@@ -607,6 +607,95 @@ bool validate_artifact_path(const std::string& path) {
     return true;
 }
 
+std::optional<std::string> find_signature_for(const std::vector<std::string>& siblings,
+                                              const std::string& filename) {
+    const std::string sig = filename + ".sig";
+    if (std::find(siblings.begin(), siblings.end(), sig) != siblings.end()) {
+        return sig;
+    }
+    const std::string asc = filename + ".asc";
+    if (std::find(siblings.begin(), siblings.end(), asc) != siblings.end()) {
+        return asc;
+    }
+    return std::nullopt;
+}
+
+struct HfMetadataCacheEntry {
+    std::string etag;
+    std::string body;
+};
+
+std::filesystem::path hf_metadata_cache_path(const std::string& models_dir) {
+    return std::filesystem::path(models_dir) / ".hf_metadata_cache.json";
+}
+
+std::optional<HfMetadataCacheEntry> load_hf_metadata_cache(const std::string& models_dir,
+                                                           const std::string& model_id) {
+    const auto cache_path = hf_metadata_cache_path(models_dir);
+    if (!std::filesystem::exists(cache_path)) return std::nullopt;
+
+    xllm::FileLock lock(cache_path);
+    if (!lock.locked()) return std::nullopt;
+
+    std::ifstream ifs(cache_path, std::ios::binary);
+    if (!ifs.is_open()) return std::nullopt;
+
+    auto j = nlohmann::json::parse(ifs, nullptr, false);
+    if (!j.is_object()) return std::nullopt;
+    if (!j.contains(model_id) || !j[model_id].is_object()) return std::nullopt;
+
+    const auto& entry = j[model_id];
+    HfMetadataCacheEntry out;
+    if (entry.contains("etag") && entry["etag"].is_string()) {
+        out.etag = entry["etag"].get<std::string>();
+    }
+    if (entry.contains("body") && entry["body"].is_string()) {
+        out.body = entry["body"].get<std::string>();
+    }
+    if (out.body.empty()) return std::nullopt;
+    return out;
+}
+
+bool store_hf_metadata_cache(const std::string& models_dir,
+                             const std::string& model_id,
+                             const HfMetadataCacheEntry& entry) {
+    if (entry.body.empty()) return false;
+
+    const auto cache_path = hf_metadata_cache_path(models_dir);
+    std::filesystem::create_directories(cache_path.parent_path());
+
+    xllm::FileLock lock(cache_path);
+    if (!lock.locked()) return false;
+
+    nlohmann::json cache = nlohmann::json::object();
+    if (std::filesystem::exists(cache_path)) {
+        std::ifstream ifs(cache_path, std::ios::binary);
+        auto current = nlohmann::json::parse(ifs, nullptr, false);
+        if (current.is_object()) {
+            cache = std::move(current);
+        }
+    }
+
+    nlohmann::json cache_entry;
+    if (!entry.etag.empty()) {
+        cache_entry["etag"] = entry.etag;
+    }
+    cache_entry["body"] = entry.body;
+    cache[model_id] = cache_entry;
+
+    const auto temp_path = cache_path.string() + ".tmp";
+    std::ofstream ofs(temp_path, std::ios::binary | std::ios::trunc);
+    if (!ofs.is_open()) return false;
+    ofs << cache.dump();
+    ofs.flush();
+    if (!ofs.good()) return false;
+
+    std::error_code ec;
+    std::filesystem::rename(temp_path, cache_path, ec);
+    if (ec) return false;
+    return true;
+}
+
 }  // namespace
 
 namespace fs = std::filesystem;
@@ -757,16 +846,38 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
         if (*token) headers.emplace("Authorization", std::string("Bearer ") + token);
     }
 
+    std::optional<HfMetadataCacheEntry> cached_metadata = load_hf_metadata_cache(models_dir_, model_id);
+    if (cached_metadata.has_value() && !cached_metadata->etag.empty()) {
+        headers.emplace("If-None-Match", cached_metadata->etag);
+    }
+
     const std::string api_path = build_hf_api_path(base, model_id);
     spdlog::info("ModelDownloader: fetching HuggingFace repo metadata path='{}'", api_path);
 
     auto res = client->Get(api_path.c_str(), headers);
+    std::string metadata_body;
     if (!res) {
-        set_error("HuggingFace request failed (no response)");
-        spdlog::warn("ModelDownloader: HuggingFace request failed (no response) path='{}'", api_path);
-        return "";
-    }
-    if (res->status < 200 || res->status >= 300) {
+        if (!cached_metadata.has_value()) {
+            set_error("HuggingFace request failed (no response)");
+            spdlog::warn("ModelDownloader: HuggingFace request failed (no response) path='{}'", api_path);
+            return "";
+        }
+        spdlog::warn("ModelDownloader: HuggingFace request failed, falling back to cached metadata path='{}'", api_path);
+        metadata_body = cached_metadata->body;
+    } else if (res->status == 304) {
+        if (!cached_metadata.has_value()) {
+            set_error("HuggingFace metadata cache missing for 304 response");
+            spdlog::warn("ModelDownloader: HuggingFace metadata cache missing for 304 path='{}'", api_path);
+            return "";
+        }
+        metadata_body = cached_metadata->body;
+    } else if (res->status >= 200 && res->status < 300) {
+        metadata_body = res->body;
+        HfMetadataCacheEntry entry;
+        entry.etag = res->get_header_value("ETag");
+        entry.body = metadata_body;
+        store_hf_metadata_cache(models_dir_, model_id, entry);
+    } else {
         if (res->status == 401 || res->status == 403) {
             set_error("gated model or unauthorized (status=" + std::to_string(res->status) + ")");
         } else {
@@ -776,7 +887,7 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
         return "";
     }
 
-    auto body = nlohmann::json::parse(res->body, nullptr, false);
+    auto body = nlohmann::json::parse(metadata_body, nullptr, false);
     if (body.is_discarded() || !body.contains("siblings") || !body["siblings"].is_array()) {
         set_error("HuggingFace response missing siblings");
         spdlog::warn("ModelDownloader: HuggingFace response missing siblings");
@@ -883,6 +994,12 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
         entry["url"] = url;
         if (auto pr = manifest_file_priority(name)) {
             entry["priority"] = *pr;
+        }
+        if (auto sig = find_signature_for(siblings, name)) {
+            nlohmann::json sig_entry;
+            sig_entry["name"] = *sig;
+            sig_entry["url"] = build_hf_resolve_url(base_url, model_id, *sig);
+            entry["signature"] = sig_entry;
         }
         files.push_back(entry);
     };

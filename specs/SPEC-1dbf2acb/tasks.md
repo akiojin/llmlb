@@ -39,9 +39,9 @@
 
 - [x] T201: LRUアンロードのunitテスト作成（llama_manager_test.cpp: EvictForVram*）
 - [x] T202: アクティブ保護のテスト作成（llama_manager_test.cpp: Active*）
-- [ ] T203: Tensor Parallelism自動化のテスト作成
+- [x] T203: Tensor Parallelism自動化のテスト作成（tensor_parallelism_test.cpp）
 - [x] T210: アイドルタイムアウトのテスト作成（model_loader_test.cpp: IdleModelsAreUnloadedAfterTimeout）
-- [ ] T211: GPU Offloadのテスト作成
+- [x] T211: GPU Offloadのテスト作成（tensor_parallelism_test.cpp: GpuOffloadTest）
 
 ### Core
 
@@ -55,137 +55,137 @@
 
 ### Integration
 
-- [ ] T209: 複数モデルロード→VRAM枯渇→LRUアンロードの統合テスト
+- [x] T209: 複数モデルロード→VRAM枯渇→LRUアンロードの統合テスト（vram_lru_evict_test.cpp）
 - [x] T214: アイドル→自動アンロードの統合テスト（model_lifecycle_test.cpp）
 
 ## Phase 3: マルチモーダル強化
 
 ### Test
 
-- [ ] T301: TTSストリーミングの契約テスト作成
-- [ ] T302: 画像URL配信のテスト作成
-- [ ] T303: 画像TTL削除のテスト作成
+- [x] T301: TTSストリーミングの契約テスト作成（audio_speech_stream_test.cpp）
+- [x] T302: 画像URL配信のテスト作成（image_url_test.cpp）
+- [x] T303: 画像TTL削除のテスト作成（image_url_test.cpp）
 
 ### Core
 
-- [ ] T304: TTSチャンク生成実装
-- [ ] T305: TTSストリーミングレスポンス実装
-- [ ] T306: [P] 画像ファイル保存実装
-- [ ] T307: [P] 静的ファイル配信エンドポイント
-- [ ] T308: 画像TTL自動削除（バックグラウンドタスク）
+- [x] T304: TTSチャンク生成実装（audio_endpoints.cpp: 時間ベースchunk算出）
+- [x] T305: TTSストリーミングレスポンス実装（audio_endpoints.cpp: chunked transfer）
+- [x] T306: [P] 画像ファイル保存実装（image_endpoints.cpp: 保存+URL）
+- [x] T307: [P] 静的ファイル配信エンドポイント（/images マウント）
+- [x] T308: 画像TTL自動削除（image_endpoints.cpp: バックグラウンド掃除）
 
 ### Integration
 
-- [ ] T309: TTS→ストリーミング受信の統合テスト
-- [ ] T310: 画像生成→URL取得→ファイル確認の統合テスト
+- [x] T309: TTS→ストリーミング受信の統合テスト（audio_speech_stream_integration_test.cpp）
+- [x] T310: 画像生成→URL取得→ファイル確認の統合テスト（image_url_integration_test.cpp）
 
 ## Phase 4: 高度な推論機能
 
 ### Test
 
-- [ ] T401: Function Calling契約テスト作成
-- [ ] T402: Speculative Decodingテスト作成
-- [ ] T409: リクエストキューイングテスト作成
+- [x] T401: Function Calling契約テスト作成（openai_api_test.cpp）
+- [x] T402: Speculative Decoding契約テスト作成（openai_api_test.cpp）
+- [x] T409: リクエストキューイングテスト作成（openai_endpoints_test.cpp）
 
 ### Core
 
-- [ ] T403: grammar/constrained decoding統合
-- [ ] T404: ツール出力形式の強制ロジック
-- [ ] T405: [P] ドラフトモデル管理
-- [ ] T406: [P] 投機的デコード検証ロジック
-- [ ] T410: リクエストキューイング実装（タイムアウト付き）
+- [x] T403: grammar/constrained decoding統合（tools時にJSON grammar適用）
+- [x] T404: ツール出力形式の強制ロジック（tool_choice対応）
+- [x] T405: [P] ドラフトモデル管理
+- [x] T406: [P] 投機的デコード検証ロジック
+- [x] T410: リクエストキューイング実装（タイムアウト付き）
 
 ### Integration
 
-- [ ] T407: Function Calling E2Eテスト
-- [ ] T408: Speculative Decoding性能テスト
-- [ ] T411: バッチ超過→キュー待機→処理の統合テスト
+- [x] T407: Function Calling E2Eテスト（openai_endpoints_test.cpp）
+- [x] T408: Speculative Decoding性能テスト
+- [x] T411: バッチ超過→キュー待機→処理の統合テスト（openai_endpoints_test.cpp）
 
 ## Phase 5: 運用機能
 
 ### Test
 
-- [ ] T501: Prometheus Metrics形式テスト
-- [ ] T502: Modelfileパーサーテスト
+- [x] T501: Prometheus Metrics形式テスト
+- [x] T502: Modelfileパーサーテスト
 
 ### Core
 
-- [ ] T503: /metrics エンドポイント実装
-- [ ] T504: トークンスループットメトリクス
-- [ ] T505: VRAM使用率メトリクス
-- [ ] T506: [P] Modelfileパーサー実装
-- [ ] T507: [P] Modelfile全命令対応
+- [x] T503: /metrics エンドポイント実装
+- [x] T504: トークンスループットメトリクス
+- [x] T505: VRAM使用率メトリクス
+- [x] T506: [P] Modelfileパーサー実装
+- [x] T507: [P] Modelfile全命令対応
 
 ### Integration
 
-- [ ] T508: Prometheus scrape統合テスト
-- [ ] T509: Modelfile適用→推論の統合テスト
+- [x] T508: Prometheus scrape統合テスト
+- [x] T509: Modelfile適用→推論の統合テスト
 
 ## Phase 6: 追加CLI機能
 
 ### Test
 
-- [ ] T601: profile コマンドの契約テスト作成
-- [ ] T602: benchmark コマンドの契約テスト作成
-- [ ] T603: compare コマンドの契約テスト作成
-- [ ] T604: convert コマンドの契約テスト作成
-- [ ] T605: export/import コマンドの契約テスト作成
+- [x] T601: profile コマンドの契約テスト作成
+- [x] T602: benchmark コマンドの契約テスト作成
+- [x] T603: compare コマンドの契約テスト作成
+- [x] T604: convert コマンドの契約テスト作成
+- [x] T605: export/import コマンドの契約テスト作成
 
 ### Core
 
-- [ ] T606: [P] profile コマンド実装（VRAM/速度計測）
-- [ ] T607: [P] benchmark コマンド実装（トークン/秒）
-- [ ] T608: compare コマンド実装（モデル比較）
-- [ ] T609: convert コマンド実装（形式変換）
-- [ ] T610: [P] export コマンド実装
-- [ ] T611: [P] import コマンド実装
+- [x] T606: [P] profile コマンド実装（VRAM/速度計測）
+- [x] T607: [P] benchmark コマンド実装（トークン/秒）
+- [x] T608: compare コマンド実装（モデル比較）
+- [x] T609: convert コマンド実装（形式変換）
+- [x] T610: [P] export コマンド実装
+- [x] T611: [P] import コマンド実装
 
 ## Phase 7: 高度な機能
 
 ### Test
 
-- [ ] T701: Dynamic LoRAのunitテスト作成
-- [ ] T702: KVキャッシュ永続化のテスト作成
-- [ ] T703: モデルレプリカのテスト作成
+- [x] T701: Dynamic LoRAのunitテスト作成
+- [x] T702: KVキャッシュ永続化のテスト作成
+- [x] T703: モデルレプリカのテスト作成
 
 ### Core
 
-- [ ] T704: Dynamic LoRA実装（実行時ロード）
-- [ ] T705: KVキャッシュディスク永続化実装
-- [ ] T706: モデルレプリカ実装（同一モデル複数インスタンス）
+- [x] T704: Dynamic LoRA実装（実行時ロード）
+- [x] T705: KVキャッシュディスク永続化実装
+- [x] T706: モデルレプリカ実装（同一モデル複数インスタンス）
 
 ### Integration
 
-- [ ] T707: LoRAロード→推論の統合テスト
-- [ ] T708: KVキャッシュ永続化→復元の統合テスト
+- [x] T707: LoRAロード→推論の統合テスト
+- [x] T708: KVキャッシュ永続化→復元の統合テスト
 
 ## Phase 8: HTTP機能強化
 
 ### Test
 
-- [ ] T801: CORS設定のテスト作成
-- [ ] T802: Gzip圧縮のテスト作成
-- [ ] T803: X-Request-IDのテスト作成
-- [ ] T804: ログローテーションのテスト作成
+- [x] T801: CORS設定のテスト作成
+- [x] T802: Gzip圧縮のテスト作成
+- [x] T803: X-Request-IDのテスト作成
+- [x] T804: ログローテーションのテスト作成
 
 ### Core
 
-- [ ] T805: [P] CORS設定実装（config.yaml対応）
-- [ ] T806: [P] Gzip圧縮実装
-- [ ] T807: X-Request-IDヘッダー実装
-- [ ] T808: ログローテーション実装
+- [x] T805: [P] CORS設定実装（config.yaml対応）
+- [x] T806: [P] Gzip圧縮実装
+- [x] T807: X-Request-IDヘッダー実装
+- [x] T808: ログローテーション実装
 
 ### Integration
 
-- [ ] T809: CORS→クロスオリジンリクエストの統合テスト
+- [x] T809: CORS→クロスオリジンリクエストの統合テスト
 
 ## Polish
 
-- [ ] P001: ドキュメント更新（README.md）
-- [ ] P002: CLIヘルプメッセージ整備
-- [ ] P003: エラーメッセージ統一
-- [ ] P004: PGP署名検証実装
-- [ ] P005: メタデータキャッシュ実装
+- [x] P001: ドキュメント更新（README.md）
+- [x] P002: CLIヘルプメッセージ整備
+- [x] P003: エラーメッセージ統一
+- [x] P004: PGP署名検証実装
+- [x] P005: メタデータキャッシュ実装
 
 ## 優先度マトリクス
 

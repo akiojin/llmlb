@@ -3,7 +3,6 @@
 //! T140: DownloadStatus遷移のunit test
 
 use llmlb::types::endpoint::{DownloadStatus, ModelDownloadTask};
-use serde_json;
 use uuid::Uuid;
 
 /// 状態遷移: Pending → Downloading → Completed

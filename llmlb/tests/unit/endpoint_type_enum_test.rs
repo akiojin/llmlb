@@ -3,7 +3,6 @@
 //! T139: EndpointType列挙型のunit test
 
 use llmlb::types::endpoint::EndpointType;
-use serde_json;
 
 /// JSON シリアライズ: snake_case形式
 #[test]
@@ -148,7 +147,7 @@ fn test_default() {
 fn test_clone_copy() {
     let t1 = EndpointType::Xllm;
     let t2 = t1; // Copy
-    let t3 = t1.clone(); // Clone
+    let t3 = t1; // Copy
 
     assert_eq!(t1, t2);
     assert_eq!(t1, t3);

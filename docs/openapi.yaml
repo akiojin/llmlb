@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: LLM Router API
+  title: LLM Load Balancer API
   version: "0.1.0"
   description: >
     OpenAI-compatible endpoints with optional cloud routing by model prefix
@@ -62,7 +62,7 @@ paths:
                 $ref: "#/components/schemas/EmbeddingResponse"
   /v0/dashboard/stats:
     get:
-      summary: Router stats including cloud key presence flags
+      summary: LLM Load Balancer stats including cloud key presence flags
       responses:
         "200":
           description: Current stats

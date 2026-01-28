@@ -22,8 +22,8 @@ import { toast } from '@/hooks/use-toast'
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Log Viewer Component
  *
- * Note: Endpoints are external services (Ollama, vLLM, etc.) that do not push logs to the router.
- * Currently displays router logs only. Can be extended when endpoints provide log APIs.
+ * Note: Endpoints are external services (Ollama, vLLM, etc.) that do not push logs to the load balancer.
+ * Currently displays load balancer logs only. Can be extended when endpoints provide log APIs.
  */
 
 interface LogViewerProps {
@@ -40,7 +40,7 @@ export function LogViewer({ nodes: _nodes }: LogViewerProps) {
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Fetch router logs only (endpoints are external services without log API)
+  // Fetch load balancer logs only (endpoints are external services without log API)
   const {
     data: routerLogs,
     refetch: refetchRouter,
@@ -90,7 +90,7 @@ export function LogViewer({ nodes: _nodes }: LogViewerProps) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `logs-router-${new Date().toISOString().slice(0, 10)}.txt`
+    a.download = `logs-llmlb-${new Date().toISOString().slice(0, 10)}.txt`
     a.click()
     URL.revokeObjectURL(url)
     toast({ title: 'Logs downloaded' })
@@ -123,7 +123,7 @@ export function LogViewer({ nodes: _nodes }: LogViewerProps) {
             {/* Source Label (router only) */}
             <div className="flex items-center gap-2 px-3 py-2 border rounded-md bg-muted/30">
               <Server className="h-4 w-4" />
-              <span className="text-sm font-medium">Router</span>
+              <span className="text-sm font-medium">LLM Load Balancer</span>
             </div>
 
             {/* Level Filter */}

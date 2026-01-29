@@ -18,7 +18,7 @@ export LLMLB_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
 export LLMLB_NODE_TIMEOUT=60           # タイムアウト（秒）
 ```
 
-### ノード側環境変数
+### エンドポイント側環境変数
 
 ```bash
 # ハートビート設定
@@ -304,7 +304,7 @@ export LLMLB_NODE_TIMEOUT=120  # 2分に延長
 
 ```bash
 # 原因: ハートビート間隔が長い
-# 対策: ノード側で間隔を短縮
+# 対策: エンドポイント側で間隔を短縮
 export XLLM_HEARTBEAT_SECS=10  # 10秒に短縮
 ```
 

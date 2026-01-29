@@ -240,7 +240,7 @@ pub fn verify_runtime_token(token: &str, stored_hash: &str) -> bool {
 - 例: `nt_123e4567-e89b-12d3-a456-426614174000`
 - プレフィックスでAPIキーと区別
 
-**ノード側の実装**:
+**エンドポイント側の実装**:
 - トークンを `~/.llmlb/token` に保存
 - 全HTTPリクエストに `X-Node-Token: nt_...` ヘッダーを追加
 

@@ -311,7 +311,7 @@
 
 ### Features
 
-* **node:** ノード側HTTPサーバーとモデルプルAPI実装 (T033) ([2142f53](https://github.com/akiojin/runtime-router/commit/2142f53bc67d11550d7569bcc5b3c4e8848a36fb))
+* **node:** エンドポイント側HTTPサーバーとモデルプルAPI実装 (T033) ([2142f53](https://github.com/akiojin/runtime-router/commit/2142f53bc67d11550d7569bcc5b3c4e8848a36fb))
 * **router:** ノード登録時の自動モデル配布機能を実装 (T032) ([7935be0](https://github.com/akiojin/runtime-router/commit/7935be05098c0ad458609dc53af66f94caf442bb))
 * **router:** ロードバランサー主導のモデル配布機能を実装 (Phase 3.1-3.3) ([62edaf7](https://github.com/akiojin/runtime-router/commit/62edaf7435e82cacd177ae3eb6939a0be72ff129))
 * **error:** エラーハンドリング強化 (T039) ([5350a31](https://github.com/akiojin/runtime-router/commit/5350a31bd9dae6b6c7690d25767ab18e1c3a42cb))

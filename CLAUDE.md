@@ -6,7 +6,7 @@
 
 ## まず読む 90秒版
 
-- 何を作る: Rust製ロードバランサー（`llmlb/`）＋ llama.cppベースのC++推論エンジン（xLLM: https://github.com/akiojin/xLLM）。Ollamaは一切使わない／復活させない。
+- 何を作る: Rust製ロードバランサー（`llmlb/`）＋ llama.cppベースのC++推論エンジン（xLLM: <https://github.com/akiojin/xLLM>）。Ollamaは一切使わない／復活させない。
 - どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ `specs/`（要件とタスク）。
 - 守る: ブランチ／worktree作成・切替禁止、作業ディレクトリ移動禁止、必ずローカルで全テスト実行。
 - HFカタログ利用時は`HF_TOKEN`（任意）と必要に応じ`HF_BASE_URL`を環境にセットしておく。
@@ -19,7 +19,7 @@
 ```text
 llmlb/
 ├── llmlb/          # Rust製ロードバランサー（APIサーバー・管理UI・共通型定義）
-├── xLLM (external)  # https://github.com/akiojin/xLLM
+├── xLLM (external)  # <https://github.com/akiojin/xLLM>
 ├── specs/           # 機能仕様書（SPEC-XXXXXXXX/）
 ├── memory/          # プロジェクト憲章・メモリファイル
 ├── docs/            # ドキュメント

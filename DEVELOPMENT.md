@@ -61,5 +61,5 @@ total_tokens). Statistics are persisted to SQLite and available via dashboard AP
 - **Dashboard**: Statistics tab shows daily/monthly breakdown
 
 ## Submodules
-- xLLM has moved to https://github.com/akiojin/xLLM.
+- xLLM has moved to <https://github.com/akiojin/xLLM>.
   Submodule policies for runtime dependencies are documented there.

@@ -43,7 +43,7 @@ for migration steps.
 | **gpt-oss (MoE + MXFP4)** | Implemented | Uses `mlp.router.*` and `mlp.experts.*_(blocks\|scales\|bias)` with MoE forward |
 | **nemotron3 (Mamba-Transformer MoE)** | Staged (not wired) | Not connected to the forward pass yet |
 
-See https://github.com/akiojin/xLLM/blob/main/specs/SPEC-69549000/spec.md for the authoritative list and updates.
+See <https://github.com/akiojin/xLLM>/blob/main/specs/SPEC-69549000/spec.md for the authoritative list and updates.
 
 ### GGUF Architecture Coverage (llama.cpp, Examples)
 
@@ -184,7 +184,7 @@ Day-to-day management is done via the Dashboard UI (`/dashboard`) or the HTTP AP
 
 The xLLM runtime has moved to a separate repository:
 
-- https://github.com/akiojin/xLLM
+- <https://github.com/akiojin/xLLM>
 
 Build/run instructions and environment variables are documented there.
 
@@ -392,7 +392,7 @@ curl http://lb:32768/v1/responses -d '...'
 ```
 llmlb/
 ├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy, common types)
-├── xllm (external)     # https://github.com/akiojin/xLLM
+├── xllm (external)     # <https://github.com/akiojin/xLLM>
 ├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
 ```
@@ -597,7 +597,7 @@ docker run --rm -p 32768:32768 --gpus all \
 If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
 
 ### 3) C++ Runtime Build
-See https://github.com/akiojin/xLLM for runtime build/run details.
+See <https://github.com/akiojin/xLLM> for runtime build/run details.
 
 ### Requirements
 
@@ -735,7 +735,7 @@ Cloud / external services:
 
 **Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
 
-Note: Engine plugins were removed in favor of built-in managers. See https://github.com/akiojin/xLLM/blob/main/docs/migrations/plugin-to-manager.md.
+Note: Engine plugins were removed in favor of built-in managers. See <<https://github.com/akiojin/xLLM>/blob/main/docs/migrations/plugin-to-manager.md>.
 
 ## Troubleshooting
 

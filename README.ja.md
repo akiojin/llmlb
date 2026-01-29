@@ -41,7 +41,7 @@ LLM Load Balancer はマネージャ方式のマルチエンジン構成をサ�
 | **gpt-oss (MoE + MXFP4)** | 実装済み | `mlp.router.*` と `mlp.experts.*_(blocks\|scales\|bias)` を読み込む |
 | **nemotron3 (Mamba-Transformer MoE)** | 準備済み（未統合） | まだforwardパスに接続されていない |
 
-詳細・更新履歴は https://github.com/akiojin/xLLM/blob/main/specs/SPEC-69549000/spec.md を参照。
+詳細・更新履歴は <https://github.com/akiojin/xLLM>/blob/main/specs/SPEC-69549000/spec.md を参照。
 
 ### GGUF アーキテクチャ例（llama.cpp）
 
@@ -340,7 +340,7 @@ GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""
 
 C++ Runtime（xLLM）は別リポジトリに分離しました。
 
-- https://github.com/akiojin/xLLM
+- <https://github.com/akiojin/xLLM>
 
 ビルド/実行/環境変数は上記リポジトリを参照してください。
 
@@ -370,7 +370,7 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 
 Runtime（xLLM）の環境変数・設定は xLLM リポジトリに移動しました。
 
-- https://github.com/akiojin/xLLM
+- <https://github.com/akiojin/xLLM>
 
 ## 利用方法（OpenAI互換エンドポイント）
 

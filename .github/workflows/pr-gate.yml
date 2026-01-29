@@ -1,0 +1,26 @@
+name: PR Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches:
+      - main
+
+jobs:
+  check-source-branch:
+    name: Check PR Source Branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR is from develop branch
+        run: |
+          HEAD_REF="${{ github.head_ref }}"
+          BASE_REF="${{ github.base_ref }}"
+
+          echo "PR: ${HEAD_REF} -> ${BASE_REF}"
+
+          if [[ "$BASE_REF" == "main" && "$HEAD_REF" != "develop" ]]; then
+            echo "::error::Direct PRs to main are not allowed. Please merge to develop first, then create a PR from develop to main."
+            exit 1
+          fi
+
+          echo "✓ PR source branch is valid"

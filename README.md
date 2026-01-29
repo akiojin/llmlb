@@ -43,7 +43,7 @@ for migration steps.
 | **gpt-oss (MoE + MXFP4)** | Implemented | Uses `mlp.router.*` and `mlp.experts.*_(blocks\|scales\|bias)` with MoE forward |
 | **nemotron3 (Mamba-Transformer MoE)** | Staged (not wired) | Not connected to the forward pass yet |
 
-See `specs/SPEC-69549000/spec.md` for the authoritative list and updates.
+See https://github.com/akiojin/xLLM/blob/main/specs/SPEC-69549000/spec.md for the authoritative list and updates.
 
 ### GGUF Architecture Coverage (llama.cpp, Examples)
 
@@ -180,89 +180,13 @@ Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 the load balancer CLI currently exposes only basic flags (`--help`, `--version`).
 Day-to-day management is done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
 
-### Runtime (C++)
+### xLLM (C++)
 
-**Prerequisites:**
+The xLLM runtime has moved to a separate repository:
 
-```bash
-# macOS
-brew install cmake
+- https://github.com/akiojin/xLLM
 
-# Ubuntu/Debian
-sudo apt install cmake build-essential
-
-# Windows
-# Download from https://cmake.org/download/
-```
-
-**Build & Run:**
-
-```bash
-# Build (Metal is enabled by default on macOS)
-npm run build:xllm
-
-# Build (Linux / CUDA)
-npm run build:xllm:cuda
-
-# Run
-npm run start:xllm
-
-# Or manually:
-# cd xllm && cmake -B build -S . && cmake --build build --config Release
-# # Linux / CUDA:
-# # cd xllm && cmake -B build -S . -DBUILD_WITH_CUDA=ON && cmake --build build --config Release
-# LLMLB_URL=http://localhost:32768 ./xllm/build/xllm
-```
-
-**Environment Variables:**
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLMLB_URL` | `http://127.0.0.1:32768` | Load balancer URL to register with |
-| `XLLM_PORT` | `32769` | Runtime listen port |
-| `XLLM_BIND_ADDRESS` | `0.0.0.0` | Bind address |
-| `XLLM_MODELS_DIR` | `~/.xllm/models` | Model storage directory |
-| `XLLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
-| `XLLM_CONFIG` | `~/.xllm/config.json` | Config file path |
-| `XLLM_LOG_LEVEL` | `info` | Log level |
-| `XLLM_LOG_DIR` | `~/.xllm/logs` | Log directory |
-| `XLLM_LOG_RETENTION_DAYS` | `7` | Log retention (days) |
-| `XLLM_PGP_VERIFY` | `false` | Verify HuggingFace PGP signatures when available |
-| `HF_TOKEN` | (none) | HuggingFace API token for gated models |
-| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model |
-| `LLM_MODEL_IDLE_TIMEOUT` | `300000` | Idle unload timeout (ms) |
-| `LLM_MAX_LOADED_MODELS` | `0` | Max loaded models (0 = unlimited) |
-| `LLM_MAX_MEMORY_BYTES` | `0` | Max memory bytes (0 = unlimited) |
-
-**Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
-
-**Config (xLLM):**
-
-```json
-{
-  "cors": {
-    "enabled": true,
-    "allow_origin": "*",
-    "allow_methods": "GET, POST, OPTIONS",
-    "allow_headers": "Content-Type, Authorization"
-  },
-  "gzip": {
-    "enabled": true
-  }
-}
-```
-
-**Docker:**
-
-```bash
-# Build
-docker build --build-arg CUDA=cpu -t xllm:latest xllm/
-
-# Run
-docker run --rm -p 32769:32769 \
-  -e LLMLB_URL=http://host.docker.internal:32768 \
-  xllm:latest
-```
+Build/run instructions and environment variables are documented there.
 
 ## Load Balancing
 
@@ -468,7 +392,7 @@ curl http://lb:32768/v1/responses -d '...'
 ```
 llmlb/
 ├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy, common types)
-├── xllm/                # C++ xLLM inference engine (llama.cpp, OpenAI-compatible /v1/*)
+├── xllm (external)     # https://github.com/akiojin/xLLM
 ├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
 └── specs/               # Specifications (Spec-Driven Development)
 ```
@@ -673,7 +597,7 @@ docker run --rm -p 32768:32768 --gpus all \
 If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
 
 ### 3) C++ Runtime Build
-See [Runtime (C++)](#runtime-c) section in Quick Start.
+See https://github.com/akiojin/xLLM for runtime build/run details.
 
 ### Requirements
 
@@ -696,13 +620,11 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
    LLMLB_URL=http://lb:32768 \
    # Replace with your actual API key (scope: runtime)
    LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
-   ./xllm/build/xllm
 
    # Machine 2
    LLMLB_URL=http://lb:32768 \
    # Replace with your actual API key (scope: runtime)
    LLM_RUNTIME_API_KEY=sk_your_runtime_register_key \
-   ./xllm/build/xllm
    ```
 
 3. **Send Inference Requests to LLM Load Balancer (OpenAI-compatible, Responses API recommended)**
@@ -813,7 +735,7 @@ Cloud / external services:
 
 **Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
 
-Note: Engine plugins were removed in favor of built-in managers. See `docs/migrations/plugin-to-manager.md`.
+Note: Engine plugins were removed in favor of built-in managers. See https://github.com/akiojin/xLLM/blob/main/docs/migrations/plugin-to-manager.md.
 
 ## Troubleshooting
 

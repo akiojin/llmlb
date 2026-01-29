@@ -7,8 +7,6 @@ dist/
 bun.lock
 vendor/
 **/vendor/
-xllm/third_party/
-xllm/build/
 tmp/
 **/tmp/**
 actions-runner/

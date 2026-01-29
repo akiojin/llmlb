@@ -41,7 +41,7 @@
 | `SPEC-5fc9fe92` | SPEC-712c20cf | Playground |
 | `SPEC-63acef08` | SPEC-66555000 | 統一APIプロキシ |
 | `SPEC-66555000` | SPEC-712c20cf, SPEC-63acef08 | **新規**: エンドポイント登録 |
-| `SPEC-69549000` | SPEC-d7feaa2c | safetensors.cpp |
+| `SPEC-69549000` | SPEC-d7feaa2c | safetensors.cpp (moved to xLLM repo) |
 | `SPEC-6c2d9f1e` | SPEC-11106000, SPEC-26006000, SPEC-32637000 | モデル登録 |
 | `SPEC-6cd7f960` | SPEC-11106000, SPEC-dcaeaec4, SPEC-d4eb8796, SPEC-66555000 | モデルリスト |
 | `SPEC-712c20cf` | SPEC-66555000, SPEC-63acef08, SPEC-d4eb8796 | ダッシュボード |
@@ -72,7 +72,7 @@
 
 - **SPEC-66555000**: ロードバランサー主導エンドポイント登録（最上位基盤、SPEC-94621a1fを置換）
 - **SPEC-dcaeaec4**: モデルストレージ
-- **SPEC-d7feaa2c**: エンジンローダー
+- **SPEC-d7feaa2c**: エンジンローダー (moved to xLLM repo)
 - **SPEC-799b8e2b**: 共通ログシステム
 - **SPEC-4b6e9f2a**: クラウドプレフィックスルーティング
 
@@ -91,7 +91,7 @@
 | `SPEC-63acef08` | 統一APIプロキシ | ✅ | P1 | ✅ |
 | `SPEC-66555000` | ロードバランサー主導エンドポイント登録システム | ✅ | P1 | ✅ |
 | `SPEC-94621a1f` | 廃止: ノード自己登録システム（→SPEC-66555000） | 🗑️ | - | - |
-| `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | ✅ | P1 | ✅ |
+| `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード (moved to xLLM repo) | ✅ | P1 | ✅ |
 
 ## 🔐 認証・セキュリティ
 
@@ -112,7 +112,7 @@
 | `SPEC-48678000` | モデル自動解決機能 | ✅ | P2 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ | P1 | ✅ |
 | `SPEC-6cd7f960` | 対応モデルリスト型管理 | ✅ | P1 | ✅ |
-| `SPEC-69549000` | safetensors.cpp - safetensors直接推論ライブラリ | ✅ | P1 | ✅ |
+| `SPEC-69549000` | safetensors.cpp (moved to xLLM repo) - safetensors直接推論ライブラリ | ✅ | P1 | ✅ |
 | `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | ✅ | P1 | ✅ |
 | `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | ✅ | P2 | ✅ |
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | ✅ | P2 | ✅ |
@@ -143,7 +143,7 @@
 |---------|--------|--------|----------|------|
 | `SPEC-026b2cde` | リクエスト履歴一覧のページネーション機能 | ✅ | P2 | ✅ |
 | `SPEC-712c20cf` | 管理ダッシュボード | ✅ | P2 | ✅ |
-| `SPEC-a7e6d40a` | CLI インターフェース整備 | ✅ | P2 | ✅ |
+| `SPEC-a7e6d40a` | CLI インターフェース整備 (moved to xLLM repo) | ✅ | P2 | ✅ |
 
 ## 📊 ログ・履歴
 
@@ -190,13 +190,13 @@
 | `SPEC-66555000` | ロードバランサー主導エンドポイント登録システム | 完了 |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | 完了 |
 | `SPEC-6cd7f960` | 対応モデルリスト型管理 | 完了 |
-| `SPEC-69549000` | safetensors.cpp - safetensors直接推論ライブラリ | 完了 |
+| `SPEC-69549000` | safetensors.cpp (moved to xLLM repo) - safetensors直接推論ライブラリ | 完了 |
 | `SPEC-93536000` | ノードベースモデル管理とモデル対応ルーティング | 完了 |
 | `SPEC-799b8e2b` | 共通ログシステム | 完了 |
 | `SPEC-7c0a37e0` | APIキースコープシステム | 完了 |
 | `SPEC-ae3f974e` | 画像生成モデル対応（Image Generation） | 完了 |
 | `SPEC-d4eb8796` | ロードバランサー認証・アクセス制御 | 完了 |
-| `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード | 完了 |
+| `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード (moved to xLLM repo) | 完了 |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Load Balancer独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
 
@@ -217,7 +217,7 @@
 | `SPEC-712c20cf` | 管理ダッシュボード | 完了 |
 | `SPEC-82491000` | クラウドプロバイダーモデル一覧統合 | 完了 |
 | `SPEC-8a2d1d43` | gptossアーキテクチャエイリアスサポート | 完了 |
-| `SPEC-a7e6d40a` | CLI インターフェース整備 | 完了 |
+| `SPEC-a7e6d40a` | CLI インターフェース整備 (moved to xLLM repo) | 完了 |
 | `SPEC-dc648675` | Worktree環境での作業境界強制システム | 完了 |
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | 完了 |
 | `SPEC-ea015fbb` | Web UI 画面一覧 | 完了 |

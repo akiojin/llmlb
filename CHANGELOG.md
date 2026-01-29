@@ -1,7 +1,7 @@
 # Unreleased
 
 ### Breaking Changes
-- Engine plugins removed in favor of built-in managers. See `docs/migrations/plugin-to-manager.md`.
+- Engine plugins removed in favor of built-in managers. See https://github.com/akiojin/xLLM/blob/main/docs/migrations/plugin-to-manager.md.
 
 ### Features
 - cloud prefix routing for `openai:/google:/anthropic:` with SSE passthrough

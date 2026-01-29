@@ -74,7 +74,7 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
     bool used_file = false;
     bool used_env = false;
 
-    // Optional JSON config file: path from LLM_DL_CONFIG or ~/.llmlb/config.json
+    // Optional JSON config file: path from LLM_DL_CONFIG or ~/.xllm/config.json
     auto load_from_file = [&](const std::filesystem::path& path) {
         if (!std::filesystem::exists(path)) return false;
         try {
@@ -105,7 +105,7 @@ std::pair<DownloadConfig, std::string> loadDownloadConfigWithLog() {
     } else {
         try {
             std::filesystem::path home = getEnvValue("HOME").value_or("");
-            auto path = home / std::filesystem::path(".llmlb/config.json");
+            auto path = home / std::filesystem::path(".xllm/config.json");
             if (load_from_file(path)) {
                 used_file = true;
             }
@@ -174,7 +174,7 @@ namespace {
 std::filesystem::path defaultConfigPath() {
     try {
         std::filesystem::path home = getEnvValue("HOME").value_or("");
-        if (!home.empty()) return home / ".llmlb/config.json";
+        if (!home.empty()) return home / ".xllm/config.json";
     } catch (...) {
     }
     return std::filesystem::path();
@@ -205,9 +205,9 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
     bool used_env = false;
     bool used_file = false;
 
-    // defaults: ~/.llmlb/models/
+    // defaults: ~/.xllm/models/
     cfg.models_dir = defaultConfigPath().empty()
-                         ? ".llmlb/models"
+                         ? ".xllm/models"
                          : (defaultConfigPath().parent_path() / "models").string();
     cfg.origin_allowlist = splitAllowlistCsv("huggingface.co/*,cdn-lfs.huggingface.co/*");
 
@@ -234,6 +234,42 @@ std::pair<NodeConfig, std::string> loadNodeConfigWithLog() {
                 list = splitAllowlistCsv(v.get<std::string>());
             }
             if (!list.empty()) cfg.origin_allowlist = std::move(list);
+        }
+        if (j.contains("cors") && j["cors"].is_object()) {
+            const auto& cors = j["cors"];
+            if (cors.contains("enabled") && cors["enabled"].is_boolean()) {
+                cfg.cors_enabled = cors["enabled"].get<bool>();
+            }
+            if (cors.contains("allow_origin") && cors["allow_origin"].is_string()) {
+                cfg.cors_allow_origin = cors["allow_origin"].get<std::string>();
+            }
+            if (cors.contains("allow_methods") && cors["allow_methods"].is_string()) {
+                cfg.cors_allow_methods = cors["allow_methods"].get<std::string>();
+            }
+            if (cors.contains("allow_headers") && cors["allow_headers"].is_string()) {
+                cfg.cors_allow_headers = cors["allow_headers"].get<std::string>();
+            }
+        }
+        if (j.contains("cors_allow_origin") && j["cors_allow_origin"].is_string()) {
+            cfg.cors_allow_origin = j["cors_allow_origin"].get<std::string>();
+        }
+        if (j.contains("cors_allow_methods") && j["cors_allow_methods"].is_string()) {
+            cfg.cors_allow_methods = j["cors_allow_methods"].get<std::string>();
+        }
+        if (j.contains("cors_allow_headers") && j["cors_allow_headers"].is_string()) {
+            cfg.cors_allow_headers = j["cors_allow_headers"].get<std::string>();
+        }
+        if (j.contains("cors_enabled") && j["cors_enabled"].is_boolean()) {
+            cfg.cors_enabled = j["cors_enabled"].get<bool>();
+        }
+        if (j.contains("gzip") && j["gzip"].is_object()) {
+            const auto& gzip = j["gzip"];
+            if (gzip.contains("enabled") && gzip["enabled"].is_boolean()) {
+                cfg.gzip_enabled = gzip["enabled"].get<bool>();
+            }
+        }
+        if (j.contains("gzip_enabled") && j["gzip_enabled"].is_boolean()) {
+            cfg.gzip_enabled = j["gzip_enabled"].get<bool>();
         }
     };
 

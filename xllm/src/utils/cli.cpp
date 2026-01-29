@@ -4,11 +4,11 @@
 #include <sstream>
 #include <cstring>
 #include <cstdlib>
+#include <vector>
 
 namespace xllm {
 
 // Forward declarations for help messages
-std::string getRouterHelpMessage();
 std::string getServeHelpMessage();
 std::string getRunHelpMessage();
 std::string getPullHelpMessage();
@@ -17,6 +17,12 @@ std::string getShowHelpMessage();
 std::string getRmHelpMessage();
 std::string getStopHelpMessage();
 std::string getPsHelpMessage();
+std::string getProfileHelpMessage();
+std::string getBenchmarkHelpMessage();
+std::string getCompareHelpMessage();
+std::string getConvertHelpMessage();
+std::string getExportHelpMessage();
+std::string getImportHelpMessage();
 
 std::string getHelpMessage() {
     std::ostringstream oss;
@@ -34,7 +40,12 @@ std::string getHelpMessage() {
     oss << "    rm         Delete a model\n";
     oss << "    stop       Unload a running model\n";
     oss << "    ps         List running models\n";
-    oss << "    router     Router commands (endpoints, models, status)\n";
+    oss << "    profile    Profile a model (latency/tokens)\n";
+    oss << "    benchmark  Benchmark a model\n";
+    oss << "    compare    Compare two models\n";
+    oss << "    convert    Convert model format\n";
+    oss << "    export     Export model metadata\n";
+    oss << "    import     Import model metadata\n";
     oss << "\n";
     oss << "OPTIONS:\n";
     oss << "    -h, --help       Print help information\n";
@@ -61,29 +72,19 @@ std::string getServeHelpMessage() {
     oss << "    -h, --help            Print help\n";
     oss << "\n";
     oss << "ENVIRONMENT VARIABLES:\n";
-    oss << "    XLLM_PORT                HTTP server port (default: 32769)\n";
-    oss << "    XLLM_MODELS_DIR          Model files directory\n";
-    oss << "    LLMLB_HOST              Router URL for registration\n";
-    oss << "    LLMLB_DEBUG             Enable debug logging\n";
-    oss << "    HF_TOKEN                     HuggingFace API token (for gated models)\n";
+    oss << "    XLLM_PORT                 HTTP server port (default: 32769)\n";
+    oss << "    XLLM_BIND_ADDRESS         Bind address\n";
+    oss << "    XLLM_MODELS_DIR           Model files directory\n";
+    oss << "    XLLM_CONFIG               Config file path (default: ~/.xllm/config.json)\n";
+    oss << "    XLLM_LOG_LEVEL            Log level (trace|debug|info|warn|error)\n";
+    oss << "    XLLM_LOG_DIR              Log directory (default: ~/.xllm/logs)\n";
+    oss << "    XLLM_LOG_RETENTION_DAYS   Log retention days (default: 7)\n";
+    oss << "    XLLM_PGP_VERIFY           Verify HuggingFace PGP signatures (default: false)\n";
+    oss << "    LLMLB_HOST                Router URL for registration\n";
+    oss << "    LLMLB_DEBUG               Enable debug logging\n";
+    oss << "    HF_TOKEN                  HuggingFace API token (for gated models)\n";
     return oss.str();
 }
-
-std::string getRouterHelpMessage() {
-    std::ostringstream oss;
-    oss << "xllm router - Router subcommands\n";
-    oss << "\n";
-    oss << "USAGE:\n";
-    oss << "    xllm router <SUBCOMMAND>\n";
-    oss << "\n";
-    oss << "SUBCOMMANDS:\n";
-    oss << "    endpoints  Manage cluster endpoints\n";
-    oss << "    models     Manage cluster models\n";
-    oss << "    status     Show cluster status\n";
-    return oss.str();
-}
-
-
 
 std::string getRunHelpMessage() {
     std::ostringstream oss;
@@ -209,6 +210,90 @@ std::string getPsHelpMessage() {
     return oss.str();
 }
 
+std::string getProfileHelpMessage() {
+    std::ostringstream oss;
+    oss << "xllm profile - Profile a model\n";
+    oss << "\n";
+    oss << "USAGE:\n";
+    oss << "    xllm profile <MODEL> [OPTIONS]\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    --prompt <TEXT>   Prompt to send (default: Hello)\n";
+    oss << "    --tokens <N>      Max tokens to generate (default: 128)\n";
+    oss << "    -h, --help        Print help\n";
+    return oss.str();
+}
+
+std::string getBenchmarkHelpMessage() {
+    std::ostringstream oss;
+    oss << "xllm benchmark - Benchmark a model\n";
+    oss << "\n";
+    oss << "USAGE:\n";
+    oss << "    xllm benchmark <MODEL> [OPTIONS]\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    --prompt <TEXT>   Prompt to send (default: Hello)\n";
+    oss << "    --tokens <N>      Max tokens to generate (default: 128)\n";
+    oss << "    --runs <N>        Number of runs (default: 3)\n";
+    oss << "    -h, --help        Print help\n";
+    return oss.str();
+}
+
+std::string getCompareHelpMessage() {
+    std::ostringstream oss;
+    oss << "xllm compare - Compare two models\n";
+    oss << "\n";
+    oss << "USAGE:\n";
+    oss << "    xllm compare <MODEL_A> <MODEL_B> [OPTIONS]\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    --prompt <TEXT>   Prompt to send (default: Hello)\n";
+    oss << "    --tokens <N>      Max tokens to generate (default: 128)\n";
+    oss << "    --runs <N>        Number of runs (default: 3)\n";
+    oss << "    -h, --help        Print help\n";
+    return oss.str();
+}
+
+std::string getConvertHelpMessage() {
+    std::ostringstream oss;
+    oss << "xllm convert - Convert model format\n";
+    oss << "\n";
+    oss << "USAGE:\n";
+    oss << "    xllm convert <SOURCE> --name <MODEL> [OPTIONS]\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    --name <MODEL>    Output model name\n";
+    oss << "    --format <FMT>    Output format (default: gguf)\n";
+    oss << "    -h, --help        Print help\n";
+    return oss.str();
+}
+
+std::string getExportHelpMessage() {
+    std::ostringstream oss;
+    oss << "xllm export - Export model metadata\n";
+    oss << "\n";
+    oss << "USAGE:\n";
+    oss << "    xllm export <MODEL> --output <FILE>\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    --output <FILE>   Output file path\n";
+    oss << "    -h, --help        Print help\n";
+    return oss.str();
+}
+
+std::string getImportHelpMessage() {
+    std::ostringstream oss;
+    oss << "xllm import - Import model metadata\n";
+    oss << "\n";
+    oss << "USAGE:\n";
+    oss << "    xllm import <MODEL> --file <FILE>\n";
+    oss << "\n";
+    oss << "OPTIONS:\n";
+    oss << "    --file <FILE>     Modelfile path to import\n";
+    oss << "    -h, --help        Print help\n";
+    return oss.str();
+}
+
 std::string getVersionMessage() {
     std::ostringstream oss;
     oss << "xllm " << XLLM_VERSION << "\n";
@@ -223,54 +308,6 @@ bool hasHelpFlag(int argc, char* argv[], int start) {
         }
     }
     return false;
-}
-
-
-
-// Parse router subcommands
-CliResult parseRouterSubcommand(int argc, char* argv[], int argIndex) {
-    CliResult result;
-
-    if (argIndex >= argc) {
-        result.should_exit = true;
-        result.exit_code = 0;
-        result.output = getRouterHelpMessage();
-        return result;
-    }
-
-    const char* subcommand = argv[argIndex];
-
-    // Check for help
-    if (std::strcmp(subcommand, "-h") == 0 || std::strcmp(subcommand, "--help") == 0) {
-        result.should_exit = true;
-        result.exit_code = 0;
-        result.output = getRouterHelpMessage();
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "endpoints") == 0) {
-        result.subcommand = Subcommand::RouterEndpoints;
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "models") == 0) {
-        result.subcommand = Subcommand::RouterModels;
-        return result;
-    }
-
-    if (std::strcmp(subcommand, "status") == 0) {
-        result.subcommand = Subcommand::RouterStatus;
-        return result;
-    }
-
-    // Unknown subcommand
-    result.should_exit = true;
-    result.exit_code = 1;
-    std::ostringstream oss;
-    oss << "Error: Unknown router subcommand '" << subcommand << "'\n\n";
-    oss << getRouterHelpMessage();
-    result.output = oss.str();
-    return result;
 }
 
 CliResult parseCliArgs(int argc, char* argv[]) {
@@ -520,9 +557,201 @@ CliResult parseCliArgs(int argc, char* argv[]) {
         return result;
     }
 
-    // Router subcommands
-    if (std::strcmp(command, "router") == 0) {
-        return parseRouterSubcommand(argc, argv, 2);
+    if (std::strcmp(command, "profile") == 0) {
+        result.subcommand = Subcommand::Profile;
+
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getProfileHelpMessage();
+            return result;
+        }
+
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--prompt") == 0 && i + 1 < argc) {
+                result.profile_options.prompt = argv[++i];
+            } else if (std::strcmp(argv[i], "--tokens") == 0 && i + 1 < argc) {
+                result.profile_options.max_tokens = std::stoi(argv[++i]);
+            } else if (argv[i][0] != '-' && result.profile_options.model.empty()) {
+                result.profile_options.model = argv[i];
+            }
+        }
+
+        if (result.profile_options.model.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: xllm profile <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "benchmark") == 0) {
+        result.subcommand = Subcommand::Benchmark;
+
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getBenchmarkHelpMessage();
+            return result;
+        }
+
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--prompt") == 0 && i + 1 < argc) {
+                result.benchmark_options.prompt = argv[++i];
+            } else if (std::strcmp(argv[i], "--tokens") == 0 && i + 1 < argc) {
+                result.benchmark_options.max_tokens = std::stoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--runs") == 0 && i + 1 < argc) {
+                result.benchmark_options.runs = std::stoi(argv[++i]);
+            } else if (argv[i][0] != '-' && result.benchmark_options.model.empty()) {
+                result.benchmark_options.model = argv[i];
+            }
+        }
+
+        if (result.benchmark_options.model.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: xllm benchmark <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "compare") == 0) {
+        result.subcommand = Subcommand::Compare;
+
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getCompareHelpMessage();
+            return result;
+        }
+
+        std::vector<std::string> models;
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--prompt") == 0 && i + 1 < argc) {
+                result.compare_options.prompt = argv[++i];
+            } else if (std::strcmp(argv[i], "--tokens") == 0 && i + 1 < argc) {
+                result.compare_options.max_tokens = std::stoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--runs") == 0 && i + 1 < argc) {
+                result.compare_options.runs = std::stoi(argv[++i]);
+            } else if (argv[i][0] != '-') {
+                models.push_back(argv[i]);
+            }
+        }
+        if (models.size() >= 2) {
+            result.compare_options.model_a = models[0];
+            result.compare_options.model_b = models[1];
+        }
+
+        if (result.compare_options.model_a.empty() || result.compare_options.model_b.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: two model names required\n\nUsage: xllm compare <MODEL_A> <MODEL_B>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "convert") == 0) {
+        result.subcommand = Subcommand::Convert;
+
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getConvertHelpMessage();
+            return result;
+        }
+
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
+                result.convert_options.name = argv[++i];
+            } else if (std::strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
+                result.convert_options.format = argv[++i];
+            } else if (argv[i][0] != '-' && result.convert_options.source.empty()) {
+                result.convert_options.source = argv[i];
+            }
+        }
+
+        if (result.convert_options.source.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: source path required\n\nUsage: xllm convert <SOURCE> --name <MODEL>\n";
+            return result;
+        }
+        if (result.convert_options.name.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: name required\n\nUsage: xllm convert <SOURCE> --name <MODEL>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "export") == 0) {
+        result.subcommand = Subcommand::Export;
+
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getExportHelpMessage();
+            return result;
+        }
+
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
+                result.export_options.output = argv[++i];
+            } else if (argv[i][0] != '-' && result.export_options.model.empty()) {
+                result.export_options.model = argv[i];
+            }
+        }
+
+        if (result.export_options.model.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: xllm export <MODEL> --output <FILE>\n";
+            return result;
+        }
+        if (result.export_options.output.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: output file required\n\nUsage: xllm export <MODEL> --output <FILE>\n";
+            return result;
+        }
+        return result;
+    }
+
+    if (std::strcmp(command, "import") == 0) {
+        result.subcommand = Subcommand::Import;
+
+        if (hasHelpFlag(argc, argv, 2)) {
+            result.should_exit = true;
+            result.exit_code = 0;
+            result.output = getImportHelpMessage();
+            return result;
+        }
+
+        for (int i = 2; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
+                result.import_options.file = argv[++i];
+            } else if (argv[i][0] != '-' && result.import_options.model.empty()) {
+                result.import_options.model = argv[i];
+            }
+        }
+
+        if (result.import_options.model.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: model name required\n\nUsage: xllm import <MODEL> --file <FILE>\n";
+            return result;
+        }
+        if (result.import_options.file.empty()) {
+            result.should_exit = true;
+            result.exit_code = 1;
+            result.output = "Error: file required\n\nUsage: xllm import <MODEL> --file <FILE>\n";
+            return result;
+        }
+        return result;
     }
 
     // Check for unknown flags (starting with - or --)
@@ -557,9 +786,12 @@ std::string subcommandToString(Subcommand subcommand) {
         case Subcommand::Rm: return "rm";
         case Subcommand::Stop: return "stop";
         case Subcommand::Ps: return "ps";
-        case Subcommand::RouterEndpoints: return "router endpoints";
-        case Subcommand::RouterModels: return "router models";
-        case Subcommand::RouterStatus: return "router status";
+        case Subcommand::Profile: return "profile";
+        case Subcommand::Benchmark: return "benchmark";
+        case Subcommand::Compare: return "compare";
+        case Subcommand::Convert: return "convert";
+        case Subcommand::Export: return "export";
+        case Subcommand::Import: return "import";
         default: return "unknown";
     }
 }

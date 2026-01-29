@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
 #include "models/model_downloader.h"
+#include <nlohmann/json.hpp>
 
 using namespace xllm;
 namespace fs = std::filesystem;
@@ -65,6 +67,62 @@ public:
 
     httplib::Server server;
     std::thread thread;
+};
+
+class HfApiServer {
+public:
+    void start(int port) {
+        server.Get(R"(/api/models/acme/llava-vision)", [this](const httplib::Request&, httplib::Response& res) {
+            res.status = 200;
+            res.set_content(R"({"siblings":[{"rfilename":"llava-vision-Q4_K_M.gguf"},{"rfilename":"llava-vision-mmproj-model-f16.gguf"}]})",
+                            "application/json");
+        });
+        thread = std::thread([this, port]() { server.listen("127.0.0.1", port); });
+        wait_for_server(server, std::chrono::seconds(5));
+    }
+
+    void stop() {
+        server.stop();
+        if (thread.joinable()) thread.join();
+    }
+
+    ~HfApiServer() { stop(); }
+
+    httplib::Server server;
+    std::thread thread;
+};
+
+class HfApiCacheServer {
+public:
+    void start(int port) {
+        server.Get(R"(/api/models/acme/cache-model)", [this](const httplib::Request& req, httplib::Response& res) {
+            call_count++;
+            last_if_none_match = req.get_header_value("If-None-Match");
+            if (!last_if_none_match.empty() && last_if_none_match == etag_value) {
+                res.status = 304;
+                res.set_content("", "application/json");
+                return;
+            }
+            res.status = 200;
+            res.set_header("ETag", etag_value);
+            res.set_content(R"({"siblings":[{"rfilename":"cache-model.Q4_K_M.gguf"}]})", "application/json");
+        });
+        thread = std::thread([this, port]() { server.listen("127.0.0.1", port); });
+        wait_for_server(server, std::chrono::seconds(5));
+    }
+
+    void stop() {
+        server.stop();
+        if (thread.joinable()) thread.join();
+    }
+
+    ~HfApiCacheServer() { stop(); }
+
+    httplib::Server server;
+    std::thread thread;
+    int call_count{0};
+    std::string last_if_none_match;
+    std::string etag_value{"\"hf-etag\""};
 };
 
 class RangeRegistryServer {
@@ -172,6 +230,79 @@ TEST(ModelDownloaderTest, FetchesManifestToLocalPath) {
 
     ASSERT_FALSE(path.empty());
     EXPECT_TRUE(fs::exists(path));
+}
+
+TEST(ModelDownloaderTest, FetchesHfManifestIncludesMmproj) {
+    HfApiServer server;
+    const int port = 18121;
+    server.start(port);
+
+    const char* old_base = std::getenv("HF_BASE_URL");
+    std::string old_value = old_base ? old_base : "";
+    const std::string base_url = "http://127.0.0.1:" + std::to_string(port);
+    setenv("HF_BASE_URL", base_url.c_str(), 1);
+
+    TempDir tmp;
+    ASSERT_FALSE(tmp.path.empty());
+
+    ModelDownloader dl("", tmp.path.string());
+    const std::string manifest_path = dl.fetchManifest("acme/llava-vision", "llava-vision-Q4_K_M.gguf");
+
+    if (old_base) {
+        setenv("HF_BASE_URL", old_value.c_str(), 1);
+    } else {
+        unsetenv("HF_BASE_URL");
+    }
+
+    ASSERT_FALSE(manifest_path.empty());
+    std::ifstream ifs(manifest_path);
+    ASSERT_TRUE(ifs.is_open());
+
+    const auto manifest = nlohmann::json::parse(ifs, nullptr, false);
+    ASSERT_TRUE(manifest.is_object());
+    ASSERT_TRUE(manifest.contains("files"));
+
+    bool has_model = false;
+    bool has_mmproj = false;
+    for (const auto& entry : manifest["files"]) {
+        const auto name = entry.value("name", "");
+        if (name == "model.gguf") has_model = true;
+        if (name == "llava-vision-mmproj-model-f16.gguf") has_mmproj = true;
+    }
+    EXPECT_TRUE(has_model);
+    EXPECT_TRUE(has_mmproj);
+}
+
+TEST(ModelDownloaderTest, UsesHfMetadataCacheWhenNotModified) {
+    HfApiCacheServer server;
+    const int port = 18122;
+    server.start(port);
+
+    const char* old_base = std::getenv("HF_BASE_URL");
+    std::string old_value = old_base ? old_base : "";
+    const std::string base_url = "http://127.0.0.1:" + std::to_string(port);
+    setenv("HF_BASE_URL", base_url.c_str(), 1);
+
+    TempDir tmp;
+    ASSERT_FALSE(tmp.path.empty());
+
+    ModelDownloader dl("", tmp.path.string());
+    const std::string manifest_path_1 = dl.fetchManifest("acme/cache-model", "cache-model.Q4_K_M.gguf");
+    ASSERT_FALSE(manifest_path_1.empty());
+    EXPECT_EQ(server.call_count, 1);
+
+    const std::string manifest_path_2 = dl.fetchManifest("acme/cache-model", "cache-model.Q4_K_M.gguf");
+    EXPECT_FALSE(manifest_path_2.empty());
+    EXPECT_GE(server.call_count, 1);
+    if (server.call_count >= 2) {
+        EXPECT_EQ(server.last_if_none_match, server.etag_value);
+    }
+
+    if (old_base) {
+        setenv("HF_BASE_URL", old_value.c_str(), 1);
+    } else {
+        unsetenv("HF_BASE_URL");
+    }
 }
 
 TEST(ModelDownloaderTest, DownloadsBlobAndReportsProgress) {

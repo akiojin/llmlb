@@ -46,6 +46,15 @@ public:
     fs::path path;
 };
 
+static void create_safetensors_model(const fs::path& models_dir,
+                                     const std::string& model_name) {
+    const auto model_dir = models_dir / ModelStorage::modelNameToDir(model_name);
+    fs::create_directories(model_dir);
+    std::ofstream(model_dir / "config.json") << R"({"architectures":["LlamaForCausalLM"]})";
+    std::ofstream(model_dir / "tokenizer.json") << R"({"dummy":true})";
+    std::ofstream(model_dir / "model.safetensors") << "dummy";
+}
+
 class RecordingEngine final : public Engine {
 public:
     RecordingEngine(std::string runtime,
@@ -106,6 +115,74 @@ private:
     std::vector<std::string>* calls_{nullptr};
     bool supports_text_{false};
     bool supports_embeddings_{false};
+};
+
+class QuantizationRecordingEngine final : public Engine {
+public:
+    QuantizationRecordingEngine(std::optional<std::string>* seen_quantization,
+                                std::vector<std::string>* calls)
+        : seen_quantization_(seen_quantization)
+        , calls_(calls) {}
+
+    std::string runtime() const override { return "safetensors_cpp"; }
+    bool supportsTextGeneration() const override { return true; }
+    bool supportsEmbeddings() const override { return false; }
+
+    ModelLoadResult loadModel(const ModelDescriptor& descriptor) override {
+        if (calls_) {
+            calls_->push_back("load:safetensors");
+        }
+        if (seen_quantization_) {
+            std::optional<std::string> quant;
+            if (descriptor.metadata && descriptor.metadata->is_object()) {
+                const auto& meta = *descriptor.metadata;
+                if (meta.contains("quantization") && meta["quantization"].is_string()) {
+                    quant = meta["quantization"].get<std::string>();
+                } else if (meta.contains("quantization_request") &&
+                           meta["quantization_request"].is_string()) {
+                    quant = meta["quantization_request"].get<std::string>();
+                }
+            }
+            *seen_quantization_ = quant;
+        }
+
+        ModelLoadResult result;
+        result.success = true;
+        result.error_code = EngineErrorCode::kOk;
+        return result;
+    }
+
+    std::string generateChat(const std::vector<ChatMessage>&,
+                             const ModelDescriptor&,
+                             const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::string generateCompletion(const std::string&,
+                                   const ModelDescriptor&,
+                                   const InferenceParams&) const override {
+        return "ok";
+    }
+
+    std::vector<std::string> generateChatStream(
+        const std::vector<ChatMessage>&,
+        const ModelDescriptor&,
+        const InferenceParams&,
+        const std::function<void(const std::string&)>&) const override {
+        return {};
+    }
+
+    std::vector<std::vector<float>> generateEmbeddings(
+        const std::vector<std::string>&,
+        const ModelDescriptor&) const override {
+        return {{1.0f, 0.0f}};
+    }
+
+    size_t getModelMaxContext(const ModelDescriptor&) const override { return 0; }
+
+private:
+    std::optional<std::string>* seen_quantization_{nullptr};
+    std::vector<std::string>* calls_{nullptr};
 };
 
 class VramEngine final : public Engine {
@@ -656,6 +733,70 @@ TEST(InferenceEngineTest, LoadModelInvalidQuantizationReturnsUnsupportedError) {
     auto result = engine.loadModel("example/model:");
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
+}
+
+TEST(InferenceEngineTest, LoadModelPropagatesSafetensorsKvQuantization) {
+    TempDir tmp;
+    const std::string model_name = "example/safetensors";
+    create_safetensors_model(tmp.path, model_name);
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    std::optional<std::string> seen_quantization;
+    std::vector<std::string> calls;
+
+    EngineRegistration reg;
+    reg.engine_id = "safetensors_quant";
+    reg.engine_version = "test";
+    reg.formats = {"safetensors"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<QuantizationRecordingEngine>(&seen_quantization, &calls),
+        reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    auto result = engine.loadModel(model_name + ":kv_int8", "text");
+    EXPECT_TRUE(result.success);
+    ASSERT_EQ(calls.size(), 1u);
+    ASSERT_TRUE(seen_quantization.has_value());
+    EXPECT_EQ(*seen_quantization, "kv_int8");
+}
+
+TEST(InferenceEngineTest, LoadModelRejectsUnsupportedSafetensorsQuantization) {
+    TempDir tmp;
+    const std::string model_name = "example/safetensors";
+    create_safetensors_model(tmp.path, model_name);
+
+    LlamaManager llama(tmp.path.string());
+    ModelStorage storage(tmp.path.string());
+    InferenceEngine engine(llama, storage);
+
+    auto registry = std::make_unique<EngineRegistry>();
+    std::optional<std::string> seen_quantization;
+    std::vector<std::string> calls;
+
+    EngineRegistration reg;
+    reg.engine_id = "safetensors_quant";
+    reg.engine_version = "test";
+    reg.formats = {"safetensors"};
+    reg.capabilities = {"text"};
+    ASSERT_TRUE(registry->registerEngine(
+        std::make_unique<QuantizationRecordingEngine>(&seen_quantization, &calls),
+        reg,
+        nullptr));
+
+    engine.setEngineRegistryForTest(std::move(registry));
+
+    auto result = engine.loadModel(model_name + ":Q4_K_M", "text");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error_code, EngineErrorCode::kUnsupported);
+    EXPECT_NE(result.error_message.find("Unsupported quantization"), std::string::npos);
+    EXPECT_TRUE(calls.empty());
 }
 
 TEST(InferenceEngineTest, LoadModelWithoutInitializationReturnsInternalError) {

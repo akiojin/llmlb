@@ -499,6 +499,65 @@ std::optional<std::string> infer_quantization_from_filename(const std::string& f
     return std::nullopt;
 }
 
+std::string strip_gguf_extension(std::string filename) {
+    const std::string suffix = ".gguf";
+    if (ends_with_case_insensitive(filename, suffix) && filename.size() > suffix.size()) {
+        filename.erase(filename.size() - suffix.size());
+    }
+    return filename;
+}
+
+std::string strip_quantization_suffix(std::string stem, const std::string& quant) {
+    if (quant.empty()) return stem;
+    const auto lower = xllm::toLowerAscii(stem);
+    const auto quant_lower = xllm::toLowerAscii(quant);
+    if (lower.size() <= quant_lower.size() + 1) return stem;
+    const size_t pos = lower.rfind(quant_lower);
+    if (pos == std::string::npos) return stem;
+    if (pos + quant_lower.size() != lower.size()) return stem;
+    const char sep = lower[pos - 1];
+    if (sep != '-' && sep != '.') return stem;
+    return stem.substr(0, pos - 1);
+}
+
+std::string infer_mmproj_base_key(const std::string& main_filename) {
+    auto file = main_filename;
+    auto slash = file.find_last_of("/\\");
+    if (slash != std::string::npos) {
+        file = file.substr(slash + 1);
+    }
+    file = strip_gguf_extension(file);
+    if (auto quant = infer_quantization_from_filename(main_filename)) {
+        file = strip_quantization_suffix(file, *quant);
+    }
+    return file;
+}
+
+std::optional<std::string> find_mmproj_artifact(const std::vector<std::string>& siblings,
+                                                const std::string& main_filename) {
+    std::vector<std::string> candidates;
+    candidates.reserve(siblings.size());
+    for (const auto& name : siblings) {
+        if (!is_gguf_filename(name)) continue;
+        const auto lower = xllm::toLowerAscii(name);
+        if (lower.find("mmproj") == std::string::npos) continue;
+        candidates.push_back(name);
+    }
+    if (candidates.empty()) return std::nullopt;
+
+    const auto base_key = xllm::toLowerAscii(infer_mmproj_base_key(main_filename));
+    if (!base_key.empty()) {
+        for (const auto& candidate : candidates) {
+            if (xllm::toLowerAscii(candidate).find(base_key) != std::string::npos) {
+                return candidate;
+            }
+        }
+    }
+
+    std::sort(candidates.begin(), candidates.end());
+    return candidates.front();
+}
+
 std::string get_hf_base_url() {
     const char* base = std::getenv("HF_BASE_URL");
     if (!base || !*base) {
@@ -545,6 +604,95 @@ bool validate_artifact_path(const std::string& path) {
     if (path.find("..") != std::string::npos) return false;
     if (path.find('\0') != std::string::npos) return false;
     if (!path.empty() && (path.front() == '/' || path.front() == '\\')) return false;
+    return true;
+}
+
+std::optional<std::string> find_signature_for(const std::vector<std::string>& siblings,
+                                              const std::string& filename) {
+    const std::string sig = filename + ".sig";
+    if (std::find(siblings.begin(), siblings.end(), sig) != siblings.end()) {
+        return sig;
+    }
+    const std::string asc = filename + ".asc";
+    if (std::find(siblings.begin(), siblings.end(), asc) != siblings.end()) {
+        return asc;
+    }
+    return std::nullopt;
+}
+
+struct HfMetadataCacheEntry {
+    std::string etag;
+    std::string body;
+};
+
+std::filesystem::path hf_metadata_cache_path(const std::string& models_dir) {
+    return std::filesystem::path(models_dir) / ".hf_metadata_cache.json";
+}
+
+std::optional<HfMetadataCacheEntry> load_hf_metadata_cache(const std::string& models_dir,
+                                                           const std::string& model_id) {
+    const auto cache_path = hf_metadata_cache_path(models_dir);
+    if (!std::filesystem::exists(cache_path)) return std::nullopt;
+
+    xllm::FileLock lock(cache_path);
+    if (!lock.locked()) return std::nullopt;
+
+    std::ifstream ifs(cache_path, std::ios::binary);
+    if (!ifs.is_open()) return std::nullopt;
+
+    auto j = nlohmann::json::parse(ifs, nullptr, false);
+    if (!j.is_object()) return std::nullopt;
+    if (!j.contains(model_id) || !j[model_id].is_object()) return std::nullopt;
+
+    const auto& entry = j[model_id];
+    HfMetadataCacheEntry out;
+    if (entry.contains("etag") && entry["etag"].is_string()) {
+        out.etag = entry["etag"].get<std::string>();
+    }
+    if (entry.contains("body") && entry["body"].is_string()) {
+        out.body = entry["body"].get<std::string>();
+    }
+    if (out.body.empty()) return std::nullopt;
+    return out;
+}
+
+bool store_hf_metadata_cache(const std::string& models_dir,
+                             const std::string& model_id,
+                             const HfMetadataCacheEntry& entry) {
+    if (entry.body.empty()) return false;
+
+    const auto cache_path = hf_metadata_cache_path(models_dir);
+    std::filesystem::create_directories(cache_path.parent_path());
+
+    xllm::FileLock lock(cache_path);
+    if (!lock.locked()) return false;
+
+    nlohmann::json cache = nlohmann::json::object();
+    if (std::filesystem::exists(cache_path)) {
+        std::ifstream ifs(cache_path, std::ios::binary);
+        auto current = nlohmann::json::parse(ifs, nullptr, false);
+        if (current.is_object()) {
+            cache = std::move(current);
+        }
+    }
+
+    nlohmann::json cache_entry;
+    if (!entry.etag.empty()) {
+        cache_entry["etag"] = entry.etag;
+    }
+    cache_entry["body"] = entry.body;
+    cache[model_id] = cache_entry;
+
+    const auto temp_path = cache_path.string() + ".tmp";
+    std::ofstream ofs(temp_path, std::ios::binary | std::ios::trunc);
+    if (!ofs.is_open()) return false;
+    ofs << cache.dump();
+    ofs.flush();
+    if (!ofs.good()) return false;
+
+    std::error_code ec;
+    std::filesystem::rename(temp_path, cache_path, ec);
+    if (ec) return false;
     return true;
 }
 
@@ -698,16 +846,38 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
         if (*token) headers.emplace("Authorization", std::string("Bearer ") + token);
     }
 
+    std::optional<HfMetadataCacheEntry> cached_metadata = load_hf_metadata_cache(models_dir_, model_id);
+    if (cached_metadata.has_value() && !cached_metadata->etag.empty()) {
+        headers.emplace("If-None-Match", cached_metadata->etag);
+    }
+
     const std::string api_path = build_hf_api_path(base, model_id);
     spdlog::info("ModelDownloader: fetching HuggingFace repo metadata path='{}'", api_path);
 
     auto res = client->Get(api_path.c_str(), headers);
+    std::string metadata_body;
     if (!res) {
-        set_error("HuggingFace request failed (no response)");
-        spdlog::warn("ModelDownloader: HuggingFace request failed (no response) path='{}'", api_path);
-        return "";
-    }
-    if (res->status < 200 || res->status >= 300) {
+        if (!cached_metadata.has_value()) {
+            set_error("HuggingFace request failed (no response)");
+            spdlog::warn("ModelDownloader: HuggingFace request failed (no response) path='{}'", api_path);
+            return "";
+        }
+        spdlog::warn("ModelDownloader: HuggingFace request failed, falling back to cached metadata path='{}'", api_path);
+        metadata_body = cached_metadata->body;
+    } else if (res->status == 304) {
+        if (!cached_metadata.has_value()) {
+            set_error("HuggingFace metadata cache missing for 304 response");
+            spdlog::warn("ModelDownloader: HuggingFace metadata cache missing for 304 path='{}'", api_path);
+            return "";
+        }
+        metadata_body = cached_metadata->body;
+    } else if (res->status >= 200 && res->status < 300) {
+        metadata_body = res->body;
+        HfMetadataCacheEntry entry;
+        entry.etag = res->get_header_value("ETag");
+        entry.body = metadata_body;
+        store_hf_metadata_cache(models_dir_, model_id, entry);
+    } else {
         if (res->status == 401 || res->status == 403) {
             set_error("gated model or unauthorized (status=" + std::to_string(res->status) + ")");
         } else {
@@ -717,7 +887,7 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
         return "";
     }
 
-    auto body = nlohmann::json::parse(res->body, nullptr, false);
+    auto body = nlohmann::json::parse(metadata_body, nullptr, false);
     if (body.is_discarded() || !body.contains("siblings") || !body["siblings"].is_array()) {
         set_error("HuggingFace response missing siblings");
         spdlog::warn("ModelDownloader: HuggingFace response missing siblings");
@@ -825,6 +995,12 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
         if (auto pr = manifest_file_priority(name)) {
             entry["priority"] = *pr;
         }
+        if (auto sig = find_signature_for(siblings, name)) {
+            nlohmann::json sig_entry;
+            sig_entry["name"] = *sig;
+            sig_entry["url"] = build_hf_resolve_url(base_url, model_id, *sig);
+            entry["signature"] = sig_entry;
+        }
         files.push_back(entry);
     };
 
@@ -834,6 +1010,11 @@ std::string ModelDownloader::fetchHfManifest(const std::string& model_id, const 
             manifest["quantization"] = *quant;
         }
         push_file("model.gguf", build_hf_resolve_url(base_url, model_id, selection));
+        if (auto mmproj = find_mmproj_artifact(siblings, selection)) {
+            if (*mmproj != selection) {
+                push_file(*mmproj, build_hf_resolve_url(base_url, model_id, *mmproj));
+            }
+        }
     } else if (format && *format == Format::Safetensors) {
         manifest["format"] = "safetensors";
         std::vector<std::string> names = {"config.json", "tokenizer.json", selection};

@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 #include "runtime/state.h"
+#include "metrics/metrics_state.h"
 #include "system/resource_monitor.h"
 #include "utils/logger.h"
 
@@ -18,6 +19,42 @@ void NodeEndpoints::setGpuDevices(std::vector<GpuDevice> devices) {
 
 void NodeEndpoints::registerRoutes(httplib::Server& server) {
     start_time_ = std::chrono::steady_clock::now();
+
+    auto populate_prometheus = [this]() {
+        const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start_time_).count();
+        const auto usage = ResourceMonitor::sampleSystemUsage();
+        const auto token_snapshot = metrics::token_metrics_snapshot();
+
+        exporter_.set_gauge("xllm_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
+        exporter_.set_gauge("xllm_gpu_devices", static_cast<double>(gpu_devices_count_), "Detected GPU devices");
+        exporter_.set_gauge("xllm_gpu_memory_bytes", static_cast<double>(gpu_total_mem_), "Total GPU memory bytes");
+        exporter_.set_gauge("xllm_gpu_capability", gpu_capability_, "Aggregated GPU capability score");
+
+        exporter_.set_gauge("xllm_requests_active", static_cast<double>(active_request_count()),
+                            "Active in-flight requests");
+        exporter_.set_counter("xllm_requests_total", static_cast<double>(total_request_count()),
+                              "Total requests handled");
+
+        exporter_.set_counter("xllm_tokens_total", static_cast<double>(token_snapshot.tokens_total),
+                              "Total tokens generated");
+        exporter_.set_gauge("xllm_tokens_per_second", token_snapshot.tokens_per_second,
+                            "Latest tokens per second");
+        exporter_.set_gauge("xllm_ttft_ms", token_snapshot.ttft_ms, "Latest TTFT in milliseconds");
+
+        exporter_.set_gauge("xllm_vram_used_bytes", static_cast<double>(usage.vram_used_bytes),
+                            "Used VRAM bytes");
+        exporter_.set_gauge("xllm_vram_total_bytes", static_cast<double>(usage.vram_total_bytes),
+                            "Total VRAM bytes");
+        if (usage.vram_total_bytes > 0) {
+            exporter_.set_gauge("xllm_vram_utilization",
+                                static_cast<double>(usage.vram_used_bytes) /
+                                    static_cast<double>(usage.vram_total_bytes),
+                                "VRAM utilization ratio");
+        } else {
+            exporter_.set_gauge("xllm_vram_utilization", 0.0, "VRAM utilization ratio");
+        }
+    };
 
     server.Get("/v0/logs", [](const httplib::Request& req, httplib::Response& res) {
         int limit = 200;
@@ -110,7 +147,10 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
     });
 
     server.Get("/health", [this](const httplib::Request&, httplib::Response& res) {
-        nlohmann::json body = {{"status", health_status_}};
+        nlohmann::json body = {
+            {"status", health_status_},
+            {"supports_responses_api", true}
+        };
         res.set_content(body.dump(), "application/json");
     });
 
@@ -215,13 +255,13 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(body.dump(), "application/json");
     });
 
-    server.Get("/metrics/prom", [this](const httplib::Request&, httplib::Response& res) {
-        auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - start_time_).count();
-        exporter_.set_gauge("xllm_uptime_seconds", static_cast<double>(uptime), "Node uptime in seconds");
-        exporter_.set_gauge("xllm_gpu_devices", static_cast<double>(gpu_devices_count_), "Detected GPU devices");
-        exporter_.set_gauge("xllm_gpu_memory_bytes", static_cast<double>(gpu_total_mem_), "Total GPU memory bytes");
-        exporter_.set_gauge("xllm_gpu_capability", gpu_capability_, "Aggregated GPU capability score");
+    server.Get("/metrics/prom", [this, &populate_prometheus](const httplib::Request&, httplib::Response& res) {
+        populate_prometheus();
+        res.set_content(exporter_.render(), "text/plain");
+    });
+
+    server.Get("/v0/metrics", [this, &populate_prometheus](const httplib::Request&, httplib::Response& res) {
+        populate_prometheus();
         res.set_content(exporter_.render(), "text/plain");
     });
 

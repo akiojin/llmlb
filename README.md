@@ -219,14 +219,38 @@ npm run start:xllm
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLMLB_URL` | `http://127.0.0.1:32768` | Load balancer URL to register with |
-| `LLM_RUNTIME_PORT` | `32769` | Runtime listen port |
-| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | Model storage directory |
-| `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
-| `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | Bind address |
-| `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | Heartbeat interval (seconds) |
-| `LLM_RUNTIME_LOG_LEVEL` | `info` | Log level |
+| `XLLM_PORT` | `32769` | Runtime listen port |
+| `XLLM_BIND_ADDRESS` | `0.0.0.0` | Bind address |
+| `XLLM_MODELS_DIR` | `~/.xllm/models` | Model storage directory |
+| `XLLM_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | Allowlist for direct origin downloads (comma-separated) |
+| `XLLM_CONFIG` | `~/.xllm/config.json` | Config file path |
+| `XLLM_LOG_LEVEL` | `info` | Log level |
+| `XLLM_LOG_DIR` | `~/.xllm/logs` | Log directory |
+| `XLLM_LOG_RETENTION_DAYS` | `7` | Log retention (days) |
+| `XLLM_PGP_VERIFY` | `false` | Verify HuggingFace PGP signatures when available |
+| `HF_TOKEN` | (none) | HuggingFace API token for gated models |
+| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model |
+| `LLM_MODEL_IDLE_TIMEOUT` | `300000` | Idle unload timeout (ms) |
+| `LLM_MAX_LOADED_MODELS` | `0` | Max loaded models (0 = unlimited) |
+| `LLM_MAX_MEMORY_BYTES` | `0` | Max memory bytes (0 = unlimited) |
 
 **Backward compatibility:** Legacy env var names (`LLM_MODELS_DIR` etc.) are supported but deprecated.
+
+**Config (xLLM):**
+
+```json
+{
+  "cors": {
+    "enabled": true,
+    "allow_origin": "*",
+    "allow_methods": "GET, POST, OPTIONS",
+    "allow_headers": "Content-Type, Authorization"
+  },
+  "gzip": {
+    "enabled": true
+  }
+}
+```
 
 **Docker:**
 

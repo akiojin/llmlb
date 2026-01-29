@@ -6,6 +6,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <random>
 #include <regex>
 
 namespace xllm {
@@ -26,10 +30,112 @@ std::string extractFirstError(const std::vector<ImageGenerationResult>& results,
     return default_message;
 }
 
+std::string getHomeDir() {
+    if (const char* home = std::getenv("HOME")) {
+        return home;
+    }
+    if (const char* userprofile = std::getenv("USERPROFILE")) {
+        return userprofile;
+    }
+    return "/tmp";
+}
+
+std::string getImageDirFromEnv() {
+    if (const char* env = std::getenv("XLLM_IMAGE_DIR")) {
+        if (env[0] != '\0') {
+            return env;
+        }
+    }
+    return (std::filesystem::path(getHomeDir()) / ".xllm" / "images").string();
+}
+
+std::chrono::seconds getImageTtlFromEnv() {
+    constexpr int64_t kDefaultTtlSeconds = 60 * 60;
+    if (const char* env = std::getenv("XLLM_IMAGE_TTL_SECONDS")) {
+        try {
+            int64_t value = std::stoll(env);
+            if (value > 0) {
+                return std::chrono::seconds(value);
+            }
+        } catch (...) {
+        }
+    }
+    return std::chrono::seconds(kDefaultTtlSeconds);
+}
+
+std::chrono::seconds getCleanupInterval(std::chrono::seconds ttl) {
+    if (const char* env = std::getenv("XLLM_IMAGE_CLEANUP_INTERVAL_SECONDS")) {
+        try {
+            int64_t value = std::stoll(env);
+            if (value > 0) {
+                return std::chrono::seconds(value);
+            }
+        } catch (...) {
+        }
+    }
+    auto interval = std::chrono::seconds(
+        std::max<int64_t>(1, std::min<int64_t>(60, ttl.count())));
+    return interval;
+}
+
+std::string randomHex(size_t bytes = 8) {
+    std::random_device rd;
+    std::uniform_int_distribution<int> dist(0, 255);
+    std::string out;
+    out.reserve(bytes * 2);
+    constexpr char kHex[] = "0123456789abcdef";
+    for (size_t i = 0; i < bytes; ++i) {
+        int v = dist(rd);
+        out.push_back(kHex[(v >> 4) & 0xF]);
+        out.push_back(kHex[v & 0xF]);
+    }
+    return out;
+}
+
+std::string makeImageFilename() {
+    auto now = std::chrono::system_clock::now();
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+        now.time_since_epoch()).count();
+    return "img_" + std::to_string(seconds) + "_" + randomHex(6) + ".png";
+}
+
+bool isValidResponseFormat(const std::string& format) {
+    return format == "url" || format == "b64_json";
+}
+
 }  // namespace
 
 ImageEndpoints::ImageEndpoints(ImageManager& image_manager)
-    : image_manager_(image_manager) {}
+    : image_manager_(image_manager),
+      image_dir_(getImageDirFromEnv()),
+      image_ttl_(getImageTtlFromEnv()),
+      cleanup_interval_(getCleanupInterval(image_ttl_)) {
+    std::error_code ec;
+    std::filesystem::create_directories(image_dir_, ec);
+    if (ec) {
+        spdlog::warn("Failed to create image directory {}: {}", image_dir_, ec.message());
+    }
+
+    cleanup_thread_ = std::thread([this]() {
+        std::unique_lock<std::mutex> lock(cleanup_mutex_);
+        while (!stop_cleanup_) {
+            lock.unlock();
+            cleanupExpiredImages();
+            lock.lock();
+            cleanup_cv_.wait_for(lock, cleanup_interval_, [this] {
+                return stop_cleanup_.load();
+            });
+        }
+    });
+}
+
+ImageEndpoints::~ImageEndpoints() {
+    stop_cleanup_.store(true);
+    cleanup_cv_.notify_all();
+    if (cleanup_thread_.joinable()) {
+        cleanup_thread_.join();
+    }
+}
 
 void ImageEndpoints::setJson(httplib::Response& res, const nlohmann::json& body) {
     res.set_content(body.dump(), "application/json");
@@ -65,6 +171,10 @@ void ImageEndpoints::registerRoutes(httplib::Server& server) {
                 [this](const httplib::Request& req, httplib::Response& res) {
                     handleVariations(req, res);
                 });
+
+    if (!server.set_mount_point("/images", image_dir_.c_str())) {
+        spdlog::warn("Failed to mount /images to {}", image_dir_);
+    }
 
     spdlog::info(
         "Image endpoints registered: /v1/images/generations, "
@@ -121,6 +231,75 @@ int64_t ImageEndpoints::getCurrentTimestamp() {
         .count();
 }
 
+void ImageEndpoints::cleanupExpiredImages() const {
+    std::error_code ec;
+    if (!std::filesystem::exists(image_dir_, ec)) {
+        return;
+    }
+
+    auto now = std::filesystem::file_time_type::clock::now();
+    auto cutoff = now - image_ttl_;
+
+    for (const auto& entry : std::filesystem::directory_iterator(image_dir_, ec)) {
+        if (ec) {
+            return;
+        }
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        std::error_code time_ec;
+        auto write_time = entry.last_write_time(time_ec);
+        if (time_ec) {
+            continue;
+        }
+        if (write_time < cutoff) {
+            std::error_code rm_ec;
+            std::filesystem::remove(entry.path(), rm_ec);
+        }
+    }
+}
+
+std::string ImageEndpoints::buildImageUrl(const httplib::Request& req,
+                                          const std::string& filename) const {
+    std::string host = req.get_header_value("Host");
+    if (host.empty()) {
+        host = "localhost";
+    }
+    return "http://" + host + "/images/" + filename;
+}
+
+std::string ImageEndpoints::storeImageAndGetUrl(const httplib::Request& req,
+                                                const std::vector<uint8_t>& data,
+                                                std::string& error_message) const {
+    std::error_code ec;
+    std::filesystem::create_directories(image_dir_, ec);
+    if (ec) {
+        error_message = "Failed to create image directory";
+        return {};
+    }
+
+    std::string filename = makeImageFilename();
+    std::filesystem::path output_path = std::filesystem::path(image_dir_) / filename;
+
+    std::ofstream out(output_path, std::ios::binary);
+    if (!out.is_open()) {
+        error_message = "Failed to open image file for writing";
+        return {};
+    }
+
+    out.write(reinterpret_cast<const char*>(data.data()),
+              static_cast<std::streamsize>(data.size()));
+    out.close();
+
+    if (!out) {
+        error_message = "Failed to write image data";
+        return {};
+    }
+
+    cleanupExpiredImages();
+    return buildImageUrl(req, filename);
+}
+
 void ImageEndpoints::handleGenerations(const httplib::Request& req,
                                        httplib::Response& res) {
     spdlog::debug("Handling image generation request");
@@ -173,6 +352,11 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req,
     std::string quality = body.value("quality", "standard");
     std::string style = body.value("style", "vivid");
     std::string response_format = body.value("response_format", "url");
+    if (!isValidResponseFormat(response_format)) {
+        respondError(res, 400, "invalid_response_format",
+                     "response_format must be 'url' or 'b64_json'");
+        return;
+    }
     int steps = body.value("steps", 20);
     if (steps < 1 || steps > 100) {
         respondError(res, 400, "invalid_steps", "steps must be between 1 and 100");
@@ -216,11 +400,13 @@ void ImageEndpoints::handleGenerations(const httplib::Request& req,
         if (response_format == "b64_json") {
             image_obj["b64_json"] = encodeBase64(result.image_data);
         } else {
-            // For URL format, we would need to save the image and return a URL
-            // For now, fall back to base64 in the response
-            // TODO: Implement image storage and URL generation
-            image_obj["b64_json"] = encodeBase64(result.image_data);
-            spdlog::warn("URL response format not yet implemented, returning base64");
+            std::string error_message;
+            std::string url = storeImageAndGetUrl(req, result.image_data, error_message);
+            if (url.empty()) {
+                spdlog::warn("Failed to store image: {}", error_message);
+                continue;
+            }
+            image_obj["url"] = url;
         }
         data_array.push_back(image_obj);
     }
@@ -316,6 +502,11 @@ void ImageEndpoints::handleEdits(const httplib::Request& req,
     if (req.form.has_field("response_format")) {
         response_format = req.form.get_field("response_format");
     }
+    if (!isValidResponseFormat(response_format)) {
+        respondError(res, 400, "invalid_response_format",
+                     "response_format must be 'url' or 'b64_json'");
+        return;
+    }
 
     // Prepare edit parameters
     ImageEditParams params;
@@ -353,8 +544,13 @@ void ImageEndpoints::handleEdits(const httplib::Request& req,
         if (response_format == "b64_json") {
             image_obj["b64_json"] = encodeBase64(result.image_data);
         } else {
-            image_obj["b64_json"] = encodeBase64(result.image_data);
-            spdlog::warn("URL response format not yet implemented, returning base64");
+            std::string error_message;
+            std::string url = storeImageAndGetUrl(req, result.image_data, error_message);
+            if (url.empty()) {
+                spdlog::warn("Failed to store edited image: {}", error_message);
+                continue;
+            }
+            image_obj["url"] = url;
         }
         data_array.push_back(image_obj);
     }
@@ -433,6 +629,11 @@ void ImageEndpoints::handleVariations(const httplib::Request& req,
     if (req.form.has_field("response_format")) {
         response_format = req.form.get_field("response_format");
     }
+    if (!isValidResponseFormat(response_format)) {
+        respondError(res, 400, "invalid_response_format",
+                     "response_format must be 'url' or 'b64_json'");
+        return;
+    }
 
     // Prepare variation parameters
     ImageVariationParams params;
@@ -469,8 +670,13 @@ void ImageEndpoints::handleVariations(const httplib::Request& req,
         if (response_format == "b64_json") {
             image_obj["b64_json"] = encodeBase64(result.image_data);
         } else {
-            image_obj["b64_json"] = encodeBase64(result.image_data);
-            spdlog::warn("URL response format not yet implemented, returning base64");
+            std::string error_message;
+            std::string url = storeImageAndGetUrl(req, result.image_data, error_message);
+            if (url.empty()) {
+                spdlog::warn("Failed to store image variation: {}", error_message);
+                continue;
+            }
+            image_obj["url"] = url;
         }
         data_array.push_back(image_obj);
     }

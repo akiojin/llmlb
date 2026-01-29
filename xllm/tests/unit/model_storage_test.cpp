@@ -397,6 +397,32 @@ TEST(ModelStorageTest, ResolveDescriptorRejectsMismatchedManifestQuantization) {
     EXPECT_FALSE(desc.has_value());
 }
 
+TEST(ModelStorageTest, ResolveDescriptorAllowsSafetensorsKvQuantization) {
+    TempModelDir tmp;
+    const std::string model_name = "llama-safetensors";
+    create_safetensors_model_with_index(tmp.base, model_name);
+
+    ModelStorage storage(tmp.base.string());
+    auto desc = storage.resolveDescriptor(model_name + ":kv_int8");
+
+    ASSERT_TRUE(desc.has_value());
+    EXPECT_EQ(desc->runtime, "safetensors_cpp");
+    EXPECT_EQ(desc->format, "safetensors");
+    ASSERT_TRUE(desc->metadata.has_value());
+    EXPECT_EQ(desc->metadata->value("quantization_request", ""), "kv_int8");
+    EXPECT_EQ(desc->metadata->value("quantization", ""), "kv_int8");
+}
+
+TEST(ModelStorageTest, ResolveDescriptorRejectsUnsupportedSafetensorsKvQuantization) {
+    TempModelDir tmp;
+    const std::string model_name = "llama-safetensors";
+    create_safetensors_model_with_index(tmp.base, model_name);
+
+    ModelStorage storage(tmp.base.string());
+    EXPECT_FALSE(storage.resolveDescriptor(model_name + ":kv_int4").has_value());
+    EXPECT_FALSE(storage.validateModel(model_name + ":kv_int4"));
+}
+
 TEST(ModelStorageTest, ResolveDescriptorIncludesCapabilitiesForGguf) {
     TempModelDir tmp;
     create_model(tmp.base, "gpt-oss-7b");

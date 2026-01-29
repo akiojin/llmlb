@@ -11,6 +11,7 @@
 #include <thread>
 #include "utils/config.h"
 #include "utils/allowlist.h"
+#include "utils/pgp.h"
 #include "utils/file_lock.h"
 #include "models/model_storage.h"
 #include <spdlog/spdlog.h>
@@ -518,6 +519,17 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
                 spdlog::warn("ModelSync: origin URL blocked by allowlist for model {} file {}", model_id, name);
                 return false;
             }
+            std::string signature_name;
+            std::string signature_url;
+            if (f.contains("signature") && f["signature"].is_object()) {
+                const auto& sig = f["signature"];
+                signature_name = sig.value("name", "");
+                signature_url = sig.value("url", "");
+                if (!signature_url.empty() && !isUrlAllowedByAllowlist(signature_url, origin_allowlist)) {
+                    spdlog::warn("ModelSync: signature URL blocked by allowlist for model {} file {}", model_id, name);
+                    return false;
+                }
+            }
 
             size_t file_chunk = f.value("chunk", static_cast<size_t>(0));
             size_t file_bps = f.value("max_bps", static_cast<size_t>(0));
@@ -525,7 +537,8 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
             int priority = f.value("priority", 0);
             bool optional = f.value("optional", false);
 
-            auto task_fn = [this, &downloader, model_id, url, name, digest, callbacks, model_cfg, file_chunk, file_bps, priority, optional]() {
+            auto task_fn = [this, &downloader, model_id, url, name, digest, signature_name, signature_url,
+                            callbacks, model_cfg, file_chunk, file_bps, priority, optional]() {
                 size_t orig_chunk = downloader.getChunkSize();
                 size_t orig_bps = downloader.getMaxBytesPerSec();
 
@@ -577,6 +590,28 @@ bool ModelSync::downloadModel(ModelDownloader& downloader,
 
                 const auto local_dir = ModelStorage::modelNameToDir(model_id);
                 auto out = downloadWithHint(downloader, model_id, url, local_dir + "/" + name, progress_cb, digest);
+
+                if (!out.empty() && !signature_url.empty() && !signature_name.empty()) {
+                    auto sig_out = downloader.downloadBlob(signature_url,
+                                                           local_dir + "/" + signature_name,
+                                                           nullptr,
+                                                           "",
+                                                           "");
+                    if (sig_out.empty()) {
+                        spdlog::warn("ModelSync: signature download failed for model {} file {}",
+                                     model_id, signature_name);
+                        if (!optional) {
+                            return false;
+                        }
+                    } else if (should_verify_pgp()) {
+                        std::string verify_error;
+                        if (!verify_pgp_signature(out, sig_out, verify_error)) {
+                            spdlog::warn("ModelSync: PGP verification failed for model {} file {}: {}",
+                                         model_id, name, verify_error);
+                            return false;
+                        }
+                    }
+                }
 
                 downloader.setChunkSize(orig_chunk);
                 downloader.setMaxBytesPerSec(orig_bps);

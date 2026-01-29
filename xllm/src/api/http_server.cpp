@@ -125,7 +125,7 @@ void HttpServer::start() {
         if (compressed.empty()) return;
 
         const auto content_type = res.get_header_value("Content-Type");
-        res.set_content(std::move(compressed),
+        res.set_content(compressed,
                         content_type.empty() ? "application/octet-stream" : content_type);
         res.set_header("Content-Encoding", "gzip");
         res.set_header("Vary", "Accept-Encoding");

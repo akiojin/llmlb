@@ -8,7 +8,7 @@
 - [x] 統合仕様の作成（本SPEC）
 - [x] 既存SPECの責務境界を明文化
 - [x] 依存関係マトリクスの更新
-- [x] Node主導キャッシュ方針の反映（`SPEC-dcaeaec4`, `SPEC-48678000` 更新）
+- [x] Node主導キャッシュ方針の反映（`SPEC-dcaeaec4`, `SPEC-48678000 (moved to xLLM repo)` 更新）
 
 ## 追加対応（Session 2025-12-31）
 

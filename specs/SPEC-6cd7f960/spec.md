@@ -216,7 +216,7 @@ URL登録は維持しつつ、Nodeがマニフェストに従い直接取得す�
 
 ### 依存元（このSPECに依存するもの）
 
-- SPEC-48678000（モデル自動解決）: supported_models.json定義を使用
+- SPEC-48678000 (moved to xLLM repo)（モデル自動解決）: supported_models.json定義を使用
 - SPEC-08d2b908（モデル管理統合）: 責務境界に含む
 
 ### 関連仕様

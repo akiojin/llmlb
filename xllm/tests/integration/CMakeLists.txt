@@ -35,6 +35,8 @@ set(INTEGRATION_TEST_SOURCES
     ../../src/metrics/metrics_state.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/engine_registry.cpp
+    ../../src/core/lora_utils.cpp
+    ../../src/core/chat_template_renderer.cpp
     ../../src/core/llama_engine.cpp
     ../../src/core/kv_cache_utils.cpp
     ../../src/core/inference_engine.cpp

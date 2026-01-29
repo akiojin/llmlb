@@ -20,7 +20,9 @@ set(CONTRACT_TEST_SOURCES
     ../../src/api/node_endpoints.cpp
     ../../src/api/audio_endpoints.cpp
     ../../src/api/image_endpoints.cpp
+    ../../src/utils/pgp.cpp
     ../../src/models/model_registry.cpp
+    ../../src/models/modelfile.cpp
     ../../src/models/model_sync.cpp
     ../../src/models/model_downloader.cpp
     ../../src/models/model_storage.cpp
@@ -28,7 +30,10 @@ set(CONTRACT_TEST_SOURCES
     ../../src/metrics/metrics_state.cpp
     ../../src/metrics/prometheus_exporter.cpp
     ../../src/core/engine_registry.cpp
+    ../../src/core/lora_utils.cpp
+    ../../src/core/chat_template_renderer.cpp
     ../../src/core/llama_engine.cpp
+    ../../src/core/kv_cache_utils.cpp
     ../../src/core/inference_engine.cpp
     ../../src/core/text_manager.cpp
     ../../src/core/request_watchdog.cpp

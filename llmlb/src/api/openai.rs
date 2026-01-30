@@ -996,10 +996,10 @@ async fn proxy_google_provider(
     let data: Value = res.json().await.map_err(map_reqwest_error)?;
     let text = data
         .get("candidates")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("content"))
-        .and_then(|c| c.get("parts"))
-        .and_then(|p| p.get(0))
+        .and_then(|c: &Value| c.get(0))
+        .and_then(|c: &Value| c.get("content"))
+        .and_then(|c: &Value| c.get("parts"))
+        .and_then(|p: &Value| p.get(0))
         .and_then(|p: &Value| p.get("text"))
         .and_then(|t: &Value| t.as_str())
         .unwrap_or("");

@@ -57,6 +57,13 @@ pub enum LockError {
     /// ロックディレクトリの作成に失敗
     #[error("Failed to create lock directory: {0}")]
     DirectoryCreationFailed(#[source] std::io::Error),
+
+    /// ロックファイルが他のプロセスによってロック中 (Windows専用)
+    #[error("Server already running on port {port} (lock file is held by another process)\n\nTo stop: llmlb stop --port {port}")]
+    FileLocked {
+        /// ポート番号
+        port: u16,
+    },
 }
 
 /// ロックディレクトリのパスを取得
@@ -109,14 +116,33 @@ pub fn is_process_running(pid: u32) -> bool {
 /// - `Ok(Some(LockInfo))`: ロックファイルが存在し、正常に読み取れた場合
 /// - `Ok(None)`: ロックファイルが存在しない場合
 /// - `Err(LockError::Corrupted)`: ロックファイルが破損している場合
+/// - `Err(LockError::FileLocked)`: Windowsでファイルがロック中の場合
 pub fn read_lock_info(port: u16) -> Result<Option<LockInfo>, LockError> {
     let path = lock_path(port);
     if !path.exists() {
         return Ok(None);
     }
 
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| LockError::Corrupted(format!("Failed to read lock file: {}", e)))?;
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            // Windowsでファイルがロック中の場合 (ERROR_LOCK_VIOLATION = 33)
+            // または他のプロセスがファイルを使用中の場合 (ERROR_SHARING_VIOLATION = 32)
+            #[cfg(windows)]
+            {
+                if let Some(code) = e.raw_os_error() {
+                    if code == 33 || code == 32 {
+                        // ファイルがロックされている = 誰かが使用中
+                        return Err(LockError::FileLocked { port });
+                    }
+                }
+            }
+            return Err(LockError::Corrupted(format!(
+                "Failed to read lock file: {}",
+                e
+            )));
+        }
+    };
 
     let info: LockInfo = serde_json::from_str(&content)
         .map_err(|e| LockError::Corrupted(format!("Invalid JSON in lock file: {}", e)))?;

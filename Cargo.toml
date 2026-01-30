@@ -16,19 +16,19 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-thiserror = "1.0"
+thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-reqwest = { version = "0.11", features = ["json", "stream", "blocking", "multipart"] }
+reqwest = { version = "0.13", features = ["json", "stream", "blocking", "multipart"] }
 
 # Router専用
-axum = "0.7"
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
 
 # Node専用
-sysinfo = "0.30"
+sysinfo = "0.38"
 
 [profile.release]
 opt-level = 3

@@ -26,7 +26,7 @@ serde_urlencoded = "0.7"
 # HTTPクライアント
 reqwest = { workspace = true }
 futures = "0.3"
-prometheus = "0.13"
+prometheus = "0.14"
 once_cell = "1.19"
 anyhow = "1.0"
 tokio-util = { version = "0.7", features = ["io"] }
@@ -46,10 +46,10 @@ base64 = "0.22"
 
 # 認証機能
 sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
-bcrypt = "0.15"
-jsonwebtoken = "9.2"
+bcrypt = "0.18"
+jsonwebtoken = "10.3"
 sha2 = "0.10"
-rand = "0.8"
+rand = "0.9"
 rpassword = "7.3"
 
 # CLI
@@ -74,14 +74,14 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Unix専用依存関係（シグナル送信用）
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.29", features = ["signal"] }
+nix = { version = "0.31", features = ["signal"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3.8"
 once_cell = "1.21"
 wiremock = "0.6.5"
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
 sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
 serial_test = "3.0"
-tokio-tungstenite = "0.24"
+tokio-tungstenite = "0.28"

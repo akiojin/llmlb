@@ -1,13 +1,23 @@
 # Unreleased
 
+# [2.4.0](https://github.com/akiojin/llmlb/compare/v2.3.1...v2.4.0) (2026-01-30)
+
 ### Breaking Changes
-- Engine plugins removed in favor of built-in managers. See <<https://github.com/akiojin/xLLM>/blob/main/docs/migrations/plugin-to-manager.md>.
+
+- Engine plugins removed in favor of built-in managers. See <https://github.com/akiojin/xLLM/blob/main/docs/migrations/plugin-to-manager.md>.
 
 ### Features
+
 - cloud prefix routing for `openai:/google:/anthropic:` with SSE passthrough
 - cloud Prometheus metrics at `/v0/metrics/cloud` (provider/status counters & latency histogram)
+- サーバーのシングル実行制約を実装 (#355)
+
+### Bug Fixes
+
+- internal endpoints を /api にリネーム (#354)
 
 ### Tests
+
 - mock integration tests for cloud prefixes (non/stream) and regression ensuring non-prefixed models stay on local path
 
 # [2.1.0](https://github.com/akiojin/runtime-router/compare/v2.0.5...v2.1.0) (2025-11-19)

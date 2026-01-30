@@ -188,6 +188,7 @@ endif()
 # Find required packages
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(ZLIB REQUIRED)
 
 # Metal support (macOS)
 if(APPLE AND BUILD_WITH_METAL)
@@ -237,7 +238,6 @@ add_library(cli_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/repl_session.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/progress_renderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/ollama_compat.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/serve.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/run.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/pull.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/list.cpp
@@ -245,9 +245,12 @@ add_library(cli_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/rm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/stop.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/ps.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_endpoints.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_models.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/router_status.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/profile.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/benchmark.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/compare.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/convert.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/export.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/commands/import.cpp
 )
 target_include_directories(cli_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(cli_lib PUBLIC
@@ -322,6 +325,7 @@ target_link_libraries(xllm PRIVATE
     ${CMAKE_THREAD_LIBS_INIT}
     OpenSSL::SSL
     OpenSSL::Crypto
+    ZLIB::ZLIB
 )
 
 target_compile_definitions(xllm PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)

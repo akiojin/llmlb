@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <sstream>
 
 #include <nlohmann/json.hpp>
@@ -81,6 +82,30 @@ stcpp_backend_type detectBackend() {
 #else
     return STCPP_BACKEND_CPU;
 #endif
+}
+
+std::optional<std::string> extract_quantization_token(const ModelDescriptor& descriptor) {
+    if (!descriptor.metadata || !descriptor.metadata->is_object()) {
+        return std::nullopt;
+    }
+    const auto& meta = *descriptor.metadata;
+    if (meta.contains("quantization") && meta["quantization"].is_string()) {
+        return meta["quantization"].get<std::string>();
+    }
+    if (meta.contains("quantization_request") && meta["quantization_request"].is_string()) {
+        return meta["quantization_request"].get<std::string>();
+    }
+    return std::nullopt;
+}
+
+void apply_kv_quantization(const std::string& quantization, stcpp_context_params& params) {
+    if (quantization == "kv_int8") {
+        params.kv_cache_quant = true;
+        params.kv_quant_type = STCPP_KV_QUANT_INT8;
+    } else if (quantization == "kv_fp8") {
+        params.kv_cache_quant = true;
+        params.kv_quant_type = STCPP_KV_QUANT_FP8;
+    }
 }
 
 }  // namespace
@@ -177,6 +202,10 @@ ModelLoadResult SafetensorsEngine::loadModel(const ModelDescriptor& descriptor) 
         return result;
     }
     ctx_params.n_gpu_layers = -1;  // All layers on GPU
+
+    if (auto quantization = extract_quantization_token(descriptor)) {
+        apply_kv_quantization(*quantization, ctx_params);
+    }
 
     fprintf(stderr, "[DEBUG] SafetensorsEngine::loadModel: calling stcpp_context_new\n");
     fflush(stderr);

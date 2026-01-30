@@ -8,6 +8,24 @@
 
 namespace xllm {
 
+inline std::string sha256_text(const std::string& text) {
+    SHA256_CTX ctx;
+    if (SHA256_Init(&ctx) != 1) return "";
+    if (!text.empty()) {
+        if (SHA256_Update(&ctx, text.data(), text.size()) != 1) return "";
+    }
+    std::array<unsigned char, SHA256_DIGEST_LENGTH> hash{};
+    if (SHA256_Final(hash.data(), &ctx) != 1) return "";
+    static const char* hex = "0123456789abcdef";
+    std::string hexout;
+    hexout.reserve(64);
+    for (auto b : hash) {
+        hexout.push_back(hex[(b >> 4) & 0x0F]);
+        hexout.push_back(hex[b & 0x0F]);
+    }
+    return hexout;
+}
+
 inline std::string sha256_file(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) return "";

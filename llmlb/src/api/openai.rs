@@ -675,24 +675,37 @@ async fn prepare_vision_payload(
         return Ok(payload);
     }
 
+    let vision_limits = VisionCapability::default();
+    if image_urls.len() > vision_limits.max_image_count as usize {
+        return Err(openai_error_response(
+            format!("Too many images (max {})", vision_limits.max_image_count),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let models = list_registered_models(&state.db_pool)
         .await
         .map_err(|err| openai_error_response(err.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
     let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
-        // 未登録モデル（クラウド等）はllmlb側の検証をスキップ
+        // 未登録モデル（クラウド等）は画像URLの検証・変換は行わないが、
+        // data URLのBase64/形式/サイズは事前に検証する。
+        for url in image_urls {
+            if image::is_data_url(&url) {
+                if let Err(err) =
+                    image::validate_image_url(&state.http_client, &url, &vision_limits).await
+                {
+                    return Err(openai_error_response(
+                        err.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+            }
+        }
         return Ok(payload);
     };
     if !model_info.has_capability(ModelCapability::Vision) {
         return Err(openai_error_response(
             format!("Model '{}' does not support image understanding", model.raw),
-            StatusCode::BAD_REQUEST,
-        ));
-    }
-
-    let vision_limits = VisionCapability::default();
-    if image_urls.len() > vision_limits.max_image_count as usize {
-        return Err(openai_error_response(
-            format!("Too many images (max {})", vision_limits.max_image_count),
             StatusCode::BAD_REQUEST,
         ));
     }

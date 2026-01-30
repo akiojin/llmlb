@@ -7,10 +7,9 @@
 
 namespace xllm {
 
-/// Subcommand types for llmlb CLI
+/// Subcommand types for xllm CLI
 enum class Subcommand {
     None,           // No subcommand (legacy server mode)
-    // Direct commands (formerly node subcommands)
     Serve,          // serve
     Run,            // run <model>
     Pull,           // pull <model>
@@ -19,10 +18,12 @@ enum class Subcommand {
     Rm,             // rm <model>
     Stop,           // stop <model>
     Ps,             // ps
-    // Router subcommands
-    RouterEndpoints,  // router endpoints
-    RouterModels,     // router models
-    RouterStatus,     // router status
+    Profile,        // profile <model>
+    Benchmark,      // benchmark <model>
+    Compare,        // compare <model_a> <model_b>
+    Convert,        // convert <src> --name <model>
+    Export,         // export <model> --output <file>
+    Import,         // import <model> --file <file>
 };
 
 /// Options for serve command
@@ -62,6 +63,43 @@ struct ModelOptions {
     std::string model;
 };
 
+struct ProfileOptions {
+    std::string model;
+    std::string prompt{"Hello"};
+    int max_tokens{128};
+};
+
+struct BenchmarkOptions {
+    std::string model;
+    std::string prompt{"Hello"};
+    int max_tokens{128};
+    int runs{3};
+};
+
+struct CompareOptions {
+    std::string model_a;
+    std::string model_b;
+    std::string prompt{"Hello"};
+    int max_tokens{128};
+    int runs{3};
+};
+
+struct ConvertOptions {
+    std::string source;
+    std::string name;
+    std::string format{"gguf"};
+};
+
+struct ExportOptions {
+    std::string model;
+    std::string output;
+};
+
+struct ImportOptions {
+    std::string model;
+    std::string file;
+};
+
 /// Result of CLI argument parsing
 struct CliResult {
     /// Whether the program should exit immediately (e.g., after --help or --version)
@@ -90,6 +128,13 @@ struct CliResult {
 
     /// Options for model commands (rm, stop)
     ModelOptions model_options;
+
+    ProfileOptions profile_options;
+    BenchmarkOptions benchmark_options;
+    CompareOptions compare_options;
+    ConvertOptions convert_options;
+    ExportOptions export_options;
+    ImportOptions import_options;
 };
 
 /// Parse command line arguments
@@ -108,9 +153,6 @@ std::string getHelpMessage();
 ///
 /// @return Version message string
 std::string getVersionMessage();
-
-/// Get help message for router subcommands
-std::string getRouterHelpMessage();
 
 /// Convert subcommand enum to string
 std::string subcommandToString(Subcommand cmd);

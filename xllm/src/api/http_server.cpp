@@ -3,9 +3,57 @@
 #include "api/openai_endpoints.h"
 #include "api/node_endpoints.h"
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <cctype>
+#include <zlib.h>
 #include "utils/request_id.h"
 
 namespace xllm {
+
+namespace {
+bool accepts_gzip(const httplib::Request& req) {
+    if (!req.has_header("Accept-Encoding")) return false;
+    auto enc = req.get_header_value("Accept-Encoding");
+    std::transform(enc.begin(), enc.end(), enc.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return enc.find("gzip") != std::string::npos;
+}
+
+std::string gzip_compress(const std::string& input) {
+    if (input.empty()) return {};
+
+    z_stream zs{};
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 + 16, 8,
+                     Z_DEFAULT_STRATEGY) != Z_OK) {
+        return {};
+    }
+
+    zs.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.data()));
+    zs.avail_in = static_cast<uInt>(input.size());
+
+    std::string output;
+    output.reserve(input.size() / 2);
+    char buffer[32768];
+
+    int ret = Z_OK;
+    while (ret == Z_OK) {
+        zs.next_out = reinterpret_cast<Bytef*>(buffer);
+        zs.avail_out = static_cast<uInt>(sizeof(buffer));
+        ret = deflate(&zs, zs.avail_in ? Z_NO_FLUSH : Z_FINISH);
+        if (ret != Z_OK && ret != Z_STREAM_END) {
+            deflateEnd(&zs);
+            return {};
+        }
+        const size_t written = sizeof(buffer) - zs.avail_out;
+        if (written > 0) {
+            output.append(buffer, written);
+        }
+    }
+
+    deflateEnd(&zs);
+    return output;
+}
+}  // namespace
 
 HttpServer::HttpServer(int port, OpenAIEndpoints& openai, NodeEndpoints& node, std::string bind_address)
     : port_(port), bind_address_(std::move(bind_address)), openai_(openai), node_(node) {}
@@ -66,8 +114,24 @@ void HttpServer::start() {
     });
 
     // Post-routing handler to ensure CORS headers on all responses
-    server_.set_post_routing_handler([this](const httplib::Request&, httplib::Response& res) {
+    server_.set_post_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         applyCors(res);
+        if (!enable_compression_) return;
+        if (!accepts_gzip(req)) return;
+        if (res.body.empty()) return;
+        if (res.has_header("Content-Encoding")) return;
+
+        auto compressed = gzip_compress(res.body);
+        if (compressed.empty()) return;
+
+        const auto content_type = res.get_header_value("Content-Type");
+        res.set_content(compressed,
+                        content_type.empty() ? "application/octet-stream" : content_type);
+        auto range = res.headers.equal_range("Content-Length");
+        res.headers.erase(range.first, range.second);
+        res.set_header("Content-Length", std::to_string(compressed.size()));
+        res.set_header("Content-Encoding", "gzip");
+        res.set_header("Vary", "Accept-Encoding");
     });
 
     // Access log

@@ -18,6 +18,7 @@
 #include "models/model_resolver.h"
 #include "models/model_registry.h"
 #include "models/model_storage.h"
+#include "models/modelfile.h"
 #include "core/llama_manager.h"
 #include "core/inference_engine.h"
 #include "api/openai_endpoints.h"
@@ -211,7 +212,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
 
         // Determine models directory
         std::string models_dir = cfg.models_dir.empty()
-                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.llmlb/models"
+                                     ? std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.xllm/models"
                                      : cfg.models_dir;
 
         // Initialize LlamaManager and ModelStorage for inference engine
@@ -377,6 +378,11 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
         node_endpoints.setGpuInfo(gpus.size(), total_mem, capability);
         node_endpoints.setGpuDevices(gpus);
         xllm::HttpServer server(node_port, openai, node_endpoints, bind_address);
+        server.enableCors(cfg.cors_enabled);
+        server.setCorsOrigin(cfg.cors_allow_origin);
+        server.setCorsMethods(cfg.cors_allow_methods);
+        server.setCorsHeaders(cfg.cors_allow_headers);
+        server.enableCompression(cfg.gzip_enabled);
 
 #ifdef USE_WHISPER
         // Register audio endpoints for ASR (and TTS if available)
@@ -490,8 +496,22 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
         // Initialize OllamaCompat for reading ~/.ollama/models/
         xllm::cli::OllamaCompat ollama_compat;
 
+        auto quantization_level_for = [](const xllm::ModelDescriptor& desc) -> std::string {
+            if (!desc.metadata || !desc.metadata->is_object()) {
+                return "";
+            }
+            const auto& meta = *desc.metadata;
+            if (meta.contains("quantization") && meta["quantization"].is_string()) {
+                return meta["quantization"].get<std::string>();
+            }
+            if (meta.contains("quantization_request") && meta["quantization_request"].is_string()) {
+                return meta["quantization_request"].get<std::string>();
+            }
+            return "";
+        };
+
         // Ollama-compatible API: GET /api/tags - list all available models
-        server.getServer().Get("/api/tags", [&model_storage, &ollama_compat, &engine](const httplib::Request&, httplib::Response& res) {
+        server.getServer().Get("/api/tags", [&model_storage, &ollama_compat, &engine, &quantization_level_for](const httplib::Request&, httplib::Response& res) {
             nlohmann::json models_array = nlohmann::json::array();
 
             // List llmlb models
@@ -510,7 +530,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
                 model_obj["details"]["format"] = desc.format;
                 model_obj["details"]["family"] = "";
                 model_obj["details"]["parameter_size"] = "";
-                model_obj["details"]["quantization_level"] = "";
+                model_obj["details"]["quantization_level"] = quantization_level_for(desc);
                 models_array.push_back(model_obj);
             }
 
@@ -570,7 +590,7 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
         spdlog::info("Ollama-compatible endpoint registered: GET /api/ps");
 
         // Ollama-compatible API: POST /api/show - show model information
-        server.getServer().Post("/api/show", [&model_storage, &ollama_compat](const httplib::Request& req, httplib::Response& res) {
+        server.getServer().Post("/api/show", [&model_storage, &ollama_compat, &quantization_level_for](const httplib::Request& req, httplib::Response& res) {
             auto body = nlohmann::json::parse(req.body, nullptr, false);
             if (body.is_discarded() || !body.contains("name")) {
                 res.status = 400;
@@ -606,14 +626,22 @@ int run_node(const xllm::NodeConfig& cfg, bool single_iteration) {
             // Check llmlb models
             auto descriptor = model_storage.resolveDescriptor(model_name);
             if (descriptor) {
+                std::string modelfile_error;
+                auto modelfile = xllm::Modelfile::loadForModel(model_name, modelfile_error);
                 response["modelfile"] = "";
                 response["parameters"] = "";
                 response["template"] = "";
+                if (modelfile) {
+                    response["modelfile"] = modelfile->raw_text;
+                    if (!modelfile->template_text.empty()) {
+                        response["template"] = modelfile->template_text;
+                    }
+                }
                 response["details"] = nlohmann::json::object();
                 response["details"]["format"] = descriptor->format;
                 response["details"]["family"] = "";
                 response["details"]["parameter_size"] = "";
-                response["details"]["quantization_level"] = "";
+                response["details"]["quantization_level"] = quantization_level_for(*descriptor);
                 response["model_info"] = nlohmann::json::object();
                 response["model_info"]["name"] = descriptor->name;
                 response["model_info"]["path"] = descriptor->primary_path;
@@ -769,14 +797,23 @@ int main(int argc, char* argv[]) {
         case xllm::Subcommand::Ps:
             return xllm::cli::commands::ps();
 
-        case xllm::Subcommand::RouterEndpoints:
-            return xllm::cli::commands::router_endpoints();
+        case xllm::Subcommand::Profile:
+            return xllm::cli::commands::profile(cli_result.profile_options);
 
-        case xllm::Subcommand::RouterModels:
-            return xllm::cli::commands::router_models();
+        case xllm::Subcommand::Benchmark:
+            return xllm::cli::commands::benchmark(cli_result.benchmark_options);
 
-        case xllm::Subcommand::RouterStatus:
-            return xllm::cli::commands::router_status();
+        case xllm::Subcommand::Compare:
+            return xllm::cli::commands::compare(cli_result.compare_options);
+
+        case xllm::Subcommand::Convert:
+            return xllm::cli::commands::convert(cli_result.convert_options);
+
+        case xllm::Subcommand::Export:
+            return xllm::cli::commands::exportModel(cli_result.export_options);
+
+        case xllm::Subcommand::Import:
+            return xllm::cli::commands::importModel(cli_result.import_options);
 
         case xllm::Subcommand::None:
         default:

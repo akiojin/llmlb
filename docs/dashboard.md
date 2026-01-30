@@ -7,7 +7,7 @@ llmlb serves the admin dashboard UI and a lightweight Playground UI.
 
 The authoritative API list and setup instructions live in `README.md` / `README.ja.md`.
 
-## Router endpoints used by the Dashboard
+## LLM Load Balancer endpoints used by the Dashboard
 
 - `GET /v0/dashboard/overview`
 - `GET /v0/dashboard/stats`

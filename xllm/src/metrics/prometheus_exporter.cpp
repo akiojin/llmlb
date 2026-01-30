@@ -16,6 +16,17 @@ void PrometheusExporter::set_gauge(const std::string& name, double value, const 
     }
 }
 
+void PrometheusExporter::set_counter(const std::string& name, double value, const std::string& help) {
+    std::lock_guard<std::mutex> lk(mu_);
+    auto it = std::find_if(counters_.begin(), counters_.end(), [&](const Counter& c) { return c.name == name; });
+    if (it == counters_.end()) {
+        counters_.push_back(Counter{name, help, value});
+    } else {
+        it->value = value;
+        if (!help.empty()) it->help = help;
+    }
+}
+
 void PrometheusExporter::inc_counter(const std::string& name, double delta, const std::string& help) {
     std::lock_guard<std::mutex> lk(mu_);
     auto it = std::find_if(counters_.begin(), counters_.end(), [&](const Counter& c) { return c.name == name; });

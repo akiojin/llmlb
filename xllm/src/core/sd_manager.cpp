@@ -256,6 +256,12 @@ std::vector<uint8_t> SDManager::makeSolidMask(int width, int height, uint8_t val
 std::vector<ImageGenerationResult> SDManager::generateImages(
     const std::string& model_path,
     const ImageGenParams& params) {
+#ifdef XLLM_TESTING
+    if (generate_hook_) {
+        updateAccessTime(model_path);
+        return generate_hook_(model_path, params);
+    }
+#endif
     std::vector<ImageGenerationResult> results;
 
     std::string canonical_path = canonicalizePath(model_path);
@@ -521,6 +527,12 @@ std::vector<std::string> SDManager::getLoadedModels() const {
 }
 
 bool SDManager::loadModelIfNeeded(const std::string& model_path) {
+#ifdef XLLM_TESTING
+    if (generate_hook_) {
+        updateAccessTime(model_path);
+        return true;
+    }
+#endif
     if (isLoaded(model_path)) {
         std::lock_guard<std::mutex> lock(mutex_);
         updateAccessTime(canonicalizePath(model_path));
@@ -528,6 +540,13 @@ bool SDManager::loadModelIfNeeded(const std::string& model_path) {
     }
     return loadModel(model_path);
 }
+
+#ifdef XLLM_TESTING
+void SDManager::setGenerateHookForTest(ImageGenerateHook hook) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    generate_hook_ = std::move(hook);
+}
+#endif
 
 void SDManager::setIdleTimeout(std::chrono::milliseconds timeout) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -613,7 +632,13 @@ bool SDManager::loadModel(const std::string&) { return false; }
 bool SDManager::isLoaded(const std::string&) const { return false; }
 sd_ctx_t* SDManager::getContext(const std::string&) const { return nullptr; }
 
-std::vector<ImageGenerationResult> SDManager::generateImages(const std::string&, const ImageGenParams&) {
+std::vector<ImageGenerationResult> SDManager::generateImages(const std::string& model_path,
+                                                             const ImageGenParams& params) {
+#ifdef XLLM_TESTING
+    if (generate_hook_) {
+        return generate_hook_(model_path, params);
+    }
+#endif
     ImageGenerationResult r;
     r.success = false;
     r.error = "stable-diffusion.cpp support is disabled";
@@ -637,7 +662,20 @@ std::vector<ImageGenerationResult> SDManager::generateVariations(const std::stri
 size_t SDManager::loadedCount() const { return 0; }
 bool SDManager::unloadModel(const std::string&) { return false; }
 std::vector<std::string> SDManager::getLoadedModels() const { return {}; }
-bool SDManager::loadModelIfNeeded(const std::string&) { return false; }
+bool SDManager::loadModelIfNeeded(const std::string&) {
+#ifdef XLLM_TESTING
+    if (generate_hook_) {
+        return true;
+    }
+#endif
+    return false;
+}
+
+#ifdef XLLM_TESTING
+void SDManager::setGenerateHookForTest(ImageGenerateHook hook) {
+    generate_hook_ = std::move(hook);
+}
+#endif
 
 void SDManager::setIdleTimeout(std::chrono::milliseconds timeout) { idle_timeout_ = timeout; }
 std::chrono::milliseconds SDManager::getIdleTimeout() const { return idle_timeout_; }

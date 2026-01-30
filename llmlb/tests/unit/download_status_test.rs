@@ -4,7 +4,6 @@
 
 use llmlb::types::endpoint::{DownloadStatus, ModelDownloadTask};
 use uuid::Uuid;
-use serde_json;
 
 /// 状態遷移: Pending → Downloading → Completed
 #[test]
@@ -76,39 +75,93 @@ fn test_is_finished() {
 /// JSON シリアライズ: snake_case形式
 #[test]
 fn test_json_serialization() {
-    assert_eq!(serde_json::to_string(&DownloadStatus::Pending).unwrap(), "\"pending\"");
-    assert_eq!(serde_json::to_string(&DownloadStatus::Downloading).unwrap(), "\"downloading\"");
-    assert_eq!(serde_json::to_string(&DownloadStatus::Completed).unwrap(), "\"completed\"");
-    assert_eq!(serde_json::to_string(&DownloadStatus::Failed).unwrap(), "\"failed\"");
-    assert_eq!(serde_json::to_string(&DownloadStatus::Cancelled).unwrap(), "\"cancelled\"");
+    assert_eq!(
+        serde_json::to_string(&DownloadStatus::Pending).unwrap(),
+        "\"pending\""
+    );
+    assert_eq!(
+        serde_json::to_string(&DownloadStatus::Downloading).unwrap(),
+        "\"downloading\""
+    );
+    assert_eq!(
+        serde_json::to_string(&DownloadStatus::Completed).unwrap(),
+        "\"completed\""
+    );
+    assert_eq!(
+        serde_json::to_string(&DownloadStatus::Failed).unwrap(),
+        "\"failed\""
+    );
+    assert_eq!(
+        serde_json::to_string(&DownloadStatus::Cancelled).unwrap(),
+        "\"cancelled\""
+    );
 }
 
 /// JSON デシリアライズ
 #[test]
 fn test_json_deserialization() {
-    assert_eq!(serde_json::from_str::<DownloadStatus>("\"pending\"").unwrap(), DownloadStatus::Pending);
-    assert_eq!(serde_json::from_str::<DownloadStatus>("\"downloading\"").unwrap(), DownloadStatus::Downloading);
-    assert_eq!(serde_json::from_str::<DownloadStatus>("\"completed\"").unwrap(), DownloadStatus::Completed);
-    assert_eq!(serde_json::from_str::<DownloadStatus>("\"failed\"").unwrap(), DownloadStatus::Failed);
-    assert_eq!(serde_json::from_str::<DownloadStatus>("\"cancelled\"").unwrap(), DownloadStatus::Cancelled);
+    assert_eq!(
+        serde_json::from_str::<DownloadStatus>("\"pending\"").unwrap(),
+        DownloadStatus::Pending
+    );
+    assert_eq!(
+        serde_json::from_str::<DownloadStatus>("\"downloading\"").unwrap(),
+        DownloadStatus::Downloading
+    );
+    assert_eq!(
+        serde_json::from_str::<DownloadStatus>("\"completed\"").unwrap(),
+        DownloadStatus::Completed
+    );
+    assert_eq!(
+        serde_json::from_str::<DownloadStatus>("\"failed\"").unwrap(),
+        DownloadStatus::Failed
+    );
+    assert_eq!(
+        serde_json::from_str::<DownloadStatus>("\"cancelled\"").unwrap(),
+        DownloadStatus::Cancelled
+    );
 }
 
 /// FromStr: 正常系
 #[test]
 fn test_from_str_valid() {
-    assert_eq!("pending".parse::<DownloadStatus>().unwrap(), DownloadStatus::Pending);
-    assert_eq!("downloading".parse::<DownloadStatus>().unwrap(), DownloadStatus::Downloading);
-    assert_eq!("completed".parse::<DownloadStatus>().unwrap(), DownloadStatus::Completed);
-    assert_eq!("failed".parse::<DownloadStatus>().unwrap(), DownloadStatus::Failed);
-    assert_eq!("cancelled".parse::<DownloadStatus>().unwrap(), DownloadStatus::Cancelled);
+    assert_eq!(
+        "pending".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Pending
+    );
+    assert_eq!(
+        "downloading".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Downloading
+    );
+    assert_eq!(
+        "completed".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Completed
+    );
+    assert_eq!(
+        "failed".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Failed
+    );
+    assert_eq!(
+        "cancelled".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Cancelled
+    );
 }
 
 /// FromStr: 不正値はPendingにフォールバック
 #[test]
 fn test_from_str_invalid_fallback() {
-    assert_eq!("invalid".parse::<DownloadStatus>().unwrap(), DownloadStatus::Pending);
-    assert_eq!("".parse::<DownloadStatus>().unwrap(), DownloadStatus::Pending);
-    assert_eq!("PENDING".parse::<DownloadStatus>().unwrap(), DownloadStatus::Pending);
+    assert_eq!(
+        "invalid".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Pending
+    );
+    assert_eq!(
+        "".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Pending
+    );
+    assert_eq!(
+        "PENDING".parse::<DownloadStatus>().unwrap(),
+        DownloadStatus::Pending
+    );
 }
 
 /// as_str: 各バリアントの文字列表現

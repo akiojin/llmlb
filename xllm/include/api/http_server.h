@@ -24,6 +24,7 @@ public:
 
     void addMiddleware(Middleware mw);
     void enableCors(bool enable) { enable_cors_ = enable; }
+    void enableCompression(bool enable) { enable_compression_ = enable; }
     void setCorsOrigin(std::string origin) { cors_allow_origin_ = std::move(origin); }
     void setCorsMethods(std::string methods) { cors_allow_methods_ = std::move(methods); }
     void setCorsHeaders(std::string headers) { cors_allow_headers_ = std::move(headers); }
@@ -49,6 +50,7 @@ private:
     std::string cors_allow_origin_{"*"};
     std::string cors_allow_methods_{"GET, POST, OPTIONS"};
     std::string cors_allow_headers_{"Content-Type, Authorization"};
+    bool enable_compression_{true};
     Logger logger_{};
 };
 

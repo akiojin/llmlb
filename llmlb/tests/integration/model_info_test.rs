@@ -4,6 +4,7 @@
 //!
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
+use crate::support::{ollama::spawn_mock_ollama, xllm::spawn_mock_xllm};
 use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
@@ -11,6 +12,7 @@ use axum::{
 };
 use llmlb::common::auth::{ApiKeyScope, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -93,10 +95,64 @@ async fn test_available_models_endpoint_is_removed() {
 
 /// T020: 複数エンドポイントのロード済みモデルの反映テスト
 #[tokio::test]
-#[ignore = "TODO: Requires multiple mock servers for proper health check testing"]
 async fn test_model_matrix_view_multiple_endpoints() {
-    let (_app, _admin_key, _db_pool) = build_app().await;
-    // TODO: EndpointRegistryベースのテストを実装
+    let (app, admin_key, _db_pool) = build_app().await;
+
+    // モックサーバーを2つ起動
+    let xllm = spawn_mock_xllm().await;
+    let ollama = spawn_mock_ollama().await;
+
+    // 2つのエンドポイントを登録
+    for (name, base_url) in [
+        ("xllm-matrix", format!("http://{}", xllm.addr())),
+        ("ollama-matrix", format!("http://{}", ollama.addr())),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v0/endpoints")
+                    .header("authorization", format!("Bearer {}", admin_key))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({
+                            "name": name,
+                            "base_url": base_url,
+                            "health_check_interval_secs": 60,
+                            "inference_timeout_secs": 30
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    // エンドポイント一覧で2件登録されていることを確認
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v0/endpoints")
+                .header("authorization", format!("Bearer {}", admin_key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let endpoints = body["endpoints"].as_array().unwrap();
+    assert!(
+        endpoints.len() >= 2,
+        "expected at least two endpoints, got {}",
+        endpoints.len()
+    );
 }
 
 /// T021: /v1/models は対応モデル一覧を返す（APIキー認証必須）

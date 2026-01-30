@@ -7,10 +7,8 @@ namespace xllm {
 namespace cli {
 namespace commands {
 
-/// Execute the 'serve' command
-/// @param options Server options (port, host)
-/// @return Exit code (0=success, 1=error)
-int serve(const ServeOptions& options);
+// Note: 'serve' command is implemented directly in main.cpp as it requires
+// access to the run_node() function and server infrastructure.
 
 /// Execute the 'run' command (REPL)
 /// @param options Run options (model, think flags)
@@ -46,17 +44,23 @@ int stop(const ModelOptions& options);
 /// @return Exit code (0=success, 1=error, 2=connection error)
 int ps();
 
-/// Execute the 'router endpoints' command
-/// @return Exit code (0=success, 1=error)
-int router_endpoints();
+/// Execute the 'profile' command
+int profile(const ProfileOptions& options);
 
-/// Execute the 'router models' command
-/// @return Exit code (0=success, 1=error)
-int router_models();
+/// Execute the 'benchmark' command
+int benchmark(const BenchmarkOptions& options);
 
-/// Execute the 'router status' command
-/// @return Exit code (0=success, 1=error)
-int router_status();
+/// Execute the 'compare' command
+int compare(const CompareOptions& options);
+
+/// Execute the 'convert' command
+int convert(const ConvertOptions& options);
+
+/// Execute the 'export' command
+int exportModel(const ExportOptions& options);
+
+/// Execute the 'import' command
+int importModel(const ImportOptions& options);
 
 }  // namespace commands
 }  // namespace cli

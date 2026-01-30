@@ -50,6 +50,29 @@ mod endpoint_auto_recovery_test;
 #[path = "integration/endpoint_viewer_access_test.rs"]
 mod endpoint_viewer_access_test;
 
+// SPEC-66555000: エンドポイントタイプ関連の統合テスト
+#[path = "integration/endpoint_type_detection_test.rs"]
+mod endpoint_type_detection_test;
+
+#[path = "integration/endpoint_type_filter_test.rs"]
+mod endpoint_type_filter_test;
+
+#[path = "integration/endpoint_type_manual_override_test.rs"]
+mod endpoint_type_manual_override_test;
+
+#[path = "integration/endpoint_xllm_download_test.rs"]
+mod endpoint_xllm_download_test;
+
+#[path = "integration/endpoint_download_reject_test.rs"]
+mod endpoint_download_reject_test;
+
+#[path = "integration/endpoint_model_metadata_test.rs"]
+mod endpoint_model_metadata_test;
+
+// 既存の統合テスト（ハーネス未登録だったものを追加）
+#[path = "integration/test_metrics.rs"]
+mod test_metrics;
+
 // SPEC-24157000: Open Responses API統合テスト
 #[path = "integration/responses_api_test.rs"]
 mod responses_api_test;

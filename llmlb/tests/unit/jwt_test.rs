@@ -2,8 +2,8 @@
 
 #[cfg(test)]
 mod jwt_tests {
-    use llmlb::common::auth::UserRole;
     use llmlb::auth::jwt::{create_jwt, verify_jwt};
+    use llmlb::common::auth::UserRole;
 
     const TEST_SECRET: &str = "test_secret_key_for_jwt_testing_12345678";
 

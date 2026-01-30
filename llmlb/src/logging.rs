@@ -174,7 +174,7 @@ fn configure_logger() -> io::Result<LoggerGuard> {
 
     tracing::info!(
         category = "system",
-        "Router logs initialized: {}",
+        "LLM Load Balancer logs initialized: {}",
         log_path.display()
     );
 

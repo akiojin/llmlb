@@ -225,9 +225,7 @@ async fn test_list_endpoints_filter_by_invalid_type() {
 
     // 不正なタイプの場合、400 Bad Requestを期待
     // NOTE: 実装により200 OKで空配列を返すか、400を返すか決定
-    assert!(
-        response.status() == StatusCode::OK || response.status() == StatusCode::BAD_REQUEST
-    );
+    assert!(response.status() == StatusCode::OK || response.status() == StatusCode::BAD_REQUEST);
 }
 
 /// GET /v0/endpoints - レスポンスにendpoint_typeフィールドが含まれる

@@ -4,6 +4,8 @@
 //! - Vision非対応モデルへの画像リクエスト拒否
 //! - 画像サイズ/枚数制限
 //! - Base64/フォーマット検証
+//!
+//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},

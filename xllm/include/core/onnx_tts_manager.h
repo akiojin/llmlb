@@ -7,6 +7,7 @@
 #include <mutex>
 #include <chrono>
 #include <optional>
+#include <functional>
 
 #ifdef USE_ONNX_RUNTIME
 #if __has_include(<onnxruntime/core/session/onnxruntime_cxx_api.h>)
@@ -84,6 +85,12 @@ public:
     /// Check if ONNX Runtime is available
     static bool isRuntimeAvailable();
 
+#ifdef XLLM_TESTING
+    /// テスト専用: synthesizeの戻り値を差し替える
+    void setSynthesizeHookForTest(
+        std::function<SpeechResult(const std::string&, const std::string&, const SpeechParams&)> hook);
+#endif
+
 private:
     static constexpr const char* kMacosSayModelName = "macos_say";
     static constexpr const char* kVibeVoiceModelId = "microsoft/VibeVoice-Realtime-0.5B";
@@ -100,6 +107,10 @@ private:
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_access_;
     std::chrono::milliseconds idle_timeout_{std::chrono::minutes(30)};
     size_t max_loaded_models_{0};  // 0 = unlimited
+
+#ifdef XLLM_TESTING
+    std::function<SpeechResult(const std::string&, const std::string&, const SpeechParams&)> synthesize_hook_;
+#endif
 
     std::string canonicalizePath(const std::string& path) const;
     void updateAccessTime(const std::string& model_path);

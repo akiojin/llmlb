@@ -31,6 +31,11 @@ struct NodeConfig {
     std::string cli_model_name;   // Model name from --model-name CLI option
     std::string cli_mmproj_path;  // MMProj path from --mmproj CLI option
     int cli_ctx_size{0};          // Context size from --ctx-size CLI option (0 = use default)
+    bool cors_enabled{true};
+    std::string cors_allow_origin{"*"};
+    std::string cors_allow_methods{"GET, POST, OPTIONS"};
+    std::string cors_allow_headers{"Content-Type, Authorization"};
+    bool gzip_enabled{true};
 };
 
 NodeConfig loadNodeConfig();

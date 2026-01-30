@@ -116,7 +116,7 @@ async fn test_get_download_progress_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!("/v0/endpoints/{}/download/progress", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download/progress", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -124,9 +124,7 @@ async fn test_get_download_progress_list() {
         .unwrap();
 
     // 実装されていない場合は404、実装後は200を期待
-    assert!(
-        response.status() == StatusCode::OK || response.status() == StatusCode::NOT_FOUND
-    );
+    assert!(response.status() == StatusCode::OK || response.status() == StatusCode::NOT_FOUND);
 
     if response.status() == StatusCode::OK {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -171,7 +169,7 @@ async fn test_download_progress_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(&format!("/v0/endpoints/{}/download/progress", endpoint_id))
+                .uri(format!("/v0/endpoints/{}/download/progress", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -190,7 +188,10 @@ async fn test_download_progress_response_structure() {
                 assert!(task["model"].is_string(), "model should be present");
                 assert!(task["status"].is_string(), "status should be present");
                 assert!(task["progress"].is_number(), "progress should be present");
-                assert!(task["started_at"].is_string(), "started_at should be present");
+                assert!(
+                    task["started_at"].is_string(),
+                    "started_at should be present"
+                );
 
                 // オプションフィールド
                 // speed_mbps, eta_seconds, filename, error_message, completed_at

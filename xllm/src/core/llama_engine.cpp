@@ -1,7 +1,11 @@
 #include "core/llama_engine.h"
 #include "core/llama_manager.h"
+#include "core/chat_template_renderer.h"
+#include "core/kv_cache_utils.h"
+#include "core/lora_utils.h"
 #include "include/llama.h"
 #include "utils/stop_sequences.h"
+#include "speculative.h"
 
 #include <spdlog/spdlog.h>
 #include <random>
@@ -10,6 +14,7 @@
 #include <cmath>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <utility>
 
 namespace xllm {
@@ -55,6 +60,132 @@ private:
     llama_context* ctx_{nullptr};
 };
 
+struct LoraScope {
+    LoraScope(llama_context* ctx,
+              llama_model* model,
+              const std::vector<LoraRequest>& loras)
+        : ctx_(ctx) {
+        if (!ctx_ || !model || loras.empty()) {
+            return;
+        }
+
+        std::string error;
+        auto resolved = resolve_lora_requests(loras, get_default_lora_dir(), error);
+        if (!error.empty()) {
+            throw std::runtime_error(error);
+        }
+
+        llama_clear_adapter_lora(ctx_);
+
+        std::vector<llama_adapter_lora*> loaded;
+        loaded.reserve(resolved.size());
+        auto cleanup = [&]() {
+            if (!ctx_) {
+                return;
+            }
+            llama_clear_adapter_lora(ctx_);
+            for (auto* adapter : loaded) {
+                llama_adapter_lora_free(adapter);
+            }
+            loaded.clear();
+        };
+
+        for (const auto& entry : resolved) {
+            if (entry.path.empty()) {
+                cleanup();
+                throw std::runtime_error("LoRA path is empty for adapter: " + entry.name);
+            }
+            llama_adapter_lora* adapter = llama_adapter_lora_init(model, entry.path.c_str());
+            if (!adapter) {
+                cleanup();
+                throw std::runtime_error("Failed to load LoRA adapter: " + entry.path);
+            }
+            int32_t result = llama_set_adapter_lora(ctx_, adapter, entry.scale);
+            if (result != 0) {
+                llama_adapter_lora_free(adapter);
+                cleanup();
+                throw std::runtime_error("Failed to apply LoRA adapter: " + entry.path);
+            }
+            loaded.push_back(adapter);
+        }
+
+        adapters_ = std::move(loaded);
+    }
+
+    ~LoraScope() {
+        if (!ctx_ || adapters_.empty()) {
+            return;
+        }
+        llama_clear_adapter_lora(ctx_);
+        for (auto* adapter : adapters_) {
+            llama_adapter_lora_free(adapter);
+        }
+    }
+
+    LoraScope(const LoraScope&) = delete;
+    LoraScope& operator=(const LoraScope&) = delete;
+
+private:
+    llama_context* ctx_{nullptr};
+    std::vector<llama_adapter_lora*> adapters_;
+};
+
+struct KvCacheLoadResult {
+    bool loaded{false};
+    std::vector<llama_token> tokens;
+};
+
+KvCacheLoadResult maybe_load_kv_cache(llama_context* ctx,
+                                      llama_model* model,
+                                      const fs::path& cache_path) {
+    KvCacheLoadResult result;
+    if (!ctx || !model || cache_path.empty()) {
+        return result;
+    }
+    if (!fs::exists(cache_path)) {
+        return result;
+    }
+    const int32_t n_ctx = llama_model_n_ctx_train(model);
+    if (n_ctx <= 0) {
+        return result;
+    }
+    std::vector<llama_token> session_tokens(static_cast<size_t>(n_ctx));
+    size_t token_count = 0;
+    if (!llama_state_load_file(ctx,
+                               cache_path.string().c_str(),
+                               session_tokens.data(),
+                               session_tokens.size(),
+                               &token_count)) {
+        spdlog::warn("Failed to load KV cache from {}", cache_path.string());
+        return result;
+    }
+    if (token_count == 0 || token_count > session_tokens.size()) {
+        spdlog::warn("Invalid KV cache token count from {}", cache_path.string());
+        return result;
+    }
+    session_tokens.resize(token_count);
+    result.loaded = true;
+    result.tokens = std::move(session_tokens);
+    spdlog::info("Loaded KV cache from {} (tokens={})", cache_path.string(), token_count);
+    return result;
+}
+
+void maybe_save_kv_cache(llama_context* ctx,
+                         const fs::path& cache_path,
+                         const std::vector<llama_token>& tokens) {
+    if (!ctx || cache_path.empty() || tokens.empty()) {
+        return;
+    }
+    if (!llama_state_save_file(ctx,
+                               cache_path.string().c_str(),
+                               tokens.data(),
+                               tokens.size())) {
+        spdlog::warn("Failed to save KV cache to {}", cache_path.string());
+        return;
+    }
+    spdlog::info("Saved KV cache to {} (tokens={})", cache_path.string(), tokens.size());
+}
+
 uint64_t steady_now_ns() {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -64,6 +195,38 @@ uint64_t steady_now_ns() {
 void emit_token_metrics(const InferenceParams& params, uint32_t token_id) {
     if (!params.on_token_callback) return;
     params.on_token_callback(params.on_token_callback_ctx, token_id, steady_now_ns());
+}
+
+struct DraftContext {
+    llama_context* ctx{nullptr};
+    llama_model* model{nullptr};
+    std::unique_ptr<KvCacheScope> scope;
+};
+
+DraftContext prepare_draft_context(LlamaManager& manager,
+                                   const InferenceParams& params,
+                                   llama_context* target_ctx) {
+    DraftContext draft;
+    if (params.draft_model_path.empty()) {
+        return draft;
+    }
+
+    if (!manager.loadModelIfNeeded(params.draft_model_path)) {
+        throw std::runtime_error("Failed to load draft model: " + params.draft_model_path);
+    }
+
+    draft.ctx = manager.getContext(params.draft_model_path);
+    draft.model = manager.getModel(params.draft_model_path);
+    if (!draft.ctx || !draft.model) {
+        throw std::runtime_error("Failed to get draft context/model for: " + params.draft_model_path);
+    }
+
+    if (!common_speculative_are_compatible(target_ctx, draft.ctx)) {
+        throw std::runtime_error("Draft model is not compatible with target model");
+    }
+
+    draft.scope = std::make_unique<KvCacheScope>(draft.ctx);
+    return draft;
 }
 
 // T049: Compute log-sum-exp for numerical stability
@@ -232,7 +395,17 @@ std::string postProcessGeneratedTextForTest(const std::string& output) {
 // モデル固有のチャットテンプレートを適用してプロンプトを構築
 static std::string applyModelChatTemplate(
     llama_model* model,
-    const std::vector<ChatMessage>& messages) {
+    const std::vector<ChatMessage>& messages,
+    const std::string& custom_template) {
+
+    if (!custom_template.empty()) {
+        try {
+            auto renderer = ChatTemplateRenderer::fromString(custom_template, "", "");
+            return renderer.render(messages, true);
+        } catch (const std::exception& e) {
+            spdlog::warn("Custom chat template rendering failed: {}", e.what());
+        }
+    }
 
     // llama_chat_message 配列を構築
     std::vector<llama_chat_message> llama_messages;
@@ -309,11 +482,25 @@ std::string LlamaEngine::generateChat(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model for: " + gguf_path);
     }
+    DraftContext draft = prepare_draft_context(manager_, params, ctx);
     KvCacheScope kv_scope(ctx);
+    LoraScope lora_scope(ctx, model, params.loras);
+    if (draft.ctx) {
+        spdlog::info("Loaded draft model for speculative decoding: {}", params.draft_model_path);
+    }
 
     // 4. プロンプト構築（モデル固有のチャットテンプレートを使用）
-    std::string prompt = applyModelChatTemplate(model, messages);
+    std::string prompt = applyModelChatTemplate(model, messages, params.chat_template);
     spdlog::debug("Prompt: {}", prompt);
+
+    std::string cache_error;
+    fs::path cache_path;
+    const std::string cache_dir = get_default_kv_cache_dir();
+    if (ensure_kv_cache_dir(cache_dir, cache_error)) {
+        cache_path = build_kv_cache_path(gguf_path, prompt, cache_dir);
+    } else if (!cache_error.empty()) {
+        spdlog::warn("KV cache disabled: {}", cache_error);
+    }
 
     // 5. vocab取得
     const llama_vocab* vocab = llama_model_get_vocab(model);
@@ -321,23 +508,23 @@ std::string LlamaEngine::generateChat(
         throw std::runtime_error("Failed to get vocab from model");
     }
 
-    // 6. トークン化
-    // add_special=true: BOSトークンを追加
-    // parse_special=true: 特殊トークンをパース
-    std::vector<llama_token> tokens(prompt.size() + 128);
-    int32_t n_tokens = llama_tokenize(
-        vocab,
-        prompt.c_str(),
-        static_cast<int32_t>(prompt.size()),
-        tokens.data(),
-        static_cast<int32_t>(tokens.size()),
-        true,   // add_special
-        true    // parse_special
-    );
+    // 6. トークン化（KVキャッシュ復元を試行）
+    std::vector<llama_token> tokens;
+    int32_t n_tokens = 0;
+    bool kv_cache_loaded = false;
+    if (!cache_path.empty()) {
+        auto loaded = maybe_load_kv_cache(ctx, model, cache_path);
+        if (loaded.loaded) {
+            tokens = std::move(loaded.tokens);
+            n_tokens = static_cast<int32_t>(tokens.size());
+            kv_cache_loaded = n_tokens > 0;
+        }
+    }
 
-    if (n_tokens < 0) {
-        // バッファが小さすぎる場合、再割り当て
-        tokens.resize(static_cast<size_t>(-n_tokens));
+    if (!kv_cache_loaded) {
+        // add_special=true: BOSトークンを追加
+        // parse_special=true: 特殊トークンをパース
+        tokens.assign(prompt.size() + 128, 0);
         n_tokens = llama_tokenize(
             vocab,
             prompt.c_str(),
@@ -347,35 +534,62 @@ std::string LlamaEngine::generateChat(
             true,   // add_special
             true    // parse_special
         );
-    }
 
-    if (n_tokens < 0) {
-        throw std::runtime_error("Failed to tokenize prompt");
-    }
+        if (n_tokens < 0) {
+            // バッファが小さすぎる場合、再割り当て
+            tokens.resize(static_cast<size_t>(-n_tokens));
+            n_tokens = llama_tokenize(
+                vocab,
+                prompt.c_str(),
+                static_cast<int32_t>(prompt.size()),
+                tokens.data(),
+                static_cast<int32_t>(tokens.size()),
+                true,   // add_special
+                true    // parse_special
+            );
+        }
 
-    tokens.resize(static_cast<size_t>(n_tokens));
-    spdlog::debug("Tokenized prompt: {} tokens", n_tokens);
+        if (n_tokens < 0) {
+            throw std::runtime_error("Failed to tokenize prompt");
+        }
 
-    // 7. バッチ分割処理でプロンプトをデコード
-    const int32_t batch_size = llama_n_batch(ctx);
-    spdlog::debug("Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
+        tokens.resize(static_cast<size_t>(n_tokens));
+        spdlog::debug("Tokenized prompt: {} tokens", n_tokens);
 
-    for (int32_t i = 0; i < n_tokens; i += batch_size) {
-        int32_t current_batch_size = std::min(batch_size, n_tokens - i);
-        llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
+        // 7. バッチ分割処理でプロンプトをデコード
+        const int32_t batch_size = llama_n_batch(ctx);
+        spdlog::debug("Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
 
-        int32_t decode_result = llama_decode(ctx, batch);
-        if (decode_result != 0) {
-            spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}, error={}",
-                i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
-                n_tokens, batch_size, decode_result);
-            throw std::runtime_error("llama_decode failed");
+        for (int32_t i = 0; i < n_tokens; i += batch_size) {
+            int32_t current_batch_size = std::min(batch_size, n_tokens - i);
+            llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
+
+            int32_t decode_result = llama_decode(ctx, batch);
+            if (decode_result != 0) {
+                spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}, error={}",
+                    i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
+                    n_tokens, batch_size, decode_result);
+                throw std::runtime_error("llama_decode failed");
+            }
+        }
+
+        if (!cache_path.empty()) {
+            maybe_save_kv_cache(ctx, cache_path, tokens);
         }
     }
 
     // 8. サンプラーチェーン初期化
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llama_sampler* sampler = llama_sampler_chain_init(sparams);
+
+    if (!params.grammar.empty()) {
+        llama_sampler* grammar = llama_sampler_init_grammar(vocab, params.grammar.c_str(), "root");
+        if (grammar) {
+            llama_sampler_chain_add(sampler, grammar);
+        } else {
+            spdlog::warn("Failed to initialize grammar sampler");
+        }
+    }
 
     // サンプリング戦略を追加
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
@@ -523,47 +737,92 @@ std::vector<std::string> LlamaEngine::generateChatStream(
     if (!ctx || !model) {
         throw std::runtime_error("Failed to get context/model");
     }
+    DraftContext draft = prepare_draft_context(manager_, params, ctx);
     KvCacheScope kv_scope(ctx);
+    LoraScope lora_scope(ctx, model, params.loras);
+    if (draft.ctx) {
+        spdlog::info("Loaded draft model for speculative decoding (stream): {}", params.draft_model_path);
+    }
 
     // 3. vocab取得とプロンプト処理（モデル固有のチャットテンプレートを使用）
     const llama_vocab* vocab = llama_model_get_vocab(model);
-    std::string prompt = applyModelChatTemplate(model, messages);
+    std::string prompt = applyModelChatTemplate(model, messages, params.chat_template);
+
+    std::string cache_error;
+    fs::path cache_path;
+    const std::string cache_dir = get_default_kv_cache_dir();
+    if (ensure_kv_cache_dir(cache_dir, cache_error)) {
+        cache_path = build_kv_cache_path(gguf_path, prompt, cache_dir);
+    } else if (!cache_error.empty()) {
+        spdlog::warn("KV cache disabled: {}", cache_error);
+    }
 
     // add_special=true: BOSトークンを追加
     // parse_special=true: 特殊トークンをパース
-    std::vector<llama_token> tokens(prompt.size() + 128);
-    int32_t n_tokens = llama_tokenize(
-        vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
-        tokens.data(), static_cast<int32_t>(tokens.size()), true, true);
+    std::vector<llama_token> tokens;
+    int32_t n_tokens = 0;
+    bool kv_cache_loaded = false;
+    if (!cache_path.empty()) {
+        auto loaded = maybe_load_kv_cache(ctx, model, cache_path);
+        if (loaded.loaded) {
+            tokens = std::move(loaded.tokens);
+            n_tokens = static_cast<int32_t>(tokens.size());
+            kv_cache_loaded = n_tokens > 0;
+        }
+    }
 
-    if (n_tokens < 0) {
-        tokens.resize(static_cast<size_t>(-n_tokens));
+    if (!kv_cache_loaded) {
+        tokens.assign(prompt.size() + 128, 0);
         n_tokens = llama_tokenize(
             vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
             tokens.data(), static_cast<int32_t>(tokens.size()), true, true);
-    }
 
-    tokens.resize(static_cast<size_t>(n_tokens));
+        if (n_tokens < 0) {
+            tokens.resize(static_cast<size_t>(-n_tokens));
+            n_tokens = llama_tokenize(
+                vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()),
+                tokens.data(), static_cast<int32_t>(tokens.size()), true, true);
+        }
 
-    // 4. バッチ分割処理でプロンプトをデコード
-    const int32_t batch_size = llama_n_batch(ctx);
-    spdlog::debug("Streaming: Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
+        if (n_tokens < 0) {
+            throw std::runtime_error("Failed to tokenize prompt");
+        }
 
-    for (int32_t i = 0; i < n_tokens; i += batch_size) {
-        int32_t current_batch_size = std::min(batch_size, n_tokens - i);
-        llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
+        tokens.resize(static_cast<size_t>(n_tokens));
 
-        if (llama_decode(ctx, batch) != 0) {
-            spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}",
-                i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
-                n_tokens, batch_size);
-            throw std::runtime_error("llama_decode failed for prompt");
+        // 4. バッチ分割処理でプロンプトをデコード
+        const int32_t batch_size = llama_n_batch(ctx);
+        spdlog::debug("Streaming: Decoding prompt with {} tokens in batches of {}", n_tokens, batch_size);
+
+        for (int32_t i = 0; i < n_tokens; i += batch_size) {
+            int32_t current_batch_size = std::min(batch_size, n_tokens - i);
+            llama_batch batch = llama_batch_get_one(tokens.data() + i, current_batch_size);
+
+            if (llama_decode(ctx, batch) != 0) {
+                spdlog::error("llama_decode failed at batch {}/{}: n_tokens={}, batch_size={}",
+                    i / batch_size + 1, (n_tokens + batch_size - 1) / batch_size,
+                    n_tokens, batch_size);
+                throw std::runtime_error("llama_decode failed for prompt");
+            }
+        }
+
+        if (!cache_path.empty()) {
+            maybe_save_kv_cache(ctx, cache_path, tokens);
         }
     }
 
     // 5. サンプラー初期化
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llama_sampler* sampler = llama_sampler_chain_init(sparams);
+
+    if (!params.grammar.empty()) {
+        llama_sampler* grammar = llama_sampler_init_grammar(vocab, params.grammar.c_str(), "root");
+        if (grammar) {
+            llama_sampler_chain_add(sampler, grammar);
+        } else {
+            spdlog::warn("Failed to initialize grammar sampler (streaming)");
+        }
+    }
 
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.top_k));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.top_p, 1));

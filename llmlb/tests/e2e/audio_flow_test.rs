@@ -48,18 +48,61 @@ async fn models_handler() -> impl IntoResponse {
         .into_response()
 }
 
-async fn register_audio_node(lb: &support::http::TestServer, node: &support::http::TestServer) {
-    let response = support::lb::register_node_with_runtimes(
-        lb.addr(),
-        node.addr(),
-        vec!["whisper_cpp", "onnx_runtime"],
-    )
-    .await
-    .expect("register node should succeed");
-    let (status, _body) = support::lb::approve_node_from_register_response(lb.addr(), response)
+async fn register_audio_endpoint(
+    lb: &support::http::TestServer,
+    node: &support::http::TestServer,
+) -> String {
+    let client = Client::new();
+
+    // Endpoint登録（Node登録APIは廃止済み）
+    let register_response = client
+        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": "audio-stub",
+            "base_url": format!("http://{}", node.addr()),
+            "capabilities": ["audio_transcription", "audio_speech", "chat_completion"]
+        }))
+        .send()
         .await
-        .expect("approve node should succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("endpoint registration should succeed");
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+
+    let register_body: Value = register_response
+        .json()
+        .await
+        .expect("endpoint registration response must be json");
+    let endpoint_id = register_body["id"]
+        .as_str()
+        .expect("endpoint id should exist")
+        .to_string();
+
+    // オンライン化 + モデル同期
+    let test_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/test",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint test should succeed");
+    assert_eq!(test_response.status(), ReqStatusCode::OK);
+
+    let sync_response = client
+        .post(format!(
+            "http://{}/v0/endpoints/{}/sync",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint sync should succeed");
+    assert_eq!(sync_response.status(), ReqStatusCode::OK);
+
+    endpoint_id
 }
 
 fn build_dummy_wav() -> Vec<u8> {
@@ -85,7 +128,7 @@ fn build_dummy_wav() -> Vec<u8> {
 async fn e2e_audio_transcriptions_returns_text() {
     let node = spawn_audio_stub().await;
     let lb = support::lb::spawn_test_lb().await;
-    register_audio_node(&lb, &node).await;
+    let _endpoint_id = register_audio_endpoint(&lb, &node).await;
 
     let form = multipart::Form::new()
         .part(
@@ -121,7 +164,7 @@ async fn e2e_audio_transcriptions_returns_text() {
 async fn e2e_audio_speech_returns_audio() {
     let node = spawn_audio_stub().await;
     let lb = support::lb::spawn_test_lb().await;
-    register_audio_node(&lb, &node).await;
+    let _endpoint_id = register_audio_endpoint(&lb, &node).await;
 
     let response = Client::new()
         .post(format!("http://{}/v1/audio/speech", lb.addr()))

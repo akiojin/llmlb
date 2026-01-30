@@ -169,6 +169,13 @@ bool OnnxTtsManager::canLoadMore() const {
 }
 
 bool OnnxTtsManager::loadModel(const std::string& model_path) {
+#ifdef XLLM_TESTING
+    if (synthesize_hook_) {
+        // テスト時はモデル実体なしでロード成功扱いにする
+        updateAccessTime(canonicalizePath(model_path));
+        return true;
+    }
+#endif
     // VibeVoice is handled by external Python runner, no ONNX loading needed
     if (isVibeVoice(model_path)) {
         spdlog::info("VibeVoice model registered (uses external Python runner): {}", model_path);
@@ -246,6 +253,11 @@ SpeechResult OnnxTtsManager::synthesize(
     const std::string& text,
     const SpeechParams& params) {
 
+#ifdef XLLM_TESTING
+    if (synthesize_hook_) {
+        return synthesize_hook_(model_path, text, params);
+    }
+#endif
     SpeechResult result;
 
     if (text.empty()) {
@@ -611,5 +623,13 @@ std::vector<uint8_t> OnnxTtsManager::createWavFile(
 
     return wav;
 }
+
+#ifdef XLLM_TESTING
+void OnnxTtsManager::setSynthesizeHookForTest(
+    std::function<SpeechResult(const std::string&, const std::string&, const SpeechParams&)> hook) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    synthesize_hook_ = std::move(hook);
+}
+#endif
 
 }  // namespace xllm

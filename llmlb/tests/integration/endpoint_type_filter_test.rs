@@ -172,7 +172,10 @@ async fn test_list_endpoints_filter_by_unknown() {
 
     // unknownタイプでフィルタ
     let response = client
-        .get(format!("http://{}/v0/endpoints?type=unknown", server.addr()))
+        .get(format!(
+            "http://{}/v0/endpoints?type=unknown",
+            server.addr()
+        ))
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -184,7 +187,10 @@ async fn test_list_endpoints_filter_by_unknown() {
     let endpoints = body["endpoints"].as_array().unwrap();
 
     // オフラインエンドポイントが含まれることを確認
-    assert!(!endpoints.is_empty(), "Should have at least one unknown endpoint");
+    assert!(
+        !endpoints.is_empty(),
+        "Should have at least one unknown endpoint"
+    );
     for endpoint in endpoints {
         assert_eq!(endpoint["endpoint_type"], "unknown");
     }

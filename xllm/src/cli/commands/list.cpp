@@ -53,6 +53,14 @@ int list(const ModelOptions& /* options */) {
             std::string id = model.value("digest", "").substr(0, 12);
             uint64_t size = model.value("size", 0);
             std::string modified = model.value("modified_at", "");
+            std::string quantization;
+            if (model.contains("details") && model["details"].is_object()) {
+                quantization = model["details"].value("quantization_level", "");
+            }
+
+            if (!quantization.empty()) {
+                name += ":" + quantization;
+            }
 
             // Format size
             std::string size_str;

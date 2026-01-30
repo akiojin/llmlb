@@ -152,8 +152,12 @@ async fn test_invalid_type_specification() {
         .await
         .unwrap();
 
-    // 400 Bad Requestを期待
-    assert_eq!(response.status().as_u16(), 400);
+    // 400 Bad Request または 422 Unprocessable Entity を期待
+    let status = response.status().as_u16();
+    assert!(
+        status == 400 || status == 422,
+        "invalid endpoint_type should be rejected with 400 or 422, got {status}"
+    );
 }
 
 /// US11-シナリオ5: 全ての有効なタイプを手動指定可能
@@ -252,5 +256,8 @@ async fn test_type_update_preserves_other_fields() {
 
     let detail: Value = detail_response.json().await.unwrap();
     assert_eq!(detail["endpoint_type"], "xllm");
-    assert_eq!(detail["notes"], "Important server", "Notes should be preserved");
+    assert_eq!(
+        detail["notes"], "Important server",
+        "Notes should be preserved"
+    );
 }

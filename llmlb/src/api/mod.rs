@@ -30,6 +30,7 @@ use crate::common::auth::ApiKeyScope;
 use crate::AppState;
 use axum::{
     body::Body,
+    extract::DefaultBodyLimit,
     extract::Path as AxumPath,
     http::{header, StatusCode},
     middleware,
@@ -42,6 +43,7 @@ use mime_guess::MimeGuess;
 
 static DASHBOARD_ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/web/static");
 const DASHBOARD_INDEX: &str = "index.html";
+const OPENAI_BODY_LIMIT_BYTES: usize = 20 * 1024 * 1024;
 // NOTE: Playground機能は廃止され、ダッシュボード内のエンドポイント別Playgroundに移行
 // const PLAYGROUND_INDEX: &str = "playground.html";
 // Force rebuild when embedded dashboard/playground assets change.
@@ -273,7 +275,8 @@ pub fn create_app(state: AppState) -> Router {
         // 画像API（OpenAI Images API互換）
         .route("/v1/images/generations", post(images::generations))
         .route("/v1/images/edits", post(images::edits))
-        .route("/v1/images/variations", post(images::variations));
+        .route("/v1/images/variations", post(images::variations))
+        .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES));
 
     let api_key_protected_routes = if auth_disabled {
         api_key_routes
@@ -462,23 +465,62 @@ mod tests {
     #[tokio::test]
     #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_nodes_endpoint_returns_json() {
-        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
-        unimplemented!("Migrate to EndpointRegistry-based test")
+        let state = test_state().await;
+        let mut app = create_app(state);
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/v0/dashboard/endpoints")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
     #[tokio::test]
     #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_overview_endpoint_returns_all_sections() {
-        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
-        unimplemented!("Migrate to EndpointRegistry-based test")
+        let state = test_state().await;
+        let mut app = create_app(state);
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/v0/dashboard/overview")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
     #[tokio::test]
     #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
     async fn test_dashboard_metrics_endpoint_returns_history() {
-        // NodeRegistry.register()を使用していたため、EndpointRegistry経由に移行が必要
-        unimplemented!("Migrate to EndpointRegistry-based test")
+        let state = test_state().await;
+        let mut app = create_app(state);
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/v0/dashboard/request-history")
+                    .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

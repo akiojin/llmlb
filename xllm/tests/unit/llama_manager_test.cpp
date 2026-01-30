@@ -326,3 +326,60 @@ TEST(LlamaManagerTest, VramRecoveryAllowsRetryAfterFailure) {
     // After failure, VRAM should be available for retry
     EXPECT_TRUE(mgr.canLoadConcurrently(model.string(), 1500));
 }
+
+// =============================================================================
+// T202: アクティブモデル保護テスト（推論中のモデルはLRU evictionから保護）
+// =============================================================================
+
+TEST(LlamaManagerTest, ActiveModelIsNotReturnedByLRU) {
+    TempModelFile tmp;
+    LlamaManager mgr(tmp.base.string());
+
+    // モデルをアクティブとしてマーク
+    mgr.markAsActive("model1.gguf");
+    EXPECT_TRUE(mgr.isActive("model1.gguf"));
+
+    // アクティブなモデルはLRU候補から除外される
+    // （実際のロード済みモデルがないので、nullopt）
+    auto lru = mgr.getLeastRecentlyUsedModel();
+    EXPECT_FALSE(lru.has_value());
+
+    // アクティブを解除
+    mgr.markAsInactive("model1.gguf");
+    EXPECT_FALSE(mgr.isActive("model1.gguf"));
+}
+
+TEST(LlamaManagerTest, EvictForVramSkipsActiveModels) {
+    TempModelFile tmp;
+    LlamaManager mgr(tmp.base.string());
+
+    // No models loaded, eviction should return 0
+    size_t freed = mgr.evictForVram(1024);
+    EXPECT_EQ(freed, 0u);
+
+    // Even if we mark a model as active, eviction shouldn't affect it
+    mgr.markAsActive("test.gguf");
+    freed = mgr.evictForVram(1024);
+    EXPECT_EQ(freed, 0u);  // No loaded models to evict
+
+    mgr.markAsInactive("test.gguf");
+}
+
+TEST(LlamaManagerTest, ActiveCountTracking) {
+    TempModelFile tmp;
+    LlamaManager mgr(tmp.base.string());
+
+    EXPECT_EQ(mgr.activeCount(), 0u);
+
+    mgr.markAsActive("model1.gguf");
+    EXPECT_EQ(mgr.activeCount(), 1u);
+
+    mgr.markAsActive("model2.gguf");
+    EXPECT_EQ(mgr.activeCount(), 2u);
+
+    mgr.markAsInactive("model1.gguf");
+    EXPECT_EQ(mgr.activeCount(), 1u);
+
+    mgr.markAsInactive("model2.gguf");
+    EXPECT_EQ(mgr.activeCount(), 0u);
+}

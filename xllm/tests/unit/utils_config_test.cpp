@@ -81,3 +81,45 @@ TEST(UtilsConfigTest, NewEnvVarsTakePriorityOverDeprecated) {
     EXPECT_EQ(cfg.models_dir, "/new/models");
     EXPECT_TRUE(cfg.require_gpu);  // GPU requirement cannot be disabled
 }
+
+TEST(UtilsConfigTest, DefaultConfigPathIsXllmDir) {
+    // Verify the default config path is ~/.xllm/config.json (not ~/.llmlb/)
+    EnvGuard guard({"XLLM_CONFIG", "HOME"});
+    unsetenv("XLLM_CONFIG");
+
+    // Create a temporary home directory with .xllm/config.json
+    fs::path tmp_home = fs::temp_directory_path() / "test_xllm_home";
+    fs::create_directories(tmp_home / ".xllm");
+    std::ofstream(tmp_home / ".xllm" / "config.json") << R"({
+        "node_port": 12345
+    })";
+    setenv("HOME", tmp_home.string().c_str(), 1);
+
+    auto [cfg, log] = loadNodeConfigWithLog();
+
+    // Should load from ~/.xllm/config.json
+    EXPECT_EQ(cfg.node_port, 12345);
+    EXPECT_NE(log.find(".xllm/config.json"), std::string::npos);
+
+    fs::remove_all(tmp_home);
+}
+
+TEST(UtilsConfigTest, DefaultModelsDirIsXllmModels) {
+    // Verify the default models_dir is ~/.xllm/models (not ~/.llmlb/)
+    EnvGuard guard({"XLLM_CONFIG", "HOME", "XLLM_MODELS_DIR", "LLM_MODELS_DIR"});
+    unsetenv("XLLM_CONFIG");
+    unsetenv("XLLM_MODELS_DIR");
+    unsetenv("LLM_MODELS_DIR");
+
+    fs::path tmp_home = fs::temp_directory_path() / "test_xllm_models";
+    fs::create_directories(tmp_home);
+    setenv("HOME", tmp_home.string().c_str(), 1);
+
+    auto cfg = loadNodeConfig();
+
+    // Default models_dir should be under .xllm
+    EXPECT_NE(cfg.models_dir.find(".xllm"), std::string::npos);
+    EXPECT_NE(cfg.models_dir.find("models"), std::string::npos);
+
+    fs::remove_all(tmp_home);
+}

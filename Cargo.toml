@@ -20,8 +20,8 @@ thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-# rustls-tlsを使用してOpenSSL依存を回避（musl/クロスコンパイル対応）
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "blocking", "multipart", "rustls-tls"] }
+# rustlsを使用してOpenSSL依存を回避（musl/クロスコンパイル対応）
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "blocking", "multipart", "rustls"] }
 
 # Router専用
 axum = "0.7"

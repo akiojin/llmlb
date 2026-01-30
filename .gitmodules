@@ -1,3 +1,0 @@
-[submodule "vendor/pest_generator"]
-	path = vendor/pest_generator
-	url = https://github.com/pest-parser/pest.git

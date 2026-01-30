@@ -340,14 +340,14 @@
   - markdownlint 合格
   - 依存: T036
 
-- [ ] T038 `quickstart.md` の手順を実際に実行して検証
+- [x] T038 `quickstart.md` の手順を実際に実行して検証
   - `llmlb serve --port 8000` でサーバー起動
   - 別ターミナルで同じコマンドを実行してエラーを確認
   - `llmlb status` で状態確認
   - `llmlb stop --port 8000` でサーバー停止
   - 依存: T037
 
-- [ ] T039 コミット＆プッシュ
+- [x] T039 コミット＆プッシュ
   - commitlint 準拠のコミットメッセージ
   - 依存: T038
 

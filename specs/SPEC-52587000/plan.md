@@ -371,7 +371,7 @@ pub async fn execute(args: &StatusArgs) -> Result<(), anyhow::Error>;
 - [x] Phase 2: Task planning完了 (/speckit.plan コマンド - アプローチのみ記述)
 - [x] Phase 3: Tasks生成済み (/speckit.tasks コマンド)
 - [x] Phase 4: 実装完了
-- [ ] Phase 5: 検証合格
+- [x] Phase 5: 検証合格
 
 **ゲートステータス**:
 

@@ -88,6 +88,16 @@ jobs:
             --notes "$NOTES" \
             --draft=false
 
+      # GITHUB_TOKENで作成されたタグは他のワークフローをトリガーしないため、
+      # 明示的にpublish.ymlをディスパッチする
+      - name: Trigger Publish Workflow
+        if: steps.check-tag.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.tag_name }}
+        run: |
+          gh workflow run publish.yml --ref "$TAG_NAME" -f release_tag="$TAG_NAME"
+
   publish-mcp-server:
     name: Publish MCP Server to npm
     needs: create-tag

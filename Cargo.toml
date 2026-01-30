@@ -3,7 +3,7 @@ members = ["llmlb"]
 resolver = "2"
 
 [workspace.package]
-version = "2.4.0"
+version = "2.4.1"
 edition = "2021"
 authors = ["LLM Router Contributors"]
 license = "Apache-2.0"
@@ -20,7 +20,8 @@ thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-reqwest = { version = "0.11", features = ["json", "stream", "blocking", "multipart"] }
+# rustls-tlsを使用してOpenSSL依存を回避（musl/クロスコンパイル対応）
+reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "blocking", "multipart", "rustls-tls"] }
 
 # Router専用
 axum = "0.7"

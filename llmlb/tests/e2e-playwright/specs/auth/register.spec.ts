@@ -51,8 +51,7 @@ test.describe('Register Page', () => {
   test.beforeEach(async ({ page }) => {
     registerPage = new RegisterPage(page);
     await registerPage.goto();
-    // Wait for page to fully load
-    await page.waitForLoadState('networkidle');
+    // RegisterPage.goto() already waits for React to mount and elements to be visible
   });
 
   test('R-01: Register page is accessible', async ({ page }) => {

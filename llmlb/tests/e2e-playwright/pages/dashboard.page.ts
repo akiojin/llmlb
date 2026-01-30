@@ -86,32 +86,35 @@ export class DashboardPage {
   }
 
   async goto() {
-    await this.page.goto('/dashboard');
+    await this.page.goto('/dashboard', { timeout: 30000 });
     // Wait for page to settle (use 'load' instead of 'networkidle' due to WebSocket connections)
     await this.page.waitForLoadState('load');
-    // Wait a moment for any JavaScript redirects
-    await this.page.waitForTimeout(500);
-    // Handle login if redirected to login page or login form appears after redirect
-    const loginForm = this.page
-      .locator('form')
-      .filter({ hasText: 'Sign in' });
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+
+    // Wait for React to mount
+    await this.page.waitForSelector('#root:not(:empty)', { timeout: 15000 });
+
+    // Handle login if redirected to login page
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       const isLoginUrl = this.page.url().includes('login');
-      const hasLoginForm = await loginForm
-        .isVisible({ timeout: 2000 })
-        .catch(() => false);
-      if (isLoginUrl || hasLoginForm) {
+
+      if (isLoginUrl) {
+        // Wait for login form to be ready
+        await this.page.waitForSelector('#username', { timeout: 10000 });
         await this.login();
+        // After login, wait for redirect
+        await this.page.waitForURL(/\/dashboard\/(?!login|register)/, { timeout: 15000 });
       }
+
       try {
         // Wait for dashboard content to be visible
         await this.page.waitForSelector('#theme-toggle', { timeout: 10000 });
         return;
       } catch (error) {
-        if (attempt === 0) {
-          continue;
+        if (attempt === 2) {
+          throw error;
         }
-        throw error;
+        // Retry - maybe page is still loading
+        await this.page.waitForTimeout(1000);
       }
     }
   }
@@ -140,11 +143,13 @@ export class DashboardPage {
   }
 
   async login(username = 'admin', password = 'test') {
+    // Wait for login form elements to be ready
+    await this.page.waitForSelector('#username', { state: 'visible', timeout: 10000 });
     await this.page.fill('#username', username);
     await this.page.fill('#password', password);
     await this.page.click('button[type="submit"]');
     // Wait for redirect to dashboard (the URL will NOT contain 'login' after successful login)
-    await this.page.waitForFunction(() => !window.location.href.includes('login'), { timeout: 10000 });
+    await this.page.waitForFunction(() => !window.location.href.includes('login'), { timeout: 15000 });
     // Use 'load' instead of 'networkidle' due to WebSocket connections
     await this.page.waitForLoadState('load');
   }

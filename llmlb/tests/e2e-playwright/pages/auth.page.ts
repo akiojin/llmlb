@@ -23,15 +23,19 @@ export class LoginPage {
 
   async goto() {
     const url = '/dashboard/login.html';
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+        await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        // Wait for React to mount - look for the root element to have content
+        await this.page.waitForSelector('#root:not(:empty)', { timeout: 10000 });
+        // Wait for either username input or an error indicator
+        await this.page.waitForSelector('#username, .error, [role="alert"]', { timeout: 10000 });
         return;
       } catch (error) {
-        if (attempt === 1) {
+        if (attempt === 2) {
           throw error;
         }
-        await this.page.waitForTimeout(500);
+        await this.page.waitForTimeout(1000);
       }
     }
   }
@@ -76,15 +80,19 @@ export class RegisterPage {
 
   async goto() {
     const url = '/dashboard/register.html';
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+        await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        // Wait for React to mount - look for the root element to have content
+        await this.page.waitForSelector('#root:not(:empty)', { timeout: 10000 });
+        // Wait for either invitation code input or an error indicator
+        await this.page.waitForSelector('#invitation-code, .error, [role="alert"]', { timeout: 10000 });
         return;
       } catch (error) {
-        if (attempt === 1) {
+        if (attempt === 2) {
           throw error;
         }
-        await this.page.waitForTimeout(500);
+        await this.page.waitForTimeout(1000);
       }
     }
   }

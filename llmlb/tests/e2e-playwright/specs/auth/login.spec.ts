@@ -7,8 +7,7 @@ test.describe('Login Page', () => {
   test.beforeEach(async ({ page }) => {
     loginPage = new LoginPage(page);
     await loginPage.goto();
-    // Wait for page to fully load
-    await page.waitForLoadState('networkidle');
+    // LoginPage.goto() already waits for React to mount and elements to be visible
   });
 
   test('L-01: Login page is accessible', async ({ page }) => {

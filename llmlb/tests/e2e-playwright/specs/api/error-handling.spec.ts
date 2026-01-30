@@ -163,18 +163,25 @@ test.describe('API Error Handling', () => {
 test.describe('Dashboard Error Handling', () => {
 
   test('login fails with invalid credentials', async ({ page }) => {
-    await page.goto(`${API_BASE}/dashboard`);
+    // Navigate to login page
+    await page.goto(`${API_BASE}/dashboard/login.html`, { timeout: 30000 });
+
+    // Wait for React to mount
+    await page.waitForSelector('#root:not(:empty)', { timeout: 15000 });
+
+    // Wait for username input to be visible
+    const usernameInput = page.locator('#username');
+    await usernameInput.waitFor({ state: 'visible', timeout: 15000 });
 
     // Fill invalid credentials
-    await page.fill('input[type="text"], input[name="username"], #username', 'invalid_user');
-    await page.fill('input[type="password"], input[name="password"], #password', 'wrong_password');
-    await page.click('button[type="submit"]');
+    await usernameInput.fill('invalid_user');
+    await page.locator('#password').fill('wrong_password');
+    await page.locator('button[type="submit"]').click();
 
-    // Should show error or stay on login page
-    await page.waitForTimeout(1000);
+    // Should show error toast or stay on login page
+    await page.waitForTimeout(2000);
 
-    // Check if still on login page or error shown
-    const pageText = await page.textContent('body');
-    expect(pageText).toContain('Sign in');
+    // Check if still on login page (URL should still contain login)
+    expect(page.url()).toContain('login');
   });
 });

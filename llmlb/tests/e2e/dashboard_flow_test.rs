@@ -1,6 +1,6 @@
 //! ダッシュボードフローE2Eテスト
 //!
-//! ダッシュボードAPI（/v0/dashboard/*）のE2Eテスト
+//! ダッシュボードAPI（/api/dashboard/*）のE2Eテスト
 //!
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
@@ -69,12 +69,13 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
 async fn test_dashboard_stats_endpoint() {
     let (app, _db_pool, admin_key) = build_app().await;
 
-    // GET /v0/dashboard/stats
+    // GET /api/dashboard/stats
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/dashboard/stats")
+                .uri("/api/dashboard/stats")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -85,7 +86,7 @@ async fn test_dashboard_stats_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /v0/dashboard/stats should return OK"
+        "GET /api/dashboard/stats should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -100,12 +101,13 @@ async fn test_dashboard_stats_endpoint() {
 async fn test_dashboard_overview_endpoint() {
     let (app, _db_pool, admin_key) = build_app().await;
 
-    // GET /v0/dashboard/overview
+    // GET /api/dashboard/overview
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/dashboard/overview")
+                .uri("/api/dashboard/overview")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -116,7 +118,7 @@ async fn test_dashboard_overview_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /v0/dashboard/overview should return OK"
+        "GET /api/dashboard/overview should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -134,12 +136,13 @@ async fn test_dashboard_overview_endpoint() {
 async fn test_dashboard_request_history_endpoint() {
     let (app, _db_pool, admin_key) = build_app().await;
 
-    // GET /v0/dashboard/request-history
+    // GET /api/dashboard/request-history
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/dashboard/request-history")
+                .uri("/api/dashboard/request-history")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -150,7 +153,7 @@ async fn test_dashboard_request_history_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /v0/dashboard/request-history should return OK"
+        "GET /api/dashboard/request-history should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -168,12 +171,13 @@ async fn test_dashboard_request_history_endpoint() {
 async fn test_cloud_metrics_endpoint() {
     let (app, _db_pool, admin_key) = build_app().await;
 
-    // GET /v0/metrics/cloud
+    // GET /api/metrics/cloud
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/metrics/cloud")
+                .uri("/api/metrics/cloud")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -184,7 +188,7 @@ async fn test_cloud_metrics_endpoint() {
     assert_eq!(
         response.status(),
         StatusCode::OK,
-        "GET /v0/metrics/cloud should return OK"
+        "GET /api/metrics/cloud should return OK"
     );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -204,12 +208,13 @@ async fn test_cloud_metrics_endpoint() {
 async fn test_models_loaded_endpoint_is_removed() {
     let (app, _db_pool, admin_key) = build_app().await;
 
-    // GET /v0/models/loaded
+    // GET /api/models/loaded
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/models/loaded")
+                .uri("/api/models/loaded")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -222,7 +227,7 @@ async fn test_models_loaded_endpoint_is_removed() {
             response.status(),
             StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
         ),
-        "/v0/models/loaded should be removed (got {})",
+        "/api/models/loaded should be removed (got {})",
         response.status()
     );
 }

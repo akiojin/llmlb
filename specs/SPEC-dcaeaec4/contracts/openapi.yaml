@@ -82,7 +82,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /v0/models:
+  /api/models:
     get:
       summary: Node同期用モデル一覧
       description: |
@@ -103,7 +103,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /v0/models/registry/{model_id}/manifest.json:
+  /api/models/registry/{model_id}/manifest.json:
     get:
       summary: モデルマニフェスト取得
       description: |

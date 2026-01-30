@@ -54,8 +54,9 @@ async fn login_as_admin(app: Router) -> (Router, String) {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/login")
+                .uri("/api/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -92,8 +93,9 @@ async fn test_complete_invitation_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/invitations")
+                .uri("/api/invitations")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -125,8 +127,9 @@ async fn test_complete_invitation_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/register")
+                .uri("/api/auth/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -156,8 +159,9 @@ async fn test_complete_invitation_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/login")
+                .uri("/api/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -177,8 +181,9 @@ async fn test_complete_invitation_flow() {
     let reuse_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/register")
+                .uri("/api/auth/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -208,8 +213,9 @@ async fn test_invalid_invitation_code_rejected() {
     let register_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/register")
+                .uri("/api/auth/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -243,8 +249,9 @@ async fn test_invitation_revocation() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/invitations")
+                .uri("/api/invitations")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
@@ -268,8 +275,9 @@ async fn test_invitation_revocation() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("DELETE")
-                .uri(format!("/v0/invitations/{}", invitation_id))
+                .uri(format!("/api/invitations/{}", invitation_id))
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -283,8 +291,9 @@ async fn test_invitation_revocation() {
     let register_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/register")
+                .uri("/api/auth/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -319,8 +328,9 @@ async fn test_list_invitations() {
             .clone()
             .oneshot(
                 Request::builder()
+                    .header("x-internal-token", "test-internal")
                     .method("POST")
-                    .uri("/v0/invitations")
+                    .uri("/api/invitations")
                     .header("authorization", format!("Bearer {}", jwt_token))
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
@@ -336,8 +346,9 @@ async fn test_list_invitations() {
     let list_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/invitations")
+                .uri("/api/invitations")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -374,8 +385,9 @@ async fn test_duplicate_username_rejected() {
             .clone()
             .oneshot(
                 Request::builder()
+                    .header("x-internal-token", "test-internal")
                     .method("POST")
-                    .uri("/v0/invitations")
+                    .uri("/api/invitations")
                     .header("authorization", format!("Bearer {}", jwt_token))
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
@@ -396,8 +408,9 @@ async fn test_duplicate_username_rejected() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/register")
+                .uri("/api/auth/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -418,8 +431,9 @@ async fn test_duplicate_username_rejected() {
     let duplicate_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/register")
+                .uri("/api/auth/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({

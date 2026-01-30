@@ -1,4 +1,4 @@
-//! Contract Test: GET /v0/endpoints/:id/models/:model/info
+//! Contract Test: GET /api/endpoints/:id/models/:model/info
 //!
 //! SPEC-66555000: エンドポイントモデル情報API契約テスト
 //!
@@ -29,6 +29,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -77,10 +78,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// GET /v0/endpoints/:id/models/:model/info - 正常系: モデル情報取得
+/// GET /api/endpoints/:id/models/:model/info - 正常系: モデル情報取得
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T125で実装予定"]
@@ -98,7 +101,7 @@ async fn test_get_model_info() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -117,7 +120,7 @@ async fn test_get_model_info() {
             admin_request(&admin_key)
                 .method("GET")
                 .uri(format!(
-                    "/v0/endpoints/{}/models/llama3:8b/info",
+                    "/api/endpoints/{}/models/llama3:8b/info",
                     endpoint_id
                 ))
                 .body(Body::empty())
@@ -135,7 +138,7 @@ async fn test_get_model_info() {
     );
 }
 
-/// GET /v0/endpoints/:id/models/:model/info - レスポンス構造検証
+/// GET /api/endpoints/:id/models/:model/info - レスポンス構造検証
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T125で実装予定"]
@@ -153,7 +156,7 @@ async fn test_model_info_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -170,7 +173,7 @@ async fn test_model_info_response_structure() {
             admin_request(&admin_key)
                 .method("GET")
                 .uri(format!(
-                    "/v0/endpoints/{}/models/llama3:8b/info",
+                    "/api/endpoints/{}/models/llama3:8b/info",
                     endpoint_id
                 ))
                 .body(Body::empty())
@@ -201,7 +204,7 @@ async fn test_model_info_response_structure() {
     }
 }
 
-/// GET /v0/endpoints/:id/models/:model/info - 異常系: 存在しないエンドポイント
+/// GET /api/endpoints/:id/models/:model/info - 異常系: 存在しないエンドポイント
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T125で実装予定"]
@@ -212,7 +215,7 @@ async fn test_model_info_endpoint_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints/00000000-0000-0000-0000-000000000000/models/llama3:8b/info")
+                .uri("/api/endpoints/00000000-0000-0000-0000-000000000000/models/llama3:8b/info")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -222,7 +225,7 @@ async fn test_model_info_endpoint_not_found() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-/// GET /v0/endpoints/:id/models/:model/info - 異常系: 存在しないモデル
+/// GET /api/endpoints/:id/models/:model/info - 異常系: 存在しないモデル
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T125で実装予定"]
@@ -240,7 +243,7 @@ async fn test_model_info_model_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -257,7 +260,7 @@ async fn test_model_info_model_not_found() {
             admin_request(&admin_key)
                 .method("GET")
                 .uri(format!(
-                    "/v0/endpoints/{}/models/nonexistent-model/info",
+                    "/api/endpoints/{}/models/nonexistent-model/info",
                     endpoint_id
                 ))
                 .body(Body::empty())
@@ -272,7 +275,7 @@ async fn test_model_info_model_not_found() {
     );
 }
 
-/// GET /v0/endpoints/:id/models/:model/info - 異常系: 認証なし
+/// GET /api/endpoints/:id/models/:model/info - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T125で実装予定"]
@@ -282,8 +285,9 @@ async fn test_model_info_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/endpoints/00000000-0000-0000-0000-000000000001/models/llama3:8b/info")
+                .uri("/api/endpoints/00000000-0000-0000-0000-000000000001/models/llama3:8b/info")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -293,7 +297,7 @@ async fn test_model_info_unauthorized() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// GET /v0/endpoints/:id/models/:model/info - 非xLLM/Ollamaエンドポイント
+/// GET /api/endpoints/:id/models/:model/info - 非xLLM/Ollamaエンドポイント
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T125で実装予定"]
@@ -311,7 +315,7 @@ async fn test_model_info_unsupported_endpoint_type() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -328,7 +332,7 @@ async fn test_model_info_unsupported_endpoint_type() {
             admin_request(&admin_key)
                 .method("GET")
                 .uri(format!(
-                    "/v0/endpoints/{}/models/some-model/info",
+                    "/api/endpoints/{}/models/some-model/info",
                     endpoint_id
                 ))
                 .body(Body::empty())

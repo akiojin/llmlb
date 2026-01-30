@@ -13,7 +13,7 @@ servers:
     description: ローカル開発サーバー
 
 paths:
-  /v0/health:
+  /api/health:
     post:
       summary: ハートビート送信
       description: |
@@ -50,7 +50,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/nodes:
+  /api/nodes:
     get:
       summary: ノード状態一覧の取得
       description: 登録済みノードの状態一覧を取得する。
@@ -67,7 +67,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NodeHealthListResponse'
 
-  /v0/nodes/{node_id}/health:
+  /api/nodes/{node_id}/health:
     get:
       summary: ノード健康状態の取得
       description: 特定ノードの詳細な健康状態を取得する。

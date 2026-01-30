@@ -63,7 +63,7 @@ URL登録は維持しつつ、Nodeがマニフェストに従い直接取得す�
 
 **受入条件**:
 
-- 「Register」ボタンをクリックすると `/v0/models/register` が呼ばれる
+- 「Register」ボタンをクリックすると `/api/models/register` が呼ばれる
 - ロードバランサーはメタデータのみ保存し、バイナリは保持しない
 - Node が HF から直接取得し、準備完了後に「Local」タブで Ready が表示される
 
@@ -116,20 +116,20 @@ URL登録は維持しつつ、Nodeがマニフェストに従い直接取得す�
 
 ### FR-2: モデル一覧API
 
-- `GET /v0/models/hub` で対応モデル一覧と状態を返す
+- `GET /api/models/hub` で対応モデル一覧と状態を返す
 - `status`（available/downloading/downloaded）と `lifecycle_status`（registered/ready など）を含む
 - Node同期に基づく ready 状態を返す
 - HuggingFaceの動的情報（ダウンロード数、スター数）は任意（キャッシュ付き）
 
 ### FR-3: Node直取得（Pull API なし）
 
-- ロードバランサーはダウンロードを開始しない（`/v0/models/pull` は不要）
+- ロードバランサーはダウンロードを開始しない（`/api/models/pull` は不要）
 - Nodeがマニフェストに従ってHFから直接取得する
 
 ### FR-4: URL登録機能の維持
 
-- `POST /v0/models/register` は維持する（メタデータ登録のみ）
-- `POST /v0/models/discover-gguf` は廃止
+- `POST /api/models/register` は維持する（メタデータ登録のみ）
+- `POST /api/models/discover-gguf` は廃止
 - ダッシュボードの「Register」ダイアログは維持する
 
 ### FR-5: バイナリ非保持

@@ -25,7 +25,7 @@ const DETECTION_TIMEOUT: Duration = Duration::from_secs(5);
 /// Detect endpoint type automatically
 ///
 /// Tries detection in priority order:
-/// 1. xLLM (GET /v0/system - xllm_version field)
+/// 1. xLLM (GET /api/system - xllm_version field)
 /// 2. Ollama (GET /api/tags)
 /// 3. vLLM (Server header check)
 /// 4. OpenAI-compatible (GET /v1/models)

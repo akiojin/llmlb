@@ -104,7 +104,7 @@ export interface RegisterResponse {
 
 export const authApi = {
   login: async (username: string, password: string) => {
-    const response = await fetch(`${API_BASE}/v0/auth/login`, {
+    const response = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -121,17 +121,17 @@ export const authApi = {
 
   logout: async () => {
     try {
-      await fetchWithAuth('/v0/auth/logout', { method: 'POST' })
+      await fetchWithAuth('/api/auth/logout', { method: 'POST' })
     } finally {
       removeToken()
     }
   },
 
   me: () =>
-    fetchWithAuth<{ id: number; username: string; role: string }>('/v0/auth/me'),
+    fetchWithAuth<{ id: number; username: string; role: string }>('/api/auth/me'),
 
   register: async (data: RegisterRequest): Promise<RegisterResponse> => {
-    const response = await fetch(`${API_BASE}/v0/auth/register`, {
+    const response = await fetch(`${API_BASE}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -273,7 +273,7 @@ export interface RequestHistoryItem {
   response_body?: unknown
 }
 
-// /v0/dashboard/request-responses APIのレスポンス型
+// /api/dashboard/request-responses APIのレスポンス型
 export interface RequestResponseRecord {
   id: string
   timestamp: string
@@ -335,45 +335,45 @@ export interface MonthlyTokenStats extends TokenStats {
 }
 
 export const dashboardApi = {
-  getOverview: () => fetchWithAuth<DashboardOverview>('/v0/dashboard/overview'),
+  getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
 
-  getNodes: () => fetchWithAuth<DashboardNode[]>('/v0/dashboard/nodes'),
+  getNodes: () => fetchWithAuth<DashboardNode[]>('/api/dashboard/nodes'),
 
   /** SPEC-66555000: List endpoints */
-  getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/v0/dashboard/endpoints'),
+  getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
-  getStats: () => fetchWithAuth<DashboardStats>('/v0/dashboard/stats'),
+  getStats: () => fetchWithAuth<DashboardStats>('/api/dashboard/stats'),
 
   // Token statistics endpoints
-  getTokenStats: () => fetchWithAuth<TokenStats>('/v0/dashboard/stats/tokens'),
+  getTokenStats: () => fetchWithAuth<TokenStats>('/api/dashboard/stats/tokens'),
 
   getDailyTokenStats: (days?: number) =>
-    fetchWithAuth<DailyTokenStats[]>('/v0/dashboard/stats/tokens/daily', {
+    fetchWithAuth<DailyTokenStats[]>('/api/dashboard/stats/tokens/daily', {
       params: { days },
     }),
 
   getMonthlyTokenStats: (months?: number) =>
-    fetchWithAuth<MonthlyTokenStats[]>('/v0/dashboard/stats/tokens/monthly', {
+    fetchWithAuth<MonthlyTokenStats[]>('/api/dashboard/stats/tokens/monthly', {
       params: { months },
     }),
 
   getRequestHistory: (limit?: number) =>
-    fetchWithAuth<RequestHistoryItem[]>('/v0/dashboard/request-history', {
+    fetchWithAuth<RequestHistoryItem[]>('/api/dashboard/request-history', {
       params: { limit },
     }),
 
   getNodeMetrics: (nodeId: string) =>
-    fetchWithAuth<unknown[]>(`/v0/dashboard/metrics/${nodeId}`),
+    fetchWithAuth<unknown[]>(`/api/dashboard/metrics/${nodeId}`),
 
   getRequestResponses: (params?: {
     limit?: number
     offset?: number
     model?: string
     status?: string
-  }) => fetchWithAuth<RequestResponsesPage>('/v0/dashboard/request-responses', { params }),
+  }) => fetchWithAuth<RequestResponsesPage>('/api/dashboard/request-responses', { params }),
 
   getRequestResponseDetail: (id: string) =>
-    fetchWithAuth<unknown>(`/v0/dashboard/request-responses/${id}`),
+    fetchWithAuth<unknown>(`/api/dashboard/request-responses/${id}`),
 
   exportRequestResponses: async (format: 'csv' | 'json') => {
     const token = getToken()
@@ -382,7 +382,7 @@ export const dashboardApi = {
       headers['Authorization'] = `Bearer ${token}`
     }
     const response = await fetch(
-      `${API_BASE}/v0/dashboard/request-responses/export?format=${format}`,
+      `${API_BASE}/api/dashboard/request-responses/export?format=${format}`,
       {
       headers,
       }
@@ -395,7 +395,7 @@ export const dashboardApi = {
   },
 
   getRouterLogs: (params?: { limit?: number }) =>
-    fetchWithAuth<LogResponse>('/v0/dashboard/logs/lb', { params }),
+    fetchWithAuth<LogResponse>('/api/dashboard/logs/lb', { params }),
 }
 
 /**
@@ -405,11 +405,11 @@ export const dashboardApi = {
  */
 export const endpointsApi = {
   /** List endpoints for dashboard */
-  list: () => fetchWithAuth<DashboardEndpoint[]>('/v0/dashboard/endpoints'),
+  list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
   /** SPEC-66555000: List endpoints by type */
   listByType: (type: EndpointType) =>
-    fetchWithAuth<DashboardEndpoint[]>('/v0/endpoints', {
+    fetchWithAuth<DashboardEndpoint[]>('/api/endpoints', {
       params: { type },
     }),
 
@@ -423,13 +423,13 @@ export const endpointsApi = {
     notes?: string
     endpoint_type?: EndpointType
   }) =>
-    fetchWithAuth<DashboardEndpoint>('/v0/endpoints', {
+    fetchWithAuth<DashboardEndpoint>('/api/endpoints', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   /** Get endpoint details */
-  get: (id: string) => fetchWithAuth<DashboardEndpoint>(`/v0/endpoints/${id}`),
+  get: (id: string) => fetchWithAuth<DashboardEndpoint>(`/api/endpoints/${id}`),
 
   /** Update endpoint */
   update: (
@@ -444,25 +444,25 @@ export const endpointsApi = {
       endpoint_type?: EndpointType
     }
   ) =>
-    fetchWithAuth<DashboardEndpoint>(`/v0/endpoints/${id}`, {
+    fetchWithAuth<DashboardEndpoint>(`/api/endpoints/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   /** Delete endpoint */
   delete: (id: string) =>
-    fetchWithAuth<void>(`/v0/endpoints/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/api/endpoints/${id}`, { method: 'DELETE' }),
 
   /** Test connection */
   test: (id: string) =>
     fetchWithAuth<{ success: boolean; message?: string; latency_ms?: number }>(
-      `/v0/endpoints/${id}/test`,
+      `/api/endpoints/${id}/test`,
       { method: 'POST' }
     ),
 
   /** Sync models */
   sync: (id: string) =>
-    fetchWithAuth<{ synced_models: number }>(`/v0/endpoints/${id}/sync`, {
+    fetchWithAuth<{ synced_models: number }>(`/api/endpoints/${id}/sync`, {
       method: 'POST',
     }),
 
@@ -476,14 +476,14 @@ export const endpointsApi = {
         max_tokens?: number
         last_checked?: string
       }>
-    }>(`/v0/endpoints/${id}/models`),
+    }>(`/api/endpoints/${id}/models`),
 
   /** SPEC-66555000: Download model (xLLM only) */
   downloadModel: (
     id: string,
     data: { model: string; filename?: string }
   ) =>
-    fetchWithAuth<{ task_id: string }>(`/v0/endpoints/${id}/download`, {
+    fetchWithAuth<{ task_id: string }>(`/api/endpoints/${id}/download`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -491,13 +491,13 @@ export const endpointsApi = {
   /** SPEC-66555000: Get download progress (xLLM only) */
   getDownloadProgress: (id: string) =>
     fetchWithAuth<{ tasks: DownloadTask[] }>(
-      `/v0/endpoints/${id}/download/progress`
+      `/api/endpoints/${id}/download/progress`
     ),
 
   /** SPEC-66555000: Get model metadata */
   getModelInfo: (id: string, model: string) =>
     fetchWithAuth<ModelMetadata>(
-      `/v0/endpoints/${id}/models/${encodeURIComponent(model)}/info`
+      `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`
     ),
 
   /** Proxy chat completions to endpoint (JWT authenticated) */
@@ -520,7 +520,7 @@ export const endpointsApi = {
       headers['Authorization'] = `Bearer ${token}`
     }
 
-    const response = await fetch(`${API_BASE}/v0/endpoints/${id}/chat/completions`, {
+    const response = await fetch(`${API_BASE}/api/endpoints/${id}/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
@@ -612,7 +612,7 @@ export interface OpenAIModel {
   chat_template?: string
 }
 
-// /v0/models/discover-gguf response types
+// /api/models/discover-gguf response types
 export interface GgufFileInfo {
   filename: string
   size_bytes: number
@@ -736,24 +736,24 @@ export interface CreateApiKeyResponse {
 
 export const apiKeysApi = {
   list: () =>
-    fetchWithAuth<{ api_keys: ApiKey[] }>('/v0/api-keys').then(
+    fetchWithAuth<{ api_keys: ApiKey[] }>('/api/api-keys').then(
       (res) => res.api_keys
     ),
 
   create: (data: { name: string; expires_at?: string; scopes: ApiKeyScope[] }) =>
-    fetchWithAuth<CreateApiKeyResponse>('/v0/api-keys', {
+    fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   update: (id: string, data: { name?: string; expires_at?: string | null }) =>
-    fetchWithAuth<ApiKey>(`/v0/api-keys/${id}`, {
+    fetchWithAuth<ApiKey>(`/api/api-keys/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/v0/api-keys/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/api/api-keys/${id}`, { method: 'DELETE' }),
 }
 
 // Invitations API
@@ -776,18 +776,18 @@ export interface CreateInvitationResponse {
 
 export const invitationsApi = {
   list: async (): Promise<Invitation[]> => {
-    const res = await fetchWithAuth<{ invitations: Invitation[] }>('/v0/invitations')
+    const res = await fetchWithAuth<{ invitations: Invitation[] }>('/api/invitations')
     return res.invitations
   },
 
   create: (expiresInHours?: number) =>
-    fetchWithAuth<CreateInvitationResponse>('/v0/invitations', {
+    fetchWithAuth<CreateInvitationResponse>('/api/invitations', {
       method: 'POST',
       body: JSON.stringify({ expires_in_hours: expiresInHours }),
     }),
 
   revoke: (id: string) =>
-    fetchWithAuth<void>(`/v0/invitations/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/api/invitations/${id}`, { method: 'DELETE' }),
 }
 
 // Users API
@@ -800,12 +800,12 @@ export interface User {
 
 export const usersApi = {
   list: async (): Promise<User[]> => {
-    const res = await fetchWithAuth<{ users: User[] }>('/v0/users')
+    const res = await fetchWithAuth<{ users: User[] }>('/api/users')
     return res.users
   },
 
   create: (data: { username: string; password: string; role: string }) =>
-    fetchWithAuth<User>('/v0/users', {
+    fetchWithAuth<User>('/api/users', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -814,13 +814,13 @@ export const usersApi = {
     id: string,
     data: { username?: string; password?: string; role?: string }
   ) =>
-    fetchWithAuth<User>(`/v0/users/${id}`, {
+    fetchWithAuth<User>(`/api/users/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/v0/users/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/api/users/${id}`, { method: 'DELETE' }),
 }
 
 // Chat API (OpenAI compatible)

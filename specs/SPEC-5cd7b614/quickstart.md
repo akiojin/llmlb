@@ -6,7 +6,7 @@
 
 2. **登録APIを検証する**
 
-   `POST /v0/nodes` へ次のJSONを送信する。
+   `POST /api/nodes` へ次のJSONを送信する。
 
    ```json
    {
@@ -21,15 +21,15 @@
    }
    ```
 
-   成功時は `status: "registered"` が返り、`GET /v0/nodes` のレスポンスに `gpu_devices` が含まれる。`gpu_devices: []` などGPU情報が欠損したリクエストは 403 と `{"error":"Validation error: GPU hardware is required"}` を返す。
+   成功時は `status: "registered"` が返り、`GET /api/nodes` のレスポンスに `gpu_devices` が含まれる。`gpu_devices: []` などGPU情報が欠損したリクエストは 403 と `{"error":"Validation error: GPU hardware is required"}` を返す。
 
 3. **ストレージクリーンアップを確認する**
 
-   過去バージョンで登録された GPU 非搭載ノード（`gpu_available=false` または GPU 情報欠損）が DB に残っている状態でロードバランサーを起動する。起動ログに `Removing GPU-less node from database during startup cleanup` が表示され、`GET /v0/nodes` から当該ノードが消えていることを確認する。
+   過去バージョンで登録された GPU 非搭載ノード（`gpu_available=false` または GPU 情報欠損）が DB に残っている状態でロードバランサーを起動する。起動ログに `Removing GPU-less node from database during startup cleanup` が表示され、`GET /api/nodes` から当該ノードが消えていることを確認する。
 
 4. **ダッシュボードの表示を確認する**
 
-   `/dashboard/` を開き、テーブルとモーダルで `GPU NVIDIA RTX 4090 (2枚)` のようにモデル名と枚数が表示されることを確認する。また `GET /v0/dashboard/nodes` のレスポンスにも `gpu_devices` 配列が含まれることを確認する。
+   `/dashboard/` を開き、テーブルとモーダルで `GPU NVIDIA RTX 4090 (2枚)` のようにモデル名と枚数が表示されることを確認する。また `GET /api/dashboard/nodes` のレスポンスにも `gpu_devices` 配列が含まれることを確認する。
 
 5. **ローカル検証を実行する**
 

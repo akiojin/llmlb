@@ -2313,6 +2313,7 @@ mod tests {
         // lb state with temp data dir
         std::env::set_var("OPENAI_API_KEY", "testkey");
         std::env::set_var("OPENAI_BASE_URL", server.uri());
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         let (state, dir) = create_state_with_tempdir().await;
 
         // spawn lb
@@ -2347,7 +2348,8 @@ mod tests {
 
         // fetch dashboard history
         let history_resp = client
-            .get(format!("http://{addr}/v0/dashboard/request-responses"))
+            .get(format!("http://{addr}/api/dashboard/request-responses"))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug_admin")
             .send()
             .await

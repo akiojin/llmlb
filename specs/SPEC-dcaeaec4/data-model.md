@@ -123,7 +123,7 @@ pub struct RegisteredModel {
 │  │ (SQLite)        │    │  (API Response)  │                │
 │  └─────────────────┘    └──────────────────┘                │
 │          │                       │                           │
-│          │ /v1/models            │ /v0/models/registry/      │
+│          │ /v1/models            │ /api/models/registry/      │
 │          ↓                       │    /{model}/manifest.json │
 └──────────┼───────────────────────┼──────────────────────────┘
            │                       │
@@ -167,7 +167,7 @@ pub struct RegisteredModel {
 
 ## API レスポンス形式
 
-### GET /v0/models/registry/{model_id}/manifest.json
+### GET /api/models/registry/{model_id}/manifest.json
 
 ```json
 {

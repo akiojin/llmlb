@@ -316,7 +316,7 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /v0/nodes:
+  /api/nodes:
     post:
       summary: ノード登録
       operationId: registerNode
@@ -354,7 +354,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Node'
 
-  /v0/health:
+  /api/health:
     post:
       summary: ヘルスチェック情報送信（ノード→ロードバランサー）
       operationId: reportHealth
@@ -527,11 +527,11 @@ components:
 **プロトコル仕様**:
 
 1. **ノード登録**:
-   - Node → Load Balancer: `POST /v0/nodes` (起動時)
+   - Node → Load Balancer: `POST /api/nodes` (起動時)
    - Load Balancer → Node: `RegisterResponse` (runtime_id返却)
 
 2. **ヘルスチェック（ハートビート）**:
-   - Node → Load Balancer: `POST /v0/health` (10秒間隔)
+   - Node → Load Balancer: `POST /api/health` (10秒間隔)
    - Payload: CPU使用率、メモリ使用率、処理中リクエスト数
 
 3. **リクエスト振り分け**:
@@ -546,8 +546,8 @@ components:
 ### 4. Contract Tests生成
 
 **テストファイル**:
-- `tests/contract/test_node_registration.rs`: `/v0/nodes` の契約テスト
-- `tests/contract/test_health_check.rs`: `/v0/health` の契約テスト
+- `tests/contract/test_node_registration.rs`: `/api/nodes` の契約テスト
+- `tests/contract/test_health_check.rs`: `/api/health` の契約テスト
 - `tests/contract/test_proxy_chat.rs`: `/v1/chat/completions` の契約テスト
 
 **テスト内容**:

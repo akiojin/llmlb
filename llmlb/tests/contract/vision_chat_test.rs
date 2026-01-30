@@ -34,6 +34,7 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         std::env::set_var("HOME", &temp_dir);
         std::env::set_var("USERPROFILE", &temp_dir);
 
@@ -121,6 +122,7 @@ async fn test_chat_completions_with_image_url() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
@@ -176,6 +178,7 @@ async fn test_chat_completions_with_base64_image() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
@@ -232,6 +235,7 @@ async fn test_chat_completions_with_multiple_images() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
@@ -294,6 +298,7 @@ async fn test_supported_image_formats() {
             .clone()
             .oneshot(
                 Request::builder()
+                    .header("x-internal-token", "test-internal")
                     .method("POST")
                     .uri("/v1/chat/completions")
                     .header("content-type", "application/json")
@@ -349,6 +354,7 @@ async fn test_vision_streaming_response() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")

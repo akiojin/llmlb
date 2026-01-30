@@ -23,7 +23,7 @@
 
 ## 関係
 - ModelInfo は router の対応モデルリストに格納され、/v1/models で外部公開される。
-- Node は `/v0/models/registry/:model_name/manifest.json` から ModelArtifact を取得し、
+- Node は `/api/models/registry/:model_name/manifest.json` から ModelArtifact を取得し、
   自身のruntime/GPU要件に合うファイルをHFから直接ダウンロードする。
 
 ## バリデーション

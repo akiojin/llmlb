@@ -8,7 +8,7 @@ mod support;
 mod model_info_test;
 
 // NOTE: audio_api_test.rs was deleted as part of NodeRegistry removal (SPEC-66555000)
-// All tests depended on deprecated /v0/internal/test/register-node endpoint
+// All tests depended on deprecated /api/internal/test/register-node endpoint
 
 #[path = "integration/images_api_test.rs"]
 mod images_api_test;
@@ -83,8 +83,8 @@ mod responses_streaming_test;
 #[path = "integration/models_api_test.rs"]
 mod models_api_test;
 
-// SPEC-f8e3a1b7: /v0/system API統合テスト
-#[path = "integration/v0_system_test.rs"]
+// SPEC-f8e3a1b7: /api/system API統合テスト
+#[path = "integration/api_system_test.rs"]
 mod v0_system_test;
 
 // Tests are defined inside the modules; this harness ensures they are built

@@ -75,13 +75,13 @@ impl LogsQuery {
 
 | エンドポイント | メソッド | 説明 |
 |---------------|---------|------|
-| /v0/logs | GET | ノード自身のログを取得 |
+| /api/logs | GET | ノード自身のログを取得 |
 
 ### Load Balancer Proxy API
 
 | エンドポイント | メソッド | 説明 |
 |---------------|---------|------|
-| /v0/nodes/:runtime_id/logs | GET | 指定ノードのログをプロキシ |
+| /api/nodes/:runtime_id/logs | GET | 指定ノードのログをプロキシ |
 
 ## エラーモデル
 

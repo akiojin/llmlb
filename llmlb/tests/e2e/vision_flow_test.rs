@@ -25,7 +25,7 @@ async fn spawn_vision_stub() -> support::http::TestServer {
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_handler))
         .route("/v1/models", get(models_handler))
-        .route("/v0/health", get(|| async { StatusCode::OK }))
+        .route("/api/health", get(|| async { StatusCode::OK }))
         .route("/test-image.png", get(test_image_handler));
     support::http::spawn_lb(app).await
 }
@@ -107,10 +107,11 @@ async fn register_and_sync_endpoint(
 
     let response = Client::new()
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             lb.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

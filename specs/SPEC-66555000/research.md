@@ -117,7 +117,7 @@ Header: Authorization: Bearer {api_key} (if required)
 1. EndpointRegistry を新規実装
 2. ルーティングロジックをEndpointRegistry対応に変更
 3. NodeRegistry/NodeStorage を削除
-4. 旧APIエンドポイント（/v0/nodes, /v0/health）を削除
+4. 旧APIエンドポイント（/api/nodes, /api/health）を削除
 
 ### 3.2 データベーススキーマ
 
@@ -139,8 +139,8 @@ Header: Authorization: Bearer {api_key} (if required)
 
 **影響を受けるAPI**:
 
-- `POST /v0/nodes` → 削除
-- `POST /v0/health` → 削除
+- `POST /api/nodes` → 削除
+- `POST /api/health` → 削除
 - `X-Node-Token` 認証 → 削除
 
 ## 4. モデル同期設計

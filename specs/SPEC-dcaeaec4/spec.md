@@ -51,7 +51,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 #### FR-3: モデルアーティファクト解決（Node主導）
 
 1. ロードバランサーは登録済みモデルの**ファイル一覧（マニフェスト）**を提示する。
-   - 例: `/v0/models/registry/:model_name/manifest.json`
+   - 例: `/api/models/registry/:model_name/manifest.json`
 2. Node はマニフェストと GPU バックエンド（Metal/DirectML）に応じて**必要アーティファクトを選択**する。
 3. Node はローカル `~/.llmlb/models/<name>/` を確認し、必要アーティファクトが揃っていれば採用する。
 4. 共有パスは本仕様では扱わない（廃止）。
@@ -71,7 +71,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 #### FR-6: ノード起動時同期
 
-- ノードは起動時にロードバランサーのモデル一覧（`/v1/models` または `/v0/models`）を取得
+- ノードは起動時にロードバランサーのモデル一覧（`/v1/models` または `/api/models`）を取得
 - 各モデルについて **マニフェストを参照**し、FR-3の解決フローに従って取得/参照
 - ローカル → 外部ソース（HF等）の順で解決
 
@@ -90,8 +90,8 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 - `GET /v1/models` - 外部クライアント向け一覧（OpenAI互換 + ダッシュボード拡張フィールド）
 - `POST /v1/models/register` - モデル登録（HuggingFace URL等）
 - `DELETE /v1/models/:model_name` - モデル削除
-- `GET /v0/models` - Node 同期向けメタデータ（format / repo / filename など）
-- `GET /v0/models/registry/:model_name/manifest.json` - Node 向けファイル一覧
+- `GET /api/models` - Node 同期向けメタデータ（format / repo / filename など）
+- `GET /api/models/registry/:model_name/manifest.json` - Node 向けファイル一覧
 
 **廃止済みエンドポイント**:
 - `/api/models/registered` - **廃止**（`/v1/models`に統合）
@@ -163,7 +163,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 - 環境変数: XLLM_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
 - モデル名形式: ファイル名ベースまたは階層形式（FR-2で明記）
 - 解決フロー: ローカル → 外部ソース（FR-3で明記）
-- API設計: 外部は `/v1/models`、Node同期は `/v0/models` と manifest API（FR-8で明記）
+- API設計: 外部は `/v1/models`、Node同期は `/api/models` と manifest API（FR-8で明記）
 - 全ノード全モデル対応: 廃止（SPEC-93536000 (moved to xLLM repo) でノード別対応へ移行）
 
 **削除される機能**:

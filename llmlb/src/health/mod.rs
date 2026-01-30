@@ -5,7 +5,7 @@
 //! # SPEC-66555000: llmlb主導エンドポイント登録システム
 //!
 //! PULL型ヘルスチェックを提供する。llmlbが各エンドポイントの
-//! `GET /v0/health` を定期的にポーリングして状態を確認する。
+//! `GET /api/health` を定期的にポーリングして状態を確認する。
 
 pub mod endpoint_checker;
 pub mod startup;

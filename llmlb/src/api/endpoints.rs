@@ -70,7 +70,7 @@ fn default_inference_timeout() -> u32 {
     120
 }
 
-/// /v0/system APIレスポンス（SPEC-f8e3a1b7）
+/// /api/system APIレスポンス（SPEC-f8e3a1b7）
 ///
 /// xLLM固有のシステム情報API。OpenAI互換エンドポイントでは利用不可。
 #[derive(Debug, Deserialize)]
@@ -80,7 +80,7 @@ struct SystemInfoResponse {
     device: Option<SystemDeviceInfo>,
 }
 
-/// /v0/system APIのデバイス情報
+/// /api/system APIのデバイス情報
 #[derive(Debug, Deserialize)]
 struct SystemDeviceInfo {
     /// デバイスタイプ（"cpu" / "gpu"）
@@ -91,7 +91,7 @@ struct SystemDeviceInfo {
     gpu_devices: Vec<SystemGpuDevice>,
 }
 
-/// /v0/system APIのGPUデバイス情報
+/// /api/system APIのGPUデバイス情報
 #[derive(Debug, Deserialize)]
 struct SystemGpuDevice {
     /// デバイス名
@@ -105,7 +105,7 @@ struct SystemGpuDevice {
     used_memory_bytes: u64,
 }
 
-/// /v0/system APIを呼び出してデバイス情報を取得（SPEC-f8e3a1b7）
+/// /api/system APIを呼び出してデバイス情報を取得（SPEC-f8e3a1b7）
 ///
 /// エンドポイント登録時に呼び出し、デバイス情報を取得する。
 /// 応答がない場合（タイムアウト、404等）はNoneを返す。
@@ -114,7 +114,7 @@ async fn fetch_system_info(
     base_url: &str,
     api_key: Option<&str>,
 ) -> Option<DeviceInfo> {
-    let url = format!("{}/v0/system", base_url.trim_end_matches('/'));
+    let url = format!("{}/api/system", base_url.trim_end_matches('/'));
 
     let mut request = client.get(&url).timeout(Duration::from_secs(5));
 
@@ -142,7 +142,7 @@ async fn fetch_system_info(
                         .collect(),
                 }),
                 Err(e) => {
-                    tracing::debug!(url = %url, error = %e, "Failed to parse /v0/system response");
+                    tracing::debug!(url = %url, error = %e, "Failed to parse /api/system response");
                     None
                 }
             }
@@ -151,12 +151,12 @@ async fn fetch_system_info(
             tracing::debug!(
                 url = %url,
                 status = %response.status(),
-                "Endpoint does not support /v0/system API"
+                "Endpoint does not support /api/system API"
             );
             None
         }
         Err(e) => {
-            tracing::debug!(url = %url, error = %e, "Failed to call /v0/system API");
+            tracing::debug!(url = %url, error = %e, "Failed to call /api/system API");
             None
         }
     }
@@ -219,7 +219,7 @@ pub struct EndpointResponse {
     pub notes: Option<String>,
     /// Responses API対応フラグ（SPEC-24157000）
     pub supports_responses_api: bool,
-    /// デバイス情報（SPEC-f8e3a1b7: /v0/systemから取得）
+    /// デバイス情報（SPEC-f8e3a1b7: /api/systemから取得）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_info: Option<crate::types::endpoint::DeviceInfo>,
     /// モデル数（一覧取得時）
@@ -438,7 +438,7 @@ fn ensure_admin(claims: &Claims) -> Result<(), impl IntoResponse> {
 
 // --- Handlers ---
 
-/// POST /v0/endpoints - エンドポイント登録
+/// POST /api/endpoints - エンドポイント登録
 pub async fn create_endpoint(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -554,7 +554,7 @@ pub async fn create_endpoint(
             // EndpointRegistryキャッシュも更新（DBは既に保存済みなのでキャッシュのみ）
             state.endpoint_registry.add_to_cache(endpoint.clone()).await;
 
-            // SPEC-f8e3a1b7: /v0/system APIを呼び出してデバイス情報を取得
+            // SPEC-f8e3a1b7: /api/system APIを呼び出してデバイス情報を取得
             let endpoint_id = endpoint.id;
             let base_url = endpoint.base_url.clone();
             let api_key = endpoint.api_key.clone();
@@ -570,7 +570,7 @@ pub async fn create_endpoint(
                         endpoint_id = %endpoint_id,
                         device_type = ?device_info.device_type,
                         gpu_count = device_info.gpu_devices.len(),
-                        "Retrieved device info from /v0/system"
+                        "Retrieved device info from /api/system"
                     );
                     if let Err(e) = registry
                         .update_device_info(endpoint_id, Some(device_info))
@@ -613,7 +613,7 @@ pub async fn create_endpoint(
     }
 }
 
-/// GET /v0/endpoints - エンドポイント一覧
+/// GET /api/endpoints - エンドポイント一覧
 pub async fn list_endpoints(
     State(state): State<AppState>,
     Query(query): Query<ListEndpointsQuery>,
@@ -672,7 +672,7 @@ pub async fn list_endpoints(
     }
 }
 
-/// GET /v0/endpoints/:id - エンドポイント詳細
+/// GET /api/endpoints/:id - エンドポイント詳細
 pub async fn get_endpoint(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -710,7 +710,7 @@ pub async fn get_endpoint(
     }
 }
 
-/// PUT /v0/endpoints/:id - エンドポイント更新
+/// PUT /api/endpoints/:id - エンドポイント更新
 pub async fn update_endpoint(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -869,7 +869,7 @@ pub async fn update_endpoint(
     }
 }
 
-/// DELETE /v0/endpoints/:id - エンドポイント削除
+/// DELETE /api/endpoints/:id - エンドポイント削除
 pub async fn delete_endpoint(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -905,7 +905,7 @@ pub async fn delete_endpoint(
     }
 }
 
-/// POST /v0/endpoints/:id/test - 接続テスト
+/// POST /api/endpoints/:id/test - 接続テスト
 pub async fn test_endpoint(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -1098,7 +1098,7 @@ pub async fn test_endpoint(
     }
 }
 
-/// POST /v0/endpoints/:id/sync - モデル一覧同期
+/// POST /api/endpoints/:id/sync - モデル一覧同期
 pub async fn sync_endpoint_models(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -1203,7 +1203,7 @@ pub async fn sync_endpoint_models(
     }
 }
 
-/// GET /v0/endpoints/:id/models - エンドポイントのモデル一覧
+/// GET /api/endpoints/:id/models - エンドポイントのモデル一覧
 pub async fn list_endpoint_models(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -1260,7 +1260,7 @@ pub async fn list_endpoint_models(
     }
 }
 
-/// POST /v0/endpoints/:id/chat/completions - エンドポイントへのチャットプロキシ
+/// POST /api/endpoints/:id/chat/completions - エンドポイントへのチャットプロキシ
 ///
 /// ダッシュボードのPlayground用。JWT認証済みユーザーが直接エンドポイントと通信できる。
 /// リクエストをそのままエンドポイントの`/v1/chat/completions`に転送する。
@@ -1395,7 +1395,7 @@ pub async fn proxy_chat_completions(
 
 // --- SPEC-66555000: ダウンロード・メタデータ関連ハンドラー ---
 
-/// POST /v0/endpoints/:id/download - モデルダウンロードリクエスト（xLLMのみ）
+/// POST /api/endpoints/:id/download - モデルダウンロードリクエスト（xLLMのみ）
 pub async fn download_model(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -1463,7 +1463,7 @@ pub async fn download_model(
     }
 }
 
-/// GET /v0/endpoints/:id/download/progress - ダウンロード進捗一覧
+/// GET /api/endpoints/:id/download/progress - ダウンロード進捗一覧
 pub async fn download_progress(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -1527,7 +1527,7 @@ pub struct ModelInfoPath {
     pub model: String,
 }
 
-/// GET /v0/endpoints/:id/models/:model/info - モデルメタデータ取得
+/// GET /api/endpoints/:id/models/:model/info - モデルメタデータ取得
 pub async fn get_model_info(
     State(state): State<AppState>,
     Path(params): Path<ModelInfoPath>,

@@ -27,7 +27,8 @@ async fn assert_register_safetensors_fails(repo: &str, siblings: serde_json::Val
         .await;
 
     let response = Client::new()
-        .post(format!("http://{}/v0/models/register", lb.addr()))
+        .post(format!("http://{}/api/models/register", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "repo": repo,

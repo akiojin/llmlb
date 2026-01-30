@@ -67,7 +67,7 @@ curl http://localhost:8080/v1/models \
 
 ```bash
 # 特定モデルのマニフェストを取得
-curl http://localhost:8080/v0/models/registry/llama-3.2-1b/manifest.json \
+curl http://localhost:8080/api/models/registry/llama-3.2-1b/manifest.json \
   -H "Authorization: Bearer sk-your-api-key"
 ```
 
@@ -112,7 +112,7 @@ for model in models:
 # マニフェストを取得
 model_id = "llama-3.2-1b"
 manifest = httpx.get(
-    f"{BASE_URL}/v0/models/registry/{model_id}/manifest.json",
+    f"{BASE_URL}/api/models/registry/{model_id}/manifest.json",
     headers=HEADERS
 ).json()
 

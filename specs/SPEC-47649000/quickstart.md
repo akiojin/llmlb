@@ -54,11 +54,11 @@ curl http://localhost:8080/v1/models \
 
 ```bash
 # 単一タグ検索
-curl "http://localhost:8080/v0/models?tag=vision" \
+curl "http://localhost:8080/api/models?tag=vision" \
   -H "Authorization: Bearer sk_debug"
 
 # 複数タグAND検索
-curl "http://localhost:8080/v0/models?tag=vision&tag=chat" \
+curl "http://localhost:8080/api/models?tag=vision&tag=chat" \
   -H "Authorization: Bearer sk_debug"
 ```
 
@@ -66,11 +66,11 @@ curl "http://localhost:8080/v0/models?tag=vision&tag=chat" \
 
 ```bash
 # HuggingFace safetensorsモデルのみ
-curl "http://localhost:8080/v0/models?source=hf_safetensors" \
+curl "http://localhost:8080/api/models?source=hf_safetensors" \
   -H "Authorization: Bearer sk_debug"
 
 # HuggingFace GGUFモデルのみ
-curl "http://localhost:8080/v0/models?source=hf_gguf" \
+curl "http://localhost:8080/api/models?source=hf_gguf" \
   -H "Authorization: Bearer sk_debug"
 ```
 
@@ -88,7 +88,7 @@ models = response.json()["data"]
 
 # タグ検索
 response = requests.get(
-    f"{BASE_URL}/v0/models",
+    f"{BASE_URL}/api/models",
     params={"tag": ["vision", "chat"]},
     headers=HEADERS
 )
@@ -96,7 +96,7 @@ vision_models = response.json()["models"]
 
 # ソースフィルタリング
 response = requests.get(
-    f"{BASE_URL}/v0/models",
+    f"{BASE_URL}/api/models",
     params={"source": "hf_safetensors"},
     headers=HEADERS
 )

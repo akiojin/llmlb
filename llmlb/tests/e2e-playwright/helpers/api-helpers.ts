@@ -92,11 +92,11 @@ export async function getModels(request: APIRequestContext): Promise<RegisteredM
 }
 
 /**
- * Get list of all registered models from /v0/models/registered
+ * Get list of all registered models from /api/models/registered
  * This includes models not attached to online endpoints
  */
 export async function getRegisteredModels(request: APIRequestContext): Promise<RegisteredModel[]> {
-  const response = await request.get(`${API_BASE}/v0/models/registered`, {
+  const response = await request.get(`${API_BASE}/api/models/registered`, {
     headers: AUTH_HEADER,
   });
   if (!response.ok()) {
@@ -139,7 +139,7 @@ export async function deleteModel(
   request: APIRequestContext,
   modelName: string
 ): Promise<boolean> {
-  const response = await request.delete(`${API_BASE}/v0/models/${encodeURIComponent(modelName)}`, {
+  const response = await request.delete(`${API_BASE}/api/models/${encodeURIComponent(modelName)}`, {
     headers: AUTH_HEADER,
   });
   return response.status() === 204 || response.status() === 200;
@@ -147,7 +147,7 @@ export async function deleteModel(
 
 /**
  * Clear all registered models
- * Uses /v0/models/registered to get ALL registered models (not just those on online endpoints)
+ * Uses /api/models/registered to get ALL registered models (not just those on online endpoints)
  */
 export async function clearAllModels(request: APIRequestContext): Promise<void> {
   const models = await getRegisteredModels(request);
@@ -187,7 +187,7 @@ export interface HubModel {
  * Get list of supported models from Model Hub
  */
 export async function getHubModels(request: APIRequestContext): Promise<HubModel[]> {
-  const response = await request.get(`${API_BASE}/v0/models/hub`, {
+  const response = await request.get(`${API_BASE}/api/models/hub`, {
     headers: AUTH_HEADER,
   });
   if (!response.ok()) {
@@ -213,7 +213,7 @@ export async function registerModel(
   const payload: Record<string, unknown> = { repo };
   if (filename) payload.filename = filename;
 
-  const response = await request.post(`${API_BASE}/v0/models/register`, {
+  const response = await request.post(`${API_BASE}/api/models/register`, {
     headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
     data: payload,
   });
@@ -327,10 +327,10 @@ export interface NodeInfo {
 
 /**
  * Get list of nodes (endpoints)
- * Note: /v0/runtimes was deprecated in SPEC-66555000, now using /v0/dashboard/endpoints
+ * Note: /api/runtimes was deprecated in SPEC-66555000, now using /api/dashboard/endpoints
  */
 export async function getNodes(request: APIRequestContext): Promise<NodeInfo[]> {
-  const response = await request.get(`${API_BASE}/v0/dashboard/endpoints`, {
+  const response = await request.get(`${API_BASE}/api/dashboard/endpoints`, {
     headers: AUTH_HEADER,
   });
   if (!response.ok()) {

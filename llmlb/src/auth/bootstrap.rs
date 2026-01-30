@@ -143,21 +143,37 @@ async fn ensure_dev_admin_exists(pool: &sqlx::SqlitePool) -> Result<(), LbError>
     // 開発用のパスワードハッシュを生成
     let password_hash = hash_password("test")?;
 
-    // nil UUIDでadminユーザーを作成
-    match db::users::create_with_id(pool, dev_user_id, "admin", &password_hash, UserRole::Admin)
+    let fallback_username = format!("admin-dev-{}", &Uuid::new_v4().to_string()[..8]);
+    let candidates = ["admin", "admin-dev", fallback_username.as_str()];
+
+    for username in candidates {
+        match db::users::create_with_id(
+            pool,
+            dev_user_id,
+            username,
+            &password_hash,
+            UserRole::Admin,
+        )
         .await
-    {
-        Ok(_) => {
-            tracing::info!("Created dev admin user with nil UUID");
-            Ok(())
+        {
+            Ok(_) => {
+                tracing::info!(
+                    "Created dev admin user with nil UUID (username={})",
+                    username
+                );
+                return Ok(());
+            }
+            Err(LbError::Database(ref e)) if e.contains("already exists") => {
+                tracing::debug!("Dev admin username conflict: {}", username);
+                continue;
+            }
+            Err(e) => return Err(e),
         }
-        Err(LbError::Database(ref e)) if e.contains("already exists") => {
-            // usernameの重複は許容（別のIDでadminが存在する場合）
-            tracing::debug!("Dev admin username conflict, skipping");
-            Ok(())
-        }
-        Err(e) => Err(e),
     }
+
+    Err(LbError::Database(
+        "Failed to create dev admin user due to repeated username conflicts".to_string(),
+    ))
 }
 
 /// 初回起動時の管理者作成処理

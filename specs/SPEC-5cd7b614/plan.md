@@ -33,7 +33,7 @@ LLM runtimeロードバランサーで GPU を搭載したノードのみを受�
 - **既存機能**: 直近の `SPEC-47c6f44c` で自動マージ周りが更新済み。GPU 関連の導線は部分的に `feature/gpu-performance` で導入済み。
 - **利用可能な構成要素**:
   - Nodeサイド: GPU情報を収集する `sysinfo` / `nvml-wrapper`。
-  - Load Balancer: 登録 API (`POST /v0/nodes`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
+  - Load Balancer: 登録 API (`POST /api/nodes`)、ヘルス/ダッシュボード API、`registry` 管理ロジック。
   - Web UI: `llmlb/src/web/static/app.js`（GPU指標表示を既に追加済みのため連携確認のみ）。
 - **制約**: Spec Kit カスタム運用によりブランチ・Worktree操作不可。CI は Quality Checks + Auto Merge を利用し、ローカルで同等検証を必須。
 
@@ -64,7 +64,7 @@ LLM runtimeロードバランサーで GPU を搭載したノードのみを受�
 
 ### 登録時バリデーション
 
-- Node から送信される `POST /v0/nodes` のペイロードに `gpu_devices`（例: `[{model, count}]`）を要求。
+- Node から送信される `POST /api/nodes` のペイロードに `gpu_devices`（例: `[{model, count}]`）を要求。
 - Load Balancer で `gpu_devices` を検証。空、null、0枚は即 403 (エラーメッセージ: "GPU hardware is required").
 - Node 側では起動時に GPU 検出を行い、取得失敗時は登録リクエスト自体を中止する fallback を実装予定。
 
@@ -75,7 +75,7 @@ LLM runtimeロードバランサーで GPU を搭載したノードのみを受�
 
 ### ダッシュボード & API
 
-- `GET /v0/nodes` レスポンスへ GPU 情報フィールドを含める。
+- `GET /api/nodes` レスポンスへ GPU 情報フィールドを含める。
 - フロントエンドで GPU 名／枚数表示。既にGPU列が前提のUIが存在するため整合性チェックのみ。
 
 ## テスト戦略

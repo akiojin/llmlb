@@ -60,11 +60,11 @@
 
 ### Contract Tests (並列実行可能)
 
-- [x] **T009** [P] `llmlb/tests/contract/test_node_registration.rs` にノード登録 Contract Test (POST /v0/nodes)
-- [x] **T010** [P] `llmlb/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /v0/health)
+- [x] **T009** [P] `llmlb/tests/contract/test_node_registration.rs` にノード登録 Contract Test (POST /api/nodes)
+- [x] **T010** [P] `llmlb/tests/contract/test_health_check.rs` にヘルスチェック Contract Test (POST /api/health)
 - [x] **T011** [P] `llmlb/tests/contract/test_proxy_chat.rs` にプロキシChat Contract Test (POST /v1/chat/completions)
 - [x] **T012** [P] `llmlb/tests/contract/test_proxy_generate.rs` にプロキシGenerate Contract Test (POST /v1/completions)
-- [x] **T013** [P] `llmlb/tests/contract/test_nodes_list.rs` にノード一覧 Contract Test (GET /v0/nodes)
+- [x] **T013** [P] `llmlb/tests/contract/test_nodes_list.rs` にノード一覧 Contract Test (GET /api/nodes)
 
 ### Integration Tests (並列実行可能)
 
@@ -103,14 +103,14 @@
 ### ノード登録API (Contract Test T009をGREENに)
 
 - [x] **T027** `llmlb/src/api/mod.rs` にAPIモジュール構造定義
-- [x] **T028** `llmlb/src/api/nodes.rs` にノード登録ハンドラー実装 (POST /v0/nodes)
+- [x] **T028** `llmlb/src/api/nodes.rs` にノード登録ハンドラー実装 (POST /api/nodes)
 - [x] **T029** `llmlb/src/registry/mod.rs` にノード登録管理モジュール
 - [x] **T030** `llmlb/src/registry/manager.rs` にNodeRegistryManager実装 (登録・更新・削除)
 - [x] **T031** **検証**: Contract Test T009が合格 (GREEN)
 
 ### ヘルスチェックAPI (Contract Test T010をGREENに)
 
-- [x] **T032** `llmlb/src/api/health.rs` にヘルスチェックハンドラー実装 (POST /v0/health)
+- [x] **T032** `llmlb/src/api/health.rs` にヘルスチェックハンドラー実装 (POST /api/health)
 - [x] **T033** `llmlb/src/health/mod.rs` にヘルスチェックモジュール
 - [x] **T034** `llmlb/src/health/monitor.rs` にHealthMonitor実装 (定期チェック、タイムアウト検知)
 - [x] **T035** **検証**: Contract Test T010が合格 (GREEN)
@@ -124,7 +124,7 @@
 
 ### ノード一覧API (Contract Test T013をGREENに)
 
-- [x] **T040** `llmlb/src/api/nodes.rs` にノード一覧ハンドラー追加 (GET /v0/nodes)
+- [x] **T040** `llmlb/src/api/nodes.rs` にノード一覧ハンドラー追加 (GET /api/nodes)
 - [x] **T041** **検証**: Contract Test T013が合格 (GREEN)
 
 ### DB永続化 (Integration Test T014をGREENに)
@@ -166,8 +166,8 @@
 ### Load Balancer通信クライアント (並列実行可能)
 
 - [x] **T057** [P] `node/src/client/mod.rs` にLoad Balancer通信モジュール
-- [x] **T058** [P] `node/src/client/register.rs` に自己登録クライアント実装 (POST /v0/nodes)
-- [x] **T059** [P] `node/src/client/heartbeat.rs` にハートビートクライアント実装 (POST /v0/health、10秒間隔)
+- [x] **T058** [P] `node/src/client/register.rs` に自己登録クライアント実装 (POST /api/nodes)
+- [x] **T059** [P] `node/src/client/heartbeat.rs` にハートビートクライアント実装 (POST /api/health、10秒間隔)
 
 ### LLM runtime管理 (並列実行可能)
 

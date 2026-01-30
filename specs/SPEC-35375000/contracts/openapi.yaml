@@ -131,7 +131,7 @@ paths:
                 # TYPE llmlb_backpressure_rejections_total counter
                 llmlb_backpressure_rejections_total 50
 
-  /v0/load-status:
+  /api/load-status:
     get:
       summary: 負荷状況の取得
       description: 現在の負荷状況とバックプレッシャー状態を取得します。

@@ -57,8 +57,9 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/login")
+                .uri("/api/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -86,8 +87,9 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/api-keys")
+                .uri("/api/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -122,6 +124,7 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -157,8 +160,9 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/api-keys")
+                .uri("/api/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -192,8 +196,9 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("DELETE")
-                .uri(format!("/v0/api-keys/{}", api_key_id))
+                .uri(format!("/api/api-keys/{}", api_key_id))
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -207,6 +212,7 @@ async fn test_complete_api_key_flow() {
     let invalid_key_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -241,8 +247,9 @@ async fn test_api_key_with_expiration() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/login")
+                .uri("/api/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -268,8 +275,9 @@ async fn test_api_key_with_expiration() {
     let create_key_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/api-keys")
+                .uri("/api/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(

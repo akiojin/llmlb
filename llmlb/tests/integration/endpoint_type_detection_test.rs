@@ -19,7 +19,8 @@ async fn test_endpoint_type_auto_detection_offline() {
 
     // エンドポイント登録（接続先がないのでタイプはunknownになる）
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Unknown Endpoint",
@@ -53,7 +54,7 @@ async fn test_endpoint_type_detection_priority() {
     let _client = Client::new();
 
     // xLLMエンドポイント判別テスト
-    // GET /v0/system が xllm_version を返す場合 → xLLMタイプ
+    // GET /api/system が xllm_version を返す場合 → xLLMタイプ
 
     // Ollamaエンドポイント判別テスト
     // GET /api/tags が成功する場合 → Ollamaタイプ
@@ -68,7 +69,7 @@ async fn test_endpoint_type_detection_priority() {
     let _ = server;
 }
 
-/// US6-シナリオ3: xLLM判別（/v0/systemエンドポイント）
+/// US6-シナリオ3: xLLM判別（/api/systemエンドポイント）
 #[tokio::test]
 #[ignore = "モックサーバーが必要 - T113で実装後に有効化"]
 async fn test_endpoint_type_detection_xllm() {
@@ -76,7 +77,7 @@ async fn test_endpoint_type_detection_xllm() {
     let _client = Client::new();
 
     // xLLM判別テスト
-    // モックサーバーが GET /v0/system に対して
+    // モックサーバーが GET /api/system に対して
     // { "xllm_version": "0.1.0" } を返す場合
     // → endpoint_type が "xllm" になることを確認
 
@@ -135,7 +136,8 @@ async fn test_endpoint_type_redetection_on_online() {
 
     // 最初はオフラインでunknownタイプ
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",

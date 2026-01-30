@@ -1,6 +1,6 @@
 # 契約: Models API 拡張 (SPEC-11106000)
 
-## POST /v0/models/register
+## POST /api/models/register
 - **Purpose**: HFリポジトリ/ファイルを対応モデルとして登録（メタデータのみ）。
 - **Body**:
 ```json
@@ -15,7 +15,7 @@
 ```
 - **Errors**: 400 無効名/URL欠損, 409 重複, 424 HFから取得不可。
 
-## GET /v0/models
+## GET /api/models
 - **Purpose**: Node向けメタデータ一覧。
 - **Response** 200:
 ```json
@@ -31,7 +31,7 @@
 }
 ```
 
-## GET /v0/models/registry/:model_name/manifest.json
+## GET /api/models/registry/:model_name/manifest.json
 - **Purpose**: Node向けマニフェスト（ファイル一覧）。
 - **Response** 200:
 ```json

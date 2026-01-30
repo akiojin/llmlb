@@ -1,6 +1,6 @@
-//! Integration Test: T024 - /v0/system API統合テスト
+//! Integration Test: T024 - /api/system API統合テスト
 //!
-//! SPEC-f8e3a1b7: エンドポイント登録時の/v0/system API呼び出し
+//! SPEC-f8e3a1b7: エンドポイント登録時の/api/system API呼び出し
 //!
 //! xLLMエンドポイントからデバイス情報を取得し、Endpoint.device_infoに保存する。
 //! 非対応エンドポイント（Ollama、vLLM等）では無視される。
@@ -14,16 +14,16 @@ use tokio::time::sleep;
 use crate::support::http::spawn_lb;
 use crate::support::lb::spawn_test_lb;
 
-/// xLLM互換のモックエンドポイントを起動（/v0/system対応）
+/// xLLM互換のモックエンドポイントを起動（/api/system対応）
 async fn spawn_xllm_mock() -> crate::support::http::TestServer {
     let app = Router::new()
-        .route("/v0/system", get(system_handler))
+        .route("/api/system", get(system_handler))
         .route("/v1/models", get(models_handler))
         .route("/health", get(health_handler));
     spawn_lb(app).await
 }
 
-/// /v0/system レスポンス（xLLM互換）
+/// /api/system レスポンス（xLLM互換）
 async fn system_handler() -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -60,7 +60,7 @@ async fn health_handler() -> impl IntoResponse {
     (StatusCode::OK, Json(json!({"status": "ok"})))
 }
 
-/// T024-1: xLLMエンドポイント登録時に/v0/systemからデバイス情報を取得
+/// T024-1: xLLMエンドポイント登録時に/api/systemからデバイス情報を取得
 #[tokio::test]
 async fn test_v0_system_device_info_retrieved_on_registration() {
     let lb = spawn_test_lb().await;
@@ -69,7 +69,8 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
 
     // エンドポイント登録
     let response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Test",
@@ -83,12 +84,17 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
     let body: Value = response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // /v0/systemは非同期で呼ばれるため、少し待つ
+    // /api/systemは非同期で呼ばれるため、少し待つ
     sleep(Duration::from_millis(500)).await;
 
     // エンドポイント詳細を取得してdevice_infoを確認
     let detail_response = client
-        .get(format!("http://{}/v0/endpoints/{}", lb.addr(), endpoint_id))
+        .get(format!(
+            "http://{}/api/endpoints/{}",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -100,7 +106,7 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
     // device_infoが取得されていることを確認
     assert!(
         detail.get("device_info").is_some() && !detail["device_info"].is_null(),
-        "device_info should be retrieved from /v0/system: {:?}",
+        "device_info should be retrieved from /api/system: {:?}",
         detail
     );
 
@@ -121,16 +127,16 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
     mock_xllm.stop().await;
 }
 
-/// /v0/system非対応エンドポイント（404を返す）
+/// /api/system非対応エンドポイント（404を返す）
 async fn spawn_non_xllm_mock() -> crate::support::http::TestServer {
     let app = Router::new()
         .route("/v1/models", get(models_handler))
         .route("/health", get(health_handler));
-    // /v0/systemルートなし - 404を返す
+    // /api/systemルートなし - 404を返す
     spawn_lb(app).await
 }
 
-/// T024-2: /v0/system非対応エンドポイント（Ollama等）では無視される
+/// T024-2: /api/system非対応エンドポイント（Ollama等）では無視される
 #[tokio::test]
 async fn test_v0_system_ignored_for_unsupported_endpoint() {
     let lb = spawn_test_lb().await;
@@ -139,7 +145,8 @@ async fn test_v0_system_ignored_for_unsupported_endpoint() {
 
     // エンドポイント登録
     let response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Test",
@@ -153,12 +160,17 @@ async fn test_v0_system_ignored_for_unsupported_endpoint() {
     let body: Value = response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // /v0/systemは非同期で呼ばれるため、少し待つ
+    // /api/systemは非同期で呼ばれるため、少し待つ
     sleep(Duration::from_millis(500)).await;
 
     // エンドポイント詳細を取得
     let detail_response = client
-        .get(format!("http://{}/v0/endpoints/{}", lb.addr(), endpoint_id))
+        .get(format!(
+            "http://{}/api/endpoints/{}",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -179,7 +191,7 @@ async fn test_v0_system_ignored_for_unsupported_endpoint() {
     mock_ollama.stop().await;
 }
 
-/// CPU専用エンドポイントの/v0/systemレスポンス
+/// CPU専用エンドポイントの/api/systemレスポンス
 async fn cpu_system_handler() -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -195,7 +207,7 @@ async fn cpu_system_handler() -> impl IntoResponse {
 /// CPU専用のモックエンドポイントを起動
 async fn spawn_cpu_mock() -> crate::support::http::TestServer {
     let app = Router::new()
-        .route("/v0/system", get(cpu_system_handler))
+        .route("/api/system", get(cpu_system_handler))
         .route("/v1/models", get(models_handler))
         .route("/health", get(health_handler));
     spawn_lb(app).await
@@ -210,7 +222,8 @@ async fn test_v0_system_cpu_device_info() {
 
     // エンドポイント登録
     let response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "CPU Only",
@@ -224,12 +237,17 @@ async fn test_v0_system_cpu_device_info() {
     let body: Value = response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // /v0/systemは非同期で呼ばれるため、少し待つ
+    // /api/systemは非同期で呼ばれるため、少し待つ
     sleep(Duration::from_millis(500)).await;
 
     // エンドポイント詳細を取得
     let detail_response = client
-        .get(format!("http://{}/v0/endpoints/{}", lb.addr(), endpoint_id))
+        .get(format!(
+            "http://{}/api/endpoints/{}",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

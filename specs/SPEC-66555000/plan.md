@@ -37,8 +37,8 @@ Ollama/vLLM等の外部OpenAI互換APIも統一的に管理できるようにな
 
 **主要変更点**:
 
-- ノード自己登録（POST /v0/nodes）→ ロードバランサー主導登録（POST /v0/endpoints）
-- プッシュ型ハートビート（POST /v0/health）→ プル型ヘルスチェック
+- ノード自己登録（POST /api/nodes）→ ロードバランサー主導登録（POST /api/endpoints）
+- プッシュ型ハートビート（POST /api/health）→ プル型ヘルスチェック
 - GPU必須要件 → 外部エンドポイントはGPU情報不問
 
 ### 追加要件（2026-01-26）: エンドポイントタイプ自動判別
@@ -177,7 +177,7 @@ llmlb/
 
 | タイプ | 判別方法 | 根拠 |
 |--------|----------|------|
-| xLLM | `GET /v0/system` レスポンスに `xllm_version` | 本プロジェクト独自エンドポイント |
+| xLLM | `GET /api/system` レスポンスに `xllm_version` | 本プロジェクト独自エンドポイント |
 | Ollama | `GET /api/tags` が有効、または `Ollama` ヘッダー | Ollama標準API |
 | vLLM | `GET /v1/models` + `vllm` in Server header | vLLM標準動作 |
 | OpenAI互換 | 上記いずれにも該当しない | フォールバック |
@@ -196,13 +196,13 @@ llmlb/
 **xLLMモデルダウンロードAPI**:
 
 ```
-POST /v0/endpoints/:id/download
+POST /api/endpoints/:id/download
 {
   "model": "Qwen/Qwen2.5-7B-Instruct-GGUF",
   "filename": "qwen2.5-7b-instruct-q4_k_m.gguf"
 }
 
-GET /v0/endpoints/:id/download/progress
+GET /api/endpoints/:id/download/progress
 {
   "model": "...",
   "progress": 45.2,
@@ -213,7 +213,7 @@ GET /v0/endpoints/:id/download/progress
 
 **モデルメタデータ取得**:
 
-- xLLM: `GET /v0/models/:model/info` → `context_length`
+- xLLM: `GET /api/models/:model/info` → `context_length`
 - Ollama: `POST /api/show` → `parameters.num_ctx`
 
 ## Phase 1: 設計＆契約
@@ -238,20 +238,20 @@ GET /v0/endpoints/:id/download/progress
 
 ```text
 # エンドポイント管理API（認証必須）
-POST   /v0/endpoints              # 登録（タイプ自動判別）
-GET    /v0/endpoints              # 一覧（?type=xllm でフィルタ可能）
-GET    /v0/endpoints/:id          # 詳細（タイプ情報含む）
-PUT    /v0/endpoints/:id          # 更新（タイプ手動変更可能）
-DELETE /v0/endpoints/:id          # 削除
-POST   /v0/endpoints/:id/test     # 接続テスト（タイプ再判別）
-POST   /v0/endpoints/:id/sync     # モデル同期
+POST   /api/endpoints              # 登録（タイプ自動判別）
+GET    /api/endpoints              # 一覧（?type=xllm でフィルタ可能）
+GET    /api/endpoints/:id          # 詳細（タイプ情報含む）
+PUT    /api/endpoints/:id          # 更新（タイプ手動変更可能）
+DELETE /api/endpoints/:id          # 削除
+POST   /api/endpoints/:id/test     # 接続テスト（タイプ再判別）
+POST   /api/endpoints/:id/sync     # モデル同期
 
 # xLLM専用API（タイプ=xllmのみ許可）
-POST   /v0/endpoints/:id/download          # モデルダウンロード開始
-GET    /v0/endpoints/:id/download/progress # ダウンロード進捗
+POST   /api/endpoints/:id/download          # モデルダウンロード開始
+GET    /api/endpoints/:id/download/progress # ダウンロード進捗
 
 # モデルメタデータAPI（xLLM/Ollamaのみ）
-GET    /v0/endpoints/:id/models/:model/info  # モデル情報（max_tokens等）
+GET    /api/endpoints/:id/models/:model/info  # モデル情報（max_tokens等）
 ```
 
 ### 3. 契約テスト

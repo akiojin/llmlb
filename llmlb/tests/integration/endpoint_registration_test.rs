@@ -19,7 +19,8 @@ async fn test_endpoint_registration_appears_in_list() {
 
     // エンドポイント登録
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production Ollama",
@@ -38,7 +39,8 @@ async fn test_endpoint_registration_appears_in_list() {
 
     // 一覧で確認
     let list_response = client
-        .get(format!("http://{}/v0/endpoints", server.addr()))
+        .get(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -62,7 +64,8 @@ async fn test_endpoint_registration_initial_status_pending() {
     let client = Client::new();
 
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -90,7 +93,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // Ollama
     let ollama_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Server",
@@ -103,7 +107,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // vLLM
     let vllm_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "vLLM Server",
@@ -116,7 +121,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // xLLM
     let xllm_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -129,7 +135,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // 全て一覧に表示される
     let list_response = client
-        .get(format!("http://{}/v0/endpoints", server.addr()))
+        .get(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -147,7 +154,8 @@ async fn test_endpoint_registration_with_api_key() {
     let client = Client::new();
 
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "OpenAI Compatible",

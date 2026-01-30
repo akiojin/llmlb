@@ -117,4 +117,4 @@ spdlogの既存機能で対応可能（daily_file_sink_mtを使用）。
 ### Phase 3: 統合確認
 
 1. Load Balancer/Node両方を起動してログ出力確認
-2. `GET /v0/logs` エンドポイント動作確認
+2. `GET /api/logs` エンドポイント動作確認

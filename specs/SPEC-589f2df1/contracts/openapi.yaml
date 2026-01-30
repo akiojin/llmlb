@@ -13,7 +13,7 @@ servers:
     description: ローカル開発サーバー
 
 paths:
-  /v0/nodes:
+  /api/nodes:
     get:
       summary: ノード一覧と負荷状況の取得
       description: 登録済みノードの一覧と現在の負荷状況を取得する。
@@ -36,7 +36,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/nodes/{node_id}/metrics:
+  /api/nodes/{node_id}/metrics:
     get:
       summary: ノードメトリクスの取得
       description: 特定ノードの詳細なメトリクスを取得する。
@@ -66,7 +66,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/load-balancer/stats:
+  /api/load-balancer/stats:
     get:
       summary: ロードバランサー統計の取得
       description: ロードバランサーの選択統計を取得する。

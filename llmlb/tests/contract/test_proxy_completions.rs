@@ -95,7 +95,7 @@ async fn proxy_completions_end_to_end_success() {
 
     // Endpoint登録 + モデル同期（Node登録APIは廃止済み）
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&serde_json::json!({
             "name": "stub-endpoint",
@@ -117,7 +117,7 @@ async fn proxy_completions_end_to_end_success() {
     // ヘルスチェックでオンライン化（routingはonlineのみ対象）
     let test_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             lb.addr(),
             endpoint_id
         ))
@@ -129,7 +129,7 @@ async fn proxy_completions_end_to_end_success() {
 
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             lb.addr(),
             endpoint_id
         ))
@@ -173,7 +173,7 @@ async fn proxy_completions_propagates_upstream_error() {
 
     // Endpoint登録 + モデル同期（Node登録APIは廃止済み）
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&serde_json::json!({
             "name": "stub-endpoint-error",
@@ -195,7 +195,7 @@ async fn proxy_completions_propagates_upstream_error() {
     // ヘルスチェックでオンライン化（routingはonlineのみ対象）
     let test_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             lb.addr(),
             endpoint_id
         ))
@@ -207,7 +207,7 @@ async fn proxy_completions_propagates_upstream_error() {
 
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             lb.addr(),
             endpoint_id
         ))

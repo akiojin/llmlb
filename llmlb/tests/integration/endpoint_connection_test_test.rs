@@ -31,7 +31,8 @@ async fn test_connection_test_success() {
     let client = Client::new();
 
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -47,10 +48,11 @@ async fn test_connection_test_success() {
     // 接続テスト
     let test_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -71,7 +73,8 @@ async fn test_connection_test_failure_invalid_url() {
     let client = Client::new();
 
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Invalid Endpoint",
@@ -86,10 +89,11 @@ async fn test_connection_test_failure_invalid_url() {
 
     let test_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -124,7 +128,8 @@ async fn test_connection_test_auth_error() {
     let client = Client::new();
 
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Auth Error Endpoint",
@@ -140,10 +145,11 @@ async fn test_connection_test_auth_error() {
 
     let test_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -185,7 +191,8 @@ async fn test_connection_test_returns_model_count() {
     let client = Client::new();
 
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Model Count Test",
@@ -200,10 +207,11 @@ async fn test_connection_test_returns_model_count() {
 
     let test_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

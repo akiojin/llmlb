@@ -84,7 +84,7 @@ struct DownloadInitResponse {
 
 /// Request model download from xLLM endpoint
 ///
-/// Sends POST /v0/models/download to the xLLM endpoint
+/// Sends POST /api/models/download to the xLLM endpoint
 ///
 /// # Arguments
 /// * `client` - HTTP client
@@ -100,7 +100,7 @@ pub async fn download_model(
     api_key: Option<&str>,
     request: &DownloadRequest,
 ) -> Result<String, DownloadError> {
-    let url = format!("{}/v0/models/download", base_url.trim_end_matches('/'));
+    let url = format!("{}/api/models/download", base_url.trim_end_matches('/'));
 
     let mut req_builder = client
         .post(&url)
@@ -134,7 +134,7 @@ pub async fn download_model(
 
 /// Get download progress from xLLM endpoint
 ///
-/// Sends GET /v0/download/progress?task_id={task_id} to the xLLM endpoint
+/// Sends GET /api/download/progress?task_id={task_id} to the xLLM endpoint
 ///
 /// # Arguments
 /// * `client` - HTTP client
@@ -151,7 +151,7 @@ pub async fn get_download_progress(
     task_id: &str,
 ) -> Result<DownloadProgressResponse, DownloadError> {
     let url = format!(
-        "{}/v0/download/progress?task_id={}",
+        "{}/api/download/progress?task_id={}",
         base_url.trim_end_matches('/'),
         task_id
     );

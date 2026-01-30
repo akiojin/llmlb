@@ -78,7 +78,12 @@ jobs:
           toolchain: ${{ matrix.rust }}
 
       - name: Bootstrap pest_generator
-        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+        run: |
+          if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
+            cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+          else
+            echo "Skipping pest_generator bootstrap: vendor/pest_generator/bootstrap/Cargo.toml not found"
+          fi
         shell: bash
 
       - name: Run Rust tests
@@ -106,7 +111,12 @@ jobs:
           toolchain: stable
 
       - name: Bootstrap pest_generator
-        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+        run: |
+          if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
+            cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+          else
+            echo "Skipping pest_generator bootstrap: vendor/pest_generator/bootstrap/Cargo.toml not found"
+          fi
 
       - name: Run OpenAI proxy tests
         run: |
@@ -134,7 +144,12 @@ jobs:
           toolchain: stable
 
       - name: Bootstrap pest_generator
-        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+        run: |
+          if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
+            cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+          else
+            echo "Skipping pest_generator bootstrap: vendor/pest_generator/bootstrap/Cargo.toml not found"
+          fi
 
       - name: Build llmlb
         # Use debug build to enable sk_debug API key for E2E tests

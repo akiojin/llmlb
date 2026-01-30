@@ -1,4 +1,4 @@
-//! Contract Test: GET /v0/endpoints?type=xxx
+//! Contract Test: GET /api/endpoints?type=xxx
 //!
 //! SPEC-66555000: エンドポイントタイプフィルタリングAPI契約テスト
 //!
@@ -29,6 +29,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -77,10 +78,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// GET /v0/endpoints?type=xllm - 正常系: xLLMタイプでフィルタ
+/// GET /api/endpoints?type=xllm - 正常系: xLLMタイプでフィルタ
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_filter_by_type_xllm() {
@@ -97,7 +100,7 @@ async fn test_list_endpoints_filter_by_type_xllm() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -112,7 +115,7 @@ async fn test_list_endpoints_filter_by_type_xllm() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints?type=xllm")
+                .uri("/api/endpoints?type=xllm")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -129,7 +132,7 @@ async fn test_list_endpoints_filter_by_type_xllm() {
     assert!(body["endpoints"].is_array());
 }
 
-/// GET /v0/endpoints?type=ollama - 正常系: Ollamaタイプでフィルタ
+/// GET /api/endpoints?type=ollama - 正常系: Ollamaタイプでフィルタ
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_filter_by_type_ollama() {
@@ -139,7 +142,7 @@ async fn test_list_endpoints_filter_by_type_ollama() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints?type=ollama")
+                .uri("/api/endpoints?type=ollama")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -156,7 +159,7 @@ async fn test_list_endpoints_filter_by_type_ollama() {
     // （フィルタがサポートされていないためエンドポイントがマッチしない）
 }
 
-/// GET /v0/endpoints?type=vllm - 正常系: vLLMタイプでフィルタ
+/// GET /api/endpoints?type=vllm - 正常系: vLLMタイプでフィルタ
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_filter_by_type_vllm() {
@@ -166,7 +169,7 @@ async fn test_list_endpoints_filter_by_type_vllm() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints?type=vllm")
+                .uri("/api/endpoints?type=vllm")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -181,7 +184,7 @@ async fn test_list_endpoints_filter_by_type_vllm() {
     assert!(body["endpoints"].is_array());
 }
 
-/// GET /v0/endpoints?type=openai_compatible - 正常系: OpenAI互換タイプでフィルタ
+/// GET /api/endpoints?type=openai_compatible - 正常系: OpenAI互換タイプでフィルタ
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_filter_by_type_openai_compatible() {
@@ -191,7 +194,7 @@ async fn test_list_endpoints_filter_by_type_openai_compatible() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints?type=openai_compatible")
+                .uri("/api/endpoints?type=openai_compatible")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -206,7 +209,7 @@ async fn test_list_endpoints_filter_by_type_openai_compatible() {
     assert!(body["endpoints"].is_array());
 }
 
-/// GET /v0/endpoints?type=invalid - 異常系: 不正なタイプ指定
+/// GET /api/endpoints?type=invalid - 異常系: 不正なタイプ指定
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_filter_by_invalid_type() {
@@ -216,7 +219,7 @@ async fn test_list_endpoints_filter_by_invalid_type() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints?type=invalid_type")
+                .uri("/api/endpoints?type=invalid_type")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -228,7 +231,7 @@ async fn test_list_endpoints_filter_by_invalid_type() {
     assert!(response.status() == StatusCode::OK || response.status() == StatusCode::BAD_REQUEST);
 }
 
-/// GET /v0/endpoints - レスポンスにendpoint_typeフィールドが含まれる
+/// GET /api/endpoints - レスポンスにendpoint_typeフィールドが含まれる
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_response_includes_endpoint_type() {
@@ -245,7 +248,7 @@ async fn test_list_endpoints_response_includes_endpoint_type() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -259,7 +262,7 @@ async fn test_list_endpoints_response_includes_endpoint_type() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )

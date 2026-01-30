@@ -60,7 +60,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmbeddingResponse"
-  /v0/dashboard/stats:
+  /api/dashboard/stats:
     get:
       summary: LLM Load Balancer stats including cloud key presence flags
       responses:

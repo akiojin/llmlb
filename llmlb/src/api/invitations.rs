@@ -68,7 +68,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
     Ok(())
 }
 
-/// POST /v0/invitations - 招待コード発行
+/// POST /api/invitations - 招待コード発行
 ///
 /// Admin専用。新しい招待コードを発行する。平文コードは発行時のみ返却
 ///
@@ -114,7 +114,7 @@ pub async fn create_invitation(
     ))
 }
 
-/// GET /v0/invitations - 招待コード一覧取得
+/// GET /api/invitations - 招待コード一覧取得
 ///
 /// Admin専用。全招待コードの一覧を返す
 ///
@@ -155,7 +155,7 @@ pub async fn list_invitations(
     }))
 }
 
-/// DELETE /v0/invitations/:id - 招待コード無効化
+/// DELETE /api/invitations/:id - 招待コード無効化
 ///
 /// Admin専用。招待コードを無効化（revoke）する
 ///

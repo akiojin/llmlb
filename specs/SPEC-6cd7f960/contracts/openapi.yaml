@@ -12,7 +12,7 @@ servers:
     description: Development server
 
 paths:
-  /v0/models:
+  /api/models:
     get:
       summary: 対応モデル一覧を取得
       description: |
@@ -55,7 +55,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /v0/models/register:
+  /api/models/register:
     post:
       summary: モデルを登録（Pull開始）
       description: |
@@ -96,7 +96,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /v0/models/{model_id}:
+  /api/models/{model_id}:
     get:
       summary: モデル詳細を取得
       description: 指定されたモデルの詳細情報と状態を返す。

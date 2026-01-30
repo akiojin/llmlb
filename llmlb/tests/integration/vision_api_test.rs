@@ -176,7 +176,7 @@ async fn spawn_vision_node(model_ids: &[&str]) -> TestServer {
     let app = Router::new()
         .route("/v1/chat/completions", post(vision_chat_handler))
         .route("/v1/models", get(models_handler))
-        .route("/v0/health", get(health_handler))
+        .route("/api/health", get(health_handler))
         .route("/test-image.png", get(test_image_handler))
         .with_state(state);
 
@@ -222,10 +222,11 @@ async fn register_and_sync_endpoint(lb: &TestServer, node: &TestServer) -> Strin
 
     let response = Client::new()
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             lb.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

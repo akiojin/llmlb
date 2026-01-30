@@ -69,7 +69,8 @@ async fn register_image_endpoint(
     let client = Client::new();
 
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "image-stub",
@@ -92,10 +93,11 @@ async fn register_image_endpoint(
 
     let test_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             lb.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -104,10 +106,11 @@ async fn register_image_endpoint(
 
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             lb.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

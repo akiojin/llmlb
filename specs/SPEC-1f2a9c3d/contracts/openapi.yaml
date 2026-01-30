@@ -5,7 +5,7 @@ info:
   description: ノードおよびllmlb経由のログ取得API
 
 paths:
-  /v0/logs:
+  /api/logs:
     get:
       summary: ノードログ取得
       description: ノード自身のログを末尾から指定行数取得する
@@ -39,7 +39,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /v0/nodes/{node_id}/logs:
+  /api/nodes/{node_id}/logs:
     get:
       summary: ノードログ取得（llmlb経由）
       description: 指定ノードのログをプロキシして取得する

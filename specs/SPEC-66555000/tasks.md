@@ -35,13 +35,13 @@
 
 ### Contract Tests（API契約検証）✅ RED完了
 
-- [x] T005 [P] `llmlb/tests/contract/endpoints_post_test.rs` に POST /v0/endpoints の contract test
-- [x] T006 [P] `llmlb/tests/contract/endpoints_get_list_test.rs` に GET /v0/endpoints の contract test
-- [x] T007 [P] `llmlb/tests/contract/endpoints_get_detail_test.rs` に GET /v0/endpoints/:id の contract test
-- [x] T008 [P] `llmlb/tests/contract/endpoints_put_test.rs` に PUT /v0/endpoints/:id の contract test
-- [x] T009 [P] `llmlb/tests/contract/endpoints_delete_test.rs` に DELETE /v0/endpoints/:id の contract test
-- [x] T010 [P] `llmlb/tests/contract/endpoints_test_test.rs` に POST /v0/endpoints/:id/test の contract test
-- [x] T011 [P] `llmlb/tests/contract/endpoints_sync_test.rs` に POST /v0/endpoints/:id/sync の contract test
+- [x] T005 [P] `llmlb/tests/contract/endpoints_post_test.rs` に POST /api/endpoints の contract test
+- [x] T006 [P] `llmlb/tests/contract/endpoints_get_list_test.rs` に GET /api/endpoints の contract test
+- [x] T007 [P] `llmlb/tests/contract/endpoints_get_detail_test.rs` に GET /api/endpoints/:id の contract test
+- [x] T008 [P] `llmlb/tests/contract/endpoints_put_test.rs` に PUT /api/endpoints/:id の contract test
+- [x] T009 [P] `llmlb/tests/contract/endpoints_delete_test.rs` に DELETE /api/endpoints/:id の contract test
+- [x] T010 [P] `llmlb/tests/contract/endpoints_test_test.rs` に POST /api/endpoints/:id/test の contract test
+- [x] T011 [P] `llmlb/tests/contract/endpoints_sync_test.rs` に POST /api/endpoints/:id/sync の contract test
 
 ### Integration Tests（ユーザーストーリー検証）✅ RED完了
 
@@ -69,13 +69,13 @@
 
 ### APIハンドラー
 
-- [x] T020 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints ハンドラー
-- [x] T021 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints ハンドラー
-- [x] T022 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id ハンドラー
-- [x] T023 `llmlb/src/api/endpoints.rs` にPUT /v0/endpoints/:id ハンドラー
-- [x] T024 `llmlb/src/api/endpoints.rs` にDELETE /v0/endpoints/:id ハンドラー
-- [x] T025 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints/:id/test ハンドラー
-- [x] T026 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints/:id/sync ハンドラー
+- [x] T020 `llmlb/src/api/endpoints.rs` にPOST /api/endpoints ハンドラー
+- [x] T021 `llmlb/src/api/endpoints.rs` にGET /api/endpoints ハンドラー
+- [x] T022 `llmlb/src/api/endpoints.rs` にGET /api/endpoints/:id ハンドラー
+- [x] T023 `llmlb/src/api/endpoints.rs` にPUT /api/endpoints/:id ハンドラー
+- [x] T024 `llmlb/src/api/endpoints.rs` にDELETE /api/endpoints/:id ハンドラー
+- [x] T025 `llmlb/src/api/endpoints.rs` にPOST /api/endpoints/:id/test ハンドラー
+- [x] T026 `llmlb/src/api/endpoints.rs` にPOST /api/endpoints/:id/sync ハンドラー
 
 ### APIルーティング
 
@@ -120,14 +120,14 @@
 ### 旧コード削除
 
 **注意**: T036-T040の完全削除にはダッシュボードの移行が必要。
-現在ダッシュボードが `/v0/nodes/*` APIを使用しているため、
+現在ダッシュボードが `/api/nodes/*` APIを使用しているため、
 以下は段階的に実行する:
 
 **Phase A: 廃止APIの削除（SPEC-94621a1f, SPEC-443acc8c対応）**
 
 - [x] T036a `api/error.rs` を作成しAppErrorを移動（nodes.rsから分離）
-- [x] T036b POST /v0/nodes ルートを削除（ノード自己登録廃止）
-- [x] T036c POST /v0/health ルートを削除（プッシュ型ヘルスチェック廃止）
+- [x] T036b POST /api/nodes ルートを削除（ノード自己登録廃止）
+- [x] T036c POST /api/health ルートを削除（プッシュ型ヘルスチェック廃止）
 
 **Phase B-0: ダッシュボードのEndpoints API移行**
 
@@ -256,10 +256,10 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 
 #### Contract Tests（API契約検証）
 
-- [x] T102 [P] `llmlb/tests/contract/endpoints_type_filter_test.rs` に GET /v0/endpoints?type=xllm の contract test
-- [x] T103 [P] `llmlb/tests/contract/endpoints_download_test.rs` に POST /v0/endpoints/:id/download の contract test
-- [x] T104 [P] `llmlb/tests/contract/endpoints_download_progress_test.rs` に GET /v0/endpoints/:id/download/progress の contract test
-- [x] T105 [P] `llmlb/tests/contract/endpoints_model_info_test.rs` に GET /v0/endpoints/:id/models/:model/info の contract test
+- [x] T102 [P] `llmlb/tests/contract/endpoints_type_filter_test.rs` に GET /api/endpoints?type=xllm の contract test
+- [x] T103 [P] `llmlb/tests/contract/endpoints_download_test.rs` に POST /api/endpoints/:id/download の contract test
+- [x] T104 [P] `llmlb/tests/contract/endpoints_download_progress_test.rs` に GET /api/endpoints/:id/download/progress の contract test
+- [x] T105 [P] `llmlb/tests/contract/endpoints_model_info_test.rs` に GET /api/endpoints/:id/models/:model/info の contract test
 
 #### Integration Tests（ユーザーストーリー検証）
 
@@ -275,7 +275,7 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 #### タイプ判別ロジック
 
 - [x] T112 `llmlb/src/detection/mod.rs` にエンドポイントタイプ判別モジュールを作成
-- [x] T113 `llmlb/src/detection/xllm.rs` にxLLM判別ロジック実装（GET /v0/system → xllm_version）
+- [x] T113 `llmlb/src/detection/xllm.rs` にxLLM判別ロジック実装（GET /api/system → xllm_version）
 - [x] T114 `llmlb/src/detection/ollama.rs` にOllama判別ロジック実装（GET /api/tags）
 - [x] T115 `llmlb/src/detection/vllm.rs` にvLLM判別ロジック実装（Server header）
 - [x] T116 `llmlb/src/detection/mod.rs` に判別優先順位ロジック実装（xLLM > Ollama > vLLM > OpenAI互換）
@@ -288,29 +288,29 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 
 #### APIハンドラー拡張
 
-- [x] T120 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints でタイプ自動判別を統合
-- [x] T121 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints?type=xxx フィルタリング対応
-- [x] T122 `llmlb/src/api/endpoints.rs` にPUT /v0/endpoints/:id でタイプ手動変更対応
-- [x] T123 `llmlb/src/api/endpoints.rs` にPOST /v0/endpoints/:id/download ハンドラー（xLLMタイプ検証）
-- [x] T124 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id/download/progress ハンドラー
-- [x] T125 `llmlb/src/api/endpoints.rs` にGET /v0/endpoints/:id/models/:model/info ハンドラー
+- [x] T120 `llmlb/src/api/endpoints.rs` にPOST /api/endpoints でタイプ自動判別を統合
+- [x] T121 `llmlb/src/api/endpoints.rs` にGET /api/endpoints?type=xxx フィルタリング対応
+- [x] T122 `llmlb/src/api/endpoints.rs` にPUT /api/endpoints/:id でタイプ手動変更対応
+- [x] T123 `llmlb/src/api/endpoints.rs` にPOST /api/endpoints/:id/download ハンドラー（xLLMタイプ検証）
+- [x] T124 `llmlb/src/api/endpoints.rs` にGET /api/endpoints/:id/download/progress ハンドラー
+- [x] T125 `llmlb/src/api/endpoints.rs` にGET /api/endpoints/:id/models/:model/info ハンドラー
 
 #### xLLMダウンロード連携
 
 - [x] T126 `llmlb/src/xllm/mod.rs` にxLLMクライアントモジュールを作成
-- [x] T127 `llmlb/src/xllm/download.rs` にモデルダウンロード要求・進捗取得実装（POST /v0/models/download, GET /v0/download/progress）
+- [x] T127 `llmlb/src/xllm/download.rs` にモデルダウンロード要求・進捗取得実装（POST /api/models/download, GET /api/download/progress）
 
 #### モデルメタデータ取得
 
 - [x] T128 `llmlb/src/metadata/mod.rs` にモデルメタデータ取得モジュールを作成
-- [x] T129 `llmlb/src/metadata/xllm.rs` にxLLMメタデータ取得実装（GET /v0/models/:model/info → context_length）
+- [x] T129 `llmlb/src/metadata/xllm.rs` にxLLMメタデータ取得実装（GET /api/models/:model/info → context_length）
 - [x] T130 `llmlb/src/metadata/ollama.rs` にOllamaメタデータ取得実装（POST /api/show → parameters.num_ctx）
 
 ### Phase 4.4: 統合
 
 #### 登録フロー統合
 
-- [x] T131 `llmlb/src/api/endpoints.rs` のPOST /v0/endpointsにタイプ判別フロー統合（オフライン時はunknown）
+- [x] T131 `llmlb/src/api/endpoints.rs` のPOST /api/endpointsにタイプ判別フロー統合（オフライン時はunknown）
 - [x] T132 `llmlb/src/health/endpoint_checker.rs` にタイプ再判別ロジック追加（unknown→オンライン時に再判別）
 
 #### モデル同期拡張

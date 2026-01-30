@@ -9,7 +9,7 @@ servers:
     description: ローカル開発サーバー
 
 paths:
-  /v0/logs:
+  /api/logs:
     get:
       summary: ログエントリの取得
       description: |
@@ -98,7 +98,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/logs/stream:
+  /api/logs/stream:
     get:
       summary: ログのリアルタイムストリーム
       description: |
@@ -130,7 +130,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/logs/stats:
+  /api/logs/stats:
     get:
       summary: ログ統計情報の取得
       description: 指定期間のログ統計情報を取得します。

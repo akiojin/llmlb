@@ -46,6 +46,7 @@ async fn dashboard_serves_react_app() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .uri("/dashboard")
                 .body(axum::body::Body::empty())
                 .unwrap(),

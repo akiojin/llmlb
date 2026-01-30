@@ -36,7 +36,7 @@ test.describe('Model Registration Workflow', () => {
 
   test.describe('Model Hub API', () => {
     // NOTE: supported_models.json は廃止されました (2026-01-25)
-    // /v0/models/hub は登録済みモデルのみを返すため、空の状態でも正常です
+    // /api/models/hub は登録済みモデルのみを返すため、空の状態でも正常です
     test('returns empty array when no models registered', async ({ request }) => {
       const hubModels = await getHubModels(request);
 
@@ -86,8 +86,8 @@ test.describe('Model Registration Workflow', () => {
 
     // NOTE: SPEC-6cd7f960 FR-6 により、/v1/models はオンラインエンドポイントのモデルのみを返す
     // 登録しただけではエンドポイントに紐付かないため、/v1/models には表示されない
-    // このテストは /v0/models/registered で確認するように変更
-    test('model appears in /v0/models/registered after register', async ({ request }, testInfo) => {
+    // このテストは /api/models/registered で確認するように変更
+    test('model appears in /api/models/registered after register', async ({ request }, testInfo) => {
       // 1. Register a HuggingFace model directly
       const result = await registerModel(
         request,
@@ -106,7 +106,7 @@ test.describe('Model Registration Workflow', () => {
 
       // 2. Verify model appears in registered models list (not /v1/models)
       // Per SPEC-6cd7f960 FR-6, /v1/models only returns models from online endpoints
-      const response = await request.get('/v0/models/registered', {
+      const response = await request.get('/api/models/registered', {
         headers: {
           Authorization: 'Bearer sk_debug',
         },

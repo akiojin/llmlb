@@ -41,7 +41,7 @@ export RUST_LOG=llmlb=debug
 export RUST_LOG=llmlb::api::openai=debug
 ```
 
-### ノード側
+### エンドポイント側
 
 ```bash
 # 環境変数で設定

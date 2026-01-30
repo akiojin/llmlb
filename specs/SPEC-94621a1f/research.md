@@ -83,7 +83,7 @@ nodes.insert(id, node);
   - Node: `XLLM_HEARTBEAT_SECS=30`（フォールバック: `LLM_HEARTBEAT_SECS`）
   - Load Balancer: `LLMLB_HEALTH_CHECK_INTERVAL=30`（フォールバック: `HEALTH_CHECK_INTERVAL`）
   - Load Balancer: `LLMLB_NODE_TIMEOUT=60`（フォールバック: `NODE_TIMEOUT`）
-- ノード側: `tokio::time::interval(Duration::from_secs(30))`
+- エンドポイント側: `tokio::time::interval(Duration::from_secs(30))`
 - ロードバランサー側: `last_heartbeat + 60秒 < now` でOffline判定
 
 ### 決定4: UUID v4 によるノードID生成

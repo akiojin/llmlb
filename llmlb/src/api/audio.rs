@@ -234,7 +234,7 @@ pub async fn transcriptions(
             );
         }
     }
-    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+    // 登録されていないモデルはエンドポイント側で処理（クラウドモデル等）
 
     info!(
         request_id = %request_id,
@@ -357,7 +357,7 @@ pub async fn speech(
             );
         }
     }
-    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+    // 登録されていないモデルはエンドポイント側で処理（クラウドモデル等）
 
     info!(
         request_id = %request_id,

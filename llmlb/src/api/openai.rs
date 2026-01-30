@@ -235,7 +235,7 @@ pub async fn chat_completions(
             ))));
         }
     }
-    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+    // 登録されていないモデルはエンドポイント側で処理（クラウドモデル等）
 
     let payload = match prepare_vision_payload(&state, payload, &parsed).await {
         Ok(payload) => payload,

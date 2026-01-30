@@ -17,7 +17,6 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      cpp: ${{ steps.filter.outputs.cpp }}
       rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
@@ -25,11 +24,6 @@ jobs:
         id: filter
         with:
           filters: |
-            cpp:
-              - 'xllm/**'
-              - 'package.json'
-              - '.github/actions/setup-cpp/**'
-              - '.github/workflows/ci.yml'
             rust:
               - 'llmlb/**'
               - 'Cargo.toml'
@@ -80,48 +74,6 @@ jobs:
         run: cargo test --workspace --all-features -- --test-threads=1
         shell: bash
 
-  cpp:
-    name: C++ Node (build & test)
-    needs: changes
-    if: needs.changes.outputs.cpp == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Setup C++ build environment
-        uses: ./.github/actions/setup-cpp
-        with:
-          with-linters: 'true'
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-ccache-cpp-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-cpp-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Build
-        run: npm run build:node:ci
-      - name: Show ccache stats
-        run: ccache -s
-      - name: Test
-        run: npm run test:node
-      - name: clang-tidy (sources only)
-        run: |
-          cd xllm
-          FILES=$(find src include -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hpp' \))
-          run-clang-tidy -p build $FILES -quiet || (cat /tmp/run-clang-tidy.log || true; exit 1)
-      - name: cppcheck (warnings)
-        run: |
-          cd xllm
-          cppcheck --enable=warning --inline-suppr --std=c++20 \
-            -I include -I third_party/nlohmann-json/include -I third_party/cpp-httplib \
-            --suppress=missingIncludeSystem \
-            src include
-
   markdownlint:
     name: Markdown Lint
     runs-on: ubuntu-latest
@@ -134,7 +86,7 @@ jobs:
         with:
           version: 10.20.0
       - name: Run markdownlint
-        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor" "!xllm/third_party" "!xllm/build"
+        run: pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!vendor"
 
   coverage-rust:
     name: Coverage (Rust)
@@ -188,46 +140,3 @@ jobs:
       - name: Test
         working-directory: mcp-server
         run: pnpm test
-
-  coverage-cpp:
-    name: Coverage (C++)
-    needs: changes
-    if: needs.changes.outputs.cpp == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Setup C++ build environment
-        uses: ./.github/actions/setup-cpp
-        with:
-          with-coverage: 'true'
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-ccache-coverage-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-coverage-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Build with coverage
-        run: npm run build:node:coverage:ci
-      - name: Show ccache stats
-        run: ccache -s
-      - name: Test
-        run: npm run test:node
-      - name: gcovr lcov report
-        run: |
-          mkdir -p coverage-cpp
-          gcovr -r xllm \
-            --exclude 'xllm/third_party' \
-            --exclude 'xllm/build/third_party' \
-            --gcov-ignore-parse-errors \
-            -x coverage-cpp/coverage.xml -s
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-coverage-xml
-          path: coverage-cpp/coverage.xml

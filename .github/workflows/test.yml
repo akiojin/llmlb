@@ -17,7 +17,6 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      cpp: ${{ steps.filter.outputs.cpp }}
       rust: ${{ steps.filter.outputs.rust }}
       e2e: ${{ steps.filter.outputs.e2e }}
     steps:
@@ -26,11 +25,6 @@ jobs:
         id: filter
         with:
           filters: |
-            cpp:
-              - 'xllm/**'
-              - 'package.json'
-              - '.github/actions/setup-cpp/**'
-              - '.github/workflows/test.yml'
             rust:
               - 'llmlb/**'
               - 'Cargo.toml'
@@ -195,41 +189,3 @@ jobs:
           name: playwright-report
           path: llmlb/tests/e2e-playwright/reports/
           retention-days: 7
-
-  cpp-tests:
-    # C++ノードのビルドとテスト
-    name: C++ Tests (Ubuntu)
-    needs: changes
-    if: needs.changes.outputs.cpp == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup C++ build environment
-        uses: ./.github/actions/setup-cpp
-
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-ccache-test-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-test-
-
-      - name: Configure C++ project
-        run: cmake -S xllm -B xllm/build -DBUILD_TESTS=ON -DPORTABLE_BUILD=ON
-
-      - name: Build C++ project
-        run: cmake --build xllm/build --config Release
-
-      - name: Show ccache stats
-        run: ccache -s
-
-      - name: Run C++ tests
-        run: ctest --output-on-failure --timeout 300 --verbose
-        working-directory: xllm/build

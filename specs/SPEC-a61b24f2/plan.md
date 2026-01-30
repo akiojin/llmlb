@@ -11,4 +11,4 @@
 ## 代替仕様
 - `SPEC-11106000`（HF URL登録）
 - `SPEC-08d2b908`（モデル管理 統合仕様）
-- `SPEC-dcaeaec4` / `SPEC-48678000`（Node主導のモデル解決）
+- `SPEC-dcaeaec4` / `SPEC-48678000 (moved to xLLM repo)`（Node主導のモデル解決）

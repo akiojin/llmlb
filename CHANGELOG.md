@@ -1,5 +1,12 @@
 # Unreleased
 
+# [2.4.1](https://github.com/akiojin/llmlb/compare/v2.4.0...v2.4.1) (2026-01-30)
+
+### Bug Fixes
+
+- reqwestでrustls-tlsを使用してOpenSSL依存を回避（Linux muslビルド修正）
+- release.ymlからpublish.ymlを明示的にトリガー（GITHUB_TOKEN制約対応）
+
 # [2.4.0](https://github.com/akiojin/llmlb/compare/v2.3.1...v2.4.0) (2026-01-30)
 
 ### Breaking Changes

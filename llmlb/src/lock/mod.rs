@@ -176,11 +176,24 @@ pub fn list_all_locks() -> Vec<LockInfo> {
                         .trim_end_matches(".lock");
                     if let Ok(port) = port_str.parse::<u16>() {
                         // ロック情報を読み取り
-                        if let Ok(Some(info)) = read_lock_info(port) {
-                            // PIDが生存中のもののみ追加
-                            if is_process_running(info.pid) {
-                                locks.push(info);
+                        match read_lock_info(port) {
+                            Ok(Some(info)) => {
+                                // PIDが生存中のもののみ追加
+                                if is_process_running(info.pid) {
+                                    locks.push(info);
+                                }
                             }
+                            // Windowsでファイルがロック中の場合
+                            Err(LockError::FileLocked { port }) => {
+                                // ロック中 = 誰かが使用中なのでリストに追加
+                                // PIDは不明なので0、時刻は現在時刻
+                                locks.push(LockInfo {
+                                    pid: 0,
+                                    started_at: chrono::Utc::now(),
+                                    port,
+                                });
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -553,10 +566,13 @@ mod tests {
         // ロックファイルが作成されていることを確認
         assert!(path.exists());
 
-        // JSONが正しいことを確認
-        let content = std::fs::read_to_string(&path).unwrap();
-        let info: LockInfo = serde_json::from_str(&content).unwrap();
-        assert_eq!(info.port, port);
+        // JSONが正しいことを確認（Windowsではファイルロック中は読み取れないためスキップ）
+        #[cfg(not(windows))]
+        {
+            let content = std::fs::read_to_string(&path).unwrap();
+            let info: LockInfo = serde_json::from_str(&content).unwrap();
+            assert_eq!(info.port, port);
+        }
 
         // ロック解除（Dropで自動解除）
         drop(lock);
@@ -593,7 +609,12 @@ mod tests {
                 assert_eq!(err_port, port);
                 assert_eq!(pid, std::process::id());
             }
-            _ => panic!("Expected AlreadyRunning error, got: {:?}", err),
+            // Windowsではファイルロック自体がブロックするため、FileLockedエラーになる
+            #[cfg(windows)]
+            LockError::FileLocked { port: err_port } => {
+                assert_eq!(err_port, port);
+            }
+            _ => panic!("Expected AlreadyRunning or FileLocked error, got: {:?}", err),
         }
     }
 
@@ -692,7 +713,16 @@ mod tests {
         let locks = list_all_locks();
         let found = locks.iter().find(|l| l.port == port);
         assert!(found.is_some());
+
+        // WindowsではFileLocked時にPID=0が設定される
+        #[cfg(not(windows))]
         assert_eq!(found.unwrap().pid, std::process::id());
+        #[cfg(windows)]
+        {
+            // WindowsではPIDが0（ファイルロック中で読み取れない）または実際のPID
+            let pid = found.unwrap().pid;
+            assert!(pid == 0 || pid == std::process::id());
+        }
     }
 
     #[test]

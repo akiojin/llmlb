@@ -65,7 +65,7 @@ pub enum Platform {
 ### ModelListResponse
 
 ```rust
-/// GET /v0/models レスポンス
+/// GET /api/models レスポンス
 pub struct ModelListResponse {
     pub models: Vec<ModelWithStatus>,
 }
@@ -110,7 +110,7 @@ pub struct HfStats {
 ### ModelRegisterRequest
 
 ```rust
-/// POST /v0/models/register リクエスト
+/// POST /api/models/register リクエスト
 pub struct ModelRegisterRequest {
     /// モデルID（supported_models.jsonから）
     pub model_id: String,
@@ -218,7 +218,7 @@ pub enum WsEvent {
 │                                │                                │
 │                                ▼                                │
 │                    ┌───────────────────────┐                    │
-│                    │ GET /v0/models        │                    │
+│                    │ GET /api/models        │                    │
 │                    │ ModelWithStatus[]     │                    │
 │                    └───────────┬───────────┘                    │
 └────────────────────────────────│────────────────────────────────┘

@@ -39,7 +39,8 @@ async fn test_viewer_can_list_endpoints() {
 
     // adminでエンドポイントを登録
     let _ = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -51,8 +52,10 @@ async fn test_viewer_can_list_endpoints() {
 
     // viewerで一覧取得
     let list_resp = client
-        .get(format!("http://{}/v0/endpoints", server.addr()))
+        .get(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
+        .header("x-internal-token", "test-internal")
         .send()
         .await
         .unwrap();
@@ -90,7 +93,8 @@ async fn test_viewer_can_get_endpoint_detail() {
 
     // adminでエンドポイントを登録
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Detail Test",
@@ -106,10 +110,11 @@ async fn test_viewer_can_get_endpoint_detail() {
     // viewerで詳細取得
     let detail_resp = client
         .get(format!(
-            "http://{}/v0/endpoints/{}",
+            "http://{}/api/endpoints/{}",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
         .send()
         .await
@@ -148,8 +153,10 @@ async fn test_viewer_cannot_create_endpoint() {
 
     // viewerでエンドポイント登録を試行
     let create_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
+        .header("x-internal-token", "test-internal")
         .json(&json!({
             "name": "Forbidden",
             "base_url": "http://localhost:11434"
@@ -192,7 +199,8 @@ async fn test_viewer_cannot_update_endpoint() {
 
     // adminでエンドポイントを登録
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Update Test",
@@ -208,10 +216,11 @@ async fn test_viewer_cannot_update_endpoint() {
     // viewerで更新を試行
     let update_resp = client
         .put(format!(
-            "http://{}/v0/endpoints/{}",
+            "http://{}/api/endpoints/{}",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
         .json(&json!({
             "name": "Forbidden Update"
@@ -254,7 +263,8 @@ async fn test_viewer_cannot_delete_endpoint() {
 
     // adminでエンドポイントを登録
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Delete Test",
@@ -270,10 +280,11 @@ async fn test_viewer_cannot_delete_endpoint() {
     // viewerで削除を試行
     let delete_resp = client
         .delete(format!(
-            "http://{}/v0/endpoints/{}",
+            "http://{}/api/endpoints/{}",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
         .send()
         .await

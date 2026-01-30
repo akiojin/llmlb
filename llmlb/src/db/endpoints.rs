@@ -319,7 +319,7 @@ pub async fn update_inference_latency(
 }
 
 /// エンドポイントのデバイス情報を更新（SPEC-f8e3a1b7）
-/// /v0/system APIから取得した情報を保存
+/// /api/system APIから取得した情報を保存
 pub async fn update_device_info(
     pool: &SqlitePool,
     id: Uuid,
@@ -620,7 +620,7 @@ impl From<EndpointRow> for Endpoint {
                 .capabilities
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_else(|| vec![EndpointCapability::ChatCompletion]),
-            // GPU情報（/v0/healthから取得、DBには未保存）
+            // GPU情報（/api/healthから取得、DBには未保存）
             gpu_device_count: None,
             gpu_total_memory_bytes: None,
             gpu_used_memory_bytes: None,

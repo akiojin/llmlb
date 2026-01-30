@@ -142,7 +142,7 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     cli.set_connection_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
     cli.set_read_timeout(static_cast<int>(timeout_.count() / 1000), static_cast<int>((timeout_.count() % 1000) * 1000));
 
-    // /v0/models を使用（登録済みモデル一覧）
+    // /api/models を使用（登録済みモデル一覧）
     std::optional<std::string> api_key;
     {
         std::lock_guard<std::mutex> lock(etag_mutex_);
@@ -152,15 +152,15 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
     httplib::Result res;
     if (api_key.has_value() && !api_key->empty()) {
         httplib::Headers headers = {{"Authorization", "Bearer " + *api_key}};
-        res = cli.Get("/v0/models", headers);
+        res = cli.Get("/api/models", headers);
     } else {
-        res = cli.Get("/v0/models");
+        res = cli.Get("/api/models");
     }
     if (!res || res->status < 200 || res->status >= 300) {
         if (!res) {
-            spdlog::warn("ModelSync: /v0/models request failed (no response) base_url={}", base_url_);
+            spdlog::warn("ModelSync: /api/models request failed (no response) base_url={}", base_url_);
         } else {
-            spdlog::warn("ModelSync: /v0/models request failed status={} base_url={}", res->status, base_url_);
+            spdlog::warn("ModelSync: /api/models request failed status={} base_url={}", res->status, base_url_);
         }
         // fallback for auth-disabled routers (legacy /v1/models)
         res = cli.Get("/v1/models");
@@ -178,7 +178,7 @@ std::vector<RemoteModel> ModelSync::fetchRemoteModels() {
         auto body = json::parse(res->body);
         std::vector<RemoteModel> remote;
 
-        // /v0/models は配列形式、/v1/models は { "object": "list", "data": [...] }
+        // /api/models は配列形式、/v1/models は { "object": "list", "data": [...] }
         // 後方互換性のため両方をサポート
         const json* models_array = nullptr;
         if (body.is_array()) {
@@ -327,7 +327,7 @@ ModelSyncResult ModelSync::sync() {
         if (!registry_base.empty() && registry_base.back() == '/') {
             registry_base.pop_back();
         }
-        registry_base += "/v0/models/registry";
+        registry_base += "/api/models/registry";
 
         ModelDownloader downloader(registry_base, models_dir_, timeout_, 2, std::chrono::milliseconds(200), api_key_value);
 

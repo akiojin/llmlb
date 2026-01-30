@@ -13,7 +13,7 @@ servers:
     description: ローカル開発サーバー
 
 paths:
-  /v0/models:
+  /api/models:
     get:
       summary: モデル一覧の取得（拡張版）
       description: |
@@ -83,7 +83,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIModelsResponse'
 
-  /v0/models/{model_id}:
+  /api/models/{model_id}:
     get:
       summary: モデル詳細の取得
       description: 特定モデルの詳細情報を取得する。
@@ -113,7 +113,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/tags:
+  /api/tags:
     get:
       summary: 利用可能タグ一覧の取得
       description: システムに登録されているすべてのタグを取得する。

@@ -132,12 +132,12 @@ LLMLB_JWT_SECRET=$(cat /secrets/jwt-secret) llmlb
 ```bash
 # 廃止: llmlb user list
 # 代替: API経由
-curl http://localhost:8080/v0/users \
+curl http://localhost:8080/api/users \
   -H "Authorization: Bearer $TOKEN"
 
 # 廃止: llmlb user add admin
 # 代替: API経由
-curl -X POST http://localhost:8080/v0/users \
+curl -X POST http://localhost:8080/api/users \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "password123"}'
 ```

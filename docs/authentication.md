@@ -2,17 +2,17 @@
 
 LLM Router uses three authentication mechanisms:
 
-1. **JWT** for the admin dashboard and management APIs (`/v0/auth/*`, `/v0/users/*`, `/v0/api-keys/*`, `/v0/dashboard/*`, `/v0/metrics/*`, `/v0/models/*`)
-2. **API keys** for OpenAI-compatible endpoints (`/v1/*`) and `/v0` admin/runtime operations
-3. **Runtime token** for runtime-to-router heartbeats/metrics (`POST /v0/health`, requires API key too)
+1. **JWT** for the admin dashboard and management APIs (`/api/auth/*`, `/api/users/*`, `/api/api-keys/*`, `/api/dashboard/*`, `/api/metrics/*`, `/api/models/*`)
+2. **API keys** for OpenAI-compatible endpoints (`/v1/*`) and `/api` admin/runtime operations
+3. **Runtime token** for runtime-to-router heartbeats/metrics (`POST /api/health`, requires API key too)
 
 The canonical API list lives in `README.md` / `README.ja.md`.
 
 ## JWT (admin)
 
-- `POST /v0/auth/login`
-- `POST /v0/auth/logout`
-- `GET /v0/auth/me`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 
 Clients send the token via `Authorization: Bearer <jwt>`.
 
@@ -41,7 +41,7 @@ should send only one auth scheme per request.
 ### API key scopes
 
 - `api`: OpenAI-compatible `/v1/*` inference endpoints
-- `runtime`: `POST /v0/runtimes` (runtime registration), `POST /v0/health` (heartbeat), `GET /v0/models` (runtime model sync), `GET /v0/models/registry/:model_name/manifest.json` (manifest)
+- `runtime`: `POST /api/runtimes` (runtime registration), `POST /api/health` (heartbeat), `GET /api/models` (runtime model sync), `GET /api/models/registry/:model_name/manifest.json` (manifest)
 - `admin`: All admin operations (dashboard, users, API keys, model management, metrics, runtime management)
 
 `admin` includes all other scopes. Keys created before scopes were introduced are treated as having all scopes for backward compatibility.
@@ -56,5 +56,5 @@ Debug builds only:
 ## Runtime token (runtime → router)
 
 - Router response includes `runtime_token`
-- Runtime heartbeat/metrics: `POST /v0/health` with `X-Runtime-Token: <runtime_token>` + API key (`Authorization: Bearer <api_key>`)
+- Runtime heartbeat/metrics: `POST /api/health` with `X-Runtime-Token: <runtime_token>` + API key (`Authorization: Bearer <api_key>`)
 - `GET /v1/models` can also be called with `X-Runtime-Token` (OpenAI-compatible list)

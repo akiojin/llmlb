@@ -1,8 +1,8 @@
 //! xLLM Endpoint Type Detection
 //!
-//! SPEC-66555000: xLLM detection via GET /v0/system
+//! SPEC-66555000: xLLM detection via GET /api/system
 //!
-//! xLLM endpoints expose a /v0/system endpoint that returns
+//! xLLM endpoints expose a /api/system endpoint that returns
 //! system information including `xllm_version` field.
 
 use reqwest::Client;
@@ -22,7 +22,7 @@ struct XllmSystemInfo {
     server_name: Option<String>,
 }
 
-/// Detect xLLM endpoint by querying GET /v0/system
+/// Detect xLLM endpoint by querying GET /api/system
 ///
 /// Returns `Some(EndpointType::Xllm)` if the endpoint responds with
 /// a JSON object containing `xllm_version` field.
@@ -31,7 +31,7 @@ pub async fn detect_xllm(
     base_url: &str,
     api_key: Option<&str>,
 ) -> Option<EndpointType> {
-    let url = format!("{}/v0/system", base_url);
+    let url = format!("{}/api/system", base_url);
 
     let mut request = client.get(&url);
     if let Some(key) = api_key {

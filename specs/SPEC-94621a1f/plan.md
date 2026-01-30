@@ -10,13 +10,13 @@
 
 ## API（実装済み）
 
-- `POST /v0/nodes` - ノード登録（GPU必須）
-- `GET /v0/nodes` - ノード一覧
-- `POST /v0/health` - ヘルスチェック受信（`X-Node-Token` 必須）
+- `POST /api/nodes` - ノード登録（GPU必須）
+- `GET /api/nodes` - ノード一覧
+- `POST /api/health` - ヘルスチェック受信（`X-Node-Token` 必須）
 
 ## 実装の要点
 
-### 登録（POST /v0/nodes）
+### 登録（POST /api/nodes）
 
 - **GPU必須**:
   - `gpu_available=true`
@@ -26,9 +26,9 @@
   - テスト実行時（`cfg!(test)`）のみスキップ
 - **レスポンス**:
   - `runtime_id`（UUID）
-  - `runtime_token`（以降の `/v0/health` 用）
+  - `runtime_token`（以降の `/api/health` 用）
 
-### ヘルスチェック（POST /v0/health）
+### ヘルスチェック（POST /api/health）
 
 - **認証**:
   - ヘッダー `X-Node-Token: <token>`
@@ -45,11 +45,11 @@
 - `llmlb/src/api/health.rs`: `health_check`
 - `llmlb/src/registry/mod.rs`: ノード状態管理（DB同期）
 - `llmlb/src/auth/middleware.rs`: `runtime_token_auth_middleware`（`X-Node-Token`）
-- `node/src/api/router_client.cpp`: `/v0/nodes` 登録 + `/v0/health` 送信
+- `node/src/api/router_client.cpp`: `/api/nodes` 登録 + `/api/health` 送信
 
 ## リクエスト例
 
-### POST /v0/nodes
+### POST /api/nodes
 
 ```json
 {
@@ -64,7 +64,7 @@
 }
 ```
 
-### POST /v0/health
+### POST /api/health
 
 Headers:
 

@@ -181,14 +181,14 @@ async fn jwt_auth_middleware<B>(
 
 // ロードバランサーへの適用
 Load Balancer::new()
-    .route("/v0/nodes", get(list_nodes))
+    .route("/api/nodes", get(list_nodes))
     .layer(middleware::from_fn_with_state(state.clone(), jwt_auth_middleware))
 ```
 
 **ミドルウェア階層**:
-1. **JWT認証**: `/v0/nodes`, `/v0/models`, `/v0/dashboard`, `/v0/users`, `/v0/api-keys`
+1. **JWT認証**: `/api/nodes`, `/api/models`, `/api/dashboard`, `/api/users`, `/api/api-keys`
 2. **APIキー認証**: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
-3. **ノードトークン認証**: `/v0/health`
+3. **ノードトークン認証**: `/api/health`
 
 **認証無効化モード**:
 ```rust

@@ -19,6 +19,7 @@ async fn dashboard_html_has_no_model_panel() {
     let body = lb
         .oneshot(
             axum::http::Request::builder()
+                .header("x-internal-token", "test-internal")
                 .uri("/dashboard/")
                 .body(axum::body::Body::empty())
                 .unwrap(),

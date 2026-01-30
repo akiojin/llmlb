@@ -87,9 +87,10 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 ## ダッシュボード
 
 ロードバランサーが `/dashboard` で提供します。
+内部トークン（`LLMLB_INTERNAL_API_TOKEN`）を `internal_token` クエリで渡してください。
 
 ```text
-http://localhost:32768/dashboard
+http://localhost:32768/dashboard?internal_token=YOUR_TOKEN
 ```
 
 ## エンドポイント管理
@@ -111,7 +112,7 @@ http://localhost:32768/dashboard
 
 **判別優先度:**
 
-1. **xLLM**: `GET /v0/system` で `xllm_version` フィールドを検出
+1. **xLLM**: `GET /api/system` で `xllm_version` フィールドを検出
 2. **Ollama**: `GET /api/tags` が成功
 3. **vLLM**: Server ヘッダーに "vllm" が含まれる
 4. **OpenAI互換**: `GET /v1/models` が成功
@@ -131,13 +132,13 @@ xLLMタイプのエンドポイントでは、ロードバランサーからモ�
 
 ```bash
 # ダウンロード開始
-curl -X POST http://localhost:32768/v0/endpoints/{id}/download \
+curl -X POST http://localhost:32768/api/endpoints/{id}/download \
   -H "Authorization: Bearer sk_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{"model": "llama-3.2-1b"}'
 
 # 進捗確認
-curl "http://localhost:32768/v0/endpoints/{id}/download/progress?model=llama-3.2-1b" \
+curl "http://localhost:32768/api/endpoints/{id}/download/progress?model=llama-3.2-1b" \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
@@ -148,7 +149,7 @@ curl "http://localhost:32768/v0/endpoints/{id}/download/progress?model=llama-3.2
 xLLMおよびOllamaエンドポイントでは、モデルのコンテキスト長などのメタデータを取得できます。
 
 ```bash
-curl http://localhost:32768/v0/endpoints/{id}/models/{model_id}/info \
+curl http://localhost:32768/api/endpoints/{id}/models/{model_id}/info \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
@@ -173,17 +174,17 @@ curl http://localhost:32768/v0/endpoints/{id}/models/{model_id}/info \
 
 ```bash
 # エンドポイント登録
-curl -X POST http://localhost:32768/v0/endpoints \
+curl -X POST http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{"name": "OllamaサーバーA", "base_url": "http://192.168.1.100:11434"}'
 
 # エンドポイント一覧
-curl http://localhost:32768/v0/endpoints \
+curl http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_your_api_key"
 
 # モデル同期
-curl -X POST http://localhost:32768/v0/endpoints/{id}/sync \
+curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
@@ -364,6 +365,7 @@ cmake --build build --config Release
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
+| `LLMLB_INTERNAL_API_TOKEN` | - | /api・/dashboard・/ws 用の内部トークン |
 | `LLMLB_LOG_LEVEL` | `info` | ログレベル |
 | `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
 | `LLMLB_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |
@@ -403,8 +405,8 @@ LLM_RUNTIME_API_KEY=sk_runtime_register_key ./xllm/build/xllm
 ```
 
 ### 6) 動作確認
-- ダッシュボード: `http://localhost:32768/dashboard`
-- 健康チェック: `curl -H "Authorization: Bearer sk_runtime_register_key" -H "X-Runtime-Token: <runtime_token>" http://localhost:32768/v0/health`
+- ダッシュボード: `http://localhost:32768/dashboard?internal_token=YOUR_TOKEN`
+- 健康チェック: `curl -H "Authorization: Bearer sk_runtime_register_key" -H "X-Runtime-Token: <runtime_token>" http://localhost:32768/api/health`
 - OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:32768/v1/models`
 
 ## 利用方法（OpenAI互換エンドポイント）
@@ -458,7 +460,7 @@ curl http://localhost:32768/v1/chat/completions \
 - `stream: true` でクラウドSSE/チャンクをそのままパススルー。
 
 ### メトリクス
-- `GET /v0/metrics/cloud` （Prometheus text）
+- `GET /api/metrics/cloud` （Prometheus text）
   - `cloud_requests_total{provider,status}`
   - `cloud_request_latency_seconds{provider}`
 
@@ -496,10 +498,10 @@ LLM Load Balancer (OpenAI-compatible)
 - ランタイムはモデルをオンデマンドで次の順に解決します。
   - ローカルキャッシュ（`LLM_RUNTIME_MODELS_DIR`）
   - 許可リスト内の外部ダウンロード（Hugging Face など、`LLM_RUNTIME_ORIGIN_ALLOWLIST`）
-  - ロードバランサーのマニフェスト参照（`GET /v0/models/registry/:model_name/manifest.json`）
+  - ロードバランサーのマニフェスト参照（`GET /api/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
-- ランタイムは `/v0/runtimes` を介して登録します。CPU のみのエンドポイントも対応しています。
+- ランタイムは `/api/runtimes` を介して登録します。CPU のみのエンドポイントも対応しています。
 - ハートビートには、ロードバランシングに使用される CPU/GPU/メモリメトリクスが含まれます。
 - ダッシュボードには `*_key_present` フラグが表示され、オペレーターはどのクラウドキーが設定されているかを確認できます。
 
@@ -512,7 +514,7 @@ LLM Load Balancer (OpenAI-compatible)
 
 ### クラウドモデルが 401/400 を返す
 - ロードバランサー側で `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` が設定されているか確認
-- ダッシュボード `/v0/dashboard/stats` の `*_key_present` が false なら未設定
+- ダッシュボード `/api/dashboard/stats` の `*_key_present` が false なら未設定
 - プレフィックスなしモデルはローカルにルーティングされるので、クラウドキーなしで利用したい場合はプレフィックスを付けない
 
 ### ポート競合で起動しない
@@ -529,7 +531,7 @@ LLM Load Balancer (OpenAI-compatible)
 - リバースプロキシ経由の場合は `/dashboard/*` の静的配信設定を確認
 
 ### OpenAI互換APIで 503 / モデル未登録
-- 全ランタイムが `initializing` の場合 503 を返すことがあります。ランタイムのモデルロードを待つか、`/v0/dashboard/runtimes` で状態を確認
+- 全ランタイムが `initializing` の場合 503 を返すことがあります。ランタイムのモデルロードを待つか、`/api/dashboard/runtimes` で状態を確認
 - モデル指定がローカルに存在しない場合、ランタイムが自動プルするまで待機
 
 ### ログが多すぎる / 少なすぎる
@@ -558,9 +560,9 @@ LLM Load Balancer (OpenAI-compatible)
   - モデルIDは Hugging Face の repo ID（例: `org/model`）です。
   - `/v1/models` は、ダウンロード中/待機中/失敗も含め `lifecycle_status` と `download_progress` を返します。
   - ランタイムはモデルをプッシュ配布されず、オンデマンドで取得します:
-  - `GET /v0/models/registry/:model_name/manifest.json`
+  - `GET /api/models/registry/:model_name/manifest.json`
 - API:
-  - `POST /v0/models/register` (`repo` と任意の `filename`)
+  - `POST /api/models/register` (`repo` と任意の `filename`)
 - `/v1/models` は登録済みモデルを返し、`ready` はランタイム同期に基づきます。
 
 ## API 仕様
@@ -571,20 +573,20 @@ LLM Load Balancer (OpenAI-compatible)
 
 | ロール | 権限 |
 |-------|------|
-| `admin` | `/v0` 管理系 API にアクセス可能 |
-| `viewer` | `/v0/auth/*` のみ（管理 API は 403） |
+| `admin` | `/api` 管理系 API にアクセス可能 |
+| `viewer` | `/api/auth/*` のみ（管理 API は 403） |
 
 #### APIキー（スコープ）
 
 | スコープ | 目的 |
 |---------|------|
-| `endpoints` | エンドポイント管理（`/v0/endpoints/*`） |
-| `runtime` | ランタイム登録 + ヘルスチェック + モデル同期（`POST /v0/runtimes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`）※レガシー |
+| `endpoints` | エンドポイント管理（`/api/endpoints/*`） |
+| `runtime` | ランタイム登録 + ヘルスチェック + モデル同期（`POST /api/runtimes`, `POST /api/health`, `GET /api/models`, `GET /api/models/registry/:model_name/manifest.json`）※レガシー |
 | `api` | OpenAI 互換推論 API（`/v1/*`） |
-| `admin` | 管理系 API 全般（`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/runtimes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`） |
+| `admin` | 管理系 API 全般（`/api/users`, `/api/api-keys`, `/api/models/*`, `/api/runtimes/*`, `/api/endpoints/*`, `/api/dashboard/*`, `/api/metrics/*`） |
 
 **補足**:
-- `/v0/auth/login` は無認証、`/v0/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
+- `/api/auth/login` は無認証、`/api/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
 ### ロードバランサー（Load Balancer）
@@ -599,47 +601,47 @@ LLM Load Balancer (OpenAI-compatible)
 
 #### エンドポイント管理
 
-- POST `/v0/endpoints`（登録、admin権限）
-- GET `/v0/endpoints`（一覧、admin/viewer権限）
-- GET `/v0/endpoints?type=xllm`（タイプフィルター、admin/viewer権限）
-- GET `/v0/endpoints/:id`（詳細、admin/viewer権限）
-- PUT `/v0/endpoints/:id`（更新、admin権限）
-- DELETE `/v0/endpoints/:id`（削除、admin権限）
-- POST `/v0/endpoints/:id/test`（接続テスト、admin権限）
-- POST `/v0/endpoints/:id/sync`（モデル同期、admin権限）
-- POST `/v0/endpoints/:id/download`（モデルダウンロード、xLLMのみ、admin権限）
-- GET `/v0/endpoints/:id/download/progress`（ダウンロード進捗、admin権限）
-- GET `/v0/endpoints/:id/models/:model/info`（モデルメタデータ、xLLM/Ollamaのみ、admin権限）
+- POST `/api/endpoints`（登録、admin権限）
+- GET `/api/endpoints`（一覧、admin/viewer権限）
+- GET `/api/endpoints?type=xllm`（タイプフィルター、admin/viewer権限）
+- GET `/api/endpoints/:id`（詳細、admin/viewer権限）
+- PUT `/api/endpoints/:id`（更新、admin権限）
+- DELETE `/api/endpoints/:id`（削除、admin権限）
+- POST `/api/endpoints/:id/test`（接続テスト、admin権限）
+- POST `/api/endpoints/:id/sync`（モデル同期、admin権限）
+- POST `/api/endpoints/:id/download`（モデルダウンロード、xLLMのみ、admin権限）
+- GET `/api/endpoints/:id/download/progress`（ダウンロード進捗、admin権限）
+- GET `/api/endpoints/:id/models/:model/info`（モデルメタデータ、xLLM/Ollamaのみ、admin権限）
 
 #### ランタイム管理（レガシー）
 
-- POST `/v0/runtimes`（登録、APIキー: `runtime`）
-- GET `/v0/runtimes`（一覧、admin権限）
-- DELETE `/v0/runtimes/:runtime_id`（admin権限）
-- POST `/v0/runtimes/:runtime_id/disconnect`（admin権限）
-- PUT `/v0/runtimes/:runtime_id/settings`（admin権限）
-- POST `/v0/health`（ランタイムからのヘルス/メトリクス送信、APIキー: `runtime` + `X-Runtime-Token`）
-- GET `/v0/runtimes/:runtime_id/logs`（admin権限）
+- POST `/api/runtimes`（登録、APIキー: `runtime`）
+- GET `/api/runtimes`（一覧、admin権限）
+- DELETE `/api/runtimes/:runtime_id`（admin権限）
+- POST `/api/runtimes/:runtime_id/disconnect`（admin権限）
+- PUT `/api/runtimes/:runtime_id/settings`（admin権限）
+- POST `/api/health`（ランタイムからのヘルス/メトリクス送信、APIキー: `runtime` + `X-Runtime-Token`）
+- GET `/api/runtimes/:runtime_id/logs`（admin権限）
 
 #### モデル管理
 
-- GET `/v0/models`（登録済みモデル一覧、APIキー: `runtime` または `admin`）
-- POST `/v0/models/register`（admin権限）
-- DELETE `/v0/models/*model_name`（admin権限）
-- GET `/v0/models/registry/:model_name/manifest.json`（APIキー: `runtime`）
+- GET `/api/models`（登録済みモデル一覧、APIキー: `runtime` または `admin`）
+- POST `/api/models/register`（admin権限）
+- DELETE `/api/models/*model_name`（admin権限）
+- GET `/api/models/registry/:model_name/manifest.json`（APIキー: `runtime`）
 
 #### ダッシュボード/監視
 
-- GET `/v0/dashboard/overview`（admin権限）
-- GET `/v0/dashboard/stats`（admin権限）
-- GET `/v0/dashboard/runtimes`（admin権限）
-- GET `/v0/dashboard/metrics/:runtime_id`（admin権限）
-- GET `/v0/dashboard/request-history`（admin権限）
-- GET `/v0/dashboard/request-responses`（admin権限）
-- GET `/v0/dashboard/request-responses/:id`（admin権限）
-- GET `/v0/dashboard/request-responses/export`（admin権限）
-- GET `/v0/dashboard/logs/lb`（admin権限）
-- GET `/v0/metrics/cloud`（admin権限）
+- GET `/api/dashboard/overview`（admin権限）
+- GET `/api/dashboard/stats`（admin権限）
+- GET `/api/dashboard/runtimes`（admin権限）
+- GET `/api/dashboard/metrics/:runtime_id`（admin権限）
+- GET `/api/dashboard/request-history`（admin権限）
+- GET `/api/dashboard/request-responses`（admin権限）
+- GET `/api/dashboard/request-responses/:id`（admin権限）
+- GET `/api/dashboard/request-responses/export`（admin権限）
+- GET `/api/dashboard/logs/lb`（admin権限）
+- GET `/api/metrics/cloud`（admin権限）
 - GET `/dashboard/*`
 - GET `/playground/*`
 
@@ -658,7 +660,7 @@ LLM Load Balancer (OpenAI-compatible)
 - GET `/startup`
 - GET `/metrics`
 - GET `/metrics/prom`
-- GET `/v0/logs?tail=200`
+- GET `/api/logs?tail=200`
 - GET `/log/level`
 - POST `/log/level`
 

@@ -29,8 +29,8 @@ public:
     void setV1Response(std::string body) { v1_response_body = std::move(body); }
 
     void start(int port) {
-        // /v0/models - 登録済みモデル一覧
-        server_.Get("/v0/models", [this](const httplib::Request&, httplib::Response& res) {
+        // /api/models - 登録済みモデル一覧
+        server_.Get("/api/models", [this](const httplib::Request&, httplib::Response& res) {
             if (!serve_v0_) {
                 res.status = 404;
                 return;
@@ -60,7 +60,7 @@ public:
 
     httplib::Server server_;
     std::thread thread_;
-    // /v0/models: array of registered models (uses "name" field)
+    // /api/models: array of registered models (uses "name" field)
     std::string v0_response_body{R"([{"name":"gpt-oss-7b"},{"name":"gpt-oss-20b"}])"};
     // /v1/models: OpenAI互換形式 {"data": [...]} with "id" field
     std::string v1_response_body{R"({"data":[{"id":"gpt-oss-7b"},{"id":"gpt-oss-20b"}]})"};
@@ -152,7 +152,7 @@ TEST(ModelSyncTest, ReportsDownloadProgressSnapshot) {
     const std::string base = "http://127.0.0.1:" + std::to_string(port);
     httplib::Server server;
 
-    server.Get("/v0/models/registry/test-model/manifest.json",
+    server.Get("/api/models/registry/test-model/manifest.json",
                [base](const httplib::Request&, httplib::Response& res) {
                    res.status = 200;
                    res.set_content(
@@ -170,7 +170,7 @@ TEST(ModelSyncTest, ReportsDownloadProgressSnapshot) {
     wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard dir;
-    ModelDownloader dl(base + "/v0/models/registry", dir.path.string());
+    ModelDownloader dl(base + "/api/models/registry", dir.path.string());
     ModelSync sync(base, dir.path.string());
     sync.setOriginAllowlist({"127.0.0.1/*"});
 
@@ -195,7 +195,7 @@ TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     std::atomic<int> metal_hits{0};
     std::atomic<int> gguf_hits{0};
 
-    server.Get("/v0/models/registry/gpt-oss-artifacts/manifest.json",
+    server.Get("/api/models/registry/gpt-oss-artifacts/manifest.json",
                [base](const httplib::Request&, httplib::Response& res) {
                    res.status = 200;
                    res.set_content(
@@ -221,7 +221,7 @@ TEST(ModelSyncTest, SkipsMetalArtifactOnNonApple) {
     wait_for_server(server, std::chrono::seconds(5));
 
     TempDirGuard dir;
-    ModelDownloader dl(base + "/v0/models/registry", dir.path.string());
+    ModelDownloader dl(base + "/api/models/registry", dir.path.string());
     ModelSync sync(base, dir.path.string());
     sync.setOriginAllowlist({"127.0.0.1/*"});
 

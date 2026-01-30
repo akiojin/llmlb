@@ -302,7 +302,7 @@ impl TimeoutCheck {
 │  │                                                              ││
 │  │  [Node]                                                      ││
 │  │    │                                                         ││
-│  │    │ POST /v0/health                                         ││
+│  │    │ POST /api/health                                         ││
 │  │    │ X-Node-Token: xxx                                       ││
 │  │    ▼                                                         ││
 │  │  ┌────────────────┐                                         ││

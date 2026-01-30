@@ -15,5 +15,5 @@ This migration applies to xLLM runtime deployments that previously used engine p
    - `safetensors_cpp` for safetensors models
 
 ## Optional checks
-- `GET /v0/runtimes` shows the built-in runtimes.
+- `GET /api/runtimes` shows the built-in runtimes.
 - Run `make quality-checks` after updating your deployment.

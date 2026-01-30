@@ -41,8 +41,8 @@
 ## Phase 1: 設計＆契約
 - data-model.md: ModelInfo 拡張（repo, filename?, source, status, size, artifacts）。
 - contracts:
-  - `POST /v0/models/register` repo-only/filename指定（バイナリ取得なし）。
-  - `GET /v0/models/registry/:model_name/manifest.json` でNode向けマニフェストを提供。
+  - `POST /api/models/register` repo-only/filename指定（バイナリ取得なし）。
+  - `GET /api/models/registry/:model_name/manifest.json` でNode向けマニフェストを提供。
   - `/v1/models` は登録済みモデルとready状態を返す。
 - quickstart.md: URL貼付→登録→/v1/models 反映→Node同期の手順を記載。
 

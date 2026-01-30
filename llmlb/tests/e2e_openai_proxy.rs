@@ -58,7 +58,8 @@ async fn register_endpoint_and_sync(lb: &TestServer, node_stub: &TestServer) -> 
     let client = Client::new();
 
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "openai-proxy-stub",
@@ -80,10 +81,11 @@ async fn register_endpoint_and_sync(lb: &TestServer, node_stub: &TestServer) -> 
 
     let test_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             lb.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -92,10 +94,11 @@ async fn register_endpoint_and_sync(lb: &TestServer, node_stub: &TestServer) -> 
 
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             lb.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -280,7 +283,11 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     let mut error = 0u64;
     for _ in 0..20 {
         let history = client
-            .get(format!("http://{}/v0/dashboard/request-history", lb.addr()))
+            .get(format!(
+                "http://{}/api/dashboard/request-history",
+                lb.addr()
+            ))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .send()
             .await

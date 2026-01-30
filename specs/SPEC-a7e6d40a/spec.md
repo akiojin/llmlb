@@ -98,7 +98,7 @@ Load Balancer/Node共に、CLIは以下のオプションのみをサポート�
 
 以下の機能は廃止され、完全に削除されました：
 
-- `user` サブコマンド（list/add/delete）- API経由 `/v0/users/*` を使用
+- `user` サブコマンド（list/add/delete）- API経由 `/api/users/*` を使用
 - `model` サブコマンド（list/add/download）- API経由 `/v1/models/*` を使用
 - `--preload-model` オプション - Dashboard経由でモデル配布を実行
 
@@ -204,7 +204,7 @@ Load Balancer/Node共に、CLIは以下のオプションのみをサポート�
 
 - インタラクティブモード（対話形式での設定）
 - 設定ファイル（YAML/TOML）からの読み込み
-- CLI経由のユーザー管理（API `/v0/users/*` で対応済み）
+- CLI経由のユーザー管理（API `/api/users/*` で対応済み）
 - CLI経由のモデル管理（API `/v1/models/*` で対応済み）
 
 ---
@@ -270,6 +270,6 @@ Load Balancer/Node共に、CLIは以下のオプションのみをサポート�
 
 **廃止された機能**:
 
-- userサブコマンド → API /v0/users/*
+- userサブコマンド → API /api/users/*
 - modelサブコマンド → API /v1/models/*
 - --preload-modelオプション → Dashboard経由

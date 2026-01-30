@@ -50,8 +50,8 @@
 既存実装の調査により、以下が判明:
 
 1. **バックエンドAPI**: 完全実装済み
-   - `POST /v0/nodes/:id/approve` - 承認API（Admin権限必須）
-   - `DELETE /v0/nodes/:id` - 削除API（拒否として利用可）
+   - `POST /api/nodes/:id/approve` - 承認API（Admin権限必須）
+   - `DELETE /api/nodes/:id` - 削除API（拒否として利用可）
 
 2. **状態遷移**: 完全実装済み
    - Pending → Registering → Online フロー実装済み
@@ -84,10 +84,10 @@ Node {
 
 | メソッド | エンドポイント | 権限 | 説明 |
 |---------|---------------|------|------|
-| POST | /v0/nodes | - | ノード登録（Pending状態で開始） |
-| POST | /v0/nodes/:id/approve | Admin | ノード承認 |
-| DELETE | /v0/nodes/:id | Admin | ノード削除（拒否） |
-| GET | /v0/nodes | - | ノード一覧取得 |
+| POST | /api/nodes | - | ノード登録（Pending状態で開始） |
+| POST | /api/nodes/:id/approve | Admin | ノード承認 |
+| DELETE | /api/nodes/:id | Admin | ノード削除（拒否） |
+| GET | /api/nodes | - | ノード一覧取得 |
 
 ### UIコンポーネント設計（新規）
 

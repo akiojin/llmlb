@@ -40,6 +40,7 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -172,6 +173,7 @@ async fn test_vision_model_has_image_understanding_capability() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -221,6 +223,7 @@ async fn test_text_model_has_no_image_understanding_capability() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -279,6 +282,7 @@ async fn test_mixed_models_capabilities() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -348,6 +352,7 @@ async fn test_models_response_includes_capabilities_field() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))

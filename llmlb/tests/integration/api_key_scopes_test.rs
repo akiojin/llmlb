@@ -1,6 +1,6 @@
 //! Integration Test: APIキーのスコープ制御
 //!
-//! /v0 と /v1 の各エンドポイントでスコープが正しく強制されることを確認する。
+//! /api と /v1 の各エンドポイントでスコープが正しく強制されることを確認する。
 //!
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
@@ -111,9 +111,8 @@ async fn v0_nodes_requires_node_register_scope() {
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-runtime")
+                .uri("/api/internal/test/register-runtime")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -126,9 +125,8 @@ async fn v0_nodes_requires_node_register_scope() {
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-runtime")
+                .uri("/api/internal/test/register-runtime")
                 .header("authorization", format!("Bearer {}", api_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -141,9 +139,8 @@ async fn v0_nodes_requires_node_register_scope() {
     // Correct scope -> 201
     let response = app
         .oneshot(
-            Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-runtime")
+                .uri("/api/internal/test/register-runtime")
                 .header("authorization", format!("Bearer {}", node_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -174,7 +171,6 @@ async fn v1_inference_requires_api_inference_scope() {
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", node_key))
@@ -189,7 +185,6 @@ async fn v1_inference_requires_api_inference_scope() {
     // Correct scope -> authenticated (503 if no nodes)
     let response = app
         .oneshot(
-            Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -214,9 +209,8 @@ async fn admin_scope_allows_dashboard_overview() {
 
     let response = app
         .oneshot(
-            Request::builder()
                 .method("GET")
-                .uri("/v0/dashboard/overview")
+                .uri("/api/dashboard/overview")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -238,9 +232,8 @@ async fn v0_health_requires_node_register_scope() {
     let register_response = app
         .clone()
         .oneshot(
-            Request::builder()
                 .method("POST")
-                .uri("/v0/internal/test/register-runtime")
+                .uri("/api/internal/test/register-runtime")
                 .header("authorization", format!("Bearer {}", node_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -271,9 +264,8 @@ async fn v0_health_requires_node_register_scope() {
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
                 .method("POST")
-                .uri("/v0/health")
+                .uri("/api/health")
                 .header("content-type", "application/json")
                 .header("x-runtime-token", node_token)
                 .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
@@ -287,9 +279,8 @@ async fn v0_health_requires_node_register_scope() {
     let response = app
         .clone()
         .oneshot(
-            Request::builder()
                 .method("POST")
-                .uri("/v0/health")
+                .uri("/api/health")
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", api_key))
                 .header("x-runtime-token", node_token)
@@ -303,9 +294,8 @@ async fn v0_health_requires_node_register_scope() {
     // Correct scope -> 200
     let response = app
         .oneshot(
-            Request::builder()
                 .method("POST")
-                .uri("/v0/health")
+                .uri("/api/health")
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", node_key))
                 .header("x-runtime-token", node_token)

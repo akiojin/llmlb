@@ -143,7 +143,7 @@ TEST(HttpServerTest, TraceparentPropagatesTraceId) {
     server.stop();
 }
 
-// Phase 1.2: GET /v0/health endpoint test
+// Phase 1.2: GET /api/health endpoint test
 TEST(NodeEndpointsTest, V0HealthReturnsGpuAndLoadInfo) {
     xllm::set_ready(true);
     ModelRegistry registry;
@@ -163,7 +163,7 @@ TEST(NodeEndpointsTest, V0HealthReturnsGpuAndLoadInfo) {
     server.start();
 
     httplib::Client cli("127.0.0.1", 18094);
-    auto resp = cli.Get("/v0/health");
+    auto resp = cli.Get("/api/health");
     ASSERT_TRUE(resp);
     EXPECT_EQ(resp->status, 200);
     EXPECT_EQ(resp->get_header_value("Content-Type"), "application/json");
@@ -189,7 +189,7 @@ TEST(NodeEndpointsTest, V0HealthReturnsOfflineWhenNotReady) {
     server.start();
 
     httplib::Client cli("127.0.0.1", 18095);
-    auto resp = cli.Get("/v0/health");
+    auto resp = cli.Get("/api/health");
     ASSERT_TRUE(resp);
     EXPECT_EQ(resp->status, 200);
     EXPECT_NE(resp->body.find("\"offline\""), std::string::npos);

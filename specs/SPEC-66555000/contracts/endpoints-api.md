@@ -2,7 +2,7 @@
 
 **機能ID**: `SPEC-66555000`
 **日付**: 2026-01-14
-**ベースパス**: `/v0/endpoints`
+**ベースパス**: `/api/endpoints`
 
 ## 認証
 
@@ -13,7 +13,7 @@
 
 ## エンドポイント一覧
 
-### POST /v0/endpoints - エンドポイント登録
+### POST /api/endpoints - エンドポイント登録
 
 新しいエンドポイントを登録する。
 
@@ -63,7 +63,7 @@
 
 ---
 
-### GET /v0/endpoints - エンドポイント一覧
+### GET /api/endpoints - エンドポイント一覧
 
 登録済みエンドポイントの一覧を取得する。
 
@@ -96,7 +96,7 @@
 
 ---
 
-### GET /v0/endpoints/:id - エンドポイント詳細
+### GET /api/endpoints/:id - エンドポイント詳細
 
 特定のエンドポイントの詳細を取得する。
 
@@ -134,7 +134,7 @@
 
 ---
 
-### PUT /v0/endpoints/:id - エンドポイント更新
+### PUT /api/endpoints/:id - エンドポイント更新
 
 エンドポイントの情報を更新する。
 
@@ -177,7 +177,7 @@
 
 ---
 
-### DELETE /v0/endpoints/:id - エンドポイント削除
+### DELETE /api/endpoints/:id - エンドポイント削除
 
 エンドポイントを削除する。
 
@@ -195,7 +195,7 @@
 
 ---
 
-### POST /v0/endpoints/:id/test - 接続テスト
+### POST /api/endpoints/:id/test - 接続テスト
 
 エンドポイントへの接続テストを実行する。
 
@@ -228,7 +228,7 @@
 
 ---
 
-### POST /v0/endpoints/:id/sync - モデル同期
+### POST /api/endpoints/:id/sync - モデル同期
 
 エンドポイントからモデル一覧を同期する。
 

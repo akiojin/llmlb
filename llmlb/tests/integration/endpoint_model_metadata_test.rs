@@ -20,7 +20,8 @@ async fn test_xllm_model_metadata_retrieval() {
 
     // xLLMエンドポイント登録（モックが必要）
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -36,10 +37,11 @@ async fn test_xllm_model_metadata_retrieval() {
     // モデル同期を実行してモデルを登録
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -49,10 +51,11 @@ async fn test_xllm_model_metadata_retrieval() {
     // モデルメタデータ取得
     let metadata_response = client
         .get(format!(
-            "http://{}/v0/endpoints/{}/models/llama3:8b/info",
+            "http://{}/api/endpoints/{}/models/llama3:8b/info",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -85,7 +88,8 @@ async fn test_ollama_model_metadata_retrieval() {
 
     // Ollamaエンドポイント登録（モックが必要）
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Server",
@@ -101,10 +105,11 @@ async fn test_ollama_model_metadata_retrieval() {
     // モデル同期を実行してモデルを登録
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -114,10 +119,11 @@ async fn test_ollama_model_metadata_retrieval() {
     // モデルメタデータ取得
     let metadata_response = client
         .get(format!(
-            "http://{}/v0/endpoints/{}/models/llama3:8b/info",
+            "http://{}/api/endpoints/{}/models/llama3:8b/info",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -146,7 +152,8 @@ async fn test_model_sync_retrieves_max_tokens() {
 
     // xLLMエンドポイント登録（モックが必要）
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -162,10 +169,11 @@ async fn test_model_sync_retrieves_max_tokens() {
     // モデル同期を実行
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -176,10 +184,11 @@ async fn test_model_sync_retrieves_max_tokens() {
     // モデル一覧を取得してmax_tokensが含まれることを確認
     let models_response = client
         .get(format!(
-            "http://{}/v0/endpoints/{}/models",
+            "http://{}/api/endpoints/{}/models",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -208,7 +217,8 @@ async fn test_vllm_metadata_not_supported() {
 
     // vLLMエンドポイント登録（モックが必要）
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "vLLM Server",
@@ -224,10 +234,11 @@ async fn test_vllm_metadata_not_supported() {
     // メタデータ取得リクエスト
     let metadata_response = client
         .get(format!(
-            "http://{}/v0/endpoints/{}/models/some-model/info",
+            "http://{}/api/endpoints/{}/models/some-model/info",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -250,7 +261,8 @@ async fn test_nonexistent_model_metadata() {
 
     // エンドポイント登録
     let register_response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Server",
@@ -266,10 +278,11 @@ async fn test_nonexistent_model_metadata() {
     // モデル同期を実行してモデルを登録
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -279,10 +292,11 @@ async fn test_nonexistent_model_metadata() {
     // 存在しないモデルのメタデータ取得
     let metadata_response = client
         .get(format!(
-            "http://{}/v0/endpoints/{}/models/nonexistent-model-12345/info",
+            "http://{}/api/endpoints/{}/models/nonexistent-model-12345/info",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

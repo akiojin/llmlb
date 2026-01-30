@@ -53,7 +53,7 @@ OpenAI互換APIでアプリケーションから利用したい。
 - **API認証**: なし（Ollama踏襲、localhost専用想定）
 - **ヘルスチェック**: モデルロード中は `{"status":"loading"}` を返却（HTTP 200）
   - ロード済みモデル一覧、GPU/VRAM情報も含む
-  - ロード進捗も `/v0/health` で取得可能
+  - ロード進捗も `/api/health` で取得可能
 - **クライアント切断検知**: 推論中にクライアントが切断したら**即座に推論中止**
 - **ログ出力**: stderr + ファイル（`--log-file` で有効化）
 - **ログローテーション**: **日次ローテーション**（デフォルト）
@@ -159,7 +159,7 @@ OpenAI互換APIでアプリケーションから利用したい。
 
 ### FR-010: Prometheus Metrics
 
-- **エンドポイント**: `/v0/metrics`
+- **エンドポイント**: `/api/metrics`
 - **プレフィックス**: `xllm_`（例: `xllm_tokens_total`, `xllm_vram_bytes`）
 - **メトリクス**: トークンスループット、VRAM使用率、リクエスト数等
 
@@ -324,15 +324,15 @@ inference:
 | POST `/v1/images/generations` | 画像生成 |
 | POST `/v1/responses` | Responses API（完全互換） |
 
-### xLLM独自エンドポイント（/v0/）
+### xLLM独自エンドポイント（/api/）
 
 | エンドポイント | 説明 |
 |----------------|------|
-| GET `/v0/health` | ヘルスチェック（status + ロード済みモデル + GPU/VRAM） |
-| GET `/v0/system` | システム情報（GPU/CPU/RAM/バージョン全て） |
-| GET `/v0/metrics` | Prometheus形式メトリクス |
+| GET `/api/health` | ヘルスチェック（status + ロード済みモデル + GPU/VRAM） |
+| GET `/api/system` | システム情報（GPU/CPU/RAM/バージョン全て） |
+| GET `/api/metrics` | Prometheus形式メトリクス |
 
-**注**: `/v0/models/load` と `/v0/models/unload` は**不要**（オンデマンドロード + LRUアンロードで管理）
+**注**: `/api/models/load` と `/api/models/unload` は**不要**（オンデマンドロード + LRUアンロードで管理）
 
 ## llmlb連携
 

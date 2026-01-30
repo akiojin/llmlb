@@ -106,7 +106,7 @@ CMake連携でビルド時に自動設定も可能。
 
 ### 廃止された機能
 
-- `user` サブコマンド → API `/v0/users/*`
+- `user` サブコマンド → API `/api/users/*`
 - `model` サブコマンド → API `/v1/models/*`
 - `--preload-model` → Dashboard経由
 

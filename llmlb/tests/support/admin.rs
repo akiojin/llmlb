@@ -8,7 +8,9 @@ use tower::ServiceExt;
 
 #[allow(dead_code)]
 pub fn admin_request() -> Builder {
-    Request::builder().header("x-api-key", admin_api_key())
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("x-api-key", admin_api_key())
 }
 
 #[cfg(debug_assertions)]
@@ -29,7 +31,7 @@ pub async fn approve_node(app: &Router, node_id: &str) {
         .oneshot(
             admin_request()
                 .method("POST")
-                .uri(format!("/v0/runtimes/{}/approve", node_id))
+                .uri(format!("/api/runtimes/{}/approve", node_id))
                 .body(Body::empty())
                 .unwrap(),
         )

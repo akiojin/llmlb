@@ -6,9 +6,9 @@ use super::http::{spawn_lb, TestServer};
 /// xLLMモックサーバーを起動する
 ///
 /// 最低限のエンドポイントのみ実装:
-/// - GET /v0/system（xLLM判別用）
+/// - GET /api/system（xLLM判別用）
 /// - GET /v1/models（モデル同期用）
-/// - GET /v0/models/:model/info（メタデータ取得用）
+/// - GET /api/models/:model/info（メタデータ取得用）
 #[allow(dead_code)]
 pub async fn spawn_mock_xllm() -> TestServer {
     async fn system() -> impl IntoResponse {
@@ -55,9 +55,9 @@ pub async fn spawn_mock_xllm() -> TestServer {
     }
 
     let app = Router::new()
-        .route("/v0/system", get(system))
+        .route("/api/system", get(system))
         .route("/v1/models", get(v1_models))
-        .route("/v0/models/{model}/info", get(model_info));
+        .route("/api/models/{model}/info", get(model_info));
 
     spawn_lb(app).await
 }

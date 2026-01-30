@@ -247,7 +247,7 @@ impl EndpointRegistry {
 
     /// エンドポイントのGPU情報を更新（キャッシュのみ、DBには保存しない）
     ///
-    /// `/v0/health`から取得したGPU情報をキャッシュに反映する。
+    /// `/api/health`から取得したGPU情報をキャッシュに反映する。
     /// GPU情報は頻繁に変化するため、DBには保存せずメモリ上でのみ管理する。
     pub async fn update_gpu_info(
         &self,
@@ -336,7 +336,7 @@ impl EndpointRegistry {
 
     /// エンドポイントのデバイス情報を更新（DBとキャッシュ両方）（SPEC-f8e3a1b7）
     ///
-    /// /v0/system APIから取得したデバイス情報を保存する。
+    /// /api/system APIから取得したデバイス情報を保存する。
     pub async fn update_device_info(
         &self,
         id: Uuid,

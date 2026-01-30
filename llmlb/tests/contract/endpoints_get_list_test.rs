@@ -1,4 +1,4 @@
-//! Contract Test: GET /v0/endpoints
+//! Contract Test: GET /api/endpoints
 //!
 //! SPEC-66555000: エンドポイント一覧取得API契約テスト
 //!
@@ -29,6 +29,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -77,10 +78,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// GET /v0/endpoints - 正常系: 空の一覧
+/// GET /api/endpoints - 正常系: 空の一覧
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_empty() {
@@ -90,7 +93,7 @@ async fn test_list_endpoints_empty() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -107,7 +110,7 @@ async fn test_list_endpoints_empty() {
     assert_eq!(body["total"], 0);
 }
 
-/// GET /v0/endpoints - 正常系: 複数エンドポイントの一覧
+/// GET /api/endpoints - 正常系: 複数エンドポイントの一覧
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_multiple() {
@@ -125,7 +128,7 @@ async fn test_list_endpoints_multiple() {
             .oneshot(
                 admin_request(&admin_key)
                     .method("POST")
-                    .uri("/v0/endpoints")
+                    .uri("/api/endpoints")
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                     .unwrap(),
@@ -140,7 +143,7 @@ async fn test_list_endpoints_multiple() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -169,7 +172,7 @@ async fn test_list_endpoints_multiple() {
     }
 }
 
-/// GET /v0/endpoints - 正常系: ステータスフィルタ
+/// GET /api/endpoints - 正常系: ステータスフィルタ
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_filter_by_status() {
@@ -186,7 +189,7 @@ async fn test_list_endpoints_filter_by_status() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -200,7 +203,7 @@ async fn test_list_endpoints_filter_by_status() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints?status=pending")
+                .uri("/api/endpoints?status=pending")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -217,7 +220,7 @@ async fn test_list_endpoints_filter_by_status() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints?status=online")
+                .uri("/api/endpoints?status=online")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -230,7 +233,7 @@ async fn test_list_endpoints_filter_by_status() {
     assert_eq!(body["endpoints"].as_array().unwrap().len(), 0);
 }
 
-/// GET /v0/endpoints - 異常系: 認証なし
+/// GET /api/endpoints - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_unauthorized() {
@@ -239,8 +242,9 @@ async fn test_list_endpoints_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )

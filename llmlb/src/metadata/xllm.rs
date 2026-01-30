@@ -1,6 +1,6 @@
 //! xLLM Model Metadata Retrieval
 //!
-//! SPEC-66555000: Fetch model metadata from xLLM endpoints via GET /v0/models/:model/info
+//! SPEC-66555000: Fetch model metadata from xLLM endpoints via GET /api/models/:model/info
 
 use super::{MetadataError, ModelMetadata};
 use reqwest::Client;
@@ -35,7 +35,7 @@ struct XllmModelInfoResponse {
 
 /// Fetch model metadata from xLLM endpoint
 ///
-/// Sends GET /v0/models/:model/info to the xLLM endpoint
+/// Sends GET /api/models/:model/info to the xLLM endpoint
 ///
 /// # Arguments
 /// * `client` - HTTP client
@@ -58,7 +58,7 @@ pub async fn get_xllm_model_metadata(
         .replace(':', "%3A");
 
     let url = format!(
-        "{}/v0/models/{}/info",
+        "{}/api/models/{}/info",
         base_url.trim_end_matches('/'),
         encoded_model
     );

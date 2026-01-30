@@ -120,7 +120,7 @@
 - **SPEC-dcaeaec4**: LLM-Load Balancer独自モデルストレージ
 - **SPEC-11106000**: Hugging Face URL登録
 - ~~**SPEC-6cd7f960**: 対応モデルリスト型管理（`supported_models.json`）~~ **依存解除**: 自動認識への移行により不要
-- マニフェスト取得（`/v0/models/registry/:model_name/manifest.json`）
+- マニフェスト取得（`/api/models/registry/:model_name/manifest.json`）
 
 ### 依存元（このSPECに依存するもの）
 

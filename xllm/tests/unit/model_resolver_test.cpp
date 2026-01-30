@@ -69,7 +69,7 @@ struct RegistryServer {
         model_name = mn;
 
         // Register manifest endpoint
-        std::string manifest_path = "/v0/models/registry/" + model_name + "/manifest.json";
+        std::string manifest_path = "/api/models/registry/" + model_name + "/manifest.json";
         std::string mbody = manifest_body;
         std::string base = baseUrl();
         server.Get(manifest_path.c_str(), [serve, mbody, base](const httplib::Request&, httplib::Response& res) {
@@ -165,7 +165,7 @@ TEST(ModelResolverTest, RegistryServerOnly) {
     server->start(19897, "test-model");
 
     httplib::Client client("127.0.0.1", 19897);
-    auto res = client.Get("/v0/models/registry/test-model/manifest.json");
+    auto res = client.Get("/api/models/registry/test-model/manifest.json");
     ASSERT_TRUE(res) << "HTTP request failed";
     EXPECT_EQ(res->status, 200) << "Expected 200, got " << res->status;
 

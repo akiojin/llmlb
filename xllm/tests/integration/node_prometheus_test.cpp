@@ -25,7 +25,7 @@ TEST(NodePrometheusTest, MetricsEndpointReturnsPrometheusText) {
     server.start();
 
     httplib::Client cli("127.0.0.1", 18090);
-    auto resp = cli.Get("/v0/metrics");
+    auto resp = cli.Get("/api/metrics");
     ASSERT_TRUE(resp);
     EXPECT_EQ(resp->status, 200);
     EXPECT_EQ(resp->get_header_value("Content-Type"), "text/plain");

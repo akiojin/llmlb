@@ -66,7 +66,7 @@ async fn registry_manifest_includes_origin_urls() {
         .oneshot(
             node_request(&node_key)
                 .method("GET")
-                .uri(format!("/v0/models/registry/{}/manifest.json", encoded))
+                .uri(format!("/api/models/registry/{}/manifest.json", encoded))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -98,6 +98,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -163,14 +164,18 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
 fn node_request(node_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", node_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", node_key))
 }
 
-/// モデル配布APIは廃止（ノードが /v0/models/registry/:model/manifest.json から自律取得）
+/// モデル配布APIは廃止（ノードが /api/models/registry/:model/manifest.json から自律取得）
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_endpoint_is_removed() {
@@ -186,7 +191,7 @@ async fn test_distribute_models_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/distribute")
+                .uri("/api/models/distribute")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -213,7 +218,7 @@ async fn test_node_models_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/runtimes/{}/models", Uuid::new_v4()))
+                .uri(format!("/api/runtimes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -241,7 +246,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/runtimes/{}/models/pull", Uuid::new_v4()))
+                .uri(format!("/api/runtimes/{}/models/pull", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -266,7 +271,7 @@ async fn test_tasks_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/tasks")
+                .uri("/api/tasks")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -280,7 +285,7 @@ async fn test_tasks_endpoint_is_removed() {
     );
 }
 
-/// POST /v0/models/register - 正常系と重複/404異常系
+/// POST /api/models/register - 正常系と重複/404異常系
 #[tokio::test]
 #[serial]
 async fn test_register_model_contract() {
@@ -314,7 +319,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -354,7 +359,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -386,7 +391,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&missing_payload).unwrap()))
                 .unwrap(),
@@ -414,7 +419,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -455,7 +460,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&shard_payload).unwrap()))
                 .unwrap(),
@@ -503,7 +508,7 @@ async fn test_register_safetensors_requires_metadata_files() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -550,7 +555,7 @@ async fn test_register_safetensors_sharded_requires_index_file() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -611,7 +616,7 @@ async fn test_delete_model_removes_from_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("DELETE")
-                .uri(format!("/v0/models/{}", model_name))
+                .uri(format!("/api/models/{}", model_name))
                 .body(Body::empty())
                 .unwrap(),
         )

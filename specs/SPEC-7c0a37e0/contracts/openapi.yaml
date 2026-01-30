@@ -5,7 +5,7 @@ info:
   description: APIキースコープ管理API
 
 paths:
-  /v0/api-keys:
+  /api/api-keys:
     get:
       summary: APIキー一覧取得
       operationId: listApiKeys
@@ -50,7 +50,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /v0/api-keys/{key_id}:
+  /api/api-keys/{key_id}:
     delete:
       summary: APIキー削除
       operationId: deleteApiKey

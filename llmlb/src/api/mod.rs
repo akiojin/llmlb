@@ -58,15 +58,16 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
 pub fn create_app(state: AppState) -> Router {
     let auth_disabled = crate::config::is_auth_disabled();
 
-    // `/v0/*`: llmlb独自API（管理/運用向け）
+    // `/api/*`: llmlb独自API（管理/運用向け）
     // JWTが必要な認証ルート（ログイン以外）
     let auth_routes = Router::new()
         .route("/auth/me", get(auth::me))
         .route("/auth/logout", post(auth::logout));
 
     let auth_routes = if auth_disabled {
-        auth_routes.layer(middleware::from_fn(
-            crate::auth::middleware::inject_dummy_admin_claims,
+        auth_routes.layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
         auth_routes.layer(middleware::from_fn_with_state(
@@ -147,8 +148,9 @@ pub fn create_app(state: AppState) -> Router {
         .route("/metrics/cloud", get(cloud_metrics::export_metrics));
 
     let admin_routes = if auth_disabled {
-        admin_routes.layer(middleware::from_fn(
-            crate::auth::middleware::inject_dummy_admin_claims,
+        admin_routes.layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
         admin_routes.layer(middleware::from_fn_with_state(
@@ -190,8 +192,9 @@ pub fn create_app(state: AppState) -> Router {
         );
 
     let endpoint_routes = if auth_disabled {
-        endpoint_routes.layer(middleware::from_fn(
-            crate::auth::middleware::inject_dummy_admin_claims,
+        endpoint_routes.layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
         endpoint_routes.layer(middleware::from_fn_with_state(
@@ -208,8 +211,9 @@ pub fn create_app(state: AppState) -> Router {
     );
 
     let playground_proxy_routes = if auth_disabled {
-        playground_proxy_routes.layer(middleware::from_fn(
-            crate::auth::middleware::inject_dummy_admin_claims,
+        playground_proxy_routes.layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
         playground_proxy_routes.layer(middleware::from_fn_with_state(
@@ -219,8 +223,8 @@ pub fn create_app(state: AppState) -> Router {
     };
 
     // モデル配布レジストリ（Runtimeスコープが必要）
-    // SPEC-66555000: POST /v0/nodes（ノード自己登録）は廃止されました
-    // 新しい実装は POST /v0/endpoints を使用してください
+    // SPEC-66555000: POST /api/nodes（ノード自己登録）は廃止されました
+    // 新しい実装は POST /api/endpoints を使用してください
     let model_registry_routes = Router::new()
         // モデル配布レジストリ（複数ファイル: safetensors 等）
         .route(
@@ -243,8 +247,8 @@ pub fn create_app(state: AppState) -> Router {
     };
 
     // モデル一覧API (Admin OR Runtime スコープで利用可能)
-    // /v0/models はランタイム同期用の登録済みモデル一覧
-    // /v0/models/hub はダッシュボード向けの対応モデル一覧 + ステータス
+    // /api/models はランタイム同期用の登録済みモデル一覧
+    // /api/models/hub はダッシュボード向けの対応モデル一覧 + ステータス
     let models_list_routes = if auth_disabled {
         Router::new()
             .route("/models", get(models::list_models))
@@ -259,7 +263,7 @@ pub fn create_app(state: AppState) -> Router {
             ))
     };
 
-    // SPEC-66555000: POST /v0/health（プッシュ型ヘルスチェック）は廃止されました
+    // SPEC-66555000: POST /api/health（プッシュ型ヘルスチェック）は廃止されました
     // 新しいエンドポイントはプル型ヘルスチェック（EndpointHealthChecker）を使用
 
     // APIキー認証が必要なルート（OpenAI互換エンドポイント）
@@ -312,40 +316,53 @@ pub fn create_app(state: AppState) -> Router {
             ))
     };
 
-    // NOTE: /v0/models (GET) は Admin/Node スコープ共用。
+    // NOTE: /api/models (GET) は Admin/Node スコープ共用。
     // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
 
     // SPEC-66555000: テスト用内部エンドポイント（デバッグビルドのみ）
     // NOTE: ノード登録ベースのテストは廃止。エンドポイント登録を使用
     let test_routes = Router::new();
 
-    Router::new()
-        // `/v0/*`: llmlb独自API（互換不要・versioned）
-        .nest(
-            "/v0",
-            Router::new()
-                // 認証エンドポイント（ログインは認証不要）
-                .route("/auth/login", post(auth::login))
-                .route("/auth/register", post(auth::register))
-                .merge(auth_routes)
-                .merge(admin_routes)
-                .merge(endpoint_routes)
-                .merge(playground_proxy_routes)
-                .merge(model_registry_routes)
-                .merge(models_list_routes)
-                // デバッグ用テストエンドポイント
-                .merge(test_routes),
-        )
-        // OpenAI互換API
-        .merge(api_key_protected_routes)
-        .merge(models_protected_routes)
+    let api_routes = Router::new()
+        // 認証エンドポイント（ログインは認証不要）
+        .route("/auth/login", post(auth::login))
+        .route("/auth/register", post(auth::register))
+        .merge(auth_routes)
+        .merge(admin_routes)
+        .merge(endpoint_routes)
+        .merge(playground_proxy_routes)
+        .merge(model_registry_routes)
+        .merge(models_list_routes)
+        // デバッグ用テストエンドポイント
+        .merge(test_routes)
+        .layer(middleware::from_fn(
+            crate::auth::middleware::internal_token_middleware,
+        ));
+
+    let dashboard_routes = Router::new()
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
         .route("/dashboard/*path", get(serve_dashboard_asset))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::internal_token_middleware,
+        ));
+
+    let ws_routes = Router::new()
+        .route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::internal_token_middleware,
+        ));
+
+    Router::new()
+        // `/api/*`: llmlb独自API（互換不要・versioned）
+        .nest("/api", api_routes)
+        // OpenAI互換API
+        .merge(api_key_protected_routes)
+        .merge(models_protected_routes)
+        .merge(dashboard_routes)
         // NOTE: Playground機能は廃止され、ダッシュボード内のエンドポイント別Playgroundに移行
         // /playground/* ルートは削除済み
-        // WebSocket endpoint for real-time dashboard updates
-        .route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler))
+        .merge(ws_routes)
         .fallback(|| async { StatusCode::NOT_FOUND })
         .with_state(state)
 }
@@ -433,6 +450,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dashboard_static_served() {
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         let state = test_state().await;
         let mut app = create_app(state);
         let response = app
@@ -440,6 +458,7 @@ mod tests {
                 Request::builder()
                     .method(axum::http::Method::GET)
                     .uri("/dashboard/index.html")
+                    .header("x-internal-token", "test-internal")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -471,7 +490,7 @@ mod tests {
             .call(
                 Request::builder()
                     .method(axum::http::Method::GET)
-                    .uri("/v0/dashboard/endpoints")
+                    .uri("/api/dashboard/endpoints")
                     .header("x-api-key", "sk_debug")
                     .body(Body::empty())
                     .unwrap(),
@@ -492,7 +511,7 @@ mod tests {
             .call(
                 Request::builder()
                     .method(axum::http::Method::GET)
-                    .uri("/v0/dashboard/overview")
+                    .uri("/api/dashboard/overview")
                     .header("x-api-key", "sk_debug")
                     .body(Body::empty())
                     .unwrap(),
@@ -513,7 +532,7 @@ mod tests {
             .call(
                 Request::builder()
                     .method(axum::http::Method::GET)
-                    .uri("/v0/dashboard/request-history")
+                    .uri("/api/dashboard/request-history")
                     .header("x-api-key", "sk_debug")
                     .body(Body::empty())
                     .unwrap(),

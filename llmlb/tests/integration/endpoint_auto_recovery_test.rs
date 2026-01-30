@@ -21,7 +21,8 @@ async fn test_endpoint_recovery_offline_to_online() {
 
     // エンドポイント登録（まだモックは応答しない）
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Recovery Test",
@@ -37,10 +38,11 @@ async fn test_endpoint_recovery_offline_to_online() {
     // 接続テスト（モックがまだ設定されていないので失敗）
     let test_fail_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -62,10 +64,11 @@ async fn test_endpoint_recovery_offline_to_online() {
     // 再度接続テスト（今度は成功）
     let test_success_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -77,10 +80,11 @@ async fn test_endpoint_recovery_offline_to_online() {
     // ステータスがonlineになっている
     let detail_resp = client
         .get(format!(
-            "http://{}/v0/endpoints/{}",
+            "http://{}/api/endpoints/{}",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -99,7 +103,8 @@ async fn test_error_count_reset_on_recovery() {
     let client = Client::new();
 
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Error Count Test",
@@ -116,10 +121,11 @@ async fn test_error_count_reset_on_recovery() {
     for _ in 0..3 {
         let _ = client
             .post(format!(
-                "http://{}/v0/endpoints/{}/test",
+                "http://{}/api/endpoints/{}/test",
                 server.addr(),
                 endpoint_id
             ))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .send()
             .await
@@ -129,10 +135,11 @@ async fn test_error_count_reset_on_recovery() {
     // error_countが増加しているはず
     let detail_resp = client
         .get(format!(
-            "http://{}/v0/endpoints/{}",
+            "http://{}/api/endpoints/{}",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -155,10 +162,11 @@ async fn test_error_count_reset_on_recovery() {
     // 成功
     let test_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -170,10 +178,11 @@ async fn test_error_count_reset_on_recovery() {
     // error_countがリセットされている
     let detail_resp = client
         .get(format!(
-            "http://{}/v0/endpoints/{}",
+            "http://{}/api/endpoints/{}",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -201,7 +210,8 @@ async fn test_last_seen_updated_on_success() {
     let client = Client::new();
 
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Last Seen Test",
@@ -220,10 +230,11 @@ async fn test_last_seen_updated_on_success() {
     // 接続テスト
     let _ = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -232,10 +243,11 @@ async fn test_last_seen_updated_on_success() {
     // last_seenが更新されている
     let detail_resp = client
         .get(format!(
-            "http://{}/v0/endpoints/{}",
+            "http://{}/api/endpoints/{}",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

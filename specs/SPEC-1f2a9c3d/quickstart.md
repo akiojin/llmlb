@@ -9,13 +9,13 @@
 ### 末尾200行を取得（デフォルト）
 
 ```bash
-curl http://localhost:11435/v0/logs | jq '.entries[-5:]'
+curl http://localhost:11435/api/logs | jq '.entries[-5:]'
 ```
 
 ### 末尾N行を指定して取得
 
 ```bash
-curl "http://localhost:11435/v0/logs?tail=50" | jq '.entries | length'
+curl "http://localhost:11435/api/logs?tail=50" | jq '.entries | length'
 ```
 
 ### レスポンス例
@@ -46,18 +46,18 @@ curl "http://localhost:11435/v0/logs?tail=50" | jq '.entries | length'
 
 ```bash
 # まずノードIDを確認
-curl http://localhost:8080/v0/nodes | jq '.[].id'
+curl http://localhost:8080/api/nodes | jq '.[].id'
 
 # ノードIDを指定してログ取得
-curl "http://localhost:8080/v0/nodes/550e8400-e29b-41d4-a716-446655440000/logs?tail=100"
+curl "http://localhost:8080/api/nodes/550e8400-e29b-41d4-a716-446655440000/logs?tail=100"
 ```
 
 ### 全ノードのログを一括取得
 
 ```bash
-for node_id in $(curl -s http://localhost:8080/v0/nodes | jq -r '.[].id'); do
+for node_id in $(curl -s http://localhost:8080/api/nodes | jq -r '.[].id'); do
   echo "=== Node: $node_id ==="
-  curl -s "http://localhost:8080/v0/nodes/$node_id/logs?tail=10" | jq '.entries'
+  curl -s "http://localhost:8080/api/nodes/$node_id/logs?tail=10" | jq '.entries'
 done
 ```
 
@@ -66,21 +66,21 @@ done
 ### ERRORレベルのみ抽出
 
 ```bash
-curl http://localhost:11435/v0/logs?tail=500 | \
+curl http://localhost:11435/api/logs?tail=500 | \
   jq '.entries | map(select(.level == "ERROR"))'
 ```
 
 ### 特定のターゲットモジュールのログ
 
 ```bash
-curl http://localhost:11435/v0/logs?tail=500 | \
+curl http://localhost:11435/api/logs?tail=500 | \
   jq '.entries | map(select(.target | contains("inference")))'
 ```
 
 ### 時間範囲でフィルタ
 
 ```bash
-curl http://localhost:11435/v0/logs?tail=1000 | \
+curl http://localhost:11435/api/logs?tail=1000 | \
   jq '.entries | map(select(.timestamp > "2025-01-02T10:00:00Z"))'
 ```
 
@@ -89,7 +89,7 @@ curl http://localhost:11435/v0/logs?tail=1000 | \
 ### ノードが見つからない場合
 
 ```bash
-curl "http://localhost:8080/v0/nodes/invalid-node-id/logs"
+curl "http://localhost:8080/api/nodes/invalid-node-id/logs"
 ```
 
 レスポンス（404 Not Found）:
@@ -103,7 +103,7 @@ curl "http://localhost:8080/v0/nodes/invalid-node-id/logs"
 ### ノードに接続できない場合
 
 ```bash
-curl "http://localhost:8080/v0/nodes/offline-node-id/logs"
+curl "http://localhost:8080/api/nodes/offline-node-id/logs"
 ```
 
 レスポンス（502 Bad Gateway）:
@@ -117,7 +117,7 @@ curl "http://localhost:8080/v0/nodes/offline-node-id/logs"
 ### ログファイルが存在しない場合
 
 ```bash
-curl http://localhost:11435/v0/logs
+curl http://localhost:11435/api/logs
 ```
 
 レスポンス（200 OK、空の配列）:
@@ -136,7 +136,7 @@ curl http://localhost:11435/v0/logs
 ```javascript
 // ノード選択時
 const response = await fetch(
-  `/v0/nodes/${nodeId}/logs?tail=${tailCount}`
+  `/api/nodes/${nodeId}/logs?tail=${tailCount}`
 );
 const { entries } = await response.json();
 ```

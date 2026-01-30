@@ -86,7 +86,7 @@ print(response.choices[0].message.content)
 
 ```bash
 # ダウンロード状態確認
-curl http://localhost:8080/v0/models/llama-3.2-1b/status \
+curl http://localhost:8080/api/models/llama-3.2-1b/status \
   -H "Authorization: Bearer sk_debug"
 ```
 

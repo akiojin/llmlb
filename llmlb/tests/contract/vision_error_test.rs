@@ -39,6 +39,7 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         std::env::set_var("HOME", &temp_dir);
         std::env::set_var("USERPROFILE", &temp_dir);
 
@@ -159,6 +160,7 @@ async fn test_image_request_to_non_vision_model_returns_400() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
@@ -235,6 +237,7 @@ async fn test_image_size_limit_exceeded() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
@@ -297,6 +300,7 @@ async fn test_image_count_limit_exceeded() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
@@ -367,6 +371,7 @@ async fn test_invalid_base64_encoding() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")
@@ -439,6 +444,7 @@ async fn test_unsupported_image_format() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")

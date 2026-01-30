@@ -111,15 +111,15 @@ for log in api_logs[-10:]:  # 最新10件
 
 ## API経由でのログ取得
 
-### GET /v0/logs
+### GET /api/logs
 
 ```bash
 # 最新ログを取得
-curl http://localhost:8080/v0/logs \
+curl http://localhost:8080/api/logs \
   -H "Authorization: Bearer sk-your-api-key"
 
 # フィルタ付きで取得
-curl "http://localhost:8080/v0/logs?level=error&category=api&limit=50" \
+curl "http://localhost:8080/api/logs?level=error&category=api&limit=50" \
   -H "Authorization: Bearer sk-your-api-key"
 ```
 

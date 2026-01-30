@@ -131,7 +131,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/status:
+  /api/status:
     get:
       summary: ステータス取得（クラウドプロバイダー情報含む）
       description: llmlbのステータスとクラウドプロバイダーの設定状態を取得します。

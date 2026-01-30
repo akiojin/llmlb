@@ -20,7 +20,7 @@ pub enum DeviceType {
 
 /// デバイス情報（SPEC-f8e3a1b7）
 ///
-/// /v0/system APIから取得したデバイス情報を格納
+/// /api/system APIから取得したデバイス情報を格納
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeviceInfo {
     /// デバイスタイプ（CPU/GPU）
@@ -311,7 +311,7 @@ pub struct Endpoint {
     /// 画像生成、音声認識等の特殊機能をサポートするかを示す
     #[serde(default)]
     pub capabilities: Vec<EndpointCapability>,
-    /// GPU情報（/v0/healthから取得、Phase 1.4）
+    /// GPU情報（/api/healthから取得、Phase 1.4）
     #[serde(default)]
     pub gpu_device_count: Option<u32>,
     /// GPU総メモリ（バイト）
@@ -326,7 +326,7 @@ pub struct Endpoint {
     /// 現在のアクティブリクエスト数
     #[serde(default)]
     pub active_requests: Option<u32>,
-    /// デバイス情報（/v0/systemから取得、SPEC-f8e3a1b7）
+    /// デバイス情報（/api/systemから取得、SPEC-f8e3a1b7）
     #[serde(default)]
     pub device_info: Option<DeviceInfo>,
     /// 推論レイテンシ（EMA、ミリ秒、SPEC-f8e3a1b7）

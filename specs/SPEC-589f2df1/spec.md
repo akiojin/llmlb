@@ -41,7 +41,7 @@
   - CPU使用率（参考値）
   - メモリ使用率（参考値）
 - 収集間隔: 30秒ごと
-- エンドポイント: `POST /v0/health`（`X-Node-Token` 必須、body に `runtime_id` を含める）
+- エンドポイント: `POST /api/health`（`X-Node-Token` 必須、body に `runtime_id` を含める）
 
 ### FR-010: 負荷ベースのノード選択
 

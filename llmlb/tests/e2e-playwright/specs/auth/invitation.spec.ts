@@ -8,7 +8,7 @@ const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768';
  * Helper to get JWT token for admin user
  */
 async function getAdminToken(request: APIRequestContext): Promise<string> {
-  const response = await request.post(`${API_BASE}/v0/auth/login`, {
+  const response = await request.post(`${API_BASE}/api/auth/login`, {
     data: {
       username: 'admin',
       password: 'test',
@@ -29,7 +29,7 @@ async function getAdminToken(request: APIRequestContext): Promise<string> {
 async function listInvitations(request: APIRequestContext): Promise<unknown[]> {
   const token = await getAdminToken(request);
 
-  const response = await request.get(`${API_BASE}/v0/invitations`, {
+  const response = await request.get(`${API_BASE}/api/invitations`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -159,7 +159,7 @@ test.describe('Invitation Code Management (Dashboard)', () => {
   test('I-05: Can revoke invitation code', async ({ page, request }) => {
     // First create an invitation via API
     const token = await getAdminToken(request);
-    const createResponse = await request.post(`${API_BASE}/v0/invitations`, {
+    const createResponse = await request.post(`${API_BASE}/api/invitations`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { expires_in_hours: 24 },
     });

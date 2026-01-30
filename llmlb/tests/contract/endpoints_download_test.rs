@@ -1,4 +1,4 @@
-//! Contract Test: POST /v0/endpoints/:id/download
+//! Contract Test: POST /api/endpoints/:id/download
 //!
 //! SPEC-66555000: エンドポイントモデルダウンロードAPI契約テスト
 //!
@@ -29,6 +29,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -77,10 +78,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// POST /v0/endpoints/:id/download - 正常系: ダウンロードリクエスト
+/// POST /api/endpoints/:id/download - 正常系: ダウンロードリクエスト
 /// NOTE: この機能はxLLMタイプのエンドポイントでのみ利用可能
 #[tokio::test]
 #[serial]
@@ -99,7 +102,7 @@ async fn test_download_model_request() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -121,7 +124,7 @@ async fn test_download_model_request() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/api/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -138,7 +141,7 @@ async fn test_download_model_request() {
     );
 }
 
-/// POST /v0/endpoints/:id/download - 異常系: 存在しないエンドポイント
+/// POST /api/endpoints/:id/download - 異常系: 存在しないエンドポイント
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T123で実装予定"]
@@ -153,7 +156,7 @@ async fn test_download_model_endpoint_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints/00000000-0000-0000-0000-000000000000/download")
+                .uri("/api/endpoints/00000000-0000-0000-0000-000000000000/download")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -164,7 +167,7 @@ async fn test_download_model_endpoint_not_found() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-/// POST /v0/endpoints/:id/download - 異常系: モデル名未指定
+/// POST /api/endpoints/:id/download - 異常系: モデル名未指定
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T123で実装予定"]
@@ -182,7 +185,7 @@ async fn test_download_model_missing_model_name() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -200,7 +203,7 @@ async fn test_download_model_missing_model_name() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/api/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -215,7 +218,7 @@ async fn test_download_model_missing_model_name() {
     );
 }
 
-/// POST /v0/endpoints/:id/download - 異常系: 非xLLMエンドポイント
+/// POST /api/endpoints/:id/download - 異常系: 非xLLMエンドポイント
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T123で実装予定"]
@@ -233,7 +236,7 @@ async fn test_download_model_non_xllm_endpoint() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -253,7 +256,7 @@ async fn test_download_model_non_xllm_endpoint() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/api/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -266,7 +269,7 @@ async fn test_download_model_non_xllm_endpoint() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-/// POST /v0/endpoints/:id/download - 異常系: 認証なし
+/// POST /api/endpoints/:id/download - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T123で実装予定"]
@@ -280,8 +283,9 @@ async fn test_download_model_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/endpoints/00000000-0000-0000-0000-000000000001/download")
+                .uri("/api/endpoints/00000000-0000-0000-0000-000000000001/download")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),
@@ -292,7 +296,7 @@ async fn test_download_model_unauthorized() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// POST /v0/endpoints/:id/download - レスポンス構造検証
+/// POST /api/endpoints/:id/download - レスポンス構造検証
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T123で実装予定"]
@@ -310,7 +314,7 @@ async fn test_download_model_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -330,7 +334,7 @@ async fn test_download_model_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/download", endpoint_id))
+                .uri(format!("/api/endpoints/{}/download", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&download_payload).unwrap()))
                 .unwrap(),

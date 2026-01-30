@@ -13,7 +13,7 @@ servers:
     description: ローカル開発サーバー
 
 paths:
-  /v0/models/{model_id}/status:
+  /api/models/{model_id}/status:
     get:
       summary: モデル解決状態の取得
       description: |
@@ -44,7 +44,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/supported-models:
+  /api/supported-models:
     get:
       summary: サポートモデル一覧の取得
       description: |

@@ -66,7 +66,7 @@
 
 | 値 | 説明 | 判別条件 |
 |----|------|---------|
-| `xllm` | 本プロジェクト独自エンジン | GET /v0/system に xllm_version |
+| `xllm` | 本プロジェクト独自エンジン | GET /api/system に xllm_version |
 | `ollama` | Ollamaサーバー | GET /api/tags が有効 |
 | `vllm` | vLLMサーバー | Server headerに vllm |
 | `openai_compatible` | その他OpenAI互換 | 上記いずれにも該当しない |

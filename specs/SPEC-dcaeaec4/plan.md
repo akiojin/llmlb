@@ -53,7 +53,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 ```text
 1. ローカル ~/.llmlb/models/<name>/ を確認（必要アーティファクトが揃っていれば採用）
-2. ロードバランサーのマニフェストを取得（/v0/models/registry/:model/manifest.json）
+2. ロードバランサーのマニフェストを取得（/api/models/registry/:model/manifest.json）
 3. Nodeがruntime/GPU要件に合うアーティファクトを選択
 4. HF等の外部ソースから直接ダウンロードして保存
 5. いずれも不可 → エラー
@@ -66,7 +66,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 1. runtime_compat.cpp → model_storage.cpp リネーム
 2. LLM runtime manifest/blob解析ロジック削除
 3. 独自ディレクトリ構造実装
-4. ロードバランサーAPI連携（/v0/models, manifest）
+4. ロードバランサーAPI連携（/api/models, manifest）
 5. ノード起動時同期ロジック
 6. プッシュ通知受信ハンドラ
 7. 統合テスト

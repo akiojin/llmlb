@@ -9,7 +9,7 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /v0/users:
+  /api/users:
     get:
       summary: ユーザー一覧取得
       description: すべてのユーザーを取得（管理者専用）
@@ -102,7 +102,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/users/{id}:
+  /api/users/{id}:
     parameters:
       - name: id
         in: path

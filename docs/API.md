@@ -30,7 +30,7 @@
 
 ## メトリクス
 
-- エンドポイント: `/v0/metrics/cloud`（Prometheus text）
+- エンドポイント: `/api/metrics/cloud`（Prometheus text）
 - 指標:
   - `cloud_requests_total{provider,status}`
   - `cloud_request_latency_seconds{provider}`
@@ -51,13 +51,13 @@
 
 | メソッド | パス | 説明 |
 | --- | --- | --- |
-| GET | `/v0/dashboard/stats/tokens` | 累計トークン統計 |
-| GET | `/v0/dashboard/stats/tokens/daily` | 日次トークン統計 |
-| GET | `/v0/dashboard/stats/tokens/monthly` | 月次トークン統計 |
+| GET | `/api/dashboard/stats/tokens` | 累計トークン統計 |
+| GET | `/api/dashboard/stats/tokens/daily` | 日次トークン統計 |
+| GET | `/api/dashboard/stats/tokens/monthly` | 月次トークン統計 |
 
 ### レスポンス形式
 
-#### 累計統計 (`/v0/dashboard/stats/tokens`)
+#### 累計統計 (`/api/dashboard/stats/tokens`)
 
 ```json
 {
@@ -68,7 +68,7 @@
 }
 ```
 
-#### 日次統計 (`/v0/dashboard/stats/tokens/daily?days=7`)
+#### 日次統計 (`/api/dashboard/stats/tokens/daily?days=7`)
 
 ```json
 [
@@ -82,7 +82,7 @@
 ]
 ```
 
-#### 月次統計 (`/v0/dashboard/stats/tokens/monthly?months=3`)
+#### 月次統計 (`/api/dashboard/stats/tokens/monthly?months=3`)
 
 ```json
 [

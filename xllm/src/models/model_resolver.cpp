@@ -148,7 +148,7 @@ std::string ModelResolver::downloadFromRegistry(const std::string& model_name) {
     if (!registry_base.empty() && registry_base.back() == '/') {
         registry_base.pop_back();
     }
-    registry_base += "/v0/models/registry";
+    registry_base += "/api/models/registry";
 
     ModelDownloader downloader(
         registry_base,

@@ -14,7 +14,7 @@
   <rect x="150" y="200" width="520" height="180" rx="14" ry="14" fill="#f5f5f5" stroke="#666666" stroke-width="2" />
   <text x="190" y="240" font-family="Noto Sans JP, Arial, sans-serif" font-size="16" font-weight="600" text-anchor="start" fill="#111111">Router</text>
   <text x="190" y="266" font-family="Noto Sans JP, Arial, sans-serif" font-size="13" text-anchor="start" fill="#111111">- /v1/* proxy + load balancing</text>
-  <text x="190" y="288" font-family="Noto Sans JP, Arial, sans-serif" font-size="13" text-anchor="start" fill="#111111">- /v0/* (runtimes, models, dashboard)</text>
+  <text x="190" y="288" font-family="Noto Sans JP, Arial, sans-serif" font-size="13" text-anchor="start" fill="#111111">- /api/* (runtimes, models, dashboard)</text>
   <text x="190" y="310" font-family="Noto Sans JP, Arial, sans-serif" font-size="13" text-anchor="start" fill="#111111">- /dashboard (Web UI)</text>
 
   <!-- Nodes -->
@@ -39,5 +39,5 @@
   <path d="M330 430 L330 418 L380 418 L380 380" fill="none" stroke="#666666" stroke-width="2.5" stroke-dasharray="5 5" marker-end="url(#arrow)" />
   <path d="M540 430 L540 418 L440 418 L440 380" fill="none" stroke="#666666" stroke-width="2.5" stroke-dasharray="5 5" marker-end="url(#arrow)" />
   <rect x="260" y="392" width="300" height="18" rx="6" ry="6" fill="#ffffff" stroke="none" opacity="0.85" />
-  <text x="410" y="405" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#444444">/v0/runtimes, /v0/health (registration/heartbeat)</text>
+  <text x="410" y="405" font-family="Noto Sans JP, Arial, sans-serif" font-size="12" text-anchor="middle" fill="#444444">/api/runtimes, /api/health (registration/heartbeat)</text>
 </svg>

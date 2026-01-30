@@ -56,7 +56,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         }
     };
 
-    server.Get("/v0/logs", [](const httplib::Request& req, httplib::Response& res) {
+    server.Get("/api/logs", [](const httplib::Request& req, httplib::Response& res) {
         int limit = 200;
         if (req.has_param("tail")) {
             try {
@@ -154,8 +154,8 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(body.dump(), "application/json");
     });
 
-    // Phase 1.2: GET /v0/health - Extended health endpoint with GPU and load info
-    server.Get("/v0/health", [this](const httplib::Request&, httplib::Response& res) {
+    // Phase 1.2: GET /api/health - Extended health endpoint with GPU and load info
+    server.Get("/api/health", [this](const httplib::Request&, httplib::Response& res) {
         // Determine status based on readiness and active requests
         std::string status;
         unsigned int active_reqs = active_request_count();
@@ -217,9 +217,9 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         }
     });
 
-    // SPEC-f8e3a1b7: /v0/system - System info endpoint for llmlb integration
+    // SPEC-f8e3a1b7: /api/system - System info endpoint for llmlb integration
     // Returns device information in the format expected by llmlb
-    server.Get("/v0/system", [this](const httplib::Request&, httplib::Response& res) {
+    server.Get("/api/system", [this](const httplib::Request&, httplib::Response& res) {
         // Build GPU devices array in llmlb-expected format
         nlohmann::json gpu_devices_json = nlohmann::json::array();
         for (const auto& dev : gpu_devices_) {
@@ -260,7 +260,7 @@ void NodeEndpoints::registerRoutes(httplib::Server& server) {
         res.set_content(exporter_.render(), "text/plain");
     });
 
-    server.Get("/v0/metrics", [this, &populate_prometheus](const httplib::Request&, httplib::Response& res) {
+    server.Get("/api/metrics", [this, &populate_prometheus](const httplib::Request&, httplib::Response& res) {
         populate_prometheus();
         res.set_content(exporter_.render(), "text/plain");
     });

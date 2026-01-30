@@ -1,4 +1,4 @@
-//! Contract Test: POST /v0/endpoints/:id/sync
+//! Contract Test: POST /api/endpoints/:id/sync
 //!
 //! SPEC-66555000: エンドポイントモデル同期API契約テスト
 //!
@@ -32,6 +32,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -80,10 +81,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// POST /v0/endpoints/:id/sync - 正常系: モデル同期成功
+/// POST /api/endpoints/:id/sync - 正常系: モデル同期成功
 #[tokio::test]
 #[serial]
 async fn test_endpoint_sync_success() {
@@ -116,7 +119,7 @@ async fn test_endpoint_sync_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -135,7 +138,7 @@ async fn test_endpoint_sync_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/sync", endpoint_id))
+                .uri(format!("/api/endpoints/{}/sync", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -164,7 +167,7 @@ async fn test_endpoint_sync_success() {
     }
 }
 
-/// POST /v0/endpoints/:id/sync - 異常系: 存在しないエンドポイント
+/// POST /api/endpoints/:id/sync - 異常系: 存在しないエンドポイント
 #[tokio::test]
 #[serial]
 async fn test_endpoint_sync_not_found() {
@@ -174,7 +177,7 @@ async fn test_endpoint_sync_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/sync", Uuid::new_v4()))
+                .uri(format!("/api/endpoints/{}/sync", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -184,7 +187,7 @@ async fn test_endpoint_sync_not_found() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-/// POST /v0/endpoints/:id/sync - 異常系: エンドポイントがオフライン
+/// POST /api/endpoints/:id/sync - 異常系: エンドポイントがオフライン
 #[tokio::test]
 #[serial]
 async fn test_endpoint_sync_offline() {
@@ -201,7 +204,7 @@ async fn test_endpoint_sync_offline() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -220,7 +223,7 @@ async fn test_endpoint_sync_offline() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/sync", endpoint_id))
+                .uri(format!("/api/endpoints/{}/sync", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -231,7 +234,7 @@ async fn test_endpoint_sync_offline() {
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
-/// POST /v0/endpoints/:id/sync - 異常系: 認証なし
+/// POST /api/endpoints/:id/sync - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 async fn test_endpoint_sync_unauthorized() {
@@ -240,8 +243,9 @@ async fn test_endpoint_sync_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/sync", Uuid::new_v4()))
+                .uri(format!("/api/endpoints/{}/sync", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -251,7 +255,7 @@ async fn test_endpoint_sync_unauthorized() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// POST /v0/endpoints/:id/sync - 正常系: 空のモデル一覧
+/// POST /api/endpoints/:id/sync - 正常系: 空のモデル一覧
 #[tokio::test]
 #[serial]
 async fn test_endpoint_sync_empty_models() {
@@ -280,7 +284,7 @@ async fn test_endpoint_sync_empty_models() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -299,7 +303,7 @@ async fn test_endpoint_sync_empty_models() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/endpoints/{}/sync", endpoint_id))
+                .uri(format!("/api/endpoints/{}/sync", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )

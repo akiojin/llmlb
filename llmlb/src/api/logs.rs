@@ -1,6 +1,6 @@
 //! ログ閲覧API
 //!
-//! `/v0/dashboard/logs/*` エンドポイントを提供する。
+//! `/api/dashboard/logs/*` エンドポイントを提供する。
 
 use super::error::AppError;
 use crate::common::{
@@ -48,7 +48,7 @@ fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
-/// GET /v0/dashboard/logs/load balancer
+/// GET /api/dashboard/logs/load balancer
 pub async fn get_lb_logs(Query(query): Query<LogQuery>) -> Result<Json<LogResponse>, AppError> {
     let log_path = logging::log_file_path().map_err(|err| {
         LbError::Internal(format!("Failed to resolve load balancer log path: {err}"))
@@ -62,12 +62,12 @@ pub async fn get_lb_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRespon
     }))
 }
 
-/// GET /v0/nodes/:node_id/logs
+/// GET /api/nodes/:node_id/logs
 ///
 /// # 廃止予定
 ///
 /// このAPIは廃止予定です。ノードベースのログ取得はエンドポイントベースに移行されます。
-/// エンドポイントが `/v0/logs` を提供している場合、llmlbはそこにリクエストを転送します。
+/// エンドポイントが `/api/logs` を提供している場合、llmlbはそこにリクエストを転送します。
 #[deprecated(note = "Use endpoint-based log fetching instead. Node-based routing is deprecated.")]
 #[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_node_logs(
@@ -91,7 +91,7 @@ pub async fn get_node_logs(
     let limit = clamp_limit(query.limit);
     // エンドポイントのbase_urlからログ取得
     let url = format!(
-        "{}/v0/logs?tail={}",
+        "{}/api/logs?tail={}",
         endpoint.base_url.trim_end_matches('/'),
         limit
     );
@@ -238,7 +238,7 @@ mod tests {
         let mock = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/v0/logs"))
+            .and(path("/api/logs"))
             .respond_with(ResponseTemplate::new(200).set_body_raw(
                 r#"{"entries":[{"timestamp":"2025-11-14T00:00:00Z","level":"INFO","target":"node","message":"remote","fields":{}}],"path":"/var/log/node.log"}"#,
                 "application/json",

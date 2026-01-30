@@ -6,7 +6,7 @@
 **入力**: ユーザー説明: "ロードバランサー主導のモデル自動配布機能"
 
 > NOTE: 本仕様は採用されません。ロードバランサーからノードへの push 配布は実装しない方針です。
-> ノードはロードバランサーの `/v1/models` と `/v0/models/registry/:model_name/manifest.json` を参照し、
+> ノードはロードバランサーの `/v1/models` と `/api/models/registry/:model_name/manifest.json` を参照し、
 > HFから直接ダウンロードして自律的にモデルを取得します。
 > 最新の設計は `SPEC-dcaeaec4` を参照してください。
 
@@ -183,8 +183,8 @@
 ### API互換性
 
 - `/v1/models` は新形式のIDでモデルを返す
-- `/v0/models/register` は新形式のIDでモデルを登録
-- `DELETE /v0/models/*model_name` は新形式のIDでモデルを削除
+- `/api/models/register` は新形式のIDでモデルを登録
+- `DELETE /api/models/*model_name` は新形式のIDでモデルを削除
 
 ---
 
@@ -263,5 +263,5 @@
 
 - **廃止理由**: ロードバランサーからノードへのpush配布は実装しない方針に変更
 - **置換先**: SPEC-dcaeaec4（モデルカタログ統合）
-- **新方針**: ノードはロードバランサーの `/v1/models` と `/v0/models/registry/:model_name/manifest.json` を参照し、
+- **新方針**: ノードはロードバランサーの `/v1/models` と `/api/models/registry/:model_name/manifest.json` を参照し、
   HFから直接ダウンロードするpull型設計に変更

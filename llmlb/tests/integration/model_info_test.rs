@@ -62,8 +62,8 @@ async fn build_app() -> (Router, String, sqlx::SqlitePool) {
     (api::create_app(state), admin_key, db_pool)
 }
 
-/// T018: /v0/models/available は廃止され、/v0/models に統合
-/// NOTE: HuggingFaceカタログ参照は廃止。登録済みモデル一覧は /v0/models で取得
+/// T018: /api/models/available は廃止され、/api/models に統合
+/// NOTE: HuggingFaceカタログ参照は廃止。登録済みモデル一覧は /api/models で取得
 #[tokio::test]
 async fn test_available_models_endpoint_is_removed() {
     let (app, admin_key, _db_pool) = build_app().await;
@@ -72,7 +72,8 @@ async fn test_available_models_endpoint_is_removed() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/v0/models/available")
+                .uri("/api/models/available")
+                .header("x-internal-token", "test-internal")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -81,11 +82,11 @@ async fn test_available_models_endpoint_is_removed() {
         .unwrap();
 
     // エンドポイントは削除済み
-    // NOTE: 405 (Method Not Allowed) は /v0/models/*model_name (DELETE用) にマッチするため
+    // NOTE: 405 (Method Not Allowed) は /api/models/*model_name (DELETE用) にマッチするため
     assert!(
         response.status() == StatusCode::NOT_FOUND
             || response.status() == StatusCode::METHOD_NOT_ALLOWED,
-        "/v0/models/available GET endpoint should be removed (got {})",
+        "/api/models/available GET endpoint should be removed (got {})",
         response.status()
     );
 }
@@ -112,7 +113,8 @@ async fn test_model_matrix_view_multiple_endpoints() {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v0/endpoints")
+                    .uri("/api/endpoints")
+                    .header("x-internal-token", "test-internal")
                     .header("authorization", format!("Bearer {}", admin_key))
                     .header("content-type", "application/json")
                     .body(Body::from(
@@ -136,7 +138,8 @@ async fn test_model_matrix_view_multiple_endpoints() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
+                .header("x-internal-token", "test-internal")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),

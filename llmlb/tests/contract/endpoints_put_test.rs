@@ -1,4 +1,4 @@
-//! Contract Test: PUT /v0/endpoints/:id
+//! Contract Test: PUT /api/endpoints/:id
 //!
 //! SPEC-66555000: エンドポイント更新API契約テスト
 //!
@@ -30,6 +30,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -78,10 +79,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// PUT /v0/endpoints/:id - 正常系: 名前の更新
+/// PUT /api/endpoints/:id - 正常系: 名前の更新
 #[tokio::test]
 #[serial]
 async fn test_update_endpoint_name() {
@@ -98,7 +101,7 @@ async fn test_update_endpoint_name() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -121,7 +124,7 @@ async fn test_update_endpoint_name() {
         .oneshot(
             admin_request(&admin_key)
                 .method("PUT")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&update_payload).unwrap()))
                 .unwrap(),
@@ -139,7 +142,7 @@ async fn test_update_endpoint_name() {
     assert_eq!(body["base_url"], "http://localhost:11434");
 }
 
-/// PUT /v0/endpoints/:id - 正常系: ヘルスチェック間隔の更新
+/// PUT /api/endpoints/:id - 正常系: ヘルスチェック間隔の更新
 #[tokio::test]
 #[serial]
 async fn test_update_endpoint_health_check_interval() {
@@ -156,7 +159,7 @@ async fn test_update_endpoint_health_check_interval() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -179,7 +182,7 @@ async fn test_update_endpoint_health_check_interval() {
         .oneshot(
             admin_request(&admin_key)
                 .method("PUT")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&update_payload).unwrap()))
                 .unwrap(),
@@ -195,7 +198,7 @@ async fn test_update_endpoint_health_check_interval() {
     assert_eq!(body["health_check_interval_secs"], 120);
 }
 
-/// PUT /v0/endpoints/:id - 正常系: notesの更新（nullで削除）
+/// PUT /api/endpoints/:id - 正常系: notesの更新（nullで削除）
 #[tokio::test]
 #[serial]
 async fn test_update_endpoint_notes() {
@@ -213,7 +216,7 @@ async fn test_update_endpoint_notes() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -236,7 +239,7 @@ async fn test_update_endpoint_notes() {
         .oneshot(
             admin_request(&admin_key)
                 .method("PUT")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&update_payload).unwrap()))
                 .unwrap(),
@@ -252,7 +255,7 @@ async fn test_update_endpoint_notes() {
     assert!(body["notes"].is_null());
 }
 
-/// PUT /v0/endpoints/:id - 異常系: 存在しないID
+/// PUT /api/endpoints/:id - 異常系: 存在しないID
 #[tokio::test]
 #[serial]
 async fn test_update_endpoint_not_found() {
@@ -266,7 +269,7 @@ async fn test_update_endpoint_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("PUT")
-                .uri(format!("/v0/endpoints/{}", Uuid::new_v4()))
+                .uri(format!("/api/endpoints/{}", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&update_payload).unwrap()))
                 .unwrap(),
@@ -277,7 +280,7 @@ async fn test_update_endpoint_not_found() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-/// PUT /v0/endpoints/:id - 異常系: バリデーションエラー（空の名前）
+/// PUT /api/endpoints/:id - 異常系: バリデーションエラー（空の名前）
 #[tokio::test]
 #[serial]
 async fn test_update_endpoint_validation_error() {
@@ -294,7 +297,7 @@ async fn test_update_endpoint_validation_error() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -317,7 +320,7 @@ async fn test_update_endpoint_validation_error() {
         .oneshot(
             admin_request(&admin_key)
                 .method("PUT")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&update_payload).unwrap()))
                 .unwrap(),
@@ -328,7 +331,7 @@ async fn test_update_endpoint_validation_error() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-/// PUT /v0/endpoints/:id - 異常系: 認証なし
+/// PUT /api/endpoints/:id - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 async fn test_update_endpoint_unauthorized() {
@@ -341,8 +344,9 @@ async fn test_update_endpoint_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("PUT")
-                .uri(format!("/v0/endpoints/{}", Uuid::new_v4()))
+                .uri(format!("/api/endpoints/{}", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&update_payload).unwrap()))
                 .unwrap(),

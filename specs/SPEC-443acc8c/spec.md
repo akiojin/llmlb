@@ -18,7 +18,7 @@
 >
 > **影響を受けるAPI**:
 >
-> - `POST /v0/health` → 廃止
+> - `POST /api/health` → 廃止
 > - `X-Node-Token` → 廃止
 >
 > **新方式**:
@@ -54,7 +54,7 @@
 ノードは定期的にロードバランサーへハートビート（ヘルスチェック＋メトリクス）を送信し、ロードバランサーはそれを受信して稼働状況を更新する（ロードバランサーからノードへポーリングはしない）。
 
 - 送信間隔: 30秒ごと（Node側設定。例: `XLLM_HEARTBEAT_SECS`）
-- 送信先: `POST /v0/health`（`X-Node-Token` 必須）
+- 送信先: `POST /api/health`（`X-Node-Token` 必須）
 
 ### FR-014: 障害検知
 
@@ -76,7 +76,7 @@
 
 ロードバランサーはノードからのヘルスチェック受信エンドポイントを提供する。
 
-- エンドポイント: `POST /v0/health`
+- エンドポイント: `POST /api/health`
 - 認証: `X-Node-Token: <node_token>` 必須
 - レスポンス: 200 OK
 
@@ -117,7 +117,7 @@
 - タイムアウト期間: 60秒（`LLMLB_NODE_TIMEOUT`で設定可能）（FR-014で明記）
 - 障害検知: `last_seen`からタイムアウト経過でオフライン遷移（FR-014で明記）
 - 自動復旧: ハートビート受信時にオンライン復帰（FR-015で明記）
-- API: `POST /v0/health`、`X-Node-Token`必須（FR-016で明記）
+- API: `POST /api/health`、`X-Node-Token`必須（FR-016で明記）
 
 **アーキテクチャの確認**:
 

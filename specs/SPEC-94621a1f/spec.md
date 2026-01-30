@@ -18,8 +18,8 @@
 >
 > **影響を受けるAPI**:
 >
-> - `POST /v0/nodes` → 廃止（`POST /v0/endpoints` に置換）
-> - `POST /v0/health` → 廃止（ロードバランサー側からのプル型ヘルスチェックに変更）
+> - `POST /api/nodes` → 廃止（`POST /api/endpoints` に置換）
+> - `POST /api/health` → 廃止（ロードバランサー側からのプル型ヘルスチェックに変更）
 > - `X-Node-Token` → 廃止
 
 ## 概要
@@ -62,16 +62,16 @@
 
 ロードバランサーは、ノードからの登録リクエストを受け付けるREST APIを提供する。
 
-- エンドポイント: `POST /v0/nodes`
+- エンドポイント: `POST /api/nodes`
 - リクエストボディ: マシン名、IPアドレス、LLM runtimeバージョン、ポート番号
-- レスポンス: 登録成功/失敗のステータス、ノードID、`node_token`（`POST /v0/health` 用）
+- レスポンス: 登録成功/失敗のステータス、ノードID、`node_token`（`POST /api/health` 用）
 - 登録直後のノード状態は常に `pending`（既存ノードの再登録も含む）
 
 ### FR-002: ノード一覧API
 
 登録されたノードの一覧を取得するAPIを提供する。
 
-- エンドポイント: `GET /v0/nodes`
+- エンドポイント: `GET /api/nodes`
 - レスポンス: ノードID、マシン名、IPアドレス、ステータス、最終確認時刻
 
 ### FR-003: ハートビート送信
@@ -79,7 +79,7 @@
 ノードは定期的にロードバランサーにヘルスチェック（ハートビート＋メトリクス）を送信し、稼働状態を通知する。
 
 - 送信間隔: 30秒ごと
-- エンドポイント: `POST /v0/health`（`X-Node-Token` 必須）
+- エンドポイント: `POST /api/health`（`X-Node-Token` 必須）
 - タイムアウト: 60秒以内に応答がない場合はオフラインとみなす
 
 ### FR-004: データ永続化
@@ -145,9 +145,9 @@
 
 **確認済み事項**:
 
-- 登録API: POST /v0/nodes（FR-001で明記）
-- 一覧API: GET /v0/nodes（FR-002で明記）
-- ハートビート: POST /v0/health、30秒間隔、X-Node-Token必須（FR-003で明記）
+- 登録API: POST /api/nodes（FR-001で明記）
+- 一覧API: GET /api/nodes（FR-002で明記）
+- ハートビート: POST /api/health、30秒間隔、X-Node-Token必須（FR-003で明記）
 - 永続化: SQLite（FR-004で明記）
 - 初期状態: 常にpending（再登録含む）（FR-001, FR-007で明記）
 - 承認フロー: pending → registering/online（FR-007で明記）

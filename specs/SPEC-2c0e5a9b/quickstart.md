@@ -67,7 +67,7 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 1. ノードのGPU状態を確認:
 
    ```bash
-   curl http://localhost:3000/v0/nodes \
+   curl http://localhost:3000/api/nodes \
      -H "Authorization: Bearer $API_KEY"
    ```
 

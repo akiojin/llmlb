@@ -78,7 +78,7 @@
 
 - [x] T010 `node/src/model_resolver.cpp` にモデル解決フローを実装
   - ローカルキャッシュ確認
-  - `supported_models.json`参照（ロードバランサー /v0/models）
+  - `supported_models.json`参照（ロードバランサー /api/models）
   - 外部ソース→ロードバランサープロキシの順でダウンロード
   - エラーハンドリング
 - [x] T011 `node/src/model_resolver.cpp` に`supported_models.json`参照ロジック

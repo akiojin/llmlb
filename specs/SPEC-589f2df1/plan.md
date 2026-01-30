@@ -121,7 +121,7 @@ pub async fn select_node_by_metrics(&self) -> Option<Node> {
 
 #### メトリクス収集API（追加予定）
 ```rust
-// POST /v0/health (X-Node-Token required)
+// POST /api/health (X-Node-Token required)
 pub async fn update_metrics(
     State(state): State<AppState>,
     Json(metrics): Json<NodeMetrics>,

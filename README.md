@@ -154,7 +154,8 @@ cargo build --release -p llmlb
 # Default: http://0.0.0.0:32768
 
 # Access dashboard
-# Open http://localhost:32768/dashboard in browser
+# Open http://localhost:32768/dashboard?internal_token=YOUR_TOKEN in browser
+# (LLMLB_INTERNAL_API_TOKEN is required)
 ```
 
 **Environment Variables:**
@@ -167,6 +168,7 @@ cargo build --release -p llmlb
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
 | `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
+| `LLMLB_INTERNAL_API_TOKEN` | (required) | Internal token for /api, /dashboard, /ws |
 
 **Backward compatibility:** Legacy env var names (`LLMLB_PORT` etc.) are supported but deprecated.
 
@@ -305,7 +307,7 @@ LLMLB_LOAD_BALANCER_MODE=auto cargo run -p llmlb
 
 Runtimes report health + metrics to the load balancer for runtime status and load balancing decisions.
 
-**Endpoint:** `POST /v0/health` (requires `X-Runtime-Token` + API key with `runtime`)
+**Endpoint:** `POST /api/health` (requires `X-Runtime-Token` + API key with `runtime`)
 
 **Headers:**
 - `Authorization: Bearer <api_key>`
@@ -434,10 +436,10 @@ curl http://lb:32768/v1/responses -d '...'
 - Runtimes resolve models on-demand in this order:
   - local cache (`LLM_RUNTIME_MODELS_DIR`)
   - allowlisted origin download (Hugging Face, etc.; configure via `LLM_RUNTIME_ORIGIN_ALLOWLIST`)
-  - manifest-based selection from the load balancer (`GET /v0/models/registry/:model_name/manifest.json`)
+  - manifest-based selection from the load balancer (`GET /api/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
-- Runtimes register via `/v0/runtimes`; CPU-only endpoints are also supported.
+- Runtimes register via `/api/runtimes`; CPU-only endpoints are also supported.
 - Heartbeats carry CPU/GPU/memory metrics used for load balancing.
 - Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
 
@@ -513,17 +515,17 @@ the load balancer centrally manages external inference servers (Ollama, vLLM, xL
 
 ```bash
 # Register endpoint
-curl -X POST http://localhost:32768/v0/endpoints \
+curl -X POST http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{"name": "Ollama Server A", "base_url": "http://192.168.1.100:11434"}'
 
 # List endpoints
-curl http://localhost:32768/v0/endpoints \
+curl http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_your_api_key"
 
 # Sync models
-curl -X POST http://localhost:32768/v0/endpoints/{id}/sync \
+curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
@@ -559,11 +561,11 @@ For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quick
   - Model IDs are the Hugging Face repo ID (e.g. `org/model`).
   - `/v1/models` lists models including queued/caching/error with `lifecycle_status` + `download_progress`.
   - Runtimes pull models on-demand via the model registry endpoints:
-    - `GET /v0/models/registry/:model_name/manifest.json`
-    - `GET /v0/models/registry/:model_name/files/:file_name`
-    - (Legacy) `GET /v0/models/blob/:model_name` for single-file GGUF.
+    - `GET /api/models/registry/:model_name/manifest.json`
+    - `GET /api/models/registry/:model_name/files/:file_name`
+    - (Legacy) `GET /api/models/blob/:model_name` for single-file GGUF.
 - API:
-  - `POST /v0/models/register` with `repo` and optional `filename`.
+  - `POST /api/models/register` with `repo` and optional `filename`.
 - `/v1/models` lists registered models; `ready` reflects runtime sync status.
 
 ## Installation
@@ -751,7 +753,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
    ```
 4. **List Registered Runtimes**
    ```bash
-   curl http://lb:32768/v0/runtimes \
+   curl http://lb:32768/api/runtimes \
      # Replace with your actual API key (scope: admin)
      -H "Authorization: Bearer sk_your_admin_key"
    ```
@@ -769,6 +771,7 @@ See [Runtime (C++)](#runtime-c) section in Quick Start.
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
 | `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
+| `LLMLB_INTERNAL_API_TOKEN` | (required) | Internal token for /api, /dashboard, /ws | `INTERNAL_API_TOKEN` |
 | `LLMLB_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
 | `LLMLB_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
 | `LLMLB_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
@@ -824,7 +827,7 @@ Note: Engine plugins were removed in favor of built-in managers. See `docs/migra
 
 ### Cloud models return 401/400
 - Check if `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` are set on the load balancer side
-- If `*_key_present` is false in Dashboard `/v0/dashboard/stats`, it's not set
+- If `*_key_present` is false in Dashboard `/api/dashboard/stats`, it's not set
 - Models without prefixes are routed locally, so do not add a prefix if you don't have cloud keys
 
 ### Port conflict
@@ -841,7 +844,7 @@ Note: Engine plugins were removed in favor of built-in managers. See `docs/migra
 - Check static delivery settings for `/dashboard/*` if using a reverse proxy
 
 ### OpenAI compatible API returns 503 / Model not registered
-- Returns 503 if all runtimes are `initializing`. Wait for runtime model load or check status at `/v0/dashboard/runtimes`
+- Returns 503 if all runtimes are `initializing`. Wait for runtime model load or check status at `/api/dashboard/runtimes`
 - If specified model does not exist locally, wait for runtime to auto-pull
 
 ### Too many / too few logs
@@ -955,17 +958,17 @@ web interface
 
 **List Request History:**
 ```bash
-GET /v0/dashboard/request-responses?page=1&per_page=50
+GET /api/dashboard/request-responses?page=1&per_page=50
 ```
 
 **Get Request Details:**
 ```bash
-GET /v0/dashboard/request-responses/{id}
+GET /api/dashboard/request-responses/{id}
 ```
 
 **Export History:**
 ```bash
-GET /v0/dashboard/request-responses/export
+GET /api/dashboard/request-responses/export
 ```
 
 ### Storage
@@ -985,9 +988,9 @@ to `.migrated`.
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/auth/login` | User authentication, JWT token issuance | None |
-| POST | `/v0/auth/logout` | Logout | JWT |
-| GET | `/v0/auth/me` | Get authenticated user info | JWT |
+| POST | `/api/auth/login` | User authentication, JWT token issuance | None |
+| POST | `/api/auth/logout` | Logout | JWT |
+| GET | `/api/auth/me` | Get authenticated user info | JWT |
 
 #### Roles & API Key Scopes
 
@@ -995,17 +998,17 @@ to `.migrated`.
 
 | Role | Capabilities |
 |------|--------------|
-| `admin` | Full access to `/v0` management APIs |
-| `viewer` | Can authenticate and access `/v0/auth/*` only |
+| `admin` | Full access to `/api` management APIs |
+| `viewer` | Can authenticate and access `/api/auth/*` only |
 
 **API key scopes:**
 
 | Scope | Grants |
 |-------|--------|
-| `endpoints` | Endpoint management (`/v0/endpoints/*`) |
-| `runtime` | Runtime registration + health + model sync (`POST /v0/runtimes`, `POST /v0/health`, `GET /v0/models`, `GET /v0/models/registry/:model_name/manifest.json`) - Legacy |
+| `endpoints` | Endpoint management (`/api/endpoints/*`) |
+| `runtime` | Runtime registration + health + model sync (`POST /api/runtimes`, `POST /api/health`, `GET /api/models`, `GET /api/models/registry/:model_name/manifest.json`) - Legacy |
 | `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via runtime token) |
-| `admin` | All management APIs (`/v0/users`, `/v0/api-keys`, `/v0/models/*`, `/v0/runtimes/*`, `/v0/endpoints/*`, `/v0/dashboard/*`, `/v0/metrics/*`) |
+| `admin` | All management APIs (`/api/users`, `/api/api-keys`, `/api/models/*`, `/api/runtimes/*`, `/api/endpoints/*`, `/api/dashboard/*`, `/api/metrics/*`) |
 
 Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
 
@@ -1013,49 +1016,49 @@ Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_ad
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/users` | List users | JWT+Admin or API key (admin) |
-| POST | `/v0/users` | Create user | JWT+Admin or API key (admin) |
-| PUT | `/v0/users/:id` | Update user | JWT+Admin or API key (admin) |
-| DELETE | `/v0/users/:id` | Delete user | JWT+Admin or API key (admin) |
+| GET | `/api/users` | List users | JWT+Admin or API key (admin) |
+| POST | `/api/users` | Create user | JWT+Admin or API key (admin) |
+| PUT | `/api/users/:id` | Update user | JWT+Admin or API key (admin) |
+| DELETE | `/api/users/:id` | Delete user | JWT+Admin or API key (admin) |
 
 #### API Key Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/api-keys` | List API keys | JWT+Admin or API key (admin) |
-| POST | `/v0/api-keys` | Create API key | JWT+Admin or API key (admin) |
-| PUT | `/v0/api-keys/:id` | Update API key | JWT+Admin or API key (admin) |
-| DELETE | `/v0/api-keys/:id` | Delete API key | JWT+Admin or API key (admin) |
+| GET | `/api/api-keys` | List API keys | JWT+Admin or API key (admin) |
+| POST | `/api/api-keys` | Create API key | JWT+Admin or API key (admin) |
+| PUT | `/api/api-keys/:id` | Update API key | JWT+Admin or API key (admin) |
+| DELETE | `/api/api-keys/:id` | Delete API key | JWT+Admin or API key (admin) |
 
 #### Endpoint Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/endpoints` | Register endpoint | JWT+Admin or API key (admin) |
-| GET | `/v0/endpoints` | List endpoints | JWT+Admin/Viewer or API key (admin/endpoints) |
-| GET | `/v0/endpoints/:id` | Get endpoint details | JWT+Admin/Viewer or API key (admin/endpoints) |
-| PUT | `/v0/endpoints/:id` | Update endpoint | JWT+Admin or API key (admin) |
-| DELETE | `/v0/endpoints/:id` | Delete endpoint | JWT+Admin or API key (admin) |
-| POST | `/v0/endpoints/:id/test` | Connection test | JWT+Admin or API key (admin) |
-| POST | `/v0/endpoints/:id/sync` | Sync models | JWT+Admin or API key (admin) |
+| POST | `/api/endpoints` | Register endpoint | JWT+Admin or API key (admin) |
+| GET | `/api/endpoints` | List endpoints | JWT+Admin/Viewer or API key (admin/endpoints) |
+| GET | `/api/endpoints/:id` | Get endpoint details | JWT+Admin/Viewer or API key (admin/endpoints) |
+| PUT | `/api/endpoints/:id` | Update endpoint | JWT+Admin or API key (admin) |
+| DELETE | `/api/endpoints/:id` | Delete endpoint | JWT+Admin or API key (admin) |
+| POST | `/api/endpoints/:id/test` | Connection test | JWT+Admin or API key (admin) |
+| POST | `/api/endpoints/:id/sync` | Sync models | JWT+Admin or API key (admin) |
 
 #### Runtime Management Endpoints (Legacy)
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/runtimes` | Register runtime (GPU required) | API key (runtime) |
-| GET | `/v0/runtimes` | List runtimes | JWT+Admin or API key (admin) |
-| DELETE | `/v0/runtimes/:runtime_id` | Delete runtime | JWT+Admin or API key (admin) |
-| POST | `/v0/runtimes/:runtime_id/disconnect` | Force runtime offline | JWT+Admin or API key (admin) |
-| PUT | `/v0/runtimes/:runtime_id/settings` | Update runtime settings | JWT+Admin or API key (admin) |
-| GET | `/v0/runtimes/metrics` | List runtime metrics | JWT+Admin or API key (admin) |
-| GET | `/v0/metrics/summary` | System statistics summary | JWT+Admin or API key (admin) |
+| POST | `/api/runtimes` | Register runtime (GPU required) | API key (runtime) |
+| GET | `/api/runtimes` | List runtimes | JWT+Admin or API key (admin) |
+| DELETE | `/api/runtimes/:runtime_id` | Delete runtime | JWT+Admin or API key (admin) |
+| POST | `/api/runtimes/:runtime_id/disconnect` | Force runtime offline | JWT+Admin or API key (admin) |
+| PUT | `/api/runtimes/:runtime_id/settings` | Update runtime settings | JWT+Admin or API key (admin) |
+| GET | `/api/runtimes/metrics` | List runtime metrics | JWT+Admin or API key (admin) |
+| GET | `/api/metrics/summary` | System statistics summary | JWT+Admin or API key (admin) |
 
 #### Health Check Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v0/health` | Receive health check from runtime | Runtime Token + API key (runtime) |
+| POST | `/api/health` | Receive health check from runtime | Runtime Token + API key (runtime) |
 
 #### OpenAI-Compatible Endpoints
 
@@ -1071,30 +1074,30 @@ Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_ad
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/models` | List registered models (runtime sync) | API key (runtime or admin) |
-| POST | `/v0/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
-| DELETE | `/v0/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
-| GET | `/v0/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (runtime or admin) |
+| GET | `/api/models` | List registered models (runtime sync) | API key (runtime or admin) |
+| POST | `/api/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
+| DELETE | `/api/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
+| GET | `/api/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (runtime or admin) |
 
 #### Dashboard Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/runtimes` | Runtime info list | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/stats` | System statistics | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/request-history` | Request history | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/metrics/:runtime_id` | Runtime metrics history | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin) |
-| GET | `/v0/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/runtimes` | Runtime info list | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/stats` | System statistics | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/request-history` | Request history | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/metrics/:runtime_id` | Runtime metrics history | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin) |
 
 #### Log Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/v0/dashboard/logs/lb` | Load balancer logs | JWT+Admin or API key (admin) |
-| GET | `/v0/runtimes/:runtime_id/logs` | Runtime logs | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/logs/lb` | Load balancer logs | JWT+Admin or API key (admin) |
+| GET | `/api/runtimes/:runtime_id/logs` | Runtime logs | JWT+Admin or API key (admin) |
 
 #### Static Files & Metrics
 
@@ -1104,7 +1107,7 @@ Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_ad
 | GET | `/dashboard/*path` | Dashboard static files | None |
 | GET | `/playground` | Chat Playground UI | None |
 | GET | `/playground/*path` | Playground static files | None |
-| GET | `/v0/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin) |
+| GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin) |
 
 ### Runtime API (C++)
 
@@ -1125,14 +1128,14 @@ Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_ad
 | GET | `/startup` | Startup status check |
 | GET | `/metrics` | Metrics (JSON format) |
 | GET | `/metrics/prom` | Prometheus metrics |
-| GET | `/v0/logs?tail=200` | Tail runtime logs (JSON) |
+| GET | `/api/logs?tail=200` | Tail runtime logs (JSON) |
 | GET | `/log/level` | Get current log level |
 | POST | `/log/level` | Change log level |
 | GET | `/internal-error` | Intentional error (debug) |
 
 ### Request/Response Examples
 
-#### POST /v0/runtimes
+#### POST /api/runtimes
 
 Register a runtime.
 
@@ -1250,4 +1253,4 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
   - `GOOGLE_API_KEY` (required), `GOOGLE_API_BASE_URL` (optional, default `https://generativelanguage.googleapis.com/v1beta`)
   - `ANTHROPIC_API_KEY` (required), `ANTHROPIC_API_BASE_URL` (optional, default `https://api.anthropic.com`)
 - Behavior: prefix is stripped before forwarding; responses remain OpenAI-compatible. Streaming is passthrough as SSE.
-- Metrics: `/v0/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).
+- Metrics: `/api/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).

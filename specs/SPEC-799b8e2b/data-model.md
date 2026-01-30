@@ -231,7 +231,7 @@ impl LogConfig {
 
 ## APIレスポンス形式
 
-### GET /v0/logs
+### GET /api/logs
 
 ```json
 {

@@ -1,4 +1,4 @@
-//! Contract Test: GET /v0/endpoints/:id/download/progress
+//! Contract Test: GET /api/endpoints/:id/download/progress
 //!
 //! SPEC-66555000: エンドポイントダウンロード進捗API契約テスト
 //!
@@ -29,6 +29,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -77,10 +78,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// GET /v0/endpoints/:id/download/progress - 正常系: 進捗一覧取得
+/// GET /api/endpoints/:id/download/progress - 正常系: 進捗一覧取得
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T124で実装予定"]
@@ -98,7 +101,7 @@ async fn test_get_download_progress_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -116,7 +119,7 @@ async fn test_get_download_progress_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/endpoints/{}/download/progress", endpoint_id))
+                .uri(format!("/api/endpoints/{}/download/progress", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -135,7 +138,7 @@ async fn test_get_download_progress_list() {
     }
 }
 
-/// GET /v0/endpoints/:id/download/progress - 正常系: 進捗詳細のフィールド検証
+/// GET /api/endpoints/:id/download/progress - 正常系: 進捗詳細のフィールド検証
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T124で実装予定"]
@@ -153,7 +156,7 @@ async fn test_download_progress_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -169,7 +172,7 @@ async fn test_download_progress_response_structure() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/endpoints/{}/download/progress", endpoint_id))
+                .uri(format!("/api/endpoints/{}/download/progress", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -200,7 +203,7 @@ async fn test_download_progress_response_structure() {
     }
 }
 
-/// GET /v0/endpoints/:id/download/progress - 異常系: 存在しないエンドポイント
+/// GET /api/endpoints/:id/download/progress - 異常系: 存在しないエンドポイント
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T124で実装予定"]
@@ -211,7 +214,7 @@ async fn test_download_progress_endpoint_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints/00000000-0000-0000-0000-000000000000/download/progress")
+                .uri("/api/endpoints/00000000-0000-0000-0000-000000000000/download/progress")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -221,7 +224,7 @@ async fn test_download_progress_endpoint_not_found() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-/// GET /v0/endpoints/:id/download/progress - 異常系: 認証なし
+/// GET /api/endpoints/:id/download/progress - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 #[ignore = "API未実装 - T124で実装予定"]
@@ -231,8 +234,9 @@ async fn test_download_progress_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/endpoints/00000000-0000-0000-0000-000000000001/download/progress")
+                .uri("/api/endpoints/00000000-0000-0000-0000-000000000001/download/progress")
                 .body(Body::empty())
                 .unwrap(),
         )

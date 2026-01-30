@@ -272,7 +272,8 @@ async fn v1_models_excludes_models_not_on_endpoints() {
     // モデルを登録（ただしエンドポイントは登録しない）
     let client = Client::new();
     let register_resp = client
-        .post(format!("http://{}/v0/models/register", lb.addr()))
+        .post(format!("http://{}/api/models/register", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "repo": "test/orphan-model"

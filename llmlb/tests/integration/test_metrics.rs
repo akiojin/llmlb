@@ -34,7 +34,7 @@ async fn test_metrics_collection_and_storage() {
     //     "gpu_count": 1,
     //     "gpu_model": "Test GPU"
     // });
-    // let node_response = server.post("/v0/runtimes")
+    // let node_response = server.post("/api/runtimes")
     //     .json(&node_req)
     //     .await;
     // let node_id: Uuid = node_response.json().get("runtime_id").as_str().unwrap().parse().unwrap();
@@ -50,7 +50,7 @@ async fn test_metrics_collection_and_storage() {
     //     "avg_response_time_ms": 250.5,
     //     "timestamp": Utc::now()
     // });
-    // let metrics_response = server.post("/v0/health")
+    // let metrics_response = server.post("/api/health")
     //     .json(&metrics_data)
     //     .await;
 
@@ -90,7 +90,7 @@ async fn test_metrics_update_existing_data() {
     //     "avg_response_time_ms": 100.0,
     //     "timestamp": Utc::now()
     // });
-    // server.post("/v0/health")
+    // server.post("/api/health")
     //     .json(&initial_metrics)
     //     .await;
 
@@ -103,7 +103,7 @@ async fn test_metrics_update_existing_data() {
     //     "avg_response_time_ms": 300.0,
     //     "timestamp": Utc::now()
     // });
-    // let response = server.post("/v0/health")
+    // let response = server.post("/api/health")
     //     .json(&updated_metrics)
     //     .await;
 
@@ -143,7 +143,7 @@ async fn test_metrics_for_nonexistent_node_returns_error() {
     //     "avg_response_time_ms": 250.5,
     //     "timestamp": Utc::now()
     // });
-    // let response = server.post("/v0/health")
+    // let response = server.post("/api/health")
     //     .json(&metrics_data)
     //     .await;
 

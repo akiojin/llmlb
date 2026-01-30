@@ -196,7 +196,7 @@ For a complete walkthrough, execute in this order:
 
 - **Login Credentials**: `admin` / `test` (development mode)
 - **API Key**: `sk_debug` (development mode)
-- **Test Models**: ALL models from `/v0/models` endpoint
+- **Test Models**: ALL models from `/api/models` endpoint
 - **Test Message**: "Hello, this is a test message"
 - **Sample HF Repo**: `Qwen/Qwen2.5-0.5B-Instruct-GGUF`
 - **Sample GGUF File**: `qwen2.5-0.5b-instruct-q4_k_m.gguf`

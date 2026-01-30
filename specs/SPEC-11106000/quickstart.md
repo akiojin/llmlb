@@ -13,7 +13,7 @@
 
 ### API
 ```bash
-curl -sS http://localhost:32768/v0/models/register \
+curl -sS http://localhost:32768/api/models/register \
   -H "Content-Type: application/json" \
   -d '{"repo":"org/repo"}' | jq .
 ```
@@ -21,13 +21,13 @@ curl -sS http://localhost:32768/v0/models/register \
 ファイルURL登録の場合は `filename` を指定する:
 
 ```bash
-curl -sS http://localhost:32768/v0/models/register \
+curl -sS http://localhost:32768/api/models/register \
   -H "Content-Type: application/json" \
   -d '{"repo":"org/repo","filename":"model.safetensors"}' | jq .
 ```
 
 ## 2. Nodeが同期して取得
-- Nodeは起動時または同期通知時に /v0/models を参照し、
+- Nodeは起動時または同期通知時に /api/models を参照し、
   マニフェストに従って HF から直接ダウンロードします。
 - ロードバランサーはバイナリを保持しません。
 

@@ -614,7 +614,10 @@ mod tests {
             LockError::FileLocked { port: err_port } => {
                 assert_eq!(err_port, port);
             }
-            _ => panic!("Expected AlreadyRunning or FileLocked error, got: {:?}", err),
+            _ => panic!(
+                "Expected AlreadyRunning or FileLocked error, got: {:?}",
+                err
+            ),
         }
     }
 

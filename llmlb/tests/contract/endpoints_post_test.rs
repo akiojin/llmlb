@@ -1,4 +1,4 @@
-//! Contract Test: POST /v0/endpoints
+//! Contract Test: POST /api/endpoints
 //!
 //! SPEC-66555000: エンドポイント登録API契約テスト
 //!
@@ -29,6 +29,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -77,10 +78,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// POST /v0/endpoints - 正常系: エンドポイント登録成功
+/// POST /api/endpoints - 正常系: エンドポイント登録成功
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_success() {
@@ -95,7 +98,7 @@ async fn test_create_endpoint_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -120,7 +123,7 @@ async fn test_create_endpoint_success() {
     assert!(body["registered_at"].is_string());
 }
 
-/// POST /v0/endpoints - 正常系: オプションフィールド付き登録
+/// POST /api/endpoints - 正常系: オプションフィールド付き登録
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_with_optional_fields() {
@@ -128,7 +131,8 @@ async fn test_create_endpoint_with_optional_fields() {
 
     let payload = json!({
         "name": "Production vLLM",
-        "base_url": "http://192.168.1.100:8000",
+        // 外部ネットワークに依存するとCI/ローカルでハングし得るため、到達不能でも即時に失敗するローカルURLを使う
+        "base_url": "http://127.0.0.1:18000",
         "api_key": "sk-secret-key",
         "health_check_interval_secs": 60,
         "notes": "Production server"
@@ -138,7 +142,7 @@ async fn test_create_endpoint_with_optional_fields() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -158,7 +162,7 @@ async fn test_create_endpoint_with_optional_fields() {
     assert!(body.get("api_key").is_none() || body["api_key"].is_null());
 }
 
-/// POST /v0/endpoints - 異常系: 名前が空
+/// POST /api/endpoints - 異常系: 名前が空
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_empty_name() {
@@ -173,7 +177,7 @@ async fn test_create_endpoint_empty_name() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -184,7 +188,7 @@ async fn test_create_endpoint_empty_name() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-/// POST /v0/endpoints - 異常系: 不正なURL
+/// POST /api/endpoints - 異常系: 不正なURL
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_invalid_url() {
@@ -199,7 +203,7 @@ async fn test_create_endpoint_invalid_url() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -210,7 +214,7 @@ async fn test_create_endpoint_invalid_url() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-/// POST /v0/endpoints - 異常系: URL重複
+/// POST /api/endpoints - 異常系: URL重複
 #[tokio::test]
 #[serial]
 #[ignore = "TDD RED: URL重複チェック未実装"]
@@ -228,7 +232,7 @@ async fn test_create_endpoint_duplicate_url() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -247,7 +251,7 @@ async fn test_create_endpoint_duplicate_url() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&dup_payload).unwrap()))
                 .unwrap(),
@@ -261,10 +265,16 @@ async fn test_create_endpoint_duplicate_url() {
         .await
         .unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert!(body["error"]["code"].is_string());
+    let code = body
+        .get("code")
+        .or_else(|| body.get("error").and_then(|e| e.get("code")));
+    assert!(
+        code.is_some() && code.unwrap().is_string(),
+        "error code should be present either at body.code or body.error.code"
+    );
 }
 
-/// POST /v0/endpoints - 異常系: 認証なし
+/// POST /api/endpoints - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_unauthorized() {
@@ -278,8 +288,9 @@ async fn test_create_endpoint_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -290,7 +301,7 @@ async fn test_create_endpoint_unauthorized() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// POST /v0/endpoints - 異常系: ヘルスチェック間隔の範囲外
+/// POST /api/endpoints - 異常系: ヘルスチェック間隔の範囲外
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_invalid_health_check_interval() {
@@ -308,7 +319,7 @@ async fn test_create_endpoint_invalid_health_check_interval() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -329,7 +340,7 @@ async fn test_create_endpoint_invalid_health_check_interval() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),

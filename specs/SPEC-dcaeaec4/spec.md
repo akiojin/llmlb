@@ -51,7 +51,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 #### FR-3: モデルアーティファクト解決（Node主導）
 
 1. ロードバランサーは登録済みモデルの**ファイル一覧（マニフェスト）**を提示する。
-   - 例: `/v0/models/registry/:model_name/manifest.json`
+   - 例: `/api/models/registry/:model_name/manifest.json`
 2. Node はマニフェストと GPU バックエンド（Metal/DirectML）に応じて**必要アーティファクトを選択**する。
 3. Node はローカル `~/.llmlb/models/<name>/` を確認し、必要アーティファクトが揃っていれば採用する。
 4. 共有パスは本仕様では扱わない（廃止）。
@@ -71,7 +71,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 #### FR-6: ノード起動時同期
 
-- ノードは起動時にロードバランサーのモデル一覧（`/v1/models` または `/v0/models`）を取得
+- ノードは起動時にロードバランサーのモデル一覧（`/v1/models` または `/api/models`）を取得
 - 各モデルについて **マニフェストを参照**し、FR-3の解決フローに従って取得/参照
 - ローカル → 外部ソース（HF等）の順で解決
 
@@ -80,7 +80,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 - ロードバランサーは新しいモデル登録時に、オンライン状態の全ノードに同期通知を送信
 - 同期通知はノードの `/api/models/sync` エンドポイントをPOST（モデル名のみ含む）
 - ノードは通知受信後、ロードバランサーの `/v1/models` からモデル一覧を取得し、FR-3のモデル解決フローに従って同期
-- **重要**: これはPull型の同期。ロードバランサーはモデルファイルをプッシュせず、通知のみ送信。ノード側が自発的に取得する
+- **重要**: これはPull型の同期。ロードバランサーはモデルファイルをプッシュせず、通知のみ送信。エンドポイント側が自発的に取得する
 - リトライポリシー: 無限リトライ、指数バックオフ（1s, 2s, 4s, ... 最大60s）
 
 #### FR-8: API設計
@@ -90,15 +90,15 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 - `GET /v1/models` - 外部クライアント向け一覧（OpenAI互換 + ダッシュボード拡張フィールド）
 - `POST /v1/models/register` - モデル登録（HuggingFace URL等）
 - `DELETE /v1/models/:model_name` - モデル削除
-- `GET /v0/models` - Node 同期向けメタデータ（format / repo / filename など）
-- `GET /v0/models/registry/:model_name/manifest.json` - Node 向けファイル一覧
+- `GET /api/models` - Node 同期向けメタデータ（format / repo / filename など）
+- `GET /api/models/registry/:model_name/manifest.json` - Node 向けファイル一覧
 
 **廃止済みエンドポイント**:
 - `/api/models/registered` - **廃止**（`/v1/models`に統合）
 
 #### FR-9: 全ノード全モデル対応の原則（廃止）
 
-**廃止理由**: SPEC-93536000 により、モデル対応はノードが `executable_models` として報告する方式へ移行。
+**廃止理由**: SPEC-93536000 (moved to xLLM repo) により、モデル対応はノードが `executable_models` として報告する方式へ移行。
 
 - すべてのノードが全モデルに対応する前提は廃止
 - 個別ノードへのモデル割り当て機能は引き続きスコープ外
@@ -163,8 +163,8 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 - 環境変数: XLLM_MODELS_DIR（推奨）、LLM_MODELS_DIR（互換）（FR-1で明記）
 - モデル名形式: ファイル名ベースまたは階層形式（FR-2で明記）
 - 解決フロー: ローカル → 外部ソース（FR-3で明記）
-- API設計: 外部は `/v1/models`、Node同期は `/v0/models` と manifest API（FR-8で明記）
-- 全ノード全モデル対応: 廃止（SPEC-93536000 でノード別対応へ移行）
+- API設計: 外部は `/v1/models`、Node同期は `/api/models` と manifest API（FR-8で明記）
+- 全ノード全モデル対応: 廃止（SPEC-93536000 (moved to xLLM repo) でノード別対応へ移行）
 
 **削除される機能**:
 
@@ -176,7 +176,7 @@ LLM runtime固有のストレージ形式への暗黙フォールバックは撤
 
 - Node は許可リスト内の外部ソースから直接取得できる（FR-3）
 - 同期はPull型: ロードバランサーは通知のみ送信し、ノードが自発的に取得（FR-7）
-- モデル割り当ては行わず、全ノードが全モデルに対応（FR-9）は廃止（SPEC-93536000へ移行）
+- モデル割り当ては行わず、全ノードが全モデルに対応（FR-9）は廃止（SPEC-93536000 (moved to xLLM repo)へ移行）
 
 ### Session 2025-12-31
 

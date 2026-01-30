@@ -29,7 +29,6 @@ on:
       - 'llmlb/src/models/image.rs'
       - 'llmlb/src/api/openai.rs'
       - 'llmlb/tests/**/vision*.rs'
-      - 'xllm/src/core/vision_processor.cpp'
       - '.github/workflows/vision-tests.yml'
 
 env:
@@ -49,6 +48,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          submodules: recursive
+
+      - name: Checkout xLLM
+        uses: actions/checkout@v4
+        with:
+          repository: akiojin/xLLM
+          path: xllm
           submodules: recursive
 
       # Self-hosted runner: Tools (Rust, CMake, Python) are pre-installed
@@ -90,7 +96,12 @@ jobs:
 
       - name: Bootstrap pest_generator
         if: steps.verify.outputs.skip_build != 'true'
-        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+        run: |
+          if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
+            cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+          else
+            echo "Skipping pest_generator bootstrap: vendor/pest_generator/bootstrap/Cargo.toml not found"
+          fi
 
       - name: Ensure huggingface-hub installed
         if: steps.verify.outputs.skip_build != 'true'
@@ -235,6 +246,8 @@ jobs:
         if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "🚀 Starting llmlb server..."
+          # Clean up previous database to avoid migration version mismatch
+          rm -rf /tmp/llmlb-data
           mkdir -p /tmp/llmlb-data
 
           LLMLB_DATABASE_URL=sqlite:/tmp/llmlb-data/router.db \
@@ -256,7 +269,7 @@ jobs:
         if: steps.verify.outputs.skip_build != 'true'
         run: |
           echo "📝 Registering xLLM endpoint..."
-          curl -X POST http://127.0.0.1:32768/api/endpoints \
+          curl -X POST http://127.0.0.1:32768/v0/endpoints \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer sk_debug" \
             -d '{

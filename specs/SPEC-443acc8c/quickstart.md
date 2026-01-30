@@ -18,7 +18,7 @@ export LLMLB_HEALTH_CHECK_INTERVAL=10  # 監視間隔（秒）
 export LLMLB_NODE_TIMEOUT=60           # タイムアウト（秒）
 ```
 
-### ノード側環境変数
+### エンドポイント側環境変数
 
 ```bash
 # ハートビート設定
@@ -33,7 +33,7 @@ export LLMLB_URL=http://localhost:8080  # ロードバランサーURL
 
 ```bash
 # 登録済みノード一覧
-curl -X GET http://localhost:8080/v0/nodes \
+curl -X GET http://localhost:8080/api/nodes \
   -H "Authorization: Bearer <jwt_token>"
 ```
 
@@ -60,7 +60,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 
 ```bash
 # ノードからロードバランサーへハートビート送信
-curl -X POST http://localhost:8080/v0/health \
+curl -X POST http://localhost:8080/api/health \
   -H "X-Node-Token: <node-token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -124,7 +124,7 @@ class HeartbeatSender:
     def send_heartbeat(self, metrics: dict):
         """単一のハートビートを送信"""
         response = httpx.post(
-            f"{self.lb_url}/v0/health",
+            f"{self.lb_url}/api/health",
             headers={"X-Node-Token": self.node_token},
             json={
                 "node_id": self.node_id,
@@ -180,7 +180,7 @@ def monitor_health(jwt_token: str, interval: int = 10):
     """ノードの健康状態を監視"""
     while True:
         response = httpx.get(
-            "http://localhost:8080/v0/nodes",
+            "http://localhost:8080/api/nodes",
             headers={"Authorization": f"Bearer {jwt_token}"}
         )
         nodes = response.json()["nodes"]
@@ -205,7 +205,7 @@ from datetime import datetime, timedelta
 def check_node_health(jwt_token: str, timeout_threshold: int = 60):
     """ノードの健康状態をチェックし、問題があればアラート"""
     response = httpx.get(
-        "http://localhost:8080/v0/nodes",
+        "http://localhost:8080/api/nodes",
         headers={"Authorization": f"Bearer {jwt_token}"}
     )
     nodes = response.json()["nodes"]
@@ -237,7 +237,7 @@ pkill -f xllm
 
 # 2. 60秒後にオフライン状態を確認
 sleep 60
-curl -X GET http://localhost:8080/v0/nodes \
+curl -X GET http://localhost:8080/api/nodes \
   -H "Authorization: Bearer <jwt_token>" | jq '.nodes[].state'
 ```
 
@@ -248,7 +248,7 @@ curl -X GET http://localhost:8080/v0/nodes \
 ./xllm --lb-url http://localhost:8080
 
 # 2. 即座にオンライン状態を確認
-curl -X GET http://localhost:8080/v0/nodes \
+curl -X GET http://localhost:8080/api/nodes \
   -H "Authorization: Bearer <jwt_token>" | jq '.nodes[].state'
 ```
 
@@ -304,7 +304,7 @@ export LLMLB_NODE_TIMEOUT=120  # 2分に延長
 
 ```bash
 # 原因: ハートビート間隔が長い
-# 対策: ノード側で間隔を短縮
+# 対策: エンドポイント側で間隔を短縮
 export XLLM_HEARTBEAT_SECS=10  # 10秒に短縮
 ```
 

@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: ルーターユーザー管理API
+  title: llmlbユーザー管理API
   description: ユーザーアカウントの作成・更新・削除API（管理者専用）
   version: 1.0.0
 
@@ -9,7 +9,7 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /v0/users:
+  /api/users:
     get:
       summary: ユーザー一覧取得
       description: すべてのユーザーを取得（管理者専用）
@@ -102,7 +102,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/users/{id}:
+  /api/users/{id}:
     parameters:
       - name: id
         in: path

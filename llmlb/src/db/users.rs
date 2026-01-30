@@ -122,6 +122,31 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<User>, LbError> {
     Ok(rows.into_iter().map(|r| r.into_user()).collect())
 }
 
+/// 任意の管理者ユーザーIDを取得
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+///
+/// # Returns
+/// * `Ok(Some(Uuid))` - 管理者ユーザーIDが見つかった
+/// * `Ok(None)` - 管理者ユーザーが存在しない
+/// * `Err(LbError)` - 取得失敗
+pub async fn find_any_admin_id(pool: &SqlitePool) -> Result<Option<Uuid>, LbError> {
+    let id: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to find admin user: {}", e)))?;
+
+    match id {
+        Some(raw) => Uuid::parse_str(&raw)
+            .map(Some)
+            .map_err(|e| LbError::Database(format!("Invalid admin user id: {}", e))),
+        None => Ok(None),
+    }
+}
+
 /// ユーザーを更新
 ///
 /// # Arguments

@@ -70,7 +70,7 @@ fn validate_model_name(model_name: &str) -> Result<(), LbError> {
 }
 
 // NOTE: AvailableModelView, AvailableModelsResponse, Pagination, model_info_to_view() は
-// /v0/models/available 廃止に伴い削除されました。
+// /api/models/available 廃止に伴い削除されました。
 
 /// モデルのライフサイクル状態
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -80,7 +80,7 @@ pub enum LifecycleStatus {
     Pending,
     /// ダウンロード・変換中（キャッシュ処理中）
     Caching,
-    /// ルーターにキャッシュ完了（ノードがアクセス可能）
+    /// llmlbにキャッシュ完了（ノードがアクセス可能）
     Registered,
     /// エラー発生
     Error,
@@ -193,7 +193,7 @@ async fn fetch_hf_info(http_client: &reqwest::Client, repo: &str) -> Option<HfIn
     Some(info)
 }
 
-/// 対応モデル + 状態（GET /v0/models レスポンス）
+/// 対応モデル + 状態（GET /api/models レスポンス）
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelWithStatus {
     /// モデルID
@@ -274,7 +274,7 @@ pub struct DownloadProgress {
     pub error: Option<String>,
 }
 
-// NOTE: RegisteredModelView と model_info_to_registered_view は /v0/models 廃止に伴い削除。
+// NOTE: RegisteredModelView と model_info_to_registered_view は /api/models 廃止に伴い削除。
 // ダッシュボードは /v1/models を使用し、TypeScript側で型を定義。
 
 // NOTE: get_registered_models() ハンドラは廃止されました。
@@ -287,7 +287,7 @@ pub async fn list_registered_models(pool: &SqlitePool) -> RouterResult<Vec<Model
     storage.load_models().await
 }
 
-/// GET /v0/models - 登録済みモデル一覧（拡張メタデータ付き）
+/// GET /api/models - 登録済みモデル一覧（拡張メタデータ付き）
 ///
 /// ノード同期用途向け。配列を直接返す。
 /// NOTE: この関数は既存のノード同期用途で維持。ダッシュボードは list_models_with_status() を使用。
@@ -296,7 +296,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<Model
     Ok(Json(models))
 }
 
-/// GET /v0/models/hub - 登録済みモデル一覧 + 状態（SPEC-6cd7f960 改定版）
+/// GET /api/models/hub - 登録済みモデル一覧 + 状態（SPEC-6cd7f960 改定版）
 ///
 /// ダッシュボードのModel Hub用。登録済みモデルを状態付きで返す。
 /// HF動的情報（ダウンロード数、いいね数）も含む。
@@ -973,7 +973,7 @@ impl IntoResponse for AppError {
     }
 }
 
-// NOTE: GET /v0/models/available は廃止されました。
+// NOTE: GET /api/models/available は廃止されました。
 // HFカタログは直接 https://huggingface.co を参照してください。
 
 #[derive(Deserialize)]
@@ -1025,10 +1025,10 @@ async fn compute_gpu_warnings(
     warnings
 }
 
-/// POST /v0/models/register - HFモデルを対応モデルに登録（メタデータのみ）
+/// POST /api/models/register - HFモデルを対応モデルに登録（メタデータのみ）
 ///
 /// 方針:
-/// - ルーターは変換・バイナリ保存を行わない
+/// - llmlbは変換・バイナリ保存を行わない
 /// - `filename` を指定するとそのアーティファクトを主として登録
 /// - 未指定の場合、リポジトリ内のアーティファクトが一意であれば自動選択
 /// - safetensors では `config.json` / `tokenizer.json` が必須
@@ -1161,7 +1161,7 @@ pub async fn register_model(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
-/// DELETE /v0/models/:model_name - 登録モデル削除
+/// DELETE /api/models/:model_name - 登録モデル削除
 ///
 /// 登録情報のみ削除し、Nodeは次回同期でキャッシュを削除する。
 pub async fn delete_model(
@@ -1176,7 +1176,7 @@ pub async fn delete_model(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// GET /v0/models/registry/:model_name/manifest.json - モデル配布マニフェスト
+/// GET /api/models/registry/:model_name/manifest.json - モデル配布マニフェスト
 ///
 /// Node がモデルを複数ファイル（safetensors + metadata）として取得するためのマニフェスト。
 pub async fn get_model_registry_manifest(

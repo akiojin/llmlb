@@ -7,21 +7,21 @@ llmlb serves the admin dashboard UI and a lightweight Playground UI.
 
 The authoritative API list and setup instructions live in `README.md` / `README.ja.md`.
 
-## Router endpoints used by the Dashboard
+## LLM Load Balancer endpoints used by the Dashboard
 
-- `GET /v0/dashboard/overview`
-- `GET /v0/dashboard/stats`
-- `GET /v0/dashboard/runtimes`
-- `GET /v0/dashboard/metrics/:runtime_id`
-- `GET /v0/dashboard/request-history`
-- `GET /v0/dashboard/request-responses`
-- `GET /v0/dashboard/request-responses/:id`
-- `GET /v0/dashboard/request-responses/export`
-- `GET /v0/dashboard/logs/router`
-- `GET /v0/runtimes/:runtime_id/logs`
-- `GET /v0/dashboard/stats/tokens`
-- `GET /v0/dashboard/stats/tokens/daily`
-- `GET /v0/dashboard/stats/tokens/monthly`
+- `GET /api/dashboard/overview`
+- `GET /api/dashboard/stats`
+- `GET /api/dashboard/runtimes`
+- `GET /api/dashboard/metrics/:runtime_id`
+- `GET /api/dashboard/request-history`
+- `GET /api/dashboard/request-responses`
+- `GET /api/dashboard/request-responses/:id`
+- `GET /api/dashboard/request-responses/export`
+- `GET /api/dashboard/logs/router`
+- `GET /api/runtimes/:runtime_id/logs`
+- `GET /api/dashboard/stats/tokens`
+- `GET /api/dashboard/stats/tokens/daily`
+- `GET /api/dashboard/stats/tokens/monthly`
 
 ## Build (regenerate embedded assets)
 

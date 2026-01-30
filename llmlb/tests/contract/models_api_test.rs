@@ -66,7 +66,7 @@ async fn registry_manifest_includes_origin_urls() {
         .oneshot(
             node_request(&node_key)
                 .method("GET")
-                .uri(format!("/v0/models/registry/{}/manifest.json", encoded))
+                .uri(format!("/api/models/registry/{}/manifest.json", encoded))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -98,6 +98,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -146,7 +147,7 @@ async fn build_app() -> TestApp {
         "node-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Runtime],
+        vec![ApiKeyScope::Endpoint],
     )
     .await
     .expect("create node api key")
@@ -163,14 +164,18 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
 fn node_request(node_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", node_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", node_key))
 }
 
-/// モデル配布APIは廃止（ノードが /v0/models/registry/:model/manifest.json から自律取得）
+/// モデル配布APIは廃止（ノードが /api/models/registry/:model/manifest.json から自律取得）
 #[tokio::test]
 #[serial]
 async fn test_distribute_models_endpoint_is_removed() {
@@ -186,7 +191,7 @@ async fn test_distribute_models_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/distribute")
+                .uri("/api/models/distribute")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -213,7 +218,7 @@ async fn test_node_models_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/runtimes/{}/models", Uuid::new_v4()))
+                .uri(format!("/api/runtimes/{}/models", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -241,7 +246,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri(format!("/v0/runtimes/{}/models/pull", Uuid::new_v4()))
+                .uri(format!("/api/runtimes/{}/models/pull", Uuid::new_v4()))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
@@ -256,7 +261,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
     );
 }
 
-/// ダウンロードタスクAPIは廃止（モデル同期はノード側でオンデマンドに実行）
+/// ダウンロードタスクAPIは廃止（モデル同期はエンドポイント側でオンデマンドに実行）
 #[tokio::test]
 #[serial]
 async fn test_tasks_endpoint_is_removed() {
@@ -266,7 +271,7 @@ async fn test_tasks_endpoint_is_removed() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/tasks")
+                .uri("/api/tasks")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -280,7 +285,7 @@ async fn test_tasks_endpoint_is_removed() {
     );
 }
 
-/// POST /v0/models/register - 正常系と重複/404異常系
+/// POST /api/models/register - 正常系と重複/404異常系
 #[tokio::test]
 #[serial]
 async fn test_register_model_contract() {
@@ -314,7 +319,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -324,7 +329,8 @@ async fn test_register_model_contract() {
 
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // /v1/models はオンラインノードの実行可能モデルのみ返すため、未登録ノードでは含まれない
+    // SPEC-6cd7f960 FR-6: /v1/models はオンラインエンドポイントの実行可能モデルのみ返す
+    // 登録しただけでエンドポイントがない場合は含まれない
     let models_res = app
         .clone()
         .oneshot(
@@ -343,8 +349,8 @@ async fn test_register_model_contract() {
         .as_array()
         .expect("'data' must be an array on /v1/models");
     assert!(
-        data.iter().any(|m| m["id"] == "test/repo"),
-        "/v1/models should include registered model without online nodes"
+        !data.iter().any(|m| m["id"] == "test/repo"),
+        "/v1/models should NOT include registered model without online endpoints (FR-6)"
     );
 
     // 重複登録は400
@@ -353,7 +359,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -385,7 +391,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&missing_payload).unwrap()))
                 .unwrap(),
@@ -413,7 +419,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -454,7 +460,7 @@ async fn test_register_model_contract() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&shard_payload).unwrap()))
                 .unwrap(),
@@ -502,7 +508,7 @@ async fn test_register_safetensors_requires_metadata_files() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -549,7 +555,7 @@ async fn test_register_safetensors_sharded_requires_index_file() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/models/register")
+                .uri("/api/models/register")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -581,6 +587,8 @@ async fn test_delete_model_removes_from_list() {
     let storage = ModelStorage::new(db_pool.clone());
     storage.save_model(&model).await.unwrap();
 
+    // SPEC-6cd7f960 FR-6: /v1/models はオンラインエンドポイントの実行可能モデルのみ返す
+    // 登録しただけでエンドポイントがない場合は含まれない
     let models_res = app
         .clone()
         .oneshot(
@@ -598,9 +606,9 @@ async fn test_delete_model_removes_from_list() {
     assert!(
         body["data"]
             .as_array()
-            .map(|arr| arr.iter().any(|m| m["id"] == model_name))
-            .unwrap_or(false),
-        "model should appear in /v1/models even without online nodes"
+            .map(|arr| !arr.iter().any(|m| m["id"] == model_name))
+            .unwrap_or(true),
+        "model should NOT appear in /v1/models without online endpoints (FR-6)"
     );
 
     let delete_res = app
@@ -608,7 +616,7 @@ async fn test_delete_model_removes_from_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("DELETE")
-                .uri(format!("/v0/models/{}", model_name))
+                .uri(format!("/api/models/{}", model_name))
                 .body(Body::empty())
                 .unwrap(),
         )

@@ -35,6 +35,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
 
@@ -131,7 +132,7 @@ async fn request_history_redacts_inline_media_data() {
     let response = app
         .app
         .oneshot(
-            Request::builder()
+            Request::builder().header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("content-type", "application/json")

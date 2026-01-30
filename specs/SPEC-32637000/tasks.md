@@ -1,5 +1,7 @@
 # タスク: モデル capabilities に基づくルーティング検証
 
+**ステータス**: 完了
+
 **入力**: `/specs/SPEC-32637000/`の設計ドキュメント
 **前提条件**: plan.md (必須)
 
@@ -106,6 +108,8 @@ T016, T017, T018 (仕上げ)
 
 ```
 # T002-T003 を一緒に起動 (enum テスト):
+
+**ステータス**: 完了
 Task: "common/src/types.rs に ModelCapability serialization テスト"
 Task: "common/src/types.rs に ModelCapability::from_model_type テスト"
 

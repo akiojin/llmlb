@@ -1,5 +1,7 @@
 # タスク: llmlb CLIコマンド
 
+**ステータス**: 完了
+
 **入力**: `/specs/SPEC-58378000/`の設計ドキュメント
 **前提条件**: plan.md, research.md, data-model.md, contracts/cli-commands.md, quickstart.md
 
@@ -136,6 +138,8 @@ Polish (T043-T049) [並列可能]
 
 ```text
 # Phase 3.2 Contract Tests を一緒に起動:
+
+**ステータス**: 完了
 Task: "node/tests/contract/cli_serve_test.cpp に node serve の contract test"
 Task: "node/tests/contract/cli_run_test.cpp に node run の contract test"
 Task: "node/tests/contract/cli_pull_test.cpp に node pull の contract test"

@@ -10,17 +10,17 @@
 Hugging Face 上のモデルをロードバランサーに登録します（バイナリのダウンロードや変換は行いません）。
 
 ```bash
-curl -sS http://localhost:32768/v0/models/register \
+curl -sS http://localhost:32768/api/models/register \
   -H "Content-Type: application/json" \
   -d '{"repo":"org/repo"}' | jq .
 ```
 
-## ノード側: モデル同期
+## エンドポイント側: モデル同期
 
 ノードはロードバランサーのモデル一覧とマニフェストを参照し、
 HFから直接ダウンロードして同期します。
 
 - モデル一覧: `GET /v1/models`
-- マニフェスト: `GET /v0/models/registry/:model_name/manifest.json`
+- マニフェスト: `GET /api/models/registry/:model_name/manifest.json`
 
 詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。

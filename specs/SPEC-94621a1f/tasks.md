@@ -1,22 +1,22 @@
 # タスク一覧: ノード自己登録システム
 
 **機能ID**: `SPEC-94621a1f`
-**ステータス**: ✅ 更新済み
+**ステータス**: 完了
 
 ## 既存実装（完了）
 
-- [x] Load Balancer: `POST /v0/nodes` でノード登録（GPU必須バリデーション、到達性チェック）
-- [x] Load Balancer: `GET /v0/nodes` でノード一覧
-- [x] Load Balancer: `POST /v0/health` でヘルスチェック受信（`X-Node-Token` 認証）
+- [x] Load Balancer: `POST /api/nodes` でノード登録（GPU必須バリデーション、到達性チェック）
+- [x] Load Balancer: `GET /api/nodes` でノード一覧
+- [x] Load Balancer: `POST /api/health` でヘルスチェック受信（`X-Node-Token` 認証）
 - [x] Token: 登録時に `runtime_token` を発行しDBに保存（以降のノード通信に必須）
 - [x] Registry: ノード状態をDBと同期し、起動時にロード
-- [x] Node: 定期的に `/v0/health` を送信して状態・メトリクスを更新
+- [x] Node: 定期的に `/api/health` を送信して状態・メトリクスを更新
 - [x] Tests: 主要フローのテストを追加
 
 ## 追加実装（承認フロー）
 
 - [x] Load Balancer: NodeStatus に `pending` を追加し、登録時は常に pending にする
-- [x] Load Balancer: `POST /v0/nodes/:id/approve`（管理者のみ）を追加
+- [x] Load Balancer: `POST /api/nodes/:id/approve`（管理者のみ）を追加
 - [x] Registry: pending から approve で `registering` / `online` に遷移（ready_models で判定）
 - [x] Load Balancer: pending 中のハートビートは受理しつつ状態遷移は抑止
 - [x] Dashboard: pending 表示と承認アクション追加

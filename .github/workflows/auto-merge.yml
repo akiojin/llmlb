@@ -1,10 +1,9 @@
-name: Auto Merge PR
+name: Auto Merge Dependabot PR
 
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
-      - main
       - develop
 
 permissions:
@@ -13,9 +12,11 @@ permissions:
 
 jobs:
   auto-merge:
-    name: Enable auto-merge
+    name: Enable auto-merge for Dependabot
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
+    if: |
+      github.event.pull_request.draft == false &&
+      github.actor == 'dependabot[bot]'
     steps:
       - name: Enable auto-merge
         env:

@@ -1,4 +1,4 @@
-//! Contract Test: GET /v0/endpoints/:id
+//! Contract Test: GET /api/endpoints/:id
 //!
 //! SPEC-66555000: エンドポイント詳細取得API契約テスト
 //!
@@ -30,6 +30,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -78,10 +79,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// GET /v0/endpoints/:id - 正常系: エンドポイント詳細取得
+/// GET /api/endpoints/:id - 正常系: エンドポイント詳細取得
 #[tokio::test]
 #[serial]
 async fn test_get_endpoint_detail_success() {
@@ -99,7 +102,7 @@ async fn test_get_endpoint_detail_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -119,7 +122,7 @@ async fn test_get_endpoint_detail_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -146,7 +149,7 @@ async fn test_get_endpoint_detail_success() {
     assert!(body["models"].is_array());
 }
 
-/// GET /v0/endpoints/:id - 異常系: 存在しないID
+/// GET /api/endpoints/:id - 異常系: 存在しないID
 #[tokio::test]
 #[serial]
 async fn test_get_endpoint_detail_not_found() {
@@ -158,7 +161,7 @@ async fn test_get_endpoint_detail_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/endpoints/{}", non_existent_id))
+                .uri(format!("/api/endpoints/{}", non_existent_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -168,7 +171,7 @@ async fn test_get_endpoint_detail_not_found() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-/// GET /v0/endpoints/:id - 異常系: 不正なUUID形式
+/// GET /api/endpoints/:id - 異常系: 不正なUUID形式
 #[tokio::test]
 #[serial]
 async fn test_get_endpoint_detail_invalid_uuid() {
@@ -178,7 +181,7 @@ async fn test_get_endpoint_detail_invalid_uuid() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints/not-a-uuid")
+                .uri("/api/endpoints/not-a-uuid")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -191,7 +194,7 @@ async fn test_get_endpoint_detail_invalid_uuid() {
     );
 }
 
-/// GET /v0/endpoints/:id - 異常系: 認証なし
+/// GET /api/endpoints/:id - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 async fn test_get_endpoint_detail_unauthorized() {
@@ -200,8 +203,9 @@ async fn test_get_endpoint_detail_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri(format!("/v0/endpoints/{}", Uuid::new_v4()))
+                .uri(format!("/api/endpoints/{}", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )

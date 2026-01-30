@@ -4,6 +4,7 @@
 //! All tests should FAIL until the vision feature is implemented.
 //!
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: SPEC-6cd7f960 FR-6に伴い、モック・エンドポイント経由でモデルを登録するよう更新。
 
 use axum::{
     body::{to_bytes, Body},
@@ -17,8 +18,10 @@ mod common {
     use axum::Router;
     use llmlb::common::auth::{ApiKeyScope, UserRole};
     use llmlb::db::models::ModelStorage;
+    use llmlb::registry::endpoints::EndpointRegistry;
     use llmlb::registry::models::ModelInfo;
-    use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+    use llmlb::types::endpoint::{Endpoint, EndpointModel, EndpointStatus};
+    use llmlb::{api, balancer::LoadManager, AppState};
     use sqlx::SqlitePool;
     use std::sync::Arc;
 
@@ -26,6 +29,7 @@ mod common {
         pub app: Router,
         pub api_key: String,
         pub db_pool: sqlx::SqlitePool,
+        pub endpoint_registry: EndpointRegistry,
     }
 
     pub async fn build_app() -> TestApp {
@@ -36,6 +40,7 @@ mod common {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
         std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create test database");
@@ -62,7 +67,7 @@ mod common {
             http_client: reqwest::Client::new(),
             queue_config: llmlb::config::QueueConfig::from_env(),
             event_bus: llmlb::events::create_shared_event_bus(),
-            endpoint_registry,
+            endpoint_registry: endpoint_registry.clone(),
         };
 
         let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -85,6 +90,7 @@ mod common {
             app,
             api_key,
             db_pool,
+            endpoint_registry,
         }
     }
 
@@ -111,9 +117,41 @@ mod common {
         let storage = ModelStorage::new(db_pool.clone());
         storage.save_model(&model).await.unwrap();
     }
+
+    /// オンラインのモック・エンドポイントを作成し、指定したモデルを登録
+    /// SPEC-6cd7f960 FR-6: /v1/modelsはオンラインエンドポイントのモデルのみ返す
+    pub async fn add_mock_endpoint_with_models(
+        endpoint_registry: &EndpointRegistry,
+        model_ids: &[&str],
+    ) {
+        // エンドポイントを作成（Onlineステータス）
+        let mut endpoint = Endpoint::new(
+            "mock-vision-test-endpoint".to_string(),
+            "http://localhost:9999".to_string(), // 実際には接続しないダミーURL
+        );
+        endpoint.status = EndpointStatus::Online;
+
+        // エンドポイントを登録
+        endpoint_registry.add(endpoint.clone()).await.unwrap();
+
+        // 各モデルをエンドポイントに紐付け
+        for model_id in model_ids {
+            let endpoint_model = EndpointModel {
+                endpoint_id: endpoint.id,
+                model_id: model_id.to_string(),
+                capabilities: Some(vec!["chat".to_string()]),
+                max_tokens: None,
+                last_checked: Some(chrono::Utc::now()),
+                supported_apis: vec![],
+            };
+            endpoint_registry.add_model(&endpoint_model).await.unwrap();
+        }
+    }
 }
 
-use common::{build_app, register_text_only_model, register_vision_model};
+use common::{
+    add_mock_endpoint_with_models, build_app, register_text_only_model, register_vision_model,
+};
 
 /// FR-006: /v1/models レスポンスに image_understanding capability を含める
 #[tokio::test]
@@ -123,14 +161,19 @@ async fn test_vision_model_has_image_understanding_capability() {
         app,
         api_key,
         db_pool,
+        endpoint_registry,
     } = build_app().await;
 
-    // Vision対応モデルを登録
+    // Vision対応モデルを登録（DB）
     register_vision_model(&db_pool, "llava-v1.5-7b").await;
+
+    // SPEC-6cd7f960 FR-6: オンラインエンドポイントに紐付けることで /v1/models に含まれる
+    add_mock_endpoint_with_models(&endpoint_registry, &["llava-v1.5-7b"]).await;
 
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -168,14 +211,19 @@ async fn test_text_model_has_no_image_understanding_capability() {
         app,
         api_key,
         db_pool,
+        endpoint_registry,
     } = build_app().await;
 
-    // テキストのみ対応モデルを登録
+    // テキストのみ対応モデルを登録（DB）
     register_text_only_model(&db_pool, "llama-3.1-8b").await;
+
+    // SPEC-6cd7f960 FR-6: オンラインエンドポイントに紐付けることで /v1/models に含まれる
+    add_mock_endpoint_with_models(&endpoint_registry, &["llama-3.1-8b"]).await;
 
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -215,17 +263,26 @@ async fn test_mixed_models_capabilities() {
         app,
         api_key,
         db_pool,
+        endpoint_registry,
     } = build_app().await;
 
-    // 両方のモデルを登録
+    // 両方のモデルを登録（DB）
     register_vision_model(&db_pool, "llava-v1.5-7b").await;
     register_vision_model(&db_pool, "qwen-vl-7b").await;
     register_text_only_model(&db_pool, "llama-3.1-8b").await;
     register_text_only_model(&db_pool, "mistral-7b").await;
 
+    // SPEC-6cd7f960 FR-6: オンラインエンドポイントに紐付けることで /v1/models に含まれる
+    add_mock_endpoint_with_models(
+        &endpoint_registry,
+        &["llava-v1.5-7b", "qwen-vl-7b", "llama-3.1-8b", "mistral-7b"],
+    )
+    .await;
+
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -283,13 +340,19 @@ async fn test_models_response_includes_capabilities_field() {
         app,
         api_key,
         db_pool,
+        endpoint_registry,
     } = build_app().await;
 
+    // モデルを登録（DB）
     register_vision_model(&db_pool, "test-model").await;
+
+    // SPEC-6cd7f960 FR-6: オンラインエンドポイントに紐付けることで /v1/models に含まれる
+    add_mock_endpoint_with_models(&endpoint_registry, &["test-model"]).await;
 
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/v1/models")
                 .header("authorization", format!("Bearer {}", api_key))

@@ -21,13 +21,16 @@ export class DashboardPage {
   readonly averageResponseTime: Locator;
 
   // Models - Tabs
+  // NOTE: Model Hub タブは SPEC-6cd7f960 により廃止されました
   readonly localTab: Locator;
-  readonly hubTab: Locator;
   readonly localModelsList: Locator;
-  readonly hubModelsList: Locator;
-  // Models - Hub
-  readonly hubSearch: Locator;
-  readonly hubModelCards: Locator;
+  // Models - Local tab elements
+  readonly localSearch: Locator;
+  readonly registerButton: Locator;
+  // Models - Registration dialog
+  readonly registerModal: Locator;
+  readonly registerRepo: Locator;
+  readonly registerSubmit: Locator;
 
   // Nodes
   readonly nodesBody: Locator;
@@ -58,13 +61,16 @@ export class DashboardPage {
     this.averageResponseTime = page.locator(DashboardSelectors.stats.averageResponseTime);
 
     // Models - Tabs
+    // NOTE: Model Hub タブは SPEC-6cd7f960 により廃止されました
     this.localTab = page.locator(DashboardSelectors.models.localTab);
-    this.hubTab = page.locator(DashboardSelectors.models.hubTab);
     this.localModelsList = page.locator(DashboardSelectors.models.localModelsList);
-    this.hubModelsList = page.locator(DashboardSelectors.models.hubModelsList);
-    // Models - Hub
-    this.hubSearch = page.locator(DashboardSelectors.models.hubSearch);
-    this.hubModelCards = page.locator(DashboardSelectors.models.hubModelCard);
+    // Models - Local tab elements
+    this.localSearch = page.locator(DashboardSelectors.models.localSearch);
+    this.registerButton = page.locator(DashboardSelectors.models.registerButton);
+    // Models - Registration dialog
+    this.registerModal = page.locator(DashboardSelectors.models.registerModal);
+    this.registerRepo = page.locator(DashboardSelectors.models.registerRepo);
+    this.registerSubmit = page.locator(DashboardSelectors.models.registerSubmit);
 
     // Nodes
     this.nodesBody = page.locator(DashboardSelectors.nodes.nodesBody);
@@ -124,11 +130,13 @@ export class DashboardPage {
     await this.page.waitForTimeout(300);
   }
 
+  /**
+   * @deprecated Model Hub タブは SPEC-6cd7f960 により廃止されました
+   * Local タブで登録ダイアログを使用してください
+   */
   async gotoModelHub() {
-    await this.gotoModels();
-    // Click Model Hub tab
-    await this.hubTab.click();
-    await this.page.waitForTimeout(300);
+    // Model Hub タブは廃止されたため、Local タブに遷移
+    await this.gotoLocalModels();
   }
 
   async login(username = 'admin', password = 'test') {
@@ -183,21 +191,64 @@ export class DashboardPage {
     await this.filterQuery.fill(query);
   }
 
-  async searchHubModels(query: string) {
-    await this.hubSearch.fill(query);
+  /**
+   * Search local models
+   */
+  async searchLocalModels(query: string) {
+    await this.localSearch.fill(query);
     await this.page.waitForTimeout(300);
   }
 
-  async registerModel(modelId: string) {
-    // Find the model card and click Register button
-    const modelCard = this.page.locator(`[data-model-id="${modelId}"]`);
-    const registerButton = modelCard.locator('button:has-text("Register")');
-    await registerButton.click();
+  /**
+   * @deprecated Use searchLocalModels instead
+   */
+  async searchHubModels(query: string) {
+    await this.searchLocalModels(query);
+  }
+
+  /**
+   * Open the registration dialog and register a model by repo
+   */
+  async registerModelByRepo(repo: string, filename?: string) {
+    // Open register dialog
+    await this.registerButton.click();
+    await this.page.waitForTimeout(300);
+
+    // Fill in the repo
+    await this.registerRepo.fill(repo);
+
+    // Fill in filename if provided
+    if (filename) {
+      const filenameInput = this.page.locator(DashboardSelectors.models.registerFilename);
+      await filenameInput.fill(filename);
+    }
+
+    // Submit
+    await this.registerSubmit.click();
     await this.page.waitForTimeout(500);
   }
 
+  /**
+   * @deprecated Model Hub は廃止されました。registerModelByRepo を使用してください
+   */
+  async registerModel(modelId: string) {
+    // Model Hub は廃止されたため、repo として登録
+    await this.registerModelByRepo(modelId);
+  }
+
+  /**
+   * Get count of local models displayed
+   */
+  async getLocalModelCount(): Promise<number> {
+    const cards = this.localModelsList.locator('.overflow-hidden');
+    return cards.count();
+  }
+
+  /**
+   * @deprecated Model Hub は廃止されました。getLocalModelCount を使用してください
+   */
   async getHubModelCount(): Promise<number> {
-    return this.hubModelCards.count();
+    return this.getLocalModelCount();
   }
 
   async getConnectionStatus(): Promise<string> {

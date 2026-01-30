@@ -302,7 +302,7 @@ impl TimeoutCheck {
 │  │                                                              ││
 │  │  [Node]                                                      ││
 │  │    │                                                         ││
-│  │    │ POST /v0/health                                         ││
+│  │    │ POST /api/health                                         ││
 │  │    │ X-Node-Token: xxx                                       ││
 │  │    ▼                                                         ││
 │  │  ┌────────────────┐                                         ││
@@ -363,7 +363,7 @@ impl TimeoutCheck {
 ## 環境変数
 
 ```bash
-# ノード側設定
+# エンドポイント側設定
 XLLM_HEARTBEAT_SECS=30        # ハートビート送信間隔（秒）
 
 # ロードバランサー側設定

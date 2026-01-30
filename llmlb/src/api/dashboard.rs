@@ -1,6 +1,6 @@
 //! ダッシュボードAPIハンドラー
 //!
-//! `/v0/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
+//! `/api/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
 //! システム統計を返却する。
 
 use super::error::AppError;
@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 /// エンドポイントのダッシュボード表示用サマリー
 ///
-/// SPEC-66555000: ルーター主導エンドポイント登録システム
+/// SPEC-66555000: llmlb主導エンドポイント登録システム
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardEndpoint {
     /// エンドポイントID
@@ -122,34 +122,34 @@ pub struct DashboardOverview {
     pub generation_time_ms: u64,
 }
 
-/// GET /v0/dashboard/nodes
+/// GET /api/dashboard/nodes
 ///
 /// # 廃止済み
 ///
-/// このエンドポイントは廃止されました。代わりに `/v0/dashboard/endpoints` を使用してください。
-#[deprecated(note = "Use /v0/dashboard/endpoints instead")]
+/// このエンドポイントは廃止されました。代わりに `/api/dashboard/endpoints` を使用してください。
+#[deprecated(note = "Use /api/dashboard/endpoints instead")]
 pub async fn get_nodes(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
     Json(collect_endpoints(&state).await)
 }
 
-/// GET /v0/dashboard/endpoints
+/// GET /api/dashboard/endpoints
 ///
-/// SPEC-66555000: ルーター主導エンドポイント登録システム
+/// SPEC-66555000: llmlb主導エンドポイント登録システム
 pub async fn get_endpoints(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
     Json(collect_endpoints(&state).await)
 }
 
-/// GET /v0/dashboard/stats
+/// GET /api/dashboard/stats
 pub async fn get_stats(State(state): State<AppState>) -> Json<DashboardStats> {
     Json(collect_stats(&state).await)
 }
 
-/// GET /v0/dashboard/request-history
+/// GET /api/dashboard/request-history
 pub async fn get_request_history(State(state): State<AppState>) -> Json<Vec<RequestHistoryPoint>> {
     Json(collect_history(&state).await)
 }
 
-/// GET /v0/dashboard/overview
+/// GET /api/dashboard/overview
 pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOverview> {
     let started = Instant::now();
     let endpoints = collect_endpoints(&state).await;
@@ -166,7 +166,7 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
     })
 }
 
-/// GET /v0/dashboard/metrics/:runtime_id
+/// GET /api/dashboard/metrics/:runtime_id
 pub async fn get_node_metrics(
     Path(node_id): Path<Uuid>,
     State(state): State<AppState>,
@@ -175,7 +175,7 @@ pub async fn get_node_metrics(
     Ok(Json(history))
 }
 
-/// GET /v0/dashboard/stats/tokens - トークン統計取得
+/// GET /api/dashboard/stats/tokens - トークン統計取得
 pub async fn get_token_stats(
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
@@ -214,7 +214,7 @@ pub struct DailyTokenStats {
     pub request_count: u64,
 }
 
-/// GET /v0/dashboard/stats/tokens/daily - 日次トークン統計取得
+/// GET /api/dashboard/stats/tokens/daily - 日次トークン統計取得
 pub async fn get_daily_token_stats(
     State(state): State<AppState>,
     Query(query): Query<DailyTokenStatsQuery>,
@@ -255,7 +255,7 @@ pub struct MonthlyTokenStats {
     pub request_count: u64,
 }
 
-/// GET /v0/dashboard/stats/tokens/monthly - 月次トークン統計取得
+/// GET /api/dashboard/stats/tokens/monthly - 月次トークン統計取得
 pub async fn get_monthly_token_stats(
     State(state): State<AppState>,
     Query(query): Query<MonthlyTokenStatsQuery>,
@@ -271,7 +271,7 @@ pub async fn get_monthly_token_stats(
 
 /// エンドポイント一覧を収集
 ///
-/// SPEC-66555000: ルーター主導エンドポイント登録システム
+/// SPEC-66555000: llmlb主導エンドポイント登録システム
 async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
     let endpoint_registry = &state.endpoint_registry;
     let endpoints = endpoint_registry.list().await;

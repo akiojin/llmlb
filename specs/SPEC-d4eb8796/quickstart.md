@@ -75,13 +75,13 @@ cargo run --bin router
 
 ```bash
 # ログインしてJWTトークンを取得
-JWT_TOKEN=$(curl -X POST http://localhost:32768/v0/auth/login \
+JWT_TOKEN=$(curl -X POST http://localhost:32768/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"secure123"}' \
   | jq -r '.token')
 
 # APIキー発行
-API_KEY=$(curl -X POST http://localhost:32768/v0/api-keys \
+API_KEY=$(curl -X POST http://localhost:32768/api/api-keys \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"my-chatbot","scopes":["api:inference","node:register"]}' \
@@ -145,13 +145,13 @@ curl -X POST http://localhost:32768/v1/chat/completions \
 
 ```bash
 # ログインしてJWTトークンを取得
-JWT_TOKEN=$(curl -X POST http://localhost:32768/v0/auth/login \
+JWT_TOKEN=$(curl -X POST http://localhost:32768/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"secure123"}' \
   | jq -r '.token')
 
 # 新規ユーザー作成
-curl -X POST http://localhost:32768/v0/users \
+curl -X POST http://localhost:32768/api/users \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -164,7 +164,7 @@ curl -X POST http://localhost:32768/v0/users \
 ### ユーザー一覧表示
 
 ```bash
-curl -X GET http://localhost:32768/v0/users \
+curl -X GET http://localhost:32768/api/users \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
@@ -173,7 +173,7 @@ curl -X GET http://localhost:32768/v0/users \
 ### パスワード変更
 
 ```bash
-curl -X PUT http://localhost:32768/v0/users/{user_id} \
+curl -X PUT http://localhost:32768/api/users/{user_id} \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"password": "new_password456"}'
@@ -185,7 +185,7 @@ curl -X PUT http://localhost:32768/v0/users/{user_id} \
 
 ```bash
 # ノード登録APIを呼び出す
-RESPONSE=$(curl -X POST http://localhost:32768/v0/nodes \
+RESPONSE=$(curl -X POST http://localhost:32768/api/nodes \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -213,7 +213,7 @@ echo "ノードトークン: $NODE_TOKEN"
 
 ```bash
 # ノードトークンを使用してヘルスチェック（runtime_id 必須）
-curl -X POST http://localhost:32768/v0/health \
+curl -X POST http://localhost:32768/api/health \
   -H "X-Node-Token: $NODE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -233,7 +233,7 @@ curl -X POST http://localhost:32768/v0/health \
 ### トークンなしでのアクセス（失敗テスト）
 
 ```bash
-curl -X POST http://localhost:32768/v0/health \
+curl -X POST http://localhost:32768/api/health \
   -H "Content-Type: application/json" \
   -d '{
     "runtime_id": "'$NODE_ID'",
@@ -261,7 +261,7 @@ cargo run -p llmlb
 
 ```bash
 # 認証なしでAPIにアクセス
-curl -X GET http://localhost:32768/v0/nodes
+curl -X GET http://localhost:32768/api/nodes
 
 # ダッシュボードにログインなしでアクセス可能
 open http://localhost:32768/dashboard
@@ -291,7 +291,7 @@ cargo run -p llmlb
 **解決方法**: パスワードをリセット（管理者権限が必要）
 
 ```bash
-curl -X PUT http://localhost:32768/v0/users/{user_id} \
+curl -X PUT http://localhost:32768/api/users/{user_id} \
   -H "Authorization: Bearer $ADMIN_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"password": "new_password"}'

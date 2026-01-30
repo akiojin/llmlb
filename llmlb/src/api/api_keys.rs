@@ -29,6 +29,8 @@ pub struct CreateApiKeyRequest {
 pub struct ApiKeyResponse {
     /// APIキーID
     pub id: String,
+    /// キーの先頭部分（表示用）
+    pub key_prefix: Option<String>,
     /// キーの名前
     pub name: String,
     /// 作成者のユーザーID
@@ -45,6 +47,7 @@ impl From<ApiKey> for ApiKeyResponse {
     fn from(api_key: ApiKey) -> Self {
         ApiKeyResponse {
             id: api_key.id.to_string(),
+            key_prefix: api_key.key_prefix,
             name: api_key.name,
             created_by: api_key.created_by.to_string(),
             created_at: api_key.created_at.to_rfc3339(),
@@ -61,6 +64,8 @@ pub struct CreateApiKeyResponse {
     pub id: String,
     /// 平文のAPIキー（発行時のみ表示）
     pub key: String,
+    /// キーの先頭部分（表示用）
+    pub key_prefix: String,
     /// キーの名前
     pub name: String,
     /// 作成日時
@@ -76,6 +81,7 @@ impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
         CreateApiKeyResponse {
             id: api_key.id.to_string(),
             key: api_key.key,
+            key_prefix: api_key.key_prefix,
             name: api_key.name,
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
@@ -100,7 +106,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
     Ok(())
 }
 
-/// GET /v0/api-keys - APIキー一覧取得
+/// GET /api/api-keys - APIキー一覧取得
 ///
 /// Admin専用。全APIキーの一覧を返す（key_hashは除外）
 ///
@@ -130,7 +136,7 @@ pub async fn list_api_keys(
     }))
 }
 
-/// POST /v0/api-keys - APIキー発行
+/// POST /api/api-keys - APIキー発行
 ///
 /// Admin専用。新しいAPIキーを発行する。平文キーは発行時のみ返却
 ///
@@ -204,7 +210,7 @@ pub struct UpdateApiKeyRequest {
     pub expires_at: Option<String>,
 }
 
-/// PUT /v0/api-keys/:id - APIキー更新
+/// PUT /api/api-keys/:id - APIキー更新
 ///
 /// Admin専用。APIキーの名前と有効期限を更新する
 ///
@@ -270,7 +276,7 @@ fn normalize_scopes(scopes: &[ApiKeyScope]) -> Vec<ApiKeyScope> {
     unique
 }
 
-/// DELETE /v0/api-keys/:id - APIキー削除
+/// DELETE /api/api-keys/:id - APIキー削除
 ///
 /// Admin専用。APIキーを削除する
 ///

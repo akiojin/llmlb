@@ -41,6 +41,15 @@ pub mod gui;
 /// 設定管理（環境変数ヘルパー）
 pub mod config;
 
+/// エンドポイントタイプ自動判別
+pub mod detection;
+
+/// xLLMクライアント（ダウンロード・メタデータ）
+pub mod xllm;
+
+/// モデルメタデータ取得
+pub mod metadata;
+
 /// JWT秘密鍵管理
 pub mod jwt_secret;
 
@@ -61,6 +70,9 @@ pub mod types;
 
 /// モデル同期
 pub mod sync;
+
+/// サーバーインスタンスの排他制御（シングル実行制約）
+pub mod lock;
 
 /// アプリケーション状態
 #[derive(Clone)]

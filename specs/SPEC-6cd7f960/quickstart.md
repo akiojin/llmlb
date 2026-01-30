@@ -14,7 +14,7 @@
 
 ```bash
 # 対応モデル一覧を取得
-curl http://localhost:8080/v0/models \
+curl http://localhost:8080/api/models \
   -H "Authorization: Bearer sk-your-api-key"
 ```
 
@@ -58,7 +58,7 @@ curl http://localhost:8080/v0/models \
 
 ```bash
 # モデルを登録（ノードが自動的にダウンロード開始）
-curl -X POST http://localhost:8080/v0/models/register \
+curl -X POST http://localhost:8080/api/models/register \
   -H "Authorization: Bearer sk-your-api-key" \
   -H "Content-Type: application/json" \
   -d '{"model_id": "llama-3.2-1b"}'
@@ -73,7 +73,7 @@ BASE_URL = "http://localhost:8080"
 HEADERS = {"Authorization": "Bearer sk-your-api-key"}
 
 # 対応モデル一覧を取得
-response = httpx.get(f"{BASE_URL}/v0/models", headers=HEADERS)
+response = httpx.get(f"{BASE_URL}/api/models", headers=HEADERS)
 models = response.json()["models"]
 
 # 利用可能なモデルを表示
@@ -88,7 +88,7 @@ available_models = [m for m in models if m["status"] == "Available"]
 if available_models:
     model_id = available_models[0]["model"]["id"]
     httpx.post(
-        f"{BASE_URL}/v0/models/register",
+        f"{BASE_URL}/api/models/register",
         headers=HEADERS,
         json={"model_id": model_id}
     )

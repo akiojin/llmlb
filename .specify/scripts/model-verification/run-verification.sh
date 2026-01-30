@@ -13,8 +13,9 @@ PLATFORM="macos-metal"
 ENGINE=""
 RESULTS_DIR=""
 CHAT_TEMPLATE=""
-XLLM_BIN="${SCRIPT_DIR}/../../../xllm/build/xllm"
-LLAMA_CLI="${SCRIPT_DIR}/../../../xllm/third_party/llama.cpp/build/bin/llama-cli"
+XLLM_REPO="${XLLM_REPO:-"${SCRIPT_DIR}/../../../xLLM"}"
+XLLM_BIN="${XLLM_BIN:-"${XLLM_REPO}/build/xllm"}"
+LLAMA_CLI="${LLAMA_CLI:-"${XLLM_REPO}/third_party/llama.cpp/build/bin/llama-cli"}"
 TEST_TIMEOUT_SEC="${TEST_TIMEOUT_SEC:-900}"
 
 # Parse arguments
@@ -69,7 +70,7 @@ if [[ "$FORMAT" == "safetensors" ]]; then
 else
   if [[ ! -x "$LLAMA_CLI" ]]; then
     echo "Error: llama-cli not found or not executable: $LLAMA_CLI"
-    echo "Build it with: cmake --build xllm/third_party/llama.cpp/build"
+    echo "Build it with: cmake --build "$XLLM_REPO/third_party/llama.cpp/build""
     exit 1
   fi
 fi

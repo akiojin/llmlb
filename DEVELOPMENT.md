@@ -61,12 +61,5 @@ total_tokens). Statistics are persisted to SQLite and available via dashboard AP
 - **Dashboard**: Statistics tab shows daily/monthly breakdown
 
 ## Submodules
-- `xllm/third_party/stable-diffusion.cpp` is pinned to the public fork
-  `https://github.com/akiojin/stable-diffusion.cpp.git` to carry project-specific
-  crash/compatibility fixes.
-- Upstream (leejet/stable-diffusion.cpp) updates are synced manually on demand
-  (cherry-pick/merge into the fork) to keep control of breaking changes.
-- We do not plan to open upstream PRs for these changes unless explicitly requested.
-- Third-party OSS should be added as git submodules.
-- Do not modify submodule contents directly. If changes are required, use a fork
-  and update the submodule pointer.
+- xLLM has moved to <https://github.com/akiojin/xLLM>.
+  Submodule policies for runtime dependencies are documented there.

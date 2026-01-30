@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: ルーター認証API
+  title: llmlb認証API
   description: ユーザー認証とセッション管理API
   version: 1.0.0
 
@@ -9,7 +9,7 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /v0/auth/login:
+  /api/auth/login:
     post:
       summary: ログイン
       description: ユーザー名とパスワードでログインし、JWTトークンを取得
@@ -66,7 +66,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/auth/logout:
+  /api/auth/logout:
     post:
       summary: ログアウト
       description: 現在のセッションを無効化
@@ -93,7 +93,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/auth/me:
+  /api/auth/me:
     get:
       summary: 現在のユーザー情報取得
       description: JWTトークンから現在ログイン中のユーザー情報を取得

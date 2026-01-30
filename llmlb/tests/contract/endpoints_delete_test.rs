@@ -1,4 +1,4 @@
-//! Contract Test: DELETE /v0/endpoints/:id
+//! Contract Test: DELETE /api/endpoints/:id
 //!
 //! SPEC-66555000: エンドポイント削除API契約テスト
 //!
@@ -30,6 +30,7 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -78,10 +79,12 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder().header("authorization", format!("Bearer {}", admin_key))
+    Request::builder()
+        .header("x-internal-token", "test-internal")
+        .header("authorization", format!("Bearer {}", admin_key))
 }
 
-/// DELETE /v0/endpoints/:id - 正常系: エンドポイント削除成功
+/// DELETE /api/endpoints/:id - 正常系: エンドポイント削除成功
 #[tokio::test]
 #[serial]
 async fn test_delete_endpoint_success() {
@@ -98,7 +101,7 @@ async fn test_delete_endpoint_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -118,7 +121,7 @@ async fn test_delete_endpoint_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("DELETE")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -132,7 +135,7 @@ async fn test_delete_endpoint_success() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -142,7 +145,7 @@ async fn test_delete_endpoint_success() {
     assert_eq!(get_response.status(), StatusCode::NOT_FOUND);
 }
 
-/// DELETE /v0/endpoints/:id - 異常系: 存在しないID
+/// DELETE /api/endpoints/:id - 異常系: 存在しないID
 #[tokio::test]
 #[serial]
 async fn test_delete_endpoint_not_found() {
@@ -152,7 +155,7 @@ async fn test_delete_endpoint_not_found() {
         .oneshot(
             admin_request(&admin_key)
                 .method("DELETE")
-                .uri(format!("/v0/endpoints/{}", Uuid::new_v4()))
+                .uri(format!("/api/endpoints/{}", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -162,7 +165,7 @@ async fn test_delete_endpoint_not_found() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-/// DELETE /v0/endpoints/:id - 異常系: 認証なし
+/// DELETE /api/endpoints/:id - 異常系: 認証なし
 #[tokio::test]
 #[serial]
 async fn test_delete_endpoint_unauthorized() {
@@ -171,8 +174,9 @@ async fn test_delete_endpoint_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("DELETE")
-                .uri(format!("/v0/endpoints/{}", Uuid::new_v4()))
+                .uri(format!("/api/endpoints/{}", Uuid::new_v4()))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -182,7 +186,7 @@ async fn test_delete_endpoint_unauthorized() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// DELETE /v0/endpoints/:id - 正常系: 削除後に一覧から消えることを確認
+/// DELETE /api/endpoints/:id - 正常系: 削除後に一覧から消えることを確認
 #[tokio::test]
 #[serial]
 async fn test_delete_endpoint_removes_from_list() {
@@ -199,7 +203,7 @@ async fn test_delete_endpoint_removes_from_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("POST")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -219,7 +223,7 @@ async fn test_delete_endpoint_removes_from_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -238,7 +242,7 @@ async fn test_delete_endpoint_removes_from_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("DELETE")
-                .uri(format!("/v0/endpoints/{}", endpoint_id))
+                .uri(format!("/api/endpoints/{}", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -250,7 +254,7 @@ async fn test_delete_endpoint_removes_from_list() {
         .oneshot(
             admin_request(&admin_key)
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )

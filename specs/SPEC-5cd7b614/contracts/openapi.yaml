@@ -5,7 +5,7 @@ info:
   description: GPU必須ノード登録API
 
 paths:
-  /v0/nodes:
+  /api/nodes:
     post:
       summary: ノード登録（GPU必須）
       operationId: registerNode

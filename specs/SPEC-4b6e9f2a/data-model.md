@@ -361,7 +361,7 @@ impl CloudErrorKind {
 
 ## ステータスAPI形式
 
-### GET /v0/status（クラウド情報含む）
+### GET /api/status（クラウド情報含む）
 
 ```json
 {

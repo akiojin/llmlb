@@ -85,7 +85,8 @@ async fn transcriptions_invalid_format_returns_400() {
 
     // 1. エンドポイントを作成（audio_transcription capability付き）
     let create_response = client
-        .post(format!("http://{}/v0/endpoints", lb.addr()))
+        .post(format!("http://{}/api/endpoints", lb.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "ASR Test Endpoint",
@@ -104,10 +105,11 @@ async fn transcriptions_invalid_format_returns_400() {
     // 2. エンドポイントをOnline状態にする
     let test_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             lb.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

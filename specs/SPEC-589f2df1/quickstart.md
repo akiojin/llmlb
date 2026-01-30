@@ -38,7 +38,7 @@ active_request_threshold = 10
 
 ```bash
 # 登録済みノード一覧
-curl -X GET http://localhost:8080/v0/nodes \
+curl -X GET http://localhost:8080/api/nodes \
   -H "Authorization: Bearer <jwt_token>"
 ```
 
@@ -156,7 +156,7 @@ import time
 def monitor_nodes(jwt_token: str, interval: int = 5):
     while True:
         response = httpx.get(
-            "http://localhost:8080/v0/nodes",
+            "http://localhost:8080/api/nodes",
             headers={"Authorization": f"Bearer {jwt_token}"}
         )
         nodes = response.json()["nodes"]
@@ -231,7 +231,7 @@ export LLMLB_GPU_THRESHOLD=70
 curl http://localhost:8080/metrics | grep selection_duration
 
 # 対策: メトリクス更新間隔を確認
-# ノード側で XLLM_HEARTBEAT_SECS を調整
+# エンドポイント側で XLLM_HEARTBEAT_SECS を調整
 ```
 
 ### メトリクスが更新されない
@@ -239,9 +239,9 @@ curl http://localhost:8080/metrics | grep selection_duration
 ```bash
 # 原因: ハートビート送信失敗
 # 確認:
-curl http://localhost:8080/v0/nodes | jq '.nodes[].last_seen'
+curl http://localhost:8080/api/nodes | jq '.nodes[].last_seen'
 
-# 対策: ノード側のログを確認
+# 対策: エンドポイント側のログを確認
 # XLLM_HEARTBEAT_SECS=30 が設定されているか
 ```
 

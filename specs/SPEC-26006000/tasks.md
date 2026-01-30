@@ -1,6 +1,7 @@
 # タスク: 音声モデル対応（TTS + ASR）
 
 **機能ID**: `SPEC-26006000` | **入力**: plan.md, data-model.md, contracts/
+**ステータス**: 完了
 **前提条件**: plan.md完了、design docs完了
 
 ## フォーマット: `[ID] [P?] 説明`

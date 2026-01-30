@@ -1,6 +1,6 @@
 //! Integration Test: US1 - エンドポイント登録
 //!
-//! SPEC-66555000: ルーター主導エンドポイント登録システム
+//! SPEC-66555000: llmlb主導エンドポイント登録システム
 //!
 //! 管理者として、Ollama・vLLM・xLLMなどのエンドポイントを
 //! ダッシュボードまたはAPIから登録したい。
@@ -19,11 +19,13 @@ async fn test_endpoint_registration_appears_in_list() {
 
     // エンドポイント登録
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production Ollama",
-            "base_url": "http://192.168.1.100:11434",
+            // 外部ネットワーク依存を避け、到達不能でも即時に失敗するローカルURLを使う
+            "base_url": "http://127.0.0.1:18134",
             "notes": "Main production server"
         }))
         .send()
@@ -37,7 +39,8 @@ async fn test_endpoint_registration_appears_in_list() {
 
     // 一覧で確認
     let list_response = client
-        .get(format!("http://{}/v0/endpoints", server.addr()))
+        .get(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -61,7 +64,8 @@ async fn test_endpoint_registration_initial_status_pending() {
     let client = Client::new();
 
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -89,7 +93,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // Ollama
     let ollama_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Server",
@@ -102,7 +107,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // vLLM
     let vllm_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "vLLM Server",
@@ -115,7 +121,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // xLLM
     let xllm_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -128,7 +135,8 @@ async fn test_endpoint_registration_multiple_types() {
 
     // 全て一覧に表示される
     let list_response = client
-        .get(format!("http://{}/v0/endpoints", server.addr()))
+        .get(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -146,11 +154,13 @@ async fn test_endpoint_registration_with_api_key() {
     let client = Client::new();
 
     let response = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "OpenAI Compatible",
-            "base_url": "https://api.example.com",
+            // 外部ドメインへの接続待ちでハングし得るため、ローカルURLで代替
+            "base_url": "http://127.0.0.1:18080",
             "api_key": "sk-secret-key-12345"
         }))
         .send()

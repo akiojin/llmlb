@@ -52,7 +52,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
 [クライアント]
      |
      v
-[ロードバランサー] GET /v0/nodes/:runtime_id/logs?tail=N
+[ロードバランサー] GET /api/nodes/:runtime_id/logs?tail=N
      |
      v
 [ノード検索]
@@ -60,7 +60,7 @@ fn tail_lines(path: &Path, n: usize) -> Vec<String> {
      +-- 見つからない --> 404 Not Found
      |
      v
-[ノードへリクエスト] GET /v0/logs?tail=N
+[ノードへリクエスト] GET /api/logs?tail=N
      |
      +-- タイムアウト/エラー --> 502 Bad Gateway
      |

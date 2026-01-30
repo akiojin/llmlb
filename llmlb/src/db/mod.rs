@@ -21,6 +21,9 @@ pub mod migrations;
 /// エンドポイント管理
 pub mod endpoints;
 
+/// ダウンロードタスク管理（SPEC-66555000）
+pub mod download_tasks;
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use once_cell::sync::Lazy;

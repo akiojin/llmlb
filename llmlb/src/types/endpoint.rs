@@ -1,6 +1,6 @@
 //! エンドポイント型定義
 //!
-//! SPEC-66555000: ルーター主導エンドポイント登録システム
+//! SPEC-66555000: llmlb主導エンドポイント登録システム
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ pub enum DeviceType {
 
 /// デバイス情報（SPEC-f8e3a1b7）
 ///
-/// /v0/system APIから取得したデバイス情報を格納
+/// /api/system APIから取得したデバイス情報を格納
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeviceInfo {
     /// デバイスタイプ（CPU/GPU）
@@ -118,6 +118,120 @@ impl std::fmt::Display for EndpointStatus {
     }
 }
 
+/// エンドポイントタイプ（SPEC-66555000追加要件 2026-01-26）
+///
+/// エンドポイントの種別を表す列挙型。
+/// 登録時に自動判別され、タイプに応じた機能制御に使用される。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointType {
+    /// 本プロジェクト独自の推論エンジン（xLLM）
+    Xllm,
+    /// Ollamaサーバー
+    Ollama,
+    /// vLLMサーバー
+    Vllm,
+    /// その他のOpenAI互換API
+    OpenaiCompatible,
+    /// 判別不能（オフライン時）
+    #[default]
+    Unknown,
+}
+
+impl EndpointType {
+    /// EndpointTypeを文字列に変換
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Xllm => "xllm",
+            Self::Ollama => "ollama",
+            Self::Vllm => "vllm",
+            Self::OpenaiCompatible => "openai_compatible",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// モデルダウンロードをサポートするか
+    pub fn supports_model_download(&self) -> bool {
+        matches!(self, Self::Xllm)
+    }
+
+    /// モデルメタデータ取得をサポートするか
+    pub fn supports_model_metadata(&self) -> bool {
+        matches!(self, Self::Xllm | Self::Ollama)
+    }
+}
+
+impl FromStr for EndpointType {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "xllm" => Self::Xllm,
+            "ollama" => Self::Ollama,
+            "vllm" => Self::Vllm,
+            "openai_compatible" => Self::OpenaiCompatible,
+            _ => Self::Unknown,
+        })
+    }
+}
+
+impl std::fmt::Display for EndpointType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// ダウンロードタスクの状態（SPEC-66555000追加要件 2026-01-26）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadStatus {
+    /// 待機中
+    #[default]
+    Pending,
+    /// ダウンロード中
+    Downloading,
+    /// 完了
+    Completed,
+    /// 失敗
+    Failed,
+    /// キャンセル
+    Cancelled,
+}
+
+impl DownloadStatus {
+    /// DownloadStatusを文字列に変換
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Downloading => "downloading",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl FromStr for DownloadStatus {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "pending" => Self::Pending,
+            "downloading" => Self::Downloading,
+            "completed" => Self::Completed,
+            "failed" => Self::Failed,
+            "cancelled" => Self::Cancelled,
+            _ => Self::Pending,
+        })
+    }
+}
+
+impl std::fmt::Display for DownloadStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// エンドポイントの機能タイプ
 ///
 /// NodeのRuntimeTypeに相当する機能分類（SPEC-66555000移行用）
@@ -171,6 +285,9 @@ pub struct Endpoint {
     pub api_key: Option<String>,
     /// 現在の状態
     pub status: EndpointStatus,
+    /// エンドポイントタイプ（SPEC-66555000追加要件 2026-01-26）
+    #[serde(default)]
+    pub endpoint_type: EndpointType,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -194,7 +311,7 @@ pub struct Endpoint {
     /// 画像生成、音声認識等の特殊機能をサポートするかを示す
     #[serde(default)]
     pub capabilities: Vec<EndpointCapability>,
-    /// GPU情報（/v0/healthから取得、Phase 1.4）
+    /// GPU情報（/api/healthから取得、Phase 1.4）
     #[serde(default)]
     pub gpu_device_count: Option<u32>,
     /// GPU総メモリ（バイト）
@@ -209,7 +326,7 @@ pub struct Endpoint {
     /// 現在のアクティブリクエスト数
     #[serde(default)]
     pub active_requests: Option<u32>,
-    /// デバイス情報（/v0/systemから取得、SPEC-f8e3a1b7）
+    /// デバイス情報（/api/systemから取得、SPEC-f8e3a1b7）
     #[serde(default)]
     pub device_info: Option<DeviceInfo>,
     /// 推論レイテンシ（EMA、ミリ秒、SPEC-f8e3a1b7）
@@ -227,6 +344,7 @@ impl Endpoint {
             base_url,
             api_key: None,
             status: EndpointStatus::Pending,
+            endpoint_type: EndpointType::Unknown,
             health_check_interval_secs: 30,
             inference_timeout_secs: 120,
             latency_ms: None,
@@ -292,6 +410,8 @@ pub struct EndpointModel {
     pub model_id: String,
     /// 能力（chat, embeddings等）
     pub capabilities: Option<Vec<String>>,
+    /// 最大トークン数（SPEC-66555000追加要件 2026-01-26）
+    pub max_tokens: Option<u32>,
     /// 最終確認時刻
     pub last_checked: Option<DateTime<Utc>>,
     /// サポートするAPI一覧（SPEC-24157000）
@@ -303,6 +423,62 @@ impl EndpointModel {
     /// デフォルトのサポートAPI（Chat Completionsのみ）
     fn default_supported_apis() -> Vec<SupportedAPI> {
         vec![SupportedAPI::ChatCompletions]
+    }
+}
+
+/// モデルダウンロードタスク（SPEC-66555000追加要件 2026-01-26）
+///
+/// xLLMエンドポイント専用のモデルダウンロード進捗管理
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelDownloadTask {
+    /// タスク識別子
+    pub id: String,
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// モデル名（例: "llama-3.2-1b"）
+    pub model: String,
+    /// ダウンロード中のファイル名
+    pub filename: Option<String>,
+    /// ダウンロード状態
+    pub status: DownloadStatus,
+    /// 進捗率（0.0 〜 1.0）
+    pub progress: f64,
+    /// ダウンロード速度（Mbps）
+    pub speed_mbps: Option<f64>,
+    /// 残り時間（秒）
+    pub eta_seconds: Option<u32>,
+    /// エラーメッセージ（失敗時のみ）
+    pub error_message: Option<String>,
+    /// 開始時刻
+    pub started_at: DateTime<Utc>,
+    /// 完了時刻
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+impl ModelDownloadTask {
+    /// 新しいダウンロードタスクを作成
+    pub fn new(endpoint_id: Uuid, model: String) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            endpoint_id,
+            model,
+            filename: None,
+            status: DownloadStatus::Pending,
+            progress: 0.0,
+            speed_mbps: None,
+            eta_seconds: None,
+            error_message: None,
+            started_at: Utc::now(),
+            completed_at: None,
+        }
+    }
+
+    /// ダウンロード完了かどうか
+    pub fn is_finished(&self) -> bool {
+        matches!(
+            self.status,
+            DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+        )
     }
 }
 
@@ -547,5 +723,201 @@ mod tests {
         let deserialized: DeviceInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.device_type, DeviceType::Gpu);
         assert_eq!(deserialized.gpu_devices.len(), 1);
+    }
+
+    // SPEC-66555000: エンドポイントタイプ自動判別機能テスト
+
+    #[test]
+    fn test_endpoint_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&EndpointType::Xllm).unwrap(),
+            "\"xllm\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointType::Ollama).unwrap(),
+            "\"ollama\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointType::Vllm).unwrap(),
+            "\"vllm\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointType::OpenaiCompatible).unwrap(),
+            "\"openai_compatible\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointType::Unknown).unwrap(),
+            "\"unknown\""
+        );
+    }
+
+    #[test]
+    fn test_endpoint_type_from_str() {
+        assert_eq!("xllm".parse::<EndpointType>().unwrap(), EndpointType::Xllm);
+        assert_eq!(
+            "ollama".parse::<EndpointType>().unwrap(),
+            EndpointType::Ollama
+        );
+        assert_eq!("vllm".parse::<EndpointType>().unwrap(), EndpointType::Vllm);
+        assert_eq!(
+            "openai_compatible".parse::<EndpointType>().unwrap(),
+            EndpointType::OpenaiCompatible
+        );
+        assert_eq!(
+            "unknown".parse::<EndpointType>().unwrap(),
+            EndpointType::Unknown
+        );
+        // 未知の値はUnknownにフォールバック
+        assert_eq!(
+            "invalid".parse::<EndpointType>().unwrap(),
+            EndpointType::Unknown
+        );
+    }
+
+    #[test]
+    fn test_endpoint_type_as_str() {
+        assert_eq!(EndpointType::Xllm.as_str(), "xllm");
+        assert_eq!(EndpointType::Ollama.as_str(), "ollama");
+        assert_eq!(EndpointType::Vllm.as_str(), "vllm");
+        assert_eq!(EndpointType::OpenaiCompatible.as_str(), "openai_compatible");
+        assert_eq!(EndpointType::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn test_endpoint_type_supports_model_download() {
+        // xLLMのみダウンロードをサポート
+        assert!(EndpointType::Xllm.supports_model_download());
+        assert!(!EndpointType::Ollama.supports_model_download());
+        assert!(!EndpointType::Vllm.supports_model_download());
+        assert!(!EndpointType::OpenaiCompatible.supports_model_download());
+        assert!(!EndpointType::Unknown.supports_model_download());
+    }
+
+    #[test]
+    fn test_endpoint_type_supports_model_metadata() {
+        // xLLMとOllamaがメタデータ取得をサポート
+        assert!(EndpointType::Xllm.supports_model_metadata());
+        assert!(EndpointType::Ollama.supports_model_metadata());
+        assert!(!EndpointType::Vllm.supports_model_metadata());
+        assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
+        assert!(!EndpointType::Unknown.supports_model_metadata());
+    }
+
+    #[test]
+    fn test_endpoint_type_default() {
+        // デフォルトはUnknown
+        assert_eq!(EndpointType::default(), EndpointType::Unknown);
+    }
+
+    #[test]
+    fn test_download_status_serialization() {
+        assert_eq!(
+            serde_json::to_string(&DownloadStatus::Pending).unwrap(),
+            "\"pending\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DownloadStatus::Downloading).unwrap(),
+            "\"downloading\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DownloadStatus::Completed).unwrap(),
+            "\"completed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DownloadStatus::Failed).unwrap(),
+            "\"failed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DownloadStatus::Cancelled).unwrap(),
+            "\"cancelled\""
+        );
+    }
+
+    #[test]
+    fn test_download_status_from_str() {
+        assert_eq!(
+            "pending".parse::<DownloadStatus>().unwrap(),
+            DownloadStatus::Pending
+        );
+        assert_eq!(
+            "downloading".parse::<DownloadStatus>().unwrap(),
+            DownloadStatus::Downloading
+        );
+        assert_eq!(
+            "completed".parse::<DownloadStatus>().unwrap(),
+            DownloadStatus::Completed
+        );
+        assert_eq!(
+            "failed".parse::<DownloadStatus>().unwrap(),
+            DownloadStatus::Failed
+        );
+        assert_eq!(
+            "cancelled".parse::<DownloadStatus>().unwrap(),
+            DownloadStatus::Cancelled
+        );
+        // 未知の値はPendingにフォールバック
+        assert_eq!(
+            "invalid".parse::<DownloadStatus>().unwrap(),
+            DownloadStatus::Pending
+        );
+    }
+
+    #[test]
+    fn test_model_download_task_new() {
+        let endpoint_id = Uuid::new_v4();
+        let task = ModelDownloadTask::new(endpoint_id, "llama-3.2-1b".to_string());
+
+        assert_eq!(task.endpoint_id, endpoint_id);
+        assert_eq!(task.model, "llama-3.2-1b");
+        assert_eq!(task.status, DownloadStatus::Pending);
+        assert_eq!(task.progress, 0.0);
+        assert!(task.filename.is_none());
+        assert!(task.speed_mbps.is_none());
+        assert!(task.eta_seconds.is_none());
+        assert!(task.error_message.is_none());
+        assert!(task.completed_at.is_none());
+    }
+
+    #[test]
+    fn test_model_download_task_is_finished() {
+        let endpoint_id = Uuid::new_v4();
+        let mut task = ModelDownloadTask::new(endpoint_id, "test-model".to_string());
+
+        // 初期状態はPending -> 未完了
+        assert!(!task.is_finished());
+
+        // Downloading -> 未完了
+        task.status = DownloadStatus::Downloading;
+        assert!(!task.is_finished());
+
+        // Completed -> 完了
+        task.status = DownloadStatus::Completed;
+        assert!(task.is_finished());
+
+        // Failed -> 完了
+        task.status = DownloadStatus::Failed;
+        assert!(task.is_finished());
+
+        // Cancelled -> 完了
+        task.status = DownloadStatus::Cancelled;
+        assert!(task.is_finished());
+    }
+
+    #[test]
+    fn test_endpoint_new_has_endpoint_type() {
+        let endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        // デフォルトはUnknown
+        assert_eq!(endpoint.endpoint_type, EndpointType::Unknown);
+    }
+
+    #[test]
+    fn test_endpoint_model_max_tokens() {
+        let json = r#"{
+            "endpoint_id": "00000000-0000-0000-0000-000000000000",
+            "model_id": "test",
+            "max_tokens": 4096
+        }"#;
+        let model: EndpointModel = serde_json::from_str(json).unwrap();
+        assert_eq!(model.max_tokens, Some(4096));
     }
 }

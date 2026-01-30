@@ -235,7 +235,7 @@ pub async fn chat_completions(
             ))));
         }
     }
-    // 登録されていないモデルはノード側で処理（クラウドモデル等）
+    // 登録されていないモデルはエンドポイント側で処理（クラウドモデル等）
 
     let payload = match prepare_vision_payload(&state, payload, &parsed).await {
         Ok(payload) => payload,
@@ -415,40 +415,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         data.push(obj);
     }
 
-    // 登録されたモデルを追加（オンラインノードがなくても表示）
-    for (model_id, m) in &registered_map {
-        if seen_models.contains(model_id) {
-            continue;
-        }
-        seen_models.insert(model_id.clone());
-
-        let ready = available_set.contains(model_id);
-        let supported_apis: Vec<String> = endpoint_model_apis
-            .get(model_id)
-            .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
-            .unwrap_or_else(|| vec!["chat_completions".to_string()]);
-        let caps: ModelCapabilities = m.get_capabilities().into();
-        let obj = json!({
-            "id": m.name,
-            "object": "model",
-            "created": 0,
-            "owned_by": "load balancer",
-            "capabilities": caps,
-            "lifecycle_status": LifecycleStatus::Registered,
-            "download_progress": null,
-            "ready": ready,
-            "repo": m.repo,
-            "filename": m.filename,
-            "size_bytes": m.size,
-            "required_memory_bytes": m.required_memory,
-            "source": m.source,
-            "tags": m.tags,
-            "description": m.description,
-            "chat_template": m.chat_template,
-            "supported_apis": supported_apis,
-        });
-        data.push(obj);
-    }
+    // NOTE: SPEC-6cd7f960 FR-6により、登録済みだがオンラインエンドポイントにないモデルは
+    // /v1/models に含めない（利用可能なモデルのみを返す）
 
     // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
 
@@ -707,24 +675,37 @@ async fn prepare_vision_payload(
         return Ok(payload);
     }
 
+    let vision_limits = VisionCapability::default();
+    if image_urls.len() > vision_limits.max_image_count as usize {
+        return Err(openai_error_response(
+            format!("Too many images (max {})", vision_limits.max_image_count),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let models = list_registered_models(&state.db_pool)
         .await
         .map_err(|err| openai_error_response(err.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
     let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
-        // 未登録モデル（クラウド等）はルーター側の検証をスキップ
+        // 未登録モデル（クラウド等）は画像URLの検証・変換は行わないが、
+        // data URLのBase64/形式/サイズは事前に検証する。
+        for url in image_urls {
+            if image::is_data_url(&url) {
+                if let Err(err) =
+                    image::validate_image_url(&state.http_client, &url, &vision_limits).await
+                {
+                    return Err(openai_error_response(
+                        err.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+            }
+        }
         return Ok(payload);
     };
     if !model_info.has_capability(ModelCapability::Vision) {
         return Err(openai_error_response(
             format!("Model '{}' does not support image understanding", model.raw),
-            StatusCode::BAD_REQUEST,
-        ));
-    }
-
-    let vision_limits = VisionCapability::default();
-    if image_urls.len() > vision_limits.max_image_count as usize {
-        return Err(openai_error_response(
-            format!("Too many images (max {})", vision_limits.max_image_count),
             StatusCode::BAD_REQUEST,
         ));
     }
@@ -2332,6 +2313,7 @@ mod tests {
         // lb state with temp data dir
         std::env::set_var("OPENAI_API_KEY", "testkey");
         std::env::set_var("OPENAI_BASE_URL", server.uri());
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         let (state, dir) = create_state_with_tempdir().await;
 
         // spawn lb
@@ -2366,7 +2348,8 @@ mod tests {
 
         // fetch dashboard history
         let history_resp = client
-            .get(format!("http://{addr}/v0/dashboard/request-responses"))
+            .get(format!("http://{addr}/api/dashboard/request-responses"))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug_admin")
             .send()
             .await

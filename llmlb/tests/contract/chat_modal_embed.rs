@@ -46,6 +46,7 @@ async fn dashboard_serves_react_app() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .uri("/dashboard")
                 .body(axum::body::Body::empty())
                 .unwrap(),
@@ -76,25 +77,6 @@ async fn dashboard_serves_react_app() {
     );
 }
 
-#[tokio::test]
-async fn dashboard_links_to_playground() {
-    // This test verifies the navigation exists in the built assets
-    // The actual link is rendered by React, so we verify the playground route works
-    let app = build_app().await;
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/playground")
-                .body(axum::body::Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        response.status(),
-        axum::http::StatusCode::OK,
-        "Playground route should be accessible"
-    );
-}
+// NOTE: dashboard_links_to_playground テストは廃止
+// Playground機能はダッシュボード内のエンドポイント別Playgroundに移行 (#playground/:endpointId)
+// 旧 /playground ルートは削除されました

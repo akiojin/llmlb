@@ -1,5 +1,7 @@
 # タスク: ロードバランサー認証・アクセス制御
 
+**ステータス**: 完了
+
 **入力**: `/specs/SPEC-d4eb8796/`の設計ドキュメント
 **前提条件**: plan.md, research.md, data-model.md, contracts/, quickstart.md
 
@@ -36,25 +38,25 @@ AUTH_DISABLED, JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD を定義
 ### Contract Tests (並列実行可能)
 
 - [x] **T004** [P] `llmlb/tests/contract/auth_api_test.rs` に
-POST /v0/auth/login の契約テスト（スキーマ検証、REDを確認）
+POST /api/auth/login の契約テスト（スキーマ検証、REDを確認）
 - [x] **T005** [P] `llmlb/tests/contract/auth_api_test.rs` に
-POST /v0/auth/logout の契約テスト（スキーマ検証、REDを確認）
+POST /api/auth/logout の契約テスト（スキーマ検証、REDを確認）
 - [x] **T006** [P] `llmlb/tests/contract/auth_api_test.rs` に
-GET /v0/auth/me の契約テスト（スキーマ検証、REDを確認）
+GET /api/auth/me の契約テスト（スキーマ検証、REDを確認）
 - [x] **T007** [P] `llmlb/tests/contract/users_api_test.rs` に
-GET /v0/users の契約テスト（スキーマ検証、REDを確認）
+GET /api/users の契約テスト（スキーマ検証、REDを確認）
 - [x] **T008** [P] `llmlb/tests/contract/users_api_test.rs` に
-POST /v0/users の契約テスト（スキーマ検証、REDを確認）
+POST /api/users の契約テスト（スキーマ検証、REDを確認）
 - [x] **T009** [P] `llmlb/tests/contract/users_api_test.rs` に
-PUT /v0/users/:id の契約テスト（スキーマ検証、REDを確認）
+PUT /api/users/:id の契約テスト（スキーマ検証、REDを確認）
 - [x] **T010** [P] `llmlb/tests/contract/users_api_test.rs` に
-DELETE /v0/users/:id の契約テスト（スキーマ検証、REDを確認）
+DELETE /api/users/:id の契約テスト（スキーマ検証、REDを確認）
 - [x] **T011** [P] `llmlb/tests/contract/api_keys_api_test.rs` に
-GET /v0/api-keys の契約テスト（スキーマ検証、REDを確認）
+GET /api/api-keys の契約テスト（スキーマ検証、REDを確認）
 - [x] **T012** [P] `llmlb/tests/contract/api_keys_api_test.rs` に
-POST /v0/api-keys の契約テスト（スキーマ検証、REDを確認）
+POST /api/api-keys の契約テスト（スキーマ検証、REDを確認）
 - [x] **T013** [P] `llmlb/tests/contract/api_keys_api_test.rs` に
-DELETE /v0/api-keys/:id の契約テスト（スキーマ検証、REDを確認）
+DELETE /api/api-keys/:id の契約テスト（スキーマ検証、REDを確認）
 
 ### Integration Tests (並列実行可能)
 
@@ -102,6 +104,8 @@ JWT有効期限チェックのユニットテスト（REDを確認）
 ```bash
 cargo test
 # すべてのテストが失敗することを確認（実装がないため）
+
+**ステータス**: 完了
 ```
 
 ## Phase 3.3: データモデル実装 (テストが失敗した後のみ)
@@ -173,28 +177,28 @@ APIキー生成関数を実装（`sk_` + 32文字ランダム、SHA-256ハッシ
 ## Phase 3.8: API実装
 
 - [x] **T057** `llmlb/src/api/auth.rs` に
-POST /v0/auth/login エンドポイントを実装 → T004 GREEN
+POST /api/auth/login エンドポイントを実装 → T004 GREEN
 - [x] **T058** `llmlb/src/api/auth.rs` に
-POST /v0/auth/logout エンドポイントを実装 → T005 GREEN
+POST /api/auth/logout エンドポイントを実装 → T005 GREEN
 - [x] **T059** `llmlb/src/api/auth.rs` に
-GET /v0/auth/me エンドポイントを実装 → T006 GREEN
+GET /api/auth/me エンドポイントを実装 → T006 GREEN
 - [x] **T060** `llmlb/src/api/users.rs` に
-GET /v0/users エンドポイントを実装（Admin専用） → T007 GREEN
+GET /api/users エンドポイントを実装（Admin専用） → T007 GREEN
 - [x] **T061** `llmlb/src/api/users.rs` に
-POST /v0/users エンドポイントを実装（Admin専用） → T008 GREEN
+POST /api/users エンドポイントを実装（Admin専用） → T008 GREEN
 - [x] **T062** `llmlb/src/api/users.rs` に
-PUT /v0/users/:id エンドポイントを実装（Admin専用） → T009 GREEN
+PUT /api/users/:id エンドポイントを実装（Admin専用） → T009 GREEN
 - [x] **T063** `llmlb/src/api/users.rs` に
-DELETE /v0/users/:id エンドポイントを実装（Admin専用、最後の管理者チェック）
+DELETE /api/users/:id エンドポイントを実装（Admin専用、最後の管理者チェック）
 → T010 GREEN
 - [x] **T064** `llmlb/src/api/api_keys.rs` に
-GET /v0/api-keys エンドポイントを実装（Admin専用） → T011 GREEN
+GET /api/api-keys エンドポイントを実装（Admin専用） → T011 GREEN
 - [x] **T065** `llmlb/src/api/api_keys.rs` に
-POST /v0/api-keys エンドポイントを実装（Admin専用、平文キー返却） → T012 GREEN
+POST /api/api-keys エンドポイントを実装（Admin専用、平文キー返却） → T012 GREEN
 - [x] **T066** `llmlb/src/api/api_keys.rs` に
-DELETE /v0/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
+DELETE /api/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
 - [x] **T067** `llmlb/src/api/nodes.rs` を修正して
-POST /v0/nodes レスポンスに runtime_token フィールドを追加 → T024 GREEN
+POST /api/nodes レスポンスに runtime_token フィールドを追加 → T024 GREEN
 
 ## Phase 3.9: 初回起動処理
 
@@ -209,14 +213,14 @@ POST /v0/nodes レスポンスに runtime_token フィールドを追加 → T02
 
 - [x] **T071** `llmlb/src/api/mod.rs` に
 JWT認証ミドルウェアを管理APIに適用
-（/v0/nodes, /v0/models, /v0/dashboard, /v0/users, /v0/api-keys）
+（/api/nodes, /api/models, /api/dashboard, /api/users, /api/api-keys）
 → T015, T016, T017 GREEN
 - [x] **T072** `llmlb/src/api/mod.rs` に
 APIキー認証ミドルウェアをOpenAI互換APIに適用
 （/v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models）
 - [x] **T073** `llmlb/src/api/mod.rs` に
 ノードトークン認証ミドルウェアをノード通信APIに適用
-（/v0/health）
+（/api/health）
 - [x] **T074** `llmlb/src/api/mod.rs` に
 認証無効化モードを実装（AUTH_DISABLED=true で全ミドルウェアスキップ）
 → T023 GREEN
@@ -226,7 +230,7 @@ APIキー認証ミドルウェアをOpenAI互換APIに適用
 - [x] **T075** [P] `llmlb/src/web/static/login.html` に
 ログイン画面を作成（ユーザー名・パスワード入力フォーム）
 - [x] **T076** [P] `llmlb/src/web/static/login.js` に
-ログイン処理を実装（POST /v0/auth/login, JWTをlocalStorageに保存）
+ログイン処理を実装（POST /api/auth/login, JWTをlocalStorageに保存）
 - [x] **T077** [P] `llmlb/src/web/static/app.js` に
 認証状態管理を追加（localStorage JWT確認、全APIリクエストにBearer付与）
 - [x] **T078** [P] `llmlb/src/web/static/app.js` に
@@ -234,21 +238,21 @@ APIキー認証ミドルウェアをOpenAI互換APIに適用
 - [x] **T079** [P] `llmlb/src/web/static/api-keys.html` に
 APIキー管理画面を作成（タブ追加）
 - [x] **T080** [P] `llmlb/src/web/static/api-keys.js` に
-APIキー一覧表示を実装（GET /v0/api-keys）
+APIキー一覧表示を実装（GET /api/api-keys）
 - [x] **T081** `llmlb/src/web/static/api-keys.js` に
-APIキー発行機能を実装（POST /v0/api-keys、平文キーのモーダル表示）
+APIキー発行機能を実装（POST /api/api-keys、平文キーのモーダル表示）
 - [x] **T082** `llmlb/src/web/static/api-keys.js` に
-APIキー削除機能を実装（DELETE /v0/api-keys/:id）
+APIキー削除機能を実装（DELETE /api/api-keys/:id）
 - [x] **T083** [P] `llmlb/src/web/static/users.html` に
 ユーザー管理画面を作成（タブ追加、Admin専用）
 - [x] **T084** [P] `llmlb/src/web/static/users.js` に
-ユーザー一覧表示を実装（GET /v0/users）
+ユーザー一覧表示を実装（GET /api/users）
 - [x] **T085** `llmlb/src/web/static/users.js` に
-ユーザー作成機能を実装（POST /v0/users）
+ユーザー作成機能を実装（POST /api/users）
 - [x] **T086** `llmlb/src/web/static/users.js` に
-パスワード変更機能を実装（PUT /v0/users/:id）
+パスワード変更機能を実装（PUT /api/users/:id）
 - [x] **T087** `llmlb/src/web/static/users.js` に
-ユーザー削除機能を実装（DELETE /v0/users/:id、最後の管理者警告）
+ユーザー削除機能を実装（DELETE /api/users/:id、最後の管理者警告）
 
 ## Phase 3.12: ノード統合
 
@@ -291,7 +295,7 @@ APIキー削除機能を実装（DELETE /v0/api-keys/:id）
   - /v1/chat/completions: ノード未登録のため 503（401 ではないことを確認）
   - ノード登録: 127.0.0.1:32769 にスタブを用意して登録成功
   - ノードヘルス: X-Node-Token ありで 200、なしで 401
-  - AUTH_DISABLED=true: /v0/nodes と /v0/auth/me が 200、/dashboard へ未認証アクセス可
+  - AUTH_DISABLED=true: /api/nodes と /api/auth/me が 200、/dashboard へ未認証アクセス可
   - 実行メモ: GPU必須ノード登録・推論はこの環境では実機検証不可のため、API/設定/画面遷移の整合性を確認し、残タスクはメンテナ向けに引き継ぎ
 
 ## 依存関係

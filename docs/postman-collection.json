@@ -38,7 +38,7 @@
       "name": "Dashboard Stats",
       "request": {
         "method": "GET",
-        "url": { "raw": "{{baseUrl}}/v0/dashboard/stats", "host": ["{{baseUrl}}"], "path": ["v0", "dashboard", "stats"] }
+        "url": { "raw": "{{baseUrl}}/api/dashboard/stats", "host": ["{{baseUrl}}"], "path": ["v0", "dashboard", "stats"] }
       }
     }
   ],

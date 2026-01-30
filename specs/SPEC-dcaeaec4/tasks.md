@@ -1,5 +1,7 @@
 # SPEC-dcaeaec4 タスク一覧
 
+**ステータス**: 完了
+
 ## 概要
 
 LLM-Load Balancer独自モデルストレージの実装タスク。
@@ -14,7 +16,7 @@ LLM-Load Balancer独自モデルストレージの実装タスク。
 - [x] FR-6: ノード起動時同期（マニフェスト+外部ソース/プロキシ）を実装
   - [x] 起動時の不要モデル削除 (`ModelStorage::deleteModel()`)
 - [x] FR-7: ロードバランサーからのプッシュ通知 (`POST /api/models/pull`)
-- [x] FR-8: API設計更新（`/v0/models/registry` 追加と Node 同期の整理）
+- [x] FR-8: API設計更新（`/api/models/registry` 追加と Node 同期の整理）
 
 ## 追加対応（要件更新）
 
@@ -26,7 +28,7 @@ LLM-Load Balancer独自モデルストレージの実装タスク。
 
 - [x] Load Balancer: モデル登録時のバイナリダウンロード/変換を廃止（メタデータのみ保存）
 - [x] Load Balancer: マニフェスト生成をローカルファイル依存からHFメタデータ基準へ変更（URLのみ提示）
-- [x] Load Balancer: `/v0/models/registry/:model_name/files/:file` の必須依存を削除（必要ならリモートストリーミングに限定）
+- [x] Load Balancer: `/api/models/registry/:model_name/files/:file` の必須依存を削除（必要ならリモートストリーミングに限定）
 - [x] Node: マニフェストのURLから**直接HF取得**するフローに統一（プロキシは非必須）
 - [x] Node: HFトークンをNode環境変数で扱う方針へ更新（ロードバランサー経由で渡さない）
 - [x] Tests: ロードバランサーキャッシュ前提のテストを削除/更新
@@ -60,7 +62,7 @@ LLM-Load Balancer独自モデルストレージの実装タスク。
 
 ## 検証済み動作
 
-1. ノード起動時にロードバランサーの `/v0/models` と同期
+1. ノード起動時にロードバランサーの `/api/models` と同期
 2. ロードバランサーに存在しないモデルは自動削除
 3. `POST /api/models/pull` でロードバランサーからの通知を受信
 4. 同期中は `/v1/chat/completions` 等が503を返却

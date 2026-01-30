@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { type DashboardEndpoint, endpointsApi } from '@/lib/api'
+import { useState, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Server, Clock, AlertCircle, Save, Play, RefreshCw } from 'lucide-react'
+import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2, Download } from 'lucide-react'
+import { ModelDownloadDialog } from './ModelDownloadDialog'
 
 /**
  * SPEC-66555000: Router-Driven Endpoint Registration System
@@ -62,6 +64,37 @@ function getStatusLabel(status: DashboardEndpoint['status']): string {
   }
 }
 
+function getTypeLabel(type: EndpointType | undefined): string {
+  switch (type) {
+    case 'xllm':
+      return 'xLLM'
+    case 'ollama':
+      return 'Ollama'
+    case 'vllm':
+      return 'vLLM'
+    case 'openai_compatible':
+      return 'OpenAI Compatible'
+    case 'unknown':
+      return 'Unknown'
+    default:
+      return '-'
+  }
+}
+
+function getTypeBadgeVariant(
+  type: EndpointType | undefined
+): 'default' | 'secondary' | 'outline' {
+  switch (type) {
+    case 'xllm':
+      return 'default'
+    case 'ollama':
+    case 'vllm':
+      return 'secondary'
+    default:
+      return 'outline'
+  }
+}
+
 export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDetailModalProps) {
   const queryClient = useQueryClient()
   const [name, setName] = useState(endpoint?.name || '')
@@ -72,6 +105,31 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
   const [inferenceTimeout, setInferenceTimeout] = useState(
     endpoint?.inference_timeout_secs?.toString() || '120'
   )
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false)
+
+  // Reset form when endpoint changes
+  useEffect(() => {
+    if (endpoint) {
+      setName(endpoint.name || '')
+      setNotes(endpoint.notes || '')
+      setHealthCheckInterval(endpoint.health_check_interval_secs?.toString() || '30')
+      setInferenceTimeout(endpoint.inference_timeout_secs?.toString() || '120')
+    }
+  }, [endpoint])
+
+  // Fetch endpoint models
+  const { data: modelsData, isLoading: isLoadingModels } = useQuery({
+    queryKey: ['endpoint-models', endpoint?.id],
+    queryFn: () => endpointsApi.getModels(endpoint!.id),
+    enabled: !!endpoint?.id && open,
+  })
+
+  const openPlayground = () => {
+    if (endpoint) {
+      window.location.hash = `playground/${endpoint.id}`
+      onOpenChange(false)
+    }
+  }
 
   // Update mutation
   const updateMutation = useMutation({
@@ -167,6 +225,9 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <Badge variant={getStatusBadgeVariant(endpoint.status)}>
                 {getStatusLabel(endpoint.status)}
               </Badge>
+              <Badge variant={getTypeBadgeVariant(endpoint.endpoint_type)}>
+                {getTypeLabel(endpoint.endpoint_type)}
+              </Badge>
               {endpoint.supports_responses_api && (
                 <Badge variant="outline">Responses API</Badge>
               )}
@@ -230,6 +291,81 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <p className="text-sm text-destructive/80 mt-1">{endpoint.last_error}</p>
             </div>
           )}
+
+          <Separator />
+
+          {/* Models Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Box className="h-4 w-4" />
+                Models ({modelsData?.models?.length || 0})
+              </Label>
+              <div className="flex items-center gap-2">
+                {endpoint.endpoint_type === 'xllm' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDownloadDialogOpen(true)}
+                    disabled={endpoint.status !== 'online'}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Download Model
+                  </Button>
+                )}
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={openPlayground}
+                  disabled={endpoint.status !== 'online' || !modelsData?.models?.length}
+                >
+                  <MessageSquare className="h-4 w-4 mr-1" />
+                  Open Playground
+                </Button>
+              </div>
+            </div>
+            <ScrollArea className="h-32 rounded-md border">
+              <div className="p-3 space-y-2">
+                {isLoadingModels ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading models...</span>
+                  </div>
+                ) : modelsData?.models?.length ? (
+                  modelsData.models.map((model) => (
+                    <div
+                      key={model.model_id}
+                      className="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-muted/50"
+                    >
+                      <span className="font-mono text-xs truncate flex-1" title={model.model_id}>
+                        {model.model_id}
+                      </span>
+                      <div className="flex items-center gap-2 ml-2">
+                        {model.max_tokens && (
+                          <span className="text-xs text-muted-foreground">
+                            {(model.max_tokens / 1024).toFixed(0)}K ctx
+                          </span>
+                        )}
+                        {model.capabilities && model.capabilities.length > 0 && (
+                          <div className="flex gap-1">
+                            {model.capabilities.slice(0, 2).map((cap) => (
+                              <Badge key={cap} variant="outline" className="text-xs">
+                                {cap}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No models available
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
 
           <Separator />
 
@@ -299,6 +435,13 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* xLLM Model Download Dialog */}
+      <ModelDownloadDialog
+        endpoint={endpoint}
+        open={downloadDialogOpen}
+        onOpenChange={setDownloadDialogOpen}
+      />
     </Dialog>
   )
 }

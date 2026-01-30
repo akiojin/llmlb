@@ -11,7 +11,7 @@ servers:
     description: 本番環境
 
 paths:
-  /v0/nodes:
+  /api/nodes:
     post:
       summary: ノード登録
       description: 新しいノードを登録し、`node_token` を発行する（登録直後は pending）
@@ -65,9 +65,9 @@ paths:
                 items:
                   $ref: '#/components/schemas/Node'
 
-  /v0/health:
+  /api/health:
     post:
-      summary: ヘルスチェック送信（ノード→ルーター）
+      summary: ヘルスチェック送信（ノード→llmlb）
       description: `X-Node-Token` で認証し、ノード状態/メトリクスを送信する
       operationId: reportHealth
       tags:
@@ -94,7 +94,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/nodes/{node_id}/approve:
+  /api/nodes/{node_id}/approve:
     post:
       summary: ノード承認（管理者専用）
       description: pending のノードを承認し、registering/online に遷移させる
@@ -205,7 +205,7 @@ components:
           description: ノードの OpenAI互換API ポート（`runtime_port+1`）
         node_token:
           type: string
-          description: ノード→ルーター通信用トークン（`X-Node-Token`）
+          description: ノード→llmlb通信用トークン（`X-Node-Token`）
 
     HealthCheckRequest:
       type: object

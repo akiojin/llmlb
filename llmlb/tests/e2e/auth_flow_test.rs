@@ -57,8 +57,9 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/login")
+                .uri("/api/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -87,8 +88,9 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/users")
+                .uri("/api/users")
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -123,8 +125,9 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/logout")
+                .uri("/api/auth/logout")
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -138,8 +141,9 @@ async fn test_complete_auth_flow() {
     let unauthorized_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/users")
+                .uri("/api/users")
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -164,8 +168,9 @@ async fn test_unauthorized_access_without_token() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/users")
+                .uri("/api/users")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -187,8 +192,9 @@ async fn test_invalid_token() {
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/users")
+                .uri("/api/users")
                 .header("authorization", "Bearer invalid-token-12345")
                 .body(Body::empty())
                 .unwrap(),
@@ -212,8 +218,9 @@ async fn test_auth_me_endpoint() {
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("POST")
-                .uri("/v0/auth/login")
+                .uri("/api/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
@@ -235,13 +242,14 @@ async fn test_auth_me_endpoint() {
     let login_data: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
     let token = login_data["token"].as_str().unwrap();
 
-    // Step 2: /v0/auth/me でユーザー情報を取得
+    // Step 2: /api/auth/me でユーザー情報を取得
     let me_response = app
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/auth/me")
+                .uri("/api/auth/me")
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -252,7 +260,7 @@ async fn test_auth_me_endpoint() {
     assert_eq!(
         me_response.status(),
         StatusCode::OK,
-        "/v0/auth/me should return OK with valid token"
+        "/api/auth/me should return OK with valid token"
     );
 
     let me_body = axum::body::to_bytes(me_response.into_body(), usize::MAX)
@@ -283,12 +291,13 @@ async fn test_auth_me_endpoint() {
 async fn test_auth_me_without_token() {
     let (app, _db_pool) = build_app().await;
 
-    // トークンなしで/v0/auth/meにアクセス
+    // トークンなしで/api/auth/meにアクセス
     let response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/auth/me")
+                .uri("/api/auth/me")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -298,6 +307,6 @@ async fn test_auth_me_without_token() {
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
-        "/v0/auth/me without token should return UNAUTHORIZED"
+        "/api/auth/me without token should return UNAUTHORIZED"
     );
 }

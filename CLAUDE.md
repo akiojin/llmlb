@@ -6,7 +6,7 @@
 
 ## まず読む 90秒版
 
-- 何を作る: Rust製ロードバランサー（`llmlb/`）＋ llama.cppベースのC++推論エンジン（`xllm/`）。Ollamaは一切使わない／復活させない。
+- 何を作る: Rust製ロードバランサー（`llmlb/`）＋ llama.cppベースのC++推論エンジン（xLLM: <https://github.com/akiojin/xLLM>）。Ollamaは一切使わない／復活させない。
 - どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ `specs/`（要件とタスク）。
 - 守る: ブランチ／worktree作成・切替禁止、作業ディレクトリ移動禁止、必ずローカルで全テスト実行。
 - HFカタログ利用時は`HF_TOKEN`（任意）と必要に応じ`HF_BASE_URL`を環境にセットしておく。
@@ -19,7 +19,7 @@
 ```text
 llmlb/
 ├── llmlb/          # Rust製ロードバランサー（APIサーバー・管理UI・共通型定義）
-├── xllm/            # C++製推論エンジン（llama.cppベース）
+├── xLLM (external)  # <https://github.com/akiojin/xLLM>
 ├── specs/           # 機能仕様書（SPEC-XXXXXXXX/）
 ├── memory/          # プロジェクト憲章・メモリファイル
 ├── docs/            # ドキュメント
@@ -33,8 +33,8 @@ llmlb/
 
 | 用語 | 説明 |
 |------|------|
-| **ルーター** | Rust製のAPIゲートウェイ。OpenAI互換APIを提供し、リクエストを適切なエンドポイントに振り分ける。ダッシュボード（管理UI）も内蔵。 |
-| **エンドポイント** | ルーターが管理する推論サービスの接続先。xLLM、Ollama、vLLM、その他OpenAI互換APIなど多様なバックエンドを統一的に扱う。 |
+| **llmlb（ロードバランサー）** | Rust製のAPIゲートウェイ。OpenAI互換APIを提供し、リクエストを適切なエンドポイントに振り分ける。ダッシュボード（管理UI）も内蔵。 |
+| **エンドポイント** | llmlbが管理する推論サービスの接続先。xLLM、Ollama、vLLM、その他OpenAI互換APIなど多様なバックエンドを統一的に扱う。 |
 | **xLLM** | 本プロジェクト独自のC++製推論エンジン。llama.cpp/whisper.cpp/stable-diffusion.cppなどを統合し、GPUを活用したローカル推論を提供。vLLM/Ollamaと同列のエンドポイントタイプとして扱う。 |
 
 ## システムアーキテクチャ
@@ -50,7 +50,7 @@ llmlb/
 - **リクエストルーティング**: 適切なエンドポイントへのリクエスト転送
 - **ダッシュボード**: 管理UI（SPA）の提供
 
-### xLLM（`xllm/` - C++製、llama.cppベース）
+### xLLM（external repo - C++製、llama.cppベース）
 - NOTE: llama.cpp is pinned to the akiojin/llama.cpp fork until upstream fixes land; once upstream is fixed, switch back to ggerganov/llama.cpp.
 
 実際のLLM推論を担当するコンポーネント。vLLM/Ollamaと同列のエンドポイントタイプ。
@@ -87,13 +87,13 @@ llmlb/
 - 単一マシン・単一GPUでのシンプルな運用
 - ローカル開発や小規模利用に適している
 
-**ルーター + エンドポイント モード（分散構成）**:
+**llmlb + エンドポイント モード（分散構成）**:
 
 ```text
-[クライアント] → [ルーター] → [xLLM1 (GPU)]
-                          → [xLLM2 (GPU)]
-                          → [Ollama]
-                          → [vLLM]
+[クライアント] → [llmlb] → [xLLM1 (GPU)]
+                       → [xLLM2 (GPU)]
+                       → [Ollama]
+                       → [vLLM]
 ```
 
 - 複数エンドポイントの統合管理

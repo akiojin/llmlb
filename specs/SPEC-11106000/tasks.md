@@ -1,5 +1,7 @@
 # タスク: SPEC-11106000 Hugging Face URL 登録（変換なし）
 
+**ステータス**: 完了
+
 ## 方針
 - TDD順で進める。契約→Integration→E2E→Unitの順。
 - Web/CLI/Load Balancerの3面を並列化できるところは[P]マーク。
@@ -14,14 +16,14 @@
 ## 追加対応（再計画）
 
 ### Contract / API
-- [x] /v0/models/register: repo/filename登録（ダウンロードなし）
-- [x] /v0/models/registry/:model/manifest.json の契約を整備
+- [x] /api/models/register: repo/filename登録（ダウンロードなし）
+- [x] /api/models/registry/:model/manifest.json の契約を整備
 - [x] /v1/models: 登録済み + Node ready の整合
 
 ### Load Balancer
 - [x] convert_manager の削除
 - [x] 登録フローをメタデータ保存のみへ変更（format/gguf_policy廃止）
-- [x] /v0/models/available とダウンロード系APIの整理
+- [x] /api/models/available とダウンロード系APIの整理
 
 ### CLI
 - [x] `model download` 等のLoad Balancer主導操作を廃止/整理
@@ -39,7 +41,7 @@
 > 現行方針では再計画の対象外。
 
 ### Contract Tests (router)
-- [x] /v0/models/register: 正常系（repo-only, file指定, format必須/省略, gguf_policy）、重複/404。
+- [x] /api/models/register: 正常系（repo-only, file指定, format必須/省略, gguf_policy）、重複/404。
 - [x] `format=gguf` でGGUFが存在しない場合は 400 になること。
 - [x] `format=safetensors` で `config.json`/`tokenizer.json` 不足時は 400 になること。
 - [x] `format=safetensors` で `.safetensors` が複数かつ index 不在の場合は 400 になること。
@@ -52,7 +54,7 @@
 
 ### Backend Implementation
 - [x] ModelInfo/registry 拡張と永続化（format/gguf_policy/repo/filename/source/status/path）。
-- [x] /v0/models/register 実装（format必須/省略判定、gguf_policy siblings選択、重複・404バリデーション）。
+- [x] /api/models/register 実装（format必須/省略判定、gguf_policy siblings選択、重複・404バリデーション）。
 - [x] /v1/models は実体（safetensors/GGUF）があるものだけ返す。
 - [x] 構造化ログ・エラー整備。
 

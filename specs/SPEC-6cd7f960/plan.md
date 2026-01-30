@@ -12,9 +12,9 @@
 
 ### Load Balancer
 - 対応モデルの静的定義（JSON）
-- `/v0/models/hub` で対応モデル一覧 + 状態（available/registered/ready）を返却
+- `/api/models/hub` で対応モデル一覧 + 状態（available/registered/ready）を返却
 - HF動的情報（downloads/likes）はキャッシュ付きで付与
-- `/v0/models/register` は維持（メタデータのみ保存）
+- `/api/models/register` は維持（メタデータのみ保存）
 
 ### Node
 - マニフェスト参照で HF から直接取得（ロードバランサーはバイナリ非保持）

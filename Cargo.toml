@@ -3,7 +3,7 @@ members = ["llmlb"]
 resolver = "2"
 
 [workspace.package]
-version = "2.1.0"
+version = "2.4.0"
 edition = "2021"
 authors = ["LLM Router Contributors"]
 license = "Apache-2.0"
@@ -29,9 +29,6 @@ tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 
 # Node専用
 sysinfo = "0.30"
-
-[patch.crates-io]
-pest_generator = { path = "vendor/pest_generator/generator" }
 
 [profile.release]
 opt-level = 3

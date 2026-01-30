@@ -16,8 +16,8 @@ test.describe('API Error Handling', () => {
   test('returns 503 when no nodes are available', async ({ request }) => {
     // This test verifies that the router returns 503 when there are no nodes
     // Skip if nodes are available (normal operation)
-    // Note: /v0/runtimes was deprecated in SPEC-66555000, now using /v0/dashboard/endpoints
-    const endpointsResponse = await request.get(`${API_BASE}/v0/dashboard/endpoints`, {
+    // Note: /api/runtimes was deprecated in SPEC-66555000, now using /api/dashboard/endpoints
+    const endpointsResponse = await request.get(`${API_BASE}/api/dashboard/endpoints`, {
       headers: { 'Authorization': 'Bearer sk_debug' }
     });
 

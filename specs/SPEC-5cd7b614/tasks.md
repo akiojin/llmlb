@@ -1,5 +1,7 @@
 # 実装タスク: GPU必須ノード登録要件
 
+**ステータス**: 完了
+
 **SPEC ID**: SPEC-5cd7b614  
 **作成日**: 2025-11-01
 
@@ -106,7 +108,7 @@
   - GPU無しノードが起動時に削除されることを検証
 
 - [x] **T013** Integration Test: Dashboard API 表示
-  - `/v0/dashboard/nodes` レスポンスで GPU 情報を検証
+  - `/api/dashboard/nodes` レスポンスで GPU 情報を検証
 
 - [x] **T014** Node Unit Test: GPU情報必須
   - GPU検出に失敗した際に登録処理をスキップする挙動をテスト（mock送信）

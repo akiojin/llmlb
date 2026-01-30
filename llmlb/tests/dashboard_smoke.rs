@@ -24,6 +24,7 @@ async fn dashboard_serves_static_index() {
         .oneshot(
             Request::builder()
                 .uri("/dashboard/index.html")
+                .header("x-internal-token", "test-internal")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -60,6 +61,7 @@ async fn dashboard_static_index_is_react_app() {
         .oneshot(
             Request::builder()
                 .uri("/dashboard/index.html")
+                .header("x-internal-token", "test-internal")
                 .body(Body::empty())
                 .unwrap(),
         )

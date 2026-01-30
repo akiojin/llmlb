@@ -62,15 +62,62 @@ async fn models_handler() -> impl IntoResponse {
         .into_response()
 }
 
-async fn register_image_node(lb: &support::http::TestServer, node: &support::http::TestServer) {
-    let response =
-        support::lb::register_node_with_runtimes(lb.addr(), node.addr(), vec!["stable_diffusion"])
-            .await
-            .expect("register node should succeed");
-    let (status, _body) = support::lb::approve_node_from_register_response(lb.addr(), response)
+async fn register_image_endpoint(
+    lb: &support::http::TestServer,
+    node: &support::http::TestServer,
+) -> String {
+    let client = Client::new();
+
+    let register_response = client
+        .post(format!("http://{}/api/endpoints", lb.addr()))
+        .header("x-internal-token", "test-internal")
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": "image-stub",
+            "base_url": format!("http://{}", node.addr()),
+            "capabilities": ["image_generation", "chat_completion"]
+        }))
+        .send()
         .await
-        .expect("approve node should succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("endpoint registration should succeed");
+    assert_eq!(register_response.status(), ReqStatusCode::CREATED);
+
+    let register_body: Value = register_response
+        .json()
+        .await
+        .expect("endpoint registration response must be json");
+    let endpoint_id = register_body["id"]
+        .as_str()
+        .expect("endpoint id should exist")
+        .to_string();
+
+    let test_response = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/test",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("x-internal-token", "test-internal")
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint test should succeed");
+    assert_eq!(test_response.status(), ReqStatusCode::OK);
+
+    let sync_response = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/sync",
+            lb.addr(),
+            endpoint_id
+        ))
+        .header("x-internal-token", "test-internal")
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint sync should succeed");
+    assert_eq!(sync_response.status(), ReqStatusCode::OK);
+
+    endpoint_id
 }
 
 fn dummy_png_bytes() -> Vec<u8> {
@@ -82,7 +129,7 @@ fn dummy_png_bytes() -> Vec<u8> {
 async fn e2e_images_generations_returns_image() {
     let node = spawn_image_stub().await;
     let lb = support::lb::spawn_test_lb().await;
-    register_image_node(&lb, &node).await;
+    let _endpoint_id = register_image_endpoint(&lb, &node).await;
 
     let response = Client::new()
         .post(format!("http://{}/v1/images/generations", lb.addr()))
@@ -111,7 +158,7 @@ async fn e2e_images_generations_returns_image() {
 async fn e2e_images_edits_returns_image() {
     let node = spawn_image_stub().await;
     let lb = support::lb::spawn_test_lb().await;
-    register_image_node(&lb, &node).await;
+    let _endpoint_id = register_image_endpoint(&lb, &node).await;
 
     let form = multipart::Form::new()
         .part(
@@ -145,7 +192,7 @@ async fn e2e_images_edits_returns_image() {
 async fn e2e_images_variations_returns_image() {
     let node = spawn_image_stub().await;
     let lb = support::lb::spawn_test_lb().await;
-    register_image_node(&lb, &node).await;
+    let _endpoint_id = register_image_endpoint(&lb, &node).await;
 
     let form = multipart::Form::new().part(
         "image",

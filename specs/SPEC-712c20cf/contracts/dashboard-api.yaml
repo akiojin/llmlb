@@ -40,7 +40,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/dashboard/nodes:
+  /api/dashboard/nodes:
     get:
       summary: ノード一覧を取得
       description: 登録済みの全ノード情報をJSON配列で返却
@@ -93,7 +93,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/dashboard/stats:
+  /api/dashboard/stats:
     get:
       summary: システム統計を取得
       description: システム全体の統計情報をJSON形式で返却
@@ -137,7 +137,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/dashboard/metrics/{node_id}:
+  /api/dashboard/metrics/{node_id}:
     get:
       summary: ノードメトリクス履歴を取得
       description: |

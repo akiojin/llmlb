@@ -55,8 +55,9 @@ export interface RegisteredModel {
 export type ModelInfo = RegisteredModel;
 
 /**
- * Get list of registered models
- * Uses /v1/models (OpenAI-compatible endpoint with lifecycle extensions)
+ * Get list of models from /v1/models
+ * NOTE: Per SPEC-6cd7f960 FR-6, /v1/models only returns models from online endpoints
+ * Use getRegisteredModels() to get all registered models regardless of endpoint status
  */
 export async function getModels(request: APIRequestContext): Promise<RegisteredModel[]> {
   const response = await request.get(`${API_BASE}/v1/models`, {
@@ -91,6 +92,39 @@ export async function getModels(request: APIRequestContext): Promise<RegisteredM
 }
 
 /**
+ * Get list of all registered models from /api/models/registered
+ * This includes models not attached to online endpoints
+ */
+export async function getRegisteredModels(request: APIRequestContext): Promise<RegisteredModel[]> {
+  const response = await request.get(`${API_BASE}/api/models/registered`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  const models = await response.json();
+  return models.map((m: {
+    name: string;
+    lifecycle_status?: string;
+    download_progress?: DownloadProgress;
+    repo?: string;
+    filename?: string;
+    size_bytes?: number;
+    required_memory_bytes?: number;
+    ready?: boolean;
+  }) => ({
+    name: m.name,
+    lifecycle_status: m.lifecycle_status || 'registered',
+    download_progress: m.download_progress,
+    repo: m.repo,
+    filename: m.filename,
+    size_bytes: m.size_bytes,
+    required_memory_bytes: m.required_memory_bytes,
+    ready: m.ready,
+  }));
+}
+
+/**
  * Get count of registered models
  */
 export async function getModelCount(request: APIRequestContext): Promise<number> {
@@ -105,7 +139,7 @@ export async function deleteModel(
   request: APIRequestContext,
   modelName: string
 ): Promise<boolean> {
-  const response = await request.delete(`${API_BASE}/v0/models/${encodeURIComponent(modelName)}`, {
+  const response = await request.delete(`${API_BASE}/api/models/${encodeURIComponent(modelName)}`, {
     headers: AUTH_HEADER,
   });
   return response.status() === 204 || response.status() === 200;
@@ -113,9 +147,10 @@ export async function deleteModel(
 
 /**
  * Clear all registered models
+ * Uses /api/models/registered to get ALL registered models (not just those on online endpoints)
  */
 export async function clearAllModels(request: APIRequestContext): Promise<void> {
-  const models = await getModels(request);
+  const models = await getRegisteredModels(request);
   for (const model of models) {
     await deleteModel(request, model.name);
   }
@@ -152,7 +187,7 @@ export interface HubModel {
  * Get list of supported models from Model Hub
  */
 export async function getHubModels(request: APIRequestContext): Promise<HubModel[]> {
-  const response = await request.get(`${API_BASE}/v0/models/hub`, {
+  const response = await request.get(`${API_BASE}/api/models/hub`, {
     headers: AUTH_HEADER,
   });
   if (!response.ok()) {
@@ -178,7 +213,7 @@ export async function registerModel(
   const payload: Record<string, unknown> = { repo };
   if (filename) payload.filename = filename;
 
-  const response = await request.post(`${API_BASE}/v0/models/register`, {
+  const response = await request.post(`${API_BASE}/api/models/register`, {
     headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
     data: payload,
   });
@@ -292,10 +327,10 @@ export interface NodeInfo {
 
 /**
  * Get list of nodes (endpoints)
- * Note: /v0/runtimes was deprecated in SPEC-66555000, now using /v0/dashboard/endpoints
+ * Note: /api/runtimes was deprecated in SPEC-66555000, now using /api/dashboard/endpoints
  */
 export async function getNodes(request: APIRequestContext): Promise<NodeInfo[]> {
-  const response = await request.get(`${API_BASE}/v0/dashboard/endpoints`, {
+  const response = await request.get(`${API_BASE}/api/dashboard/endpoints`, {
     headers: AUTH_HEADER,
   });
   if (!response.ok()) {

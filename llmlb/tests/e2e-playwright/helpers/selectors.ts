@@ -28,18 +28,23 @@ export const DashboardSelectors = {
   },
 
   // Models Tab
+  // NOTE: Model Hub タブは SPEC-6cd7f960 により廃止されました
   models: {
     // Tab navigation
     localTab: 'button[role="tab"]:has-text("Local")',
-    hubTab: 'button[role="tab"]:has-text("Model Hub")',
+    // hubTab は廃止 - Model Hub タブは削除されました
     // Model lists
     localModelsList: '#local-models-list',
-    hubModelsList: '#hub-models-list',
-    // Model Hub elements
-    hubSearch: '#hub-search',
-    hubModelCard: '[data-model-card]',
-    hubRegisterButton: 'button:has-text("Register")',
-    hubModelStatus: '[data-model-status]',
+    // Local tab elements
+    localSearch: 'input[placeholder*="Search"]',
+    registerButton: '#register-model',
+    // Registration dialog elements
+    registerModal: '#register-modal',
+    registerRepo: '#register-repo',
+    registerFilename: '#register-filename',
+    registerDisplayName: '#register-display-name',
+    registerSubmit: '#register-submit',
+    registerCancel: '#register-modal-close',
     // Individual model card elements
     modelCard: '.model-card',
     modelName: '[data-model-name]',

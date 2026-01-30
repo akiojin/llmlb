@@ -52,18 +52,18 @@ pub enum UserRole {
 
 | エンドポイント | 必要なスコープ |
 |---------------|---------------|
-| POST /v0/nodes | `node` |
-| GET /v0/health | `node` + ノードトークン |
-| GET /v0/models/registry/:name/manifest.json | `node` |
+| POST /api/nodes | `node` |
+| GET /api/health | `node` + ノードトークン |
+| GET /api/models/registry/:name/manifest.json | `node` |
 | POST /v1/chat/completions | `api` |
 | POST /v1/embeddings | `api` |
 | GET /v1/models | `api` |
 | POST /v1/models/register | `admin` |
 | DELETE /v1/models/:name | `admin` |
-| GET /v0/users | `admin` |
-| GET /v0/api-keys | `admin` |
-| GET /v0/metrics/* | `admin` |
-| GET /v0/dashboard/* | `admin` または JWT |
+| GET /api/users | `admin` |
+| GET /api/api-keys | `admin` |
+| GET /api/metrics/* | `admin` |
+| GET /api/dashboard/* | `admin` または JWT |
 
 ## デバッグAPIキー
 

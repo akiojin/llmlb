@@ -17,7 +17,10 @@ pub async fn create_test_lb() -> (Router, SqlitePool) {
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
     std::env::set_var("LLM_CONVERT_FAKE", "1");
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
@@ -50,6 +53,7 @@ pub async fn create_test_lb() -> (Router, SqlitePool) {
 
 /// テスト用のSQLiteデータベースプールを作成する
 pub async fn create_test_db_pool() -> SqlitePool {
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
     let pool = SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create in-memory SQLite pool");
@@ -68,7 +72,7 @@ pub fn test_jwt_secret() -> String {
     "test-jwt-secret-key-for-testing-only".to_string()
 }
 
-/// ルーターサーバーをテスト用に起動する
+/// llmlbサーバーをテスト用に起動する
 #[allow(dead_code)]
 pub async fn spawn_test_lb() -> TestServer {
     // テスト用に一時ディレクトリを設定
@@ -76,6 +80,7 @@ pub async fn spawn_test_lb() -> TestServer {
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
     std::env::set_var("LLM_CONVERT_FAKE", "1");
+    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = create_test_db_pool().await;
     let request_history = std::sync::Arc::new(
@@ -106,7 +111,7 @@ pub async fn spawn_test_lb() -> TestServer {
     spawn_lb(app).await
 }
 
-/// 指定したルーターにノードを登録する
+/// 指定したllmlbにノードを登録する
 #[allow(dead_code)]
 pub async fn register_node(
     lb_addr: SocketAddr,
@@ -116,11 +121,11 @@ pub async fn register_node(
     Ok(response)
 }
 
-/// SPEC-66555000: POST /v0/runtimes は廃止されました。
+/// SPEC-66555000: POST /api/runtimes は廃止されました。
 /// このヘルパー関数は後方互換性のために残されていますが、
 /// 新しいテストは Endpoints API を使用してください。
 ///
-/// 指定したルーターにノードを登録する（ランタイムタイプ指定可能）
+/// 指定したllmlbにノードを登録する（ランタイムタイプ指定可能）
 /// レスポンスのボディには {"runtime_id": "...", "token": "..."} 形式が含まれます
 pub async fn register_node_with_runtimes(
     lb_addr: SocketAddr,
@@ -130,7 +135,7 @@ pub async fn register_node_with_runtimes(
     use serde_json::json;
 
     // 1. 内部APIを使ってノードを登録するための仮想レスポンスを作成
-    // POST /v0/runtimes が廃止されたため、内部 /v0/internal/test/register-runtime を使用
+    // POST /api/runtimes が廃止されたため、内部 /api/internal/test/register-runtime を使用
     let payload = json!({
         "machine_name": "stub-node",
         "ip_address": node_addr.ip().to_string(),
@@ -146,8 +151,9 @@ pub async fn register_node_with_runtimes(
     // テスト専用の内部エンドポイントを使用
     Client::new()
         .post(format!(
-            "http://{lb_addr}/v0/internal/test/register-runtime"
+            "http://{lb_addr}/api/internal/test/register-runtime"
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&payload)
         .send()
@@ -215,7 +221,8 @@ pub async fn register_endpoint_with_capabilities(
 
     // 1. エンドポイントを作成
     let create_response = client
-        .post(format!("http://{}/v0/endpoints", lb_addr))
+        .post(format!("http://{}/api/endpoints", lb_addr))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": format!("{} - {}", name, stub_addr),
@@ -232,9 +239,10 @@ pub async fn register_endpoint_with_capabilities(
     // 2. エンドポイントをOnline状態にする
     let _ = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             lb_addr, endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await?;
@@ -254,7 +262,8 @@ pub async fn register_responses_endpoint(
 
     // 1. エンドポイントを登録
     let create_response = client
-        .post(format!("http://{}/v0/endpoints", lb_addr))
+        .post(format!("http://{}/api/endpoints", lb_addr))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": format!("Responses API Test Endpoint - {}", model_id),
@@ -278,9 +287,10 @@ pub async fn register_responses_endpoint(
     // 2. エンドポイントをOnline状態にする（接続テストを実行）
     let test_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             lb_addr, endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await?;
@@ -297,9 +307,10 @@ pub async fn register_responses_endpoint(
     // 3. モデルを同期
     let sync_response = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/sync",
+            "http://{}/api/endpoints/{}/sync",
             lb_addr, endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await?;
@@ -321,7 +332,8 @@ pub async fn register_responses_endpoint(
 pub async fn approve_node(lb_addr: SocketAddr, node_id: &str) -> reqwest::Result<Response> {
     let client = Client::new();
     let login_response = client
-        .post(format!("http://{}/v0/auth/login", lb_addr))
+        .post(format!("http://{}/api/auth/login", lb_addr))
+        .header("x-internal-token", "test-internal")
         .json(&json!({
             "username": "admin",
             "password": "test"
@@ -334,9 +346,10 @@ pub async fn approve_node(lb_addr: SocketAddr, node_id: &str) -> reqwest::Result
 
     client
         .post(format!(
-            "http://{}/v0/runtimes/{}/approve",
+            "http://{}/api/runtimes/{}/approve",
             lb_addr, node_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", token))
         .send()
         .await
@@ -371,7 +384,8 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
 
     // ログイン
     let login_response = client
-        .post(format!("http://{}/v0/auth/login", lb_addr))
+        .post(format!("http://{}/api/auth/login", lb_addr))
+        .header("x-internal-token", "test-internal")
         .json(&json!({
             "username": "admin",
             "password": "password123"
@@ -385,7 +399,8 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
 
     // APIキーを発行
     let create_key_response = client
-        .post(format!("http://{}/v0/api-keys", lb_addr))
+        .post(format!("http://{}/api/api-keys", lb_addr))
+        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
@@ -400,7 +415,7 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
     key_data["key"].as_str().unwrap().to_string()
 }
 
-/// ルーターサーバーをテスト用に起動する（DBプールも返す）
+/// llmlbサーバーをテスト用に起動する（DBプールも返す）
 #[allow(dead_code)]
 pub async fn spawn_test_lb_with_db() -> (TestServer, SqlitePool) {
     // テスト用に一時ディレクトリを設定

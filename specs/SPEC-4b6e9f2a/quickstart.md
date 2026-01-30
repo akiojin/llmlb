@@ -171,7 +171,7 @@ cloud_response = httpx.post(
 
 ```bash
 # ロードバランサーのステータスを確認
-curl http://localhost:8080/v0/status \
+curl http://localhost:8080/api/status \
   -H "Authorization: Bearer sk-your-api-key"
 ```
 

@@ -41,7 +41,7 @@
 ### エンドポイント登録
 
 ```bash
-curl -X POST http://localhost:32768/v0/endpoints \
+curl -X POST http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -66,28 +66,28 @@ curl -X POST http://localhost:32768/v0/endpoints \
 ### エンドポイント一覧取得
 
 ```bash
-curl http://localhost:32768/v0/endpoints \
+curl http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
 ### エンドポイント詳細取得
 
 ```bash
-curl http://localhost:32768/v0/endpoints/{endpoint_id} \
+curl http://localhost:32768/api/endpoints/{endpoint_id} \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
 ### 接続テスト
 
 ```bash
-curl -X POST http://localhost:32768/v0/endpoints/{endpoint_id}/test \
+curl -X POST http://localhost:32768/api/endpoints/{endpoint_id}/test \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
 ### モデル同期
 
 ```bash
-curl -X POST http://localhost:32768/v0/endpoints/{endpoint_id}/sync \
+curl -X POST http://localhost:32768/api/endpoints/{endpoint_id}/sync \
   -H "Authorization: Bearer sk_your_api_key"
 ```
 
@@ -138,13 +138,13 @@ curl -X POST http://localhost:32768/v0/endpoints/{endpoint_id}/sync \
 
 ```bash
 # 登録
-curl -X POST http://localhost:32768/v0/endpoints \
+curl -X POST http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_debug" \
   -H "Content-Type: application/json" \
   -d '{"name": "Test", "base_url": "http://localhost:11434"}'
 
 # 確認
-curl http://localhost:32768/v0/endpoints \
+curl http://localhost:32768/api/endpoints \
   -H "Authorization: Bearer sk_debug"
 ```
 
@@ -154,7 +154,7 @@ curl http://localhost:32768/v0/endpoints \
 
 ```bash
 # 30秒待機後、状態確認
-curl http://localhost:32768/v0/endpoints/{endpoint_id} \
+curl http://localhost:32768/api/endpoints/{endpoint_id} \
   -H "Authorization: Bearer sk_debug"
 ```
 
@@ -164,7 +164,7 @@ curl http://localhost:32768/v0/endpoints/{endpoint_id} \
 
 ```bash
 # 同期実行
-curl -X POST http://localhost:32768/v0/endpoints/{endpoint_id}/sync \
+curl -X POST http://localhost:32768/api/endpoints/{endpoint_id}/sync \
   -H "Authorization: Bearer sk_debug"
 
 # モデル一覧確認
@@ -187,6 +187,88 @@ curl -X POST http://localhost:32768/v1/chat/completions \
 ```
 
 **期待結果**: エンドポイントにルーティングされ、レスポンスが返る
+
+### 5. エンドポイントタイプ自動判別の検証
+
+エンドポイント登録時に自動的にタイプが判別されます。
+
+```bash
+# エンドポイント登録（タイプ自動判別）
+curl -X POST http://localhost:32768/api/endpoints \
+  -H "Authorization: Bearer sk_debug" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "xLLM Server", "base_url": "http://localhost:8080"}'
+```
+
+**期待結果**: レスポンスに `endpoint_type` フィールドが含まれる
+
+```json
+{
+  "id": "...",
+  "name": "xLLM Server",
+  "endpoint_type": "xllm",
+  ...
+}
+```
+
+判別優先度:
+
+1. **xllm**: GET /api/system に `xllm_version` が含まれる
+2. **ollama**: GET /api/tags が成功
+3. **vllm**: Server ヘッダーに "vllm" が含まれる
+4. **openai_compatible**: GET /v1/models が成功
+5. **unknown**: 判別不能（オフライン時）
+
+### 6. タイプフィルタリングの検証
+
+```bash
+# xLLMタイプのみ取得
+curl "http://localhost:32768/api/endpoints?type=xllm" \
+  -H "Authorization: Bearer sk_debug"
+
+# Ollamaタイプのみ取得
+curl "http://localhost:32768/api/endpoints?type=ollama" \
+  -H "Authorization: Bearer sk_debug"
+```
+
+**期待結果**: 指定タイプのエンドポイントのみがフィルタリングされる
+
+### 7. xLLMモデルダウンロードの検証（xLLMタイプのみ）
+
+```bash
+# ダウンロード開始
+curl -X POST http://localhost:32768/api/endpoints/{endpoint_id}/download \
+  -H "Authorization: Bearer sk_debug" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama-3.2-1b"}'
+
+# 進捗確認
+curl "http://localhost:32768/api/endpoints/{endpoint_id}/download/progress?model=llama-3.2-1b" \
+  -H "Authorization: Bearer sk_debug"
+```
+
+**期待結果**:
+
+- xLLMタイプ: ダウンロードが開始される
+- 非xLLMタイプ: 400 Bad Request（ダウンロード非対応）
+
+### 8. モデルメタデータ取得の検証（xLLM/Ollamaのみ）
+
+```bash
+# モデル情報取得
+curl http://localhost:32768/api/endpoints/{endpoint_id}/models/{model_id}/info \
+  -H "Authorization: Bearer sk_debug"
+```
+
+**期待結果**:
+
+```json
+{
+  "model": "llama-3.2-1b",
+  "context_length": 131072,
+  "capabilities": ["text", "vision"]
+}
+```
 
 ## トラブルシューティング
 

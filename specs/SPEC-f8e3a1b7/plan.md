@@ -139,9 +139,9 @@ impl From<LbError> for OpenAIError {
 4. リクエスト成功時のレイテンシ計測・更新
 5. タイブレーク用ラウンドロビンインデックス追加
 
-### Phase 4: /v0/system API対応
+### Phase 4: /api/system API対応
 
-1. /v0/system エンドポイント試行ロジック追加
+1. /api/system エンドポイント試行ロジック追加
 2. DeviceInfo取得・保存実装
 3. 登録時のみ呼び出し制御
 

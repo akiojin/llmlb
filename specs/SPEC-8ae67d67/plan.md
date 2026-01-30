@@ -10,9 +10,9 @@
 - ノードはロードバランサーのモデル一覧を取得し、自律的にモデルを同期する
   - `GET /v1/models`
 - モデルファイルはロードバランサーから配信せず、HFから直接取得する
-  - マニフェスト取得: `GET /v0/models/registry/:model_name/manifest.json`
+  - マニフェスト取得: `GET /api/models/registry/:model_name/manifest.json`
 - ロードバランサー側のモデル管理API（管理者向け）
-  - `POST /v0/models/register`
+  - `POST /api/models/register`
   - `GET /v1/models`
   - `DELETE /v1/models/:model_name`
 

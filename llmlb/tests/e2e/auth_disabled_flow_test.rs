@@ -64,7 +64,7 @@ async fn build_app() -> Router {
     api::create_app(state)
 }
 
-/// SPEC-66555000: /v0/nodes は廃止されたため、/v0/endpoints を使用
+/// SPEC-66555000: /api/nodes は廃止されたため、/api/endpoints を使用
 /// このテストはAUTH_DISABLEDモードの動作確認に焦点を当てる
 #[tokio::test]
 #[serial]
@@ -72,13 +72,14 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
     let _guard = EnvGuard::set("AUTH_DISABLED", "true");
     let app = build_app().await;
 
-    // /v0/endpoints エンドポイントをテスト（/v0/nodesは廃止）
+    // /api/endpoints エンドポイントをテスト（/api/nodesは廃止）
     let endpoints_response = app
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/endpoints")
+                .uri("/api/endpoints")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -88,15 +89,16 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
     assert_eq!(
         endpoints_response.status(),
         StatusCode::OK,
-        "AUTH_DISABLED should allow /v0/endpoints without auth"
+        "AUTH_DISABLED should allow /api/endpoints without auth"
     );
 
     let me_response = app
         .clone()
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
-                .uri("/v0/auth/me")
+                .uri("/api/auth/me")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -106,12 +108,13 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
     assert_eq!(
         me_response.status(),
         StatusCode::OK,
-        "AUTH_DISABLED should allow /v0/auth/me without auth"
+        "AUTH_DISABLED should allow /api/auth/me without auth"
     );
 
     let dashboard_response = app
         .oneshot(
             Request::builder()
+                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/dashboard")
                 .body(Body::empty())

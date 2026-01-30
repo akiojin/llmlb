@@ -1,6 +1,6 @@
 //! Integration Test: T016b - レイテンシベースルーティング
 //!
-//! SPEC-66555000: ルーター主導エンドポイント登録システム
+//! SPEC-66555000: llmlb主導エンドポイント登録システム
 //!
 //! レイテンシが最も低いエンドポイントを優先的に選択する機能を検証する。
 
@@ -41,7 +41,8 @@ async fn test_latency_recorded_for_endpoints() {
 
     for (name, url) in &endpoints {
         let reg_resp = client
-            .post(format!("http://{}/v0/endpoints", server.addr()))
+            .post(format!("http://{}/api/endpoints", server.addr()))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .json(&json!({
                 "name": name,
@@ -57,10 +58,11 @@ async fn test_latency_recorded_for_endpoints() {
         // 接続テストでレイテンシを計測
         let test_resp = client
             .post(format!(
-                "http://{}/v0/endpoints/{}/test",
+                "http://{}/api/endpoints/{}/test",
                 server.addr(),
                 endpoint_id
             ))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .send()
             .await
@@ -76,7 +78,8 @@ async fn test_latency_recorded_for_endpoints() {
 
     // 一覧でレイテンシ情報が含まれる（latency_msフィールドがエンドポイントに記録される）
     let list_resp = client
-        .get(format!("http://{}/v0/endpoints", server.addr()))
+        .get(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -111,7 +114,8 @@ async fn test_slow_endpoint_handled() {
     let client = Client::new();
 
     let reg_resp = client
-        .post(format!("http://{}/v0/endpoints", server.addr()))
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Slow Endpoint",
@@ -126,10 +130,11 @@ async fn test_slow_endpoint_handled() {
 
     let test_resp = client
         .post(format!(
-            "http://{}/v0/endpoints/{}/test",
+            "http://{}/api/endpoints/{}/test",
             server.addr(),
             endpoint_id
         ))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -167,7 +172,8 @@ async fn test_multiple_endpoints_same_model() {
     // 2つのエンドポイントを登録（同じモデルを持つ）
     for (i, url) in [mock1.uri(), mock2.uri()].iter().enumerate() {
         let reg_resp = client
-            .post(format!("http://{}/v0/endpoints", server.addr()))
+            .post(format!("http://{}/api/endpoints", server.addr()))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .json(&json!({
                 "name": format!("Endpoint {}", i + 1),
@@ -183,10 +189,11 @@ async fn test_multiple_endpoints_same_model() {
         // モデル同期
         let _ = client
             .post(format!(
-                "http://{}/v0/endpoints/{}/sync",
+                "http://{}/api/endpoints/{}/sync",
                 server.addr(),
                 endpoint_id
             ))
+            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .send()
             .await
@@ -195,7 +202,8 @@ async fn test_multiple_endpoints_same_model() {
 
     // 両方のエンドポイントが同じモデルを持つ
     let list_resp = client
-        .get(format!("http://{}/v0/endpoints", server.addr()))
+        .get(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

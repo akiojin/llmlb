@@ -1,15 +1,17 @@
 // T047-T049: 認証ミドルウェア実装
 
 use crate::common::auth::{ApiKeyScope, Claims, UserRole};
+use crate::AppState;
 use axum::{
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{header, HeaderValue, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
 use jsonwebtoken::decode_header;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[cfg(debug_assertions)]
@@ -21,11 +23,15 @@ const DEBUG_API_KEY_API: &str = "sk_debug_api";
 #[cfg(debug_assertions)]
 const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
 
+const INTERNAL_TOKEN_HEADER: &str = "x-internal-token";
+const INTERNAL_TOKEN_QUERY: &str = "internal_token";
+const INTERNAL_TOKEN_COOKIE: &str = "llmlb_internal_token";
+
 #[cfg(debug_assertions)]
 fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
     match request_key {
         DEBUG_API_KEY_ALL => Some(ApiKeyScope::all()),
-        DEBUG_API_KEY_RUNTIME => Some(vec![ApiKeyScope::Runtime]),
+        DEBUG_API_KEY_RUNTIME => Some(vec![ApiKeyScope::Endpoint]),
         DEBUG_API_KEY_API => Some(vec![ApiKeyScope::Api]),
         DEBUG_API_KEY_ADMIN => Some(vec![ApiKeyScope::Admin]),
         _ => None,
@@ -68,6 +74,37 @@ fn token_looks_like_jwt(token: &str) -> bool {
         return decode_header(token).is_ok();
     }
     false
+}
+
+fn extract_internal_token_from_header(request: &Request) -> Option<String> {
+    request
+        .headers()
+        .get(INTERNAL_TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string())
+}
+
+fn extract_internal_token_from_cookie(request: &Request) -> Option<String> {
+    let cookie_header = request.headers().get(header::COOKIE)?.to_str().ok()?;
+    for part in cookie_header.split(';') {
+        let mut iter = part.trim().splitn(2, '=');
+        let name = iter.next()?.trim();
+        let value = iter.next()?.trim();
+        if name == INTERNAL_TOKEN_COOKIE {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+fn extract_internal_token_from_query(request: &Request) -> Option<String> {
+    let query = request.uri().query()?;
+    let params: HashMap<String, String> = serde_urlencoded::from_str(query).ok()?;
+    params.get(INTERNAL_TOKEN_QUERY).cloned()
+}
+
+fn internal_token_is_valid(expected: &str, tokens: &[Option<String>]) -> bool {
+    tokens.iter().flatten().any(|provided| provided == expected)
 }
 
 async fn authenticate_api_key(
@@ -367,7 +404,7 @@ pub async fn authenticated_middleware(
 
 /// 管理者またはランタイム権限ミドルウェア
 ///
-/// `/v0/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ランタイム(Runtime APIキー)」の両方から
+/// `/api/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ランタイム(Runtime APIキー)」の両方から
 /// アクセスされるエンドポイント向け。
 ///
 /// 許可される認証:
@@ -410,13 +447,13 @@ pub async fn admin_or_runtime_middleware(
     let api_key = extract_api_key(&request)?;
     let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
 
-    // Admin または Runtime スコープを許可
+    // Admin または Endpoint スコープを許可
     let has_admin = auth_context.scopes.contains(&ApiKeyScope::Admin);
-    let has_runtime = auth_context.scopes.contains(&ApiKeyScope::Runtime);
-    if !has_admin && !has_runtime {
+    let has_endpoint = auth_context.scopes.contains(&ApiKeyScope::Endpoint);
+    if !has_admin && !has_endpoint {
         return Err((
             StatusCode::FORBIDDEN,
-            "Admin or Runtime scope required".to_string(),
+            "Admin or Endpoint scope required".to_string(),
         )
             .into_response());
     }
@@ -443,7 +480,7 @@ pub async fn admin_or_runtime_middleware(
 
 // SPEC-66555000: APIキー or ノードトークン認証ミドルウェアは廃止されました
 // api_key_or_node_token_auth_middleware と node_token_auth_middleware は削除されました
-// 新しい実装は POST /v0/endpoints を使用してください
+// 新しい実装は POST /api/endpoints を使用してください
 
 /// SHA-256ハッシュ化ヘルパー関数
 ///
@@ -484,11 +521,92 @@ pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Resp
     next.run(request).await
 }
 
+/// AUTH_DISABLED用ダミーClaims注入ミドルウェア（管理者ID参照）
+///
+/// 既存の管理者ユーザーIDを取得してClaimsへ設定する。
+/// 管理者が存在しない場合はnil UUIDを使用する。
+pub async fn inject_dummy_admin_claims_with_state(
+    State(app_state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let admin_id = match crate::db::users::find_any_admin_id(&app_state.db_pool).await {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            tracing::warn!("No admin user found; using nil UUID for dummy claims");
+            Uuid::nil()
+        }
+        Err(e) => {
+            tracing::error!("Failed to lookup admin user: {}", e);
+            Uuid::nil()
+        }
+    };
+
+    let dummy_claims = Claims {
+        sub: admin_id.to_string(),
+        role: UserRole::Admin,
+        exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
+    };
+
+    request.extensions_mut().insert(dummy_claims);
+
+    next.run(request).await
+}
+
+/// 内部APIトークン必須ミドルウェア
+///
+/// `/api/*`, `/dashboard*`, `/ws/*` など内部向けルートで使用する。
+/// `LLMLB_INTERNAL_API_TOKEN` が設定されている場合のみ許可する。
+pub async fn internal_token_middleware(request: Request, next: Next) -> Response {
+    let expected = match crate::config::internal_api_token() {
+        Some(value) if !value.is_empty() => value,
+        _ => {
+            tracing::error!("LLMLB_INTERNAL_API_TOKEN is not configured");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal API token not configured",
+            )
+                .into_response();
+        }
+    };
+
+    let header_token = extract_internal_token_from_header(&request);
+    let cookie_token = extract_internal_token_from_cookie(&request);
+    let query_token = extract_internal_token_from_query(&request);
+
+    if !internal_token_is_valid(
+        &expected,
+        &[
+            header_token.clone(),
+            cookie_token.clone(),
+            query_token.clone(),
+        ],
+    ) {
+        return (StatusCode::UNAUTHORIZED, "Internal token required").into_response();
+    }
+
+    let mut response = next.run(request).await;
+
+    if let Some(query_token) = query_token {
+        if query_token == expected {
+            if let Ok(value) = HeaderValue::from_str(&format!(
+                "{}={}; Path=/; HttpOnly; SameSite=Lax",
+                INTERNAL_TOKEN_COOKIE, query_token
+            )) {
+                response.headers_mut().append(header::SET_COOKIE, value);
+            }
+        }
+    }
+
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::balancer::LoadManager;
     use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
+    use serial_test::serial;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -508,6 +626,140 @@ mod tests {
         // 異なる入力は異なるハッシュを生成
         let hash3 = hash_with_sha256("different_input");
         assert_ne!(hash, hash3);
+    }
+
+    #[tokio::test]
+    async fn dummy_admin_claims_use_existing_admin_id() {
+        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite pool");
+        sqlx::migrate!("./migrations")
+            .run(&db_pool)
+            .await
+            .expect("Failed to run migrations");
+
+        let admin = crate::db::users::create(&db_pool, "admin-user", "hash", UserRole::Admin)
+            .await
+            .expect("create admin user");
+
+        let request_history = std::sync::Arc::new(
+            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
+        );
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
+        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
+        let load_manager = LoadManager::new(endpoint_registry_arc);
+        let state = crate::AppState {
+            load_manager,
+            request_history,
+            db_pool,
+            jwt_secret: "test-secret".to_string(),
+            http_client: reqwest::Client::new(),
+            queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry,
+        };
+
+        let app = Router::new()
+            .route(
+                "/t",
+                get(
+                    |axum::extract::Extension(claims): axum::extract::Extension<Claims>| async move {
+                        claims.sub
+                    },
+                ),
+            )
+            .layer(axum_middleware::from_fn_with_state(
+                state,
+                inject_dummy_admin_claims_with_state,
+            ));
+
+        let res = app
+            .oneshot(Request::builder().uri("/t").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_str = std::str::from_utf8(&body).unwrap();
+        assert_eq!(body_str, admin.id.to_string());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn internal_token_middleware_rejects_without_token() {
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
+
+        let app = Router::new()
+            .route("/t", get(|| async { "ok" }))
+            .layer(axum_middleware::from_fn(internal_token_middleware));
+
+        let res = app
+            .oneshot(Request::builder().uri("/t").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn internal_token_middleware_allows_with_header() {
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
+
+        let app = Router::new()
+            .route("/t", get(|| async { "ok" }))
+            .layer(axum_middleware::from_fn(internal_token_middleware));
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/t")
+                    .header(INTERNAL_TOKEN_HEADER, "secret-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+
+        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn internal_token_middleware_sets_cookie_from_query() {
+        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
+
+        let app = Router::new()
+            .route("/t", get(|| async { "ok" }))
+            .layer(axum_middleware::from_fn(internal_token_middleware));
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/t?internal_token=secret-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let set_cookie = res
+            .headers()
+            .get(header::SET_COOKIE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        assert!(set_cookie.contains("llmlb_internal_token=secret-token"));
+
+        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
     }
 
     #[cfg(debug_assertions)]

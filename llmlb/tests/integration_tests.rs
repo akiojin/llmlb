@@ -8,7 +8,7 @@ mod support;
 mod model_info_test;
 
 // NOTE: audio_api_test.rs was deleted as part of NodeRegistry removal (SPEC-66555000)
-// All tests depended on deprecated /v0/internal/test/register-node endpoint
+// All tests depended on deprecated /api/internal/test/register-node endpoint
 
 #[path = "integration/images_api_test.rs"]
 mod images_api_test;
@@ -50,6 +50,29 @@ mod endpoint_auto_recovery_test;
 #[path = "integration/endpoint_viewer_access_test.rs"]
 mod endpoint_viewer_access_test;
 
+// SPEC-66555000: エンドポイントタイプ関連の統合テスト
+#[path = "integration/endpoint_type_detection_test.rs"]
+mod endpoint_type_detection_test;
+
+#[path = "integration/endpoint_type_filter_test.rs"]
+mod endpoint_type_filter_test;
+
+#[path = "integration/endpoint_type_manual_override_test.rs"]
+mod endpoint_type_manual_override_test;
+
+#[path = "integration/endpoint_xllm_download_test.rs"]
+mod endpoint_xllm_download_test;
+
+#[path = "integration/endpoint_download_reject_test.rs"]
+mod endpoint_download_reject_test;
+
+#[path = "integration/endpoint_model_metadata_test.rs"]
+mod endpoint_model_metadata_test;
+
+// 既存の統合テスト（ハーネス未登録だったものを追加）
+#[path = "integration/test_metrics.rs"]
+mod test_metrics;
+
 // SPEC-24157000: Open Responses API統合テスト
 #[path = "integration/responses_api_test.rs"]
 mod responses_api_test;
@@ -60,8 +83,8 @@ mod responses_streaming_test;
 #[path = "integration/models_api_test.rs"]
 mod models_api_test;
 
-// SPEC-f8e3a1b7: /v0/system API統合テスト
-#[path = "integration/v0_system_test.rs"]
+// SPEC-f8e3a1b7: /api/system API統合テスト
+#[path = "integration/api_system_test.rs"]
 mod v0_system_test;
 
 // Tests are defined inside the modules; this harness ensures they are built

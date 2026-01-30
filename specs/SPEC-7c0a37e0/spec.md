@@ -47,7 +47,7 @@
 **受け入れシナリオ**:
 
 1. **前提** `endpoints`スコープ付きAPIキーを所持、
-   **実行** そのキーでPOST /v0/endpoints を呼び出す、
+   **実行** そのキーでPOST /api/endpoints を呼び出す、
    **結果** エンドポイントが正常に登録される
 2. **前提** `api`のみのスコープ付きAPIキーを所持、
    **実行** そのキーでエンドポイント登録を試みる、
@@ -121,16 +121,16 @@ API利用者として、管理者から発行されたAPIキーを使用してOp
 
 **この優先度の理由**: 誤操作や権限逸脱を防ぐため、最低限のロール分離が必要。
 
-**独立テスト**: `viewer` ロールで `/v0/auth/me` は成功するが、
-`/v0/users` など管理APIは 403 になることを確認。
+**独立テスト**: `viewer` ロールで `/api/auth/me` は成功するが、
+`/api/users` など管理APIは 403 になることを確認。
 
 **受け入れシナリオ**:
 
 1. **前提** `viewer` ロールのユーザーでログイン済み、
-   **実行** `/v0/auth/me` を呼び出す、
+   **実行** `/api/auth/me` を呼び出す、
    **結果** 200 OK でユーザー情報が返る
 2. **前提** `viewer` ロールのユーザーでログイン済み、
-   **実行** `/v0/users` へアクセスする、
+   **実行** `/api/users` へアクセスする、
    **結果** 403 Forbidden で拒否される
 
 ---
@@ -156,15 +156,15 @@ API利用者として、管理者から発行されたAPIキーを使用してOp
 
 - **FR-001**: APIキーにスコープ（権限）を紐付けて発行できる
 - **FR-002**: スコープは`endpoints`、`api`、`admin`の3種類
-- **FR-003**: エンドポイント管理API（`/v0/endpoints`）は`endpoints`スコープを要求する
+- **FR-003**: エンドポイント管理API（`/api/endpoints`）は`endpoints`スコープを要求する
 - **FR-004**: 推論API（`/v1/chat/completions`等）は`api`スコープを要求する
-- **FR-005**: ダッシュボードAPI（`/v0/dashboard/*`）は`admin`スコープまたはJWT認証を要求する
+- **FR-005**: ダッシュボードAPI（`/api/dashboard/*`）は`admin`スコープまたはJWT認証を要求する
 - **FR-006**: デバッグビルドでは事前定義されたAPIキーが各スコープで利用可能
 - **FR-007**: リリースビルドではデバッグAPIキーは無効化される
 - **FR-008**: APIキー発行時にスコープを選択できるUIをダッシュボードに提供する
 - **FR-009**: `admin`スコープは他のすべてのスコープの権限を包含する
-- **FR-010**: `/v0`の管理系エンドポイント（`/v0/users`, `/v0/api-keys`, `/v0/endpoints`の管理操作, `/v0/metrics/*`）および`/v1/models`の管理操作（`POST /v1/models/register`, `DELETE /v1/models/:name`）は`admin`スコープまたはJWT認証を要求する
-- **FR-011**: モデル同期用エンドポイント（`/v0/models/registry/:model_name/manifest.json`）は`endpoints`スコープを要求する
+- **FR-010**: `/api`の管理系エンドポイント（`/api/users`, `/api/api-keys`, `/api/endpoints`の管理操作, `/api/metrics/*`）および`/v1/models`の管理操作（`POST /v1/models/register`, `DELETE /v1/models/:name`）は`admin`スコープまたはJWT認証を要求する
+- **FR-011**: モデル同期用エンドポイント（`/api/models/registry/:model_name/manifest.json`）は`endpoints`スコープを要求する
 - **FR-012**: `viewer`ロールのユーザーは管理系APIへアクセスできない（403）
 - **FR-013**: APIキー発行時のデフォルト有効期限は90日とする
 

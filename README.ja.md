@@ -41,7 +41,7 @@ LLM Load Balancer はマネージャ方式のマルチエンジン構成をサ�
 | **gpt-oss (MoE + MXFP4)** | 実装済み | `mlp.router.*` と `mlp.experts.*_(blocks\|scales\|bias)` を読み込む |
 | **nemotron3 (Mamba-Transformer MoE)** | 準備済み（未統合） | まだforwardパスに接続されていない |
 
-詳細・更新履歴は `specs/SPEC-69549000/spec.md` を参照。
+詳細・更新履歴は <https://github.com/akiojin/xLLM>/blob/main/specs/SPEC-69549000/spec.md を参照。
 
 ### GGUF アーキテクチャ例（llama.cpp）
 
@@ -336,21 +336,13 @@ docker run --rm -p 32768:32768 --gpus all \
 ```
 GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
 
-### 3) C++ Runtime ビルド
+### 3) xLLM（C++ Runtime）
 
-```bash
-npm run build:xllm
+C++ Runtime（xLLM）は別リポジトリに分離しました。
 
-# Linux / CUDA の場合
-npm run build:xllm:cuda
+- <https://github.com/akiojin/xLLM>
 
-# 手動でビルドする場合:
-cd xllm
-cmake -B build -S .
-cmake --build build --config Release
-```
-
-生成物: `xllm/build/xllm`
+ビルド/実行/環境変数は上記リポジトリを参照してください。
 
 ### 4) 基本設定
 
@@ -374,38 +366,11 @@ cmake --build build --config Release
 
 - `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 
-#### ランタイム（C++）環境変数
+#### ランタイム（C++）
 
-| 環境変数 | デフォルト | 説明 |
-|---------|-----------|------|
-| `LLMLB_URL` | `http://127.0.0.1:32768` | ロードバランサーURL |
-| `LLM_RUNTIME_API_KEY` | - | ランタイム登録/モデルレジストリ取得用APIキー（スコープ: `runtime`） |
-| `LLM_RUNTIME_PORT` | `32769` | HTTPサーバーポート |
-| `LLM_RUNTIME_MODELS_DIR` | `~/.llmlb/models` | モデルディレクトリ |
-| `LLM_RUNTIME_ORIGIN_ALLOWLIST` | `huggingface.co/*,cdn-lfs.huggingface.co/*` | 外部ダウンロード許可リスト（カンマ区切り） |
-| `LLM_RUNTIME_BIND_ADDRESS` | `0.0.0.0` | バインドアドレス |
-| `LLM_RUNTIME_HEARTBEAT_SECS` | `10` | ハートビート間隔（秒） |
-| `LLM_RUNTIME_LOG_LEVEL` | `info` | ログレベル |
-| `LLM_RUNTIME_LOG_DIR` | `~/.llmlb/logs` | ログディレクトリ |
+Runtime（xLLM）の環境変数・設定は xLLM リポジトリに移動しました。
 
-**注意**: 旧環境変数名（`LLMLB_HOST`, `LLM_MODELS_DIR`等）は非推奨です。
-新しい環境変数名を使用してください。
-
-**注記**: エンジンプラグインは廃止しました。移行手順は `docs/migrations/plugin-to-manager.md` を参照してください。
-
-### 5) 起動例
-```bash
-# ロードバランサー
-cargo run -p llmlb
-
-# ランタイム (別シェル)
-LLM_RUNTIME_API_KEY=sk_runtime_register_key ./xllm/build/xllm
-```
-
-### 6) 動作確認
-- ダッシュボード: `http://localhost:32768/dashboard`
-- 健康チェック: `curl -H "Authorization: Bearer sk_runtime_register_key" -H "X-Runtime-Token: <runtime_token>" http://localhost:32768/v0/health`
-- OpenAI互換: `curl -H "Authorization: Bearer sk_api_key" http://localhost:32768/v1/models`
+- <https://github.com/akiojin/xLLM>
 
 ## 利用方法（OpenAI互換エンドポイント）
 

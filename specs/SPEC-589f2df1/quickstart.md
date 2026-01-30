@@ -231,7 +231,7 @@ export LLMLB_GPU_THRESHOLD=70
 curl http://localhost:8080/metrics | grep selection_duration
 
 # 対策: メトリクス更新間隔を確認
-# ノード側で XLLM_HEARTBEAT_SECS を調整
+# エンドポイント側で XLLM_HEARTBEAT_SECS を調整
 ```
 
 ### メトリクスが更新されない
@@ -241,7 +241,7 @@ curl http://localhost:8080/metrics | grep selection_duration
 # 確認:
 curl http://localhost:8080/v0/nodes | jq '.nodes[].last_seen'
 
-# 対策: ノード側のログを確認
+# 対策: エンドポイント側のログを確認
 # XLLM_HEARTBEAT_SECS=30 が設定されているか
 ```
 

@@ -6,4 +6,4 @@
 - `SPEC-11106000`
 - `SPEC-08d2b908`
 - `SPEC-dcaeaec4`
-- `SPEC-48678000`
+- `SPEC-48678000 (moved to xLLM repo)`

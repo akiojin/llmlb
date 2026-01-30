@@ -256,7 +256,7 @@ async fn test_pull_model_to_node_endpoint_is_removed() {
     );
 }
 
-/// ダウンロードタスクAPIは廃止（モデル同期はノード側でオンデマンドに実行）
+/// ダウンロードタスクAPIは廃止（モデル同期はエンドポイント側でオンデマンドに実行）
 #[tokio::test]
 #[serial]
 async fn test_tasks_endpoint_is_removed() {

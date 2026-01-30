@@ -1000,8 +1000,8 @@ async fn proxy_google_provider(
         .and_then(|c| c.get("content"))
         .and_then(|c| c.get("parts"))
         .and_then(|p| p.get(0))
-        .and_then(|p| p.get("text"))
-        .and_then(|t| t.as_str())
+        .and_then(|p: &Value| p.get("text"))
+        .and_then(|t: &Value| t.as_str())
         .unwrap_or("");
 
     let resp_body = json!({
@@ -1130,8 +1130,8 @@ async fn proxy_anthropic_provider(
     let text = data
         .get("content")
         .and_then(|c| c.get(0))
-        .and_then(|p| p.get("text"))
-        .and_then(|t| t.as_str())
+        .and_then(|p: &Value| p.get("text"))
+        .and_then(|t: &Value| t.as_str())
         .unwrap_or("");
 
     let id = data

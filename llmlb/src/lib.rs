@@ -53,6 +53,9 @@ pub mod metadata;
 /// JWT秘密鍵管理
 pub mod jwt_secret;
 
+/// 内部APIトークン管理
+pub mod internal_token;
+
 /// 認証・認可機能
 pub mod auth;
 

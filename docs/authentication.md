@@ -1,12 +1,20 @@
 # Authentication
 
-LLM Router uses three authentication mechanisms:
+LLM Router uses four authentication mechanisms:
 
 1. **JWT** for the admin dashboard and management APIs (`/api/auth/*`, `/api/users/*`, `/api/api-keys/*`, `/api/dashboard/*`, `/api/metrics/*`, `/api/models/*`)
 2. **API keys** for OpenAI-compatible endpoints (`/v1/*`) and `/api` admin/runtime operations
-3. **Runtime token** for runtime-to-router heartbeats/metrics (`POST /api/health`, requires API key too)
+3. **Internal token** for internal-only routes (`/api/*`, `/dashboard*`, `/ws/*`)
+4. **Runtime token** for runtime-to-router heartbeats/metrics (`POST /api/health`, requires API key too)
 
 The canonical API list lives in `README.md` / `README.ja.md`.
+
+## Internal token (internal-only routes)
+
+- `/api/*`, `/dashboard*`, `/ws/*` require `internal_token`
+- Token is sourced from `LLMLB_INTERNAL_API_TOKEN` (or legacy `INTERNAL_API_TOKEN`)
+- If not set, it is auto-generated and stored in `~/.llmlb/internal_token`
+- Provide via `x-internal-token` header or `?internal_token=...` query (query sets cookie)
 
 ## JWT (admin)
 

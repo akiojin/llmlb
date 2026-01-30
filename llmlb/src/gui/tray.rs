@@ -36,8 +36,9 @@ pub struct TrayOptions {
 impl TrayOptions {
     /// Construct options from the load balancer base URL.
     pub fn new(base_url: &str, dashboard_url: &str) -> Self {
+        let dashboard_url = add_internal_token_to_dashboard_url(dashboard_url);
         Self {
-            dashboard_url: dashboard_url.to_string(),
+            dashboard_url,
             tooltip: format!("LLM Load Balancer\n{}", base_url),
         }
     }
@@ -49,6 +50,24 @@ impl TrayOptions {
     fn tooltip(&self) -> &str {
         &self.tooltip
     }
+}
+
+fn add_internal_token_to_dashboard_url(dashboard_url: &str) -> String {
+    if dashboard_url.contains("internal_token=") {
+        return dashboard_url.to_string();
+    }
+
+    let token = match crate::config::internal_api_token() {
+        Some(value) if !value.is_empty() => value,
+        _ => return dashboard_url.to_string(),
+    };
+
+    let separator = if dashboard_url.contains('?') {
+        '&'
+    } else {
+        '?'
+    };
+    format!("{dashboard_url}{separator}internal_token={token}")
 }
 
 /// Proxy used to signal between the runtime thread and tray loop.

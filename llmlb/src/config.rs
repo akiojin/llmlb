@@ -125,8 +125,9 @@ pub fn is_auth_disabled() -> bool {
 ///
 /// 環境変数 `LLMLB_INTERNAL_API_TOKEN` を優先し、
 /// 旧変数 `INTERNAL_API_TOKEN` をフォールバックとして受け付ける。
+/// 未設定の場合は `~/.llmlb/internal_token` に自動生成して保存する。
 pub fn internal_api_token() -> Option<String> {
-    get_env_with_fallback("LLMLB_INTERNAL_API_TOKEN", "INTERNAL_API_TOKEN")
+    crate::internal_token::get_or_create_internal_token().ok()
 }
 
 #[cfg(test)]

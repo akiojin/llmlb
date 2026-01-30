@@ -1,8 +1,9 @@
 //! LLM load balancer Server Entry Point
 
 use clap::Parser;
-use llmlb::cli::Cli;
+use llmlb::cli::{Cli, Commands};
 use llmlb::config::{get_env_with_fallback_or, get_env_with_fallback_parse};
+use llmlb::lock::ServerLock;
 use llmlb::{api, auth, balancer, health, logging, AppState};
 use sqlx::sqlite::SqliteConnectOptions;
 use std::net::SocketAddr;
@@ -19,6 +20,10 @@ impl ServerConfig {
     fn from_env() -> Self {
         let host = get_env_with_fallback_or("LLMLB_HOST", "LLMLB_HOST", "0.0.0.0");
         let port = get_env_with_fallback_parse("LLMLB_PORT", "LLMLB_PORT", 32768);
+        Self { host, port }
+    }
+
+    fn from_args(host: String, port: u16) -> Self {
         Self { host, port }
     }
 
@@ -47,23 +52,61 @@ impl ServerConfig {
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn main() {
-    // Parse CLI for -h/--help and -V/--version support on all platforms
-    match Cli::try_parse() {
-        Ok(_) => {
-            // No special flags, proceed with GUI tray mode
-        }
-        Err(e) => {
-            // Handle --help and --version which clap reports as errors
-            match e.kind() {
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
-                    // clap already printed the output, just exit
-                    e.exit();
-                }
-                _ => {
-                    // Actual error (unknown flag, etc.)
-                    e.exit();
-                }
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => match e.kind() {
+            clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                e.exit();
             }
+            _ => {
+                e.exit();
+            }
+        },
+    };
+
+    // Handle subcommands
+    match cli.command {
+        Some(Commands::Stop(args)) => {
+            let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            if let Err(e) = runtime.block_on(llmlb::cli::stop::execute(&args)) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some(Commands::Status(args)) => {
+            let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            if let Err(e) = runtime.block_on(llmlb::cli::status::execute(&args)) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some(Commands::Serve(args)) => {
+            // Fall through to GUI mode with specified port
+            logging::init().expect("failed to initialize logging");
+            use llmlb::gui::tray::{run_with_system_tray, TrayOptions};
+            use std::thread;
+            use tokio::runtime::Builder;
+
+            let config = ServerConfig::from_args(args.host, args.port);
+            let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
+
+            run_with_system_tray(tray_options, move |proxy| {
+                let server_config = config.clone();
+                thread::spawn(move || {
+                    let runtime = Builder::new_multi_thread()
+                        .enable_all()
+                        .build()
+                        .expect("failed to build Tokio runtime for system tray mode");
+                    runtime.block_on(run_server(server_config));
+                    proxy.notify_server_exit();
+                });
+            });
+            return;
+        }
+        None => {
+            // No subcommand - use default GUI mode
         }
     }
 
@@ -91,13 +134,37 @@ fn main() {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 #[tokio::main]
 async fn main() {
-    // Parse CLI (only -h/--help and -V/--version)
-    let _cli = Cli::parse();
+    let cli = Cli::parse();
 
-    // Start server
-    logging::init().expect("failed to initialize logging");
-    let cfg = ServerConfig::from_env();
-    run_server(cfg).await;
+    // Handle subcommands
+    match cli.command {
+        Some(Commands::Stop(args)) => {
+            if let Err(e) = llmlb::cli::stop::execute(&args).await {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some(Commands::Status(args)) => {
+            if let Err(e) = llmlb::cli::status::execute(&args).await {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some(Commands::Serve(args)) => {
+            logging::init().expect("failed to initialize logging");
+            let cfg = ServerConfig::from_args(args.host, args.port);
+            run_server(cfg).await;
+            return;
+        }
+        None => {
+            // No subcommand - default to serve
+            logging::init().expect("failed to initialize logging");
+            let cfg = ServerConfig::from_env();
+            run_server(cfg).await;
+        }
+    }
 }
 
 async fn init_db_pool(database_url: &str) -> sqlx::Result<sqlx::SqlitePool> {
@@ -128,6 +195,22 @@ async fn init_db_pool(database_url: &str) -> sqlx::Result<sqlx::SqlitePool> {
 
 async fn run_server(config: ServerConfig) {
     info!("LLM Load Balancer v{}", env!("CARGO_PKG_VERSION"));
+
+    // シングル実行制約: ロックを取得
+    let _server_lock = match ServerLock::acquire(config.port) {
+        Ok(lock) => {
+            info!(
+                "Lock acquired for port {} (PID: {})",
+                config.port,
+                lock.info().pid
+            );
+            lock
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // データベース接続プールを最初に作成（他コンポーネントが依存）
     let database_url = llmlb::config::get_env_with_fallback("LLMLB_DATABASE_URL", "DATABASE_URL")
@@ -228,18 +311,56 @@ async fn run_server(config: ServerConfig) {
     let app = api::create_app(state);
 
     let bind_addr = config.bind_addr();
+
+    // グレースフルシャットダウン用のシグナルハンドリング
     let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
         .expect("Failed to bind to address");
 
     info!("LLM Load Balancer server listening on {}", bind_addr);
 
+    // シグナルハンドリングを設定
+    let shutdown_signal = shutdown_signal();
+
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal)
     .await
     .expect("Server error");
+
+    info!("Server shutdown complete");
+    // _server_lock はここでDropされ、ロックが解除される
+}
+
+/// シャットダウンシグナルを待機
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received Ctrl+C, shutting down...");
+        }
+        _ = terminate => {
+            info!("Received SIGTERM, shutting down...");
+        }
+    }
 }
 
 #[cfg(test)]

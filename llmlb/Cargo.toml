@@ -55,6 +55,9 @@ rpassword = "7.3"
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 
+# ファイルロック（クロスプラットフォーム）
+fs2 = "0.4"
+
 # Progress parsing
 regex = "1.10"
 
@@ -68,6 +71,10 @@ winresource = "0.1.27"
 tray-icon = "0.21.2"
 winit = "0.30"
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Unix専用依存関係（シグナル送信用）
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", features = ["signal"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

@@ -71,6 +71,9 @@ pub mod types;
 /// モデル同期
 pub mod sync;
 
+/// サーバーインスタンスの排他制御（シングル実行制約）
+pub mod lock;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {

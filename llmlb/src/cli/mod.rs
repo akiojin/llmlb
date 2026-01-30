@@ -1,9 +1,12 @@
 //! CLI module for llmlb
 //!
 //! Provides command-line interface for load balancer management.
-//! All operations are performed via API/Dashboard UI.
 
-use clap::Parser;
+pub mod serve;
+pub mod status;
+pub mod stop;
+
+use clap::{Parser, Subcommand};
 
 /// LLM load balancer - Centralized management system for LLM inference nodes
 #[derive(Parser, Debug)]
@@ -18,4 +21,19 @@ use clap::Parser;
     LLMLB_ADMIN_USERNAME    Initial admin username (default: admin)
     LLMLB_ADMIN_PASSWORD    Initial admin password (required on first run)
 "#)]
-pub struct Cli;
+pub struct Cli {
+    /// Subcommand to execute
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+/// Available subcommands
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Start the load balancer server
+    Serve(serve::ServeArgs),
+    /// Stop a running server
+    Stop(stop::StopArgs),
+    /// Show status of running servers
+    Status(status::StatusArgs),
+}

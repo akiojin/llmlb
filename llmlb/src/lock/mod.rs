@@ -191,6 +191,14 @@ pub fn stop_process(pid: u32) -> Result<(), std::io::Error> {
         .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
+/// 指定されたPIDのプロセスを停止します (Windows版)
+///
+/// # Arguments
+/// * `pid` - 停止するプロセスのPID
+///
+/// # Returns
+/// * `Ok(())` - プロセスの強制終了に成功
+/// * `Err` - プロセスの終了に失敗
 #[cfg(windows)]
 pub fn stop_process(pid: u32) -> Result<(), std::io::Error> {
     use std::process::Command;
@@ -202,8 +210,7 @@ pub fn stop_process(pid: u32) -> Result<(), std::io::Error> {
     if output.status.success() {
         Ok(())
     } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        Err(std::io::Error::other(
             String::from_utf8_lossy(&output.stderr).to_string(),
         ))
     }

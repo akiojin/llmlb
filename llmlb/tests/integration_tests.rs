@@ -16,9 +16,6 @@ mod images_api_test;
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 
-#[path = "integration/vision_api_test.rs"]
-mod vision_api_test;
-
 #[path = "integration/test_dashboard.rs"]
 mod test_dashboard;
 

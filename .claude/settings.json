@@ -1,48 +1,49 @@
 {
   "enableAllProjectMcpServers": true,
+  "enabledPlugins": {
+    "clangd-lsp@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "github@akiojin-skills": true,
+    "github@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "ralph-wiggum@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": false,
+    "serena@claude-plugins-official": true,
+    "speckit@akiojin-skills": true,
+    "worktree-protection-hooks@gwt-plugins": true
+  },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/block-git-branch-ops.sh"
+            "command": ".claude/hooks/block-git-branch-ops.sh",
+            "type": "command"
           },
           {
-            "type": "command",
-            "command": ".claude/hooks/block-cd-command.sh"
+            "command": ".claude/hooks/block-cd-command.sh",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Bash"
       },
       {
-        "matcher": "Task",
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/block-quality-checks-in-task.sh"
+            "command": ".claude/hooks/block-quality-checks-in-task.sh",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Task"
       }
     ]
-  },
-  "enabledPlugins": {
-    "frontend-design@claude-plugins-official": true,
-    "serena@claude-plugins-official": true,
-    "github@claude-plugins-official": true,
-    "feature-dev@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "context7@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true,
-    "security-guidance@claude-plugins-official": false,
-    "pr-review-toolkit@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
-    "clangd-lsp@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "ralph-wiggum@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": true,
-    "github@akiojin-skills": true,
-    "speckit@akiojin-skills": true
   }
 }

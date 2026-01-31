@@ -16,6 +16,8 @@
     "**/vendor/**",
     "tmp/**",
     "**/tmp/**",
+    "xllm/third_party/**",
+    "**/third_party/**",
     "PLANS.md"
   ]
 }

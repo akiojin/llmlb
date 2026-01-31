@@ -11,3 +11,5 @@ tmp/
 **/tmp/**
 actions-runner/
 .worktrees/
+xllm/third_party/
+**/third_party/**

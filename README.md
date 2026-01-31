@@ -63,7 +63,7 @@ non-exhaustive and follows upstream llama.cpp compatibility.
 | **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite family |
 | **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM family |
 | **kimi** | Kimi-K2 | Moonshot Kimi family |
-| **moondream** | Moondream2 | Moondream vision family |
+| **moondream** | Moondream2 | Moondream family |
 | **devstral** | Devstral-Small | Mistral derivative (coding-focused) |
 | **magistral** | Magistral-Small-3.2 | Mistral derivative (multimodal) |
 
@@ -74,7 +74,6 @@ Beyond text generation, LLM Load Balancer provides OpenAI-compatible APIs for:
 - **Text-to-Speech (TTS)**: `/v1/audio/speech` - Generate natural speech from text
 - **Speech-to-Text (ASR)**: `/v1/audio/transcriptions` - Transcribe audio to text
 - **Image Generation**: `/v1/images/generations` - Generate images from text prompts
-- **Image Understanding**: `/v1/chat/completions` - Analyze images via `image_url` content parts (Vision models)
 
 Text generation should use the **Responses API** (`/v1/responses`) by default. Chat Completions remains
 available for compatibility.

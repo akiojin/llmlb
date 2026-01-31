@@ -71,15 +71,6 @@ mod openai_logging_test;
 #[path = "contract/models_source_test.rs"]
 mod models_source_test;
 
-#[path = "contract/vision_chat_test.rs"]
-mod vision_chat_test;
-
-#[path = "contract/vision_error_test.rs"]
-mod vision_error_test;
-
-#[path = "contract/vision_capabilities_test.rs"]
-mod vision_capabilities_test;
-
 // SPEC-24157000: Open Responses API契約テスト
 #[path = "contract/responses_api_test.rs"]
 mod responses_api_test;

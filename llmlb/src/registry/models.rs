@@ -33,7 +33,7 @@ pub struct ModelInfo {
     pub description: String,
     /// 必要なGPUメモリ（バイト）
     pub required_memory: u64,
-    /// タグ（例: ["vision", "tools", "thinking"]）
+    /// タグ（例: ["tools", "thinking"]）
     pub tags: Vec<String>,
     /// モデルの能力（対応するAPI）
     /// 未設定の場合はModelType::Llm（テキスト生成）として扱う
@@ -324,7 +324,10 @@ mod tests {
 
     #[test]
     fn test_model_info_with_capabilities() {
-        let caps = vec![ModelCapability::TextGeneration, ModelCapability::Vision];
+        let caps = vec![
+            ModelCapability::TextGeneration,
+            ModelCapability::TextToSpeech,
+        ];
         let model = ModelInfo::with_capabilities(
             "gpt-4o".to_string(),
             0,
@@ -336,8 +339,8 @@ mod tests {
 
         assert_eq!(model.capabilities, caps);
         assert!(model.has_capability(ModelCapability::TextGeneration));
-        assert!(model.has_capability(ModelCapability::Vision));
-        assert!(!model.has_capability(ModelCapability::TextToSpeech));
+        assert!(model.has_capability(ModelCapability::TextToSpeech));
+        assert!(!model.has_capability(ModelCapability::SpeechToText));
     }
 
     #[test]
@@ -383,15 +386,13 @@ mod tests {
             vec![],
             vec![
                 ModelCapability::TextGeneration,
-                ModelCapability::Vision,
                 ModelCapability::TextToSpeech,
             ],
         );
 
         let caps = model.get_capabilities();
-        assert_eq!(caps.len(), 3);
+        assert_eq!(caps.len(), 2);
         assert!(caps.contains(&ModelCapability::TextGeneration));
-        assert!(caps.contains(&ModelCapability::Vision));
         assert!(caps.contains(&ModelCapability::TextToSpeech));
     }
 

@@ -8,7 +8,7 @@ const UNSPECIFIED_IP: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr
 use crate::common::{
     error::{CommonError, LbError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
-    types::{ModelCapabilities, ModelCapability, VisionCapability},
+    types::{ModelCapabilities, ModelCapability},
 };
 use axum::body::Body;
 use axum::{
@@ -24,7 +24,6 @@ use std::{collections::HashMap, net::IpAddr, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::models::image;
 use crate::{
     api::{
         error::AppError,
@@ -237,10 +236,9 @@ pub async fn chat_completions(
     }
     // 登録されていないモデルはエンドポイント側で処理（クラウドモデル等）
 
-    let payload = match prepare_vision_payload(&state, payload, &parsed).await {
-        Ok(payload) => payload,
-        Err(response) => return Ok(response),
-    };
+    if let Some(response) = reject_image_payload(&payload) {
+        return Ok(response);
+    }
 
     let stream = extract_stream(&payload);
     proxy_openai_post(
@@ -586,149 +584,24 @@ fn extract_stream(payload: &Value) -> bool {
         .unwrap_or(false)
 }
 
-fn collect_image_urls(payload: &Value) -> Result<Vec<String>, String> {
-    let mut urls = Vec::new();
-    let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) else {
-        return Ok(urls);
-    };
+fn reject_image_payload(payload: &Value) -> Option<Response> {
+    let messages = payload.get("messages").and_then(|v| v.as_array())?;
 
     for message in messages {
-        let Some(content) = message.get("content") else {
-            continue;
-        };
-        let Some(parts) = content.as_array() else {
-            continue;
-        };
-
-        for part in parts {
-            if part.get("type").and_then(|v| v.as_str()) != Some("image_url") {
-                continue;
-            }
-            let image_url_value = part
-                .get("image_url")
-                .ok_or_else(|| "image_url is required".to_string())?;
-            let url = if let Some(url) = image_url_value.get("url").and_then(|v| v.as_str()) {
-                url
-            } else if let Some(url) = image_url_value.as_str() {
-                url
-            } else {
-                return Err("image_url.url is required".to_string());
-            };
-            urls.push(url.to_string());
-        }
-    }
-
-    Ok(urls)
-}
-
-fn replace_image_urls(payload: &mut Value, replacements: &[String]) -> Result<(), String> {
-    let mut index = 0usize;
-    let Some(messages) = payload.get_mut("messages").and_then(|v| v.as_array_mut()) else {
-        if replacements.is_empty() {
-            return Ok(());
-        }
-        return Err("messages must be an array".to_string());
-    };
-
-    for message in messages {
-        let Some(parts) = message.get_mut("content").and_then(|v| v.as_array_mut()) else {
+        let Some(parts) = message.get("content").and_then(|v| v.as_array()) else {
             continue;
         };
         for part in parts {
-            if part.get("type").and_then(|v| v.as_str()) != Some("image_url") {
-                continue;
-            }
-            let new_url = replacements
-                .get(index)
-                .ok_or_else(|| "image_url replacement missing".to_string())?
-                .clone();
-            index += 1;
-
-            let Some(image_url_value) = part.get_mut("image_url") else {
-                return Err("image_url is required".to_string());
-            };
-            if let Some(obj) = image_url_value.as_object_mut() {
-                obj.insert("url".to_string(), Value::String(new_url));
-            } else if image_url_value.is_string() {
-                *image_url_value = Value::String(new_url);
-            } else {
-                return Err("image_url must be object or string".to_string());
-            }
-        }
-    }
-
-    if index != replacements.len() {
-        return Err("image_url replacement count mismatch".to_string());
-    }
-
-    Ok(())
-}
-
-async fn prepare_vision_payload(
-    state: &AppState,
-    mut payload: Value,
-    model: &ParsedModelName,
-) -> Result<Value, Response> {
-    let image_urls = collect_image_urls(&payload)
-        .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
-    if image_urls.is_empty() {
-        return Ok(payload);
-    }
-
-    let vision_limits = VisionCapability::default();
-    if image_urls.len() > vision_limits.max_image_count as usize {
-        return Err(openai_error_response(
-            format!("Too many images (max {})", vision_limits.max_image_count),
-            StatusCode::BAD_REQUEST,
-        ));
-    }
-
-    let models = list_registered_models(&state.db_pool)
-        .await
-        .map_err(|err| openai_error_response(err.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
-    let Some(model_info) = models.iter().find(|m| m.name == model.base) else {
-        // 未登録モデル（クラウド等）は画像URLの検証・変換は行わないが、
-        // data URLのBase64/形式/サイズは事前に検証する。
-        for url in image_urls {
-            if image::is_data_url(&url) {
-                if let Err(err) =
-                    image::validate_image_url(&state.http_client, &url, &vision_limits).await
-                {
-                    return Err(openai_error_response(
-                        err.to_string(),
-                        StatusCode::BAD_REQUEST,
-                    ));
-                }
-            }
-        }
-        return Ok(payload);
-    };
-    if !model_info.has_capability(ModelCapability::Vision) {
-        return Err(openai_error_response(
-            format!("Model '{}' does not support image understanding", model.raw),
-            StatusCode::BAD_REQUEST,
-        ));
-    }
-
-    let mut embedded_urls = Vec::with_capacity(image_urls.len());
-    for url in image_urls {
-        match image::validate_image_url(&state.http_client, &url, &vision_limits).await {
-            Ok(image_data) => {
-                embedded_urls.push(image_data.to_data_url());
-            }
-            Err(err) => {
-                return Err(openai_error_response(
-                    err.to_string(),
+            if part.get("type").and_then(|v| v.as_str()) == Some("image_url") {
+                return Some(openai_error_response(
+                    "Image inputs are not supported",
                     StatusCode::BAD_REQUEST,
                 ));
             }
         }
     }
 
-    replace_image_urls(&mut payload, &embedded_urls)
-        .map_err(|msg| openai_error_response(msg, StatusCode::BAD_REQUEST))?;
-
-    Ok(payload)
+    None
 }
 
 fn parse_cloud_model(model: &str) -> Option<(String, String)> {

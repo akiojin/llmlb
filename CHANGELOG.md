@@ -1,6 +1,6 @@
 # Unreleased
 
-# [3.0.0](https://github.com/akiojin/llmlb/compare/v2.4.1...v3.0.0) (2026-02-02)
+# [3.0.1](https://github.com/akiojin/llmlb/compare/v3.0.0...v3.0.1) (2026-02-02)
 
 ### Breaking Changes
 

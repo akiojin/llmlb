@@ -22,7 +22,7 @@ pub struct ChatRequest {
 }
 
 /// チャットメッセージ
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChatMessage {
     /// ロール ("user", "assistant", "system")
     pub role: String,
@@ -30,58 +30,13 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-/// OpenAI Vision API互換のコンテンツパート
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ContentPart {
-    /// テキストパート
-    Text {
-        /// テキスト本文
-        text: String,
-    },
-    /// 画像URLパート
-    ImageUrl {
-        /// 画像URL情報
-        image_url: ImageUrl,
-    },
-}
-
-/// 画像URL詳細
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ImageUrl {
-    /// 画像URL（data URL含む）
-    pub url: String,
-    /// 解像度指定（OpenAI互換: "low" | "high" | "auto"）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-}
-
-/// Vision対応チャットコンテンツ
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum ChatContent {
-    /// 文字列のみ
-    Text(String),
-    /// コンテンツパート配列
-    Parts(Vec<ContentPart>),
-}
-
-/// Vision対応チャットメッセージ
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ChatCompletionMessage {
-    /// ロール ("user", "assistant", "system")
-    pub role: String,
-    /// メッセージ内容
-    pub content: ChatContent,
-}
-
-/// Vision対応Chat Completionsリクエスト
+/// Chat Completionsリクエスト
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChatCompletionRequest {
     /// モデル名
     pub model: String,
     /// メッセージ配列
-    pub messages: Vec<ChatCompletionMessage>,
+    pub messages: Vec<ChatMessage>,
     /// ストリーミング有効化
     #[serde(default)]
     pub stream: bool,

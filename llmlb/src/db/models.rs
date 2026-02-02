@@ -281,7 +281,6 @@ impl ModelStorage {
                 "TextToSpeech" => Some(ModelCapability::TextToSpeech),
                 "SpeechToText" => Some(ModelCapability::SpeechToText),
                 "ImageGeneration" => Some(ModelCapability::ImageGeneration),
-                "Vision" => Some(ModelCapability::Vision),
                 "Embedding" => Some(ModelCapability::Embedding),
                 _ => None,
             })
@@ -415,13 +414,13 @@ mod tests {
         // Update the model
         model.description = "Updated".to_string();
         model.tags = vec!["updated".to_string()];
-        model.capabilities = vec![ModelCapability::Vision];
+        model.capabilities = vec![ModelCapability::TextGeneration];
 
         storage.save_model(&model).await.unwrap();
 
         let loaded = storage.load_model("updatable").await.unwrap().unwrap();
         assert_eq!(loaded.description, "Updated");
         assert_eq!(loaded.tags, vec!["updated"]);
-        assert_eq!(loaded.capabilities, vec![ModelCapability::Vision]);
+        assert_eq!(loaded.capabilities, vec![ModelCapability::TextGeneration]);
     }
 }

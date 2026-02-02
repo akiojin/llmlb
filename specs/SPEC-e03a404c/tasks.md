@@ -1,12 +1,10 @@
 # タスク: 画像認識モデル対応（Image Understanding）
 
 **機能ID**: `SPEC-e03a404c`
-**ステータス**: 完了（実モデル検証済み、性能はモック近似）
+**ステータス**: 廃止（2026-01-31: Vision対応を削除）
 **入力**: `/specs/SPEC-e03a404c/` の設計ドキュメント
 
-**注記**: Vision API実装完了。契約テスト・統合テスト合格。
-実モデル検証（llmlb→xLLM, base64/URL/複数/stream）を実施。
-性能はモック近似のまま。xLLMはllama.cppのmultimodal supportをラップして使用。
+**注記**: Vision API実装は削除済み。関連テストも削除済み。
 
 ## 技術スタック
 

@@ -2,15 +2,16 @@
 
 **機能ID**: `SPEC-e03a404c`
 **作成日**: 2025-12-24
-**ステータス**: 実装完了（実モデル検証済み、性能はモック近似）
+**ステータス**: 廃止（2026-01-31: Vision対応を削除）
 **入力**: ユーザー説明: "画像認識モデル対応（Image Understanding）- llmlbにVisionモデル対応を追加し、画像を含むチャットリクエストを処理できるようにする。OpenAI Vision API互換のエンドポイント（/v1/chat/completions with images）を実装する。"
+
+> この機能は廃止されました。Vision対応は削除済みです。
 
 ## 決定事項（共有用サマリ）
 
 - 画像認識は **safetensors正本** を前提に実行する
 - GGUFは **safetensorsが存在しない場合のみ** フォールバックとして許可する
 - Node実行時はPython依存を導入しない
-- xLLMは **llama.cppのmultimodal supportをラップ** して使用（独自実装なし）
 - GPU対応は **ggmlバックエンド経由** で自動的に対応（Metal/CUDA）
 
 ## ユーザーシナリオ＆テスト *(必須)*

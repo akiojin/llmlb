@@ -60,7 +60,7 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 | **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite 系 |
 | **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM 系 |
 | **kimi** | Kimi-K2 | Moonshot Kimi 系 |
-| **moondream** | Moondream2 | Moondream 系（Vision） |
+| **moondream** | Moondream2 | Moondream 系 |
 | **devstral** | Devstral-Small | Mistral 派生（コーディング特化） |
 | **magistral** | Magistral-Small-3.2 | Mistral 派生（マルチモーダル） |
 
@@ -71,7 +71,6 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 - **音声合成（TTS）**: `/v1/audio/speech` - テキストから自然な音声を生成
 - **音声認識（ASR）**: `/v1/audio/transcriptions` - 音声をテキストに変換
 - **画像生成**: `/v1/images/generations` - テキストプロンプトから画像を生成
-- **画像認識**: `/v1/chat/completions` - image_url を含むVisionリクエスト
 
 テキスト生成は **Responses API**（`/v1/responses`）を推奨します。Chat Completions は互換用途で残します。
 
@@ -396,25 +395,6 @@ curl http://localhost:32768/v1/images/generations \
   }'
 ```
 
-### 画像認識例
-```bash
-curl http://localhost:32768/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk_api_key" \
-  -d '{
-    "model": "llava-v1.5-7b",
-    "messages": [
-      {
-        "role": "user",
-        "content": [
-          {"type": "text", "text": "この画像には何が写っていますか？"},
-          {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
-        ]
-      }
-    ],
-    "max_tokens": 300
-  }'
-```
 ### クラウドモデルプレフィックス
 - 付けるだけでクラウド経路に切替: `openai:`, `google:`, `anthropic:`（`ahtnorpic:` も許容）
 - 例: `model: "openai:gpt-4o"` / `model: "google:gemini-1.5-pro"` / `model: "anthropic:claude-3-opus"`

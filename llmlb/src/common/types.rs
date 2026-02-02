@@ -104,7 +104,7 @@ pub enum RuntimeType {
 /// モデルの能力（対応するAPI）
 ///
 /// モデルが対応する API エンドポイントを表す。
-/// 1つのモデルが複数の能力を持つ場合がある（例: GPT-4o は TextGeneration + Vision + TextToSpeech）
+/// 1つのモデルが複数の能力を持つ場合がある（例: GPT-4o は TextGeneration + TextToSpeech）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelCapability {
@@ -116,8 +116,6 @@ pub enum ModelCapability {
     SpeechToText,
     /// 画像生成 (/v1/images/generations)
     ImageGeneration,
-    /// 画像理解 (/v1/chat/completions with images)
-    Vision,
     /// 埋め込み生成 (/v1/embeddings)
     Embedding,
 }
@@ -157,9 +155,6 @@ pub struct ModelCapabilities {
     pub speech_to_text: bool,
     /// 画像生成対応 (/v1/images/generations)
     pub image_generation: bool,
-    /// 画像理解対応 (/v1/chat/completions with images)
-    #[serde(default)]
-    pub image_understanding: bool,
 }
 
 impl From<&[ModelCapability]> for ModelCapabilities {
@@ -172,7 +167,6 @@ impl From<&[ModelCapability]> for ModelCapabilities {
             text_to_speech: caps.contains(&ModelCapability::TextToSpeech),
             speech_to_text: caps.contains(&ModelCapability::SpeechToText),
             image_generation: caps.contains(&ModelCapability::ImageGeneration),
-            image_understanding: caps.contains(&ModelCapability::Vision),
             fine_tune: false, // 未対応
         }
     }
@@ -199,89 +193,6 @@ pub enum AudioFormat {
     Ogg,
     /// Opus
     Opus,
-}
-
-/// 画像MIMEタイプ
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ImageContentType {
-    /// image/jpeg
-    #[serde(rename = "image/jpeg")]
-    Jpeg,
-    /// image/png
-    #[serde(rename = "image/png")]
-    Png,
-    /// image/gif
-    #[serde(rename = "image/gif")]
-    Gif,
-    /// image/webp
-    #[serde(rename = "image/webp")]
-    Webp,
-}
-
-impl ImageContentType {
-    /// MIME文字列を返す
-    pub fn as_mime(&self) -> &'static str {
-        match self {
-            ImageContentType::Jpeg => "image/jpeg",
-            ImageContentType::Png => "image/png",
-            ImageContentType::Gif => "image/gif",
-            ImageContentType::Webp => "image/webp",
-        }
-    }
-}
-
-/// 画像データ（URLまたはBase64）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ImageContent {
-    /// URL参照
-    Url {
-        /// 画像URL
-        url: String,
-        /// MIMEタイプ
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        mime_type: Option<ImageContentType>,
-        /// サイズ（バイト）
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        size_bytes: Option<u64>,
-    },
-    /// Base64エンコード
-    Base64 {
-        /// Base64文字列
-        data: String,
-        /// MIMEタイプ
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        mime_type: Option<ImageContentType>,
-        /// サイズ（バイト）
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        size_bytes: Option<u64>,
-    },
-}
-
-/// Vision対応能力
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct VisionCapability {
-    /// 対応画像形式
-    pub supported_formats: Vec<ImageContentType>,
-    /// 画像サイズ上限（バイト）
-    pub max_image_size_bytes: u64,
-    /// 画像枚数上限（1リクエストあたり）
-    pub max_image_count: u8,
-}
-
-impl Default for VisionCapability {
-    fn default() -> Self {
-        Self {
-            supported_formats: vec![
-                ImageContentType::Jpeg,
-                ImageContentType::Png,
-                ImageContentType::Gif,
-                ImageContentType::Webp,
-            ],
-            max_image_size_bytes: 10 * 1024 * 1024,
-            max_image_count: 10,
-        }
-    }
 }
 
 /// 画像サイズ
@@ -723,10 +634,6 @@ mod tests {
             "\"image_generation\""
         );
         assert_eq!(
-            serde_json::to_string(&ModelCapability::Vision).unwrap(),
-            "\"vision\""
-        );
-        assert_eq!(
             serde_json::to_string(&ModelCapability::Embedding).unwrap(),
             "\"embedding\""
         );
@@ -745,9 +652,6 @@ mod tests {
 
         let image_gen: ModelCapability = serde_json::from_str("\"image_generation\"").unwrap();
         assert_eq!(image_gen, ModelCapability::ImageGeneration);
-
-        let vision: ModelCapability = serde_json::from_str("\"vision\"").unwrap();
-        assert_eq!(vision, ModelCapability::Vision);
 
         let embedding: ModelCapability = serde_json::from_str("\"embedding\"").unwrap();
         assert_eq!(embedding, ModelCapability::Embedding);
@@ -790,7 +694,6 @@ mod tests {
         assert!(!caps.text_to_speech);
         assert!(!caps.speech_to_text);
         assert!(!caps.image_generation);
-        assert!(!caps.image_understanding);
         assert!(!caps.fine_tune);
 
         // Embedding capabilities
@@ -800,7 +703,6 @@ mod tests {
         assert!(!caps.completion);
         assert!(caps.embeddings);
         assert!(caps.inference);
-        assert!(!caps.image_understanding);
 
         // TTS capabilities
         let tts_caps = vec![ModelCapability::TextToSpeech];
@@ -808,7 +710,6 @@ mod tests {
         assert!(caps.text_to_speech);
         assert!(!caps.speech_to_text);
         assert!(caps.inference);
-        assert!(!caps.image_understanding);
 
         // ASR capabilities
         let stt_caps = vec![ModelCapability::SpeechToText];
@@ -816,19 +717,11 @@ mod tests {
         assert!(caps.speech_to_text);
         assert!(!caps.text_to_speech);
         assert!(caps.inference);
-        assert!(!caps.image_understanding);
 
         // Image generation capabilities
         let img_caps = vec![ModelCapability::ImageGeneration];
         let caps: ModelCapabilities = img_caps.into();
         assert!(caps.image_generation);
-        assert!(caps.inference);
-        assert!(!caps.image_understanding);
-
-        // Vision capabilities
-        let vision_caps = vec![ModelCapability::Vision];
-        let caps: ModelCapabilities = vision_caps.into();
-        assert!(caps.image_understanding);
         assert!(caps.inference);
     }
 
@@ -843,7 +736,6 @@ mod tests {
             text_to_speech: false,
             speech_to_text: false,
             image_generation: false,
-            image_understanding: false,
         };
 
         let json = serde_json::to_string(&caps).unwrap();
@@ -851,7 +743,6 @@ mod tests {
         assert!(json.contains("\"completion\":true"));
         assert!(json.contains("\"embeddings\":false"));
         assert!(json.contains("\"inference\":true"));
-        assert!(json.contains("\"image_understanding\":false"));
 
         // Deserialization
         let deserialized: ModelCapabilities = serde_json::from_str(&json).unwrap();

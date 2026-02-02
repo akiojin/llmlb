@@ -1,5 +1,11 @@
 # Unreleased
 
+# [3.0.3](https://github.com/akiojin/llmlb/compare/v3.0.2...v3.0.3) (2026-02-02)
+
+### Bug Fixes
+
+- マイグレーションv008のチェックサム互換性を修正 (#367)
+
 # [3.0.2](https://github.com/akiojin/llmlb/compare/v3.0.1...v3.0.2) (2026-02-02)
 
 ### Breaking Changes

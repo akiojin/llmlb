@@ -204,8 +204,37 @@ const MIGRATION_005_NEW_CHECKSUM: [u8; 48] = [
     0x5a, 0xe9, 0x92, 0x74, 0x46, 0xbd, 0x0e, 0x82, 0xc4, 0x2a, 0xe5, 0xe5, 0x8d, 0x0b, 0xcf, 0x50,
     0x43, 0xb4, 0xbf, 0x00, 0xa2, 0x8e, 0x3a, 0x95, 0x89, 0xa8, 0x1c, 0x08, 0x9c, 0x26, 0xcc, 0xa0,
 ];
+const MIGRATION_008_OLD_CHECKSUM: [u8; 48] = [
+    0x40, 0xc9, 0xe6, 0x46, 0x26, 0x8e, 0xa3, 0xfb, 0xe8, 0x0b, 0xd5, 0x99, 0x7d, 0xa8, 0x94, 0x44,
+    0x41, 0x49, 0x7d, 0x42, 0x06, 0xc1, 0xa9, 0x45, 0xd5, 0x97, 0xdc, 0x16, 0x32, 0x35, 0x9d, 0x1d,
+    0x3b, 0x18, 0x72, 0xb3, 0x1a, 0x10, 0xbb, 0x6b, 0x9a, 0x7f, 0xcb, 0x32, 0x97, 0x9a, 0x74, 0xa7,
+];
+const MIGRATION_008_NEW_CHECKSUM: [u8; 48] = [
+    0x09, 0x7a, 0xe1, 0x69, 0x3f, 0x87, 0x81, 0x8a, 0x35, 0x46, 0x94, 0x54, 0x35, 0xfc, 0xfc, 0x96,
+    0xae, 0xd4, 0x00, 0xb7, 0xdb, 0x44, 0x3f, 0x7c, 0xf7, 0x8a, 0xd8, 0xb4, 0x72, 0xc0, 0x56, 0xf5,
+    0x67, 0x2d, 0x7a, 0xbb, 0xd4, 0x38, 0xba, 0x86, 0xdf, 0x5b, 0xd4, 0xec, 0xa1, 0x23, 0x70, 0x05,
+];
 
-async fn reconcile_migration_005_checksum(pool: &sqlx::SqlitePool) -> sqlx::Result<()> {
+struct MigrationChecksumOverride {
+    version: i64,
+    old: &'static [u8; 48],
+    new: &'static [u8; 48],
+}
+
+const MIGRATION_CHECKSUM_OVERRIDES: &[MigrationChecksumOverride] = &[
+    MigrationChecksumOverride {
+        version: 5,
+        old: &MIGRATION_005_OLD_CHECKSUM,
+        new: &MIGRATION_005_NEW_CHECKSUM,
+    },
+    MigrationChecksumOverride {
+        version: 8,
+        old: &MIGRATION_008_OLD_CHECKSUM,
+        new: &MIGRATION_008_NEW_CHECKSUM,
+    },
+];
+
+async fn reconcile_migration_checksums(pool: &sqlx::SqlitePool) -> sqlx::Result<()> {
     let row: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
     )
@@ -215,20 +244,27 @@ async fn reconcile_migration_005_checksum(pool: &sqlx::SqlitePool) -> sqlx::Resu
         return Ok(());
     }
 
-    let checksum_row = sqlx::query("SELECT checksum FROM _sqlx_migrations WHERE version = 5")
-        .fetch_optional(pool)
-        .await?;
-    let Some(checksum_row) = checksum_row else {
-        return Ok(());
-    };
-
-    let checksum: Vec<u8> = checksum_row.try_get("checksum")?;
-    if checksum == MIGRATION_005_OLD_CHECKSUM {
-        sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 5")
-            .bind(MIGRATION_005_NEW_CHECKSUM.as_slice())
-            .execute(pool)
+    for override_entry in MIGRATION_CHECKSUM_OVERRIDES {
+        let checksum_row = sqlx::query("SELECT checksum FROM _sqlx_migrations WHERE version = ?")
+            .bind(override_entry.version)
+            .fetch_optional(pool)
             .await?;
-        info!("Updated migration checksum for version 5 to latest format");
+        let Some(checksum_row) = checksum_row else {
+            continue;
+        };
+
+        let checksum: Vec<u8> = checksum_row.try_get("checksum")?;
+        if checksum == override_entry.old.as_slice() {
+            sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = ?")
+                .bind(override_entry.new.as_slice())
+                .bind(override_entry.version)
+                .execute(pool)
+                .await?;
+            info!(
+                "Updated migration checksum for version {} to latest format",
+                override_entry.version
+            );
+        }
     }
 
     Ok(())
@@ -266,7 +302,7 @@ async fn run_server(config: ServerConfig) {
         .await
         .expect("Failed to connect to database");
 
-    reconcile_migration_005_checksum(&db_pool)
+    reconcile_migration_checksums(&db_pool)
         .await
         .expect("Failed to reconcile database migrations");
 
@@ -439,7 +475,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reconcile_migration_005_checksum_updates_old_checksum() {
+    async fn reconcile_migration_checksums_updates_old_checksums() {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("load balancer.db");
         let db_url = format!("sqlite:{}", db_path.display());
@@ -475,7 +511,19 @@ CREATE TABLE IF NOT EXISTS _sqlx_migrations (
         .await
         .expect("should insert migration row");
 
-        reconcile_migration_005_checksum(&pool)
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .bind(8_i64)
+        .bind("test")
+        .bind(true)
+        .bind(MIGRATION_008_OLD_CHECKSUM.as_slice())
+        .bind(0_i64)
+        .execute(&pool)
+        .await
+        .expect("should insert migration row");
+
+        reconcile_migration_checksums(&pool)
             .await
             .expect("reconcile should succeed");
 
@@ -488,5 +536,15 @@ CREATE TABLE IF NOT EXISTS _sqlx_migrations (
             .expect("should get checksum");
 
         assert_eq!(checksum, MIGRATION_005_NEW_CHECKSUM);
+
+        let checksum_row = sqlx::query("SELECT checksum FROM _sqlx_migrations WHERE version = 8")
+            .fetch_one(&pool)
+            .await
+            .expect("should read checksum");
+        let checksum: Vec<u8> = checksum_row
+            .try_get("checksum")
+            .expect("should get checksum");
+
+        assert_eq!(checksum, MIGRATION_008_NEW_CHECKSUM);
     }
 }

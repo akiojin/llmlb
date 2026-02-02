@@ -1,5 +1,23 @@
 # Unreleased
 
+# [3.0.0](https://github.com/akiojin/llmlb/compare/v2.4.1...v3.0.0) (2026-02-02)
+
+### Breaking Changes
+
+- Vision対応を削除しxLLMエンドポイントを復旧 (#364)
+  - `/v1/chat/completions`のVision（画像入力）機能を削除
+  - xLLMエンドポイントタイプを標準エンドポイントとして復旧
+
+### Bug Fixes
+
+- 旧マイグレーションのチェックサム互換を追加 (#362)
+
+### Chores
+
+- dependabot脆弱性対応
+- xllm/third_partyをmarkdownlint除外対象に追加
+- プラグイン設定の更新とフックマッチャーの改善
+
 # [2.4.1](https://github.com/akiojin/llmlb/compare/v2.4.0...v2.4.1) (2026-01-30)
 
 ### Bug Fixes

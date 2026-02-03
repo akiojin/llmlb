@@ -4,7 +4,6 @@
 //! DashboardEvents to connected clients in real-time.
 //!
 //! Authentication is required via JWT token passed as a query parameter `token`.
-//! In addition, internal API token is required for `/ws/*` routes.
 
 use crate::common::auth::UserRole;
 use axum::extract::ws::{Message, WebSocket};
@@ -35,7 +34,6 @@ pub struct WsAuthQuery {
 /// - Metrics updates
 ///
 /// Authentication is required unless AUTH_DISABLED is set.
-/// Internal API token is always required for `/ws/*` routes.
 pub async fn dashboard_ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,

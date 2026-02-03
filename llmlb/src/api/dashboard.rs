@@ -5,7 +5,11 @@
 
 use super::error::AppError;
 use crate::common::types::HealthMetrics;
-use crate::{balancer::RequestHistoryPoint, types::endpoint::EndpointStatus, AppState};
+use crate::{
+    balancer::RequestHistoryPoint,
+    types::endpoint::{EndpointStatus, EndpointType},
+    AppState,
+};
 use axum::{
     body::Body,
     extract::{Path, Query, State},
@@ -31,6 +35,8 @@ pub struct DashboardEndpoint {
     pub base_url: String,
     /// 現在の状態
     pub status: EndpointStatus,
+    /// エンドポイントタイプ
+    pub endpoint_type: EndpointType,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -288,6 +294,7 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
             name: endpoint.name,
             base_url: endpoint.base_url,
             status: endpoint.status,
+            endpoint_type: endpoint.endpoint_type,
             health_check_interval_secs: endpoint.health_check_interval_secs,
             inference_timeout_secs: endpoint.inference_timeout_secs,
             latency_ms: endpoint.latency_ms,

@@ -6,6 +6,7 @@
 
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::time::{Duration, Instant};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -249,4 +250,85 @@ async fn test_sync_returns_change_counts() {
     assert!(sync_body["added"].is_number());
     assert!(sync_body["removed"].is_number());
     assert!(sync_body["updated"].is_number());
+}
+
+/// US3-シナリオ5: エンドポイント登録直後に接続チェック＆モデル同期が自動実行される
+#[tokio::test]
+async fn test_auto_test_and_sync_on_create() {
+    let mock = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [
+                {"id": "auto-model-1", "object": "model"},
+                {"id": "auto-model-2", "object": "model"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+
+    let reg_resp = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("x-internal-token", "test-internal")
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": "Auto Sync Test",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let reg_body: Value = reg_resp.json().await.unwrap();
+    let endpoint_id = reg_body["id"].as_str().unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let models_resp = client
+            .get(format!(
+                "http://{}/api/endpoints/{}/models",
+                server.addr(),
+                endpoint_id
+            ))
+            .header("x-internal-token", "test-internal")
+            .header("authorization", "Bearer sk_debug")
+            .send()
+            .await
+            .unwrap();
+
+        if models_resp.status().is_success() {
+            let body: Value = models_resp.json().await.unwrap();
+            if let Some(models) = body["models"].as_array() {
+                if models.iter().any(|m| m["model_id"] == "auto-model-1") {
+                    break;
+                }
+            }
+        }
+
+        if Instant::now() > deadline {
+            panic!("Timed out waiting for auto sync to complete");
+        }
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    let endpoint_resp = client
+        .get(format!(
+            "http://{}/api/endpoints/{}",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("x-internal-token", "test-internal")
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+
+    let endpoint_body: Value = endpoint_resp.json().await.unwrap();
+    assert_eq!(endpoint_body["status"], "online");
 }

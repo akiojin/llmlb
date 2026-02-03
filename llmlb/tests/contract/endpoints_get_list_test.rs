@@ -14,7 +14,10 @@ use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, A
 use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct TestApp {
     app: Router,
@@ -178,10 +181,22 @@ async fn test_list_endpoints_multiple() {
 async fn test_list_endpoints_filter_by_status() {
     let TestApp { app, admin_key } = build_app().await;
 
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [
+                {"id": "stable-diffusion-xl", "object": "model"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+
     // エンドポイントを登録（初期状態はpending）
     let payload = json!({
         "name": "Test Endpoint",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let _ = app
@@ -197,7 +212,38 @@ async fn test_list_endpoints_filter_by_status() {
         .await
         .unwrap();
 
-    // pendingでフィルタ
+    // 接続チェック完了まで待機（オンラインになるのを確認）
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let response = app
+            .clone()
+            .oneshot(
+                admin_request(&admin_key)
+                    .method("GET")
+                    .uri("/api/endpoints?status=online")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        let online_count = body["endpoints"].as_array().unwrap().len();
+
+        if online_count == 1 {
+            break;
+        }
+
+        if Instant::now() > deadline {
+            panic!("Timed out waiting for endpoint to become online");
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // pendingでフィルタ（該当なし）
     let response = app
         .clone()
         .oneshot(
@@ -213,9 +259,9 @@ async fn test_list_endpoints_filter_by_status() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["endpoints"].as_array().unwrap().len(), 1);
+    assert_eq!(body["endpoints"].as_array().unwrap().len(), 0);
 
-    // onlineでフィルタ（該当なし）
+    // onlineでフィルタ（該当あり）
     let response = app
         .oneshot(
             admin_request(&admin_key)
@@ -230,7 +276,7 @@ async fn test_list_endpoints_filter_by_status() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["endpoints"].as_array().unwrap().len(), 0);
+    assert_eq!(body["endpoints"].as_array().unwrap().len(), 1);
 }
 
 /// GET /api/endpoints - 異常系: 認証なし

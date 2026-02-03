@@ -77,7 +77,6 @@ async fn node_models_handler(State(state): State<Arc<NodeStubState>>) -> impl In
 
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Mock node server health check issue"]
 async fn proxy_completions_end_to_end_success() {
     let node_stub = spawn_node_stub(NodeStubState {
         expected_model: Some("gpt-oss-20b".to_string()),
@@ -158,7 +157,6 @@ async fn proxy_completions_end_to_end_success() {
 
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: Mock node server health check issue"]
 async fn proxy_completions_propagates_upstream_error() {
     let node_stub = spawn_node_stub(NodeStubState {
         expected_model: Some("missing-model".to_string()),

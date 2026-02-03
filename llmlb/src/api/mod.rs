@@ -98,6 +98,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/invitations/:id", delete(invitations::revoke_invitation))
         // ダッシュボードAPI
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))
+        .route("/dashboard/models", get(dashboard::get_models))
         .route("/dashboard/stats", get(dashboard::get_stats))
         .route(
             "/dashboard/request-history",

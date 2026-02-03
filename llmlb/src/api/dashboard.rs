@@ -723,5 +723,10 @@ pub async fn export_request_responses(
     }
 }
 
+/// GET /api/dashboard/models - ダッシュボード向けモデル一覧
+pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppError> {
+    crate::api::openai::list_models(State(state)).await
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-66555000

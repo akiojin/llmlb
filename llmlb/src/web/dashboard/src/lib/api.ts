@@ -657,21 +657,8 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
 export const modelsApi = {
   /** OpenAI互換の登録済みモデル一覧を取得 */
   getRegistered: async (): Promise<RegisteredModelView[]> => {
-    // /v1/models - OpenAI-compatible model list (includes lifecycle_status)
-    // Requires API key auth, using API key from localStorage
-    const apiKey = localStorage.getItem('llmlb-api-key') || 'sk_debug'
-    const response = await fetch('/v1/models', {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    })
-    if (!response.ok) {
-      // Get error details and throw appropriate error
-      const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }))
-      const message = errorBody.error || undefined
-      throw new ApiError(response.status, response.statusText, message)
-    }
-    const json = (await response.json()) as OpenAIModelsResponse
+    // /api/dashboard/models - JWT認証で取得
+    const json = await fetchWithAuth<OpenAIModelsResponse>('/api/dashboard/models')
     // Convert from OpenAI format to RegisteredModelView format
     return json.data.map(toRegisteredModelView)
   },

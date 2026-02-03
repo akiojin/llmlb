@@ -38,15 +38,16 @@ Use the model verification suite or explicit E2E coverage and record results in 
 - E2E coverage: `LLM_TEST_MODEL=<model-id> npx bats tests/e2e/test-openai-api.bats`
 
 ## Environment Variables
-- Router: `LLMLB_PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`,
-  `ANTHROPIC_API_KEY`.
+- Router: `LLMLB_HOST`, `LLMLB_PORT`, `LLMLB_DATABASE_URL` (or `DATABASE_URL`),
+  `LLMLB_LOG_LEVEL`, `LLMLB_ADMIN_USERNAME`, `LLMLB_ADMIN_PASSWORD`,
+  `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`.
 - xLLM: `LLMLB_URL`, `XLLM_PORT`, `LLM_ALLOW_NO_GPU=false`
   by default.
 
 ## Debugging Tips
 
 - Set `RUST_LOG=debug` for verbose load balancer output.
-- Dashboard stats endpoint `/v0/dashboard/stats` shows cloud key presence.
+- Dashboard stats endpoint `/api/dashboard/stats` shows cloud key presence.
 - For cloud routing, confirm the key is logged as present at startup.
 
 ## Token Statistics
@@ -56,8 +57,8 @@ total_tokens). Statistics are persisted to SQLite and available via dashboard AP
 
 - **Data source**: Node response `usage` field (preferred), tiktoken estimation (fallback)
 - **Streaming**: Tokens accumulated per chunk, final usage from last chunk
-- **API endpoints**: `/v0/dashboard/stats/tokens`, `/v0/dashboard/stats/tokens/daily`,
-  `/v0/dashboard/stats/tokens/monthly`
+- **API endpoints**: `/api/dashboard/stats/tokens`, `/api/dashboard/stats/tokens/daily`,
+  `/api/dashboard/stats/tokens/monthly`
 - **Dashboard**: Statistics tab shows daily/monthly breakdown
 
 ## Submodules

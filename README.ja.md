@@ -351,15 +351,20 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 |---------|-----------|------|
 | `LLMLB_HOST` | `0.0.0.0` | バインドアドレス |
 | `LLMLB_PORT` | `32768` | リッスンポート |
-| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/lb.db` | データベースURL |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/load balancer.db` | データベースURL |
+| `LLMLB_DATA_DIR` | `~/.llmlb` | ログ/旧リクエスト履歴の基準ディレクトリ |
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
 | `LLMLB_LOG_LEVEL` | `info` | ログレベル |
+| `LLMLB_LOG_DIR` | `~/.llmlb/logs` | ログ保存先 |
+| `LLMLB_LOG_RETENTION_DAYS` | `7` | ログ保持日数 |
 | `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
-| `LLMLB_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |
 | `LLMLB_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
-| `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
+| `LLMLB_QUEUE_MAX` | `100` | キュー待機上限 |
+| `LLMLB_QUEUE_TIMEOUT_SECS` | `60` | キュー待機タイムアウト（秒） |
+| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル |
+| `AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用） |
 
 クラウドAPI:
 

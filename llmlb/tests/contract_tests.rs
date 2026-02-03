@@ -71,6 +71,10 @@ mod openai_logging_test;
 #[path = "contract/models_source_test.rs"]
 mod models_source_test;
 
+// SPEC-fbc50d97: リクエスト/レスポンス履歴API契約テスト
+#[path = "contract/request_history_api_test.rs"]
+mod request_history_api_test;
+
 // SPEC-24157000: Open Responses API契約テスト
 #[path = "contract/responses_api_test.rs"]
 mod responses_api_test;

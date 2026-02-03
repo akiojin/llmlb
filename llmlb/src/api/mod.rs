@@ -334,24 +334,14 @@ pub fn create_app(state: AppState) -> Router {
         .merge(model_registry_routes)
         .merge(models_list_routes)
         // デバッグ用テストエンドポイント
-        .merge(test_routes)
-        .layer(middleware::from_fn(
-            crate::auth::middleware::internal_token_middleware,
-        ));
+        .merge(test_routes);
 
     let dashboard_routes = Router::new()
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
-        .route("/dashboard/*path", get(serve_dashboard_asset))
-        .layer(middleware::from_fn(
-            crate::auth::middleware::internal_token_middleware,
-        ));
+        .route("/dashboard/*path", get(serve_dashboard_asset));
 
-    let ws_routes = Router::new()
-        .route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler))
-        .layer(middleware::from_fn(
-            crate::auth::middleware::internal_token_middleware,
-        ));
+    let ws_routes = Router::new().route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler));
 
     Router::new()
         // `/api/*`: llmlb独自API（互換不要・versioned）

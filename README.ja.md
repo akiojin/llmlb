@@ -86,10 +86,9 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 ## ダッシュボード
 
 ロードバランサーが `/dashboard` で提供します。
-内部トークン（`LLMLB_INTERNAL_API_TOKEN`）を `internal_token` クエリで渡してください。
 
 ```text
-http://localhost:32768/dashboard?internal_token=YOUR_TOKEN
+http://localhost:32768/dashboard
 ```
 
 ## エンドポイント管理
@@ -356,7 +355,7 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
-| `LLMLB_INTERNAL_API_TOKEN` | - | /api・/dashboard・/ws 用の内部トークン |
+| `LLMLB_INTERNAL_API_TOKEN` | (任意) | /api・/dashboard・/ws 用の内部トークン（レガシー） |
 | `LLMLB_LOG_LEVEL` | `info` | ログレベル |
 | `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
 | `LLMLB_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |

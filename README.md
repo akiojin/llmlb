@@ -154,7 +154,7 @@ cargo build --release -p llmlb
 
 # Access dashboard
 # Open http://localhost:32768/dashboard in browser
-# (LLMLB_INTERNAL_API_TOKEN is optional)
+# (No internal API token required)
 ```
 
 **Environment Variables:**
@@ -167,7 +167,6 @@ cargo build --release -p llmlb
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
 | `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
-| `LLMLB_INTERNAL_API_TOKEN` | (optional) | Internal token for /api, /dashboard, /ws (legacy) |
 
 **Backward compatibility:** Legacy env var names (`LLMLB_PORT` etc.) are supported but deprecated.
 
@@ -693,7 +692,6 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
 | `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
-| `LLMLB_INTERNAL_API_TOKEN` | (optional) | Internal token for /api, /dashboard, /ws (legacy) | `INTERNAL_API_TOKEN` |
 | `LLMLB_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
 | `LLMLB_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
 | `LLMLB_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |

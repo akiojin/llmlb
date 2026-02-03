@@ -4,14 +4,13 @@ use crate::common::auth::{ApiKeyScope, Claims, UserRole};
 use crate::AppState;
 use axum::{
     extract::{Request, State},
-    http::{header, HeaderValue, StatusCode},
+    http::{header, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
 use jsonwebtoken::decode_header;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 #[cfg(debug_assertions)]
@@ -22,10 +21,6 @@ const DEBUG_API_KEY_RUNTIME: &str = "sk_debug_runtime";
 const DEBUG_API_KEY_API: &str = "sk_debug_api";
 #[cfg(debug_assertions)]
 const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
-
-const INTERNAL_TOKEN_HEADER: &str = "x-internal-token";
-const INTERNAL_TOKEN_QUERY: &str = "internal_token";
-const INTERNAL_TOKEN_COOKIE: &str = "llmlb_internal_token";
 
 #[cfg(debug_assertions)]
 fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
@@ -74,37 +69,6 @@ fn token_looks_like_jwt(token: &str) -> bool {
         return decode_header(token).is_ok();
     }
     false
-}
-
-fn extract_internal_token_from_header(request: &Request) -> Option<String> {
-    request
-        .headers()
-        .get(INTERNAL_TOKEN_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(|value| value.to_string())
-}
-
-fn extract_internal_token_from_cookie(request: &Request) -> Option<String> {
-    let cookie_header = request.headers().get(header::COOKIE)?.to_str().ok()?;
-    for part in cookie_header.split(';') {
-        let mut iter = part.trim().splitn(2, '=');
-        let name = iter.next()?.trim();
-        let value = iter.next()?.trim();
-        if name == INTERNAL_TOKEN_COOKIE {
-            return Some(value.to_string());
-        }
-    }
-    None
-}
-
-fn extract_internal_token_from_query(request: &Request) -> Option<String> {
-    let query = request.uri().query()?;
-    let params: HashMap<String, String> = serde_urlencoded::from_str(query).ok()?;
-    params.get(INTERNAL_TOKEN_QUERY).cloned()
-}
-
-fn internal_token_is_valid(expected: &str, tokens: &[Option<String>]) -> bool {
-    tokens.iter().flatten().any(|provided| provided == expected)
 }
 
 async fn authenticate_api_key(
@@ -553,60 +517,11 @@ pub async fn inject_dummy_admin_claims_with_state(
     next.run(request).await
 }
 
-/// 内部APIトークン必須ミドルウェア
-///
-/// `/api/*`, `/dashboard*`, `/ws/*` など内部向けルートで使用する。
-/// `LLMLB_INTERNAL_API_TOKEN` が設定されている場合のみ許可する。
-pub async fn internal_token_middleware(request: Request, next: Next) -> Response {
-    let expected = match crate::config::internal_api_token() {
-        Some(value) if !value.is_empty() => value,
-        _ => {
-            tracing::error!("LLMLB_INTERNAL_API_TOKEN is not configured");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal API token not configured",
-            )
-                .into_response();
-        }
-    };
-
-    let header_token = extract_internal_token_from_header(&request);
-    let cookie_token = extract_internal_token_from_cookie(&request);
-    let query_token = extract_internal_token_from_query(&request);
-
-    if !internal_token_is_valid(
-        &expected,
-        &[
-            header_token.clone(),
-            cookie_token.clone(),
-            query_token.clone(),
-        ],
-    ) {
-        return (StatusCode::UNAUTHORIZED, "Internal token required").into_response();
-    }
-
-    let mut response = next.run(request).await;
-
-    if let Some(query_token) = query_token {
-        if query_token == expected {
-            if let Ok(value) = HeaderValue::from_str(&format!(
-                "{}={}; Path=/; HttpOnly; SameSite=Lax",
-                INTERNAL_TOKEN_COOKIE, query_token
-            )) {
-                response.headers_mut().append(header::SET_COOKIE, value);
-            }
-        }
-    }
-
-    response
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::balancer::LoadManager;
     use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
-    use serial_test::serial;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -686,80 +601,6 @@ mod tests {
             .unwrap();
         let body_str = std::str::from_utf8(&body).unwrap();
         assert_eq!(body_str, admin.id.to_string());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn internal_token_middleware_rejects_without_token() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
-
-        let app = Router::new()
-            .route("/t", get(|| async { "ok" }))
-            .layer(axum_middleware::from_fn(internal_token_middleware));
-
-        let res = app
-            .oneshot(Request::builder().uri("/t").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-
-        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn internal_token_middleware_allows_with_header() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
-
-        let app = Router::new()
-            .route("/t", get(|| async { "ok" }))
-            .layer(axum_middleware::from_fn(internal_token_middleware));
-
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .uri("/t")
-                    .header(INTERNAL_TOKEN_HEADER, "secret-token")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(res.status(), StatusCode::OK);
-
-        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn internal_token_middleware_sets_cookie_from_query() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
-
-        let app = Router::new()
-            .route("/t", get(|| async { "ok" }))
-            .layer(axum_middleware::from_fn(internal_token_middleware));
-
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .uri("/t?internal_token=secret-token")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(res.status(), StatusCode::OK);
-        let set_cookie = res
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("");
-        assert!(set_cookie.contains("llmlb_internal_token=secret-token"));
-
-        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
     }
 
     #[cfg(debug_assertions)]

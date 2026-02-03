@@ -440,7 +440,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_dashboard_static_served() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         let state = test_state().await;
         let mut app = create_app(state);
         let response = app
@@ -448,7 +447,6 @@ mod tests {
                 Request::builder()
                     .method(axum::http::Method::GET)
                     .uri("/dashboard/index.html")
-                    .header("x-internal-token", "test-internal")
                     .body(Body::empty())
                     .unwrap(),
             )

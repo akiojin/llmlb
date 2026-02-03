@@ -121,14 +121,6 @@ pub fn is_auth_disabled() -> bool {
         .unwrap_or(false)
 }
 
-/// 内部APIトークンを取得
-///
-/// 環境変数 `LLMLB_INTERNAL_API_TOKEN` を優先し、
-/// 旧変数 `INTERNAL_API_TOKEN` をフォールバックとして受け付ける。
-pub fn internal_api_token() -> Option<String> {
-    get_env_with_fallback("LLMLB_INTERNAL_API_TOKEN", "INTERNAL_API_TOKEN")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

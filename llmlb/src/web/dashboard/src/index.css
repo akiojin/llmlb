@@ -1,8 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @layer base {
   :root {
@@ -98,11 +96,15 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: 'Geist', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 
@@ -113,27 +115,32 @@
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    background-color: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-border rounded-full;
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/50;
+    background-color: hsl(var(--muted-foreground) / 0.5);
   }
 
   /* Selection */
   ::selection {
-    @apply bg-primary/20 text-foreground;
+    background-color: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
   }
 }
 
 @layer components {
   /* Glass effect card */
   .glass {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50;
+    background-color: hsl(var(--card) / 0.8);
+    border: 1px solid hsl(var(--border) / 0.5);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
   }
 
   /* Glow effect */
@@ -150,15 +157,18 @@
 
   /* Status indicators */
   .status-online {
-    @apply bg-success text-success-foreground;
+    background-color: hsl(var(--success));
+    color: hsl(var(--success-foreground));
   }
 
   .status-offline {
-    @apply bg-destructive/20 text-destructive;
+    background-color: hsl(var(--destructive) / 0.2);
+    color: hsl(var(--destructive));
   }
 
   .status-pending {
-    @apply bg-warning/20 text-warning;
+    background-color: hsl(var(--warning) / 0.2);
+    color: hsl(var(--warning));
   }
 
   /* Data grid pattern background */
@@ -170,45 +180,68 @@
 
   /* Gradient text */
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-primary to-accent-foreground;
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--primary)),
+      hsl(var(--primary)),
+      hsl(var(--accent-foreground))
+    );
+    color: transparent;
+    -webkit-background-clip: text;
+    background-clip: text;
   }
 
   /* Stats card hover effect */
   .stat-card {
-    @apply relative overflow-hidden transition-all duration-300;
+    position: relative;
+    overflow: hidden;
+    transition: all 300ms ease;
   }
 
   .stat-card::before {
     content: '';
-    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 300ms ease;
     background: linear-gradient(135deg, hsl(var(--primary) / 0.1) 0%, transparent 50%);
   }
 
   .stat-card:hover::before {
-    @apply opacity-100;
+    opacity: 1;
   }
 
   .stat-card:hover {
-    @apply border-primary/30;
+    border-color: hsl(var(--primary) / 0.3);
   }
 
   /* Table row hover */
   .table-row-hover {
-    @apply transition-colors duration-150;
+    transition: color 150ms ease,
+      background-color 150ms ease,
+      border-color 150ms ease,
+      text-decoration-color 150ms ease,
+      fill 150ms ease,
+      stroke 150ms ease;
   }
 
   .table-row-hover:hover {
-    @apply bg-muted/50;
+    background-color: hsl(var(--muted) / 0.5);
   }
 
   /* Pulse animation for live indicators */
   .pulse-live {
-    @apply relative;
+    position: relative;
   }
 
   .pulse-live::after {
     content: '';
-    @apply absolute inset-0 rounded-full animate-ping bg-current opacity-75;
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background-color: currentColor;
+    opacity: 0.75;
+    animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
 
   /* Shimmer loading effect */
@@ -220,11 +253,16 @@
       hsl(var(--muted)) 100%
     );
     background-size: 200% 100%;
-    @apply animate-shimmer;
+    animation: shimmer 2s linear infinite;
   }
 }
 
 @layer utilities {
+  .backdrop-blur-xl {
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
   /* Animation delays */
   .animation-delay-100 { animation-delay: 100ms; }
   .animation-delay-200 { animation-delay: 200ms; }
@@ -245,6 +283,23 @@
   /* Text balance */
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes ping {
+  75%,
+  100% {
+    transform: scale(2);
+    opacity: 0;
   }
 }
 

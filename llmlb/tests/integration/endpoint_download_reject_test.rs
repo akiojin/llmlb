@@ -20,7 +20,6 @@ async fn test_download_reject_unknown_type() {
     // エンドポイント登録（オフラインなのでunknownタイプ）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Offline Endpoint",
@@ -40,7 +39,6 @@ async fn test_download_reject_unknown_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "llama-3.2-1b"
@@ -69,7 +67,6 @@ async fn test_download_reject_ollama_type() {
     // Ollamaエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Server",
@@ -89,7 +86,6 @@ async fn test_download_reject_ollama_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "llama3:8b"
@@ -112,7 +108,6 @@ async fn test_download_reject_vllm_type() {
     // vLLMエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "vLLM Server",
@@ -132,7 +127,6 @@ async fn test_download_reject_vllm_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "some-model"
@@ -155,7 +149,6 @@ async fn test_download_reject_openai_compatible_type() {
     // OpenAI互換エンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "OpenAI Compatible Server",
@@ -175,7 +168,6 @@ async fn test_download_reject_openai_compatible_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "gpt-3.5-turbo"
@@ -198,7 +190,6 @@ async fn test_download_reject_error_message() {
     // unknownタイプのエンドポイントを登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -218,7 +209,6 @@ async fn test_download_reject_error_message() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "llama-3.2-1b"

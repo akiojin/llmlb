@@ -23,7 +23,6 @@ async fn react_app_shell_is_clean_on_initial_load() {
     let body = lb
         .oneshot(
             axum::http::Request::builder()
-                .header("x-internal-token", "test-internal")
                 .uri("/dashboard/")
                 .body(axum::body::Body::empty())
                 .unwrap(),

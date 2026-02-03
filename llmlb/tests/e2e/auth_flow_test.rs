@@ -57,7 +57,6 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -88,7 +87,6 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .header("authorization", format!("Bearer {}", token))
@@ -125,7 +123,6 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/logout")
                 .header("authorization", format!("Bearer {}", token))
@@ -141,7 +138,6 @@ async fn test_complete_auth_flow() {
     let unauthorized_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .header("authorization", format!("Bearer {}", token))
@@ -168,7 +164,6 @@ async fn test_unauthorized_access_without_token() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .body(Body::empty())
@@ -192,7 +187,6 @@ async fn test_invalid_token() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .header("authorization", "Bearer invalid-token-12345")
@@ -218,7 +212,6 @@ async fn test_auth_me_endpoint() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -247,7 +240,6 @@ async fn test_auth_me_endpoint() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/auth/me")
                 .header("authorization", format!("Bearer {}", token))
@@ -295,7 +287,6 @@ async fn test_auth_me_without_token() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/auth/me")
                 .body(Body::empty())

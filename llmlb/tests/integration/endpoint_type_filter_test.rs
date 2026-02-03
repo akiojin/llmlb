@@ -20,7 +20,6 @@ async fn test_list_endpoints_without_type_filter() {
     for i in 1..=3 {
         let _ = client
             .post(format!("http://{}/api/endpoints", server.addr()))
-            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .json(&json!({
                 "name": format!("Endpoint {}", i),
@@ -34,7 +33,6 @@ async fn test_list_endpoints_without_type_filter() {
     // フィルタなしで取得
     let response = client
         .get(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -58,7 +56,6 @@ async fn test_list_endpoints_filter_by_xllm() {
     // xLLMタイプでフィルタ
     let response = client
         .get(format!("http://{}/api/endpoints?type=xllm", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -91,7 +88,6 @@ async fn test_list_endpoints_filter_by_ollama() {
             "http://{}/api/endpoints?type=ollama",
             server.addr()
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -116,7 +112,6 @@ async fn test_list_endpoints_filter_by_vllm() {
 
     let response = client
         .get(format!("http://{}/api/endpoints?type=vllm", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -144,7 +139,6 @@ async fn test_list_endpoints_filter_by_openai_compatible() {
             "http://{}/api/endpoints?type=openai_compatible",
             server.addr()
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -170,7 +164,6 @@ async fn test_list_endpoints_filter_by_unknown() {
     // オフラインエンドポイントを登録（unknownタイプになる）
     let _ = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Offline Endpoint",
@@ -186,7 +179,6 @@ async fn test_list_endpoints_filter_by_unknown() {
             "http://{}/api/endpoints?type=unknown",
             server.addr()
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -220,7 +212,6 @@ async fn test_list_endpoints_combined_filters() {
             "http://{}/api/endpoints?type=xllm&status=pending",
             server.addr()
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

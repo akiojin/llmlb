@@ -20,7 +20,6 @@ async fn test_endpoint_type_auto_detection_offline() {
     // エンドポイント登録（接続先がないのでタイプはunknownになる）
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Unknown Endpoint",
@@ -137,7 +136,6 @@ async fn test_endpoint_type_redetection_on_online() {
     // 最初はオフラインでunknownタイプ
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",

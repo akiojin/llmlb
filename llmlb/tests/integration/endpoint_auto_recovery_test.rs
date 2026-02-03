@@ -22,7 +22,6 @@ async fn test_endpoint_recovery_offline_to_online() {
     // エンドポイント登録（まだモックは応答しない）
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Recovery Test",
@@ -42,7 +41,6 @@ async fn test_endpoint_recovery_offline_to_online() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -68,7 +66,6 @@ async fn test_endpoint_recovery_offline_to_online() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -84,7 +81,6 @@ async fn test_endpoint_recovery_offline_to_online() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -104,7 +100,6 @@ async fn test_error_count_reset_on_recovery() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Error Count Test",
@@ -125,7 +120,6 @@ async fn test_error_count_reset_on_recovery() {
                 server.addr(),
                 endpoint_id
             ))
-            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .send()
             .await
@@ -139,7 +133,6 @@ async fn test_error_count_reset_on_recovery() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -166,7 +159,6 @@ async fn test_error_count_reset_on_recovery() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -182,7 +174,6 @@ async fn test_error_count_reset_on_recovery() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -211,7 +202,6 @@ async fn test_last_seen_updated_on_success() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Last Seen Test",
@@ -234,7 +224,6 @@ async fn test_last_seen_updated_on_success() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -247,7 +236,6 @@ async fn test_last_seen_updated_on_success() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

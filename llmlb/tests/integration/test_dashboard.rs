@@ -33,7 +33,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
-    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
+
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
     // Disable authentication for integration tests (cleaned up by AuthDisabledGuard)
@@ -75,10 +75,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
 
 fn ws_url_with_token(addr: std::net::SocketAddr, secret: &str) -> String {
     let token = create_jwt("test-admin", UserRole::Admin, secret).expect("create test jwt");
-    format!(
-        "ws://{}/ws/dashboard?token={}&internal_token=test-internal",
-        addr, token
-    )
+    format!("ws://{}/ws/dashboard?token={}", addr, token)
 }
 
 #[tokio::test]

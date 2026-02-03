@@ -32,9 +32,7 @@ async fn test_integration_register_safetensors_requires_metadata() {
 
     let response = Client::new()
         .post(format!("http://{}/api/models/register", lb.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", admin_key))
-        .header("x-internal-token", "test-internal")
         .json(&json!({
             "repo": "safetensors-missing-meta",
             "format": "safetensors"
@@ -77,9 +75,7 @@ async fn test_integration_register_sharded_safetensors_requires_index() {
 
     let response = Client::new()
         .post(format!("http://{}/api/models/register", lb.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", admin_key))
-        .header("x-internal-token", "test-internal")
         .json(&json!({
             "repo": "sharded-safetensors",
             "format": "safetensors"

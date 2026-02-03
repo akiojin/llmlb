@@ -20,7 +20,6 @@ async fn test_manual_type_on_registration() {
     // タイプを手動指定してエンドポイント登録
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Manual xLLM",
@@ -52,7 +51,6 @@ async fn test_manual_type_update() {
     // エンドポイント登録（タイプはunknown）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -91,7 +89,6 @@ async fn test_manual_type_update() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -114,7 +111,6 @@ async fn test_manual_type_overrides_auto_detection() {
     // Ollamaエンドポイント（モック）を手動でxLLMとして登録
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Manual Override",
@@ -146,7 +142,6 @@ async fn test_invalid_type_specification() {
     // 不正なタイプを指定
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Invalid Type",
@@ -177,7 +172,6 @@ async fn test_all_valid_types_can_be_specified() {
     for (i, endpoint_type) in valid_types.iter().enumerate() {
         let response = client
             .post(format!("http://{}/api/endpoints", server.addr()))
-            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .json(&json!({
                 "name": format!("Endpoint Type {}", endpoint_type),
@@ -215,7 +209,6 @@ async fn test_type_update_preserves_other_fields() {
     // エンドポイント登録（メモ付き）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -256,7 +249,6 @@ async fn test_type_update_preserves_other_fields() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

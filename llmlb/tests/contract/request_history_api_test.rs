@@ -21,9 +21,7 @@ async fn build_app() -> (Router, SqlitePool) {
 }
 
 fn admin_request() -> axum::http::request::Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug_admin")
+    Request::builder().header("authorization", "Bearer sk_debug_admin")
 }
 
 async fn insert_record(db_pool: &SqlitePool, record: &RequestResponseRecord) {

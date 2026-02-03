@@ -21,7 +21,6 @@ async fn test_xllm_model_download_request() {
     // xLLMタイプのエンドポイントを登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -41,7 +40,6 @@ async fn test_xllm_model_download_request() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "llama-3.2-1b"
@@ -70,7 +68,6 @@ async fn test_xllm_model_download_progress() {
     // エンドポイント登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -90,7 +87,6 @@ async fn test_xllm_model_download_progress() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "llama-3.2-1b"
@@ -106,7 +102,6 @@ async fn test_xllm_model_download_progress() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -139,7 +134,6 @@ async fn test_xllm_model_download_multiple() {
     // エンドポイント登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -160,7 +154,6 @@ async fn test_xllm_model_download_multiple() {
                 server.addr(),
                 endpoint_id
             ))
-            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .json(&json!({
                 "model": model
@@ -177,7 +170,6 @@ async fn test_xllm_model_download_multiple() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -200,7 +192,6 @@ async fn test_xllm_model_download_completion() {
     // エンドポイント登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -220,7 +211,6 @@ async fn test_xllm_model_download_completion() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "model": "llama-3.2-1b"

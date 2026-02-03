@@ -30,7 +30,6 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
-    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -79,9 +78,7 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("authorization", format!("Bearer {}", admin_key))
+    Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
 /// DELETE /api/endpoints/:id - 正常系: エンドポイント削除成功
@@ -174,7 +171,6 @@ async fn test_delete_endpoint_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("DELETE")
                 .uri(format!("/api/endpoints/{}", Uuid::new_v4()))
                 .body(Body::empty())

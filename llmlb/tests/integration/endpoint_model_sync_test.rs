@@ -36,7 +36,6 @@ async fn test_sync_models_from_ollama() {
     // エンドポイント登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Server",
@@ -56,7 +55,6 @@ async fn test_sync_models_from_ollama() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -101,7 +99,6 @@ async fn test_sync_models_from_vllm() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "vLLM Server",
@@ -120,7 +117,6 @@ async fn test_sync_models_from_vllm() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -154,7 +150,6 @@ async fn test_synced_models_appear_in_endpoint_detail() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "OpenAI Compatible",
@@ -174,7 +169,6 @@ async fn test_synced_models_appear_in_endpoint_detail() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -187,7 +181,6 @@ async fn test_synced_models_appear_in_endpoint_detail() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -218,7 +211,6 @@ async fn test_sync_returns_change_counts() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Change Count Test",
@@ -237,7 +229,6 @@ async fn test_sync_returns_change_counts() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

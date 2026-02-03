@@ -3,8 +3,6 @@
 //! リクエスト振り分け → LLM runtime転送 → レスポンス返却
 //! このテストはRED状態であることが期待されます（T036-T039で実装後にGREENになる）
 
-use serde_json::json;
-
 #[tokio::test]
 #[ignore = "TDD RED: LLM runtimeプロキシ未実装"]
 async fn test_proxy_request_to_single_node() {

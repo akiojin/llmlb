@@ -81,7 +81,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             case 'NodeRegistered':
             case 'NodeRemoved':
             case 'NodeStatusChanged':
-              // Invalidate dashboard overview query (includes nodes, stats)
+              // Invalidate dashboard overview query (includes endpoints, stats)
               queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
               queryClient.invalidateQueries({ queryKey: ['request-responses'] })
               break

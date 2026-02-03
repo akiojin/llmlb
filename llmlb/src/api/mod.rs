@@ -97,14 +97,6 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route("/invitations/:id", delete(invitations::revoke_invitation))
         // ダッシュボードAPI
-        // NOTE: /dashboard/nodes は廃止済み、/dashboard/endpoints を使用
-        .route(
-            "/dashboard/nodes",
-            get({
-                #[allow(deprecated)]
-                dashboard::get_nodes
-            }),
-        )
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))
         .route("/dashboard/stats", get(dashboard::get_stats))
         .route(

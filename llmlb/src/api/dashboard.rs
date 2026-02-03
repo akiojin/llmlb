@@ -126,16 +126,6 @@ pub struct DashboardOverview {
     pub generation_time_ms: u64,
 }
 
-/// GET /api/dashboard/nodes
-///
-/// # 廃止済み
-///
-/// このエンドポイントは廃止されました。代わりに `/api/dashboard/endpoints` を使用してください。
-#[deprecated(note = "Use /api/dashboard/endpoints instead")]
-pub async fn get_nodes(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
-    Json(collect_endpoints(&state).await)
-}
-
 /// GET /api/dashboard/endpoints
 ///
 /// SPEC-66555000: llmlb主導エンドポイント登録システム

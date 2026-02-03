@@ -176,37 +176,6 @@ export interface SyncProgress {
   total_bytes: number
 }
 
-export interface DashboardNode {
-  node_id: string
-  machine_name: string
-  custom_name?: string
-  ip_address: string
-  port: number
-  status: 'online' | 'pending' | 'registering' | 'offline'
-  runtime_version: string
-  gpu_model?: string
-  gpu_count?: number
-  cpu_usage?: number
-  memory_usage?: number
-  gpu_usage?: number
-  gpu_memory_usage?: number
-  gpu_memory_total_mb?: number
-  gpu_memory_used_mb?: number
-  total_requests: number
-  uptime_seconds: number
-  last_seen: string
-  tags?: string[]
-  notes?: string
-  ready_models?: string[]
-  sync_state?: SyncState
-  sync_progress?: SyncProgress
-  sync_updated_at?: string
-  // Token statistics
-  total_input_tokens: number
-  total_output_tokens: number
-  total_tokens: number
-}
-
 /**
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
@@ -297,7 +266,7 @@ export interface RequestResponsesPage {
 }
 
 export interface DashboardOverview {
-  nodes: DashboardNode[]
+  endpoints: DashboardEndpoint[]
   stats: DashboardStats
   history: RequestHistoryItem[]
   generated_at: string
@@ -336,8 +305,6 @@ export interface MonthlyTokenStats extends TokenStats {
 
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
-
-  getNodes: () => fetchWithAuth<DashboardNode[]>('/api/dashboard/nodes'),
 
   /** SPEC-66555000: List endpoints */
   getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),

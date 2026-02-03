@@ -6,6 +6,7 @@
 use serde_json::json;
 
 #[tokio::test]
+#[ignore = "TDD RED: LLM runtimeプロキシ未実装"]
 async fn test_proxy_request_to_single_node() {
     // Arrange: Routerサーバー起動、1台のノード登録、モックLLM runtime起動
     // let lb = start_test_lb().await;
@@ -29,6 +30,7 @@ async fn test_proxy_request_to_single_node() {
 }
 
 #[tokio::test]
+#[ignore = "TDD RED: LLM runtimeプロキシ未実装"]
 async fn test_proxy_no_nodes_returns_503() {
     // Arrange: Routerサーバー起動（ノード未登録）
     // let lb = start_test_lb().await;

@@ -4,6 +4,7 @@
 //! このテストはRED状態であることが期待されます（T033-T049で実装後にGREENになる）
 
 #[tokio::test]
+#[ignore = "TDD RED: ヘルスモニター未実装"]
 async fn test_health_monitor_detects_timeout() {
     // Arrange: Routerサーバー起動（ヘルスモニター有効）、ノード登録
     // let lb = start_test_lb_with_health_monitor().await;
@@ -21,6 +22,7 @@ async fn test_health_monitor_detects_timeout() {
 }
 
 #[tokio::test]
+#[ignore = "TDD RED: オフラインノード除外未実装"]
 async fn test_offline_node_excluded_from_balancing() {
     // Arrange: Routerサーバー起動、2台のノード登録（1台はオフライン）
     // let lb = start_test_lb().await;

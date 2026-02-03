@@ -66,6 +66,13 @@ mod endpoint_download_reject_test;
 #[path = "integration/endpoint_model_metadata_test.rs"]
 mod endpoint_model_metadata_test;
 
+// SPEC-fbc50d97: リクエスト履歴ストレージ/キャプチャ統合テスト
+#[path = "integration/request_storage_test.rs"]
+mod request_storage_test;
+
+#[path = "integration/request_capture_test.rs"]
+mod request_capture_test;
+
 // 既存の統合テスト（ハーネス未登録だったものを追加）
 #[path = "integration/test_metrics.rs"]
 mod test_metrics;

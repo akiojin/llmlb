@@ -39,9 +39,6 @@ async fn build_app(openai_base_url: String) -> TestApp {
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
 
-    // OpenAI互換エンドポイントのAPIキー認証をスキップ（テスト用）
-    std::env::set_var("LLMLB_SKIP_API_KEY", "1");
-
     // Cloud proxy用（wiremockへ向ける）
     std::env::set_var("OPENAI_API_KEY", "sk-test");
     std::env::set_var("OPENAI_BASE_URL", openai_base_url);
@@ -136,6 +133,7 @@ async fn request_history_redacts_inline_media_data() {
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
+                .header("x-api-key", "sk_debug")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),

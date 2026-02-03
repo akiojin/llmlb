@@ -30,6 +30,22 @@ impl RequestHistoryStorage {
         Self { pool }
     }
 
+    /// IDでレコードを取得
+    pub async fn get_record_by_id(&self, id: Uuid) -> RouterResult<Option<RequestResponseRecord>> {
+        let row = sqlx::query_as::<_, RequestHistoryRow>(
+            "SELECT * FROM request_history WHERE id = ? LIMIT 1",
+        )
+        .bind(id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to load record: {}", e)))?;
+
+        match row {
+            Some(row) => Ok(Some(row.try_into()?)),
+            None => Ok(None),
+        }
+    }
+
     /// レコードを保存
     pub async fn save_record(&self, record: &RequestResponseRecord) -> RouterResult<()> {
         self.insert_record(record, false).await?;

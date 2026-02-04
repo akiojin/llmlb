@@ -59,7 +59,7 @@
 
 - [x] T017 `llmlb/tests/contract/test_proxy_completions.rs` の
 queue overflow テストを安定化（in-flight 反映後に2本目を送信）
-- [ ] T018 `llmlb/src/balancer/mod.rs` に
+- [x] T018 `llmlb/src/balancer/mod.rs` に
 テスト向けの状態可視化（busy判定/待機数の待ち合わせヘルパー）を追加
 - [ ] T019 `llmlb/tests/contract/queueing_test.rs` に
 キュー満杯の再現用シナリオを追加（Notifyで先行リクエストを保持）

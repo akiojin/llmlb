@@ -22,10 +22,7 @@ use uuid::Uuid;
 
 use crate::support::{
     http::{spawn_lb, TestServer},
-    lb::{
-        approve_node_from_register_response, register_node, spawn_test_lb,
-        spawn_test_lb_with_manager,
-    },
+    lb::spawn_test_lb_with_manager,
 };
 
 #[derive(Clone)]
@@ -104,28 +101,22 @@ fn clear_queue_env() {
 
 fn chat_payload() -> serde_json::Value {
     json!({
-        "model": "gpt-oss-20b",
+        "model": "test-model",
         "messages": [{"role": "user", "content": "ping"}]
     })
 }
 
 #[tokio::test]
-#[ignore = "NodeRegistry廃止により登録フローが未移行"]
 #[serial]
 async fn queued_request_waits_and_sets_header() {
     set_queue_env(2, 2);
 
     let stub_state = QueueStubState::new(true, "node-a");
     let stub = spawn_queue_stub(stub_state.clone()).await;
-    let lb = spawn_test_lb().await;
-
-    let register_response = register_node(lb.addr(), stub.addr())
+    let (lb, load_manager) = spawn_test_lb_with_manager().await;
+    let endpoint_id = register_queue_endpoint(lb.addr(), stub.addr())
         .await
-        .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(lb.addr(), register_response)
-        .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
 
@@ -146,6 +137,8 @@ async fn queued_request_waits_and_sets_header() {
     timeout(Duration::from_secs(1), stub_state.first_started.notified())
         .await
         .expect("first request should reach node");
+
+    wait_for_endpoint_active(&load_manager, &endpoint_id, Duration::from_secs(1)).await;
 
     let second = tokio::spawn({
         let client = client.clone();
@@ -201,10 +194,7 @@ async fn queue_full_returns_429_with_retry_after() {
         .expect("register endpoint must succeed");
 
     let client = Client::new();
-    let payload = json!({
-        "model": "test-model",
-        "messages": [{"role": "user", "content": "ping"}]
-    });
+    let payload = chat_payload();
 
     let first = tokio::spawn({
         let client = client.clone();
@@ -246,22 +236,16 @@ async fn queue_full_returns_429_with_retry_after() {
 }
 
 #[tokio::test]
-#[ignore = "NodeRegistry廃止により登録フローが未移行"]
 #[serial]
 async fn queue_timeout_returns_504() {
     set_queue_env(1, 0);
 
     let stub_state = QueueStubState::new(true, "node-a");
     let stub = spawn_queue_stub(stub_state.clone()).await;
-    let lb = spawn_test_lb().await;
-
-    let register_response = register_node(lb.addr(), stub.addr())
+    let (lb, load_manager) = spawn_test_lb_with_manager().await;
+    let endpoint_id = register_queue_endpoint(lb.addr(), stub.addr())
         .await
-        .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(lb.addr(), register_response)
-        .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
 
@@ -283,6 +267,8 @@ async fn queue_timeout_returns_504() {
         .await
         .expect("first request should reach node");
 
+    wait_for_endpoint_active(&load_manager, &endpoint_id, Duration::from_secs(1)).await;
+
     let second_resp = client
         .post(format!("http://{}/v1/chat/completions", lb.addr()))
         .header("x-api-key", "sk_debug")
@@ -300,7 +286,6 @@ async fn queue_timeout_returns_504() {
 }
 
 #[tokio::test]
-#[ignore = "NodeRegistry廃止により登録フローが未移行"]
 #[serial]
 async fn routes_to_idle_node_when_one_busy() {
     set_queue_env(2, 2);
@@ -311,23 +296,10 @@ async fn routes_to_idle_node_when_one_busy() {
     let busy_stub = spawn_queue_stub(busy_state.clone()).await;
     let idle_stub = spawn_queue_stub(idle_state.clone()).await;
 
-    let lb = spawn_test_lb().await;
-
-    let register_response = register_node(lb.addr(), busy_stub.addr())
+    let (lb, load_manager) = spawn_test_lb_with_manager().await;
+    let busy_endpoint_id = register_queue_endpoint(lb.addr(), busy_stub.addr())
         .await
-        .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(lb.addr(), register_response)
-        .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
-
-    let register_response = register_node(lb.addr(), idle_stub.addr())
-        .await
-        .expect("register node must succeed");
-    let (status, _body) = approve_node_from_register_response(lb.addr(), register_response)
-        .await
-        .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register busy endpoint must succeed");
 
     let client = Client::new();
 
@@ -348,6 +320,13 @@ async fn routes_to_idle_node_when_one_busy() {
     timeout(Duration::from_secs(1), busy_state.first_started.notified())
         .await
         .expect("busy node should receive first request");
+
+    wait_for_endpoint_active(&load_manager, &busy_endpoint_id, Duration::from_secs(1)).await;
+
+    let _idle_endpoint_id = register_queue_endpoint(lb.addr(), idle_stub.addr())
+        .await
+        .expect("register idle endpoint must succeed");
+    sleep(Duration::from_millis(50)).await;
 
     let second_resp = client
         .post(format!("http://{}/v1/chat/completions", lb.addr()))

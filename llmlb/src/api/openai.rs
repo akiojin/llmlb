@@ -1178,26 +1178,82 @@ async fn proxy_openai_post(
 
     // Endpoint-based routing: check if model exists in EndpointRegistry
     if let Ok(EndpointSelection::Found(endpoint)) = select_endpoint_for_model(state, &model).await {
-        let record_id = Uuid::new_v4();
-        let timestamp = Utc::now();
-        let request_body = sanitize_openai_payload_for_history(&payload);
-        let body_bytes = serde_json::to_vec(&payload).map_err(|e| {
-            AppError::from(LbError::Http(format!("Failed to serialize payload: {}", e)))
-        })?;
-        let start = Instant::now();
+        let snapshot = state.load_manager.snapshot(endpoint.id).await.ok();
+        let is_busy = snapshot
+            .as_ref()
+            .map(|s| s.active_requests > 0)
+            .unwrap_or(false);
 
-        let response = match forward_to_endpoint(
-            &state.http_client,
-            &endpoint,
-            target_path,
-            body_bytes,
-            stream,
-        )
-        .await
-        {
-            Ok(res) => res,
-            Err(e) => {
-                let duration = start.elapsed();
+        if !is_busy {
+            let record_id = Uuid::new_v4();
+            let timestamp = Utc::now();
+            let request_body = sanitize_openai_payload_for_history(&payload);
+            let body_bytes = serde_json::to_vec(&payload).map_err(|e| {
+                AppError::from(LbError::Http(format!("Failed to serialize payload: {}", e)))
+            })?;
+            let start = Instant::now();
+
+            state
+                .load_manager
+                .begin_request(endpoint.id)
+                .await
+                .map_err(AppError::from)?;
+
+            let response = match forward_to_endpoint(
+                &state.http_client,
+                &endpoint,
+                target_path,
+                body_bytes,
+                stream,
+            )
+            .await
+            {
+                Ok(res) => res,
+                Err(e) => {
+                    let duration = start.elapsed();
+                    state
+                        .load_manager
+                        .finish_request(endpoint.id, RequestOutcome::Error, duration)
+                        .await
+                        .map_err(AppError::from)?;
+                    save_request_record(
+                        state.request_history.clone(),
+                        RequestResponseRecord {
+                            id: record_id,
+                            timestamp,
+                            request_type,
+                            model: model.clone(),
+                            node_id: endpoint.id,
+                            node_machine_name: endpoint.name.clone(),
+                            node_ip: UNSPECIFIED_IP,
+                            client_ip: None,
+                            request_body,
+                            response_body: None,
+                            duration_ms: duration.as_millis() as u64,
+                            status: RecordStatus::Error {
+                                message: format!("Endpoint request failed: {}", e),
+                            },
+                            completed_at: Utc::now(),
+                            input_tokens: None,
+                            output_tokens: None,
+                            total_tokens: None,
+                        },
+                    );
+                    return Err(e.into());
+                }
+            };
+
+            let duration = start.elapsed();
+
+            if stream {
+                state
+                    .load_manager
+                    .finish_request(endpoint.id, RequestOutcome::Success, duration)
+                    .await
+                    .map_err(AppError::from)?;
+                // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+                update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
+
                 save_request_record(
                     state.request_history.clone(),
                     RequestResponseRecord {
@@ -1212,24 +1268,39 @@ async fn proxy_openai_post(
                         request_body,
                         response_body: None,
                         duration_ms: duration.as_millis() as u64,
-                        status: RecordStatus::Error {
-                            message: format!("Endpoint request failed: {}", e),
-                        },
+                        status: RecordStatus::Success,
                         completed_at: Utc::now(),
                         input_tokens: None,
                         output_tokens: None,
                         total_tokens: None,
                     },
                 );
-                return Err(e.into());
+                return forward_streaming_response(response).map_err(AppError::from);
             }
-        };
 
-        let duration = start.elapsed();
+            // Non-streaming: read response body
+            let status = response.status();
+            let body_bytes = response.bytes().await.map_err(map_reqwest_error)?;
+            let response_body_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
+            let token_usage = response_body_value
+                .as_ref()
+                .and_then(extract_usage_from_response);
 
-        if stream {
+            let outcome = if status.is_success() {
+                RequestOutcome::Success
+            } else {
+                RequestOutcome::Error
+            };
+            state
+                .load_manager
+                .finish_request(endpoint.id, outcome, duration)
+                .await
+                .map_err(AppError::from)?;
+
             // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
-            update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
+            if status.is_success() {
+                update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
+            }
 
             save_request_record(
                 state.request_history.clone(),
@@ -1243,64 +1314,28 @@ async fn proxy_openai_post(
                     node_ip: UNSPECIFIED_IP,
                     client_ip: None,
                     request_body,
-                    response_body: None,
+                    response_body: response_body_value,
                     duration_ms: duration.as_millis() as u64,
-                    status: RecordStatus::Success,
+                    status: if status.is_success() {
+                        RecordStatus::Success
+                    } else {
+                        RecordStatus::Error {
+                            message: format!("Endpoint returned {}", status),
+                        }
+                    },
                     completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
+                    input_tokens: token_usage.as_ref().and_then(|u| u.input_tokens),
+                    output_tokens: token_usage.as_ref().and_then(|u| u.output_tokens),
+                    total_tokens: token_usage.as_ref().and_then(|u| u.total_tokens),
                 },
             );
-            return forward_streaming_response(response).map_err(AppError::from);
+
+            return Ok(Response::builder()
+                .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(body_bytes))
+                .expect("Response builder should not fail with valid status and body"));
         }
-
-        // Non-streaming: read response body
-        let status = response.status();
-        let body_bytes = response.bytes().await.map_err(map_reqwest_error)?;
-        let response_body_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
-        let token_usage = response_body_value
-            .as_ref()
-            .and_then(extract_usage_from_response);
-
-        // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
-        if status.is_success() {
-            update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
-        }
-
-        save_request_record(
-            state.request_history.clone(),
-            RequestResponseRecord {
-                id: record_id,
-                timestamp,
-                request_type,
-                model: model.clone(),
-                node_id: endpoint.id,
-                node_machine_name: endpoint.name.clone(),
-                node_ip: UNSPECIFIED_IP,
-                client_ip: None,
-                request_body,
-                response_body: response_body_value,
-                duration_ms: duration.as_millis() as u64,
-                status: if status.is_success() {
-                    RecordStatus::Success
-                } else {
-                    RecordStatus::Error {
-                        message: format!("Endpoint returned {}", status),
-                    }
-                },
-                completed_at: Utc::now(),
-                input_tokens: token_usage.as_ref().and_then(|u| u.input_tokens),
-                output_tokens: token_usage.as_ref().and_then(|u| u.output_tokens),
-                total_tokens: token_usage.as_ref().and_then(|u| u.total_tokens),
-            },
-        );
-
-        return Ok(Response::builder()
-            .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK))
-            .header(CONTENT_TYPE, "application/json")
-            .body(Body::from(body_bytes))
-            .expect("Response builder should not fail with valid status and body"));
     }
 
     // Check if any endpoint has this model

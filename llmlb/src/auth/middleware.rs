@@ -460,7 +460,7 @@ fn hash_with_sha256(input: &str) -> String {
     format!("{:x}", result)
 }
 
-/// AUTH_DISABLED用ダミーClaims注入ミドルウェア
+/// LLMLB_AUTH_DISABLED（旧: AUTH_DISABLED）用ダミーClaims注入ミドルウェア
 ///
 /// 認証無効化モードの場合、すべてのリクエストにダミーのAdmin Claimsを注入する
 /// これにより、Extension<Claims>を要求するハンドラーが正常に動作する
@@ -485,7 +485,7 @@ pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Resp
     next.run(request).await
 }
 
-/// AUTH_DISABLED用ダミーClaims注入ミドルウェア（管理者ID参照）
+/// LLMLB_AUTH_DISABLED（旧: AUTH_DISABLED）用ダミーClaims注入ミドルウェア（管理者ID参照）
 ///
 /// 既存の管理者ユーザーIDを取得してClaimsへ設定する。
 /// 管理者が存在しない場合はnil UUIDを使用する。

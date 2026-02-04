@@ -363,8 +363,19 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 | `LLMLB_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
 | `LLMLB_QUEUE_MAX` | `100` | キュー待機上限 |
 | `LLMLB_QUEUE_TIMEOUT_SECS` | `60` | キュー待機タイムアウト（秒） |
-| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル |
-| `AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用） |
+| `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（旧: `REQUEST_HISTORY_RETENTION_DAYS`） |
+| `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、旧: `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`） |
+| `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（旧: `LLM_DEFAULT_EMBEDDING_MODEL`） |
+| `LLMLB_AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、旧: `AUTH_DISABLED`） |
+| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（非推奨） |
+| `AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、非推奨） |
+| `REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（非推奨） |
+| `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、非推奨） |
+
+#### システムトレイ（Windows/macOS）
+
+Windows 10+ / macOS 12+ ではシステムトレイに常駐します。ヘッドレスで起動したい場合は
+`llmlb serve --no-tray` を利用してください。
 
 クラウドAPI:
 

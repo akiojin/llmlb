@@ -1,7 +1,7 @@
 # タスク: ロードバランサー主導エンドポイント登録システム
 
 **機能ID**: `SPEC-66555000`
-**ステータス**: 完了（Phase 4 エンドポイントタイプ自動判別 2026-01-27完了）
+**ステータス**: 部分完了（Phase 4 実装済み、テスト/ハーネス未復帰あり）
 **入力**: `/specs/SPEC-66555000/` の設計ドキュメント
 **前提条件**: plan.md, research.md, data-model.md, contracts/endpoints-api.md, quickstart.md
 
@@ -260,6 +260,9 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 - [x] T103 [P] `llmlb/tests/contract/endpoints_download_test.rs` に POST /api/endpoints/:id/download の contract test
 - [x] T104 [P] `llmlb/tests/contract/endpoints_download_progress_test.rs` に GET /api/endpoints/:id/download/progress の contract test
 - [x] T105 [P] `llmlb/tests/contract/endpoints_model_info_test.rs` に GET /api/endpoints/:id/models/:model/info の contract test
+- [ ] T103a `llmlb/tests/contract/endpoints_download_test.rs` の #[ignore] を解除し、実装に合わせて期待値を確定
+- [ ] T104a `llmlb/tests/contract/endpoints_download_progress_test.rs` の #[ignore] を解除し、progressレスポンスを実装に合わせて検証
+- [ ] T105a `llmlb/tests/contract/endpoints_model_info_test.rs` の #[ignore] を解除し、model infoレスポンスの期待値を更新
 
 #### Integration Tests（ユーザーストーリー検証）
 
@@ -269,6 +272,12 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 - [x] T109 [P] `llmlb/tests/integration/endpoint_download_reject_test.rs` にUS8: 非xLLMダウンロード拒否のintegration test
 - [x] T110 [P] `llmlb/tests/integration/endpoint_model_metadata_test.rs` にUS9: モデルメタデータ取得のintegration test
 - [x] T111 [P] `llmlb/tests/integration/endpoint_type_manual_override_test.rs` にUS11: 手動タイプ指定のintegration test
+- [ ] T106a `llmlb/tests/integration/endpoint_type_detection_test.rs` のモックサーバーハーネスを実装し、#[ignore] を解除
+- [ ] T107a `llmlb/tests/integration/endpoint_type_filter_test.rs` の #[ignore] を解除し、タイプフィルタの期待値を確定
+- [ ] T108a `llmlb/tests/integration/endpoint_xllm_download_test.rs` のダウンロード同期/完了待ちを実装し、#[ignore] を解除
+- [ ] T109a `llmlb/tests/integration/endpoint_download_reject_test.rs` の #[ignore] を解除し、拒否理由の期待値を更新
+- [ ] T110a `llmlb/tests/integration/endpoint_model_metadata_test.rs` の #[ignore] を解除し、メタデータ期待値を更新
+- [ ] T111a `llmlb/tests/integration/endpoint_type_manual_override_test.rs` の #[ignore] を解除し、手動タイプ更新の期待値を確定
 
 ### Phase 4.3: コア実装（テストが失敗した後のみ）
 
@@ -294,6 +303,9 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 - [x] T123 `llmlb/src/api/endpoints.rs` にPOST /api/endpoints/:id/download ハンドラー（xLLMタイプ検証）
 - [x] T124 `llmlb/src/api/endpoints.rs` にGET /api/endpoints/:id/download/progress ハンドラー
 - [x] T125 `llmlb/src/api/endpoints.rs` にGET /api/endpoints/:id/models/:model/info ハンドラー
+- [ ] T123b ダウンロードAPIの実装差分（エラーコード/レスポンス形式）をcontract/integrationテストと一致させる
+- [ ] T124b progress APIのレスポンス形式をcontract/integrationテストと一致させる
+- [ ] T125b model info APIのレスポンス形式をcontract/integrationテストと一致させる
 
 #### xLLMダウンロード連携
 
@@ -305,6 +317,7 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 - [x] T128 `llmlb/src/metadata/mod.rs` にモデルメタデータ取得モジュールを作成
 - [x] T129 `llmlb/src/metadata/xllm.rs` にxLLMメタデータ取得実装（GET /api/models/:model/info → context_length）
 - [x] T130 `llmlb/src/metadata/ollama.rs` にOllamaメタデータ取得実装（POST /api/show → parameters.num_ctx）
+- [ ] T130a メタデータ取得の返却形式（max_tokens/context_length）を統一し、APIレスポンスに反映
 
 ### Phase 4.4: 統合
 
@@ -334,6 +347,7 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 
 - [x] T141 `specs/SPEC-66555000/quickstart.md` にタイプ判別の検証ステップを追加・実行
 - [x] T142 `README.ja.md` にエンドポイントタイプとxLLM連携の説明を追加
+- [ ] T143 追加要件のcontract/integrationテストがCIで常時実行可能になったことを確認し、完了報告を更新
 
 ## 追加要件の依存関係
 

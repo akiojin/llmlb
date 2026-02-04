@@ -33,7 +33,7 @@ pub struct WsAuthQuery {
 /// - Node status changes
 /// - Metrics updates
 ///
-/// Authentication is required unless AUTH_DISABLED is set.
+/// Authentication is required unless LLMLB_AUTH_DISABLED (legacy: AUTH_DISABLED) is set.
 pub async fn dashboard_ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,

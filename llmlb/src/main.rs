@@ -9,7 +9,7 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Row;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Clone)]
 struct ServerConfig {
@@ -91,9 +91,18 @@ fn main() {
             use tokio::runtime::Builder;
 
             let config = ServerConfig::from_args(args.host, args.port);
+            if args.no_tray {
+                let runtime = Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build Tokio runtime for server mode");
+                runtime.block_on(run_server(config));
+                return;
+            }
             let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
+            let fallback_config = config.clone();
 
-            run_with_system_tray(tray_options, move |proxy| {
+            let result = run_with_system_tray(tray_options, move |proxy| {
                 let server_config = config.clone();
                 thread::spawn(move || {
                     let runtime = Builder::new_multi_thread()
@@ -104,6 +113,14 @@ fn main() {
                     proxy.notify_server_exit();
                 });
             });
+            if let Err(err) = result {
+                error!("System tray initialization failed: {err}");
+                let runtime = Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build Tokio runtime for server mode");
+                runtime.block_on(run_server(fallback_config));
+            }
             return;
         }
         None => {
@@ -118,8 +135,9 @@ fn main() {
 
     let config = ServerConfig::from_env();
     let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
+    let fallback_config = config.clone();
 
-    run_with_system_tray(tray_options, move |proxy| {
+    let result = run_with_system_tray(tray_options, move |proxy| {
         let server_config = config.clone();
         thread::spawn(move || {
             let runtime = Builder::new_multi_thread()
@@ -130,6 +148,14 @@ fn main() {
             proxy.notify_server_exit();
         });
     });
+    if let Err(err) = result {
+        error!("System tray initialization failed: {err}");
+        let runtime = Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build Tokio runtime for server mode");
+        runtime.block_on(run_server(fallback_config));
+    }
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]

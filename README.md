@@ -175,6 +175,7 @@ cargo build --release -p llmlb
 
 On Windows 10+ and macOS 12+, the load balancer displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
+Use `llmlb serve --no-tray` to force headless mode on supported platforms.
 
 ### CLI Reference
 
@@ -700,8 +701,14 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
 | `LLMLB_LOAD_BALANCER_MODE` | `auto` | Load balancer mode (`auto` / `metrics`) | `LOAD_BALANCER_MODE` |
 | `LLMLB_QUEUE_MAX` | `100` | Admission queue limit | `QUEUE_MAX` |
 | `LLMLB_QUEUE_TIMEOUT_SECS` | `60` | Admission queue timeout (seconds) | `QUEUE_TIMEOUT_SECS` |
-| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | - |
-| `AUTH_DISABLED` | `false` | Disable auth checks (dev/test only) | - |
+| `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | `REQUEST_HISTORY_RETENTION_DAYS` |
+| `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` |
+| `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | `LLM_DEFAULT_EMBEDDING_MODEL` |
+| `LLMLB_AUTH_DISABLED` | `false` | Disable auth checks (dev/test only) | `AUTH_DISABLED` |
+| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | deprecated (use `LLMLB_DEFAULT_EMBEDDING_MODEL`) |
+| `AUTH_DISABLED` | `false` | Disable auth checks (dev/test only) | deprecated (use `LLMLB_AUTH_DISABLED`) |
+| `REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | deprecated (use `LLMLB_REQUEST_HISTORY_RETENTION_DAYS`) |
+| `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | deprecated (use `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`) |
 
 Cloud / external services:
 

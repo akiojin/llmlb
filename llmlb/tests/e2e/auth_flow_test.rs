@@ -373,6 +373,111 @@ async fn test_logout_requires_origin_for_cookie_auth() {
 }
 
 #[tokio::test]
+async fn test_csrf_token_rotates_on_mutation() {
+    let (app, _db_pool) = build_app().await;
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "password123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let (login_parts, _) = login_response.into_parts();
+    let set_cookie_values: Vec<String> = login_parts
+        .headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(|s| s.to_string()))
+        .collect();
+    let cookie_pairs: Vec<String> = set_cookie_values
+        .into_iter()
+        .filter_map(|value| {
+            value
+                .split(';')
+                .next()
+                .map(|first| first.trim().to_string())
+        })
+        .collect();
+    let mut jwt_cookie = "";
+    let mut csrf_cookie = "";
+    for first in &cookie_pairs {
+        if first.starts_with("llmlb_jwt=") {
+            jwt_cookie = first;
+        }
+        if first.starts_with("llmlb_csrf=") {
+            csrf_cookie = first;
+        }
+    }
+    assert!(
+        !jwt_cookie.is_empty() && !csrf_cookie.is_empty(),
+        "Expected both jwt and csrf cookies, got: {:?}",
+        cookie_pairs
+    );
+
+    let cookie_header = format!("{}; {}", jwt_cookie, csrf_cookie);
+
+    let create_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/invitations")
+                .header("content-type", "application/json")
+                .header(header::HOST, "example.com")
+                .header(header::ORIGIN, "http://example.com")
+                .header(header::COOKIE, &cookie_header)
+                .header(
+                    "x-csrf-token",
+                    csrf_cookie.trim_start_matches("llmlb_csrf="),
+                )
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "expires_in_hours": 24
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
+    let new_csrf_cookie = create_response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .filter_map(|value| value.split(';').next())
+        .map(|value| value.trim())
+        .find(|value| value.starts_with("llmlb_csrf="))
+        .unwrap_or_default()
+        .to_string();
+
+    assert!(
+        !new_csrf_cookie.is_empty(),
+        "Mutating response should rotate CSRF cookie"
+    );
+    assert_ne!(
+        new_csrf_cookie, csrf_cookie,
+        "CSRF cookie should rotate after mutation"
+    );
+}
+
+#[tokio::test]
 async fn test_unauthorized_access_without_token() {
     let (app, _db_pool) = build_app().await;
 

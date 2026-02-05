@@ -71,6 +71,20 @@ fn token_looks_like_jwt(token: &str) -> bool {
     false
 }
 
+fn extract_jwt_from_headers(headers: &HeaderMap) -> Option<String> {
+    if let Some(auth_header) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if token_looks_like_jwt(token) {
+                return Some(token.to_string());
+            }
+        }
+    }
+    extract_jwt_cookie(headers)
+}
+
 pub(crate) fn extract_jwt_cookie(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     for part in cookie_header.split(';') {
@@ -153,6 +167,36 @@ fn origin_matches(headers: &HeaderMap) -> bool {
         None => return false,
     };
     provided.eq_ignore_ascii_case(&expected)
+}
+
+fn request_is_secure(headers: &HeaderMap) -> bool {
+    if let Some(proto) = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+    {
+        if proto.eq_ignore_ascii_case("https") {
+            return true;
+        }
+    }
+    if let Some(forwarded) = headers
+        .get("forwarded")
+        .and_then(|value| value.to_str().ok())
+    {
+        let lowered = forwarded.to_ascii_lowercase();
+        if lowered.contains("proto=https") {
+            return true;
+        }
+    }
+    false
+}
+
+fn response_sets_csrf_cookie(response: &Response) -> bool {
+    response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.starts_with(crate::auth::DASHBOARD_CSRF_COOKIE))
 }
 
 async fn authenticate_api_key(
@@ -286,6 +330,8 @@ pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Res
         return Ok(next.run(request).await);
     }
 
+    let headers_snapshot = request.headers().clone();
+
     // Authorizationヘッダーがある場合はCSRF対象外（APIクライアント向け）
     if request.headers().contains_key(header::AUTHORIZATION) {
         return Ok(next.run(request).await);
@@ -314,7 +360,16 @@ pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Res
             .into_response());
     }
 
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+    if response.status().is_success() && !response_sets_csrf_cookie(&response) {
+        let new_token = crate::auth::generate_random_token(32);
+        let secure = request_is_secure(&headers_snapshot);
+        let cookie = crate::auth::build_csrf_cookie(&new_token, 86400, secure);
+        response
+            .headers_mut()
+            .append(header::SET_COOKIE, cookie.parse().unwrap());
+    }
+    Ok(response)
 }
 
 /// APIキー認証ミドルウェア
@@ -376,27 +431,16 @@ pub async fn admin_or_api_key_middleware(
     next: Next,
 ) -> Result<Response, Response> {
     // JWTがあれば優先
-    if let Some(auth_header) = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if token_looks_like_jwt(token) {
-                let claims =
-                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
-                        tracing::warn!("JWT verification failed: {}", e);
-                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
-                    })?;
-                if claims.role == UserRole::Admin {
-                    request.extensions_mut().insert(claims);
-                    return Ok(next.run(request).await);
-                }
-                return Err(
-                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response()
-                );
-            }
+    if let Some(token) = extract_jwt_from_headers(request.headers()) {
+        let claims = crate::auth::jwt::verify_jwt(&token, &app_state.jwt_secret).map_err(|e| {
+            tracing::warn!("JWT verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+        })?;
+        if claims.role == UserRole::Admin {
+            request.extensions_mut().insert(claims);
+            return Ok(next.run(request).await);
         }
+        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response());
     }
 
     // JWTがない/無効ならAPIキーで認証
@@ -436,23 +480,14 @@ pub async fn authenticated_middleware(
     next: Next,
 ) -> Result<Response, Response> {
     // JWTがあれば優先
-    if let Some(auth_header) = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if token_looks_like_jwt(token) {
-                let claims =
-                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
-                        tracing::warn!("JWT verification failed: {}", e);
-                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
-                    })?;
-                // 任意のロールを許可
-                request.extensions_mut().insert(claims);
-                return Ok(next.run(request).await);
-            }
-        }
+    if let Some(token) = extract_jwt_from_headers(request.headers()) {
+        let claims = crate::auth::jwt::verify_jwt(&token, &app_state.jwt_secret).map_err(|e| {
+            tracing::warn!("JWT verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+        })?;
+        // 任意のロールを許可
+        request.extensions_mut().insert(claims);
+        return Ok(next.run(request).await);
     }
 
     // JWTがない/無効ならAPIキーで認証

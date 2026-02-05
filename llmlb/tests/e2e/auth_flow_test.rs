@@ -6,7 +6,7 @@
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{header, Request, StatusCode},
     Router,
 };
 use llmlb::common::auth::UserRole;
@@ -74,9 +74,19 @@ async fn test_complete_auth_flow() {
 
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let login_body = axum::body::to_bytes(login_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let (login_parts, login_body) = login_response.into_parts();
+    let set_cookie = login_parts
+        .headers
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        set_cookie.contains("llmlb_jwt="),
+        "Login response should set JWT cookie"
+    );
+
+    let login_body = axum::body::to_bytes(login_body, usize::MAX).await.unwrap();
     let login_data: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
 
     let token = login_data["token"].as_str().unwrap();
@@ -133,6 +143,15 @@ async fn test_complete_auth_flow() {
         .unwrap();
 
     assert_eq!(logout_response.status(), StatusCode::NO_CONTENT);
+    let logout_set_cookie = logout_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    assert!(
+        logout_set_cookie.contains("llmlb_jwt="),
+        "Logout should clear JWT cookie"
+    );
 
     // Step 4: ログアウト後は認証が必要なエンドポイントにアクセスできない
     let unauthorized_response = app
@@ -276,6 +295,68 @@ async fn test_auth_me_endpoint() {
     assert!(
         me_data.get("role").is_some(),
         "Response must have 'role' field"
+    );
+}
+
+#[tokio::test]
+async fn test_auth_me_with_cookie() {
+    let (app, _db_pool) = build_app().await;
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "password123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let (login_parts, login_body) = login_response.into_parts();
+    let set_cookie = login_parts
+        .headers
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let cookie_pair = set_cookie.split(';').next().unwrap_or_default().to_string();
+    assert!(
+        cookie_pair.starts_with("llmlb_jwt="),
+        "Set-Cookie should contain llmlb_jwt token"
+    );
+
+    let login_body = axum::body::to_bytes(login_body, usize::MAX).await.unwrap();
+    let login_data: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
+    assert!(
+        login_data["token"].as_str().unwrap_or_default() != "",
+        "Token should still be included in response"
+    );
+
+    let me_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/auth/me")
+                .header(header::COOKIE, cookie_pair)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        me_response.status(),
+        StatusCode::OK,
+        "/api/auth/me should accept JWT cookie"
     );
 }
 

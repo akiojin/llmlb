@@ -111,6 +111,50 @@ fn method_requires_csrf(method: &axum::http::Method) -> bool {
     )
 }
 
+fn expected_origin(headers: &HeaderMap) -> Option<String> {
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(header::HOST))
+        .and_then(|value| value.to_str().ok())?;
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("http");
+    Some(format!("{}://{}", proto, host))
+}
+
+fn origin_or_referer(headers: &HeaderMap) -> Option<String> {
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+    {
+        return Some(origin.to_string());
+    }
+    let referer = headers
+        .get(header::REFERER)
+        .and_then(|value| value.to_str().ok())?;
+    if let Some((scheme, rest)) = referer.split_once("://") {
+        let host = rest.split('/').next().unwrap_or_default();
+        if !host.is_empty() {
+            return Some(format!("{}://{}", scheme, host));
+        }
+    }
+    None
+}
+
+fn origin_matches(headers: &HeaderMap) -> bool {
+    let expected = match expected_origin(headers) {
+        Some(value) => value,
+        None => return false,
+    };
+    let provided = match origin_or_referer(headers) {
+        Some(value) => value,
+        None => return false,
+    };
+    provided.eq_ignore_ascii_case(&expected)
+}
+
 async fn authenticate_api_key(
     pool: &sqlx::SqlitePool,
     api_key: &str,
@@ -260,6 +304,14 @@ pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Res
 
     if csrf_cookie != csrf_header {
         return Err((StatusCode::FORBIDDEN, "Invalid CSRF token".to_string()).into_response());
+    }
+
+    if !origin_matches(request.headers()) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Origin validation failed".to_string(),
+        )
+            .into_response());
     }
 
     Ok(next.run(request).await)

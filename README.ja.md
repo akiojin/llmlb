@@ -547,6 +547,7 @@ LLM Load Balancer (OpenAI-compatible)
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
 - Cookie認証で変更系操作を行う場合は、`llmlb_csrf` Cookieの値を `X-CSRF-Token` ヘッダーで送信します。
+- Cookie認証の変更系操作では Origin/Referer が同一オリジンである必要があります。
 - `/api/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 

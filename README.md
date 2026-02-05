@@ -922,7 +922,8 @@ to `.migrated`.
 | GET | `/api/auth/me` | Get authenticated user info | JWT (HttpOnly cookie or Authorization header) |
 
 Note: When using the JWT cookie for mutating dashboard requests, include the CSRF token via
-`X-CSRF-Token` header (token is provided in `llmlb_csrf` cookie).
+`X-CSRF-Token` header (token is provided in `llmlb_csrf` cookie). Origin/Referer must match the
+dashboard origin.
 
 #### Roles & API Key Scopes
 

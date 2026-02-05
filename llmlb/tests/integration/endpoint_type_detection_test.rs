@@ -6,9 +6,12 @@
 //! （xLLM/Ollama/vLLM/OpenAI互換）を判別してほしい。
 
 use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::health::EndpointHealthChecker;
+use llmlb::registry::endpoints::EndpointRegistry;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use uuid::Uuid;
 use wiremock::{
     matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
@@ -286,11 +289,35 @@ async fn test_endpoint_type_detection_openai_compatible() {
 
 /// US6-シナリオ7: オンライン復帰時のタイプ再判別
 #[tokio::test]
-#[ignore = "T132で実装後に有効化"]
 async fn test_endpoint_type_redetection_on_online() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
+
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/health"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
 
     // 最初はオフラインでunknownタイプ
     let response = client
@@ -307,6 +334,43 @@ async fn test_endpoint_type_redetection_on_online() {
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "unknown");
 
-    // TODO: エンドポイントをオンラインにして
-    // ヘルスチェックでタイプが再判別されることを確認
+    let endpoint_id = body["id"].as_str().expect("endpoint id");
+    let endpoint_uuid = Uuid::parse_str(endpoint_id).expect("endpoint uuid");
+
+    // base_url をオンラインのモックへ更新
+    let update_response = client
+        .put(format!(
+            "http://{}/api/endpoints/{}",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("update request failed");
+
+    assert_eq!(update_response.status().as_u16(), 200);
+
+    let registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("endpoint registry init");
+    let checker = EndpointHealthChecker::new(registry);
+    let endpoint = llmlb::db::endpoints::get_endpoint(&db_pool, endpoint_uuid)
+        .await
+        .expect("get endpoint")
+        .expect("endpoint exists");
+
+    checker
+        .check_endpoint(&endpoint)
+        .await
+        .expect("health check should succeed");
+
+    let updated = llmlb::db::endpoints::get_endpoint(&db_pool, endpoint_uuid)
+        .await
+        .expect("get endpoint")
+        .expect("endpoint exists");
+    assert_eq!(updated.endpoint_type.as_str(), "openai_compatible");
 }

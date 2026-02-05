@@ -17,22 +17,6 @@ export class ApiError extends Error {
   }
 }
 
-function getToken(): string | null {
-  return localStorage.getItem('jwt_token')
-}
-
-function setToken(token: string): void {
-  localStorage.setItem('jwt_token', token)
-}
-
-function removeToken(): void {
-  localStorage.removeItem('jwt_token')
-}
-
-function isAuthenticated(): boolean {
-  return !!getToken()
-}
-
 async function fetchWithAuth<T>(
   endpoint: string,
   options: FetchOptions = {}
@@ -53,23 +37,18 @@ async function fetchWithAuth<T>(
     }
   }
 
-  const token = getToken()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   }
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
   const response = await fetch(url, {
     ...fetchOptions,
     headers,
+    credentials: 'include',
   })
 
   if (response.status === 401) {
-    removeToken()
     window.location.href = '/dashboard/login.html'
     throw new ApiError(401, 'Unauthorized')
   }
@@ -108,23 +87,18 @@ export const authApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
+      credentials: 'include',
     })
 
     if (!response.ok) {
       throw new ApiError(response.status, response.statusText)
     }
 
-    const data = await response.json()
-    setToken(data.token)
-    return data
+    return response.json()
   },
 
   logout: async () => {
-    try {
-      await fetchWithAuth('/api/auth/logout', { method: 'POST' })
-    } finally {
-      removeToken()
-    }
+    await fetchWithAuth('/api/auth/logout', { method: 'POST' })
   },
 
   me: () =>
@@ -343,15 +317,10 @@ export const dashboardApi = {
     fetchWithAuth<unknown>(`/api/dashboard/request-responses/${id}`),
 
   exportRequestResponses: async (format: 'csv' | 'json') => {
-    const token = getToken()
-    const headers: HeadersInit = {}
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
     const response = await fetch(
       `${API_BASE}/api/dashboard/request-responses/export?format=${format}`,
       {
-      headers,
+        credentials: 'include',
       }
     )
     if (!response.ok) {
@@ -479,18 +448,15 @@ export const endpointsApi = {
     },
     onChunk?: (chunk: string) => void
   ) => {
-    const token = localStorage.getItem('jwt_token')
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-    }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
     }
 
     const response = await fetch(`${API_BASE}/api/endpoints/${id}/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
+      credentials: 'include',
     })
 
     if (!response.ok) {
@@ -882,4 +848,3 @@ export const chatApi = {
 }
 
 // Export utilities
-export { getToken, setToken, removeToken, isAuthenticated }

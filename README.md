@@ -917,9 +917,9 @@ to `.migrated`.
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/auth/login` | User authentication, JWT token issuance | None |
-| POST | `/api/auth/logout` | Logout | JWT |
-| GET | `/api/auth/me` | Get authenticated user info | JWT |
+| POST | `/api/auth/login` | User authentication, JWT issuance (sets HttpOnly cookie) | None |
+| POST | `/api/auth/logout` | Logout | JWT (HttpOnly cookie or Authorization header) |
+| GET | `/api/auth/me` | Get authenticated user info | JWT (HttpOnly cookie or Authorization header) |
 
 #### Roles & API Key Scopes
 

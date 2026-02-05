@@ -6,7 +6,7 @@ use crate::common::auth::{Claims, UserRole};
 use crate::{config, AppState};
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json,
 };
@@ -68,8 +68,11 @@ pub struct MeResponse {
 /// * `500 Internal Server Error` - サーバーエラー
 pub async fn login(
     State(app_state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, Response> {
+) -> Result<impl IntoResponse, Response> {
+    let is_secure = is_request_secure(&headers);
+
     // 開発モード: admin/test で固定ログイン可能
     #[cfg(debug_assertions)]
     if request.username == "admin" && request.password == "test" {
@@ -86,15 +89,20 @@ pub async fn login(
         })?;
 
         tracing::info!("Development mode login: admin/test");
-        return Ok(Json(LoginResponse {
-            token,
-            expires_in,
-            user: UserInfo {
-                id: dev_user_id,
-                username: "admin".to_string(),
-                role: "admin".to_string(),
-            },
-        }));
+        let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
+        return Ok((
+            StatusCode::OK,
+            [(header::SET_COOKIE, cookie)],
+            Json(LoginResponse {
+                token,
+                expires_in,
+                user: UserInfo {
+                    id: dev_user_id,
+                    username: "admin".to_string(),
+                    role: "admin".to_string(),
+                },
+            }),
+        ));
     }
 
     // ユーザーを検索
@@ -137,28 +145,54 @@ pub async fn login(
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
             })?;
 
-    Ok(Json(LoginResponse {
-        token,
-        expires_in,
-        user: UserInfo {
-            id: user.id.to_string(),
-            username: user.username,
-            role: format!("{:?}", user.role).to_lowercase(),
-        },
-    }))
+    let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
+    Ok((
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie)],
+        Json(LoginResponse {
+            token,
+            expires_in,
+            user: UserInfo {
+                id: user.id.to_string(),
+                username: user.username,
+                role: format!("{:?}", user.role).to_lowercase(),
+            },
+        }),
+    ))
 }
 
 /// POST /api/auth/logout - ログアウト
 ///
 /// JWTはステートレスなのでクライアント側でトークンを破棄するだけ
-/// このエンドポイントは主にログ記録用
+/// Cookieの削除ヘッダーも返す
 ///
 /// # Returns
 /// * `204 No Content` - ログアウト成功
-pub async fn logout() -> impl IntoResponse {
-    // JWT認証はステートレスなので、サーバー側では何もしない
-    // クライアント側でトークンを破棄する
-    StatusCode::NO_CONTENT
+pub async fn logout(headers: HeaderMap) -> impl IntoResponse {
+    let is_secure = is_request_secure(&headers);
+    let cookie = crate::auth::clear_jwt_cookie(is_secure);
+    (StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)])
+}
+
+fn is_request_secure(headers: &HeaderMap) -> bool {
+    if let Some(proto) = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+    {
+        if proto.eq_ignore_ascii_case("https") {
+            return true;
+        }
+    }
+    if let Some(forwarded) = headers
+        .get("forwarded")
+        .and_then(|value| value.to_str().ok())
+    {
+        let lowered = forwarded.to_ascii_lowercase();
+        if lowered.contains("proto=https") {
+            return true;
+        }
+    }
+    false
 }
 
 /// GET /api/auth/me - 認証情報確認
@@ -340,7 +374,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_logout_returns_no_content() {
-        let response = logout().await.into_response();
+        let response = logout(HeaderMap::new()).await.into_response();
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
 

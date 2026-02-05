@@ -545,7 +545,8 @@ LLM Load Balancer (OpenAI-compatible)
 | `admin` | 管理系 API 全般（`/api/users`, `/api/api-keys`, `/api/models/*`, `/api/runtimes/*`, `/api/endpoints/*`, `/api/dashboard/*`, `/api/metrics/*`） |
 
 **補足**:
-- `/api/auth/login` は無認証、`/api/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
+- `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
+- `/api/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
 ### ロードバランサー（Load Balancer）

@@ -3,32 +3,24 @@
 //! This module provides `/ws/dashboard` endpoint that streams
 //! DashboardEvents to connected clients in real-time.
 //!
-//! Authentication is required via JWT token passed as a query parameter `token`.
+//! Authentication is required via JWT cookie.
 
 use crate::common::auth::UserRole;
 use axum::extract::ws::{Message, WebSocket};
 use axum::{
-    extract::{Query, State, WebSocketUpgrade},
-    http::StatusCode,
+    extract::{State, WebSocketUpgrade},
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
-use serde::Deserialize;
 use tracing::{debug, warn};
 
 use crate::events::SharedEventBus;
 use crate::AppState;
 
-/// Query parameters for WebSocket connection
-#[derive(Debug, Deserialize)]
-pub struct WsAuthQuery {
-    /// JWT token for authentication
-    token: Option<String>,
-}
-
 /// WebSocket upgrade handler for dashboard events
 ///
-/// Clients connect to `/ws/dashboard?token=<JWT>` to receive real-time updates about:
+/// Clients connect to `/ws/dashboard` to receive real-time updates about:
 /// - Node registration/removal
 /// - Node status changes
 /// - Metrics updates
@@ -37,19 +29,29 @@ pub struct WsAuthQuery {
 pub async fn dashboard_ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
-    Query(query): Query<WsAuthQuery>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // Check if auth is disabled
     let auth_disabled = crate::config::is_auth_disabled();
 
     if !auth_disabled {
-        // Validate JWT token from query parameter
-        let token = query.token.ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                "Missing token query parameter".to_string(),
-            )
-        })?;
+        let token = if let Some(auth_header) = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+        {
+            auth_header
+                .strip_prefix("Bearer ")
+                .ok_or_else(|| {
+                    (
+                        StatusCode::UNAUTHORIZED,
+                        "Invalid Authorization header format".to_string(),
+                    )
+                })?
+                .to_string()
+        } else {
+            crate::auth::middleware::extract_jwt_cookie(&headers)
+                .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing JWT cookie".to_string()))?
+        };
 
         let claims = crate::auth::jwt::verify_jwt(&token, &state.jwt_secret).map_err(|e| {
             warn!("WebSocket JWT verification failed: {}", e);

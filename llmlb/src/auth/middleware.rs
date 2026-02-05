@@ -4,7 +4,7 @@ use crate::common::auth::{ApiKeyScope, Claims, UserRole};
 use crate::AppState;
 use axum::{
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -69,6 +69,21 @@ fn token_looks_like_jwt(token: &str) -> bool {
         return decode_header(token).is_ok();
     }
     false
+}
+
+pub(crate) fn extract_jwt_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    for part in cookie_header.split(';') {
+        let trimmed = part.trim();
+        if let Some(value) =
+            trimmed.strip_prefix(&format!("{}=", crate::auth::DASHBOARD_JWT_COOKIE))
+        {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }
 
 async fn authenticate_api_key(
@@ -157,30 +172,34 @@ pub async fn jwt_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    // Authorizationヘッダーを取得
-    let auth_header = request
+    // AuthorizationヘッダーまたはCookieからトークンを取得
+    let token = if let Some(auth_header) = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                "Missing Authorization header".to_string(),
-            )
-                .into_response()
-        })?;
-
-    // "Bearer {token}" から token を抽出
-    let token = auth_header.strip_prefix("Bearer ").ok_or_else(|| {
-        (
+    {
+        auth_header
+            .strip_prefix("Bearer ")
+            .ok_or_else(|| {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    "Invalid Authorization header format".to_string(),
+                )
+                    .into_response()
+            })?
+            .to_string()
+    } else if let Some(cookie_token) = extract_jwt_cookie(request.headers()) {
+        cookie_token
+    } else {
+        return Err((
             StatusCode::UNAUTHORIZED,
-            "Invalid Authorization header format".to_string(),
+            "Missing Authorization header or JWT cookie".to_string(),
         )
-            .into_response()
-    })?;
+            .into_response());
+    };
 
     // JWTを検証
-    let claims = crate::auth::jwt::verify_jwt(token, &jwt_secret).map_err(|e| {
+    let claims = crate::auth::jwt::verify_jwt(&token, &jwt_secret).map_err(|e| {
         tracing::warn!("JWT verification failed: {}", e);
         (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
     })?;

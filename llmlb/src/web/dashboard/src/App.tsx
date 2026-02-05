@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { isAuthenticated } from '@/lib/api'
 import Dashboard from '@/pages/Dashboard'
 import EndpointPlayground from '@/pages/EndpointPlayground'
 
@@ -20,7 +19,7 @@ function parseHash(): Route {
 }
 
 function App() {
-  const { isLoading } = useAuth()
+  const { isLoading, isLoggedIn } = useAuth()
   const [route, setRoute] = useState<Route>(parseHash)
 
   const navigateToDashboard = useCallback(() => {
@@ -38,10 +37,10 @@ function App() {
 
   useEffect(() => {
     // Redirect to login if not authenticated
-    if (!isLoading && !isAuthenticated()) {
+    if (!isLoading && !isLoggedIn) {
       window.location.href = '/dashboard/login.html'
     }
-  }, [isLoading])
+  }, [isLoading, isLoggedIn])
 
   if (isLoading) {
     return (

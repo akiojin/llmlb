@@ -86,6 +86,31 @@ pub(crate) fn extract_jwt_cookie(headers: &HeaderMap) -> Option<String> {
     None
 }
 
+pub(crate) fn extract_csrf_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    for part in cookie_header.split(';') {
+        let trimmed = part.trim();
+        if let Some(value) =
+            trimmed.strip_prefix(&format!("{}=", crate::auth::DASHBOARD_CSRF_COOKIE))
+        {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn method_requires_csrf(method: &axum::http::Method) -> bool {
+    matches!(
+        *method,
+        axum::http::Method::POST
+            | axum::http::Method::PUT
+            | axum::http::Method::PATCH
+            | axum::http::Method::DELETE
+    )
+}
+
 async fn authenticate_api_key(
     pool: &sqlx::SqlitePool,
     api_key: &str,
@@ -208,6 +233,35 @@ pub async fn jwt_auth_middleware(
     request.extensions_mut().insert(claims);
 
     // 次のミドルウェア/ハンドラーに進む
+    Ok(next.run(request).await)
+}
+
+/// CookieベースのJWT認証時にCSRFトークンを要求するミドルウェア
+pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Response, Response> {
+    if !method_requires_csrf(request.method()) {
+        return Ok(next.run(request).await);
+    }
+
+    // Authorizationヘッダーがある場合はCSRF対象外（APIクライアント向け）
+    if request.headers().contains_key(header::AUTHORIZATION) {
+        return Ok(next.run(request).await);
+    }
+
+    let csrf_cookie = extract_csrf_cookie(request.headers()).ok_or_else(|| {
+        (StatusCode::FORBIDDEN, "Missing CSRF cookie".to_string()).into_response()
+    })?;
+    let csrf_header = request
+        .headers()
+        .get("x-csrf-token")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| {
+            (StatusCode::FORBIDDEN, "Missing CSRF header".to_string()).into_response()
+        })?;
+
+    if csrf_cookie != csrf_header {
+        return Err((StatusCode::FORBIDDEN, "Invalid CSRF token".to_string()).into_response());
+    }
+
     Ok(next.run(request).await)
 }
 

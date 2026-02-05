@@ -90,9 +90,17 @@ pub async fn login(
 
         tracing::info!("Development mode login: admin/test");
         let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
+        let csrf_cookie = crate::auth::build_csrf_cookie(
+            &crate::auth::generate_random_token(32),
+            expires_in,
+            is_secure,
+        );
+        let mut headers = HeaderMap::new();
+        headers.append(header::SET_COOKIE, cookie.parse().unwrap());
+        headers.append(header::SET_COOKIE, csrf_cookie.parse().unwrap());
         return Ok((
             StatusCode::OK,
-            [(header::SET_COOKIE, cookie)],
+            headers,
             Json(LoginResponse {
                 token,
                 expires_in,
@@ -146,9 +154,17 @@ pub async fn login(
             })?;
 
     let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
+    let csrf_cookie = crate::auth::build_csrf_cookie(
+        &crate::auth::generate_random_token(32),
+        expires_in,
+        is_secure,
+    );
+    let mut headers = HeaderMap::new();
+    headers.append(header::SET_COOKIE, cookie.parse().unwrap());
+    headers.append(header::SET_COOKIE, csrf_cookie.parse().unwrap());
     Ok((
         StatusCode::OK,
-        [(header::SET_COOKIE, cookie)],
+        headers,
         Json(LoginResponse {
             token,
             expires_in,
@@ -171,7 +187,11 @@ pub async fn login(
 pub async fn logout(headers: HeaderMap) -> impl IntoResponse {
     let is_secure = is_request_secure(&headers);
     let cookie = crate::auth::clear_jwt_cookie(is_secure);
-    (StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)])
+    let csrf_cookie = crate::auth::clear_csrf_cookie(is_secure);
+    let mut response_headers = HeaderMap::new();
+    response_headers.append(header::SET_COOKIE, cookie.parse().unwrap());
+    response_headers.append(header::SET_COOKIE, csrf_cookie.parse().unwrap());
+    (StatusCode::NO_CONTENT, response_headers)
 }
 
 fn is_request_secure(headers: &HeaderMap) -> bool {

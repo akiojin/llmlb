@@ -70,10 +70,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        auth_routes.layer(middleware::from_fn_with_state(
-            state.jwt_secret.clone(),
-            crate::auth::middleware::jwt_auth_middleware,
-        ))
+        auth_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
+            ))
     };
 
     // 管理者API（JWTまたはadminスコープAPIキー）
@@ -146,10 +150,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        admin_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::admin_or_api_key_middleware,
-        ))
+        admin_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::auth::middleware::admin_or_api_key_middleware,
+            ))
     };
 
     // エンドポイント管理API（SPEC-66555000）
@@ -190,10 +198,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        endpoint_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::authenticated_middleware,
-        ))
+        endpoint_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::auth::middleware::authenticated_middleware,
+            ))
     };
 
     // Playground用プロキシ（JWT認証のみ、APIキー不可）
@@ -209,10 +221,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        playground_proxy_routes.layer(middleware::from_fn_with_state(
-            state.jwt_secret.clone(),
-            crate::auth::middleware::jwt_auth_middleware,
-        ))
+        playground_proxy_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
+            ))
     };
 
     // モデル配布レジストリ（Runtimeスコープが必要）

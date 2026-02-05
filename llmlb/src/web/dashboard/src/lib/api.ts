@@ -42,6 +42,14 @@ async function fetchWithAuth<T>(
     ...(options.headers as Record<string, string>),
   }
 
+  const method = (fetchOptions.method || 'GET').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD') {
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken
+    }
+  }
+
   const response = await fetch(url, {
     ...fetchOptions,
     headers,
@@ -65,6 +73,11 @@ async function fetchWithAuth<T>(
   }
 
   return JSON.parse(text)
+}
+
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(?:^|; )llmlb_csrf=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : null
 }
 
 // Auth API
@@ -450,6 +463,10 @@ export const endpointsApi = {
   ) => {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
+    }
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken
     }
 
     const response = await fetch(`${API_BASE}/api/endpoints/${id}/chat/completions`, {

@@ -921,6 +921,9 @@ to `.migrated`.
 | POST | `/api/auth/logout` | Logout | JWT (HttpOnly cookie or Authorization header) |
 | GET | `/api/auth/me` | Get authenticated user info | JWT (HttpOnly cookie or Authorization header) |
 
+Note: When using the JWT cookie for mutating dashboard requests, include the CSRF token via
+`X-CSRF-Token` header (token is provided in `llmlb_csrf` cookie).
+
 #### Roles & API Key Scopes
 
 **User roles (JWT):**

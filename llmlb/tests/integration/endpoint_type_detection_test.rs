@@ -78,6 +78,7 @@ async fn test_endpoint_type_auto_detection_offline() {
         body["endpoint_type"], "unknown",
         "Offline endpoint should have unknown type"
     );
+    assert_eq!(body["endpoint_type_source"], "auto");
 }
 
 /// US6-シナリオ2: 判別の優先順位（xLLM > Ollama > vLLM > OpenAI互換）
@@ -133,6 +134,12 @@ async fn test_endpoint_type_detection_priority() {
         body["endpoint_type"], "xllm",
         "xLLM should win priority over other detections"
     );
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("xLLM"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ3: xLLM判別（/api/systemエンドポイント）
@@ -164,6 +171,12 @@ async fn test_endpoint_type_detection_xllm() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "xllm");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("xLLM"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ4: Ollama判別（/api/tagsエンドポイント）
@@ -200,6 +213,12 @@ async fn test_endpoint_type_detection_ollama() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "ollama");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Ollama"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ5: vLLM判別（Serverヘッダー）
@@ -243,6 +262,12 @@ async fn test_endpoint_type_detection_vllm() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "vllm");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("vLLM"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ6: OpenAI互換判別（フォールバック）
@@ -285,6 +310,12 @@ async fn test_endpoint_type_detection_openai_compatible() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "openai_compatible");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("OpenAI"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ7: オンライン復帰時のタイプ再判別
@@ -333,6 +364,7 @@ async fn test_endpoint_type_redetection_on_online() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "unknown");
+    assert_eq!(body["endpoint_type_source"], "auto");
 
     let endpoint_id = body["id"].as_str().expect("endpoint id");
     let endpoint_uuid = Uuid::parse_str(endpoint_id).expect("endpoint uuid");
@@ -373,4 +405,11 @@ async fn test_endpoint_type_redetection_on_online() {
         .expect("get endpoint")
         .expect("endpoint exists");
     assert_eq!(updated.endpoint_type.as_str(), "openai_compatible");
+    assert_eq!(updated.endpoint_type_source.as_str(), "auto");
+    assert!(updated
+        .endpoint_type_reason
+        .as_deref()
+        .unwrap_or("")
+        .contains("OpenAI"));
+    assert!(updated.endpoint_type_detected_at.is_some());
 }

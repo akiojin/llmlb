@@ -52,7 +52,8 @@ async fn test_manual_type_on_registration() {
         .json(&json!({
             "name": "Manual xLLM",
             "base_url": "http://localhost:8080",
-            "endpoint_type": "xllm"  // 手動指定
+            "endpoint_type": "xllm",  // 手動指定
+            "endpoint_type_reason": "manual for testing"
         }))
         .send()
         .await
@@ -67,6 +68,9 @@ async fn test_manual_type_on_registration() {
         body["endpoint_type"], "xllm",
         "Manual type should be applied"
     );
+    assert_eq!(body["endpoint_type_source"], "manual");
+    assert_eq!(body["endpoint_type_reason"], "manual for testing");
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US11-シナリオ2: 既存エンドポイントのタイプを手動変更（PUT）
@@ -102,7 +106,8 @@ async fn test_manual_type_update() {
         .json(&json!({
             "name": "Test Endpoint",
             "base_url": "http://localhost:9999",
-            "endpoint_type": "xllm"
+            "endpoint_type": "xllm",
+            "endpoint_type_reason": "override during update"
         }))
         .send()
         .await
@@ -127,6 +132,9 @@ async fn test_manual_type_update() {
         detail["endpoint_type"], "xllm",
         "Type should be updated to xllm"
     );
+    assert_eq!(detail["endpoint_type_source"], "manual");
+    assert_eq!(detail["endpoint_type_reason"], "override during update");
+    assert!(detail["endpoint_type_detected_at"].is_string());
 }
 
 /// US11-シナリオ3: 手動指定は自動判別より優先される
@@ -158,6 +166,9 @@ async fn test_manual_type_overrides_auto_detection() {
         body["endpoint_type"], "xllm",
         "Manual type should override auto-detection"
     );
+    assert_eq!(body["endpoint_type_source"], "manual");
+    assert!(body["endpoint_type_reason"].is_string());
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US11-シナリオ4: 不正なタイプ指定はエラー

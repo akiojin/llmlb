@@ -9,8 +9,6 @@ use reqwest::Client;
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::types::endpoint::EndpointType;
-
 /// xLLM system info response
 #[derive(Debug, Deserialize)]
 struct XllmSystemInfo {
@@ -24,13 +22,9 @@ struct XllmSystemInfo {
 
 /// Detect xLLM endpoint by querying GET /api/system
 ///
-/// Returns `Some(EndpointType::Xllm)` if the endpoint responds with
+/// Returns a reason string if the endpoint responds with
 /// a JSON object containing `xllm_version` field.
-pub async fn detect_xllm(
-    client: &Client,
-    base_url: &str,
-    api_key: Option<&str>,
-) -> Option<EndpointType> {
+pub async fn detect_xllm(client: &Client, base_url: &str, api_key: Option<&str>) -> Option<String> {
     let url = format!("{}/api/system", base_url);
 
     let mut request = client.get(&url);
@@ -42,12 +36,12 @@ pub async fn detect_xllm(
         Ok(response) if response.status().is_success() => {
             match response.json::<XllmSystemInfo>().await {
                 Ok(info) => {
-                    if info.xllm_version.is_some() {
+                    if let Some(version) = info.xllm_version {
                         debug!(
-                            version = ?info.xllm_version,
+                            version = ?version,
                             "Detected xLLM endpoint"
                         );
-                        return Some(EndpointType::Xllm);
+                        return Some(format!("xLLM: /api/system xllm_version={}", version));
                     }
                     None
                 }

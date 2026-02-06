@@ -279,15 +279,30 @@ impl EndpointRegistry {
         &self,
         id: Uuid,
         endpoint_type: EndpointType,
+        endpoint_type_source: crate::types::endpoint::EndpointTypeSource,
+        endpoint_type_reason: Option<String>,
+        endpoint_type_detected_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<bool, sqlx::Error> {
         // DBを更新
-        let updated = db::update_endpoint_type(&self.pool, id, endpoint_type).await?;
+        let detected_at = endpoint_type_detected_at.map(|dt| dt.to_rfc3339());
+        let updated = db::update_endpoint_type(
+            &self.pool,
+            id,
+            endpoint_type,
+            endpoint_type_source,
+            endpoint_type_reason.as_deref(),
+            detected_at,
+        )
+        .await?;
 
         if updated {
             // キャッシュを更新
             let mut endpoints = self.endpoints.write().await;
             if let Some(endpoint) = endpoints.get_mut(&id) {
                 endpoint.endpoint_type = endpoint_type;
+                endpoint.endpoint_type_source = endpoint_type_source;
+                endpoint.endpoint_type_reason = endpoint_type_reason;
+                endpoint.endpoint_type_detected_at = endpoint_type_detected_at;
             }
         }
 

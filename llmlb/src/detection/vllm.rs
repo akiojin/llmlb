@@ -8,17 +8,11 @@
 use reqwest::Client;
 use tracing::debug;
 
-use crate::types::endpoint::EndpointType;
-
 /// Detect vLLM endpoint by checking Server header
 ///
-/// Returns `Some(EndpointType::Vllm)` if the endpoint returns
+/// Returns a reason string if the endpoint returns
 /// a Server header containing "vllm" (case-insensitive).
-pub async fn detect_vllm(
-    client: &Client,
-    base_url: &str,
-    api_key: Option<&str>,
-) -> Option<EndpointType> {
+pub async fn detect_vllm(client: &Client, base_url: &str, api_key: Option<&str>) -> Option<String> {
     // Try /v1/models endpoint first
     let url = format!("{}/v1/models", base_url);
 
@@ -38,7 +32,10 @@ pub async fn detect_vllm(
                             server_header = %server_str,
                             "Detected vLLM endpoint via Server header"
                         );
-                        return Some(EndpointType::Vllm);
+                        return Some(format!(
+                            "vLLM: Server header contains vllm ({})",
+                            server_str
+                        ));
                     }
                 }
             }
@@ -58,7 +55,9 @@ pub async fn detect_vllm(
                                         .unwrap_or(false)
                                     {
                                         debug!("Detected vLLM endpoint via owned_by field");
-                                        return Some(EndpointType::Vllm);
+                                        return Some(
+                                            "vLLM: owned_by field contains vllm".to_string(),
+                                        );
                                     }
                                 }
                             }

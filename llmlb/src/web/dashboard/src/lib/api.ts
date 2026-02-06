@@ -168,6 +168,7 @@ export interface SyncProgress {
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 export type EndpointType = 'xllm' | 'ollama' | 'vllm' | 'openai_compatible' | 'unknown'
+export type EndpointTypeSource = 'auto' | 'manual'
 
 export interface DashboardEndpoint {
   id: string
@@ -175,6 +176,9 @@ export interface DashboardEndpoint {
   base_url: string
   status: 'pending' | 'online' | 'offline' | 'error'
   endpoint_type: EndpointType
+  endpoint_type_source: EndpointTypeSource
+  endpoint_type_reason?: string
+  endpoint_type_detected_at?: string
   health_check_interval_secs: number
   inference_timeout_secs: number
   latency_ms?: number

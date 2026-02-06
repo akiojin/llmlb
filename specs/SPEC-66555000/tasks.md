@@ -319,6 +319,28 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 - [x] T130 `llmlb/src/metadata/ollama.rs` にOllamaメタデータ取得実装（POST /api/show → parameters.num_ctx）
 - [ ] T130a メタデータ取得の返却形式（max_tokens/context_length）を統一し、APIレスポンスに反映
 
+---
+
+## 追加要件（2026-02-06）: タイプ判定メタデータの説明責任
+
+### Phase 4.4: テストファースト (TDD)
+
+- [ ] T140 [P] `llmlb/tests/integration/endpoint_type_detection_test.rs` に判定メタデータ（source/reason/detected_at）の検証を追加
+- [ ] T141 [P] `llmlb/tests/integration/endpoint_type_manual_override_test.rs` に手動上書き時のsource/reason/detected_at検証を追加
+- [ ] T142 [P] `llmlb/tests/integration/endpoint_type_detection_test.rs` に再判別時のメタデータ更新検証を追加
+
+### Phase 4.5: 実装
+
+- [ ] T143 `llmlb/migrations/` に `YYYYMMDDHHMMSS_add_endpoint_type_metadata.sql` を追加（source/reason/detected_at）
+- [ ] T144 `llmlb/src/types/endpoint.rs` に EndpointTypeSource とメタデータフィールドを追加
+- [ ] T145 `llmlb/src/detection/` に判定理由を返すAPIを追加（タイプと理由の組）
+- [ ] T146 `llmlb/src/db/endpoints.rs` に判定メタデータ列のCRUD対応追加
+- [ ] T147 `llmlb/src/registry/endpoints.rs` に判定メタデータ更新処理を追加
+- [ ] T148 `llmlb/src/api/endpoints.rs` のCreate/Update/Responseにメタデータを追加
+- [ ] T149 `llmlb/src/health/endpoint_checker.rs` の再判別でメタデータを更新
+- [ ] T150 `llmlb/src/web/dashboard/src/lib/api.ts` にメタデータ型を追加
+- [ ] T151 `llmlb/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` と `EndpointDetailModal.tsx` に判定メタデータ表示を追加
+
 ### Phase 4.4: 統合
 
 #### 登録フロー統合

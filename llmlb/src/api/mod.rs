@@ -80,7 +80,7 @@ pub fn create_app(state: AppState) -> Router {
     let admin_routes = Router::new()
         .route("/users", get(users::list_users).post(users::create_user))
         .route(
-            "/users/:id",
+            "/users/{id}",
             put(users::update_user).delete(users::delete_user),
         )
         .route(
@@ -88,14 +88,14 @@ pub fn create_app(state: AppState) -> Router {
             get(api_keys::list_api_keys).post(api_keys::create_api_key),
         )
         .route(
-            "/api-keys/:id",
+            "/api-keys/{id}",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         )
         .route(
             "/invitations",
             get(invitations::list_invitations).post(invitations::create_invitation),
         )
-        .route("/invitations/:id", delete(invitations::revoke_invitation))
+        .route("/invitations/{id}", delete(invitations::revoke_invitation))
         // ダッシュボードAPI
         // NOTE: /dashboard/nodes は廃止済み、/dashboard/endpoints を使用
         .route(
@@ -113,7 +113,7 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route("/dashboard/overview", get(dashboard::get_overview))
         .route(
-            "/dashboard/metrics/:node_id",
+            "/dashboard/metrics/{node_id}",
             get(dashboard::get_node_metrics),
         )
         .route(
@@ -121,7 +121,7 @@ pub fn create_app(state: AppState) -> Router {
             get(dashboard::list_request_responses),
         )
         .route(
-            "/dashboard/request-responses/:id",
+            "/dashboard/request-responses/{id}",
             get(dashboard::get_request_response_detail),
         )
         .route(
@@ -140,10 +140,10 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route("/dashboard/logs/lb", get(logs::get_lb_logs))
         // ノードログ取得（lb→node proxy）
-        .route("/nodes/:node_id/logs", get(logs::get_node_logs))
+        .route("/nodes/{node_id}/logs", get(logs::get_node_logs))
         // モデル管理API (Admin のみ: register/delete)
         .route("/models/register", post(models::register_model))
-        .route("/models/*model_name", delete(models::delete_model))
+        .route("/models/{*model_name}", delete(models::delete_model))
         // Prometheus metrics（cloud prefix含む独自メトリクス）
         .route("/metrics/cloud", get(cloud_metrics::export_metrics));
 
@@ -168,26 +168,26 @@ pub fn create_app(state: AppState) -> Router {
             get(endpoints::list_endpoints).post(endpoints::create_endpoint),
         )
         .route(
-            "/endpoints/:id",
+            "/endpoints/{id}",
             get(endpoints::get_endpoint)
                 .put(endpoints::update_endpoint)
                 .delete(endpoints::delete_endpoint),
         )
-        .route("/endpoints/:id/test", post(endpoints::test_endpoint))
-        .route("/endpoints/:id/sync", post(endpoints::sync_endpoint_models))
+        .route("/endpoints/{id}/test", post(endpoints::test_endpoint))
+        .route("/endpoints/{id}/sync", post(endpoints::sync_endpoint_models))
         .route(
-            "/endpoints/:id/models",
+            "/endpoints/{id}/models",
             get(endpoints::list_endpoint_models),
         )
         // SPEC-66555000: ダウンロードAPI
-        .route("/endpoints/:id/download", post(endpoints::download_model))
+        .route("/endpoints/{id}/download", post(endpoints::download_model))
         .route(
-            "/endpoints/:id/download/progress",
+            "/endpoints/{id}/download/progress",
             get(endpoints::download_progress),
         )
         // SPEC-66555000: モデルメタデータAPI
         .route(
-            "/endpoints/:id/models/:model/info",
+            "/endpoints/{id}/models/{model}/info",
             get(endpoints::get_model_info),
         );
 
@@ -206,7 +206,7 @@ pub fn create_app(state: AppState) -> Router {
     // Playground用プロキシ（JWT認証のみ、APIキー不可）
     // ダッシュボードにログインしているユーザーのみがエンドポイントに直接リクエストを転送できる
     let playground_proxy_routes = Router::new().route(
-        "/endpoints/:id/chat/completions",
+        "/endpoints/{id}/chat/completions",
         post(endpoints::proxy_chat_completions),
     );
 
@@ -228,7 +228,7 @@ pub fn create_app(state: AppState) -> Router {
     let model_registry_routes = Router::new()
         // モデル配布レジストリ（複数ファイル: safetensors 等）
         .route(
-            "/models/registry/:model_name/manifest.json",
+            "/models/registry/{model_name}/manifest.json",
             get(models::get_model_registry_manifest),
         );
 
@@ -300,7 +300,7 @@ pub fn create_app(state: AppState) -> Router {
     // SPEC-66555000: ノードトークン認証は廃止されました
     let models_routes = Router::new()
         .route("/v1/models", get(openai::list_models))
-        .route("/v1/models/:model_id", get(openai::get_model));
+        .route("/v1/models/{model_id}", get(openai::get_model));
 
     let models_protected_routes = if auth_disabled {
         models_routes
@@ -334,14 +334,24 @@ pub fn create_app(state: AppState) -> Router {
         .merge(model_registry_routes)
         .merge(models_list_routes)
         // デバッグ用テストエンドポイント
-        .merge(test_routes);
+        .merge(test_routes)
+        .layer(middleware::from_fn(
+            crate::auth::middleware::internal_token_middleware,
+        ));
 
     let dashboard_routes = Router::new()
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
-        .route("/dashboard/*path", get(serve_dashboard_asset));
+        .route("/dashboard/{*path}", get(serve_dashboard_asset))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::internal_token_middleware,
+        ));
 
-    let ws_routes = Router::new().route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler));
+    let ws_routes = Router::new()
+        .route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::internal_token_middleware,
+        ));
 
     Router::new()
         // `/api/*`: llmlb独自API（互換不要・versioned）

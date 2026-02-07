@@ -47,7 +47,7 @@ base64 = "0.22"
 # 認証機能
 sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
 bcrypt = "0.18"
-jsonwebtoken = "10.3"
+jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 sha2 = "0.10"
 rand = "0.9"
 rpassword = "7.3"

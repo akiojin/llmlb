@@ -1098,6 +1098,11 @@ pub async fn test_endpoint(
                     Some(&error_msg),
                 )
                 .await;
+                // ダッシュボードはEndpointRegistryキャッシュを参照するため、失敗時もキャッシュを更新する。
+                let _ = state
+                    .endpoint_registry
+                    .update_status(id, EndpointStatus::Error, None, Some(&error_msg))
+                    .await;
 
                 (
                     StatusCode::OK,
@@ -1122,6 +1127,11 @@ pub async fn test_endpoint(
                 Some(&error_msg),
             )
             .await;
+            // ダッシュボードはEndpointRegistryキャッシュを参照するため、失敗時もキャッシュを更新する。
+            let _ = state
+                .endpoint_registry
+                .update_status(id, EndpointStatus::Error, None, Some(&error_msg))
+                .await;
 
             (
                 StatusCode::OK,

@@ -232,12 +232,13 @@ impl EndpointRegistry {
             if let Some(endpoint) = endpoints.get_mut(&id) {
                 endpoint.status = status;
                 endpoint.latency_ms = latency_ms;
-                if error.is_some() {
-                    endpoint.last_error = error.map(String::from);
-                    endpoint.error_count += 1;
+                // DBと同様に、last_error は成功時にクリアし、error_count は status=error のときのみ加算する。
+                endpoint.last_error = error.map(String::from);
+                endpoint.error_count = if status == EndpointStatus::Error {
+                    endpoint.error_count.saturating_add(1)
                 } else {
-                    endpoint.error_count = 0;
-                }
+                    0
+                };
                 endpoint.last_seen = Some(chrono::Utc::now());
             }
         }

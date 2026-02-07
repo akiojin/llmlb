@@ -179,11 +179,11 @@ curl -X POST http://localhost:32768/api/endpoints \
 
 # エンドポイント一覧
 curl http://localhost:32768/api/endpoints \
-  -H "Authorization: Bearer sk_your_api_key"
+  -H "X-API-Key: sk_admin_scope_key"
 
 # モデル同期
 curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
-  -H "Authorization: Bearer sk_your_api_key"
+  -H "X-API-Key: sk_admin_scope_key"
 ```
 
 ### ステータス遷移
@@ -199,7 +199,7 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 
 LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Load Balancer と連携できます。
 
-MCP ????? npm/npx ??????????????????????? pnpm ??????
+MCP サーバーは npm/npx で配布しています。pnpm は本リポジトリの lint ツール用で、利用者側の必須要件ではありません。
 
 ### インストール
 
@@ -220,7 +220,8 @@ npx @llmlb/mcp-server
       "args": ["-y", "@llmlb/mcp-server"],
       "env": {
         "LLMLB_URL": "http://localhost:32768",
-        "LLMLB_API_KEY": "sk_your_api_key"
+        "LLMLB_API_KEY": "sk_api_scope_key",
+        "LLMLB_ADMIN_API_KEY": "sk_admin_scope_key"
       }
     }
   }

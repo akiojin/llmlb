@@ -485,14 +485,15 @@ async fn test_api_key_mutation_does_not_require_csrf() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/api-keys")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .header("x-api-key", "sk_debug_admin")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
-                        "name": "test-key",
-                        "expires_at": null,
-                        "scopes": ["admin"],
+                        "name": "test-endpoint",
+                        "base_url": "http://127.0.0.1:9",
+                        "endpoint_type": "unknown",
+                        "inference_timeout_secs": 1,
                     }))
                     .unwrap(),
                 ))

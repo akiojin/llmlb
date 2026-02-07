@@ -174,7 +174,10 @@ pub fn create_app(state: AppState) -> Router {
                 .delete(endpoints::delete_endpoint),
         )
         .route("/endpoints/{id}/test", post(endpoints::test_endpoint))
-        .route("/endpoints/{id}/sync", post(endpoints::sync_endpoint_models))
+        .route(
+            "/endpoints/{id}/sync",
+            post(endpoints::sync_endpoint_models),
+        )
         .route(
             "/endpoints/{id}/models",
             get(endpoints::list_endpoint_models),

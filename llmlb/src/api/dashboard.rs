@@ -4,7 +4,11 @@
 //! システム統計を返却する。
 
 use super::error::AppError;
-use crate::common::types::HealthMetrics;
+use crate::common::{
+    error::{CommonError, LbError},
+    types::HealthMetrics,
+};
+use crate::db::request_history::{FilterStatus, RecordFilter};
 use crate::{balancer::RequestHistoryPoint, types::endpoint::EndpointStatus, AppState};
 use axum::{
     body::Body,
@@ -347,6 +351,33 @@ async fn collect_history(state: &AppState) -> Vec<RequestHistoryPoint> {
     state.load_manager.request_history().await
 }
 
+async fn load_filtered_records(
+    state: &AppState,
+    filter: &RecordFilter,
+) -> Result<Vec<crate::common::protocol::RequestResponseRecord>, AppError> {
+    let initial = state
+        .request_history
+        .filter_and_paginate(filter, 1, DEFAULT_PAGE_SIZE)
+        .await
+        .map_err(AppError::from)?;
+
+    if initial.total_count == 0 {
+        return Ok(vec![]);
+    }
+
+    if initial.total_count <= initial.records.len() {
+        return Ok(initial.records);
+    }
+
+    let all = state
+        .request_history
+        .filter_and_paginate(filter, 1, initial.total_count)
+        .await
+        .map_err(AppError::from)?;
+
+    Ok(all.records)
+}
+
 /// 許可されたページサイズ
 pub const ALLOWED_PAGE_SIZES: &[usize] = &[10, 25, 50, 100];
 
@@ -362,6 +393,23 @@ pub struct RequestHistoryQuery {
     /// 1ページあたりの件数（10, 25, 50, 100のいずれか）
     #[serde(default = "default_per_page")]
     pub per_page: usize,
+    /// 1ページあたりの件数（互換: limit）
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// オフセット（互換: offset）
+    #[serde(default)]
+    pub offset: Option<usize>,
+    /// モデル名フィルタ（部分一致）
+    pub model: Option<String>,
+    /// ノードIDフィルタ
+    #[serde(alias = "agent_id")]
+    pub node_id: Option<Uuid>,
+    /// ステータスフィルタ
+    pub status: Option<FilterStatus>,
+    /// 開始時刻フィルタ（RFC3339）
+    pub start_time: Option<DateTime<Utc>>,
+    /// 終了時刻フィルタ（RFC3339）
+    pub end_time: Option<DateTime<Utc>>,
 }
 
 fn default_page() -> usize {
@@ -381,6 +429,74 @@ impl RequestHistoryQuery {
             DEFAULT_PAGE_SIZE
         }
     }
+
+    fn to_record_filter(&self) -> Result<RecordFilter, AppError> {
+        if let (Some(start), Some(end)) = (&self.start_time, &self.end_time) {
+            if start > end {
+                return Err(AppError(LbError::Common(CommonError::Validation(
+                    "start_time must be <= end_time".to_string(),
+                ))));
+            }
+        }
+
+        Ok(RecordFilter {
+            model: self.model.clone(),
+            node_id: self.node_id,
+            status: self.status,
+            start_time: self.start_time,
+            end_time: self.end_time,
+        })
+    }
+}
+
+/// エクスポート形式
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestHistoryExportFormat {
+    /// CSV形式
+    #[default]
+    Csv,
+    /// JSON形式
+    Json,
+}
+
+/// リクエスト履歴エクスポート用のクエリパラメータ
+#[derive(Debug, Clone, Deserialize)]
+pub struct RequestHistoryExportQuery {
+    /// エクスポート形式（csv/json）
+    #[serde(default)]
+    pub format: RequestHistoryExportFormat,
+    /// モデル名フィルタ（部分一致）
+    pub model: Option<String>,
+    /// ノードIDフィルタ
+    #[serde(alias = "agent_id")]
+    pub node_id: Option<Uuid>,
+    /// ステータスフィルタ
+    pub status: Option<FilterStatus>,
+    /// 開始時刻フィルタ（RFC3339）
+    pub start_time: Option<DateTime<Utc>>,
+    /// 終了時刻フィルタ（RFC3339）
+    pub end_time: Option<DateTime<Utc>>,
+}
+
+impl RequestHistoryExportQuery {
+    fn to_record_filter(&self) -> Result<RecordFilter, AppError> {
+        if let (Some(start), Some(end)) = (&self.start_time, &self.end_time) {
+            if start > end {
+                return Err(AppError(LbError::Common(CommonError::Validation(
+                    "start_time must be <= end_time".to_string(),
+                ))));
+            }
+        }
+
+        Ok(RecordFilter {
+            model: self.model.clone(),
+            node_id: self.node_id,
+            status: self.status,
+            start_time: self.start_time,
+            end_time: self.end_time,
+        })
+    }
 }
 
 /// T023: リクエスト履歴一覧API
@@ -388,9 +504,24 @@ pub async fn list_request_responses(
     State(state): State<AppState>,
     Query(query): Query<RequestHistoryQuery>,
 ) -> Result<Json<crate::db::request_history::FilteredRecords>, AppError> {
-    let filter = crate::db::request_history::RecordFilter::default();
-    let page = if query.page == 0 { 1 } else { query.page };
-    let per_page = query.normalized_per_page();
+    let filter = query.to_record_filter()?;
+    let mut page = if query.page == 0 { 1 } else { query.page };
+    let mut per_page = query.normalized_per_page();
+
+    if let Some(limit) = query.limit {
+        per_page = if ALLOWED_PAGE_SIZES.contains(&limit) {
+            limit
+        } else {
+            DEFAULT_PAGE_SIZE
+        };
+    }
+
+    if let Some(offset) = query.offset {
+        if per_page == 0 {
+            per_page = DEFAULT_PAGE_SIZE;
+        }
+        page = offset / per_page + 1;
+    }
     let result = state
         .request_history
         .filter_and_paginate(&filter, page, per_page)
@@ -410,78 +541,96 @@ pub async fn get_request_response_detail(
         .await
         .map_err(AppError::from)?;
     let record = records.into_iter().find(|r| r.id == id).ok_or_else(|| {
-        crate::common::error::LbError::Database(format!("Record {} not found", id))
+        crate::common::error::LbError::NotFound(format!("Record {} not found", id))
     })?;
     Ok(Json(record))
 }
 
 /// T025: エクスポートAPI
-pub async fn export_request_responses(State(state): State<AppState>) -> Result<Response, AppError> {
-    let records = state
-        .request_history
-        .load_records()
-        .await
-        .map_err(AppError::from)?;
+pub async fn export_request_responses(
+    State(state): State<AppState>,
+    Query(query): Query<RequestHistoryExportQuery>,
+) -> Result<Response, AppError> {
+    let filter = query.to_record_filter()?;
+    let records = load_filtered_records(&state, &filter).await?;
 
-    // CSV形式でエクスポート
-    let mut wtr = csv::Writer::from_writer(vec![]);
-    wtr.write_record([
-        "id",
-        "timestamp",
-        "request_type",
-        "model",
-        "runtime_id",
-        "runtime_machine_name",
-        "runtime_ip",
-        "client_ip",
-        "duration_ms",
-        "status",
-        "completed_at",
-    ])
-    .map_err(|e| crate::common::error::LbError::Internal(format!("CSV header error: {}", e)))?;
+    match query.format {
+        RequestHistoryExportFormat::Json => {
+            let json_bytes = serde_json::to_vec(&records)
+                .map_err(|e| AppError(LbError::Internal(format!("JSON serialize error: {}", e))))?;
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .header(
+                    "Content-Disposition",
+                    "attachment; filename=\"request_history.json\"",
+                )
+                .body(Body::from(json_bytes))
+                .unwrap();
+            Ok(response)
+        }
+        RequestHistoryExportFormat::Csv => {
+            // CSV形式でエクスポート
+            let mut wtr = csv::Writer::from_writer(vec![]);
+            wtr.write_record([
+                "id",
+                "timestamp",
+                "request_type",
+                "model",
+                "runtime_id",
+                "runtime_machine_name",
+                "runtime_ip",
+                "client_ip",
+                "duration_ms",
+                "status",
+                "completed_at",
+            ])
+            .map_err(|e| AppError(LbError::Internal(format!("CSV header error: {}", e))))?;
 
-    for record in records {
-        let status_str = match &record.status {
-            crate::common::protocol::RecordStatus::Success => "success".to_string(),
-            crate::common::protocol::RecordStatus::Error { message } => {
-                format!("error: {}", message)
+            for record in records {
+                let status_str = match &record.status {
+                    crate::common::protocol::RecordStatus::Success => "success".to_string(),
+                    crate::common::protocol::RecordStatus::Error { message } => {
+                        format!("error: {}", message)
+                    }
+                };
+
+                wtr.write_record(&[
+                    record.id.to_string(),
+                    record.timestamp.to_rfc3339(),
+                    format!("{:?}", record.request_type),
+                    record.model,
+                    record.node_id.to_string(),
+                    record.node_machine_name,
+                    record.node_ip.to_string(),
+                    record
+                        .client_ip
+                        .map(|ip| ip.to_string())
+                        .unwrap_or_default(),
+                    record.duration_ms.to_string(),
+                    status_str,
+                    record.completed_at.to_rfc3339(),
+                ])
+                .map_err(|e| AppError(LbError::Internal(format!("CSV write error: {}", e))))?;
             }
-        };
 
-        wtr.write_record(&[
-            record.id.to_string(),
-            record.timestamp.to_rfc3339(),
-            format!("{:?}", record.request_type),
-            record.model,
-            record.node_id.to_string(),
-            record.node_machine_name,
-            record.node_ip.to_string(),
-            record
-                .client_ip
-                .map(|ip| ip.to_string())
-                .unwrap_or_default(),
-            record.duration_ms.to_string(),
-            status_str,
-            record.completed_at.to_rfc3339(),
-        ])
-        .map_err(|e| crate::common::error::LbError::Internal(format!("CSV write error: {}", e)))?;
+            let csv_data = wtr
+                .into_inner()
+                .map_err(|e| AppError(LbError::Internal(format!("CSV finalize error: {}", e))))?;
+
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/csv")
+                .header(
+                    "Content-Disposition",
+                    "attachment; filename=\"request_history.csv\"",
+                )
+                .body(Body::from(csv_data))
+                .unwrap();
+
+            Ok(response)
+        }
     }
-
-    let csv_data = wtr.into_inner().map_err(|e| {
-        crate::common::error::LbError::Internal(format!("CSV finalize error: {}", e))
-    })?;
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "text/csv")
-        .header(
-            "Content-Disposition",
-            "attachment; filename=\"request_history.csv\"",
-        )
-        .body(Body::from(csv_data))
-        .unwrap();
-
-    Ok(response)
 }
 
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装

@@ -22,6 +22,7 @@ impl IntoResponse for AppError {
         // Full error details are logged separately for debugging
         let (status, message) = match &self.0 {
             LbError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
+            LbError::NotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
             LbError::NoNodesAvailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }

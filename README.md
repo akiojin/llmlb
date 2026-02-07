@@ -152,10 +152,10 @@ cargo build --release -p llmlb
 ./target/release/llmlb
 # Default: http://0.0.0.0:32768
 
-# Access dashboard
-# Open http://localhost:32768/dashboard in browser
-# (No internal API token required)
-```
+	# Access dashboard
+	# Open http://localhost:32768/dashboard in browser
+	# (No internal API token required; LLMLB_INTERNAL_API_TOKEN is optional (legacy))
+	```
 
 **Environment Variables:**
 
@@ -165,9 +165,10 @@ cargo build --release -p llmlb
 | `LLMLB_PORT` | `32768` | Listen port |
 | `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/load balancer.db` | Database URL |
 | `LLMLB_LOG_LEVEL` | `info` | Log level |
-| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret |
-| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
-| `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
+	| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret |
+	| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
+	| `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
+	| `LLMLB_INTERNAL_API_TOKEN` | (optional) | Internal token for /api, /dashboard, /ws (legacy) |
 
 **Backward compatibility:** Legacy env var names are supported but deprecated (see full list below).
 
@@ -707,10 +708,11 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
 | `LLMLB_PORT` | `32768` | Listen port | - |
 | `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/load balancer.db` | Database URL | `DATABASE_URL` |
 | `LLMLB_DATA_DIR` | `~/.llmlb` | Base directory for logs and legacy request history | - |
-| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
-| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
-| `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
-| `LLMLB_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
+	| `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
+	| `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
+	| `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
+	| `LLMLB_INTERNAL_API_TOKEN` | (optional) | Internal token for /api, /dashboard, /ws (legacy) | `INTERNAL_API_TOKEN` |
+	| `LLMLB_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
 | `LLMLB_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
 | `LLMLB_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
 | `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | Endpoint health check interval (seconds) | `HEALTH_CHECK_INTERVAL` |

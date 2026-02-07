@@ -357,6 +357,7 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
+| `LLMLB_INTERNAL_API_TOKEN` | (任意) | /api・/dashboard・/ws 用の内部トークン（レガシー） |
 | `LLMLB_LOG_LEVEL` | `info` | ログレベル |
 | `LLMLB_LOG_DIR` | `~/.llmlb/logs` | ログ保存先 |
 | `LLMLB_LOG_RETENTION_DAYS` | `7` | ログ保持日数 |

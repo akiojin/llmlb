@@ -3,7 +3,7 @@
 //! This module provides `/ws/dashboard` endpoint that streams
 //! DashboardEvents to connected clients in real-time.
 //!
-//! Authentication is required via JWT cookie.
+//! Authentication is required via Bearer token (`Authorization`) or JWT cookie.
 
 use crate::common::auth::UserRole;
 use axum::extract::ws::{Message, WebSocket};

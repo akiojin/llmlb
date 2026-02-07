@@ -171,11 +171,11 @@ pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<(), LbError> {
 /// * `String` - 生成されたAPIキー
 fn generate_api_key() -> String {
     let charset: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let random_part: String = (0..32)
         .map(|_| {
-            let idx = rng.gen_range(0..charset.len());
+            let idx = rng.random_range(0..charset.len());
             charset[idx] as char
         })
         .collect();

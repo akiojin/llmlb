@@ -353,12 +353,8 @@ async fn run_server(config: ServerConfig) {
     let health_check_interval_secs: u64 =
         get_env_with_fallback_parse("LLMLB_HEALTH_CHECK_INTERVAL", "HEALTH_CHECK_INTERVAL", 30);
 
-    // 起動時にエンドポイントのヘルスチェックを実行
-    if let Err(e) = health::run_startup_health_check(&endpoint_registry).await {
-        tracing::warn!("Startup health check failed: {}", e);
-    }
-
     // エンドポイントヘルスチェッカーをバックグラウンドで開始
+    // NOTE: 起動時の並列ヘルスチェックもこのstart()内で実行し、サーバー起動をブロックしない。
     let endpoint_health_checker = health::EndpointHealthChecker::new(endpoint_registry.clone())
         .with_interval(health_check_interval_secs);
     endpoint_health_checker.start();

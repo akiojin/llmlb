@@ -395,10 +395,6 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
-    // エンドポイントレジストリを初期化
-    let endpoint_registry = llmlb::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-        .await
-        .expect("Failed to initialize endpoint registry");
     info!(
         "Endpoint registry initialized with {} endpoints",
         endpoint_registry.count().await

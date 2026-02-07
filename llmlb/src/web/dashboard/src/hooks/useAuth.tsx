@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react'
-import { authApi, isAuthenticated, removeToken } from '@/lib/api'
+import { authApi } from '@/lib/api'
 
 interface User {
   id: number
@@ -23,17 +23,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   const checkAuth = useCallback(async () => {
-    if (!isAuthenticated()) {
-      setUser(null)
-      setIsLoading(false)
-      return
-    }
-
     try {
       const userData = await authApi.me()
       setUser(userData)
     } catch {
-      removeToken()
       setUser(null)
     } finally {
       setIsLoading(false)

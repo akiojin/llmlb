@@ -70,10 +70,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        auth_routes.layer(middleware::from_fn_with_state(
-            state.jwt_secret.clone(),
-            crate::auth::middleware::jwt_auth_middleware,
-        ))
+        auth_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
+            ))
     };
 
     // 管理者API（JWTまたはadminスコープAPIキー）
@@ -97,15 +101,8 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route("/invitations/{id}", delete(invitations::revoke_invitation))
         // ダッシュボードAPI
-        // NOTE: /dashboard/nodes は廃止済み、/dashboard/endpoints を使用
-        .route(
-            "/dashboard/nodes",
-            get({
-                #[allow(deprecated)]
-                dashboard::get_nodes
-            }),
-        )
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))
+        .route("/dashboard/models", get(dashboard::get_models))
         .route("/dashboard/stats", get(dashboard::get_stats))
         .route(
             "/dashboard/request-history",
@@ -153,10 +150,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        admin_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::admin_or_api_key_middleware,
-        ))
+        admin_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::auth::middleware::admin_or_api_key_middleware,
+            ))
     };
 
     // エンドポイント管理API（SPEC-66555000）
@@ -200,10 +201,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        endpoint_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::authenticated_middleware,
-        ))
+        endpoint_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::auth::middleware::authenticated_middleware,
+            ))
     };
 
     // Playground用プロキシ（JWT認証のみ、APIキー不可）
@@ -219,10 +224,14 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        playground_proxy_routes.layer(middleware::from_fn_with_state(
-            state.jwt_secret.clone(),
-            crate::auth::middleware::jwt_auth_middleware,
-        ))
+        playground_proxy_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
+            ))
     };
 
     // モデル配布レジストリ（Runtimeスコープが必要）
@@ -337,24 +346,14 @@ pub fn create_app(state: AppState) -> Router {
         .merge(model_registry_routes)
         .merge(models_list_routes)
         // デバッグ用テストエンドポイント
-        .merge(test_routes)
-        .layer(middleware::from_fn(
-            crate::auth::middleware::internal_token_middleware,
-        ));
+        .merge(test_routes);
 
     let dashboard_routes = Router::new()
         .route("/dashboard", get(serve_dashboard_index))
         .route("/dashboard/", get(serve_dashboard_index))
-        .route("/dashboard/{*path}", get(serve_dashboard_asset))
-        .layer(middleware::from_fn(
-            crate::auth::middleware::internal_token_middleware,
-        ));
+        .route("/dashboard/{*path}", get(serve_dashboard_asset));
 
-    let ws_routes = Router::new()
-        .route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler))
-        .layer(middleware::from_fn(
-            crate::auth::middleware::internal_token_middleware,
-        ));
+    let ws_routes = Router::new().route("/ws/dashboard", get(dashboard_ws::dashboard_ws_handler));
 
     Router::new()
         // `/api/*`: llmlb独自API（互換不要・versioned）
@@ -453,7 +452,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_dashboard_static_served() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
         let state = test_state().await;
         let mut app = create_app(state);
         let response = app
@@ -461,7 +459,6 @@ mod tests {
                 Request::builder()
                     .method(axum::http::Method::GET)
                     .uri("/dashboard/index.html")
-                    .header("x-internal-token", "test-internal")
                     .body(Body::empty())
                     .unwrap(),
             )

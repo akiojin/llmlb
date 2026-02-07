@@ -8,7 +8,7 @@ use crate::detection::detect_endpoint_type_with_client;
 use crate::sync::{self, SyncError};
 use crate::types::endpoint::{
     DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus,
-    EndpointType, GpuDevice, ModelDownloadTask,
+    EndpointType, EndpointTypeSource, GpuDevice, ModelDownloadTask,
 };
 use crate::AppState;
 use axum::{
@@ -17,6 +17,7 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
+use chrono::Utc;
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::time::Duration;
@@ -60,6 +61,9 @@ pub struct CreateEndpointRequest {
     /// 指定しない場合は自動判別
     #[serde(default)]
     pub endpoint_type: Option<EndpointType>,
+    /// エンドポイントタイプ判定理由（手動指定時のみ）
+    #[serde(default)]
+    pub endpoint_type_reason: Option<String>,
 }
 
 fn default_health_check_interval() -> u32 {
@@ -186,6 +190,9 @@ pub struct UpdateEndpointRequest {
     /// エンドポイントタイプ（手動変更、SPEC-66555000）
     #[serde(default)]
     pub endpoint_type: Option<EndpointType>,
+    /// エンドポイントタイプ判定理由（手動変更時のみ）
+    #[serde(default)]
+    pub endpoint_type_reason: Option<String>,
 }
 
 /// エンドポイントレスポンス
@@ -201,6 +208,14 @@ pub struct EndpointResponse {
     pub status: String,
     /// エンドポイントタイプ（SPEC-66555000）
     pub endpoint_type: String,
+    /// タイプ判定ソース（auto/manual）
+    pub endpoint_type_source: String,
+    /// 判定理由
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_type_reason: Option<String>,
+    /// 判定時刻
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_type_detected_at: Option<String>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -238,6 +253,9 @@ impl From<Endpoint> for EndpointResponse {
             base_url: ep.base_url,
             status: ep.status.as_str().to_string(),
             endpoint_type: ep.endpoint_type.as_str().to_string(),
+            endpoint_type_source: ep.endpoint_type_source.as_str().to_string(),
+            endpoint_type_reason: ep.endpoint_type_reason,
+            endpoint_type_detected_at: ep.endpoint_type_detected_at.map(|dt| dt.to_rfc3339()),
             health_check_interval_secs: ep.health_check_interval_secs,
             inference_timeout_secs: ep.inference_timeout_secs,
             latency_ms: ep.latency_ms,
@@ -436,6 +454,134 @@ fn ensure_admin(claims: &Claims) -> Result<(), impl IntoResponse> {
     Ok(())
 }
 
+/// 接続テスト実行（DB/キャッシュの更新を含む）
+async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConnectionResponse {
+    // GET /v1/models でヘルスチェック
+    let url = format!("{}/v1/models", endpoint.base_url.trim_end_matches('/'));
+    let start = std::time::Instant::now();
+
+    let mut request = state.http_client.get(&url);
+    if let Some(ref api_key) = endpoint.api_key {
+        request = request.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let result = request
+        .timeout(std::time::Duration::from_secs(
+            endpoint.inference_timeout_secs as u64,
+        ))
+        .send()
+        .await;
+
+    let latency_ms = start.elapsed().as_millis() as u32;
+
+    match result {
+        Ok(response) => {
+            if response.status().is_success() {
+                // モデル一覧を取得
+                let models_found: Option<Vec<String>> = match response
+                    .json::<serde_json::Value>()
+                    .await
+                {
+                    Ok(json) => json["data"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|m| m["id"].as_str().map(String::from))
+                                .collect()
+                        })
+                        .or_else(|| {
+                            json["models"].as_array().map(|arr| {
+                                arr.iter()
+                                    .filter_map(|m| {
+                                        m["name"].as_str().or(m["model"].as_str()).map(String::from)
+                                    })
+                                    .collect()
+                            })
+                        }),
+                    Err(_) => None,
+                };
+
+                // ステータスを更新（DB + キャッシュ）
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
+                    .await;
+
+                // SPEC-24157000: Responses API対応を検出
+                // /health エンドポイントで supports_responses_api フラグを確認
+                let health_url = format!("{}/health", endpoint.base_url.trim_end_matches('/'));
+                let mut health_request = state.http_client.get(&health_url);
+                if let Some(ref api_key) = endpoint.api_key {
+                    health_request =
+                        health_request.header("Authorization", format!("Bearer {}", api_key));
+                }
+
+                if let Ok(health_response) = health_request
+                    .timeout(std::time::Duration::from_secs(10))
+                    .send()
+                    .await
+                {
+                    if let Ok(health_json) = health_response.json::<serde_json::Value>().await {
+                        let supports_responses_api = health_json["supports_responses_api"]
+                            .as_bool()
+                            .unwrap_or(false);
+                        // EndpointRegistryキャッシュも更新
+                        let _ = state
+                            .endpoint_registry
+                            .update_responses_api_support(endpoint.id, supports_responses_api)
+                            .await;
+                        tracing::debug!(
+                            endpoint_id = %endpoint.id,
+                            supports_responses_api = supports_responses_api,
+                            "Detected Responses API support"
+                        );
+                    }
+                }
+
+                // モデル数を計算
+                let model_count = models_found.as_ref().map(|m| m.len()).unwrap_or(0);
+
+                TestConnectionResponse {
+                    success: true,
+                    latency_ms: Some(latency_ms),
+                    error: None,
+                    models_found,
+                    endpoint_info: Some(EndpointTestInfo { model_count }),
+                }
+            } else {
+                let error_msg = format!("HTTP {}", response.status());
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
+                    .await;
+
+                TestConnectionResponse {
+                    success: false,
+                    latency_ms: Some(latency_ms),
+                    error: Some(error_msg),
+                    models_found: None,
+                    endpoint_info: None,
+                }
+            }
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            let _ = state
+                .endpoint_registry
+                .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
+                .await;
+
+            TestConnectionResponse {
+                success: false,
+                latency_ms: None,
+                error: Some(error_msg),
+                models_found: None,
+                endpoint_info: None,
+            }
+        }
+    }
+}
+
 // --- Handlers ---
 
 /// POST /api/endpoints - エンドポイント登録
@@ -541,13 +687,29 @@ pub async fn create_endpoint(
     }
 
     // SPEC-66555000: タイプ判別（手動指定優先）
-    endpoint.endpoint_type = if let Some(manual_type) = req.endpoint_type {
-        manual_type
+    if let Some(manual_type) = req.endpoint_type {
+        endpoint.endpoint_type = manual_type;
+        endpoint.endpoint_type_source = EndpointTypeSource::Manual;
+        endpoint.endpoint_type_reason = Some(
+            req.endpoint_type_reason
+                .unwrap_or_else(|| "manual override".to_string()),
+        );
+        endpoint.endpoint_type_detected_at = Some(Utc::now());
     } else {
         // 自動判別（非同期で行うとレスポンスが遅くなるが、登録時は同期で判別）
-        detect_endpoint_type_with_client(&state.http_client, &req.base_url, req.api_key.as_deref())
-            .await
-    };
+        let detection = detect_endpoint_type_with_client(
+            &state.http_client,
+            &req.base_url,
+            req.api_key.as_deref(),
+        )
+        .await;
+        endpoint.endpoint_type = detection.endpoint_type;
+        endpoint.endpoint_type_source = EndpointTypeSource::Auto;
+        endpoint.endpoint_type_reason = detection.reason;
+        if endpoint.endpoint_type != EndpointType::Unknown {
+            endpoint.endpoint_type_detected_at = Some(Utc::now());
+        }
+    }
 
     match db::create_endpoint(&state.db_pool, &endpoint).await {
         Ok(()) => {
@@ -580,6 +742,61 @@ pub async fn create_endpoint(
                             endpoint_id = %endpoint_id,
                             error = %e,
                             "Failed to save device info"
+                        );
+                    }
+                }
+            });
+
+            // 登録直後に接続チェック＆モデル同期（バックグラウンド実行）
+            let state_clone = state.clone();
+            let endpoint_clone = endpoint.clone();
+            tokio::spawn(async move {
+                let test_result = run_connection_test(&state_clone, &endpoint_clone).await;
+                if !test_result.success {
+                    tracing::warn!(
+                        endpoint_id = %endpoint_clone.id,
+                        endpoint_name = %endpoint_clone.name,
+                        error = ?test_result.error,
+                        "Auto connection test failed"
+                    );
+                    return;
+                }
+
+                match sync::sync_models(
+                    &state_clone.db_pool,
+                    &state_clone.http_client,
+                    endpoint_clone.id,
+                    &endpoint_clone.base_url,
+                    endpoint_clone.api_key.as_deref(),
+                    endpoint_clone.inference_timeout_secs as u64,
+                )
+                .await
+                {
+                    Ok(result) => {
+                        if let Err(e) = state_clone
+                            .endpoint_registry
+                            .refresh_model_mappings(endpoint_clone.id)
+                            .await
+                        {
+                            tracing::warn!(
+                                endpoint_id = %endpoint_clone.id,
+                                error = %e,
+                                "Failed to refresh model mappings"
+                            );
+                        }
+                        tracing::info!(
+                            endpoint_id = %endpoint_clone.id,
+                            added = result.added,
+                            removed = result.removed,
+                            updated = result.updated,
+                            "Auto model sync completed"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            endpoint_id = %endpoint_clone.id,
+                            error = %e,
+                            "Auto model sync failed"
                         );
                     }
                 }
@@ -831,6 +1048,12 @@ pub async fn update_endpoint(
     // SPEC-66555000: エンドポイントタイプの手動変更
     if let Some(endpoint_type) = req.endpoint_type {
         updated.endpoint_type = endpoint_type;
+        updated.endpoint_type_source = EndpointTypeSource::Manual;
+        updated.endpoint_type_reason = Some(
+            req.endpoint_type_reason
+                .unwrap_or_else(|| "manual override".to_string()),
+        );
+        updated.endpoint_type_detected_at = Some(Utc::now());
     }
 
     match db::update_endpoint(&state.db_pool, &updated).await {
@@ -942,160 +1165,8 @@ pub async fn test_endpoint(
         }
     };
 
-    // GET /v1/models でヘルスチェック
-    let url = format!("{}/v1/models", endpoint.base_url.trim_end_matches('/'));
-    let start = std::time::Instant::now();
-
-    let mut request = state.http_client.get(&url);
-    if let Some(ref api_key) = endpoint.api_key {
-        request = request.header("Authorization", format!("Bearer {}", api_key));
-    }
-
-    let result = request
-        .timeout(std::time::Duration::from_secs(
-            endpoint.inference_timeout_secs as u64,
-        ))
-        .send()
-        .await;
-
-    let latency_ms = start.elapsed().as_millis() as u32;
-
-    match result {
-        Ok(response) => {
-            if response.status().is_success() {
-                // モデル一覧を取得
-                let models_found: Option<Vec<String>> = match response
-                    .json::<serde_json::Value>()
-                    .await
-                {
-                    Ok(json) => json["data"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|m| m["id"].as_str().map(String::from))
-                                .collect()
-                        })
-                        .or_else(|| {
-                            json["models"].as_array().map(|arr| {
-                                arr.iter()
-                                    .filter_map(|m| {
-                                        m["name"].as_str().or(m["model"].as_str()).map(String::from)
-                                    })
-                                    .collect()
-                            })
-                        }),
-                    Err(_) => None,
-                };
-
-                // ステータスを更新（DB）
-                let _ = db::update_endpoint_status(
-                    &state.db_pool,
-                    id,
-                    EndpointStatus::Online,
-                    Some(latency_ms),
-                    None,
-                )
-                .await;
-
-                // EndpointRegistryキャッシュも更新
-                let _ = state
-                    .endpoint_registry
-                    .update_status(id, EndpointStatus::Online, Some(latency_ms), None)
-                    .await;
-
-                // SPEC-24157000: Responses API対応を検出
-                // /health エンドポイントで supports_responses_api フラグを確認
-                let health_url = format!("{}/health", endpoint.base_url.trim_end_matches('/'));
-                let mut health_request = state.http_client.get(&health_url);
-                if let Some(ref api_key) = endpoint.api_key {
-                    health_request =
-                        health_request.header("Authorization", format!("Bearer {}", api_key));
-                }
-
-                if let Ok(health_response) = health_request
-                    .timeout(std::time::Duration::from_secs(10))
-                    .send()
-                    .await
-                {
-                    if let Ok(health_json) = health_response.json::<serde_json::Value>().await {
-                        let supports_responses_api = health_json["supports_responses_api"]
-                            .as_bool()
-                            .unwrap_or(false);
-                        // EndpointRegistryキャッシュも更新
-                        let _ = state
-                            .endpoint_registry
-                            .update_responses_api_support(id, supports_responses_api)
-                            .await;
-                        tracing::debug!(
-                            endpoint_id = %id,
-                            supports_responses_api = supports_responses_api,
-                            "Detected Responses API support"
-                        );
-                    }
-                }
-
-                // モデル数を計算
-                let model_count = models_found.as_ref().map(|m| m.len()).unwrap_or(0);
-
-                (
-                    StatusCode::OK,
-                    Json(TestConnectionResponse {
-                        success: true,
-                        latency_ms: Some(latency_ms),
-                        error: None,
-                        models_found,
-                        endpoint_info: Some(EndpointTestInfo { model_count }),
-                    }),
-                )
-                    .into_response()
-            } else {
-                let error_msg = format!("HTTP {}", response.status());
-                let _ = db::update_endpoint_status(
-                    &state.db_pool,
-                    id,
-                    EndpointStatus::Error,
-                    None,
-                    Some(&error_msg),
-                )
-                .await;
-
-                (
-                    StatusCode::OK,
-                    Json(TestConnectionResponse {
-                        success: false,
-                        latency_ms: Some(latency_ms),
-                        error: Some(error_msg),
-                        models_found: None,
-                        endpoint_info: None,
-                    }),
-                )
-                    .into_response()
-            }
-        }
-        Err(e) => {
-            let error_msg = e.to_string();
-            let _ = db::update_endpoint_status(
-                &state.db_pool,
-                id,
-                EndpointStatus::Error,
-                None,
-                Some(&error_msg),
-            )
-            .await;
-
-            (
-                StatusCode::OK,
-                Json(TestConnectionResponse {
-                    success: false,
-                    latency_ms: None,
-                    error: Some(error_msg),
-                    models_found: None,
-                    endpoint_info: None,
-                }),
-            )
-                .into_response()
-        }
-    }
+    let response = run_connection_test(&state, &endpoint).await;
+    (StatusCode::OK, Json(response)).into_response()
 }
 
 /// POST /api/endpoints/:id/sync - モデル一覧同期

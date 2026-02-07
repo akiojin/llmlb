@@ -273,7 +273,6 @@ async fn v1_models_excludes_models_not_on_endpoints() {
     let client = Client::new();
     let register_resp = client
         .post(format!("http://{}/api/models/register", lb.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "repo": "test/orphan-model"

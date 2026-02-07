@@ -232,12 +232,13 @@ impl EndpointRegistry {
             if let Some(endpoint) = endpoints.get_mut(&id) {
                 endpoint.status = status;
                 endpoint.latency_ms = latency_ms;
-                if error.is_some() {
-                    endpoint.last_error = error.map(String::from);
-                    endpoint.error_count += 1;
+                // DBと同様に、last_error は成功時にクリアし、error_count は status=error のときのみ加算する。
+                endpoint.last_error = error.map(String::from);
+                endpoint.error_count = if status == EndpointStatus::Error {
+                    endpoint.error_count.saturating_add(1)
                 } else {
-                    endpoint.error_count = 0;
-                }
+                    0
+                };
                 endpoint.last_seen = Some(chrono::Utc::now());
             }
         }
@@ -279,15 +280,30 @@ impl EndpointRegistry {
         &self,
         id: Uuid,
         endpoint_type: EndpointType,
+        endpoint_type_source: crate::types::endpoint::EndpointTypeSource,
+        endpoint_type_reason: Option<String>,
+        endpoint_type_detected_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<bool, sqlx::Error> {
         // DBを更新
-        let updated = db::update_endpoint_type(&self.pool, id, endpoint_type).await?;
+        let detected_at = endpoint_type_detected_at.map(|dt| dt.to_rfc3339());
+        let updated = db::update_endpoint_type(
+            &self.pool,
+            id,
+            endpoint_type,
+            endpoint_type_source,
+            endpoint_type_reason.as_deref(),
+            detected_at,
+        )
+        .await?;
 
         if updated {
             // キャッシュを更新
             let mut endpoints = self.endpoints.write().await;
             if let Some(endpoint) = endpoints.get_mut(&id) {
                 endpoint.endpoint_type = endpoint_type;
+                endpoint.endpoint_type_source = endpoint_type_source;
+                endpoint.endpoint_type_reason = endpoint_type_reason;
+                endpoint.endpoint_type_detected_at = endpoint_type_detected_at;
             }
         }
 
@@ -495,6 +511,29 @@ impl EndpointRegistry {
     /// エンドポイントのモデル一覧を取得
     pub async fn list_models(&self, endpoint_id: Uuid) -> Result<Vec<EndpointModel>, sqlx::Error> {
         db::list_endpoint_models(&self.pool, endpoint_id).await
+    }
+
+    /// モデルマッピングを指定エンドポイント分だけ再構築
+    pub async fn refresh_model_mappings(&self, endpoint_id: Uuid) -> Result<(), sqlx::Error> {
+        let models = db::list_endpoint_models(&self.pool, endpoint_id).await?;
+
+        let mut model_map = self.model_to_endpoints.write().await;
+
+        // 既存マッピングから当該エンドポイントを除外
+        model_map.retain(|_, endpoints| {
+            endpoints.retain(|id| *id != endpoint_id);
+            !endpoints.is_empty()
+        });
+
+        // 取得したモデルでマッピングを再構築
+        for model in models {
+            model_map
+                .entry(model.model_id.clone())
+                .or_default()
+                .push(endpoint_id);
+        }
+
+        Ok(())
     }
 
     /// 全モデルIDの一覧を取得

@@ -29,7 +29,6 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
-    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -78,9 +77,7 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("authorization", format!("Bearer {}", admin_key))
+    Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
 /// GET /api/endpoints/:id/download/progress - 正常系: 進捗一覧取得
@@ -234,7 +231,6 @@ async fn test_download_progress_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/endpoints/00000000-0000-0000-0000-000000000001/download/progress")
                 .body(Body::empty())

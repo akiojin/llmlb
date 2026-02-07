@@ -1,8 +1,8 @@
 # 機能仕様一覧
 
-> 最終更新: 2026-01-18 (SPEC-66555000実装状態更新)
+> 最終更新: 2026-02-03 (specs/specs.md整合)
 >
-> 総SPEC数: **49** | 廃止: 6 | plan.md欠損: 0 | 依存関係完全化済み
+> 総SPEC数: **57** | 廃止: 7 | plan.md欠損: 0 | 依存関係完全化済み
 
 **凡例:**
 
@@ -12,7 +12,7 @@
 
 ## 依存関係マトリクス
 
-> 49件中、明示的な依存関係があるSPEC: 33件 | 基盤SPEC（依存なし）: 10件 | 廃止: 6件
+> 57件中、明示的な依存関係があるSPEC: 35件 | 基盤SPEC（依存なし）: 5件 | 廃止: 7件
 
 | SPEC ID | 依存先 | 備考 |
 |---------|--------|------|
@@ -36,8 +36,12 @@
 | `SPEC-47c6f44c` | - | CI/CD |
 | `SPEC-48678000` | SPEC-11106000, SPEC-dcaeaec4, SPEC-6cd7f960 | モデル解決 (moved to xLLM repo) |
 | `SPEC-4b6e9f2a` | SPEC-63acef08 | クラウドルーティング |
+| `SPEC-5045f436` | - | トークン累積統計 |
+| `SPEC-52587000` | - | llmlb serveシングル実行制約 |
+| `SPEC-58378000` | SPEC-69549000 (moved to xLLM repo) | llmlb CLIコマンド |
 | `SPEC-589f2df1` | SPEC-63acef08 | ロードバランシング |
 | `SPEC-5cd7b614` | - | 基盤機能 |
+| `SPEC-5f3dd53a` | SPEC-2c0e5a9b, SPEC-3fc2c1e4, SPEC-d7feaa2c | Windows CUDA runtime DLL |
 | `SPEC-5fc9fe92` | SPEC-712c20cf | Playground |
 | `SPEC-63acef08` | SPEC-66555000 | 統一APIプロキシ |
 | `SPEC-66555000` | SPEC-712c20cf, SPEC-63acef08 | **新規**: エンドポイント登録 |
@@ -52,6 +56,9 @@
 | `SPEC-8a2d1d43` | - | 基盤機能 |
 | `SPEC-93536000` | SPEC-dcaeaec4, SPEC-05098000 | ノードベースモデル管理 (moved to xLLM repo) |
 | `SPEC-94621a1f` | - | 🗑️ 廃止（→SPEC-66555000） |
+| `SPEC-98665367` | SPEC-47c6f44c, SPEC-ee2aa3ef | CI/CDパイプライン統合 |
+| `SPEC-98934000` | - | 🗑️ 廃止（NodeRegistry廃止） |
+| `SPEC-99024000` | SPEC-66555000 | Open Responses API対応 |
 | `SPEC-a61b24f2` | - | 🗑️ 廃止（統合仕様へ移行） |
 | `SPEC-a7e6d40a` | - | CLI |
 | `SPEC-ae3f974e` | SPEC-dcaeaec4 | 画像生成 |
@@ -64,6 +71,7 @@
 | `SPEC-ee2aa3ef` | SPEC-47c6f44c | CI/CD |
 | `SPEC-efff1da7` | - | PoC |
 | `SPEC-fbc50d97` | SPEC-63acef08 | 履歴保存 |
+| `SPEC-f8e3a1b7` | - | llmlbアーキテクチャ刷新 |
 | `SPEC-8ae67d67` | - | 🗑️ 廃止 |
 
 ### 基盤SPEC（依存なし・他が依存）
@@ -82,8 +90,10 @@
 |---------|--------|--------|----------|------|
 | `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | ✅ | P1 | ✅ |
 | `SPEC-24157000` | OpenAI互換API完全準拠 | ✅ | P1 | ✅ |
+| `SPEC-99024000` | Open Responses API対応 | ✅ | P1 | ✅ |
 | `SPEC-32e2b31a` | LLM Load Balancer System（統合版・アーカイブ） | ✅ | P1 | ✅ |
 | `SPEC-35375000` | ロードバランサー負荷最適化 | ✅ | P1 | ✅ |
+| `SPEC-f8e3a1b7` | llmlb アーキテクチャ刷新 | ✅ | P1 | ✅ |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | ✅ | P2 | ✅ |
 | `SPEC-443acc8c` | 廃止: ヘルスチェックシステム（→SPEC-66555000） | 🗑️ | - | - |
 | `SPEC-589f2df1` | ロードバランシングシステム | ✅ | P1 | ✅ |
@@ -91,6 +101,7 @@
 | `SPEC-63acef08` | 統一APIプロキシ | ✅ | P1 | ✅ |
 | `SPEC-66555000` | ロードバランサー主導エンドポイント登録システム | ✅ | P1 | ✅ |
 | `SPEC-94621a1f` | 廃止: ノード自己登録システム（→SPEC-66555000） | 🗑️ | - | - |
+| `SPEC-98934000` | 廃止: ノード登録承認フロー（NodeRegistry廃止） | 🗑️ | - | - |
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード (moved to xLLM repo) | ✅ | P1 | ✅ |
 
 ## 🔐 認証・セキュリティ
@@ -108,6 +119,7 @@
 | `SPEC-0c4f3e5c` | 廃止: LLM runtimeモデルストレージ形式サポート | 🗑️ | - | - |
 | `SPEC-11106000` | Hugging Face URL 登録（変換なし） | ✅ | P1 | ✅ |
 | `SPEC-3df1b977` | 廃止: モデルファイル破損時の自動修復機能 | 🗑️ | - | - |
+| `SPEC-5f3dd53a` | Windows CUDA runtime DLL (gpt-oss/nemotron) | ✅ | P2 | 📝 |
 | `SPEC-47649000` | モデルメタデータSQLite統合 | ✅ | P1 | ✅ |
 | `SPEC-48678000` | モデル自動解決機能 (moved to xLLM repo) | ✅ | P2 | ✅ |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | ✅ | P1 | ✅ |
@@ -143,6 +155,13 @@
 |---------|--------|--------|----------|------|
 | `SPEC-026b2cde` | リクエスト履歴一覧のページネーション機能 | ✅ | P2 | ✅ |
 | `SPEC-712c20cf` | 管理ダッシュボード | ✅ | P2 | ✅ |
+
+## 🧰 CLI・運用
+
+| SPEC ID | 機能名 | Status | Priority | 実装 |
+|---------|--------|--------|----------|------|
+| `SPEC-52587000` | llmlb serveコマンドのシングル実行制約 | ✅ | P1 | ✅ |
+| `SPEC-58378000` | llmlb CLIコマンド | ✅ | P1 | ✅ |
 | `SPEC-a7e6d40a` | CLI インターフェース整備 (moved to xLLM repo) | ✅ | P2 | ✅ |
 
 ## 📊 ログ・履歴
@@ -151,6 +170,7 @@
 |---------|--------|--------|----------|------|
 | `SPEC-1970e39f` | 構造化ロギング強化 | ✅ | P2 | ✅ |
 | `SPEC-1f2a9c3d` | SPEC-log-api: Node / Load Balancer Log Retrieval API | ✅ | P2 | ✅ |
+| `SPEC-5045f436` | トークン累積統計機能 | ✅ | P1 | ✅ |
 | `SPEC-799b8e2b` | 共通ログシステム | ✅ | P1 | ✅ |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | ✅ | P1 | ✅ |
 
@@ -158,6 +178,7 @@
 
 | SPEC ID | 機能名 | Status | Priority | 実装 |
 |---------|--------|--------|----------|------|
+| `SPEC-98665367` | CI/CD パイプライン | ✅ | P2 | ✅ |
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | ✅ | P2 | ✅ |
 | `SPEC-dc648675` | Worktree環境での作業境界強制システム | ✅ | P2 | ✅ |
 | `SPEC-ee2aa3ef` | 完全自動化リリースシステム | ✅ | P2 | ✅ |
@@ -172,12 +193,15 @@
 
 ## 優先度サマリー
 
-### P1（最優先）- 22件
+### P1（最優先）- 28件
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
 | `SPEC-05098000` | 推論中ノードへの多重リクエストキューイング | 完了 |
 | `SPEC-24157000` | OpenAI互換API完全準拠 | 完了 |
+| `SPEC-5045f436` | トークン累積統計機能 | 完了 |
+| `SPEC-52587000` | llmlb serveコマンドのシングル実行制約 | 完了 |
+| `SPEC-58378000` | llmlb CLIコマンド | 完了 |
 | `SPEC-11106000` | Hugging Face URL 登録（変換なし） | 完了 |
 | `SPEC-26006000` | 音声モデル対応（TTS + ASR） | 完了 |
 | `SPEC-32637000` | モデル capabilities に基づくルーティング検証 | 完了 |
@@ -199,8 +223,10 @@
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード (moved to xLLM repo) | 完了 |
 | `SPEC-dcaeaec4` | SPEC-dcaeaec4: LLM-Load Balancer独自モデルストレージ | 完了 |
 | `SPEC-fbc50d97` | リクエスト/レスポンス履歴保存機能 | 完了 |
+| `SPEC-99024000` | Open Responses API対応 | 完了 |
+| `SPEC-f8e3a1b7` | llmlb アーキテクチャ刷新 | 完了 |
 
-### P2（重要）- 18件
+### P2（重要）- 20件
 
 | SPEC ID | 機能名 | 状態 |
 |---------|--------|------|
@@ -211,6 +237,7 @@
 | `SPEC-2c0e5a9b` | SPEC-2c0e5a9b: gpt-oss-20b safetensors 実行（GPU: Metal/DirectML） | 完了 |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | 完了 |
 | `SPEC-47c6f44c` | 自動マージ機能の実装 | 完了 |
+| `SPEC-5f3dd53a` | Windows CUDA runtime DLL (gpt-oss/nemotron) | 未着手 |
 | `SPEC-48678000` | モデル自動解決機能 (moved to xLLM repo) | 完了 |
 | `SPEC-4b6e9f2a` | クラウドモデルプレフィックスルーティング | 完了 |
 | `SPEC-5fc9fe92` | Playground Chat マルチモーダル対応 | 完了 |
@@ -222,6 +249,7 @@
 | `SPEC-e03a404c` | 画像認識モデル対応（Image Understanding） | 完了 |
 | `SPEC-ea015fbb` | Web UI 画面一覧 | 完了 |
 | `SPEC-ee2aa3ef` | 完全自動化リリースシステム | 完了 |
+| `SPEC-98665367` | CI/CD パイプライン | 完了 |
 
 ### P3（通常）- 2件
 
@@ -230,7 +258,7 @@
 | `SPEC-83825900` | Nemotron CUDA PoC | 完了 |
 | `SPEC-efff1da7` | SPEC-efff1da7: Nemotron safetensors-cpp PoC | 完了 |
 
-### 廃止 - 6件
+### 廃止 - 7件
 
 | SPEC ID | 機能名 | 置換先 |
 |---------|--------|--------|
@@ -239,4 +267,5 @@
 | `SPEC-443acc8c` | ヘルスチェックシステム | SPEC-66555000 |
 | `SPEC-8ae67d67` | ロードバランサー主導のモデル自動配布機能 | SPEC-dcaeaec4 |
 | `SPEC-94621a1f` | ノード自己登録システム | SPEC-66555000 |
+| `SPEC-98934000` | ノード登録承認フロー | SPEC-66555000 |
 | `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF） | 統合仕様へ移行 |

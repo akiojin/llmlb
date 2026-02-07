@@ -5,23 +5,58 @@
 //! 管理者として、エンドポイント登録時に自動的にタイプ
 //! （xLLM/Ollama/vLLM/OpenAI互換）を判別してほしい。
 
+use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::health::EndpointHealthChecker;
+use llmlb::registry::endpoints::EndpointRegistry;
 use reqwest::Client;
 use serde_json::{json, Value};
+use sqlx::SqlitePool;
+use uuid::Uuid;
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
 
-use crate::support::lb::spawn_test_lb;
+use crate::support::lb::spawn_test_lb_with_db;
+
+async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin).await;
+    let admin_id = match created {
+        Ok(user) => user.id,
+        Err(_) => {
+            llmlb::db::users::find_by_username(db_pool, "admin")
+                .await
+                .unwrap()
+                .unwrap()
+                .id
+        }
+    };
+
+    let api_key = llmlb::db::api_keys::create(
+        db_pool,
+        "test-admin-key",
+        admin_id,
+        None,
+        vec![ApiKeyScope::Admin],
+    )
+    .await
+    .expect("create admin api key");
+    api_key.key
+}
 
 /// US6-シナリオ1: エンドポイント登録時にタイプが自動判別される
 /// NOTE: 実際のエンドポイントがないとタイプ判別できないため、unknownになる
 #[tokio::test]
 async fn test_endpoint_type_auto_detection_offline() {
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // エンドポイント登録（接続先がないのでタイプはunknownになる）
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Unknown Endpoint",
             "base_url": "http://localhost:9999"
@@ -43,102 +78,282 @@ async fn test_endpoint_type_auto_detection_offline() {
         body["endpoint_type"], "unknown",
         "Offline endpoint should have unknown type"
     );
+    assert_eq!(body["endpoint_type_source"], "auto");
 }
 
 /// US6-シナリオ2: 判別の優先順位（xLLM > Ollama > vLLM > OpenAI互換）
 /// NOTE: モックサーバーを使用したテストが必要（実際の判別ロジック検証）
 #[tokio::test]
-#[ignore = "モックサーバーが必要 - T112-T116で実装後に有効化"]
 async fn test_endpoint_type_detection_priority() {
-    let server = spawn_test_lb().await;
-    let _client = Client::new();
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
-    // xLLMエンドポイント判別テスト
-    // GET /api/system が xllm_version を返す場合 → xLLMタイプ
+    let mock = MockServer::start().await;
 
-    // Ollamaエンドポイント判別テスト
-    // GET /api/tags が成功する場合 → Ollamaタイプ
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock)
+        .await;
 
-    // vLLMエンドポイント判別テスト
-    // Serverヘッダーに vllm が含まれる場合 → vLLMタイプ
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": []
+        })))
+        .mount(&mock)
+        .await;
 
-    // OpenAI互換判別テスト
-    // 上記すべてに該当しない場合 → OpenAI互換タイプ
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("server", "vllm")
+                .set_body_json(json!({"object": "list", "data": []})),
+        )
+        .mount(&mock)
+        .await;
 
-    // テストはモックサーバーを用いて実装
-    let _ = server;
+    let response = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "name": "Priority Endpoint",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("registration request failed");
+
+    assert_eq!(response.status().as_u16(), 201);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(
+        body["endpoint_type"], "xllm",
+        "xLLM should win priority over other detections"
+    );
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("xLLM"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ3: xLLM判別（/api/systemエンドポイント）
 #[tokio::test]
-#[ignore = "モックサーバーが必要 - T113で実装後に有効化"]
 async fn test_endpoint_type_detection_xllm() {
-    let server = spawn_test_lb().await;
-    let _client = Client::new();
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
-    // xLLM判別テスト
-    // モックサーバーが GET /api/system に対して
-    // { "xllm_version": "0.1.0" } を返す場合
-    // → endpoint_type が "xllm" になることを確認
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock)
+        .await;
 
-    let _ = server;
+    let response = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "name": "xLLM Endpoint",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("registration request failed");
+
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "xllm");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("xLLM"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ4: Ollama判別（/api/tagsエンドポイント）
 #[tokio::test]
-#[ignore = "モックサーバーが必要 - T114で実装後に有効化"]
 async fn test_endpoint_type_detection_ollama() {
-    let server = spawn_test_lb().await;
-    let _client = Client::new();
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
-    // Ollama判別テスト
-    // モックサーバーが GET /api/tags に対して成功レスポンスを返す場合
-    // → endpoint_type が "ollama" になることを確認
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": []
+        })))
+        .mount(&mock)
+        .await;
 
-    let _ = server;
+    let response = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "name": "Ollama Endpoint",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("registration request failed");
+
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "ollama");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Ollama"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ5: vLLM判別（Serverヘッダー）
 #[tokio::test]
-#[ignore = "モックサーバーが必要 - T115で実装後に有効化"]
 async fn test_endpoint_type_detection_vllm() {
-    let server = spawn_test_lb().await;
-    let _client = Client::new();
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
-    // vLLM判別テスト
-    // モックサーバーが Server: vllm ヘッダーを返す場合
-    // → endpoint_type が "vllm" になることを確認
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("server", "vllm")
+                .set_body_json(json!({"object": "list", "data": []})),
+        )
+        .mount(&mock)
+        .await;
 
-    let _ = server;
+    let response = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "name": "vLLM Endpoint",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("registration request failed");
+
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "vllm");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("vLLM"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ6: OpenAI互換判別（フォールバック）
 #[tokio::test]
-#[ignore = "モックサーバーが必要 - T116で実装後に有効化"]
 async fn test_endpoint_type_detection_openai_compatible() {
-    let server = spawn_test_lb().await;
-    let _client = Client::new();
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
-    // OpenAI互換判別テスト
-    // モックサーバーが /v1/models に成功レスポンスを返すが
-    // xLLM/Ollama/vLLMのいずれにも該当しない場合
-    // → endpoint_type が "openai_compatible" になることを確認
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
 
-    let _ = server;
+    let response = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "name": "OpenAI Compatible Endpoint",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("registration request failed");
+
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "openai_compatible");
+    assert_eq!(body["endpoint_type_source"], "auto");
+    assert!(body["endpoint_type_reason"]
+        .as_str()
+        .unwrap_or("")
+        .contains("OpenAI"));
+    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ7: オンライン復帰時のタイプ再判別
 #[tokio::test]
-#[ignore = "T132で実装後に有効化"]
 async fn test_endpoint_type_redetection_on_online() {
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
+
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/health"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
 
     // 最初はオフラインでunknownタイプ
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Test Endpoint",
             "base_url": "http://localhost:9999"
@@ -149,7 +364,52 @@ async fn test_endpoint_type_redetection_on_online() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "unknown");
+    assert_eq!(body["endpoint_type_source"], "auto");
 
-    // TODO: エンドポイントをオンラインにして
-    // ヘルスチェックでタイプが再判別されることを確認
+    let endpoint_id = body["id"].as_str().expect("endpoint id");
+    let endpoint_uuid = Uuid::parse_str(endpoint_id).expect("endpoint uuid");
+
+    // base_url をオンラインのモックへ更新
+    let update_response = client
+        .put(format!(
+            "http://{}/api/endpoints/{}",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("update request failed");
+
+    assert_eq!(update_response.status().as_u16(), 200);
+
+    let registry = EndpointRegistry::new(db_pool.clone())
+        .await
+        .expect("endpoint registry init");
+    let checker = EndpointHealthChecker::new(registry);
+    let endpoint = llmlb::db::endpoints::get_endpoint(&db_pool, endpoint_uuid)
+        .await
+        .expect("get endpoint")
+        .expect("endpoint exists");
+
+    checker
+        .check_endpoint(&endpoint)
+        .await
+        .expect("health check should succeed");
+
+    let updated = llmlb::db::endpoints::get_endpoint(&db_pool, endpoint_uuid)
+        .await
+        .expect("get endpoint")
+        .expect("endpoint exists");
+    assert_eq!(updated.endpoint_type.as_str(), "openai_compatible");
+    assert_eq!(updated.endpoint_type_source.as_str(), "auto");
+    assert!(updated
+        .endpoint_type_reason
+        .as_deref()
+        .unwrap_or("")
+        .contains("OpenAI"));
+    assert!(updated.endpoint_type_detected_at.is_some());
 }

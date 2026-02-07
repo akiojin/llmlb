@@ -70,7 +70,6 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
     // エンドポイント登録
     let response = client
         .post(format!("http://{}/api/endpoints", lb.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Test",
@@ -94,7 +93,6 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
             lb.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -146,7 +144,6 @@ async fn test_v0_system_ignored_for_unsupported_endpoint() {
     // エンドポイント登録
     let response = client
         .post(format!("http://{}/api/endpoints", lb.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Test",
@@ -170,7 +167,6 @@ async fn test_v0_system_ignored_for_unsupported_endpoint() {
             lb.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -223,7 +219,6 @@ async fn test_v0_system_cpu_device_info() {
     // エンドポイント登録
     let response = client
         .post(format!("http://{}/api/endpoints", lb.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "CPU Only",
@@ -247,7 +242,6 @@ async fn test_v0_system_cpu_device_info() {
             lb.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

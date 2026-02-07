@@ -2,8 +2,9 @@
 
 #[cfg(test)]
 mod jwt_tests {
+    use jsonwebtoken::{encode, EncodingKey, Header};
     use llmlb::auth::jwt::{create_jwt, verify_jwt};
-    use llmlb::common::auth::UserRole;
+    use llmlb::common::auth::{Claims, UserRole};
 
     const TEST_SECRET: &str = "test_secret_key_for_jwt_testing_12345678";
 
@@ -78,11 +79,28 @@ mod jwt_tests {
     }
 
     #[test]
-    #[ignore] // 実際の有効期限テストは時間がかかるため、通常はスキップ
     fn test_jwt_expiration_expired() {
-        // Given: 有効期限が1秒のトークン（テスト用）
-        // 注: この実装では有効期限を変更できないため、このテストはスキップ
-        // 実装時にcreate_jwt_with_expirationのような関数を追加する必要がある
+        // Given: 有効期限切れのトークン
+        let user_id = "user-exp-expired";
+        let role = UserRole::Admin;
+        let expired_at = (chrono::Utc::now() - chrono::Duration::hours(1)).timestamp() as usize;
+        let claims = Claims {
+            sub: user_id.to_string(),
+            role,
+            exp: expired_at,
+        };
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+        )
+        .expect("Failed to create expired JWT");
+
+        // When: 検証を試みる
+        let result = verify_jwt(&token, TEST_SECRET);
+
+        // Then: 検証失敗（期限切れ）
+        assert!(result.is_err());
     }
 
     #[test]

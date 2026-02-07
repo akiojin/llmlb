@@ -27,6 +27,9 @@
 | registered_at | DateTime | Yes | 登録日時 |
 | notes | String? | No | メモ |
 | endpoint_type | EndpointType | Yes | エンドポイントタイプ（追加 2026-01-26） |
+| endpoint_type_source | EndpointTypeSource | Yes | タイプ判定ソース（追加 2026-02-06） |
+| endpoint_type_reason | String? | No | 判定理由（追加 2026-02-06） |
+| endpoint_type_detected_at | DateTime? | No | 判定時刻（追加 2026-02-06） |
 
 **検証ルール**:
 
@@ -79,6 +82,17 @@
 | モデルダウンロード | ✅ | ❌ | ❌ | ❌ |
 | モデルメタデータ取得 | ✅ | ✅ | ❌ | ❌ |
 | モデル一覧同期 | ✅ | ✅ | ✅ | ✅ |
+
+### 3.1. EndpointTypeSource（追加 2026-02-06）
+
+エンドポイントタイプの判定ソースを表す列挙型。
+
+**値**:
+
+| 値 | 説明 |
+|----|------|
+| `auto` | 自動判別（ヘルスチェック含む） |
+| `manual` | 手動指定 |
 
 ### 4. EndpointModel（エンドポイントモデル）
 
@@ -157,6 +171,9 @@ CREATE TABLE endpoints (
     api_key_encrypted TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     endpoint_type TEXT NOT NULL DEFAULT 'unknown',
+    endpoint_type_source TEXT NOT NULL DEFAULT 'auto',
+    endpoint_type_reason TEXT,
+    endpoint_type_detected_at TEXT,
     health_check_interval_secs INTEGER NOT NULL DEFAULT 30,
     inference_timeout_secs INTEGER NOT NULL DEFAULT 120,
     latency_ms INTEGER,
@@ -170,6 +187,7 @@ CREATE TABLE endpoints (
 CREATE INDEX idx_endpoints_status ON endpoints(status);
 CREATE INDEX idx_endpoints_name ON endpoints(name);
 CREATE INDEX idx_endpoints_type ON endpoints(endpoint_type);
+CREATE INDEX idx_endpoints_type_source ON endpoints(endpoint_type_source);
 ```
 
 ### endpoint_models テーブル

@@ -29,7 +29,6 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
-    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -78,9 +77,7 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("authorization", format!("Bearer {}", admin_key))
+    Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
 /// POST /api/endpoints - 正常系: エンドポイント登録成功
@@ -288,7 +285,6 @@ async fn test_create_endpoint_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/endpoints")
                 .header("content-type", "application/json")

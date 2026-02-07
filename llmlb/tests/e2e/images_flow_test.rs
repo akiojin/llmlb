@@ -70,7 +70,6 @@ async fn register_image_endpoint(
 
     let register_response = client
         .post(format!("http://{}/api/endpoints", lb.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "image-stub",
@@ -97,7 +96,6 @@ async fn register_image_endpoint(
             lb.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -110,7 +108,6 @@ async fn register_image_endpoint(
             lb.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

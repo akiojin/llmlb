@@ -21,7 +21,6 @@ async fn test_xllm_model_metadata_retrieval() {
     // xLLMエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -41,7 +40,6 @@ async fn test_xllm_model_metadata_retrieval() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -55,7 +53,6 @@ async fn test_xllm_model_metadata_retrieval() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -89,7 +86,6 @@ async fn test_ollama_model_metadata_retrieval() {
     // Ollamaエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Ollama Server",
@@ -109,7 +105,6 @@ async fn test_ollama_model_metadata_retrieval() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -123,7 +118,6 @@ async fn test_ollama_model_metadata_retrieval() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -153,7 +147,6 @@ async fn test_model_sync_retrieves_max_tokens() {
     // xLLMエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "xLLM Server",
@@ -173,7 +166,6 @@ async fn test_model_sync_retrieves_max_tokens() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -188,7 +180,6 @@ async fn test_model_sync_retrieves_max_tokens() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -218,7 +209,6 @@ async fn test_vllm_metadata_not_supported() {
     // vLLMエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "vLLM Server",
@@ -238,7 +228,6 @@ async fn test_vllm_metadata_not_supported() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -262,7 +251,6 @@ async fn test_nonexistent_model_metadata() {
     // エンドポイント登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Server",
@@ -282,7 +270,6 @@ async fn test_nonexistent_model_metadata() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -296,7 +283,6 @@ async fn test_nonexistent_model_metadata() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

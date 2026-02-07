@@ -179,11 +179,11 @@ curl -X POST http://localhost:32768/api/endpoints \
 
 # エンドポイント一覧
 curl http://localhost:32768/api/endpoints \
-  -H "Authorization: Bearer sk_your_api_key"
+  -H "X-API-Key: sk_admin_scope_key"
 
 # モデル同期
 curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
-  -H "Authorization: Bearer sk_your_api_key"
+  -H "X-API-Key: sk_admin_scope_key"
 ```
 
 ### ステータス遷移
@@ -199,7 +199,7 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 
 LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Load Balancer と連携できます。
 
-MCP ????? npm/npx ??????????????????????? pnpm ??????
+MCP サーバーは npm/npx で配布しています。pnpm は本リポジトリの lint ツール用で、利用者側の必須要件ではありません。
 
 ### インストール
 
@@ -220,7 +220,8 @@ npx @llmlb/mcp-server
       "args": ["-y", "@llmlb/mcp-server"],
       "env": {
         "LLMLB_URL": "http://localhost:32768",
-        "LLMLB_API_KEY": "sk_your_api_key"
+        "LLMLB_API_KEY": "sk_api_scope_key",
+        "LLMLB_ADMIN_API_KEY": "sk_admin_scope_key"
       }
     }
   }
@@ -351,16 +352,32 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 |---------|-----------|------|
 | `LLMLB_HOST` | `0.0.0.0` | バインドアドレス |
 | `LLMLB_PORT` | `32768` | リッスンポート |
-| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/lb.db` | データベースURL |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/load balancer.db` | データベースURL |
+| `LLMLB_DATA_DIR` | `~/.llmlb` | ログ/旧リクエスト履歴の基準ディレクトリ |
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
 | `LLMLB_INTERNAL_API_TOKEN` | (任意) | /api・/dashboard・/ws 用の内部トークン（レガシー） |
 | `LLMLB_LOG_LEVEL` | `info` | ログレベル |
+| `LLMLB_LOG_DIR` | `~/.llmlb/logs` | ログ保存先 |
+| `LLMLB_LOG_RETENTION_DAYS` | `7` | ログ保持日数 |
 | `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
-| `LLMLB_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |
 | `LLMLB_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
-| `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
+| `LLMLB_QUEUE_MAX` | `100` | キュー待機上限 |
+| `LLMLB_QUEUE_TIMEOUT_SECS` | `60` | キュー待機タイムアウト（秒） |
+| `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（旧: `REQUEST_HISTORY_RETENTION_DAYS`） |
+| `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、旧: `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`） |
+| `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（旧: `LLM_DEFAULT_EMBEDDING_MODEL`） |
+| `LLMLB_AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、旧: `AUTH_DISABLED`） |
+| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（非推奨） |
+| `AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、非推奨） |
+| `REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（非推奨） |
+| `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、非推奨） |
+
+#### システムトレイ（Windows/macOS）
+
+Windows 10+ / macOS 12+ ではシステムトレイに常駐します。ヘッドレスで起動したい場合は
+`llmlb serve --no-tray` を利用してください。
 
 クラウドAPI:
 
@@ -530,7 +547,10 @@ LLM Load Balancer (OpenAI-compatible)
 | `admin` | 管理系 API 全般（`/api/users`, `/api/api-keys`, `/api/models/*`, `/api/runtimes/*`, `/api/endpoints/*`, `/api/dashboard/*`, `/api/metrics/*`） |
 
 **補足**:
-- `/api/auth/login` は無認証、`/api/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
+- `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
+- Cookie認証で変更系操作を行う場合は、`llmlb_csrf` Cookieの値を `X-CSRF-Token` ヘッダーで送信します。
+- Cookie認証の変更系操作では Origin/Referer が同一オリジンである必要があります。
+- `/api/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
 ### ロードバランサー（Load Balancer）

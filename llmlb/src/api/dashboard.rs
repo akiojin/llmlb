@@ -9,7 +9,11 @@ use crate::common::{
     types::HealthMetrics,
 };
 use crate::db::request_history::{FilterStatus, RecordFilter};
-use crate::{balancer::RequestHistoryPoint, types::endpoint::EndpointStatus, AppState};
+use crate::{
+    balancer::RequestHistoryPoint,
+    types::endpoint::{EndpointStatus, EndpointType, EndpointTypeSource},
+    AppState,
+};
 use axum::{
     body::Body,
     extract::{Path, Query, State},
@@ -20,6 +24,9 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
+use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
+use tracing::warn;
 use uuid::Uuid;
 
 /// エンドポイントのダッシュボード表示用サマリー
@@ -35,6 +42,14 @@ pub struct DashboardEndpoint {
     pub base_url: String,
     /// 現在の状態
     pub status: EndpointStatus,
+    /// エンドポイントタイプ（xLLM/Ollama/vLLM 等）
+    pub endpoint_type: EndpointType,
+    /// エンドポイントタイプ判定ソース（自動/手動）
+    pub endpoint_type_source: EndpointTypeSource,
+    /// 判定理由（自動判別/手動指定）
+    pub endpoint_type_reason: Option<String>,
+    /// 判定時刻
+    pub endpoint_type_detected_at: Option<DateTime<Utc>>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -124,16 +139,6 @@ pub struct DashboardOverview {
     pub generated_at: DateTime<Utc>,
     /// 集計に要した時間（ミリ秒）
     pub generation_time_ms: u64,
-}
-
-/// GET /api/dashboard/nodes
-///
-/// # 廃止済み
-///
-/// このエンドポイントは廃止されました。代わりに `/api/dashboard/endpoints` を使用してください。
-#[deprecated(note = "Use /api/dashboard/endpoints instead")]
-pub async fn get_nodes(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
-    Json(collect_endpoints(&state).await)
 }
 
 /// GET /api/dashboard/endpoints
@@ -292,6 +297,10 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
             name: endpoint.name,
             base_url: endpoint.base_url,
             status: endpoint.status,
+            endpoint_type: endpoint.endpoint_type,
+            endpoint_type_source: endpoint.endpoint_type_source,
+            endpoint_type_reason: endpoint.endpoint_type_reason,
+            endpoint_type_detected_at: endpoint.endpoint_type_detected_at,
             health_check_interval_secs: endpoint.health_check_interval_secs,
             inference_timeout_secs: endpoint.inference_timeout_secs,
             latency_ms: endpoint.latency_ms,
@@ -349,33 +358,6 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
 
 async fn collect_history(state: &AppState) -> Vec<RequestHistoryPoint> {
     state.load_manager.request_history().await
-}
-
-async fn load_filtered_records(
-    state: &AppState,
-    filter: &RecordFilter,
-) -> Result<Vec<crate::common::protocol::RequestResponseRecord>, AppError> {
-    let initial = state
-        .request_history
-        .filter_and_paginate(filter, 1, DEFAULT_PAGE_SIZE)
-        .await
-        .map_err(AppError::from)?;
-
-    if initial.total_count == 0 {
-        return Ok(vec![]);
-    }
-
-    if initial.total_count <= initial.records.len() {
-        return Ok(initial.records);
-    }
-
-    let all = state
-        .request_history
-        .filter_and_paginate(filter, 1, initial.total_count)
-        .await
-        .map_err(AppError::from)?;
-
-    Ok(all.records)
 }
 
 /// 許可されたページサイズ
@@ -535,14 +517,14 @@ pub async fn get_request_response_detail(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::common::protocol::RequestResponseRecord>, AppError> {
-    let records = state
+    let record = state
         .request_history
-        .load_records()
+        .get_record_by_id(id)
         .await
-        .map_err(AppError::from)?;
-    let record = records.into_iter().find(|r| r.id == id).ok_or_else(|| {
-        crate::common::error::LbError::NotFound(format!("Record {} not found", id))
-    })?;
+        .map_err(AppError::from)?
+        .ok_or_else(|| {
+            crate::common::error::LbError::NotFound(format!("Record {} not found", id))
+        })?;
     Ok(Json(record))
 }
 
@@ -552,12 +534,74 @@ pub async fn export_request_responses(
     Query(query): Query<RequestHistoryExportQuery>,
 ) -> Result<Response, AppError> {
     let filter = query.to_record_filter()?;
-    let records = load_filtered_records(&state, &filter).await?;
+    const EXPORT_PAGE_SIZE: usize = 1000;
+
+    let first_page = state
+        .request_history
+        .filter_and_paginate(&filter, 1, EXPORT_PAGE_SIZE)
+        .await
+        .map_err(AppError::from)?;
 
     match query.format {
         RequestHistoryExportFormat::Json => {
-            let json_bytes = serde_json::to_vec(&records)
-                .map_err(|e| AppError(LbError::Internal(format!("JSON serialize error: {}", e))))?;
+            let storage = state.request_history.clone();
+            let filter = filter.clone();
+            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
+            let mut page = 1usize;
+            let mut page_data = Some(first_page.clone());
+
+            tokio::spawn(async move {
+                if writer.write_all(b"[").await.is_err() {
+                    return;
+                }
+                let mut first = true;
+                loop {
+                    let data = if let Some(data) = page_data.take() {
+                        data
+                    } else {
+                        match storage
+                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                            .await
+                        {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to export request history page {}: {}", page, err);
+                                break;
+                            }
+                        }
+                    };
+
+                    if data.records.is_empty() {
+                        break;
+                    }
+
+                    for record in data.records {
+                        let json = match serde_json::to_vec(&record) {
+                            Ok(json) => json,
+                            Err(err) => {
+                                warn!("Failed to serialize request history record: {}", err);
+                                return;
+                            }
+                        };
+                        if !first && writer.write_all(b",").await.is_err() {
+                            return;
+                        }
+                        first = false;
+                        if writer.write_all(&json).await.is_err() {
+                            return;
+                        }
+                    }
+
+                    if page * EXPORT_PAGE_SIZE >= data.total_count {
+                        break;
+                    }
+                    page += 1;
+                }
+
+                let _ = writer.write_all(b"]").await;
+                let _ = writer.shutdown().await;
+            });
+
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
@@ -565,58 +609,120 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.json\"",
                 )
-                .body(Body::from(json_bytes))
+                .body(Body::from_stream(ReaderStream::new(reader)))
                 .unwrap();
             Ok(response)
         }
         RequestHistoryExportFormat::Csv => {
-            // CSV形式でエクスポート
-            let mut wtr = csv::Writer::from_writer(vec![]);
-            wtr.write_record([
-                "id",
-                "timestamp",
-                "request_type",
-                "model",
-                "runtime_id",
-                "runtime_machine_name",
-                "runtime_ip",
-                "client_ip",
-                "duration_ms",
-                "status",
-                "completed_at",
-            ])
-            .map_err(|e| AppError(LbError::Internal(format!("CSV header error: {}", e))))?;
+            let storage = state.request_history.clone();
+            let filter = filter.clone();
+            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
+            let mut page = 1usize;
+            let mut page_data = Some(first_page.clone());
 
-            for record in records {
-                let status_str = match &record.status {
-                    crate::common::protocol::RecordStatus::Success => "success".to_string(),
-                    crate::common::protocol::RecordStatus::Error { message } => {
-                        format!("error: {}", message)
+            tokio::spawn(async move {
+                let mut header = csv::Writer::from_writer(vec![]);
+                if header
+                    .write_record([
+                        "id",
+                        "timestamp",
+                        "request_type",
+                        "model",
+                        "runtime_id",
+                        "runtime_machine_name",
+                        "runtime_ip",
+                        "client_ip",
+                        "duration_ms",
+                        "status",
+                        "completed_at",
+                    ])
+                    .is_err()
+                {
+                    return;
+                }
+                let header_bytes = match header.into_inner() {
+                    Ok(data) => data,
+                    Err(err) => {
+                        warn!("Failed to finalize CSV header: {}", err);
+                        return;
                     }
                 };
+                if writer.write_all(&header_bytes).await.is_err() {
+                    return;
+                }
 
-                wtr.write_record(&[
-                    record.id.to_string(),
-                    record.timestamp.to_rfc3339(),
-                    format!("{:?}", record.request_type),
-                    record.model,
-                    record.node_id.to_string(),
-                    record.node_machine_name,
-                    record.node_ip.to_string(),
-                    record
-                        .client_ip
-                        .map(|ip| ip.to_string())
-                        .unwrap_or_default(),
-                    record.duration_ms.to_string(),
-                    status_str,
-                    record.completed_at.to_rfc3339(),
-                ])
-                .map_err(|e| AppError(LbError::Internal(format!("CSV write error: {}", e))))?;
-            }
+                loop {
+                    let data = if let Some(data) = page_data.take() {
+                        data
+                    } else {
+                        match storage
+                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                            .await
+                        {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to export request history page {}: {}", page, err);
+                                break;
+                            }
+                        }
+                    };
 
-            let csv_data = wtr
-                .into_inner()
-                .map_err(|e| AppError(LbError::Internal(format!("CSV finalize error: {}", e))))?;
+                    if data.records.is_empty() {
+                        break;
+                    }
+
+                    for record in data.records {
+                        let status_str = match &record.status {
+                            crate::common::protocol::RecordStatus::Success => "success".to_string(),
+                            crate::common::protocol::RecordStatus::Error { message } => {
+                                format!("error: {}", message)
+                            }
+                        };
+
+                        let mut row = csv::Writer::from_writer(vec![]);
+                        if row
+                            .write_record(&[
+                                record.id.to_string(),
+                                record.timestamp.to_rfc3339(),
+                                format!("{:?}", record.request_type),
+                                record.model,
+                                record.node_id.to_string(),
+                                record.node_machine_name,
+                                record.node_ip.to_string(),
+                                record
+                                    .client_ip
+                                    .map(|ip| ip.to_string())
+                                    .unwrap_or_default(),
+                                record.duration_ms.to_string(),
+                                status_str,
+                                record.completed_at.to_rfc3339(),
+                            ])
+                            .is_err()
+                        {
+                            return;
+                        }
+
+                        let row_bytes = match row.into_inner() {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to finalize CSV row: {}", err);
+                                return;
+                            }
+                        };
+
+                        if writer.write_all(&row_bytes).await.is_err() {
+                            return;
+                        }
+                    }
+
+                    if page * EXPORT_PAGE_SIZE >= data.total_count {
+                        break;
+                    }
+                    page += 1;
+                }
+
+                let _ = writer.shutdown().await;
+            });
 
             let response = Response::builder()
                 .status(StatusCode::OK)
@@ -625,12 +731,17 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.csv\"",
                 )
-                .body(Body::from(csv_data))
+                .body(Body::from_stream(ReaderStream::new(reader)))
                 .unwrap();
 
             Ok(response)
         }
     }
+}
+
+/// GET /api/dashboard/models - ダッシュボード向けモデル一覧
+pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppError> {
+    crate::api::openai::list_models(State(state)).await
 }
 
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装

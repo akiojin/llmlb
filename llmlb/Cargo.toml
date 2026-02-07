@@ -45,7 +45,9 @@ csv = "1.3"
 base64 = "0.22"
 
 # 認証機能
-sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
+# default-features には "any/macros/migrate/json" が含まれており、未使用DBドライバまで
+# lockfile に固定されてしまう（= cargo-audit で到達不能な脆弱性が検出される）ため明示制御する。
+sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "uuid"] }
 bcrypt = "0.18"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 sha2 = "0.10"
@@ -82,6 +84,6 @@ tempfile = "3.8"
 once_cell = "1.21"
 wiremock = "0.6.5"
 criterion = { version = "0.8", features = ["async_tokio"] }
-sqlx = { version = "0.8.1", features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
+sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "uuid"] }
 serial_test = "3.0"
 tokio-tungstenite = "0.28"

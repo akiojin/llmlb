@@ -8,7 +8,5 @@
 //! `GET /api/health` を定期的にポーリングして状態を確認する。
 
 pub mod endpoint_checker;
-pub mod startup;
 
 pub use endpoint_checker::EndpointHealthChecker;
-pub use startup::run_startup_health_check;

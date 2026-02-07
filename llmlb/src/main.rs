@@ -91,9 +91,18 @@ fn main() {
             use tokio::runtime::Builder;
 
             let config = ServerConfig::from_args(args.host, args.port);
+            if args.no_tray {
+                let runtime = Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build Tokio runtime for server mode");
+                runtime.block_on(run_server(config));
+                return;
+            }
             let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
+            let fallback_config = config.clone();
 
-            run_with_system_tray(tray_options, move |proxy| {
+            let result = run_with_system_tray(tray_options, move |proxy| {
                 let server_config = config.clone();
                 thread::spawn(move || {
                     let runtime = Builder::new_multi_thread()
@@ -104,6 +113,14 @@ fn main() {
                     proxy.notify_server_exit();
                 });
             });
+            if let Err(err) = result {
+                tracing::error!("System tray initialization failed: {err}");
+                let runtime = Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build Tokio runtime for server mode");
+                runtime.block_on(run_server(fallback_config));
+            }
             return;
         }
         None => {
@@ -118,8 +135,9 @@ fn main() {
 
     let config = ServerConfig::from_env();
     let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
+    let fallback_config = config.clone();
 
-    run_with_system_tray(tray_options, move |proxy| {
+    let result = run_with_system_tray(tray_options, move |proxy| {
         let server_config = config.clone();
         thread::spawn(move || {
             let runtime = Builder::new_multi_thread()
@@ -130,6 +148,14 @@ fn main() {
             proxy.notify_server_exit();
         });
     });
+    if let Err(err) = result {
+        tracing::error!("System tray initialization failed: {err}");
+        let runtime = Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build Tokio runtime for server mode");
+        runtime.block_on(run_server(fallback_config));
+    }
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -327,12 +353,8 @@ async fn run_server(config: ServerConfig) {
     let health_check_interval_secs: u64 =
         get_env_with_fallback_parse("LLMLB_HEALTH_CHECK_INTERVAL", "HEALTH_CHECK_INTERVAL", 30);
 
-    // 起動時にエンドポイントのヘルスチェックを実行
-    if let Err(e) = health::run_startup_health_check(&endpoint_registry).await {
-        tracing::warn!("Startup health check failed: {}", e);
-    }
-
     // エンドポイントヘルスチェッカーをバックグラウンドで開始
+    // NOTE: 起動時の並列ヘルスチェックもこのstart()内で実行し、サーバー起動をブロックしない。
     let endpoint_health_checker = health::EndpointHealthChecker::new(endpoint_registry.clone())
         .with_interval(health_check_interval_secs);
     endpoint_health_checker.start();
@@ -369,10 +391,6 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
-    // エンドポイントレジストリを初期化
-    let endpoint_registry = llmlb::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-        .await
-        .expect("Failed to initialize endpoint registry");
     info!(
         "Endpoint registry initialized with {} endpoints",
         endpoint_registry.count().await

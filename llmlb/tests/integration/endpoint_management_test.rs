@@ -18,7 +18,6 @@ async fn test_update_endpoint_name() {
     // エンドポイント登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Original Name",
@@ -38,7 +37,6 @@ async fn test_update_endpoint_name() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Updated Name"
@@ -55,7 +53,6 @@ async fn test_update_endpoint_name() {
     // 一覧でも更新されている
     let list_resp = client
         .get(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -80,7 +77,6 @@ async fn test_update_health_check_interval() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Interval Test",
@@ -101,7 +97,6 @@ async fn test_update_health_check_interval() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "health_check_interval_secs": 120
@@ -122,7 +117,6 @@ async fn test_delete_endpoint() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "To Be Deleted",
@@ -142,7 +136,6 @@ async fn test_delete_endpoint() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -153,7 +146,6 @@ async fn test_delete_endpoint() {
     // 一覧から消えている
     let list_resp = client
         .get(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -172,7 +164,6 @@ async fn test_manage_endpoint_notes() {
     // notesなしで登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Notes Test",
@@ -193,7 +184,6 @@ async fn test_manage_endpoint_notes() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "notes": "Production server - do not disable"
@@ -215,7 +205,6 @@ async fn test_manage_endpoint_notes() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "notes": null
@@ -236,7 +225,6 @@ async fn test_update_multiple_fields() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Multi Update Test",
@@ -256,7 +244,6 @@ async fn test_update_multiple_fields() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "New Name",

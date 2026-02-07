@@ -68,6 +68,12 @@ mod images_variations_test;
 #[path = "contract/openai_logging_test.rs"]
 mod openai_logging_test;
 
+#[path = "contract/openai_request_sanitization_spec.rs"]
+mod openai_request_sanitization_spec;
+
+#[path = "contract/queueing_test.rs"]
+mod queueing_test;
+
 #[path = "contract/models_source_test.rs"]
 mod models_source_test;
 

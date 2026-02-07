@@ -7,11 +7,20 @@ mod support;
 #[path = "integration/model_info_test.rs"]
 mod model_info_test;
 
+#[path = "integration/models_metadata_test.rs"]
+mod models_metadata_test;
+
+#[path = "integration/migration_test.rs"]
+mod migration_test;
+
 // NOTE: audio_api_test.rs was deleted as part of NodeRegistry removal (SPEC-66555000)
 // All tests depended on deprecated /api/internal/test/register-node endpoint
 
 #[path = "integration/images_api_test.rs"]
 mod images_api_test;
+
+#[path = "integration/api_key_scopes_test.rs"]
+mod api_key_scopes_test;
 
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
@@ -57,6 +66,9 @@ mod endpoint_type_filter_test;
 #[path = "integration/endpoint_type_manual_override_test.rs"]
 mod endpoint_type_manual_override_test;
 
+#[path = "integration/dashboard_endpoints_type_test.rs"]
+mod dashboard_endpoints_type_test;
+
 #[path = "integration/endpoint_xllm_download_test.rs"]
 mod endpoint_xllm_download_test;
 
@@ -76,6 +88,15 @@ mod request_capture_test;
 // 既存の統合テスト（ハーネス未登録だったものを追加）
 #[path = "integration/test_metrics.rs"]
 mod test_metrics;
+
+#[path = "integration/test_node_lifecycle.rs"]
+mod test_node_lifecycle;
+
+#[path = "integration/test_health_monitor.rs"]
+mod test_health_monitor;
+
+#[path = "integration/test_proxy.rs"]
+mod test_proxy;
 
 // SPEC-24157000: Open Responses API統合テスト
 #[path = "integration/responses_api_test.rs"]

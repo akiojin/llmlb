@@ -45,7 +45,7 @@ export async function getOpenApiContent(
 const DEFAULT_OPENAPI_SPEC = {
   openapi: "3.1.0",
   info: {
-    title: "LLM Router API",
+    title: "llmlb API",
     version: "0.1.0",
     description:
       "OpenAI-compatible endpoints with optional cloud routing by model prefix (openai:/google:/anthropic:).",
@@ -96,21 +96,29 @@ const DEFAULT_OPENAPI_SPEC = {
         },
       },
     },
-    "/v0/nodes": {
-      get: { summary: "List registered nodes" },
-      post: { summary: "Register a new node" },
+    "/api/auth/login": {
+      post: { summary: "Login (sets HttpOnly cookie for the dashboard)" },
     },
-    "/v0/dashboard/stats": {
-      get: { summary: "Get dashboard statistics" },
+    "/api/auth/me": {
+      get: { summary: "Get current user session" },
     },
-    "/v0/dashboard/overview": {
+    "/api/endpoints": {
+      get: { summary: "List endpoints" },
+      post: { summary: "Create endpoint" },
+    },
+    "/api/endpoints/{id}": {
+      get: { summary: "Get endpoint detail" },
+      put: { summary: "Update endpoint" },
+      delete: { summary: "Delete endpoint" },
+    },
+    "/api/dashboard/overview": {
       get: { summary: "Get dashboard overview" },
     },
-    "/v0/models/available": {
-      get: { summary: "List available models" },
+    "/api/dashboard/stats": {
+      get: { summary: "Get dashboard statistics" },
     },
-    "/v0/models/registered": {
-      get: { summary: "List registered models" },
+    "/api/models/register": {
+      post: { summary: "Register a model (admin only)" },
     },
   },
   components: {

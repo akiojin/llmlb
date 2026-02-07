@@ -55,6 +55,15 @@
 - [x] T015 仕様に沿ってエラーメッセージとヘッダ名を整理
 - [x] T016 追加したテスト・品質チェックをすべて実行
 
+## Phase 3.7: 安定化（2026-02-04）
+
+- [x] T017 `llmlb/tests/contract/test_proxy_completions.rs` の
+queue overflow テストを安定化（in-flight 反映後に2本目を送信）
+- [x] T018 `llmlb/src/balancer/mod.rs` に
+テスト向けの状態可視化（busy判定/待機数の待ち合わせヘルパー）を追加
+- [x] T019 `llmlb/tests/contract/queueing_test.rs` に
+キュー満杯の再現用シナリオを追加（Notifyで先行リクエストを保持）
+
 ## 依存関係
 
 ```text

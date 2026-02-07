@@ -15,6 +15,8 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     let registered_at = endpoint.registered_at.to_rfc3339();
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
     let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
+    let endpoint_type_source = endpoint.endpoint_type_source.as_str();
+    let endpoint_type_detected_at = endpoint.endpoint_type_detected_at.map(|dt| dt.to_rfc3339());
     // SPEC-f8e3a1b7: デバイス情報と推論レイテンシ
     let device_info = endpoint
         .device_info
@@ -26,10 +28,11 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
         r#"
         INSERT INTO endpoints (
             id, name, base_url, api_key_encrypted, status, endpoint_type,
+            endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
             health_check_interval_secs, inference_timeout_secs,
             latency_ms, last_seen, last_error, error_count,
             registered_at, notes, capabilities, device_info, inference_latency_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -38,6 +41,9 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     .bind(&endpoint.api_key)
     .bind(status)
     .bind(endpoint_type)
+    .bind(endpoint_type_source)
+    .bind(&endpoint.endpoint_type_reason)
+    .bind(&endpoint_type_detected_at)
     .bind(endpoint.health_check_interval_secs as i32)
     .bind(endpoint.inference_timeout_secs as i32)
     .bind(endpoint.latency_ms.map(|v| v as i32))
@@ -60,6 +66,7 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, supports_responses_api, capabilities,
@@ -79,6 +86,7 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
     let row = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, supports_responses_api, capabilities,
@@ -99,6 +107,8 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     let id = endpoint.id.to_string();
     let status = endpoint.status.as_str();
     let endpoint_type = endpoint.endpoint_type.as_str();
+    let endpoint_type_source = endpoint.endpoint_type_source.as_str();
+    let endpoint_type_detected_at = endpoint.endpoint_type_detected_at.map(|dt| dt.to_rfc3339());
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
     let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
     // SPEC-f8e3a1b7: デバイス情報と推論レイテンシ
@@ -111,6 +121,7 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
         r#"
         UPDATE endpoints SET
             name = ?, base_url = ?, api_key_encrypted = ?, status = ?, endpoint_type = ?,
+            endpoint_type_source = ?, endpoint_type_reason = ?, endpoint_type_detected_at = ?,
             health_check_interval_secs = ?, inference_timeout_secs = ?,
             latency_ms = ?, last_seen = ?, last_error = ?, error_count = ?,
             notes = ?, capabilities = ?, device_info = ?, inference_latency_ms = ?
@@ -122,6 +133,9 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     .bind(&endpoint.api_key)
     .bind(status)
     .bind(endpoint_type)
+    .bind(endpoint_type_source)
+    .bind(&endpoint.endpoint_type_reason)
+    .bind(&endpoint_type_detected_at)
     .bind(endpoint.health_check_interval_secs as i32)
     .bind(endpoint.inference_timeout_secs as i32)
     .bind(endpoint.latency_ms.map(|v| v as i32))
@@ -154,6 +168,7 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
     let row = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, supports_responses_api, capabilities,
@@ -177,6 +192,7 @@ pub async fn list_endpoints_by_status(
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, supports_responses_api, capabilities,
@@ -201,6 +217,7 @@ pub async fn list_endpoints_by_type(
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, supports_responses_api, capabilities,
@@ -226,6 +243,7 @@ pub async fn list_endpoints_by_type_and_status(
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
+               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, supports_responses_api, capabilities,
@@ -248,15 +266,24 @@ pub async fn update_endpoint_type(
     pool: &SqlitePool,
     id: Uuid,
     endpoint_type: crate::types::endpoint::EndpointType,
+    endpoint_type_source: crate::types::endpoint::EndpointTypeSource,
+    endpoint_type_reason: Option<&str>,
+    endpoint_type_detected_at: Option<String>,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
         UPDATE endpoints SET
-            endpoint_type = ?
+            endpoint_type = ?,
+            endpoint_type_source = ?,
+            endpoint_type_reason = ?,
+            endpoint_type_detected_at = ?
         WHERE id = ?
         "#,
     )
     .bind(endpoint_type.as_str())
+    .bind(endpoint_type_source.as_str())
+    .bind(endpoint_type_reason)
+    .bind(endpoint_type_detected_at)
     .bind(id.to_string())
     .execute(pool)
     .await?;
@@ -574,6 +601,12 @@ struct EndpointRow {
     status: String,
     /// SPEC-66555000: エンドポイントタイプ
     endpoint_type: String,
+    /// SPEC-66555000: タイプ判定ソース
+    endpoint_type_source: String,
+    /// SPEC-66555000: 判定理由
+    endpoint_type_reason: Option<String>,
+    /// SPEC-66555000: 判定時刻
+    endpoint_type_detected_at: Option<String>,
     health_check_interval_secs: i32,
     inference_timeout_secs: i32,
     latency_ms: Option<i32>,
@@ -602,6 +635,12 @@ impl From<EndpointRow> for Endpoint {
             api_key: row.api_key_encrypted,
             status: row.status.parse().unwrap_or_default(),
             endpoint_type: row.endpoint_type.parse().unwrap_or_default(),
+            endpoint_type_source: row.endpoint_type_source.parse().unwrap_or_default(),
+            endpoint_type_reason: row.endpoint_type_reason,
+            endpoint_type_detected_at: row
+                .endpoint_type_detected_at
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc)),
             health_check_interval_secs: row.health_check_interval_secs as u32,
             inference_timeout_secs: row.inference_timeout_secs as u32,
             latency_ms: row.latency_ms.map(|v| v as u32),

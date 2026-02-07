@@ -950,6 +950,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match &self.0 {
             LbError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
+            LbError::NotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
             LbError::NoNodesAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             LbError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
             LbError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),

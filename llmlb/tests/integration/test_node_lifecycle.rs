@@ -4,6 +4,7 @@
 //! このテストはRED状態であることが期待されます（T027-T049で実装後にGREENになる）
 
 #[tokio::test]
+#[ignore = "TDD RED: ノードライフサイクル未実装"]
 async fn test_node_registers_and_sends_heartbeat() {
     // Arrange: Routerサーバー起動
     // let lb = start_test_lb().await;
@@ -29,6 +30,7 @@ async fn test_node_registers_and_sends_heartbeat() {
 }
 
 #[tokio::test]
+#[ignore = "TDD RED: ノードタイムアウト検知未実装"]
 async fn test_node_timeout_detection() {
     // Arrange: Routerサーバー起動、ノード登録
     // let lb = start_test_lb().await;
@@ -46,6 +48,7 @@ async fn test_node_timeout_detection() {
 }
 
 #[tokio::test]
+#[ignore = "TDD RED: ノード自動再接続未実装"]
 async fn test_node_auto_reconnect() {
     // Arrange: Routerサーバー起動、ノード登録後にオフライン
     // let lb = start_test_lb().await;

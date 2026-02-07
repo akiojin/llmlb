@@ -5,26 +5,54 @@
 //! 管理者として、非xLLMエンドポイント（Ollama/vLLM/OpenAI互換）で
 //! モデルダウンロードがリクエストされた場合、エラーを返してほしい。
 
+use llmlb::common::auth::{ApiKeyScope, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
+use sqlx::SqlitePool;
 
-use crate::support::lb::spawn_test_lb;
+use crate::support::lb::spawn_test_lb_with_db;
+
+async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin).await;
+    let admin_id = match created {
+        Ok(user) => user.id,
+        Err(_) => {
+            llmlb::db::users::find_by_username(db_pool, "admin")
+                .await
+                .unwrap()
+                .unwrap()
+                .id
+        }
+    };
+
+    let api_key = llmlb::db::api_keys::create(
+        db_pool,
+        "test-admin-key",
+        admin_id,
+        None,
+        vec![ApiKeyScope::Admin],
+    )
+    .await
+    .expect("create admin api key");
+    api_key.key
+}
 
 /// US8-拒否シナリオ1: unknownタイプのエンドポイントでダウンロード拒否
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T123で実装後に有効化"]
 async fn test_download_reject_unknown_type() {
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // エンドポイント登録（オフラインなのでunknownタイプ）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Offline Endpoint",
-            "base_url": "http://localhost:9999"
+            "base_url": "http://localhost:9999",
+            "endpoint_type": "unknown"
         }))
         .send()
         .await
@@ -40,8 +68,7 @@ async fn test_download_reject_unknown_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "llama-3.2-1b"
         }))
@@ -61,19 +88,19 @@ async fn test_download_reject_unknown_type() {
 
 /// US8-拒否シナリオ2: Ollamaタイプのエンドポイントでダウンロード拒否
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T123で実装後に有効化"]
 async fn test_download_reject_ollama_type() {
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // Ollamaエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Ollama Server",
-            "base_url": "http://localhost:11434"  // Ollamaモック
+            "base_url": "http://localhost:11434",  // Ollamaモック
+            "endpoint_type": "ollama"
         }))
         .send()
         .await
@@ -89,8 +116,7 @@ async fn test_download_reject_ollama_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "llama3:8b"
         }))
@@ -104,19 +130,19 @@ async fn test_download_reject_ollama_type() {
 
 /// US8-拒否シナリオ3: vLLMタイプのエンドポイントでダウンロード拒否
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T123で実装後に有効化"]
 async fn test_download_reject_vllm_type() {
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // vLLMエンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "vLLM Server",
-            "base_url": "http://localhost:8000"  // vLLMモック
+            "base_url": "http://localhost:8000",  // vLLMモック
+            "endpoint_type": "vllm"
         }))
         .send()
         .await
@@ -132,8 +158,7 @@ async fn test_download_reject_vllm_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "some-model"
         }))
@@ -147,19 +172,19 @@ async fn test_download_reject_vllm_type() {
 
 /// US8-拒否シナリオ4: OpenAI互換タイプのエンドポイントでダウンロード拒否
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T123で実装後に有効化"]
 async fn test_download_reject_openai_compatible_type() {
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // OpenAI互換エンドポイント登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "OpenAI Compatible Server",
-            "base_url": "http://localhost:8001"  // OpenAI互換モック
+            "base_url": "http://localhost:8001",  // OpenAI互換モック
+            "endpoint_type": "openai_compatible"
         }))
         .send()
         .await
@@ -175,8 +200,7 @@ async fn test_download_reject_openai_compatible_type() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "gpt-3.5-turbo"
         }))
@@ -190,19 +214,19 @@ async fn test_download_reject_openai_compatible_type() {
 
 /// US8-拒否シナリオ5: エラーメッセージの検証
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T123で実装後に有効化"]
 async fn test_download_reject_error_message() {
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // unknownタイプのエンドポイントを登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Test Endpoint",
-            "base_url": "http://localhost:9999"
+            "base_url": "http://localhost:9999",
+            "endpoint_type": "unknown"
         }))
         .send()
         .await
@@ -218,8 +242,7 @@ async fn test_download_reject_error_message() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "llama-3.2-1b"
         }))

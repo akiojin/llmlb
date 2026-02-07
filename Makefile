@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy test markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
 .PHONY: openai-tests test-hooks e2e-tests
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -49,9 +49,12 @@ specify-commits:
 
 specify-checks: specify-tasks specify-tests specify-compile specify-commits
 
-quality-checks: fmt clippy test specify-checks markdownlint openai-tests test-hooks
+quality-checks: fmt clippy test security-checks specify-checks markdownlint openai-tests test-hooks
 
 quality-checks-pre-commit: fmt clippy
+
+security-checks:
+	cargo audit
 
 # NOTE: openai_proxy.rs was removed in SPEC-66555000 (NodeRegistry removal)
 # OpenAI API tests are now covered by e2e_openai_proxy

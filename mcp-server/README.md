@@ -25,7 +25,8 @@ Add to your `.mcp.json`:
       "args": ["-y", "@llmlb/mcp-server"],
       "env": {
         "LLMLB_URL": "http://localhost:32768",
-        "LLMLB_API_KEY": "sk_your_api_key"
+        "LLMLB_API_KEY": "sk_api_scope_key",
+        "LLMLB_ADMIN_API_KEY": "sk_admin_scope_key"
       }
     }
   }
@@ -37,8 +38,9 @@ Add to your `.mcp.json`:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LLMLB_URL` | Base URL of the LLM Router | `http://localhost:32768` |
-| `LLMLB_API_KEY` | API key for inference endpoints | - |
-| `LLMLB_JWT_TOKEN` | JWT token for management APIs | - |
+| `LLMLB_API_KEY` | API key for `/v1/*` inference endpoints (scope: `api`) | - |
+| `LLMLB_ADMIN_API_KEY` | API key for `/api/*` management endpoints (scope: `admin`) | - |
+| `LLMLB_JWT_TOKEN` | (Deprecated) bearer JWT token for management APIs | - |
 | `LLMLB_OPENAPI_PATH` | Path to custom OpenAPI spec | - |
 
 ## Tools
@@ -70,11 +72,11 @@ curl -X POST http://localhost:32768/v1/chat/completions \
 The server provides API documentation as MCP resources:
 
 - `llmlb-openapi`: OpenAPI specification (JSON)
-- `llmlb-guide-inference`: Guide for inference endpoints
-- `llmlb-guide-node-mgmt`: Guide for node management
-- `llmlb-guide-model-mgmt`: Guide for model management
-- `llmlb-guide-user-mgmt`: Guide for user and API key management
-- `llmlb-guide-dashboard`: Guide for dashboard and monitoring
+- `llmlb-api-overview`: API overview and auth notes
+- `llmlb-openai-api`: OpenAI-compatible `/v1/*` guide
+- `llmlb-endpoint-api`: Endpoint management `/api/endpoints` guide
+- `llmlb-model-api`: Model management `/api/models/*` guide
+- `llmlb-dashboard-api`: Dashboard `/api/dashboard/*` guide
 
 ## Security
 

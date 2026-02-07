@@ -47,6 +47,10 @@ pub enum LbError {
     #[error("Runtime not found: {0}")]
     NodeNotFound(Uuid),
 
+    /// Resource not found
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     /// No available runtimes
     #[error("No available runtimes")]
     NoNodesAvailable,
@@ -117,6 +121,7 @@ impl LbError {
         match self {
             Self::Common(_) => "Request error",
             Self::NodeNotFound(_) => "Runtime not found",
+            Self::NotFound(_) => "Not found",
             Self::NoNodesAvailable => "No available runtimes",
             Self::NoCapableNodes(_) => "No capable runtimes",
             Self::Database(_) => "Database error",
@@ -150,6 +155,7 @@ impl LbError {
             Self::Common(CommonError::Validation(_)) => "invalid_request_error",
             Self::Common(_) => "invalid_request_error",
             Self::NodeNotFound(_) => "not_found_error",
+            Self::NotFound(_) => "not_found_error",
             Self::NoNodesAvailable => "service_unavailable",
             Self::NoCapableNodes(_) => "not_found_error",
             Self::Database(_) => "server_error",
@@ -173,6 +179,7 @@ impl LbError {
             Self::Common(CommonError::Validation(_)) => StatusCode::BAD_REQUEST,
             Self::Common(_) => StatusCode::BAD_REQUEST,
             Self::NodeNotFound(_) => StatusCode::NOT_FOUND,
+            Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::NoNodesAvailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::NoCapableNodes(_) => StatusCode::NOT_FOUND,
             Self::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -339,6 +346,10 @@ mod tests {
             "not_found_error"
         );
         assert_eq!(
+            LbError::NotFound("test".to_string()).error_type(),
+            "not_found_error"
+        );
+        assert_eq!(
             LbError::NoCapableNodes("test".to_string()).error_type(),
             "not_found_error"
         );
@@ -386,6 +397,10 @@ mod tests {
         );
         assert_eq!(
             LbError::NodeNotFound(Uuid::new_v4()).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            LbError::NotFound("test".to_string()).status_code(),
             StatusCode::NOT_FOUND
         );
         assert_eq!(

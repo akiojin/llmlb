@@ -2,6 +2,8 @@
 
 use std::process::Command;
 
+use anyhow::{Context, Result};
+
 #[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
@@ -72,17 +74,23 @@ enum RuntimeEvent {
 }
 
 /// Run the system tray loop and bootstrap the load balancer runtime.
-pub fn run_with_system_tray<F>(options: TrayOptions, bootstrap: F)
+pub fn run_with_system_tray<F>(options: TrayOptions, bootstrap: F) -> Result<()>
 where
     F: FnOnce(TrayEventProxy) + Send + 'static,
 {
     let event_loop: EventLoop<RuntimeEvent> = EventLoop::with_user_event()
         .build()
-        .expect("failed to create system tray event loop");
+        .context("failed to create system tray event loop")?;
 
     let tray_proxy = TrayEventProxy {
         proxy: event_loop.create_proxy(),
     };
+
+    let mut controller = TrayController::new(options)?;
+    if let Err(err) = controller.ensure_initialized() {
+        error!("Failed to initialize system tray: {err}");
+        return Err(err);
+    }
 
     bootstrap(tray_proxy.clone());
 
@@ -96,12 +104,15 @@ where
         let _ = menu_proxy.send_event(RuntimeEvent::Menu(event));
     }));
 
-    let mut controller = TrayController::new(options);
-
     #[allow(deprecated)]
     event_loop
         .run(move |event, event_loop| match event {
-            Event::NewEvents(StartCause::Init) => controller.ensure_initialized(),
+            Event::NewEvents(StartCause::Init) => {
+                if let Err(err) = controller.ensure_initialized() {
+                    error!("Failed to initialize system tray: {err}");
+                    event_loop.exit();
+                }
+            }
             Event::UserEvent(RuntimeEvent::Tray(event)) => controller.handle_tray_event(event),
             Event::UserEvent(RuntimeEvent::Menu(event)) => controller.handle_menu_event(event),
             Event::UserEvent(RuntimeEvent::ServerExited) => {
@@ -110,7 +121,8 @@ where
             }
             _ => (),
         })
-        .expect("system tray loop exited unexpectedly")
+        .context("system tray loop exited unexpectedly")?;
+    Ok(())
 }
 
 struct TrayController {
@@ -122,19 +134,19 @@ struct TrayController {
 }
 
 impl TrayController {
-    fn new(options: TrayOptions) -> Self {
-        Self {
+    fn new(options: TrayOptions) -> Result<Self> {
+        Ok(Self {
             options,
             tray_icon: None,
-            menu: TrayMenu::new(),
+            menu: TrayMenu::new()?,
             #[cfg(target_os = "macos")]
             last_click: None,
-        }
+        })
     }
 
-    fn ensure_initialized(&mut self) {
+    fn ensure_initialized(&mut self) -> Result<()> {
         if self.tray_icon.is_none() {
-            let icon = create_icon();
+            let icon = create_icon()?;
             let builder = {
                 let base = TrayIconBuilder::new()
                     .with_tooltip(self.options.tooltip())
@@ -151,8 +163,9 @@ impl TrayController {
                 }
             };
 
-            self.tray_icon = Some(builder.build().expect("failed to create tray icon"));
+            self.tray_icon = Some(builder.build().context("failed to create tray icon")?);
         }
+        Ok(())
     }
 
     fn handle_tray_event(&mut self, event: TrayIconEvent) {
@@ -215,20 +228,20 @@ struct TrayMenu {
 }
 
 impl TrayMenu {
-    fn new() -> Self {
+    fn new() -> Result<Self> {
         let menu = Menu::new();
         let open_dashboard = MenuItem::new("Open Dashboard", true, None);
         let quit = MenuItem::new("Quit LLM Load Balancer", true, None);
 
         menu.append(&open_dashboard)
-            .expect("failed to append dashboard menu");
-        menu.append(&quit).expect("failed to append quit menu");
+            .context("failed to append dashboard menu")?;
+        menu.append(&quit).context("failed to append quit menu")?;
 
-        Self {
+        Ok(Self {
             menu,
             open_dashboard,
             quit,
-        }
+        })
     }
 }
 
@@ -252,15 +265,15 @@ fn launch_url(url: &str) -> std::io::Result<()> {
     }
 }
 
-fn create_icon() -> Icon {
+fn create_icon() -> Result<Icon> {
     load_icon_from_png(include_bytes!("../../../assets/icons/llmlb.png"))
 }
 
-fn load_icon_from_png(bytes: &[u8]) -> Icon {
+fn load_icon_from_png(bytes: &[u8]) -> Result<Icon> {
     let image = image::load_from_memory(bytes)
-        .expect("failed to decode load balancer tray icon")
+        .context("failed to decode load balancer tray icon")?
         .to_rgba8();
     let (width, height) = image.dimensions();
     Icon::from_rgba(image.into_raw(), width, height)
-        .expect("failed to create tray icon rgba buffer")
+        .context("failed to create tray icon rgba buffer")
 }

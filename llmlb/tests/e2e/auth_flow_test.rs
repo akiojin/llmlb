@@ -6,7 +6,7 @@
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{header, Request, StatusCode},
     Router,
 };
 use llmlb::common::auth::UserRole;
@@ -57,7 +57,6 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -75,9 +74,25 @@ async fn test_complete_auth_flow() {
 
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let login_body = axum::body::to_bytes(login_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let (login_parts, login_body) = login_response.into_parts();
+    let set_cookie_values: Vec<String> = login_parts
+        .headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(|s| s.to_string()))
+        .collect();
+    assert!(
+        !set_cookie_values.is_empty(),
+        "Expected Set-Cookie headers, got: {:?}",
+        login_parts.headers
+    );
+    let set_cookie = set_cookie_values.join(", ");
+    assert!(
+        set_cookie.contains("llmlb_jwt="),
+        "Login response should set JWT cookie"
+    );
+
+    let login_body = axum::body::to_bytes(login_body, usize::MAX).await.unwrap();
     let login_data: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
 
     let token = login_data["token"].as_str().unwrap();
@@ -88,7 +103,6 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .header("authorization", format!("Bearer {}", token))
@@ -125,7 +139,6 @@ async fn test_complete_auth_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/logout")
                 .header("authorization", format!("Bearer {}", token))
@@ -136,12 +149,26 @@ async fn test_complete_auth_flow() {
         .unwrap();
 
     assert_eq!(logout_response.status(), StatusCode::NO_CONTENT);
+    let logout_set_cookie = logout_response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect::<Vec<_>>()
+        .join(", ");
+    assert!(
+        logout_set_cookie.contains("llmlb_jwt="),
+        "Logout should clear JWT cookie"
+    );
+    assert!(
+        logout_set_cookie.contains("llmlb_csrf="),
+        "Logout should clear CSRF cookie"
+    );
 
     // Step 4: ログアウト後は認証が必要なエンドポイントにアクセスできない
     let unauthorized_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .header("authorization", format!("Bearer {}", token))
@@ -161,6 +188,296 @@ async fn test_complete_auth_flow() {
 }
 
 #[tokio::test]
+async fn test_logout_requires_csrf_for_cookie_auth() {
+    let (app, _db_pool) = build_app().await;
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "password123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let (login_parts, _) = login_response.into_parts();
+    let set_cookie_values: Vec<String> = login_parts
+        .headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(|s| s.to_string()))
+        .collect();
+    let cookie_pairs: Vec<String> = set_cookie_values
+        .into_iter()
+        .filter_map(|value| {
+            value
+                .split(';')
+                .next()
+                .map(|first| first.trim().to_string())
+        })
+        .collect();
+    let mut jwt_cookie = "";
+    let mut csrf_cookie = "";
+    for first in &cookie_pairs {
+        if first.starts_with("llmlb_jwt=") {
+            jwt_cookie = first;
+        }
+        if first.starts_with("llmlb_csrf=") {
+            csrf_cookie = first;
+        }
+    }
+    assert!(
+        !jwt_cookie.is_empty() && !csrf_cookie.is_empty(),
+        "Expected both jwt and csrf cookies, got: {:?}",
+        cookie_pairs
+    );
+
+    let cookie_header = format!("{}; {}", jwt_cookie, csrf_cookie);
+
+    let forbidden = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/logout")
+                .header(header::HOST, "example.com")
+                .header(header::ORIGIN, "http://example.com")
+                .header(header::COOKIE, &cookie_header)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        forbidden.status(),
+        StatusCode::FORBIDDEN,
+        "Logout without CSRF header should be forbidden"
+    );
+
+    let ok = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/logout")
+                .header(header::HOST, "example.com")
+                .header(header::ORIGIN, "http://example.com")
+                .header(header::COOKIE, &cookie_header)
+                .header(
+                    "x-csrf-token",
+                    csrf_cookie.trim_start_matches("llmlb_csrf="),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        ok.status(),
+        StatusCode::NO_CONTENT,
+        "Logout with CSRF header should succeed"
+    );
+}
+
+#[tokio::test]
+async fn test_logout_requires_origin_for_cookie_auth() {
+    let (app, _db_pool) = build_app().await;
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "password123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let (login_parts, _) = login_response.into_parts();
+    let set_cookie_values: Vec<String> = login_parts
+        .headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(|s| s.to_string()))
+        .collect();
+    let cookie_pairs: Vec<String> = set_cookie_values
+        .into_iter()
+        .filter_map(|value| {
+            value
+                .split(';')
+                .next()
+                .map(|first| first.trim().to_string())
+        })
+        .collect();
+    let mut jwt_cookie = "";
+    let mut csrf_cookie = "";
+    for first in &cookie_pairs {
+        if first.starts_with("llmlb_jwt=") {
+            jwt_cookie = first;
+        }
+        if first.starts_with("llmlb_csrf=") {
+            csrf_cookie = first;
+        }
+    }
+    assert!(
+        !jwt_cookie.is_empty() && !csrf_cookie.is_empty(),
+        "Expected both jwt and csrf cookies, got: {:?}",
+        cookie_pairs
+    );
+
+    let cookie_header = format!("{}; {}", jwt_cookie, csrf_cookie);
+
+    let forbidden = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/logout")
+                .header(header::COOKIE, &cookie_header)
+                .header(
+                    "x-csrf-token",
+                    csrf_cookie.trim_start_matches("llmlb_csrf="),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        forbidden.status(),
+        StatusCode::FORBIDDEN,
+        "Logout without origin should be forbidden"
+    );
+}
+
+#[tokio::test]
+async fn test_csrf_token_rotates_on_mutation() {
+    let (app, _db_pool) = build_app().await;
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "password123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let (login_parts, _) = login_response.into_parts();
+    let set_cookie_values: Vec<String> = login_parts
+        .headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok().map(|s| s.to_string()))
+        .collect();
+    let cookie_pairs: Vec<String> = set_cookie_values
+        .into_iter()
+        .filter_map(|value| {
+            value
+                .split(';')
+                .next()
+                .map(|first| first.trim().to_string())
+        })
+        .collect();
+    let mut jwt_cookie = "";
+    let mut csrf_cookie = "";
+    for first in &cookie_pairs {
+        if first.starts_with("llmlb_jwt=") {
+            jwt_cookie = first;
+        }
+        if first.starts_with("llmlb_csrf=") {
+            csrf_cookie = first;
+        }
+    }
+    assert!(
+        !jwt_cookie.is_empty() && !csrf_cookie.is_empty(),
+        "Expected both jwt and csrf cookies, got: {:?}",
+        cookie_pairs
+    );
+
+    let cookie_header = format!("{}; {}", jwt_cookie, csrf_cookie);
+
+    let create_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/invitations")
+                .header("content-type", "application/json")
+                .header(header::HOST, "example.com")
+                .header(header::ORIGIN, "http://example.com")
+                .header(header::COOKIE, &cookie_header)
+                .header(
+                    "x-csrf-token",
+                    csrf_cookie.trim_start_matches("llmlb_csrf="),
+                )
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "expires_in_hours": 24
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
+    let new_csrf_cookie = create_response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .filter_map(|value| value.split(';').next())
+        .map(|value| value.trim())
+        .find(|value| value.starts_with("llmlb_csrf="))
+        .unwrap_or_default()
+        .to_string();
+
+    assert!(
+        !new_csrf_cookie.is_empty(),
+        "Mutating response should rotate CSRF cookie"
+    );
+    assert_ne!(
+        new_csrf_cookie, csrf_cookie,
+        "CSRF cookie should rotate after mutation"
+    );
+}
+
+#[tokio::test]
 async fn test_unauthorized_access_without_token() {
     let (app, _db_pool) = build_app().await;
 
@@ -168,7 +485,6 @@ async fn test_unauthorized_access_without_token() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .body(Body::empty())
@@ -192,7 +508,6 @@ async fn test_invalid_token() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/users")
                 .header("authorization", "Bearer invalid-token-12345")
@@ -218,7 +533,6 @@ async fn test_auth_me_endpoint() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -247,7 +561,6 @@ async fn test_auth_me_endpoint() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/auth/me")
                 .header("authorization", format!("Bearer {}", token))
@@ -288,6 +601,72 @@ async fn test_auth_me_endpoint() {
 }
 
 #[tokio::test]
+async fn test_auth_me_with_cookie() {
+    let (app, _db_pool) = build_app().await;
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "username": "admin",
+                        "password": "password123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let (login_parts, login_body) = login_response.into_parts();
+    let cookie_pair = login_parts
+        .headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .filter_map(|value| value.split(';').next())
+        .map(|value| value.trim())
+        .find(|value| value.starts_with("llmlb_jwt="))
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        !cookie_pair.is_empty(),
+        "Set-Cookie should contain llmlb_jwt token"
+    );
+
+    let login_body = axum::body::to_bytes(login_body, usize::MAX).await.unwrap();
+    let login_data: serde_json::Value = serde_json::from_slice(&login_body).unwrap();
+    assert!(
+        login_data["token"].as_str().unwrap_or_default() != "",
+        "Token should still be included in response"
+    );
+
+    let me_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/auth/me")
+                .header(header::COOKIE, cookie_pair)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        me_response.status(),
+        StatusCode::OK,
+        "/api/auth/me should accept JWT cookie"
+    );
+}
+
+#[tokio::test]
 async fn test_auth_me_without_token() {
     let (app, _db_pool) = build_app().await;
 
@@ -295,7 +674,6 @@ async fn test_auth_me_without_token() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/auth/me")
                 .body(Body::empty())

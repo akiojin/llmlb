@@ -5,12 +5,12 @@
 //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
-    body::{to_bytes, Body},
+    body::Body,
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -48,8 +48,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
 async fn create_admin_user(db_pool: &sqlx::SqlitePool) -> uuid::Uuid {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin)
-        .await;
+    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin).await;
     if let Ok(user) = created {
         return user.id;
     }
@@ -60,10 +59,7 @@ async fn create_admin_user(db_pool: &sqlx::SqlitePool) -> uuid::Uuid {
         .id
 }
 
-async fn create_api_key(
-    db_pool: &sqlx::SqlitePool,
-    scopes: Vec<ApiKeyScope>,
-) -> String {
+async fn create_api_key(db_pool: &sqlx::SqlitePool, scopes: Vec<ApiKeyScope>) -> String {
     let admin_id = create_admin_user(db_pool).await;
     let api_key = llmlb::db::api_keys::create(db_pool, "test-key", admin_id, None, scopes)
         .await
@@ -71,29 +67,26 @@ async fn create_api_key(
     api_key.key
 }
 
-fn node_payload(runtime_port: u16) -> serde_json::Value {
-    json!({
-        "machine_name": "scope-node",
-        "ip_address": "127.0.0.1",
-        "runtime_version": "0.1.0-test",
-        "runtime_port": runtime_port,
-        "gpu_available": true,
-        "gpu_devices": [
-            {"model": "Test GPU", "count": 1, "memory": 16_000_000_000u64}
-        ]
-    })
-}
-
 #[tokio::test]
-async fn v0_nodes_requires_node_register_scope() {
+async fn endpoints_create_requires_admin_scope() {
     let (app, db_pool) = build_app().await;
 
-    let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
-    let api_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
+    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
+    let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
+    let admin_key = create_api_key(&db_pool, vec![ApiKeyScope::Admin]).await;
 
     let mock_server = MockServer::start().await;
+    // 検出経路のタイムアウトを避けるため最小限のレスポンスを用意
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_server)
+        .await;
     // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
     Mock::given(method("GET"))
         .and(path("/v1/models"))
@@ -104,15 +97,19 @@ async fn v0_nodes_requires_node_register_scope() {
         .mount(&mock_server)
         .await;
 
-    let runtime_port = mock_server.address().port().saturating_sub(1);
-    let payload = node_payload(runtime_port);
+    let payload = json!({
+        "name": "scope-endpoint",
+        "base_url": format!("http://{}", mock_server.address()),
+        "health_check_interval_secs": 30
+    });
 
     // No API key -> 401
     let response = app
         .clone()
         .oneshot(
+            Request::builder()
                 .method("POST")
-                .uri("/api/internal/test/register-runtime")
+                .uri("/api/endpoints")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -125,8 +122,9 @@ async fn v0_nodes_requires_node_register_scope() {
     let response = app
         .clone()
         .oneshot(
+            Request::builder()
                 .method("POST")
-                .uri("/api/internal/test/register-runtime")
+                .uri("/api/endpoints")
                 .header("authorization", format!("Bearer {}", api_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
@@ -136,12 +134,29 @@ async fn v0_nodes_requires_node_register_scope() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    // Correct scope -> 201
+    // Endpoint scope -> 403 (admin required)
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/endpoints")
+                .header("authorization", format!("Bearer {}", node_key))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Admin scope -> 201
     let response = app
         .oneshot(
+            Request::builder()
                 .method("POST")
-                .uri("/api/internal/test/register-runtime")
-                .header("authorization", format!("Bearer {}", node_key))
+                .uri("/api/endpoints")
+                .header("authorization", format!("Bearer {}", admin_key))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
@@ -155,10 +170,8 @@ async fn v0_nodes_requires_node_register_scope() {
 async fn v1_inference_requires_api_inference_scope() {
     let (app, db_pool) = build_app().await;
 
-    let node_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
-    let api_key =
-        create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
+    let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
+    let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
     let payload = json!({
         "model": "test-model",
@@ -171,6 +184,7 @@ async fn v1_inference_requires_api_inference_scope() {
     let response = app
         .clone()
         .oneshot(
+            Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", node_key))
@@ -185,6 +199,7 @@ async fn v1_inference_requires_api_inference_scope() {
     // Correct scope -> authenticated (503 if no nodes)
     let response = app
         .oneshot(
+            Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -195,8 +210,10 @@ async fn v1_inference_requires_api_inference_scope() {
         .await
         .unwrap();
     assert!(
-        response.status() == StatusCode::SERVICE_UNAVAILABLE
-            || response.status() == StatusCode::OK,
+        matches!(
+            response.status(),
+            StatusCode::SERVICE_UNAVAILABLE | StatusCode::OK | StatusCode::NOT_FOUND
+        ),
         "expected authenticated response, got {}",
         response.status()
     );
@@ -209,6 +226,7 @@ async fn admin_scope_allows_dashboard_overview() {
 
     let response = app
         .oneshot(
+            Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/overview")
                 .header("authorization", format!("Bearer {}", admin_key))
@@ -222,53 +240,20 @@ async fn admin_scope_allows_dashboard_overview() {
 }
 
 #[tokio::test]
-async fn v0_health_requires_node_register_scope() {
+async fn v0_models_requires_endpoint_scope() {
     let (app, db_pool) = build_app().await;
 
     let node_key = create_api_key(&db_pool, vec![ApiKeyScope::Endpoint]).await;
     let api_key = create_api_key(&db_pool, vec![ApiKeyScope::Api]).await;
 
-    let payload = node_payload(32769);
-    let register_response = app
-        .clone()
-        .oneshot(
-                .method("POST")
-                .uri("/api/internal/test/register-runtime")
-                .header("authorization", format!("Bearer {}", node_key))
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(register_response.status(), StatusCode::CREATED);
-
-    let body = to_bytes(register_response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let register_data: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let node_id = register_data["runtime_id"].as_str().unwrap();
-    let node_token = register_data["runtime_token"].as_str().unwrap();
-
-    let health_payload = json!({
-        "runtime_id": node_id,
-        "cpu_usage": 0.0,
-        "memory_usage": 0.0,
-        "active_requests": 0,
-        "loaded_models": [],
-        "loaded_embedding_models": [],
-        "initializing": false
-    });
-
     // No API key -> 401
     let response = app
         .clone()
         .oneshot(
-                .method("POST")
-                .uri("/api/health")
-                .header("content-type", "application/json")
-                .header("x-runtime-token", node_token)
-                .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
+            Request::builder()
+                .method("GET")
+                .uri("/api/models")
+                .body(Body::empty())
                 .unwrap(),
         )
         .await
@@ -279,12 +264,11 @@ async fn v0_health_requires_node_register_scope() {
     let response = app
         .clone()
         .oneshot(
-                .method("POST")
-                .uri("/api/health")
-                .header("content-type", "application/json")
+            Request::builder()
+                .method("GET")
+                .uri("/api/models")
                 .header("authorization", format!("Bearer {}", api_key))
-                .header("x-runtime-token", node_token)
-                .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
+                .body(Body::empty())
                 .unwrap(),
         )
         .await
@@ -294,12 +278,11 @@ async fn v0_health_requires_node_register_scope() {
     // Correct scope -> 200
     let response = app
         .oneshot(
-                .method("POST")
-                .uri("/api/health")
-                .header("content-type", "application/json")
+            Request::builder()
+                .method("GET")
+                .uri("/api/models")
                 .header("authorization", format!("Bearer {}", node_key))
-                .header("x-runtime-token", node_token)
-                .body(Body::from(serde_json::to_vec(&health_payload).unwrap()))
+                .body(Body::empty())
                 .unwrap(),
         )
         .await

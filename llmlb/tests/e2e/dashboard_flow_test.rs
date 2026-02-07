@@ -76,7 +76,6 @@ async fn test_dashboard_stats_endpoint() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/stats")
                 .header("authorization", format!("Bearer {}", admin_key))
@@ -108,7 +107,6 @@ async fn test_dashboard_overview_endpoint() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/overview")
                 .header("authorization", format!("Bearer {}", admin_key))
@@ -143,7 +141,6 @@ async fn test_dashboard_request_history_endpoint() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/request-history")
                 .header("authorization", format!("Bearer {}", admin_key))
@@ -252,7 +249,6 @@ async fn test_cloud_metrics_endpoint() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/metrics/cloud")
                 .header("authorization", format!("Bearer {}", admin_key))
@@ -289,7 +285,6 @@ async fn test_models_loaded_endpoint_is_removed() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/models/loaded")
                 .header("authorization", format!("Bearer {}", admin_key))

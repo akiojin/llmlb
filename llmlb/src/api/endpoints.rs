@@ -8,7 +8,7 @@ use crate::detection::detect_endpoint_type_with_client;
 use crate::sync::{self, SyncError};
 use crate::types::endpoint::{
     DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus,
-    EndpointType, GpuDevice, ModelDownloadTask,
+    EndpointType, EndpointTypeSource, GpuDevice, ModelDownloadTask,
 };
 use crate::AppState;
 use axum::{
@@ -17,6 +17,7 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
+use chrono::Utc;
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::time::Duration;
@@ -60,6 +61,9 @@ pub struct CreateEndpointRequest {
     /// 指定しない場合は自動判別
     #[serde(default)]
     pub endpoint_type: Option<EndpointType>,
+    /// エンドポイントタイプ判定理由（手動指定時のみ）
+    #[serde(default)]
+    pub endpoint_type_reason: Option<String>,
 }
 
 fn default_health_check_interval() -> u32 {
@@ -186,6 +190,9 @@ pub struct UpdateEndpointRequest {
     /// エンドポイントタイプ（手動変更、SPEC-66555000）
     #[serde(default)]
     pub endpoint_type: Option<EndpointType>,
+    /// エンドポイントタイプ判定理由（手動変更時のみ）
+    #[serde(default)]
+    pub endpoint_type_reason: Option<String>,
 }
 
 /// エンドポイントレスポンス
@@ -201,6 +208,14 @@ pub struct EndpointResponse {
     pub status: String,
     /// エンドポイントタイプ（SPEC-66555000）
     pub endpoint_type: String,
+    /// タイプ判定ソース（auto/manual）
+    pub endpoint_type_source: String,
+    /// 判定理由
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_type_reason: Option<String>,
+    /// 判定時刻
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_type_detected_at: Option<String>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -238,6 +253,9 @@ impl From<Endpoint> for EndpointResponse {
             base_url: ep.base_url,
             status: ep.status.as_str().to_string(),
             endpoint_type: ep.endpoint_type.as_str().to_string(),
+            endpoint_type_source: ep.endpoint_type_source.as_str().to_string(),
+            endpoint_type_reason: ep.endpoint_type_reason,
+            endpoint_type_detected_at: ep.endpoint_type_detected_at.map(|dt| dt.to_rfc3339()),
             health_check_interval_secs: ep.health_check_interval_secs,
             inference_timeout_secs: ep.inference_timeout_secs,
             latency_ms: ep.latency_ms,
@@ -687,13 +705,29 @@ pub async fn create_endpoint(
     }
 
     // SPEC-66555000: タイプ判別（手動指定優先）
-    endpoint.endpoint_type = if let Some(manual_type) = req.endpoint_type {
-        manual_type
+    if let Some(manual_type) = req.endpoint_type {
+        endpoint.endpoint_type = manual_type;
+        endpoint.endpoint_type_source = EndpointTypeSource::Manual;
+        endpoint.endpoint_type_reason = Some(
+            req.endpoint_type_reason
+                .unwrap_or_else(|| "manual override".to_string()),
+        );
+        endpoint.endpoint_type_detected_at = Some(Utc::now());
     } else {
         // 自動判別（非同期で行うとレスポンスが遅くなるが、登録時は同期で判別）
-        detect_endpoint_type_with_client(&state.http_client, &req.base_url, req.api_key.as_deref())
-            .await
-    };
+        let detection = detect_endpoint_type_with_client(
+            &state.http_client,
+            &req.base_url,
+            req.api_key.as_deref(),
+        )
+        .await;
+        endpoint.endpoint_type = detection.endpoint_type;
+        endpoint.endpoint_type_source = EndpointTypeSource::Auto;
+        endpoint.endpoint_type_reason = detection.reason;
+        if endpoint.endpoint_type != EndpointType::Unknown {
+            endpoint.endpoint_type_detected_at = Some(Utc::now());
+        }
+    }
 
     match db::create_endpoint(&state.db_pool, &endpoint).await {
         Ok(()) => {
@@ -1032,6 +1066,12 @@ pub async fn update_endpoint(
     // SPEC-66555000: エンドポイントタイプの手動変更
     if let Some(endpoint_type) = req.endpoint_type {
         updated.endpoint_type = endpoint_type;
+        updated.endpoint_type_source = EndpointTypeSource::Manual;
+        updated.endpoint_type_reason = Some(
+            req.endpoint_type_reason
+                .unwrap_or_else(|| "manual override".to_string()),
+        );
+        updated.endpoint_type_detected_at = Some(Utc::now());
     }
 
     match db::update_endpoint(&state.db_pool, &updated).await {

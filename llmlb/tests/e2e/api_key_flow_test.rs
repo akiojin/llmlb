@@ -57,7 +57,6 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -87,7 +86,6 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
@@ -124,7 +122,6 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -160,7 +157,6 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
@@ -196,7 +192,6 @@ async fn test_complete_api_key_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("DELETE")
                 .uri(format!("/api/api-keys/{}", api_key_id))
                 .header("authorization", format!("Bearer {}", jwt_token))
@@ -212,7 +207,6 @@ async fn test_complete_api_key_flow() {
     let invalid_key_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .header("authorization", format!("Bearer {}", api_key))
@@ -247,7 +241,6 @@ async fn test_api_key_with_expiration() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -275,7 +268,6 @@ async fn test_api_key_with_expiration() {
     let create_key_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))

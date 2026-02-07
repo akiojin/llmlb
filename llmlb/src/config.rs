@@ -100,18 +100,21 @@ impl QueueConfig {
 
 /// デフォルトembeddingモデルを取得
 ///
-/// 環境変数 `LLM_DEFAULT_EMBEDDING_MODEL` から取得し、
+/// 環境変数 `LLMLB_DEFAULT_EMBEDDING_MODEL`（旧: `LLM_DEFAULT_EMBEDDING_MODEL`）から取得し、
 /// 未設定の場合は `nomic-embed-text-v1.5` を返す。
 pub fn get_default_embedding_model() -> String {
-    std::env::var("LLM_DEFAULT_EMBEDDING_MODEL")
-        .unwrap_or_else(|_| "nomic-embed-text-v1.5".to_string())
+    get_env_with_fallback(
+        "LLMLB_DEFAULT_EMBEDDING_MODEL",
+        "LLM_DEFAULT_EMBEDDING_MODEL",
+    )
+    .unwrap_or_else(|| "nomic-embed-text-v1.5".to_string())
 }
 
 /// 認証無効化モードの有効/無効を取得
 ///
-/// 環境変数 `AUTH_DISABLED` が `true/1/yes/on` のときに有効化する。
+/// 環境変数 `LLMLB_AUTH_DISABLED`（旧: `AUTH_DISABLED`）が `true/1/yes/on` のときに有効化する。
 pub fn is_auth_disabled() -> bool {
-    std::env::var("AUTH_DISABLED")
+    get_env_with_fallback("LLMLB_AUTH_DISABLED", "AUTH_DISABLED")
         .map(|value| {
             matches!(
                 value.to_ascii_lowercase().as_str(),
@@ -119,14 +122,6 @@ pub fn is_auth_disabled() -> bool {
             )
         })
         .unwrap_or(false)
-}
-
-/// 内部APIトークンを取得
-///
-/// 環境変数 `LLMLB_INTERNAL_API_TOKEN` を優先し、
-/// 旧変数 `INTERNAL_API_TOKEN` をフォールバックとして受け付ける。
-pub fn internal_api_token() -> Option<String> {
-    get_env_with_fallback("LLMLB_INTERNAL_API_TOKEN", "INTERNAL_API_TOKEN")
 }
 
 #[cfg(test)]
@@ -206,6 +201,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_default_embedding_model_default() {
+        std::env::remove_var("LLMLB_DEFAULT_EMBEDDING_MODEL");
         std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
         let result = get_default_embedding_model();
         assert_eq!(result, "nomic-embed-text-v1.5");
@@ -213,10 +209,59 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_get_default_embedding_model_custom() {
+    fn test_get_default_embedding_model_custom_new_name() {
+        std::env::set_var("LLMLB_DEFAULT_EMBEDDING_MODEL", "bge-m3");
+        std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
+        let result = get_default_embedding_model();
+        assert_eq!(result, "bge-m3");
+        std::env::remove_var("LLMLB_DEFAULT_EMBEDDING_MODEL");
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_default_embedding_model_custom_old_name() {
         std::env::set_var("LLM_DEFAULT_EMBEDDING_MODEL", "bge-m3");
         let result = get_default_embedding_model();
         assert_eq!(result, "bge-m3");
         std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_default_embedding_model_new_takes_precedence() {
+        std::env::set_var("LLMLB_DEFAULT_EMBEDDING_MODEL", "new-model");
+        std::env::set_var("LLM_DEFAULT_EMBEDDING_MODEL", "old-model");
+        let result = get_default_embedding_model();
+        assert_eq!(result, "new-model");
+        std::env::remove_var("LLMLB_DEFAULT_EMBEDDING_MODEL");
+        std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_auth_disabled_new_name() {
+        std::env::set_var("LLMLB_AUTH_DISABLED", "true");
+        std::env::remove_var("AUTH_DISABLED");
+        assert!(is_auth_disabled());
+        std::env::remove_var("LLMLB_AUTH_DISABLED");
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_auth_disabled_old_name() {
+        std::env::remove_var("LLMLB_AUTH_DISABLED");
+        std::env::set_var("AUTH_DISABLED", "1");
+        assert!(is_auth_disabled());
+        std::env::remove_var("AUTH_DISABLED");
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_auth_disabled_new_takes_precedence() {
+        std::env::set_var("LLMLB_AUTH_DISABLED", "false");
+        std::env::set_var("AUTH_DISABLED", "true");
+        assert!(!is_auth_disabled());
+        std::env::remove_var("LLMLB_AUTH_DISABLED");
+        std::env::remove_var("AUTH_DISABLED");
     }
 }

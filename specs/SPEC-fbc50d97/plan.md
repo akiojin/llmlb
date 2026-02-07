@@ -109,14 +109,13 @@ common/
 └── src/
     └── protocol.rs                # MODIFY: RequestResponseRecord追加
 
-tests/
+llmlb/tests/
 ├── contract/
 │   └── request_history_api_test.rs # NEW: API契約テスト
 ├── integration/
 │   ├── request_capture_test.rs     # NEW: キャプチャ統合テスト
 │   └── request_storage_test.rs     # NEW: ストレージ統合テスト
-└── e2e/
-    └── request_history_flow_test.rs # NEW: E2Eフロー
+└── e2e_openai_proxy.rs             # EXISTING: ダッシュボード履歴E2E
 ```
 
 **構造決定**: 既存の単一プロジェクト構造を維持し、router クレート内に

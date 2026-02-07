@@ -4,14 +4,13 @@ use crate::common::auth::{ApiKeyScope, Claims, UserRole};
 use crate::AppState;
 use axum::{
     extract::{Request, State},
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
 use jsonwebtoken::decode_header;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 #[cfg(debug_assertions)]
@@ -22,10 +21,6 @@ const DEBUG_API_KEY_RUNTIME: &str = "sk_debug_runtime";
 const DEBUG_API_KEY_API: &str = "sk_debug_api";
 #[cfg(debug_assertions)]
 const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
-
-const INTERNAL_TOKEN_HEADER: &str = "x-internal-token";
-const INTERNAL_TOKEN_QUERY: &str = "internal_token";
-const INTERNAL_TOKEN_COOKIE: &str = "llmlb_internal_token";
 
 #[cfg(debug_assertions)]
 fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
@@ -76,35 +71,132 @@ fn token_looks_like_jwt(token: &str) -> bool {
     false
 }
 
-fn extract_internal_token_from_header(request: &Request) -> Option<String> {
-    request
-        .headers()
-        .get(INTERNAL_TOKEN_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(|value| value.to_string())
+fn extract_jwt_from_headers(headers: &HeaderMap) -> Option<String> {
+    if let Some(auth_header) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if token_looks_like_jwt(token) {
+                return Some(token.to_string());
+            }
+        }
+    }
+    extract_jwt_cookie(headers)
 }
 
-fn extract_internal_token_from_cookie(request: &Request) -> Option<String> {
-    let cookie_header = request.headers().get(header::COOKIE)?.to_str().ok()?;
+pub(crate) fn extract_jwt_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     for part in cookie_header.split(';') {
-        let mut iter = part.trim().splitn(2, '=');
-        let name = iter.next()?.trim();
-        let value = iter.next()?.trim();
-        if name == INTERNAL_TOKEN_COOKIE {
-            return Some(value.to_string());
+        let trimmed = part.trim();
+        if let Some(value) =
+            trimmed.strip_prefix(&format!("{}=", crate::auth::DASHBOARD_JWT_COOKIE))
+        {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
         }
     }
     None
 }
 
-fn extract_internal_token_from_query(request: &Request) -> Option<String> {
-    let query = request.uri().query()?;
-    let params: HashMap<String, String> = serde_urlencoded::from_str(query).ok()?;
-    params.get(INTERNAL_TOKEN_QUERY).cloned()
+pub(crate) fn extract_csrf_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    for part in cookie_header.split(';') {
+        let trimmed = part.trim();
+        if let Some(value) =
+            trimmed.strip_prefix(&format!("{}=", crate::auth::DASHBOARD_CSRF_COOKIE))
+        {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }
 
-fn internal_token_is_valid(expected: &str, tokens: &[Option<String>]) -> bool {
-    tokens.iter().flatten().any(|provided| provided == expected)
+fn method_requires_csrf(method: &axum::http::Method) -> bool {
+    matches!(
+        *method,
+        axum::http::Method::POST
+            | axum::http::Method::PUT
+            | axum::http::Method::PATCH
+            | axum::http::Method::DELETE
+    )
+}
+
+fn expected_origin(headers: &HeaderMap) -> Option<String> {
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(header::HOST))
+        .and_then(|value| value.to_str().ok())?;
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("http");
+    Some(format!("{}://{}", proto, host))
+}
+
+fn origin_or_referer(headers: &HeaderMap) -> Option<String> {
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+    {
+        return Some(origin.to_string());
+    }
+    let referer = headers
+        .get(header::REFERER)
+        .and_then(|value| value.to_str().ok())?;
+    if let Some((scheme, rest)) = referer.split_once("://") {
+        let host = rest.split('/').next().unwrap_or_default();
+        if !host.is_empty() {
+            return Some(format!("{}://{}", scheme, host));
+        }
+    }
+    None
+}
+
+fn origin_matches(headers: &HeaderMap) -> bool {
+    let expected = match expected_origin(headers) {
+        Some(value) => value,
+        None => return false,
+    };
+    let provided = match origin_or_referer(headers) {
+        Some(value) => value,
+        None => return false,
+    };
+    provided.eq_ignore_ascii_case(&expected)
+}
+
+fn request_is_secure(headers: &HeaderMap) -> bool {
+    if let Some(proto) = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+    {
+        if proto.eq_ignore_ascii_case("https") {
+            return true;
+        }
+    }
+    if let Some(forwarded) = headers
+        .get("forwarded")
+        .and_then(|value| value.to_str().ok())
+    {
+        let lowered = forwarded.to_ascii_lowercase();
+        if lowered.contains("proto=https") {
+            return true;
+        }
+    }
+    false
+}
+
+fn response_sets_csrf_cookie(response: &Response) -> bool {
+    response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.starts_with(crate::auth::DASHBOARD_CSRF_COOKIE))
 }
 
 async fn authenticate_api_key(
@@ -193,30 +285,34 @@ pub async fn jwt_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    // Authorizationヘッダーを取得
-    let auth_header = request
+    // AuthorizationヘッダーまたはCookieからトークンを取得
+    let token = if let Some(auth_header) = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                "Missing Authorization header".to_string(),
-            )
-                .into_response()
-        })?;
-
-    // "Bearer {token}" から token を抽出
-    let token = auth_header.strip_prefix("Bearer ").ok_or_else(|| {
-        (
+    {
+        auth_header
+            .strip_prefix("Bearer ")
+            .ok_or_else(|| {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    "Invalid Authorization header format".to_string(),
+                )
+                    .into_response()
+            })?
+            .to_string()
+    } else if let Some(cookie_token) = extract_jwt_cookie(request.headers()) {
+        cookie_token
+    } else {
+        return Err((
             StatusCode::UNAUTHORIZED,
-            "Invalid Authorization header format".to_string(),
+            "Missing Authorization header or JWT cookie".to_string(),
         )
-            .into_response()
-    })?;
+            .into_response());
+    };
 
     // JWTを検証
-    let claims = crate::auth::jwt::verify_jwt(token, &jwt_secret).map_err(|e| {
+    let claims = crate::auth::jwt::verify_jwt(&token, &jwt_secret).map_err(|e| {
         tracing::warn!("JWT verification failed: {}", e);
         (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
     })?;
@@ -226,6 +322,54 @@ pub async fn jwt_auth_middleware(
 
     // 次のミドルウェア/ハンドラーに進む
     Ok(next.run(request).await)
+}
+
+/// CookieベースのJWT認証時にCSRFトークンを要求するミドルウェア
+pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Response, Response> {
+    if !method_requires_csrf(request.method()) {
+        return Ok(next.run(request).await);
+    }
+
+    let headers_snapshot = request.headers().clone();
+
+    // Authorizationヘッダーがある場合はCSRF対象外（APIクライアント向け）
+    if request.headers().contains_key(header::AUTHORIZATION) {
+        return Ok(next.run(request).await);
+    }
+
+    let csrf_cookie = extract_csrf_cookie(request.headers()).ok_or_else(|| {
+        (StatusCode::FORBIDDEN, "Missing CSRF cookie".to_string()).into_response()
+    })?;
+    let csrf_header = request
+        .headers()
+        .get("x-csrf-token")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| {
+            (StatusCode::FORBIDDEN, "Missing CSRF header".to_string()).into_response()
+        })?;
+
+    if csrf_cookie != csrf_header {
+        return Err((StatusCode::FORBIDDEN, "Invalid CSRF token".to_string()).into_response());
+    }
+
+    if !origin_matches(request.headers()) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Origin validation failed".to_string(),
+        )
+            .into_response());
+    }
+
+    let mut response = next.run(request).await;
+    if response.status().is_success() && !response_sets_csrf_cookie(&response) {
+        let new_token = crate::auth::generate_random_token(32);
+        let secure = request_is_secure(&headers_snapshot);
+        let cookie = crate::auth::build_csrf_cookie(&new_token, 86400, secure);
+        response
+            .headers_mut()
+            .append(header::SET_COOKIE, cookie.parse().unwrap());
+    }
+    Ok(response)
 }
 
 /// APIキー認証ミドルウェア
@@ -287,27 +431,16 @@ pub async fn admin_or_api_key_middleware(
     next: Next,
 ) -> Result<Response, Response> {
     // JWTがあれば優先
-    if let Some(auth_header) = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if token_looks_like_jwt(token) {
-                let claims =
-                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
-                        tracing::warn!("JWT verification failed: {}", e);
-                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
-                    })?;
-                if claims.role == UserRole::Admin {
-                    request.extensions_mut().insert(claims);
-                    return Ok(next.run(request).await);
-                }
-                return Err(
-                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response()
-                );
-            }
+    if let Some(token) = extract_jwt_from_headers(request.headers()) {
+        let claims = crate::auth::jwt::verify_jwt(&token, &app_state.jwt_secret).map_err(|e| {
+            tracing::warn!("JWT verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+        })?;
+        if claims.role == UserRole::Admin {
+            request.extensions_mut().insert(claims);
+            return Ok(next.run(request).await);
         }
+        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response());
     }
 
     // JWTがない/無効ならAPIキーで認証
@@ -347,23 +480,14 @@ pub async fn authenticated_middleware(
     next: Next,
 ) -> Result<Response, Response> {
     // JWTがあれば優先
-    if let Some(auth_header) = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if token_looks_like_jwt(token) {
-                let claims =
-                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
-                        tracing::warn!("JWT verification failed: {}", e);
-                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
-                    })?;
-                // 任意のロールを許可
-                request.extensions_mut().insert(claims);
-                return Ok(next.run(request).await);
-            }
-        }
+    if let Some(token) = extract_jwt_from_headers(request.headers()) {
+        let claims = crate::auth::jwt::verify_jwt(&token, &app_state.jwt_secret).map_err(|e| {
+            tracing::warn!("JWT verification failed: {}", e);
+            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+        })?;
+        // 任意のロールを許可
+        request.extensions_mut().insert(claims);
+        return Ok(next.run(request).await);
     }
 
     // JWTがない/無効ならAPIキーで認証
@@ -496,7 +620,7 @@ fn hash_with_sha256(input: &str) -> String {
     format!("{:x}", result)
 }
 
-/// AUTH_DISABLED用ダミーClaims注入ミドルウェア
+/// LLMLB_AUTH_DISABLED（旧: AUTH_DISABLED）用ダミーClaims注入ミドルウェア
 ///
 /// 認証無効化モードの場合、すべてのリクエストにダミーのAdmin Claimsを注入する
 /// これにより、Extension<Claims>を要求するハンドラーが正常に動作する
@@ -521,7 +645,7 @@ pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Resp
     next.run(request).await
 }
 
-/// AUTH_DISABLED用ダミーClaims注入ミドルウェア（管理者ID参照）
+/// LLMLB_AUTH_DISABLED（旧: AUTH_DISABLED）用ダミーClaims注入ミドルウェア（管理者ID参照）
 ///
 /// 既存の管理者ユーザーIDを取得してClaimsへ設定する。
 /// 管理者が存在しない場合はnil UUIDを使用する。
@@ -553,60 +677,11 @@ pub async fn inject_dummy_admin_claims_with_state(
     next.run(request).await
 }
 
-/// 内部APIトークン必須ミドルウェア
-///
-/// `/api/*`, `/dashboard*`, `/ws/*` など内部向けルートで使用する。
-/// `LLMLB_INTERNAL_API_TOKEN` が設定されている場合のみ許可する。
-pub async fn internal_token_middleware(request: Request, next: Next) -> Response {
-    let expected = match crate::config::internal_api_token() {
-        Some(value) if !value.is_empty() => value,
-        _ => {
-            tracing::error!("LLMLB_INTERNAL_API_TOKEN is not configured");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal API token not configured",
-            )
-                .into_response();
-        }
-    };
-
-    let header_token = extract_internal_token_from_header(&request);
-    let cookie_token = extract_internal_token_from_cookie(&request);
-    let query_token = extract_internal_token_from_query(&request);
-
-    if !internal_token_is_valid(
-        &expected,
-        &[
-            header_token.clone(),
-            cookie_token.clone(),
-            query_token.clone(),
-        ],
-    ) {
-        return (StatusCode::UNAUTHORIZED, "Internal token required").into_response();
-    }
-
-    let mut response = next.run(request).await;
-
-    if let Some(query_token) = query_token {
-        if query_token == expected {
-            if let Ok(value) = HeaderValue::from_str(&format!(
-                "{}={}; Path=/; HttpOnly; SameSite=Lax",
-                INTERNAL_TOKEN_COOKIE, query_token
-            )) {
-                response.headers_mut().append(header::SET_COOKIE, value);
-            }
-        }
-    }
-
-    response
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::balancer::LoadManager;
     use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
-    use serial_test::serial;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -686,80 +761,6 @@ mod tests {
             .unwrap();
         let body_str = std::str::from_utf8(&body).unwrap();
         assert_eq!(body_str, admin.id.to_string());
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn internal_token_middleware_rejects_without_token() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
-
-        let app = Router::new()
-            .route("/t", get(|| async { "ok" }))
-            .layer(axum_middleware::from_fn(internal_token_middleware));
-
-        let res = app
-            .oneshot(Request::builder().uri("/t").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-
-        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn internal_token_middleware_allows_with_header() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
-
-        let app = Router::new()
-            .route("/t", get(|| async { "ok" }))
-            .layer(axum_middleware::from_fn(internal_token_middleware));
-
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .uri("/t")
-                    .header(INTERNAL_TOKEN_HEADER, "secret-token")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(res.status(), StatusCode::OK);
-
-        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn internal_token_middleware_sets_cookie_from_query() {
-        std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "secret-token");
-
-        let app = Router::new()
-            .route("/t", get(|| async { "ok" }))
-            .layer(axum_middleware::from_fn(internal_token_middleware));
-
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .uri("/t?internal_token=secret-token")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(res.status(), StatusCode::OK);
-        let set_cookie = res
-            .headers()
-            .get(header::SET_COOKIE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("");
-        assert!(set_cookie.contains("llmlb_internal_token=secret-token"));
-
-        std::env::remove_var("LLMLB_INTERNAL_API_TOKEN");
     }
 
     #[cfg(debug_assertions)]

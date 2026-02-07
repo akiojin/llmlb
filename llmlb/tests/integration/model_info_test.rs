@@ -73,7 +73,6 @@ async fn test_available_models_endpoint_is_removed() {
             Request::builder()
                 .method("GET")
                 .uri("/api/models/available")
-                .header("x-internal-token", "test-internal")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -114,7 +113,6 @@ async fn test_model_matrix_view_multiple_endpoints() {
                 Request::builder()
                     .method("POST")
                     .uri("/api/endpoints")
-                    .header("x-internal-token", "test-internal")
                     .header("authorization", format!("Bearer {}", admin_key))
                     .header("content-type", "application/json")
                     .body(Body::from(
@@ -139,7 +137,6 @@ async fn test_model_matrix_view_multiple_endpoints() {
             Request::builder()
                 .method("GET")
                 .uri("/api/endpoints")
-                .header("x-internal-token", "test-internal")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),

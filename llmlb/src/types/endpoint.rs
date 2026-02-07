@@ -181,6 +181,44 @@ impl std::fmt::Display for EndpointType {
     }
 }
 
+/// エンドポイントタイプ判定ソース（SPEC-66555000追加要件 2026-02-06）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointTypeSource {
+    /// 自動判別
+    #[default]
+    Auto,
+    /// 手動指定
+    Manual,
+}
+
+impl EndpointTypeSource {
+    /// EndpointTypeSourceを文字列に変換
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+impl FromStr for EndpointTypeSource {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "manual" => Self::Manual,
+            _ => Self::Auto,
+        })
+    }
+}
+
+impl std::fmt::Display for EndpointTypeSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// ダウンロードタスクの状態（SPEC-66555000追加要件 2026-01-26）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -288,6 +326,15 @@ pub struct Endpoint {
     /// エンドポイントタイプ（SPEC-66555000追加要件 2026-01-26）
     #[serde(default)]
     pub endpoint_type: EndpointType,
+    /// エンドポイントタイプ判定ソース（SPEC-66555000追加要件 2026-02-06）
+    #[serde(default)]
+    pub endpoint_type_source: EndpointTypeSource,
+    /// 判定理由（自動判別/手動指定）
+    #[serde(default)]
+    pub endpoint_type_reason: Option<String>,
+    /// 判定時刻
+    #[serde(default)]
+    pub endpoint_type_detected_at: Option<DateTime<Utc>>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -345,6 +392,9 @@ impl Endpoint {
             api_key: None,
             status: EndpointStatus::Pending,
             endpoint_type: EndpointType::Unknown,
+            endpoint_type_source: EndpointTypeSource::Auto,
+            endpoint_type_reason: None,
+            endpoint_type_detected_at: None,
             health_check_interval_secs: 30,
             inference_timeout_secs: 120,
             latency_ms: None,

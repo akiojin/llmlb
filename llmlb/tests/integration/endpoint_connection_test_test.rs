@@ -32,7 +32,6 @@ async fn test_connection_test_success() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -52,7 +51,6 @@ async fn test_connection_test_success() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -74,7 +72,6 @@ async fn test_connection_test_failure_invalid_url() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Invalid Endpoint",
@@ -93,7 +90,6 @@ async fn test_connection_test_failure_invalid_url() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -129,7 +125,6 @@ async fn test_connection_test_auth_error() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Auth Error Endpoint",
@@ -149,7 +144,6 @@ async fn test_connection_test_auth_error() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -192,7 +186,6 @@ async fn test_connection_test_returns_model_count() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Model Count Test",
@@ -211,7 +204,6 @@ async fn test_connection_test_returns_model_count() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

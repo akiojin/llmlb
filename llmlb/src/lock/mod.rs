@@ -98,10 +98,10 @@ pub fn lock_path(port: u16) -> PathBuf {
 ///
 /// プロセスが存在する場合は `true`、存在しない場合は `false`
 pub fn is_process_running(pid: u32) -> bool {
-    use sysinfo::{Pid, System};
+    use sysinfo::{Pid, ProcessesToUpdate, System};
 
     let mut system = System::new();
-    system.refresh_processes();
+    system.refresh_processes(ProcessesToUpdate::All, true);
     system.process(Pid::from_u32(pid)).is_some()
 }
 

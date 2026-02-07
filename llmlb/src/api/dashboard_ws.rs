@@ -80,7 +80,7 @@ async fn handle_socket(socket: WebSocket, event_bus: SharedEventBus) {
         "type": "connected",
         "message": "Dashboard WebSocket connected"
     });
-    if let Err(e) = sender.send(Message::Text(welcome.to_string())).await {
+    if let Err(e) = sender.send(Message::Text(welcome.to_string().into())).await {
         warn!("Failed to send welcome message: {}", e);
         return;
     }
@@ -123,7 +123,7 @@ async fn handle_socket(socket: WebSocket, event_bus: SharedEventBus) {
                                 continue;
                             }
                         };
-                        if let Err(e) = sender.send(Message::Text(json)).await {
+                        if let Err(e) = sender.send(Message::Text(json.into())).await {
                             warn!("Failed to send event: {}", e);
                             break;
                         }

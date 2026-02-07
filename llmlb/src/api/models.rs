@@ -394,6 +394,10 @@ fn hf_resolve_url(base_url: &str, repo: &str, filename: &str) -> String {
     format!("{}/{}/resolve/main/{}", base_url, repo, filename)
 }
 
+// HuggingFace API is an external dependency. Keep requests bounded to avoid
+// hanging /api/models/register and E2E workflows when HF is slow or unreachable.
+const HF_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+
 async fn fetch_repo_siblings(
     http_client: &reqwest::Client,
     repo: &str,
@@ -405,7 +409,13 @@ async fn fetch_repo_siblings(
     if let Ok(token) = std::env::var("HF_TOKEN") {
         req = req.bearer_auth(token);
     }
-    let resp = req.send().await.map_err(|e| LbError::Http(e.to_string()))?;
+    let resp = req.timeout(HF_HTTP_TIMEOUT).send().await.map_err(|_| {
+        // Treat transport failures similarly to non-2xx responses so callers can surface
+        // a stable "bad input / unavailable" message without leaking internals.
+        LbError::Common(CommonError::Validation(
+            "Failed to fetch specified repository".into(),
+        ))
+    })?;
     if !resp.status().is_success() {
         return Err(LbError::Common(CommonError::Validation(
             "Failed to fetch specified repository".into(),
@@ -433,7 +443,12 @@ async fn fetch_hf_file_bytes(
     if let Ok(token) = std::env::var("HF_TOKEN") {
         req = req.bearer_auth(token);
     }
-    let resp = req.send().await.map_err(|e| LbError::Http(e.to_string()))?;
+    let resp = req.timeout(HF_HTTP_TIMEOUT).send().await.map_err(|_| {
+        LbError::Common(CommonError::Validation(format!(
+            "Failed to fetch file: {}",
+            filename
+        )))
+    })?;
     if !resp.status().is_success() {
         return Err(LbError::Common(CommonError::Validation(format!(
             "Failed to fetch file: {}",

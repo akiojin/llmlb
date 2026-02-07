@@ -42,9 +42,9 @@ pub struct DashboardEndpoint {
     pub base_url: String,
     /// 現在の状態
     pub status: EndpointStatus,
-    /// エンドポイントタイプ
+    /// エンドポイントタイプ（xLLM/Ollama/vLLM 等）
     pub endpoint_type: EndpointType,
-    /// エンドポイントタイプ判定ソース
+    /// エンドポイントタイプ判定ソース（自動/手動）
     pub endpoint_type_source: EndpointTypeSource,
     /// 判定理由（自動判別/手動指定）
     pub endpoint_type_reason: Option<String>,

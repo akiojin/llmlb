@@ -66,6 +66,9 @@ mod endpoint_type_filter_test;
 #[path = "integration/endpoint_type_manual_override_test.rs"]
 mod endpoint_type_manual_override_test;
 
+#[path = "integration/dashboard_endpoints_type_test.rs"]
+mod dashboard_endpoints_type_test;
+
 #[path = "integration/endpoint_xllm_download_test.rs"]
 mod endpoint_xllm_download_test;
 

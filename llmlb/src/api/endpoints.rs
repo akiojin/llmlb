@@ -501,17 +501,7 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
                     Err(_) => None,
                 };
 
-                // ステータスを更新（DB）
-                let _ = db::update_endpoint_status(
-                    &state.db_pool,
-                    endpoint.id,
-                    EndpointStatus::Online,
-                    Some(latency_ms),
-                    None,
-                )
-                .await;
-
-                // EndpointRegistryキャッシュも更新
+                // ステータスを更新（DB + キャッシュ）
                 let _ = state
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
@@ -560,14 +550,10 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
                 }
             } else {
                 let error_msg = format!("HTTP {}", response.status());
-                let _ = db::update_endpoint_status(
-                    &state.db_pool,
-                    endpoint.id,
-                    EndpointStatus::Error,
-                    None,
-                    Some(&error_msg),
-                )
-                .await;
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
+                    .await;
 
                 TestConnectionResponse {
                     success: false,
@@ -580,14 +566,10 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
         }
         Err(e) => {
             let error_msg = e.to_string();
-            let _ = db::update_endpoint_status(
-                &state.db_pool,
-                endpoint.id,
-                EndpointStatus::Error,
-                None,
-                Some(&error_msg),
-            )
-            .await;
+            let _ = state
+                .endpoint_registry
+                .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
+                .await;
 
             TestConnectionResponse {
                 success: false,

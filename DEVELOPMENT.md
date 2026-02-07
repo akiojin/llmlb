@@ -20,8 +20,10 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 ## Everyday Commands
 
 - Format/lint/test everything: `make quality-checks`
+- Security advisories (Rust): `make security-checks`
 - OpenAI-only tests: `make openai-tests`
-- Router dev run: `cargo run -p llmlb`
+- Router dev run (default): `cargo run -p llmlb`
+- Router dev run (headless): `cargo run -p llmlb -- serve --no-tray`
 - xLLM build: `npm run build:node`
 - xLLM run: `npm run start:node`
 

@@ -179,8 +179,24 @@ Use `llmlb serve --no-tray` to force headless mode on supported platforms.
 
 ### CLI Reference
 
-the load balancer CLI currently exposes only basic flags (`--help`, `--version`).
-Day-to-day management is done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
+The CLI provides a small set of management subcommands:
+
+```bash
+# Start server (tray on Windows/macOS, headless on Linux)
+llmlb serve
+
+# Force headless mode on supported platforms
+llmlb serve --no-tray
+
+# Show running server status (lockfile-based)
+llmlb status
+llmlb status --port 32768
+
+# Stop a running server
+llmlb stop --port 32768
+```
+
+Day-to-day management is still done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
 
 ### xLLM (C++)
 

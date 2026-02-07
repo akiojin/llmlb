@@ -288,11 +288,11 @@ pub fn validate_invitation(invitation: &InvitationCode) -> Result<(), LbError> {
 /// 招待コードを生成（`inv_` + 16文字のランダム英数字）
 fn generate_invitation_code() -> String {
     let charset: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let random_part: String = (0..16)
         .map(|_| {
-            let idx = rng.gen_range(0..charset.len());
+            let idx = rng.random_range(0..charset.len());
             charset[idx] as char
         })
         .collect();

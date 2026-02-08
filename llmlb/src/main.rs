@@ -9,7 +9,7 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Row;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(Clone)]
 struct ServerConfig {
@@ -114,7 +114,7 @@ fn main() {
                 });
             });
             if let Err(err) = result {
-                error!("System tray initialization failed: {err}");
+                tracing::error!("System tray initialization failed: {err}");
                 let runtime = Builder::new_multi_thread()
                     .enable_all()
                     .build()
@@ -149,7 +149,7 @@ fn main() {
         });
     });
     if let Err(err) = result {
-        error!("System tray initialization failed: {err}");
+        tracing::error!("System tray initialization failed: {err}");
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .build()

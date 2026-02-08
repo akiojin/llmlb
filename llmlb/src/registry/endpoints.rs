@@ -513,6 +513,29 @@ impl EndpointRegistry {
         db::list_endpoint_models(&self.pool, endpoint_id).await
     }
 
+    /// モデルマッピングを指定エンドポイント分だけ再構築
+    pub async fn refresh_model_mappings(&self, endpoint_id: Uuid) -> Result<(), sqlx::Error> {
+        let models = db::list_endpoint_models(&self.pool, endpoint_id).await?;
+
+        let mut model_map = self.model_to_endpoints.write().await;
+
+        // 既存マッピングから当該エンドポイントを除外
+        model_map.retain(|_, endpoints| {
+            endpoints.retain(|id| *id != endpoint_id);
+            !endpoints.is_empty()
+        });
+
+        // 取得したモデルでマッピングを再構築
+        for model in models {
+            model_map
+                .entry(model.model_id.clone())
+                .or_default()
+                .push(endpoint_id);
+        }
+
+        Ok(())
+    }
+
     /// 全モデルIDの一覧を取得
     pub async fn list_all_model_ids(&self) -> Vec<String> {
         self.model_to_endpoints

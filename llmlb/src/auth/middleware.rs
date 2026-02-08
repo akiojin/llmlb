@@ -332,8 +332,10 @@ pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Res
 
     let headers_snapshot = request.headers().clone();
 
-    // Authorizationヘッダーがある場合はCSRF対象外（APIクライアント向け）
-    if request.headers().contains_key(header::AUTHORIZATION) {
+    // ヘッダー認証（APIキー/Authorization）はCSRF対象外（CookieベースのJWT認証のみ保護する）
+    if request.headers().contains_key(header::AUTHORIZATION)
+        || request.headers().contains_key("X-API-Key")
+    {
         return Ok(next.run(request).await);
     }
 

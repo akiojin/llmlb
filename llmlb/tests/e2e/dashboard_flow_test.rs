@@ -11,8 +11,11 @@ use axum::{
 };
 use llmlb::common::auth::{ApiKeyScope, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support;
 
@@ -161,6 +164,80 @@ async fn test_dashboard_request_history_endpoint() {
     assert!(
         history.is_array(),
         "Response should be an array of request history"
+    );
+}
+
+#[tokio::test]
+async fn test_dashboard_endpoints_include_endpoint_type() {
+    let (app, _db_pool, admin_key) = build_app().await;
+
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": []
+        })))
+        .mount(&mock)
+        .await;
+
+    let create_body = json!({
+        "name": "Test vLLM",
+        "base_url": mock.uri(),
+        "endpoint_type": "vllm"
+    });
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .header("x-internal-token", "test-internal")
+                .method("POST")
+                .uri("/api/endpoints")
+                .header("authorization", format!("Bearer {}", admin_key))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&create_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        create_response.status(),
+        StatusCode::CREATED,
+        "POST /api/endpoints should return CREATED"
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .header("x-internal-token", "test-internal")
+                .method("GET")
+                .uri("/api/dashboard/endpoints")
+                .header("authorization", format!("Bearer {}", admin_key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/dashboard/endpoints should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let endpoints: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    let endpoints = endpoints.as_array().expect("response should be an array");
+    assert!(
+        endpoints
+            .iter()
+            .any(|endpoint| endpoint["endpoint_type"] == "vllm"),
+        "endpoint_type should be included in dashboard endpoints"
     );
 }
 

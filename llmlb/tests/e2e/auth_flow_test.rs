@@ -478,6 +478,43 @@ async fn test_csrf_token_rotates_on_mutation() {
 }
 
 #[tokio::test]
+async fn test_api_key_mutation_does_not_require_csrf() {
+    let (app, _db_pool) = build_app().await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/endpoints")
+                .header("content-type", "application/json")
+                .header("x-api-key", "sk_debug_admin")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "test-endpoint",
+                        "base_url": "http://127.0.0.1:9",
+                        "endpoint_type": "unknown",
+                        "inference_timeout_secs": 1,
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert!(
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .all(|cookie| !cookie.starts_with("llmlb_csrf=")),
+        "API key auth should not require/rotate CSRF cookies"
+    );
+}
+
+#[tokio::test]
 async fn test_unauthorized_access_without_token() {
     let (app, _db_pool) = build_app().await;
 

@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 use chrono::{Duration, SecondsFormat, Utc};
+use llmlb::common::auth::UserRole;
 use llmlb::common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
 use llmlb::db::request_history::RequestHistoryStorage;
 use serde_json::{json, Value};
@@ -16,12 +17,26 @@ use sqlx::SqlitePool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-async fn build_app() -> (Router, SqlitePool) {
-    crate::support::lb::create_test_lb().await
+async fn build_app() -> (Router, SqlitePool, String) {
+    let (app, db_pool) = crate::support::lb::create_test_lb().await;
+
+    // /api/dashboard/* は JWT のみのため、テスト用JWTを発行して返す。
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let admin_user = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+        .await
+        .expect("create admin user");
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &admin_user.id.to_string(),
+        UserRole::Admin,
+        &crate::support::lb::test_jwt_secret(),
+    )
+    .expect("create admin jwt");
+
+    (app, db_pool, jwt)
 }
 
-fn admin_request() -> axum::http::request::Builder {
-    Request::builder().header("authorization", "Bearer sk_debug_admin")
+fn admin_request(jwt: &str) -> axum::http::request::Builder {
+    Request::builder().header("authorization", format!("Bearer {}", jwt))
 }
 
 async fn insert_record(db_pool: &SqlitePool, record: &RequestResponseRecord) {
@@ -33,11 +48,11 @@ async fn insert_record(db_pool: &SqlitePool, record: &RequestResponseRecord) {
 #[tokio::test]
 #[serial]
 async fn test_list_request_responses_contract_empty() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     let response = app
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri("/api/dashboard/request-responses")
                 .body(Body::empty())
@@ -62,7 +77,7 @@ async fn test_list_request_responses_contract_empty() {
 #[tokio::test]
 #[serial]
 async fn test_list_request_responses_with_filters() {
-    let (app, db_pool) = build_app().await;
+    let (app, db_pool, jwt) = build_app().await;
     let now = Utc::now();
     let node_a = Uuid::new_v4();
     let node_b = Uuid::new_v4();
@@ -81,7 +96,7 @@ async fn test_list_request_responses_with_filters() {
     let response = app
         .clone()
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri("/api/dashboard/request-responses?model=alpha")
                 .body(Body::empty())
@@ -98,7 +113,7 @@ async fn test_list_request_responses_with_filters() {
     let response = app
         .clone()
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri(format!(
                     "/api/dashboard/request-responses?node_id={}",
@@ -118,7 +133,7 @@ async fn test_list_request_responses_with_filters() {
     let response = app
         .clone()
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri("/api/dashboard/request-responses?status=error")
                 .body(Body::empty())
@@ -137,7 +152,7 @@ async fn test_list_request_responses_with_filters() {
     let response = app
         .clone()
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri(format!(
                     "/api/dashboard/request-responses?start_time={}&end_time={}",
@@ -169,7 +184,7 @@ async fn test_list_request_responses_with_filters() {
 
     let response = app
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri("/api/dashboard/request-responses?per_page=10&page=2")
                 .body(Body::empty())
@@ -190,12 +205,12 @@ async fn test_list_request_responses_with_filters() {
 #[tokio::test]
 #[serial]
 async fn test_get_request_response_detail_contract_not_found() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
     let missing_id = Uuid::new_v4();
 
     let response = app
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri(format!("/api/dashboard/request-responses/{}", missing_id))
                 .body(Body::empty())
@@ -211,13 +226,13 @@ async fn test_get_request_response_detail_contract_not_found() {
 #[tokio::test]
 #[serial]
 async fn test_get_request_response_detail_contract_found() {
-    let (app, db_pool) = build_app().await;
+    let (app, db_pool, jwt) = build_app().await;
     let record = create_test_record("detail-model", Uuid::new_v4(), Utc::now(), true);
     insert_record(&db_pool, &record).await;
 
     let response = app
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri(format!("/api/dashboard/request-responses/{}", record.id))
                 .body(Body::empty())
@@ -237,13 +252,13 @@ async fn test_get_request_response_detail_contract_found() {
 #[tokio::test]
 #[serial]
 async fn test_export_request_responses_json_contract() {
-    let (app, db_pool) = build_app().await;
+    let (app, db_pool, jwt) = build_app().await;
     let record = create_test_record("export-json", Uuid::new_v4(), Utc::now(), true);
     insert_record(&db_pool, &record).await;
 
     let response = app
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri("/api/dashboard/request-responses/export?format=json")
                 .body(Body::empty())
@@ -275,13 +290,13 @@ async fn test_export_request_responses_json_contract() {
 #[tokio::test]
 #[serial]
 async fn test_export_request_responses_csv_contract() {
-    let (app, db_pool) = build_app().await;
+    let (app, db_pool, jwt) = build_app().await;
     let record = create_test_record("export-csv", Uuid::new_v4(), Utc::now(), true);
     insert_record(&db_pool, &record).await;
 
     let response = app
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri("/api/dashboard/request-responses/export?format=csv")
                 .body(Body::empty())
@@ -307,11 +322,11 @@ async fn test_export_request_responses_csv_contract() {
 #[tokio::test]
 #[serial]
 async fn test_export_request_responses_invalid_format() {
-    let (app, _db_pool) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     let response = app
         .oneshot(
-            admin_request()
+            admin_request(&jwt)
                 .method("GET")
                 .uri("/api/dashboard/request-responses/export?format=invalid")
                 .body(Body::empty())

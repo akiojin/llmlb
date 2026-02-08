@@ -1,6 +1,6 @@
 // T047-T049: 認証ミドルウェア実装
 
-use crate::common::auth::{ApiKeyScope, Claims, UserRole};
+use crate::common::auth::{ApiKeyPermission, Claims, UserRole};
 use crate::AppState;
 use axum::{
     extract::{Request, State},
@@ -23,18 +23,25 @@ const DEBUG_API_KEY_API: &str = "sk_debug_api";
 const DEBUG_API_KEY_ADMIN: &str = "sk_debug_admin";
 
 #[cfg(debug_assertions)]
-fn debug_api_key_scopes(request_key: &str) -> Option<Vec<ApiKeyScope>> {
+fn debug_api_key_permissions(
+    request_key: &str,
+) -> Option<Vec<crate::common::auth::ApiKeyPermission>> {
     match request_key {
-        DEBUG_API_KEY_ALL => Some(ApiKeyScope::all()),
-        DEBUG_API_KEY_RUNTIME => Some(vec![ApiKeyScope::Endpoint]),
-        DEBUG_API_KEY_API => Some(vec![ApiKeyScope::Api]),
-        DEBUG_API_KEY_ADMIN => Some(vec![ApiKeyScope::Admin]),
+        DEBUG_API_KEY_ALL => Some(crate::common::auth::ApiKeyPermission::all()),
+        DEBUG_API_KEY_RUNTIME => Some(vec![crate::common::auth::ApiKeyPermission::RegistryRead]),
+        DEBUG_API_KEY_API => Some(vec![
+            crate::common::auth::ApiKeyPermission::OpenaiInference,
+            crate::common::auth::ApiKeyPermission::OpenaiModelsRead,
+        ]),
+        DEBUG_API_KEY_ADMIN => Some(crate::common::auth::ApiKeyPermission::all()),
         _ => None,
     }
 }
 
 #[cfg(not(debug_assertions))]
-fn debug_api_key_scopes(_request_key: &str) -> Option<Vec<ApiKeyScope>> {
+fn debug_api_key_permissions(
+    _request_key: &str,
+) -> Option<Vec<crate::common::auth::ApiKeyPermission>> {
     None
 }
 
@@ -45,17 +52,17 @@ pub struct ApiKeyAuthContext {
     pub id: Uuid,
     /// APIキー発行者のユーザーID
     pub created_by: Uuid,
-    /// APIキーのスコープ一覧
-    pub scopes: Vec<ApiKeyScope>,
+    /// APIキーの権限一覧
+    pub permissions: Vec<crate::common::auth::ApiKeyPermission>,
     /// APIキーの有効期限
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-fn has_scope(scopes: &[ApiKeyScope], required: ApiKeyScope) -> bool {
-    if scopes.contains(&ApiKeyScope::Admin) {
-        return true;
-    }
-    scopes.contains(&required)
+fn has_permission(
+    permissions: &[crate::common::auth::ApiKeyPermission],
+    required: crate::common::auth::ApiKeyPermission,
+) -> bool {
+    permissions.contains(&required)
 }
 
 fn token_looks_like_jwt(token: &str) -> bool {
@@ -203,12 +210,12 @@ async fn authenticate_api_key(
     pool: &sqlx::SqlitePool,
     api_key: &str,
 ) -> Result<ApiKeyAuthContext, Response> {
-    if let Some(scopes) = debug_api_key_scopes(api_key) {
+    if let Some(permissions) = debug_api_key_permissions(api_key) {
         tracing::warn!("Authenticated via debug API key (debug build only)");
         return Ok(ApiKeyAuthContext {
             id: Uuid::nil(),
             created_by: Uuid::nil(),
-            scopes,
+            permissions,
             expires_at: None,
         });
     }
@@ -231,7 +238,7 @@ async fn authenticate_api_key(
     Ok(ApiKeyAuthContext {
         id: api_key_record.id,
         created_by: api_key_record.created_by,
-        scopes: api_key_record.scopes,
+        permissions: api_key_record.permissions,
         expires_at: api_key_record.expires_at,
     })
 }
@@ -398,9 +405,9 @@ pub async fn api_key_auth_middleware(
     Ok(next.run(request).await)
 }
 
-/// APIキーのスコープを要求するミドルウェア
-pub async fn require_api_key_scope_middleware(
-    State(required_scope): State<ApiKeyScope>,
+/// APIキーの権限を要求するミドルウェア
+pub async fn require_api_key_permission_middleware(
+    State(required_permission): State<ApiKeyPermission>,
     request: Request,
     next: Next,
 ) -> Result<Response, Response> {
@@ -415,10 +422,10 @@ pub async fn require_api_key_scope_middleware(
                 .into_response()
         })?;
 
-    if !has_scope(&auth_context.scopes, required_scope) {
+    if !has_permission(&auth_context.permissions, required_permission) {
         return Err((
             StatusCode::FORBIDDEN,
-            "Insufficient API key scope".to_string(),
+            "Insufficient API key permission".to_string(),
         )
             .into_response());
     }
@@ -426,176 +433,75 @@ pub async fn require_api_key_scope_middleware(
     Ok(next.run(request).await)
 }
 
-/// 管理者権限（JWTまたはadminスコープAPIキー）ミドルウェア
-pub async fn admin_or_api_key_middleware(
-    State(app_state): State<crate::AppState>,
-    mut request: Request,
-    next: Next,
-) -> Result<Response, Response> {
-    // JWTがあれば優先
-    if let Some(token) = extract_jwt_from_headers(request.headers()) {
-        let claims = crate::auth::jwt::verify_jwt(&token, &app_state.jwt_secret).map_err(|e| {
-            tracing::warn!("JWT verification failed: {}", e);
-            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
-        })?;
-        if claims.role == UserRole::Admin {
-            request.extensions_mut().insert(claims);
-            return Ok(next.run(request).await);
-        }
-        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response());
-    }
-
-    // JWTがない/無効ならAPIキーで認証
-    let api_key = extract_api_key(&request)?;
-    let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
-
-    if !has_scope(&auth_context.scopes, ApiKeyScope::Admin) {
-        return Err((StatusCode::FORBIDDEN, "Admin scope required".to_string()).into_response());
-    }
-
-    // APIキーの発行者を管理者として扱う
-    let exp = auth_context
-        .expires_at
-        .map(|dt| dt.timestamp() as usize)
-        .unwrap_or_else(|| (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize);
-    let claims = Claims {
-        sub: auth_context.created_by.to_string(),
-        role: UserRole::Admin,
-        exp,
-    };
-    request.extensions_mut().insert(claims);
-
-    Ok(next.run(request).await)
+/// JWTまたはAPIキー(permissions)で認証し、必要な権限を満たすことを要求するミドルウェア。
+///
+/// - JWTが存在する場合はJWTを優先（Authorization Bearer / Cookie）。
+/// - APIキーは `X-API-Key` または `Authorization: Bearer sk_...` を許可。
+///
+/// NOTE:
+/// - `jwt_required_role` が `Some(Admin)` の場合、JWTはadminのみ許可。
+/// - APIキーは `required_permission` を必須とし、成功時に `api_key_role` で Claims を注入する。
+#[derive(Clone)]
+pub struct JwtOrApiKeyPermissionConfig {
+    /// アプリケーション状態（DB/JWT secret 参照用）
+    pub app_state: AppState,
+    /// APIキーに要求する権限
+    pub required_permission: ApiKeyPermission,
+    /// JWTに要求するロール（Noneの場合は任意ロールを許可）
+    pub jwt_required_role: Option<UserRole>,
+    /// APIキー認証成功時に注入するClaimsのロール
+    pub api_key_role: UserRole,
 }
 
-/// 認証済みユーザー向けミドルウェア（viewerも許可）
-///
-/// GET操作など、viewerロールでもアクセス可能なエンドポイント向け。
-/// 認証は必須だが、Admin権限は不要。
-///
-/// 許可される認証:
-/// - JWT (任意のrole)
-/// - APIキー (AdminまたはApiスコープ)
-pub async fn authenticated_middleware(
-    State(app_state): State<crate::AppState>,
+/// `JwtOrApiKeyPermissionConfig` に従って、JWTまたはAPIキーで認証・認可を行う。
+pub async fn jwt_or_api_key_permission_middleware(
+    State(config): State<JwtOrApiKeyPermissionConfig>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
     // JWTがあれば優先
     if let Some(token) = extract_jwt_from_headers(request.headers()) {
-        let claims = crate::auth::jwt::verify_jwt(&token, &app_state.jwt_secret).map_err(|e| {
-            tracing::warn!("JWT verification failed: {}", e);
-            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
-        })?;
-        // 任意のロールを許可
+        let claims =
+            crate::auth::jwt::verify_jwt(&token, &config.app_state.jwt_secret).map_err(|e| {
+                tracing::warn!("JWT verification failed: {}", e);
+                (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+            })?;
+
+        if let Some(required_role) = config.jwt_required_role {
+            if claims.role != required_role {
+                return Err(
+                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response()
+                );
+            }
+        }
+
         request.extensions_mut().insert(claims);
         return Ok(next.run(request).await);
     }
 
     // JWTがない/無効ならAPIキーで認証
     let api_key = extract_api_key(&request)?;
-    let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
+    let auth_context = authenticate_api_key(&config.app_state.db_pool, &api_key).await?;
 
-    // AdminまたはApiスコープを許可
-    if !has_scope(&auth_context.scopes, ApiKeyScope::Admin)
-        && !has_scope(&auth_context.scopes, ApiKeyScope::Api)
-    {
+    if !has_permission(&auth_context.permissions, config.required_permission) {
+        let permission_str = serde_json::to_string(&config.required_permission)
+            .unwrap_or_else(|_| "\"unknown\"".to_string());
+        let permission_str = permission_str.trim_matches('"');
         return Err((
             StatusCode::FORBIDDEN,
-            "Admin or Api scope required".to_string(),
+            format!("Missing required permission: {}", permission_str),
         )
             .into_response());
     }
 
     // APIキーの発行者の情報でClaimsを構築
-    // スコープからロールを推測
-    let role = if has_scope(&auth_context.scopes, ApiKeyScope::Admin) {
-        UserRole::Admin
-    } else {
-        UserRole::Viewer
-    };
     let exp = auth_context
         .expires_at
         .map(|dt| dt.timestamp() as usize)
         .unwrap_or_else(|| (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize);
     let claims = Claims {
         sub: auth_context.created_by.to_string(),
-        role,
-        exp,
-    };
-    request.extensions_mut().insert(claims);
-
-    Ok(next.run(request).await)
-}
-
-/// 管理者またはランタイム権限ミドルウェア
-///
-/// `/api/models` のように「ダッシュボード(JWT/Admin APIキー)」と「ランタイム(Runtime APIキー)」の両方から
-/// アクセスされるエンドポイント向け。
-///
-/// 許可される認証:
-/// - JWT (admin role)
-/// - APIキー (Admin scope)
-/// - APIキー (Runtime scope)
-///
-/// 拒否される認証:
-/// - APIキー (Api scope) → 403 Forbidden
-pub async fn admin_or_runtime_middleware(
-    State(app_state): State<crate::AppState>,
-    mut request: Request,
-    next: Next,
-) -> Result<Response, Response> {
-    // JWTがあれば優先
-    if let Some(auth_header) = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if token_looks_like_jwt(token) {
-                let claims =
-                    crate::auth::jwt::verify_jwt(token, &app_state.jwt_secret).map_err(|e| {
-                        tracing::warn!("JWT verification failed: {}", e);
-                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
-                    })?;
-                if claims.role == UserRole::Admin {
-                    request.extensions_mut().insert(claims);
-                    return Ok(next.run(request).await);
-                }
-                return Err(
-                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response()
-                );
-            }
-        }
-    }
-
-    // JWTがない/無効ならAPIキーで認証
-    let api_key = extract_api_key(&request)?;
-    let auth_context = authenticate_api_key(&app_state.db_pool, &api_key).await?;
-
-    // Admin または Endpoint スコープを許可
-    let has_admin = auth_context.scopes.contains(&ApiKeyScope::Admin);
-    let has_endpoint = auth_context.scopes.contains(&ApiKeyScope::Endpoint);
-    if !has_admin && !has_endpoint {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "Admin or Endpoint scope required".to_string(),
-        )
-            .into_response());
-    }
-
-    // APIキーの発行者を管理者として扱う（Claimsを注入）
-    let exp = auth_context
-        .expires_at
-        .map(|dt| dt.timestamp() as usize)
-        .unwrap_or_else(|| (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize);
-    let claims = Claims {
-        sub: auth_context.created_by.to_string(),
-        role: if has_admin {
-            UserRole::Admin
-        } else {
-            UserRole::Viewer
-        },
+        role: config.api_key_role,
         exp,
     };
     request.extensions_mut().insert(claims);
@@ -794,8 +700,14 @@ mod tests {
             endpoint_registry,
         };
 
+        let cfg = JwtOrApiKeyPermissionConfig {
+            app_state: state,
+            required_permission: ApiKeyPermission::UsersManage,
+            jwt_required_role: Some(UserRole::Admin),
+            api_key_role: UserRole::Admin,
+        };
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(
-            axum_middleware::from_fn_with_state(state, admin_or_api_key_middleware),
+            axum_middleware::from_fn_with_state(cfg, jwt_or_api_key_permission_middleware),
         );
 
         let res = app
@@ -841,8 +753,14 @@ mod tests {
             endpoint_registry,
         };
 
+        let cfg = JwtOrApiKeyPermissionConfig {
+            app_state: state,
+            required_permission: ApiKeyPermission::UsersManage,
+            jwt_required_role: Some(UserRole::Admin),
+            api_key_role: UserRole::Admin,
+        };
         let app = Router::new().route("/admin", get(|| async { "ok" })).layer(
-            axum_middleware::from_fn_with_state(state, admin_or_api_key_middleware),
+            axum_middleware::from_fn_with_state(cfg, jwt_or_api_key_permission_middleware),
         );
 
         let res = app
@@ -876,7 +794,9 @@ mod tests {
                 axum::routing::get(
                     |axum::extract::Extension(auth): axum::extract::Extension<
                         ApiKeyAuthContext,
-                    >| async move { format!("{}:{}", auth.id, auth.scopes.len()) },
+                    >| async move {
+                        format!("{}:{}", auth.id, auth.permissions.len())
+                    },
                 ),
             )
             .layer(axum::middleware::from_fn_with_state(
@@ -901,7 +821,7 @@ mod tests {
             .unwrap();
         let body_str = std::str::from_utf8(&body).unwrap();
         assert!(body_str.starts_with(&Uuid::nil().to_string()));
-        assert!(body_str.contains(&ApiKeyScope::all().len().to_string()));
+        assert!(body_str.contains(&ApiKeyPermission::all().len().to_string()));
     }
 
     #[cfg(not(debug_assertions))]

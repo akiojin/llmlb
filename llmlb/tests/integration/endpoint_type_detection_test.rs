@@ -5,7 +5,7 @@
 //! 管理者として、エンドポイント登録時に自動的にタイプ
 //! （xLLM/Ollama/vLLM/OpenAI互換）を判別してほしい。
 
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::health::EndpointHealthChecker;
 use llmlb::registry::endpoints::EndpointRegistry;
 use reqwest::Client;
@@ -38,7 +38,7 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
         "test-admin-key",
         admin_id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key");

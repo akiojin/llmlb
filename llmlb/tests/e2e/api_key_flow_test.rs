@@ -94,7 +94,7 @@ async fn test_complete_api_key_flow() {
                     serde_json::to_vec(&json!({
                         "name": "Test API Key",
                         "expires_at": null,
-                        "scopes": ["api"]
+                        "permissions": ["openai.inference", "openai.models.read"]
                     }))
                     .unwrap(),
                 ))
@@ -116,8 +116,8 @@ async fn test_complete_api_key_flow() {
     assert!(!api_key.is_empty(), "API key should not be empty");
 
     // Step 3: APIキーを使ってエンドポイントにアクセス
-    // Note: APIキーはOpenAI互換エンドポイント(/v1/*)とLLM runtime APIで使用される
-    // ここではOpenAI互換のchat/completionsエンドポイントをテスト
+    // Note: APIキーはOpenAI互換エンドポイント(/v1/*)で使用される
+    // ここではOpenAI互換のchat/completionsエンドポイントをテストする
     let use_key_response = app
         .clone()
         .oneshot(
@@ -276,7 +276,7 @@ async fn test_api_key_with_expiration() {
                     serde_json::to_vec(&json!({
                         "name": "Expiring API Key",
                         "expires_at": expires_at.to_rfc3339(),
-                        "scopes": ["api"]
+                        "permissions": ["openai.inference", "openai.models.read"]
                     }))
                     .unwrap(),
                 ))

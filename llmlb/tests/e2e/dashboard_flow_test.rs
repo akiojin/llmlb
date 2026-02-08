@@ -9,7 +9,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::UserRole;
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::json;
 use std::sync::Arc;
@@ -54,23 +54,19 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     let admin_user = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
         .await
         .expect("create admin user");
-    let admin_key = llmlb::db::api_keys::create(
-        &db_pool,
-        "admin-key",
-        admin_user.id,
-        None,
-        vec![ApiKeyScope::Admin],
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &admin_user.id.to_string(),
+        UserRole::Admin,
+        &support::lb::test_jwt_secret(),
     )
-    .await
-    .expect("create admin api key")
-    .key;
+    .expect("create admin jwt");
 
-    (api::create_app(state), db_pool, admin_key)
+    (api::create_app(state), db_pool, jwt)
 }
 
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/stats
     let response = app
@@ -78,7 +74,7 @@ async fn test_dashboard_stats_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/stats")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -101,7 +97,7 @@ async fn test_dashboard_stats_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_overview_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/overview
     let response = app
@@ -109,7 +105,7 @@ async fn test_dashboard_overview_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/overview")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -135,7 +131,7 @@ async fn test_dashboard_overview_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_request_history_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/request-history
     let response = app
@@ -143,7 +139,7 @@ async fn test_dashboard_request_history_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/request-history")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -169,7 +165,7 @@ async fn test_dashboard_request_history_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_endpoints_include_endpoint_type() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     let mock = MockServer::start().await;
     Mock::given(method("GET"))
@@ -193,7 +189,7 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
             Request::builder()
                 .method("POST")
                 .uri("/api/endpoints")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&create_body).unwrap()))
                 .unwrap(),
@@ -212,7 +208,7 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
             Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/endpoints")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )

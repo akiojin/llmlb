@@ -77,8 +77,9 @@ export function injectAuthHeadersForUrl(
       authHeader = `-H "Authorization: Bearer ${config.jwtToken}"`;
     }
   } else if (isManagementEndpoint) {
-    // Management APIs: prefer admin-scoped API key. If not available, fall back to JWT (legacy),
-    // then to the generic API key (might have admin scope in debug/dev).
+    // Management APIs: prefer a management API key (with required permissions such as
+    // `users.manage` / `api_keys.manage` / `endpoints.manage`). If not available, fall back to JWT,
+    // then to the generic API key (might be permissive in debug/dev).
     if (config.adminApiKey) {
       authHeader = `-H "X-API-Key: ${config.adminApiKey}"`;
     } else if (config.jwtToken) {
@@ -87,7 +88,8 @@ export function injectAuthHeadersForUrl(
       authHeader = `-H "X-API-Key: ${config.apiKey}"`;
     }
   } else if (isInferenceEndpoint) {
-    // Inference APIs: prefer the API scope key, fall back to admin key if that's all we have.
+    // Inference APIs: prefer an API key with OpenAI inference permissions (`openai.inference`),
+    // fall back to the management key if that's all we have.
     if (config.apiKey) {
       authHeader = `-H "X-API-Key: ${config.apiKey}"`;
     } else if (config.adminApiKey) {

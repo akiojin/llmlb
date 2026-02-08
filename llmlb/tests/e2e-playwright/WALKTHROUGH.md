@@ -1,29 +1,28 @@
 # E2E Full Walkthrough Test Documentation
 
-This document describes all screens in the LLM Router web application and the actions
+This document describes all screens in the LLM Load Balancer web application and the actions
 required for a complete end-to-end walkthrough test.
 
 ## Application Structure
 
 ```text
-LLM Router Web Application
+LLM Load Balancer Web Application
 ├── Login Page (/dashboard/login.html)
 ├── Dashboard (/dashboard/)
 │   ├── Header
 │   │   ├── Logo
-│   │   ├── Playground Button
 │   │   ├── API Keys Button → API Keys Modal
 │   │   ├── Refresh Button
 │   │   ├── Theme Toggle
 │   │   └── User Menu → User Modal (admin only)
 │   ├── Stats Cards
 │   └── Tabs
-│       ├── Nodes Tab
+│       ├── Endpoints Tab
 │       ├── Models Tab
 │       ├── History Tab
 │       └── Logs Tab
-└── Playground (/dashboard/playground.html)
-    ├── Sidebar (Sessions)
+└── Playground (/dashboard/#playground/:endpointId)
+    ├── Sidebar (Endpoint info)
     ├── Chat Area
     ├── Settings Dialog
     └── curl Dialog
@@ -69,15 +68,15 @@ LLM Router Web Application
 | 3.1 | View stats cards | Cards display node count, request stats |
 | 3.2 | Verify data loading | Loading state completes |
 
-### 4. Dashboard - Nodes Tab
+### 4. Dashboard - Endpoints Tab
 
 **Walkthrough Actions**:
 
 | Step | Action | Verification |
 |------|--------|--------------|
-| 4.1 | Click Nodes tab | Tab becomes active |
-| 4.2 | View node table | Table displays registered nodes |
-| 4.3 | Verify node status | Status indicators visible |
+| 4.1 | Click Endpoints tab | Tab becomes active |
+| 4.2 | View endpoints table | Table displays registered endpoints |
+| 4.3 | Verify endpoint status | Status indicators visible |
 | 4.4 | Test search/filter (if available) | Filter works |
 
 ### 5. Dashboard - Models Tab
@@ -119,14 +118,15 @@ LLM Router Web Application
 
 ### 8. Playground - Navigation
 
-**URL**: `/dashboard/playground.html`
+**URL**: `/dashboard/#playground/:endpointId`
 
 **Walkthrough Actions**:
 
 | Step | Action | Verification |
 |------|--------|--------------|
-| 8.1 | Click Playground button | New tab/window opens |
-| 8.2 | Verify playground loads | Chat interface visible |
+| 8.1 | Open an endpoint's detail view | Detail modal opens |
+| 8.2 | Navigate to Playground for that endpoint | Playground view is shown |
+| 8.3 | Verify playground loads | Chat interface visible |
 
 ### 9. Playground - Model Selection
 
@@ -182,11 +182,11 @@ For a complete walkthrough, execute in this order:
 1. Login (1.1-1.4)
 2. Dashboard Header (2.1-2.7)
 3. Stats Cards (3.1-3.2)
-4. Nodes Tab (4.1-4.4)
+4. Endpoints Tab (4.1-4.4)
 5. Models Tab with Registration (5.1-5.10)
 6. History Tab (6.1-6.3)
 7. Logs Tab (7.1-7.3)
-8. Open Playground (8.1-8.2)
+8. Open Playground (8.1-8.3)
 9. Model Selection (9.1-9.3)
 10. Chat Test - ALL Models (10.1-10.7 for each model)
 11. Sessions (11.1-11.3)

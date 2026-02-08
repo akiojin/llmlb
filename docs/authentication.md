@@ -1,60 +1,70 @@
 # Authentication
 
-LLM Router uses three authentication mechanisms:
+llmlb uses two authentication mechanisms:
 
-1. **JWT** for the admin dashboard and management APIs (`/api/auth/*`, `/api/users/*`, `/api/api-keys/*`, `/api/dashboard/*`, `/api/metrics/*`, `/api/models/*`)
-2. **API keys** for OpenAI-compatible endpoints (`/v1/*`) and `/api` admin/runtime operations
-3. **Runtime token** for runtime-to-router heartbeats/metrics (`POST /api/health`, requires API key too)
+1. **JWT** for the dashboard and management APIs (`/api/*`).
+   - `/api/dashboard/*` is **JWT-only** (API keys are rejected).
+2. **API keys** for the OpenAI-compatible API (`/v1/*`) and selected `/api/*` endpoints for
+   ops automation.
 
 The canonical API list lives in `README.md` / `README.ja.md`.
 
-## JWT (admin)
+## JWT (dashboard + management)
 
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 
-Clients send the token via `Authorization: Bearer <jwt>`.
+Accepted transports:
 
-## API keys (OpenAI-compatible `/v1/*`)
+- `Authorization: Bearer <jwt>`
+- HttpOnly cookie `llmlb_jwt` (used by the dashboard)
 
-Protected endpoints (API key with `api` scope required, Responses API recommended):
+### CSRF (cookie auth only)
 
-- `POST /v1/responses`
-- `POST /v1/chat/completions`
-- `POST /v1/completions`
-- `POST /v1/embeddings`
+When authenticating via cookies and making mutating requests (POST/PUT/PATCH/DELETE):
 
-Model discovery endpoints (API key **or** runtime token):
+- send `X-CSRF-Token: <token>` where `<token>` is the value of the `llmlb_csrf` cookie
+- `Origin`/`Referer` must match the dashboard origin
 
-- `GET /v1/models`
-- `GET /v1/models/:model_id`
+If you authenticate via `Authorization` header, CSRF checks are not applied.
 
-Clients send the key via `Authorization: Bearer <api_key>`.
+## API keys
 
-Alternatively, clients can send `X-API-Key: <api_key>`.
+Clients send the key via:
 
-Note: If `Authorization: Bearer` looks like a JWT (three dot-separated segments) and JWT
-verification fails, the request is rejected and API key fallback is not attempted. Clients
-should send only one auth scheme per request.
+- `Authorization: Bearer <api_key>`
+- `X-API-Key: <api_key>`
 
-### API key scopes
+### Permissions
 
-- `api`: OpenAI-compatible `/v1/*` inference endpoints
-- `runtime`: `POST /api/runtimes` (runtime registration), `POST /api/health` (heartbeat), `GET /api/models` (runtime model sync), `GET /api/models/registry/:model_name/manifest.json` (manifest)
-- `admin`: All admin operations (dashboard, users, API keys, model management, metrics, runtime management)
+API keys carry a list of `permissions` (string IDs). The backend default-denies: keys without
+permissions cannot access protected endpoints. The legacy `scopes` field is deprecated and is
+rejected by the API.
 
-`admin` includes all other scopes. Keys created before scopes were introduced are treated as having all scopes for backward compatibility.
+| Permission | Grants |
+|---|---|
+| `openai.inference` | OpenAI-compatible inference endpoints (`POST /v1/*` except `GET /v1/models*`) |
+| `openai.models.read` | Model discovery (`GET /v1/models`, `GET /v1/models/:model_id`) |
+| `endpoints.read` | Read-only endpoint APIs (`GET /api/endpoints*`) |
+| `endpoints.manage` | Endpoint mutations (`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`) |
+| `api_keys.manage` | API key management (`/api/api-keys*`) |
+| `users.manage` | User management (`/api/users*`) |
+| `invitations.manage` | Invitation management (`/api/invitations*`) |
+| `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
+| `registry.read` | Model registry access (`GET /api/models/registry/*`) and model list endpoints (`GET /api/models`, `GET /api/models/hub`) |
+| `logs.read` | Node log proxy (`GET /api/nodes/:node_id/logs`) |
+| `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
 
-Debug builds only:
+Note: For routes that accept either JWT or API key, llmlb prefers JWT if present. Avoid sending a
+JWT-looking token (three dot-separated segments) as an API key in `Authorization: Bearer`.
 
-- `sk_debug` is accepted for all scopes
-- `sk_debug_api` for `api`
-- `sk_debug_runtime` for `runtime`
-- `sk_debug_admin` for `admin`
+### Debug keys (debug builds only)
 
-## Runtime token (runtime → router)
+In debug builds (`#[cfg(debug_assertions)]`) the following API keys are accepted:
 
-- Router response includes `runtime_token`
-- Runtime heartbeat/metrics: `POST /api/health` with `X-Runtime-Token: <runtime_token>` + API key (`Authorization: Bearer <api_key>`)
-- `GET /v1/models` can also be called with `X-Runtime-Token` (OpenAI-compatible list)
+- `sk_debug`: all permissions
+- `sk_debug_admin`: all permissions
+- `sk_debug_api`: `openai.inference` + `openai.models.read`
+- `sk_debug_runtime`: `registry.read`
+

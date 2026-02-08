@@ -2253,10 +2253,22 @@ mod tests {
         // wait for async save_request_record
         tokio::time::sleep(Duration::from_millis(50)).await;
 
+        // login (dashboard is JWT-only; API keys are rejected for /api/dashboard/*)
+        let login_resp = client
+            .post(format!("http://{addr}/api/auth/login"))
+            .header("content-type", "application/json")
+            .json(&json!({"username":"admin","password":"test"}))
+            .send()
+            .await
+            .expect("login request");
+        assert_eq!(login_resp.status(), reqwest::StatusCode::OK);
+        let login_body: serde_json::Value = login_resp.json().await.expect("login json");
+        let jwt_token = login_body["token"].as_str().expect("login token");
+
         // fetch dashboard history
         let history_resp = client
             .get(format!("http://{addr}/api/dashboard/request-responses"))
-            .header("authorization", "Bearer sk_debug_admin")
+            .header("authorization", format!("Bearer {jwt_token}"))
             .send()
             .await
             .expect("history request");

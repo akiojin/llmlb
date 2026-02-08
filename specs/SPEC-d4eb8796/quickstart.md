@@ -84,7 +84,7 @@ JWT_TOKEN=$(curl -X POST http://localhost:32768/api/auth/login \
 API_KEY=$(curl -X POST http://localhost:32768/api/api-keys \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"my-chatbot","scopes":["api:inference","node:register"]}' \
+  -d '{"name":"my-chatbot","permissions":["openai.inference","openai.models.read"]}' \
   | jq -r '.key')
 
 echo "発行されたAPIキー: $API_KEY"

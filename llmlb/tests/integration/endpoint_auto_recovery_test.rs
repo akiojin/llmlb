@@ -9,14 +9,42 @@ use serde_json::{json, Value};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use crate::support::lb::spawn_test_lb;
+use crate::support::lb::spawn_test_lb_with_db;
+
+async fn create_admin_jwt(db_pool: &sqlx::SqlitePool) -> String {
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let created = llmlb::db::users::create(
+        db_pool,
+        "admin",
+        &password_hash,
+        llmlb::common::auth::UserRole::Admin,
+    )
+    .await;
+    let admin_id = match created {
+        Ok(user) => user.id,
+        Err(_) => {
+            llmlb::db::users::find_by_username(db_pool, "admin")
+                .await
+                .unwrap()
+                .unwrap()
+                .id
+        }
+    };
+
+    llmlb::auth::jwt::create_jwt(
+        &admin_id.to_string(),
+        llmlb::common::auth::UserRole::Admin,
+        &crate::support::lb::test_jwt_secret(),
+    )
+    .expect("create admin jwt")
+}
 
 /// オフライン状態からオンラインへの復旧を検証
 #[tokio::test]
 async fn test_endpoint_recovery_offline_to_online() {
     let mock = MockServer::start().await;
 
-    let server = spawn_test_lb().await;
+    let (server, _db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
 
     // エンドポイント登録（まだモックは応答しない）
@@ -95,7 +123,7 @@ async fn test_endpoint_recovery_offline_to_online() {
 async fn test_error_count_reset_on_recovery() {
     let mock = MockServer::start().await;
 
-    let server = spawn_test_lb().await;
+    let (server, _db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
 
     let reg_resp = client
@@ -188,8 +216,9 @@ async fn test_error_count_reset_on_recovery() {
 async fn test_last_error_cleared_on_recovery() {
     let mock = MockServer::start().await;
 
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let jwt = create_admin_jwt(&db_pool).await;
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
@@ -220,7 +249,7 @@ async fn test_last_error_cleared_on_recovery() {
     // ダッシュボードAPI（キャッシュ）で last_error がセットされている
     let dash_resp = client
         .get(format!("http://{}/api/dashboard/endpoints", server.addr()))
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", jwt))
         .send()
         .await
         .unwrap();
@@ -262,7 +291,7 @@ async fn test_last_error_cleared_on_recovery() {
     // last_errorがクリアされている（ダッシュボードはキャッシュを参照するため）
     let dash_resp = client
         .get(format!("http://{}/api/dashboard/endpoints", server.addr()))
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", jwt))
         .send()
         .await
         .unwrap();
@@ -289,8 +318,9 @@ async fn test_last_error_cleared_on_recovery() {
 async fn test_dashboard_reflects_test_failure_immediately() {
     let mock = MockServer::start().await;
 
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let jwt = create_admin_jwt(&db_pool).await;
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
@@ -324,7 +354,7 @@ async fn test_dashboard_reflects_test_failure_immediately() {
     // Dashboard API（キャッシュ）にerrorが反映されている
     let dash_resp = client
         .get(format!("http://{}/api/dashboard/endpoints", server.addr()))
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", jwt))
         .send()
         .await
         .unwrap();
@@ -360,7 +390,7 @@ async fn test_last_seen_updated_on_success() {
         .mount(&mock)
         .await;
 
-    let server = spawn_test_lb().await;
+    let (server, _db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
 
     let reg_resp = client

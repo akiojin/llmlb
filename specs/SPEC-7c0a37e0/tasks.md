@@ -1,56 +1,36 @@
-# タスク: SPEC-k5mdhprl APIキースコープ & /api 認証強化
+# タスク: SPEC-7c0a37e0 APIキー権限（Permissions）& /api 認証強化
 
-**ステータス**: 完了
+**ステータス**: ✅ 完了（`scopes` 廃止 → `permissions` へ移行）
 
 ## 方針
+
 - TDD順で進める（Contract → Integration → E2E → Unit）。
-- 既存テストの更新もTDDの一部として扱う。
+- 仕様（`spec.md` / `data-model.md` / `contracts/openapi.yaml`）と実装・テストの整合を最優先する。
 
-## Setup
-- [x] 仕様の最新化（/api認証必須、ユーザーロール追記）。
+## Backend / DB
 
-## 追加対応（Session 2025-12-31）
-
-- [x] マニフェスト取得（`/api/models/registry/:model_name/manifest.json`）を`node`スコープ必須に更新
-- [x] Node がマニフェスト取得時に APIキーを送信
-
-## Contract Tests (router)
-- [x] [P] APIキーのスコープ不足で403が返ることを検証。
-- [x] [P] `node` と `api` の権限差を検証。
-- [x] [P] `/api` 管理系APIは admin 以外を拒否することを検証。
-- [x] [P] `/api/health` が `node` スコープとノードトークンを要求することを検証。
-
-## Integration / E2E (router)
-- [x] [P] `/api` 管理系/ダッシュボードAPIの認証必須化に合わせてテスト更新。
-- [x] [P] `/v1` 推論APIに `api` スコープが必須であることを確認。
-
-## Backend Implementation (llmlb/common)
-- [x] APIキーに `scopes` を追加しDBへ永続化。
-- [x] APIキー認証/スコープ判定ミドルウェアを実装。
-- [x] `/api` 管理系ルートを admin（JWT or admin）に制限。
-- [x] `/api/nodes` を `node` スコープ必須に変更。
-- [x] `/api/models/blob/*` を `node` スコープ必須に変更（旧仕様）。
-- [x] デバッグ用 API キー（sk_debug*）のスコープ対応。
-- [x] `/api/health` を APIキー（`node`）必須に変更。
+- [x] DB: `api_keys.permissions` を追加し、旧`scopes`から`permissions`へ移行（マイグレーション追加）。
+- [x] Common: `ApiKeyPermission` と `ApiKey.permissions` を追加。
+- [x] DB層: `permissions` の保存/読み取りを実装（NULL/不正値は default-deny）。
+- [x] Middleware: `permissions` ベースの認可へ移行（JWT or API key を統一）。
+- [x] Router: `/api/dashboard/*` を JWT のみに制限（APIキー不可）。
+- [x] API: `/api/api-keys` は `permissions` のみ受け付け、`scopes` は 400 で拒否。
 
 ## Frontend (dashboard)
-- [x] [P] APIキー作成UIでスコープ選択を追加。
-- [x] [P] APIキー一覧にスコープ表示を追加。
 
-## Node (C++)
-- [x] `XLLM_API_KEY` を設定可能にする。
-- [x] ノード登録時に APIキーを送信。
-- [x] モデル配信 (`/api/models/blob`) に APIキーを送信（旧仕様）。
-- [x] ハートビート (`/api/health`) に APIキーを送信。
+- [x] APIキー作成UIを permissions（チェックボックス）へ移行。
+- [x] Vite build を実行し、埋め込み静的アセット（`llmlb/src/web/static`）を更新。
 
-## Docs
-- [x] [P] README / README.ja に権限マトリクスと環境変数を追記。
-- [x] [P] `docs/authentication.md` を更新（スコープ/デバッグキー）。
-- [x] [P] `/api/health` のAPIキー必須化に合わせてドキュメントを更新。
+## Specs / Docs
 
-## 検証
-- [x] [P] `cargo fmt --check`
-- [x] [P] `cargo clippy -- -D warnings`
-- [x] [P] `cargo test`
-- [x] [P] `.specify/scripts/checks/check-tasks.sh`
-- [x] [P] `pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees"`
+- [x] SPEC-7c0a37e0 を permissions 仕様へ更新（spec/data-model）。
+- [x] SPEC-7c0a37e0 の OpenAPI contract を permissions へ更新。
+- [x] SPEC-d4eb8796 の quickstart/tasks を permissions へ更新。
+- [x] `docs/authentication.md` を permissions へ更新。
+- [x] `README.md` / `README.ja.md` の API仕様・認証マトリクスを現行（endpoints/permissions）に更新。
+
+## Tests / Verification
+
+- [x] Rust tests: `permissions` 仕様に合わせて Contract/Integration/E2E を更新。
+- [x] `make quality-checks` を実行し、全てグリーンであることを確認。
+- [x] Playwright: E2E walkthrough（`llmlb/tests/e2e-playwright`）を実行し、主要画面が通ることを確認。

@@ -2,7 +2,7 @@
 //!
 //! Admin専用のAPIキーCRUD操作
 
-use crate::common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext, Claims, UserRole};
+use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext, Claims, UserRole};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -20,8 +20,12 @@ pub struct CreateApiKeyRequest {
     pub name: String,
     /// 有効期限（RFC3339形式、オプション）
     pub expires_at: Option<String>,
-    /// スコープ（権限）
-    pub scopes: Vec<ApiKeyScope>,
+    /// 付与する権限（推奨: チェックボックスUIで複数選択）
+    #[serde(default)]
+    pub permissions: Option<Vec<ApiKeyPermission>>,
+    /// 旧互換: `scopes` は廃止。送られてきた場合は 400 を返す。
+    #[serde(default)]
+    pub scopes: Option<serde_json::Value>,
 }
 
 /// APIキーレスポンス（key_hash除外）
@@ -39,8 +43,8 @@ pub struct ApiKeyResponse {
     pub created_at: String,
     /// 有効期限
     pub expires_at: Option<String>,
-    /// スコープ（権限）
-    pub scopes: Vec<ApiKeyScope>,
+    /// 付与された権限
+    pub permissions: Vec<ApiKeyPermission>,
 }
 
 impl From<ApiKey> for ApiKeyResponse {
@@ -52,7 +56,7 @@ impl From<ApiKey> for ApiKeyResponse {
             created_by: api_key.created_by.to_string(),
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
-            scopes: api_key.scopes,
+            permissions: api_key.permissions,
         }
     }
 }
@@ -72,8 +76,8 @@ pub struct CreateApiKeyResponse {
     pub created_at: String,
     /// 有効期限
     pub expires_at: Option<String>,
-    /// スコープ（権限）
-    pub scopes: Vec<ApiKeyScope>,
+    /// 付与された権限
+    pub permissions: Vec<ApiKeyPermission>,
 }
 
 impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
@@ -85,7 +89,7 @@ impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
             name: api_key.name,
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
-            scopes: api_key.scopes,
+            permissions: api_key.permissions,
         }
     }
 }
@@ -157,8 +161,17 @@ pub async fn create_api_key(
 ) -> Result<(StatusCode, Json<CreateApiKeyResponse>), Response> {
     check_admin(&claims)?;
 
-    if request.scopes.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Scopes are required").into_response());
+    if request.scopes.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Field 'scopes' is deprecated. Use 'permissions' instead.",
+        )
+            .into_response());
+    }
+
+    let permissions = request.permissions.unwrap_or_default();
+    if permissions.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Permissions are required").into_response());
     }
 
     // ユーザーIDをパース
@@ -187,7 +200,7 @@ pub async fn create_api_key(
         &request.name,
         user_id,
         expires_at,
-        normalize_scopes(&request.scopes),
+        normalize_permissions(&permissions),
     )
     .await
     .map_err(|e| {
@@ -263,14 +276,14 @@ pub async fn update_api_key(
     }
 }
 
-fn normalize_scopes(scopes: &[ApiKeyScope]) -> Vec<ApiKeyScope> {
+fn normalize_permissions(permissions: &[ApiKeyPermission]) -> Vec<ApiKeyPermission> {
     use std::collections::HashSet;
 
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
-    for scope in scopes {
-        if seen.insert(*scope) {
-            unique.push(*scope);
+    for permission in permissions {
+        if seen.insert(*permission) {
+            unique.push(*permission);
         }
     }
     unique

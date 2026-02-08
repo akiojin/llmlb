@@ -9,7 +9,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -69,7 +69,7 @@ async fn build_app() -> TestApp {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key")

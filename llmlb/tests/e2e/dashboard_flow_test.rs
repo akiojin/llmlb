@@ -191,7 +191,6 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/endpoints")
                 .header("authorization", format!("Bearer {}", admin_key))
@@ -211,7 +210,6 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/endpoints")
                 .header("authorization", format!("Bearer {}", admin_key))

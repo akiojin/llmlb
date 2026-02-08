@@ -154,7 +154,7 @@ cargo build --release -p llmlb
 
 # Access dashboard
 # Open http://localhost:32768/dashboard in browser
-# (No internal API token required; LLMLB_INTERNAL_API_TOKEN is optional (legacy))
+# (No internal API token required)
 ```
 
 **Environment Variables:**

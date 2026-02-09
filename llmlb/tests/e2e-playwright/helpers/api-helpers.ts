@@ -327,6 +327,15 @@ export interface NodeInfo {
   model_count?: number;
 }
 
+export interface EndpointInfo {
+  id: string;
+  name: string;
+  base_url: string;
+  status: string;
+  endpoint_type?: string;
+  model_count?: number;
+}
+
 /**
  * Get list of nodes (endpoints)
  *
@@ -359,6 +368,56 @@ export async function getNodes(request: APIRequestContext): Promise<NodeInfo[]> 
 export async function getOnlineNodeCount(request: APIRequestContext): Promise<number> {
   const nodes = await getNodes(request);
   return nodes.filter((n) => n.status === 'online').length;
+}
+
+/**
+ * List endpoints (raw shape) via /api/endpoints
+ */
+export async function listEndpoints(request: APIRequestContext): Promise<EndpointInfo[]> {
+  const response = await request.get(`${API_BASE}/api/endpoints`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  const data = await response.json();
+  const endpoints = Array.isArray(data) ? data : data.endpoints || [];
+  return endpoints.map((e: { id: string; name: string; base_url: string; status: string; endpoint_type?: string; model_count?: number }) => ({
+    id: e.id,
+    name: e.name,
+    base_url: e.base_url,
+    status: e.status,
+    endpoint_type: e.endpoint_type,
+    model_count: e.model_count,
+  }));
+}
+
+/**
+ * Delete an endpoint by id.
+ */
+export async function deleteEndpoint(
+  request: APIRequestContext,
+  endpointId: string
+): Promise<boolean> {
+  const response = await request.delete(`${API_BASE}/api/endpoints/${encodeURIComponent(endpointId)}`, {
+    headers: AUTH_HEADER,
+  });
+  return response.status() === 204 || response.status() === 200;
+}
+
+/**
+ * Best-effort cleanup helper for E2E: delete endpoints matching exact name.
+ */
+export async function deleteEndpointsByName(
+  request: APIRequestContext,
+  name: string
+): Promise<number> {
+  const endpoints = await listEndpoints(request);
+  const targets = endpoints.filter((e) => e.name === name);
+  for (const ep of targets) {
+    await deleteEndpoint(request, ep.id);
+  }
+  return targets.length;
 }
 
 // ============================================================================

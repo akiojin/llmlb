@@ -372,29 +372,6 @@ impl EndpointRegistry {
         db::update_device_info(&self.pool, id, device_info.as_ref()).await
     }
 
-    /// エンドポイントのResponses API対応フラグを更新（DBとキャッシュ両方）
-    /// （SPEC-24157000: Open Responses API対応）
-    pub async fn update_responses_api_support(
-        &self,
-        id: Uuid,
-        supports_responses_api: bool,
-    ) -> Result<bool, sqlx::Error> {
-        // DBを更新
-        let updated =
-            db::update_endpoint_responses_api_support(&self.pool, id, supports_responses_api)
-                .await?;
-
-        if updated {
-            // キャッシュを更新
-            let mut endpoints = self.endpoints.write().await;
-            if let Some(endpoint) = endpoints.get_mut(&id) {
-                endpoint.supports_responses_api = supports_responses_api;
-            }
-        }
-
-        Ok(updated)
-    }
-
     /// エンドポイントを削除（DBとキャッシュ両方）
     pub async fn remove(&self, id: Uuid) -> Result<bool, sqlx::Error> {
         // モデルマッピングから削除

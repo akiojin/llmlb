@@ -323,10 +323,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
-                    // Responses API対応エンドポイントの場合は追加
-                    if ep.supports_responses_api {
-                        apis.insert(SupportedAPI::Responses);
-                    }
+                    // Responses APIは全エンドポイント対応前提（判定/フラグは廃止）
+                    apis.insert(SupportedAPI::Responses);
                 }
             }
         }
@@ -475,9 +473,7 @@ pub async fn get_model(
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
-                    if ep.supports_responses_api {
-                        apis.insert(SupportedAPI::Responses);
-                    }
+                    apis.insert(SupportedAPI::Responses);
                 }
             }
         }

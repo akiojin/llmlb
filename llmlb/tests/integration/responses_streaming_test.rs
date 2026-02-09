@@ -33,7 +33,6 @@ async fn spawn_streaming_node(state: StreamingNodeState) -> TestServer {
     let app = Router::new()
         .route("/v1/responses", post(streaming_responses_handler))
         .route("/v1/models", get(models_handler))
-        .route("/health", get(health_handler))
         .with_state(Arc::new(state));
 
     spawn_lb(app).await
@@ -159,17 +158,6 @@ async fn models_handler(State(state): State<Arc<StreamingNodeState>>) -> impl In
                 "object": "model",
                 "supported_apis": ["chat_completions", "responses"]
             }]
-        })),
-    )
-        .into_response()
-}
-
-async fn health_handler(State(_state): State<Arc<StreamingNodeState>>) -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "status": "ok",
-            "supports_responses_api": true
         })),
     )
         .into_response()

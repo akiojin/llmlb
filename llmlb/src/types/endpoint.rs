@@ -351,9 +351,6 @@ pub struct Endpoint {
     pub registered_at: DateTime<Utc>,
     /// メモ
     pub notes: Option<String>,
-    /// Responses API対応フラグ（SPEC-24157000）
-    #[serde(default)]
-    pub supports_responses_api: bool,
     /// エンドポイントの機能一覧（SPEC-66555000移行用）
     /// 画像生成、音声認識等の特殊機能をサポートするかを示す
     #[serde(default)]
@@ -403,7 +400,6 @@ impl Endpoint {
             error_count: 0,
             registered_at: Utc::now(),
             notes: None,
-            supports_responses_api: false,
             capabilities: vec![EndpointCapability::ChatCompletion], // デフォルトはチャット機能
             gpu_device_count: None,
             gpu_total_memory_bytes: None,
@@ -610,7 +606,6 @@ mod tests {
         assert_eq!(endpoint.health_check_interval_secs, 30);
         assert_eq!(endpoint.inference_timeout_secs, 120);
         assert_eq!(endpoint.error_count, 0);
-        assert!(!endpoint.supports_responses_api);
         // デフォルトでChatCompletion機能を持つ
         assert!(endpoint.has_capability(EndpointCapability::ChatCompletion));
         assert!(!endpoint.has_capability(EndpointCapability::ImageGeneration));

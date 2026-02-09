@@ -8,9 +8,7 @@ use tower::ServiceExt;
 
 #[allow(dead_code)]
 pub fn admin_request() -> Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("x-api-key", admin_api_key())
+    Request::builder().header("x-api-key", admin_api_key())
 }
 
 #[cfg(debug_assertions)]

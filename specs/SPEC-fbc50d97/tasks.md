@@ -26,7 +26,7 @@
 このプロジェクトは**単一プロジェクト構造**（router クレート）を使用：
 - `llmlb/src/` - ソースコード
 - `common/src/` - 共有プロトコル定義
-- `tests/` - テストコード
+- `llmlb/tests/` - テストコード
 
 ---
 
@@ -53,19 +53,19 @@
 
 ### Contract Tests（並列実行可能）
 
-- [x] T004 [P] `tests/contract/request_history_api_test.rs` に
+- [x] T004 [P] `llmlb/tests/contract/request_history_api_test.rs` に
   List API (`GET /api/dashboard/request-responses`) の contract test を作成
   - 空の履歴でも 200 OK を返すことをテスト
   - レスポンス構造（records, total_count, page, per_page）を検証
   - 依存: T001 (RequestResponseRecord 定義)
 
-- [x] T005 [P] `tests/contract/request_history_api_test.rs` に
+- [x] T005 [P] `llmlb/tests/contract/request_history_api_test.rs` に
   Detail API (`GET /api/dashboard/request-responses/:id`) の contract test を作成
   - 存在しないIDで 404 を返すことをテスト
   - 存在するIDで RequestResponseRecord を返すことをテスト
   - 依存: T001
 
-- [x] T006 [P] `tests/contract/request_history_api_test.rs` に
+- [x] T006 [P] `llmlb/tests/contract/request_history_api_test.rs` に
   Export API (`GET /api/dashboard/request-responses/export`) の contract test を作成
   - format=json で JSON 形式を返すことをテスト
   - format=csv で CSV 形式を返すことをテスト
@@ -74,27 +74,27 @@
 
 ### Integration Tests（ストレージ層）
 
-- [x] T007 [P] `tests/integration/request_storage_test.rs` に
+- [x] T007 [P] `llmlb/tests/integration/request_storage_test.rs` に
   ストレージ層の保存機能の integration test を作成
   - `save_record()` 関数をテスト
   - レコードがファイルに保存されることを確認
   - JSON 形式の検証
   - 依存: T001
 
-- [x] T008 [P] `tests/integration/request_storage_test.rs` に
+- [x] T008 [P] `llmlb/tests/integration/request_storage_test.rs` に
   ストレージ層の読み込み機能の integration test を作成
   - `load_records()` 関数をテスト
   - 保存されたレコードを正しく読み込めることを確認
   - 依存: T001
 
-- [x] T009 [P] `tests/integration/request_storage_test.rs` に
+- [x] T009 [P] `llmlb/tests/integration/request_storage_test.rs` に
   ストレージ層のクリーンアップ機能の integration test を作成
   - `cleanup_old_records()` 関数をテスト
   - 7日より古いレコードが削除されることを確認
   - 新しいレコードは残ることを確認
   - 依存: T001
 
-- [x] T010 [P] `tests/integration/request_storage_test.rs` に
+- [x] T010 [P] `llmlb/tests/integration/request_storage_test.rs` に
   ストレージ層のフィルタリング機能の integration test を作成
   - モデル名、ノードID、ステータス、日時範囲でフィルタ
   - ページネーションの動作を確認
@@ -102,19 +102,19 @@
 
 ### Integration Tests（プロキシ層）
 
-- [x] T011 `tests/integration/request_capture_test.rs` に
+- [x] T011 `llmlb/tests/integration/request_capture_test.rs` に
   プロキシキャプチャ機能の integration test を作成
   - `/v1/chat/completions` へのリクエストがキャプチャされることをテスト
   - request_history.json にレコードが保存されることを確認
   - レスポンスが正しくクライアントに返されることを確認
   - 依存: T001, T007 (保存機能のテストが先)
 
-- [x] T012 `tests/integration/request_capture_test.rs` に
+- [x] T012 `llmlb/tests/integration/request_capture_test.rs` に
   エラーリクエストのキャプチャ integration test を作成
   - エラーが発生したリクエストもエラー情報付きで保存されることを確認
   - 依存: T001, T011
 
-- [x] T013 `tests/integration/request_capture_test.rs` に
+- [x] T013 `llmlb/tests/integration/request_capture_test.rs` に
   ストリーミングレスポンスのキャプチャ integration test を作成
   - ストリーミングモードでもレスポンス全体が保存されることを確認
   - 依存: T001, T011
@@ -270,7 +270,7 @@
 
 ## Phase 3.5: E2E テスト
 
-- [x] T033 `tests/e2e/request_history_flow_test.rs` に
+- [x] T033 `llmlb/tests/e2e_openai_proxy.rs` に
   エンドツーエンドフローの E2E test を作成
   - ✅ SKIP: 既存の統合テストとコントラクトテストで十分カバー済み
   - dashboard_smoke.rs で履歴エンドポイントをテスト
@@ -288,7 +288,7 @@
   - API エンドポイントの説明
   - 依存: なし
 
-- [x] T035 [P] `tests/unit/` にユニットテストを追加（必要に応じて）
+- [x] T035 [P] `llmlb/tests/unit/` にユニットテストを追加（必要に応じて）
   - ✅ SKIP: 既存のユニット＆統合テストで十分なカバレッジ
   - request_storage_test.rs でフィルタロジックをテスト済み
   - 98テスト全合格、カバレッジ十分

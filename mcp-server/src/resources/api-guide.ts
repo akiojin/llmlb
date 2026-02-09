@@ -4,32 +4,38 @@ const GUIDE_BASE_URI = "llmlb://guide";
 
 /**
  * API Guide categories
+ *
+ * NOTE:
+ * llmlb has migrated away from legacy `/v0/*` "node" APIs to `/api/*` (management)
+ * and `/v1/*` (OpenAI-compatible inference).
  */
 const GUIDE_CATEGORIES = [
   {
     id: "overview",
     name: "llmlb-api-overview",
-    description: "Overview of LLM Router API categories, authentication methods, and base URL configuration",
+    description:
+      "Overview of llmlb API categories, auth methods, and base URL configuration",
   },
   {
     id: "openai-compatible",
     name: "llmlb-openai-api",
-    description: "OpenAI-compatible endpoints: /v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models",
+    description:
+      "OpenAI-compatible endpoints: /v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models",
   },
   {
-    id: "node-management",
-    name: "llmlb-node-api",
-    description: "Node management endpoints: /v0/nodes (list, register, delete, configure)",
+    id: "endpoint-management",
+    name: "llmlb-endpoint-api",
+    description: "Endpoint management endpoints: /api/endpoints",
   },
   {
     id: "model-management",
     name: "llmlb-model-api",
-    description: "Model management endpoints: /v0/models/* (register, delete, manifest)",
+    description: "Model management endpoints: /api/models/*",
   },
   {
     id: "dashboard",
     name: "llmlb-dashboard-api",
-    description: "Dashboard and monitoring endpoints: /v0/dashboard/* (stats, overview, metrics)",
+    description: "Dashboard and monitoring endpoints: /api/dashboard/*",
   },
 ];
 
@@ -57,8 +63,8 @@ export function getApiGuideContent(
       return getOverviewGuide(routerUrl);
     case "openai-compatible":
       return getOpenAiGuide(routerUrl);
-    case "node-management":
-      return getNodeManagementGuide(routerUrl);
+    case "endpoint-management":
+      return getEndpointManagementGuide(routerUrl);
     case "model-management":
       return getModelManagementGuide(routerUrl);
     case "dashboard":
@@ -69,7 +75,7 @@ export function getApiGuideContent(
 }
 
 function getOverviewGuide(routerUrl: string): string {
-  return `# LLM Router API Overview
+  return `# llmlb API Overview
 
 ## Base URL
 
@@ -77,68 +83,36 @@ function getOverviewGuide(routerUrl: string): string {
 ${routerUrl}
 \`\`\`
 
-## Authentication Methods
-
-### 1. API Key Authentication (Scoped)
-
-**Header**: \`X-API-Key: sk_xxx\` or \`Authorization: Bearer sk_xxx\`
-
-**Used for**:
-- /v1/* (scope: \`api\`)
-- /v0/nodes (scope: \`node\`)
-- /v0/health (scope: \`node\`)
-- /v0/models/registry/:model_name/manifest.json (scope: \`node\`)
-- /v0/* admin endpoints (scope: \`admin\`)
-
-### 2. JWT Authentication (Management APIs)
-
-**Header**: \`Authorization: Bearer <jwt_token>\`
-
-**Used for**:
-- /v0/auth/* (me/logout)
-- /v0/users (admin only)
-- /v0/api-keys (admin only)
-- /v0/dashboard/*, /v0/metrics/* (admin only)
-
-**Obtain JWT via**:
-\`\`\`bash
-curl -X POST ${routerUrl}/v0/auth/login \\
-  -H "Content-Type: application/json" \\
-  -d '{"username":"admin","password":"your_password"}'
-\`\`\`
-
-### 3. Node Token (Node Communication)
-
-**Header**: \`X-Node-Token: nt_xxx\`
-
-**Used for**:
-- /v0/health (internal node health reporting, requires API key too)
-- /v1/models (node model sync)
-
-For \`/v0/health\`, include **both** \`X-Node-Token\` and \`Authorization: Bearer <api_key>\`.
-
 ## API Categories
 
-| Category | Base Path | Description |
-|----------|-----------|-------------|
-| OpenAI-Compatible | /v1/* | Chat, completions, embeddings, models |
-| Node Management | /v0/nodes | Register/manage inference nodes |
-| Model Management | /v0/models/* | Register/delete models, manifest |
-| Dashboard | /v0/dashboard/* | Stats, metrics, overview |
-| Authentication | /v0/auth/* | Login, logout, user info |
+| Category | Base Path | Notes |
+|----------|-----------|-------|
+| OpenAI-Compatible | /v1/* | Inference APIs. Requires an API key with \`api\` scope. |
+| Management | /api/* | Endpoint/model/dashboard/admin APIs. Prefer an API key with \`admin\` scope. |
+| Dashboard UI | /dashboard | Browser UI. Uses HttpOnly cookies after login. |
 
-## Cloud Model Routing
+## Authentication
 
-Use prefixes to route to cloud providers:
-- \`openai:gpt-4o\` → OpenAI API
-- \`google:gemini-pro\` → Google AI API
-- \`anthropic:claude-3-opus\` → Anthropic API
-- No prefix → Local inference node
-`;
+### API Key Authentication (recommended for programmatic access)
+
+**Header**: \`X-API-Key: sk_xxx\` (or \`Authorization: Bearer sk_xxx\`)
+
+Scopes (examples):
+- \`api\`: /v1/* inference endpoints
+- \`admin\`: /api/* management endpoints
+
+This MCP server can auto-inject:
+- \`LLMLB_API_KEY\` for /v1/*
+- \`LLMLB_ADMIN_API_KEY\` for /api/* (preferred)
+
+### Dashboard Session (browser UI)
+
+The dashboard uses **HttpOnly cookies** for JWT sessions. This MCP server does not manage browser cookies.
+Use scoped API keys for automation.`;
 }
 
 function getOpenAiGuide(routerUrl: string): string {
-  return `# OpenAI-Compatible API
+  return `# OpenAI-Compatible API (/v1/*)
 
 ## Chat Completions
 
@@ -149,7 +123,7 @@ curl -X POST ${routerUrl}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -d '{
-    "model": "llama2",
+    "model": "llama3.2:3b",
     "messages": [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "Hello!"}
@@ -158,19 +132,27 @@ curl -X POST ${routerUrl}/v1/chat/completions \\
   }'
 \`\`\`
 
-**Cloud routing**:
+## Cloud Routing (model prefix)
+
 \`\`\`bash
 curl -X POST ${routerUrl}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -d '{"model": "openai:gpt-4o", "messages": [...]}'
+  -H "X-API-Key: YOUR_API_KEY" \\
+  -d '{"model": "openai:gpt-4o", "messages": [{"role":"user","content":"Hello"}]}'
 \`\`\`
+
+Supported prefixes:
+- \`openai:\`
+- \`google:\`
+- \`anthropic:\`
 
 ## List Models
 
 **Endpoint**: GET ${routerUrl}/v1/models
 
 \`\`\`bash
-curl ${routerUrl}/v1/models -H "X-API-Key: YOUR_API_KEY"
+curl ${routerUrl}/v1/models \\
+  -H "X-API-Key: YOUR_API_KEY"
 \`\`\`
 
 ## Embeddings
@@ -181,227 +163,119 @@ curl ${routerUrl}/v1/models -H "X-API-Key: YOUR_API_KEY"
 curl -X POST ${routerUrl}/v1/embeddings \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: YOUR_API_KEY" \\
-  -d '{"model": "nomic-embed-text", "input": "Hello world"}'
-\`\`\`
-
-## Text Completions (Legacy)
-
-**Endpoint**: POST ${routerUrl}/v1/completions
-
-\`\`\`bash
-curl -X POST ${routerUrl}/v1/completions \\
-  -H "Content-Type: application/json" \\
-  -H "X-API-Key: YOUR_API_KEY" \\
-  -d '{"model": "llama2", "prompt": "Once upon a time"}'
+  -d '{"model": "nomic-embed-text-v1.5", "input": "Hello world"}'
 \`\`\`
 `;
 }
 
-function getNodeManagementGuide(routerUrl: string): string {
-  return `# Node Management API
+function getEndpointManagementGuide(routerUrl: string): string {
+  return `# Endpoint Management API (/api/endpoints)
 
-## List Nodes
+## List Endpoints
 
-**Endpoint**: GET ${routerUrl}/v0/nodes
+**Endpoint**: GET ${routerUrl}/api/endpoints
 
 \`\`\`bash
-curl ${routerUrl}/v0/nodes \\
-  -H "Authorization: Bearer ADMIN_API_KEY"
+curl ${routerUrl}/api/endpoints \\
+  -H "X-API-Key: ADMIN_API_KEY"
 \`\`\`
 
-## Register Node
+## Create Endpoint
 
-**Endpoint**: POST ${routerUrl}/v0/nodes
+**Endpoint**: POST ${routerUrl}/api/endpoints
 
 \`\`\`bash
-curl -X POST ${routerUrl}/v0/nodes \\
+curl -X POST ${routerUrl}/api/endpoints \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer NODE_API_KEY" \\
+  -H "X-API-Key: ADMIN_API_KEY" \\
   -d '{
-    "machine_name": "gpu-server-1",
-    "ip_address": "192.168.1.100",
-    "runtime_version": "0.1.0",
-    "runtime_port": 32768,
-    "gpu_available": true,
-    "gpu_devices": [
-      {"model": "NVIDIA RTX 4090", "count": 1}
-    ]
+    "name": "xllm-local",
+    "base_url": "http://127.0.0.1:8080",
+    "api_key": null
   }'
 \`\`\`
 
-## Delete Node
-
-**Endpoint**: DELETE ${routerUrl}/v0/nodes/:node_id
-
-\`\`\`bash
-curl -X DELETE ${routerUrl}/v0/nodes/NODE_ID \\
-  -H "Authorization: Bearer ADMIN_API_KEY"
-\`\`\`
-
-## Disconnect Node
-
-**Endpoint**: POST ${routerUrl}/v0/nodes/:node_id/disconnect
-
-\`\`\`bash
-curl -X POST ${routerUrl}/v0/nodes/NODE_ID/disconnect \\
-  -H "Authorization: Bearer ADMIN_API_KEY"
-\`\`\`
-
-## Update Node Settings
-
-**Endpoint**: PUT ${routerUrl}/v0/nodes/:node_id/settings
-
-\`\`\`bash
-curl -X PUT ${routerUrl}/v0/nodes/NODE_ID/settings \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ADMIN_API_KEY" \\
-  -d '{
-    "custom_name": "Primary",
-    "tags": ["gpu", "primary"],
-    "notes": "Keep online"
-  }'
-\`\`\`
-
-To clear a nullable field, send \`null\` (for example, \`{"custom_name": null}\`).
-
-## Node Logs
-
-**Endpoint**: GET ${routerUrl}/v0/nodes/:node_id/logs
-
-\`\`\`bash
-curl ${routerUrl}/v0/nodes/NODE_ID/logs \\
-  -H "Authorization: Bearer ADMIN_API_KEY"
-\`\`\`
-`;
+Notes:
+- \`endpoint_type\` can be provided to override auto-detection (xllm/ollama/vllm/openai_compatible).
+- If omitted, llmlb will auto-detect the endpoint type (when reachable).`;
 }
 
 function getModelManagementGuide(routerUrl: string): string {
-  return `# Model Management API
+  return `# Model Management API (/api/models/*)
 
-## List Registered Models (Node Sync)
+## List Models (management view)
 
-**Endpoint**: GET ${routerUrl}/v0/models
+**Endpoint**: GET ${routerUrl}/api/models/hub
 
 \`\`\`bash
-curl ${routerUrl}/v0/models \
-  -H "Authorization: Bearer NODE_API_KEY"
+curl ${routerUrl}/api/models/hub \\
+  -H "X-API-Key: ADMIN_API_KEY"
 \`\`\`
 
-## Register Model
+## Register Model (admin only)
 
-**Endpoint**: POST ${routerUrl}/v0/models/register
+**Endpoint**: POST ${routerUrl}/api/models/register
 
 \`\`\`bash
-curl -X POST ${routerUrl}/v0/models/register \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ADMIN_API_KEY" \
+curl -X POST ${routerUrl}/api/models/register \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: ADMIN_API_KEY" \\
   -d '{
     "repo": "TheBloke/Llama-2-7B-GGUF",
     "filename": "llama-2-7b.Q4_K_M.gguf"
   }'
 \`\`\`
 
-If \`filename\` is omitted, the router stores the manifest for the repo and nodes choose compatible artifacts.
-The router does **not** download binaries or run conversions.
+## Delete Model (admin only)
 
-## Delete Model
-
-**Endpoint**: DELETE ${routerUrl}/v0/models/:model_name
+**Endpoint**: DELETE ${routerUrl}/api/models/:model_name
 
 \`\`\`bash
-curl -X DELETE ${routerUrl}/v0/models/llama-2-7b \
-  -H "Authorization: Bearer ADMIN_API_KEY"
+curl -X DELETE ${routerUrl}/api/models/gpt-oss-20b \\
+  -H "X-API-Key: ADMIN_API_KEY"
 \`\`\`
 
-## Model Manifest
-
-**Endpoint**: GET ${routerUrl}/v0/models/registry/:model_name/manifest.json
-
-\`\`\`bash
-curl ${routerUrl}/v0/models/registry/gpt-oss-20b/manifest.json \
-  -H "Authorization: Bearer NODE_API_KEY"
-\`\`\`
-
-## Model ID Format
-
-Model IDs are normalized to a filename-based format (for example \`gpt-oss-20b\`). Colons and slashes are not used.
-`;
+Note:
+- llmlb does not push binaries to runtimes. Runtimes fetch manifests and artifacts as needed.`;
 }
 
 function getDashboardGuide(routerUrl: string): string {
-  return `# Dashboard API
+  return `# Dashboard API (/api/dashboard/*)
 
-## Dashboard Overview
+## Overview
 
-**Endpoint**: GET ${routerUrl}/v0/dashboard/overview
+**Endpoint**: GET ${routerUrl}/api/dashboard/overview
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/overview \
-  -H "Authorization: Bearer ADMIN_API_KEY"
+curl ${routerUrl}/api/dashboard/overview \\
+  -H "X-API-Key: ADMIN_API_KEY"
 \`\`\`
 
-## Dashboard Statistics
+## Stats
 
-**Endpoint**: GET ${routerUrl}/v0/dashboard/stats
+**Endpoint**: GET ${routerUrl}/api/dashboard/stats
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/stats \
-  -H "Authorization: Bearer ADMIN_API_KEY"
+curl ${routerUrl}/api/dashboard/stats \\
+  -H "X-API-Key: ADMIN_API_KEY"
 \`\`\`
 
-## Node Information
+## Request/Response History (API)
 
-**Endpoint**: GET ${routerUrl}/v0/dashboard/nodes
-
-\`\`\`bash
-curl ${routerUrl}/v0/dashboard/nodes \
-  -H "Authorization: Bearer ADMIN_API_KEY"
-\`\`\`
-
-## Node Metrics History
-
-**Endpoint**: GET ${routerUrl}/v0/dashboard/metrics/:node_id
+**Endpoint**: GET ${routerUrl}/api/dashboard/request-responses
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/metrics/NODE_ID \
-  -H "Authorization: Bearer ADMIN_API_KEY"
-\`\`\`
-
-## Request/Response Logs
-
-**Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses
-
-\`\`\`bash
-curl ${routerUrl}/v0/dashboard/request-responses \
-  -H "Authorization: Bearer ADMIN_API_KEY"
-\`\`\`
-
-## Export Request/Response Logs
-
-**Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses/export
-
-\`\`\`bash
-curl -L ${routerUrl}/v0/dashboard/request-responses/export \
-  -H "Authorization: Bearer ADMIN_API_KEY" \
-  -o request-responses.json
-\`\`\`
-
-## Request Detail
-
-**Endpoint**: GET ${routerUrl}/v0/dashboard/request-responses/:id
-
-\`\`\`bash
-curl ${routerUrl}/v0/dashboard/request-responses/REQUEST_ID \
-  -H "Authorization: Bearer ADMIN_API_KEY"
+curl ${routerUrl}/api/dashboard/request-responses \\
+  -H "X-API-Key: ADMIN_API_KEY"
 \`\`\`
 
 ## Router Logs
 
-**Endpoint**: GET ${routerUrl}/v0/dashboard/logs/router
+**Endpoint**: GET ${routerUrl}/api/dashboard/logs/lb
 
 \`\`\`bash
-curl ${routerUrl}/v0/dashboard/logs/router \
-  -H "Authorization: Bearer ADMIN_API_KEY"
+curl ${routerUrl}/api/dashboard/logs/lb \\
+  -H "X-API-Key: ADMIN_API_KEY"
 \`\`\`
 `;
 }

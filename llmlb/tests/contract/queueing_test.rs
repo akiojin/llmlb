@@ -4,6 +4,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::time::Instant;
 
 use axum::{
     extract::State,
@@ -17,10 +18,11 @@ use serde_json::json;
 use serial_test::serial;
 use tokio::sync::Notify;
 use tokio::time::{sleep, timeout, Duration};
+use uuid::Uuid;
 
 use crate::support::{
     http::{spawn_lb, TestServer},
-    lb::{approve_node_from_register_response, register_node, spawn_test_lb},
+    lb::spawn_test_lb_with_manager,
 };
 
 #[derive(Clone)]
@@ -55,7 +57,10 @@ async fn spawn_queue_stub(state: QueueStubState) -> TestServer {
     spawn_lb(app).await
 }
 
-async fn chat_handler(State(state): State<Arc<QueueStubState>>, Json(_): Json<serde_json::Value>) -> impl IntoResponse {
+async fn chat_handler(
+    State(state): State<Arc<QueueStubState>>,
+    Json(_): Json<serde_json::Value>,
+) -> impl IntoResponse {
     let count = state.request_count.fetch_add(1, Ordering::SeqCst);
     if count == 0 && state.block_first {
         state.first_started.notify_waiters();
@@ -73,7 +78,11 @@ async fn chat_handler(State(state): State<Arc<QueueStubState>>, Json(_): Json<se
 
 // SPEC-93536000: 空のモデルリストは登録拒否されるため、少なくとも1つのモデルを返す
 async fn models_handler() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({"data": [{"id": "test-model", "object": "model"}]}))).into_response()
+    (
+        StatusCode::OK,
+        Json(json!({"data": [{"id": "test-model", "object": "model"}]})),
+    )
+        .into_response()
 }
 
 async fn tags_handler() -> impl IntoResponse {
@@ -92,7 +101,7 @@ fn clear_queue_env() {
 
 fn chat_payload() -> serde_json::Value {
     json!({
-        "model": "gpt-oss-20b",
+        "model": "test-model",
         "messages": [{"role": "user", "content": "ping"}]
     })
 }
@@ -104,16 +113,10 @@ async fn queued_request_waits_and_sets_header() {
 
     let stub_state = QueueStubState::new(true, "node-a");
     let stub = spawn_queue_stub(stub_state.clone()).await;
-    let lb = spawn_test_lb().await;
-
-    let register_response = register_node(lb.addr(), stub.addr())
+    let (lb, load_manager) = spawn_test_lb_with_manager().await;
+    let endpoint_id = register_queue_endpoint(lb.addr(), stub.addr())
         .await
-        .expect("register node must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(lb.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
 
@@ -134,6 +137,8 @@ async fn queued_request_waits_and_sets_header() {
     timeout(Duration::from_secs(1), stub_state.first_started.notified())
         .await
         .expect("first request should reach node");
+
+    wait_for_endpoint_active(&load_manager, &endpoint_id, Duration::from_secs(1)).await;
 
     let second = tokio::spawn({
         let client = client.clone();
@@ -179,31 +184,27 @@ async fn queued_request_waits_and_sets_header() {
 #[tokio::test]
 #[serial]
 async fn queue_full_returns_429_with_retry_after() {
-    set_queue_env(1, 2);
+    set_queue_env(0, 2);
 
     let stub_state = QueueStubState::new(true, "node-a");
     let stub = spawn_queue_stub(stub_state.clone()).await;
-    let lb = spawn_test_lb().await;
-
-    let register_response = register_node(lb.addr(), stub.addr())
+    let (lb, load_manager) = spawn_test_lb_with_manager().await;
+    let endpoint_id = register_queue_endpoint(lb.addr(), stub.addr())
         .await
-        .expect("register node must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(lb.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
+    let payload = chat_payload();
 
     let first = tokio::spawn({
         let client = client.clone();
         let addr = lb.addr();
+        let payload = payload.clone();
         async move {
             client
                 .post(format!("http://{addr}/v1/chat/completions"))
                 .header("x-api-key", "sk_debug")
-                .json(&chat_payload())
+                .json(&payload)
                 .send()
                 .await
                 .expect("first request should be sent")
@@ -214,36 +215,22 @@ async fn queue_full_returns_429_with_retry_after() {
         .await
         .expect("first request should reach node");
 
-    let second = tokio::spawn({
-        let client = client.clone();
-        let addr = lb.addr();
-        async move {
-            client
-                .post(format!("http://{addr}/v1/chat/completions"))
-                .header("x-api-key", "sk_debug")
-                .json(&chat_payload())
-                .send()
-                .await
-                .expect("second request should be sent")
-        }
-    });
+    wait_for_endpoint_active(&load_manager, &endpoint_id, Duration::from_secs(1)).await;
 
-    let third_resp = client
+    let second_resp = client
         .post(format!("http://{}/v1/chat/completions", lb.addr()))
         .header("x-api-key", "sk_debug")
-        .json(&chat_payload())
+        .json(&payload)
         .send()
         .await
-        .expect("third request should be sent");
+        .expect("second request should be sent");
 
-    assert_eq!(third_resp.status(), ReqStatusCode::TOO_MANY_REQUESTS);
-    assert!(third_resp.headers().get("retry-after").is_some());
+    assert_eq!(second_resp.status(), ReqStatusCode::TOO_MANY_REQUESTS);
+    assert!(second_resp.headers().get("retry-after").is_some());
 
     stub_state.release_first.notify_waiters();
 
     let _ = first.await.expect("first join should succeed");
-    let second_resp = second.await.expect("second join should succeed");
-    assert_eq!(second_resp.status(), ReqStatusCode::OK);
 
     clear_queue_env();
 }
@@ -255,16 +242,10 @@ async fn queue_timeout_returns_504() {
 
     let stub_state = QueueStubState::new(true, "node-a");
     let stub = spawn_queue_stub(stub_state.clone()).await;
-    let lb = spawn_test_lb().await;
-
-    let register_response = register_node(lb.addr(), stub.addr())
+    let (lb, load_manager) = spawn_test_lb_with_manager().await;
+    let endpoint_id = register_queue_endpoint(lb.addr(), stub.addr())
         .await
-        .expect("register node must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(lb.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register endpoint must succeed");
 
     let client = Client::new();
 
@@ -285,6 +266,8 @@ async fn queue_timeout_returns_504() {
     timeout(Duration::from_secs(1), stub_state.first_started.notified())
         .await
         .expect("first request should reach node");
+
+    wait_for_endpoint_active(&load_manager, &endpoint_id, Duration::from_secs(1)).await;
 
     let second_resp = client
         .post(format!("http://{}/v1/chat/completions", lb.addr()))
@@ -313,25 +296,10 @@ async fn routes_to_idle_node_when_one_busy() {
     let busy_stub = spawn_queue_stub(busy_state.clone()).await;
     let idle_stub = spawn_queue_stub(idle_state.clone()).await;
 
-    let lb = spawn_test_lb().await;
-
-    let register_response = register_node(lb.addr(), busy_stub.addr())
+    let (lb, load_manager) = spawn_test_lb_with_manager().await;
+    let busy_endpoint_id = register_queue_endpoint(lb.addr(), busy_stub.addr())
         .await
-        .expect("register node must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(lb.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
-
-    let register_response = register_node(lb.addr(), idle_stub.addr())
-        .await
-        .expect("register node must succeed");
-    let (status, _body) =
-        approve_node_from_register_response(lb.addr(), register_response)
-            .await
-            .expect("approve node must succeed");
-    assert_eq!(status, ReqStatusCode::CREATED);
+        .expect("register busy endpoint must succeed");
 
     let client = Client::new();
 
@@ -353,6 +321,13 @@ async fn routes_to_idle_node_when_one_busy() {
         .await
         .expect("busy node should receive first request");
 
+    wait_for_endpoint_active(&load_manager, &busy_endpoint_id, Duration::from_secs(1)).await;
+
+    let _idle_endpoint_id = register_queue_endpoint(lb.addr(), idle_stub.addr())
+        .await
+        .expect("register idle endpoint must succeed");
+    sleep(Duration::from_millis(50)).await;
+
     let second_resp = client
         .post(format!("http://{}/v1/chat/completions", lb.addr()))
         .header("x-api-key", "sk_debug")
@@ -370,4 +345,69 @@ async fn routes_to_idle_node_when_one_busy() {
     let _ = first.await.expect("first join should succeed");
 
     clear_queue_env();
+}
+
+async fn register_queue_endpoint(
+    lb_addr: std::net::SocketAddr,
+    stub_addr: std::net::SocketAddr,
+) -> reqwest::Result<String> {
+    let client = Client::new();
+
+    let create_response = client
+        .post(format!("http://{}/api/endpoints", lb_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": format!("Queue Stub - {}", stub_addr),
+            "base_url": format!("http://{}", stub_addr),
+            "health_check_interval_secs": 30
+        }))
+        .send()
+        .await?;
+
+    let create_body: serde_json::Value = create_response.json().await.unwrap_or_default();
+    let endpoint_id = create_body["id"].as_str().unwrap_or_default().to_string();
+
+    let _ = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/test",
+            lb_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    let _ = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/sync",
+            lb_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await?;
+
+    Ok(endpoint_id)
+}
+
+async fn wait_for_endpoint_active(
+    load_manager: &llmlb::balancer::LoadManager,
+    endpoint_id: &str,
+    timeout_duration: Duration,
+) {
+    let endpoint_id = Uuid::parse_str(endpoint_id).expect("endpoint id should be UUID");
+    let start = Instant::now();
+    loop {
+        let snapshots = load_manager.snapshots().await;
+        if snapshots
+            .iter()
+            .any(|snapshot| snapshot.endpoint_id == endpoint_id && snapshot.active_requests > 0)
+        {
+            return;
+        }
+
+        if start.elapsed() > timeout_duration {
+            panic!("timeout waiting for endpoint to become active");
+        }
+
+        sleep(Duration::from_millis(10)).await;
+    }
 }

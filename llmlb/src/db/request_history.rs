@@ -6,6 +6,7 @@ use crate::common::{
     error::{LbError, RouterResult},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
 };
+use crate::config::get_env_with_fallback_parse;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::SqlitePool;
 use std::env;
@@ -17,6 +18,10 @@ use uuid::Uuid;
 const LEGACY_DATA_DIR_ENV: &str = "LLMLB_DATA_DIR";
 const DEFAULT_DATA_DIR: &str = ".llmlb";
 const LEGACY_REQUEST_HISTORY_FILE: &str = "request_history.json";
+const REQUEST_HISTORY_RETENTION_DAYS_ENV: &str = "LLMLB_REQUEST_HISTORY_RETENTION_DAYS";
+const LEGACY_REQUEST_HISTORY_RETENTION_DAYS_ENV: &str = "REQUEST_HISTORY_RETENTION_DAYS";
+const REQUEST_HISTORY_CLEANUP_INTERVAL_ENV: &str = "LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS";
+const LEGACY_REQUEST_HISTORY_CLEANUP_INTERVAL_ENV: &str = "REQUEST_HISTORY_CLEANUP_INTERVAL_SECS";
 
 /// リクエスト履歴ストレージ（SQLite版）
 #[derive(Clone)]
@@ -28,6 +33,22 @@ impl RequestHistoryStorage {
     /// 新しいストレージインスタンスを作成
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
+    }
+
+    /// IDでレコードを取得
+    pub async fn get_record_by_id(&self, id: Uuid) -> RouterResult<Option<RequestResponseRecord>> {
+        let row = sqlx::query_as::<_, RequestHistoryRow>(
+            "SELECT * FROM request_history WHERE id = ? LIMIT 1",
+        )
+        .bind(id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to load record: {}", e)))?;
+
+        match row {
+            Some(row) => Ok(Some(row.try_into()?)),
+            None => Ok(None),
+        }
     }
 
     /// レコードを保存
@@ -747,7 +768,8 @@ impl RecordFilter {
 }
 
 /// フィルタ用のステータス
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FilterStatus {
     /// 成功したリクエスト
     Success,
@@ -862,18 +884,35 @@ struct MonthlyTokenStatisticsRow {
 
 /// 定期クリーンアップタスクを開始
 pub fn start_cleanup_task(storage: Arc<RequestHistoryStorage>) {
+    let retention_days = get_env_with_fallback_parse(
+        REQUEST_HISTORY_RETENTION_DAYS_ENV,
+        LEGACY_REQUEST_HISTORY_RETENTION_DAYS_ENV,
+        7i64,
+    );
+    let interval_secs = get_env_with_fallback_parse(
+        REQUEST_HISTORY_CLEANUP_INTERVAL_ENV,
+        LEGACY_REQUEST_HISTORY_CLEANUP_INTERVAL_ENV,
+        3600u64,
+    );
+
+    if retention_days <= 0 {
+        tracing::info!("Request history cleanup disabled ({} <= 0)", retention_days);
+        return;
+    }
+
     tokio::spawn(async move {
         // 起動時に1回実行
-        if let Err(e) = storage.cleanup_old_records(Duration::days(7)).await {
+        let retention = Duration::days(retention_days);
+        if let Err(e) = storage.cleanup_old_records(retention).await {
             tracing::error!("Initial cleanup failed: {}", e);
         }
 
         // 1時間ごとに実行
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
         loop {
             interval.tick().await;
 
-            if let Err(e) = storage.cleanup_old_records(Duration::days(7)).await {
+            if let Err(e) = storage.cleanup_old_records(retention).await {
                 tracing::error!("Periodic cleanup failed: {}", e);
             } else {
                 tracing::info!("Periodic cleanup completed");

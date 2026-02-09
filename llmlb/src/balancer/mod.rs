@@ -494,6 +494,29 @@ impl LoadManager {
         }
     }
 
+    /// テスト用: 指定エンドポイントがアクティブになるまで待機する
+    #[cfg(test)]
+    pub async fn wait_for_endpoint_active(
+        &self,
+        endpoint_id: Uuid,
+        timeout_duration: StdDuration,
+    ) -> bool {
+        let start = std::time::Instant::now();
+        loop {
+            if let Ok(snapshot) = self.snapshot(endpoint_id).await {
+                if snapshot.active_requests > 0 {
+                    return true;
+                }
+            }
+
+            if start.elapsed() > timeout_duration {
+                return false;
+            }
+
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    }
+
     /// エンドポイントレジストリへの参照を取得
     pub fn endpoint_registry(&self) -> &Arc<EndpointRegistry> {
         &self.endpoint_registry

@@ -16,10 +16,10 @@ export const DashboardSelectors = {
   },
 
   // Stats Grid - These match the actual data-stat attributes in StatsCards.tsx
-  // Note: Online/Offline counts are shown in subtitle of totalNodes card, not as separate cards
+  // Note: Online/Offline counts are shown in subtitle of the totalEndpoints card, not as separate cards
   // Note: Success/Failed counts are shown in subtitle of totalRequests and successRate cards
   stats: {
-    totalNodes: '[data-stat="total-nodes"]',
+    totalEndpoints: '[data-stat="total-endpoints"]',
     totalRequests: '[data-stat="total-requests"]',
     successRate: '[data-stat="success-rate"]',
     averageResponseTime: '[data-stat="average-response-time-ms"]',

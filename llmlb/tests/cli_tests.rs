@@ -1,8 +1,8 @@
 //! CLI integration tests
 //!
 //! Tests for command-line interface parsing and behavior.
-//! The CLI only supports -h/--help and -V/--version flags.
-//! All other operations are performed via API/Dashboard UI.
+//! The CLI supports a small set of management subcommands (serve/status/stop) plus basic flags.
+//! Day-to-day configuration is done via the Dashboard UI (`/dashboard`) or HTTP APIs.
 
 use clap::Parser;
 use llmlb::cli::Cli;
@@ -54,6 +54,27 @@ fn test_short_help_flag() {
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
 }
 
+/// Test serve subcommand parses
+#[test]
+fn test_serve_subcommand_parses() {
+    let cli = Cli::try_parse_from(["llmlb", "serve", "--no-tray"]);
+    assert!(cli.is_ok());
+}
+
+/// Test status subcommand parses
+#[test]
+fn test_status_subcommand_parses() {
+    let cli = Cli::try_parse_from(["llmlb", "status"]);
+    assert!(cli.is_ok());
+}
+
+/// Test stop subcommand parses
+#[test]
+fn test_stop_subcommand_parses() {
+    let cli = Cli::try_parse_from(["llmlb", "stop", "--port", "32768"]);
+    assert!(cli.is_ok());
+}
+
 /// Test unknown argument is rejected
 #[test]
 fn test_unknown_arg_rejected() {
@@ -61,9 +82,9 @@ fn test_unknown_arg_rejected() {
     assert!(result.is_err());
 }
 
-/// Test subcommand is rejected (no subcommands available)
+/// Test unknown subcommand is rejected
 #[test]
-fn test_subcommand_rejected() {
+fn test_unknown_subcommand_rejected() {
     let result = Cli::try_parse_from(["llmlb", "user"]);
     assert!(result.is_err());
 }

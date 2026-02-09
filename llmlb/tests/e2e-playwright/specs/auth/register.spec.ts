@@ -85,7 +85,7 @@ test.describe('Register Page', () => {
     const invitationCode = await createInvitationCode(request);
 
     // Generate unique username
-    const username = `testuser_${Date.now()}`;
+    const username = `testuser_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
     // Register with the code
     await registerPage.register(invitationCode, username, 'password123');
@@ -112,7 +112,7 @@ test.describe('Register Page', () => {
   test('R-06: Used invitation code is rejected', async ({ page, request }) => {
     // Create and use an invitation code
     const invitationCode = await createInvitationCode(request);
-    const username1 = `testuser1_${Date.now()}`;
+    const username1 = `testuser1_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
     // First registration
     await registerPage.register(invitationCode, username1, 'password123');
@@ -122,7 +122,7 @@ test.describe('Register Page', () => {
     await registerPage.goto();
 
     // Try to use the same code again
-    const username2 = `testuser2_${Date.now()}`;
+    const username2 = `testuser2_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     await registerPage.register(invitationCode, username2, 'password123');
 
     // Should show error

@@ -2,9 +2,7 @@
 //!
 //! T014: JSONからSQLiteへのマイグレーション
 
-use llmlb::db::migrations::{
-    import_nodes_from_json, initialize_database,
-};
+use llmlb::db::migrations::{import_nodes_from_json, initialize_database};
 
 /// T014: JSONからSQLiteへのマイグレーションテスト
 #[tokio::test]

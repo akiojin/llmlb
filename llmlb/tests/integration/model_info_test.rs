@@ -10,7 +10,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -53,7 +53,7 @@ async fn build_app() -> (Router, String, sqlx::SqlitePool) {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key")
@@ -73,7 +73,6 @@ async fn test_available_models_endpoint_is_removed() {
             Request::builder()
                 .method("GET")
                 .uri("/api/models/available")
-                .header("x-internal-token", "test-internal")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -114,7 +113,6 @@ async fn test_model_matrix_view_multiple_endpoints() {
                 Request::builder()
                     .method("POST")
                     .uri("/api/endpoints")
-                    .header("x-internal-token", "test-internal")
                     .header("authorization", format!("Bearer {}", admin_key))
                     .header("content-type", "application/json")
                     .body(Body::from(
@@ -139,7 +137,6 @@ async fn test_model_matrix_view_multiple_endpoints() {
             Request::builder()
                 .method("GET")
                 .uri("/api/endpoints")
-                .header("x-internal-token", "test-internal")
                 .header("authorization", format!("Bearer {}", admin_key))
                 .body(Body::empty())
                 .unwrap(),
@@ -185,7 +182,7 @@ async fn test_v1_models_returns_fixed_list() {
         "test-key",
         test_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![ApiKeyPermission::OpenaiModelsRead],
     )
     .await
     .expect("Failed to create test API key");

@@ -9,7 +9,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -32,7 +32,6 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
-    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -70,7 +69,7 @@ async fn build_app() -> TestApp {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key")
@@ -81,9 +80,7 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("authorization", format!("Bearer {}", admin_key))
+    Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
 /// POST /api/endpoints/:id/sync - 正常系: モデル同期成功
@@ -243,7 +240,6 @@ async fn test_endpoint_sync_unauthorized() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri(format!("/api/endpoints/{}/sync", Uuid::new_v4()))
                 .body(Body::empty())

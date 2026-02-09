@@ -312,7 +312,9 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
       ? [{ role: 'system', content: systemPrompt }, ...messages]
       : messages
 
-    const baseUrl = endpoint?.base_url?.replace(/\/$/, '') || 'http://localhost:11434'
+    if (!hasBaseUrl) {
+      return '# Error: endpoint base_url is not configured. Please set it in the dashboard.'
+    }
 
     return `curl -X POST '${baseUrl}/v1/chat/completions' \\
   -H 'Content-Type: application/json' \\
@@ -342,6 +344,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   }
 
   const models = endpointModels?.models || []
+  const baseUrl = endpoint?.base_url?.replace(/\/$/, '') || ''
+  const hasBaseUrl = baseUrl.length > 0
 
   if (isLoadingEndpoint) {
     return (
@@ -378,9 +382,14 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           <div className="text-xs text-muted-foreground">
             <span className="font-medium">URL:</span>{' '}
             <span className="truncate block" title={endpoint?.base_url}>
-              {endpoint?.base_url}
+              {hasBaseUrl ? endpoint?.base_url : '未設定'}
             </span>
           </div>
+          {!hasBaseUrl && (
+            <div className="text-xs text-destructive">
+              base_url が未設定です。エンドポイント設定を確認してください。
+            </div>
+          )}
           <div className="text-xs text-muted-foreground">
             <span className="font-medium">Status:</span>{' '}
             <Badge variant={endpoint?.status === 'online' ? 'default' : 'secondary'} className="text-xs">
@@ -790,6 +799,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
               size="sm"
               className="absolute right-2 top-2"
               onClick={() => copyToClipboard(generateCurl())}
+              disabled={!hasBaseUrl}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </Button>

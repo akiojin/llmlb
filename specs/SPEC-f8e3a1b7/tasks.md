@@ -141,7 +141,7 @@
   - デバイスタイプ選択: 元々存在しない
   - endpoint_type選択: 元々存在しない
 
-## Phase 6: Visionテスト環境
+## Phase 6: Visionテスト環境（廃止）
 
 ### Setup
 
@@ -149,7 +149,7 @@
   - HuggingFaceからダウンロード
   - GitHub Actions Cacheで永続化（初回のみダウンロード）
   - CI環境への配置
-  - `.github/workflows/vision-tests.yml` で実装
+  - `.github/workflows/vision-tests.yml` で実装（後に llmlb の責務外のため本repoから削除）
 
 - [x] T029: 100x100テスト画像作成
   - PNG形式のシンプルな画像
@@ -163,7 +163,7 @@
   - 成功: test_chat_completions_with_base64_image
   - 成功: test_supported_image_formats
   - TDD RED: エラーハンドリング系5件、E2E系2件、統合テスト5件
-  - Vision Tests CIワークフロー成功
+  - Vision Tests CIワークフロー成功（後に llmlb の責務外のため本repoから削除）
   - コミット: 8a984963
 
 ## Phase 7: ドキュメント更新

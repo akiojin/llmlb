@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { getToken } from '@/lib/api'
 
 export type DashboardEventType =
   | 'connected'
@@ -47,18 +46,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [lastEvent, setLastEvent] = useState<DashboardEvent | null>(null)
 
   const connect = useCallback(() => {
-    // Get JWT token for authentication
-    const token = getToken()
-    if (!token) {
-      console.warn('No JWT token available for WebSocket connection')
-      // Schedule reconnection to wait for authentication
-      reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval)
-      return
-    }
-
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/dashboard?token=${encodeURIComponent(token)}`
+    const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`
 
     try {
       const ws = new WebSocket(wsUrl)
@@ -81,7 +71,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             case 'NodeRegistered':
             case 'NodeRemoved':
             case 'NodeStatusChanged':
-              // Invalidate dashboard overview query (includes nodes, stats)
+              // Invalidate dashboard overview query (includes endpoints, stats)
               queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
               queryClient.invalidateQueries({ queryKey: ['request-responses'] })
               break

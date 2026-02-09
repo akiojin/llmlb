@@ -18,7 +18,6 @@ async fn test_duplicate_name_rejected() {
     // 最初のエンドポイント登録
     let first_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production Ollama",
@@ -33,7 +32,6 @@ async fn test_duplicate_name_rejected() {
     // 同じ名前で異なるURLのエンドポイントを登録（名前重複）
     let dup_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production Ollama",
@@ -56,7 +54,6 @@ async fn test_name_case_sensitivity() {
     // 最初のエンドポイント登録
     let _ = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production",
@@ -69,7 +66,6 @@ async fn test_name_case_sensitivity() {
     // 大文字小文字が異なる名前は別物として扱う
     let diff_case_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "PRODUCTION",
@@ -92,7 +88,6 @@ async fn test_name_reusable_after_deletion() {
     // エンドポイント登録
     let first_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Reusable Name",
@@ -112,7 +107,6 @@ async fn test_name_reusable_after_deletion() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -121,7 +115,6 @@ async fn test_name_reusable_after_deletion() {
     // 同じ名前で再登録可能
     let reuse_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Reusable Name",
@@ -143,7 +136,6 @@ async fn test_update_name_uniqueness() {
     // 2つのエンドポイントを登録
     let _ = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Endpoint A",
@@ -155,7 +147,6 @@ async fn test_update_name_uniqueness() {
 
     let second_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Endpoint B",
@@ -175,7 +166,6 @@ async fn test_update_name_uniqueness() {
             server.addr(),
             endpoint_b_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Endpoint A"

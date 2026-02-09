@@ -5,27 +5,54 @@
 //! 管理者として、xLLMエンドポイントにモデルダウンロードを
 //! リクエストし、進捗を確認したい。
 
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
+use sqlx::SqlitePool;
 
-use crate::support::{lb::spawn_test_lb, xllm::spawn_mock_xllm};
+use crate::support::lb::spawn_test_lb_with_db;
+
+async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin).await;
+    let admin_id = match created {
+        Ok(user) => user.id,
+        Err(_) => {
+            llmlb::db::users::find_by_username(db_pool, "admin")
+                .await
+                .unwrap()
+                .unwrap()
+                .id
+        }
+    };
+
+    let api_key = llmlb::db::api_keys::create(
+        db_pool,
+        "test-admin-key",
+        admin_id,
+        None,
+        ApiKeyPermission::all(),
+    )
+    .await
+    .expect("create admin api key");
+    api_key.key
+}
 
 /// US8-シナリオ1: xLLMエンドポイントでモデルダウンロードをリクエスト
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T123で実装後に有効化"]
 async fn test_xllm_model_download_request() {
-    let server = spawn_test_lb().await;
-    let xllm = spawn_mock_xllm().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // xLLMタイプのエンドポイントを登録（モックが必要）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": format!("http://{}", xllm.addr())
+            "base_url": "http://localhost:9999",
+            "endpoint_type": "xllm"
         }))
         .send()
         .await
@@ -41,8 +68,7 @@ async fn test_xllm_model_download_request() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "llama-3.2-1b"
         }))
@@ -61,20 +87,19 @@ async fn test_xllm_model_download_request() {
 
 /// US8-シナリオ2: ダウンロード進捗を確認
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T124で実装後に有効化"]
 async fn test_xllm_model_download_progress() {
-    let server = spawn_test_lb().await;
-    let xllm = spawn_mock_xllm().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // エンドポイント登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": format!("http://{}", xllm.addr())
+            "base_url": "http://localhost:9999",
+            "endpoint_type": "xllm"
         }))
         .send()
         .await
@@ -90,8 +115,7 @@ async fn test_xllm_model_download_progress() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "llama-3.2-1b"
         }))
@@ -106,8 +130,7 @@ async fn test_xllm_model_download_progress() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .send()
         .await
         .unwrap();
@@ -130,20 +153,19 @@ async fn test_xllm_model_download_progress() {
 
 /// US8-シナリオ3: 複数モデルの同時ダウンロード
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - T123-T124で実装後に有効化"]
 async fn test_xllm_model_download_multiple() {
-    let server = spawn_test_lb().await;
-    let xllm = spawn_mock_xllm().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // エンドポイント登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": format!("http://{}", xllm.addr())
+            "base_url": "http://localhost:9999",
+            "endpoint_type": "xllm"
         }))
         .send()
         .await
@@ -160,8 +182,7 @@ async fn test_xllm_model_download_multiple() {
                 server.addr(),
                 endpoint_id
             ))
-            .header("x-internal-token", "test-internal")
-            .header("authorization", "Bearer sk_debug")
+            .header("authorization", format!("Bearer {}", admin_key))
             .json(&json!({
                 "model": model
             }))
@@ -177,8 +198,7 @@ async fn test_xllm_model_download_multiple() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .send()
         .await
         .unwrap();
@@ -193,18 +213,18 @@ async fn test_xllm_model_download_multiple() {
 #[tokio::test]
 #[ignore = "ダウンロードAPI未実装 - 全タスク実装後に有効化"]
 async fn test_xllm_model_download_completion() {
-    let server = spawn_test_lb().await;
-    let xllm = spawn_mock_xllm().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
 
     // エンドポイント登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": format!("http://{}", xllm.addr())
+            "base_url": "http://localhost:9999",
+            "endpoint_type": "xllm"
         }))
         .send()
         .await
@@ -220,8 +240,7 @@ async fn test_xllm_model_download_completion() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
-        .header("authorization", "Bearer sk_debug")
+        .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "model": "llama-3.2-1b"
         }))

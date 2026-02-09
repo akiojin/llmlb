@@ -1,0 +1,13 @@
+# cargo-audit configuration
+#
+# NOTE:
+# - This repository currently uses SQLite only (no MySQL driver at runtime).
+# - `cargo audit` can report RUSTSEC-2023-0071 (rsa) via `sqlx-mysql`, but
+#   `cargo tree -i rsa` shows it is not in the feature-resolved graph for llmlb.
+# - If MySQL support is enabled in the future, revisit this ignore.
+
+[advisories]
+ignore = [
+  "RUSTSEC-2023-0071", # rsa: no fixed upgrade; unreachable unless sqlx-mysql feature is enabled
+]
+

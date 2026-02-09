@@ -54,7 +54,6 @@ async fn login_as_admin(app: Router) -> (Router, String) {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -93,7 +92,6 @@ async fn test_complete_invitation_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/invitations")
                 .header("authorization", format!("Bearer {}", jwt_token))
@@ -127,7 +125,6 @@ async fn test_complete_invitation_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/register")
                 .header("content-type", "application/json")
@@ -159,7 +156,6 @@ async fn test_complete_invitation_flow() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/login")
                 .header("content-type", "application/json")
@@ -181,7 +177,6 @@ async fn test_complete_invitation_flow() {
     let reuse_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/register")
                 .header("content-type", "application/json")
@@ -213,7 +208,6 @@ async fn test_invalid_invitation_code_rejected() {
     let register_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/register")
                 .header("content-type", "application/json")
@@ -249,7 +243,6 @@ async fn test_invitation_revocation() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/invitations")
                 .header("authorization", format!("Bearer {}", jwt_token))
@@ -275,7 +268,6 @@ async fn test_invitation_revocation() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("DELETE")
                 .uri(format!("/api/invitations/{}", invitation_id))
                 .header("authorization", format!("Bearer {}", jwt_token))
@@ -291,7 +283,6 @@ async fn test_invitation_revocation() {
     let register_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/register")
                 .header("content-type", "application/json")
@@ -328,7 +319,6 @@ async fn test_list_invitations() {
             .clone()
             .oneshot(
                 Request::builder()
-                    .header("x-internal-token", "test-internal")
                     .method("POST")
                     .uri("/api/invitations")
                     .header("authorization", format!("Bearer {}", jwt_token))
@@ -346,7 +336,6 @@ async fn test_list_invitations() {
     let list_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/invitations")
                 .header("authorization", format!("Bearer {}", jwt_token))
@@ -385,7 +374,6 @@ async fn test_duplicate_username_rejected() {
             .clone()
             .oneshot(
                 Request::builder()
-                    .header("x-internal-token", "test-internal")
                     .method("POST")
                     .uri("/api/invitations")
                     .header("authorization", format!("Bearer {}", jwt_token))
@@ -408,7 +396,6 @@ async fn test_duplicate_username_rejected() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/register")
                 .header("content-type", "application/json")
@@ -431,7 +418,6 @@ async fn test_duplicate_username_rejected() {
     let duplicate_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/auth/register")
                 .header("content-type", "application/json")

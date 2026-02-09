@@ -77,7 +77,6 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/endpoints")
                 .body(Body::empty())
@@ -96,7 +95,6 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/auth/me")
                 .body(Body::empty())
@@ -114,7 +112,6 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
     let dashboard_response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/dashboard")
                 .body(Body::empty())

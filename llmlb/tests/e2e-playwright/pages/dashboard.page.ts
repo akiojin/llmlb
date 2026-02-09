@@ -15,7 +15,7 @@ export class DashboardPage {
   readonly connectionStatus: Locator;
 
   // Stats
-  readonly totalNodes: Locator;
+  readonly totalEndpoints: Locator;
   readonly totalRequests: Locator;
   readonly successRate: Locator;
   readonly averageResponseTime: Locator;
@@ -55,7 +55,7 @@ export class DashboardPage {
     this.connectionStatus = page.locator(DashboardSelectors.header.connectionStatus);
 
     // Stats
-    this.totalNodes = page.locator(DashboardSelectors.stats.totalNodes);
+    this.totalEndpoints = page.locator(DashboardSelectors.stats.totalEndpoints);
     this.totalRequests = page.locator(DashboardSelectors.stats.totalRequests);
     this.successRate = page.locator(DashboardSelectors.stats.successRate);
     this.averageResponseTime = page.locator(DashboardSelectors.stats.averageResponseTime);
@@ -255,8 +255,8 @@ export class DashboardPage {
     return (await this.connectionStatus.textContent()) ?? '';
   }
 
-  async getTotalNodes(): Promise<string> {
-    return (await this.totalNodes.textContent()) ?? '-';
+  async getTotalEndpoints(): Promise<string> {
+    return (await this.totalEndpoints.textContent()) ?? '-';
   }
 
   async getNodeCount(): Promise<number> {

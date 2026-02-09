@@ -3,7 +3,10 @@
 //! 起動中のサーバーの状態を表示します。
 
 use crate::lock::{is_process_running, list_all_locks, read_lock_info};
+use chrono::Utc;
 use clap::Args;
+use reqwest::StatusCode;
+use std::time::Duration;
 
 /// status サブコマンドの引数
 #[derive(Args, Debug, Clone)]
@@ -15,13 +18,27 @@ pub struct StatusArgs {
 
 /// status コマンドを実行
 pub async fn execute(args: &StatusArgs) -> Result<(), anyhow::Error> {
+    let client = reqwest::Client::new();
     if let Some(port) = args.port {
         // 特定ポートの状態を表示
         match read_lock_info(port)? {
             Some(info) => {
+                let base_url = format!("http://127.0.0.1:{}", info.port);
+                let dashboard_url = format!("{}/dashboard/", base_url);
                 if is_process_running(info.pid) {
-                    println!("PORT\tPID\tSTARTED\t\t\t\tSTATUS");
-                    println!("{}\t{}\t{}\tRunning", info.port, info.pid, info.started_at);
+                    let http_status = check_http(&client, &dashboard_url).await;
+                    let status_label =
+                        determine_status_label(info.pid, true, info.started_at, http_status);
+                    println!("PORT\tPID\tSTARTED\t\t\t\tSTATUS\tURL\tHTTP");
+                    println!(
+                        "{}\t{}\t{}\t{}\t{}\t{}",
+                        info.port,
+                        info.pid,
+                        info.started_at,
+                        status_label,
+                        dashboard_url,
+                        format_http_status(http_status)
+                    );
                 } else {
                     println!("No active server on port {} (stale lock file found)", port);
                 }
@@ -36,11 +53,80 @@ pub async fn execute(args: &StatusArgs) -> Result<(), anyhow::Error> {
         if locks.is_empty() {
             println!("No servers running");
         } else {
-            println!("PORT\tPID\tSTARTED\t\t\t\tSTATUS");
+            println!("PORT\tPID\tSTARTED\t\t\t\tSTATUS\tURL\tHTTP");
             for info in locks {
-                println!("{}\t{}\t{}\tRunning", info.port, info.pid, info.started_at);
+                let base_url = format!("http://127.0.0.1:{}", info.port);
+                let dashboard_url = format!("{}/dashboard/", base_url);
+                let is_running = info.pid != 0 && is_process_running(info.pid);
+                let http_status = if info.pid == 0 || is_running {
+                    check_http(&client, &dashboard_url).await
+                } else {
+                    None
+                };
+                let status_label =
+                    determine_status_label(info.pid, is_running, info.started_at, http_status);
+                println!(
+                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    info.port,
+                    info.pid,
+                    info.started_at,
+                    status_label,
+                    dashboard_url,
+                    format_http_status(http_status)
+                );
             }
         }
     }
     Ok(())
+}
+
+fn determine_status_label(
+    pid: u32,
+    is_running: bool,
+    started_at: chrono::DateTime<chrono::Utc>,
+    http_status: Option<StatusCode>,
+) -> &'static str {
+    if pid == 0 {
+        // Windows: lock file can be held by a running process but unreadable (PID unknown).
+        return if http_status.is_some() {
+            "Running"
+        } else {
+            "Unknown"
+        };
+    }
+
+    if !is_running {
+        return "Stale";
+    }
+
+    if http_status.is_some() {
+        return "Running";
+    }
+
+    // Process is alive but HTTP is unreachable. This commonly happens during startup before
+    // the TCP listener is bound.
+    let age = Utc::now() - started_at;
+    if age.num_seconds() < 30 {
+        "Starting"
+    } else {
+        "Unreachable"
+    }
+}
+
+async fn check_http(client: &reqwest::Client, url: &str) -> Option<StatusCode> {
+    client
+        .get(url)
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .map(|resp| resp.status())
+        .ok()
+}
+
+fn format_http_status(status: Option<StatusCode>) -> String {
+    match status {
+        Some(code) if code.is_success() => "OK".to_string(),
+        Some(code) => format!("HTTP {}", code),
+        None => "UNREACHABLE".to_string(),
+    }
 }

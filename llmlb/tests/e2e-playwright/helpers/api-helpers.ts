@@ -92,11 +92,13 @@ export async function getModels(request: APIRequestContext): Promise<RegisteredM
 }
 
 /**
- * Get list of all registered models from /api/models/registered
- * This includes models not attached to online endpoints
+ * Get list of all registered models from /api/models
+ *
+ * This is the model registry (metadata in DB), not the list of online endpoint models.
+ * It includes models that are not attached to any online endpoint.
  */
 export async function getRegisteredModels(request: APIRequestContext): Promise<RegisteredModel[]> {
-  const response = await request.get(`${API_BASE}/api/models/registered`, {
+  const response = await request.get(`${API_BASE}/api/models`, {
     headers: AUTH_HEADER,
   });
   if (!response.ok()) {
@@ -105,22 +107,19 @@ export async function getRegisteredModels(request: APIRequestContext): Promise<R
   const models = await response.json();
   return models.map((m: {
     name: string;
-    lifecycle_status?: string;
-    download_progress?: DownloadProgress;
     repo?: string;
     filename?: string;
-    size_bytes?: number;
-    required_memory_bytes?: number;
-    ready?: boolean;
+    size?: number;
+    required_memory?: number;
   }) => ({
     name: m.name,
-    lifecycle_status: m.lifecycle_status || 'registered',
-    download_progress: m.download_progress,
+    // Registry entries are already "registered" in the DB.
+    lifecycle_status: 'registered',
     repo: m.repo,
     filename: m.filename,
-    size_bytes: m.size_bytes,
-    required_memory_bytes: m.required_memory_bytes,
-    ready: m.ready,
+    size_bytes: m.size,
+    required_memory_bytes: m.required_memory,
+    ready: false,
   }));
 }
 
@@ -128,7 +127,7 @@ export async function getRegisteredModels(request: APIRequestContext): Promise<R
  * Get count of registered models
  */
 export async function getModelCount(request: APIRequestContext): Promise<number> {
-  const models = await getModels(request);
+  const models = await getRegisteredModels(request);
   return models.length;
 }
 
@@ -147,7 +146,7 @@ export async function deleteModel(
 
 /**
  * Clear all registered models
- * Uses /api/models/registered to get ALL registered models (not just those on online endpoints)
+ * Uses /api/models to get ALL registry models (not just those on online endpoints)
  */
 export async function clearAllModels(request: APIRequestContext): Promise<void> {
   const models = await getRegisteredModels(request);
@@ -320,25 +319,47 @@ export async function clearAllConvertTasks(request: APIRequestContext): Promise<
 
 export interface NodeInfo {
   id: string;
-  machine_name: string;
+  machine_name?: string;
+  name?: string;
+  base_url?: string;
   status: string;
-  loaded_models: string[];
+  loaded_models?: string[];
+  model_count?: number;
+}
+
+export interface EndpointInfo {
+  id: string;
+  name: string;
+  base_url: string;
+  status: string;
+  endpoint_type?: string;
+  model_count?: number;
 }
 
 /**
  * Get list of nodes (endpoints)
- * Note: /api/runtimes was deprecated in SPEC-66555000, now using /api/dashboard/endpoints
+ *
+ * Prefer /api/endpoints here because it supports API key auth (sk_debug) in E2E/CI.
  */
 export async function getNodes(request: APIRequestContext): Promise<NodeInfo[]> {
-  const response = await request.get(`${API_BASE}/api/dashboard/endpoints`, {
+  const response = await request.get(`${API_BASE}/api/endpoints`, {
     headers: AUTH_HEADER,
   });
   if (!response.ok()) {
     return [];
   }
   const data = await response.json();
-  // Handle both array and { nodes: [] } response formats
-  return Array.isArray(data) ? data : data.nodes || [];
+  const endpoints = Array.isArray(data) ? data : data.endpoints || [];
+  // Normalize fields for legacy tests.
+  return endpoints.map((e: { id: string; name?: string; base_url?: string; status: string; model_count?: number; loaded_models?: string[] }) => ({
+    id: e.id,
+    machine_name: e.name,
+    name: e.name,
+    base_url: e.base_url,
+    status: e.status,
+    loaded_models: e.loaded_models,
+    model_count: e.model_count,
+  }));
 }
 
 /**
@@ -347,6 +368,56 @@ export async function getNodes(request: APIRequestContext): Promise<NodeInfo[]> 
 export async function getOnlineNodeCount(request: APIRequestContext): Promise<number> {
   const nodes = await getNodes(request);
   return nodes.filter((n) => n.status === 'online').length;
+}
+
+/**
+ * List endpoints (raw shape) via /api/endpoints
+ */
+export async function listEndpoints(request: APIRequestContext): Promise<EndpointInfo[]> {
+  const response = await request.get(`${API_BASE}/api/endpoints`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  const data = await response.json();
+  const endpoints = Array.isArray(data) ? data : data.endpoints || [];
+  return endpoints.map((e: { id: string; name: string; base_url: string; status: string; endpoint_type?: string; model_count?: number }) => ({
+    id: e.id,
+    name: e.name,
+    base_url: e.base_url,
+    status: e.status,
+    endpoint_type: e.endpoint_type,
+    model_count: e.model_count,
+  }));
+}
+
+/**
+ * Delete an endpoint by id.
+ */
+export async function deleteEndpoint(
+  request: APIRequestContext,
+  endpointId: string
+): Promise<boolean> {
+  const response = await request.delete(`${API_BASE}/api/endpoints/${encodeURIComponent(endpointId)}`, {
+    headers: AUTH_HEADER,
+  });
+  return response.status() === 204 || response.status() === 200;
+}
+
+/**
+ * Best-effort cleanup helper for E2E: delete endpoints matching exact name.
+ */
+export async function deleteEndpointsByName(
+  request: APIRequestContext,
+  name: string
+): Promise<number> {
+  const endpoints = await listEndpoints(request);
+  const targets = endpoints.filter((e) => e.name === name);
+  for (const ep of targets) {
+    await deleteEndpoint(request, ep.id);
+  }
+  return targets.length;
 }
 
 // ============================================================================
@@ -403,7 +474,7 @@ export async function ensureDashboardLogin(page: Page): Promise<void> {
     // Wait for either dashboard content or URL change
     await Promise.race([
       page.waitForURL('**/dashboard/**', { timeout: 10000 }),
-      page.waitForSelector('[data-stat="total-nodes"]', { timeout: 10000 }),
+      page.waitForSelector('[data-stat="total-endpoints"]', { timeout: 10000 }),
       page.waitForSelector('button[role="tab"]', { timeout: 10000 }),
     ]).catch(() => {
       // Ignore timeout, continue if we're on dashboard

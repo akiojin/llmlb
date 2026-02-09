@@ -80,6 +80,10 @@ impl EndpointHealthChecker {
     /// バックグラウンドで監視を開始
     pub fn start(self) {
         tokio::spawn(async move {
+            // Run an initial parallel check to converge quickly without delaying server startup.
+            if let Err(e) = self.check_all_endpoints_parallel().await {
+                error!("Startup health check error: {}", e);
+            }
             self.monitor_loop().await;
         });
     }
@@ -92,6 +96,10 @@ impl EndpointHealthChecker {
             interval_secs = self.check_interval_secs,
             "Endpoint health checker started"
         );
+
+        // `interval()` ticks immediately on the first call. Since we already performed an initial
+        // startup check, wait a full interval before the next periodic check.
+        timer.tick().await;
 
         loop {
             timer.tick().await;
@@ -256,23 +264,29 @@ impl EndpointHealthChecker {
 
         // SPEC-66555000: タイプ再判別（Unknown→オンライン時に再判別）
         if success && endpoint.endpoint_type == EndpointType::Unknown {
-            let detected_type = detect_endpoint_type_with_client(
+            let detection = detect_endpoint_type_with_client(
                 &self.client,
                 &endpoint.base_url,
                 endpoint.api_key.as_deref(),
             )
             .await;
 
-            if detected_type != EndpointType::Unknown {
+            if detection.endpoint_type != EndpointType::Unknown {
                 info!(
                     endpoint_id = %endpoint.id,
                     endpoint_name = %endpoint.name,
-                    detected_type = %detected_type.as_str(),
+                    detected_type = %detection.endpoint_type.as_str(),
                     "Endpoint type re-detected on health check"
                 );
                 if let Err(e) = self
                     .registry
-                    .update_endpoint_type(endpoint.id, detected_type)
+                    .update_endpoint_type(
+                        endpoint.id,
+                        detection.endpoint_type,
+                        crate::types::endpoint::EndpointTypeSource::Auto,
+                        detection.reason,
+                        Some(chrono::Utc::now()),
+                    )
                     .await
                 {
                     warn!(

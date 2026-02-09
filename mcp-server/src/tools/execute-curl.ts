@@ -40,6 +40,71 @@ export interface ExecuteCurlResult {
   executed_command: string;
 }
 
+function safePathname(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    // Fallback: best-effort matching for weird inputs.
+    return url;
+  }
+}
+
+export function injectAuthHeadersForUrl(
+  command: string,
+  url: string,
+  config: ServerConfig
+): string {
+  // Skip if already has auth headers
+  if (
+    command.includes("Authorization:") ||
+    command.includes("X-API-Key:") ||
+    command.includes("X-Node-Token:")
+  ) {
+    return command;
+  }
+
+  const pathname = safePathname(url);
+
+  const isAuthEndpoint = pathname.startsWith("/api/auth/");
+  const isManagementEndpoint = pathname.startsWith("/api/");
+  const isInferenceEndpoint = pathname.startsWith("/v1/");
+
+  let authHeader = "";
+
+  if (isAuthEndpoint) {
+    // Dashboard auth endpoints use JWT (cookie in browser; bearer token is supported in some deployments).
+    if (config.jwtToken) {
+      authHeader = `-H "Authorization: Bearer ${config.jwtToken}"`;
+    }
+  } else if (isManagementEndpoint) {
+    // Management APIs: prefer a management API key (with required permissions such as
+    // `users.manage` / `api_keys.manage` / `endpoints.manage`). If not available, fall back to JWT,
+    // then to the generic API key (might be permissive in debug/dev).
+    if (config.adminApiKey) {
+      authHeader = `-H "X-API-Key: ${config.adminApiKey}"`;
+    } else if (config.jwtToken) {
+      authHeader = `-H "Authorization: Bearer ${config.jwtToken}"`;
+    } else if (config.apiKey) {
+      authHeader = `-H "X-API-Key: ${config.apiKey}"`;
+    }
+  } else if (isInferenceEndpoint) {
+    // Inference APIs: prefer an API key with OpenAI inference permissions (`openai.inference`),
+    // fall back to the management key if that's all we have.
+    if (config.apiKey) {
+      authHeader = `-H "X-API-Key: ${config.apiKey}"`;
+    } else if (config.adminApiKey) {
+      authHeader = `-H "X-API-Key: ${config.adminApiKey}"`;
+    }
+  }
+
+  if (!authHeader) {
+    return command;
+  }
+
+  // Insert after "curl "
+  return command.replace(/^curl\s+/, `curl ${authHeader} `);
+}
+
 /**
  * Handler for execute_curl tool.
  * Executes curl commands against the LLM Router API with security constraints.
@@ -54,8 +119,8 @@ Authentication headers are automatically injected from environment variables.
 Examples:
 - List models: curl http://localhost:32768/v1/models
 - Chat completion: curl -X POST http://localhost:32768/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"...", "messages":[...]}'
-- List nodes: curl http://localhost:32768/v0/nodes
-- Dashboard stats: curl http://localhost:32768/v0/dashboard/stats
+- List endpoints: curl http://localhost:32768/api/endpoints
+- Dashboard overview: curl http://localhost:32768/api/dashboard/overview
 
 Refer to the 'llmlb-openapi' resource for full API documentation.`;
 
@@ -167,36 +232,7 @@ Refer to the 'llmlb-openapi' resource for full API documentation.`;
    * Inject authentication headers based on endpoint type
    */
   private injectAuthHeaders(command: string, url: string): string {
-    // Skip if already has auth headers
-    if (
-      command.includes("Authorization:") ||
-      command.includes("X-API-Key:") ||
-      command.includes("X-Node-Token:")
-    ) {
-      return command;
-    }
-
-    const isManagementEndpoint =
-      url.includes("/v0/users") ||
-      url.includes("/v0/api-keys") ||
-      url.includes("/v0/auth/me");
-
-    let authHeader = "";
-
-    if (isManagementEndpoint && this.config.jwtToken) {
-      // Management API uses JWT
-      authHeader = `-H "Authorization: Bearer ${this.config.jwtToken}"`;
-    } else if (this.config.apiKey) {
-      // Inference API uses API key
-      authHeader = `-H "X-API-Key: ${this.config.apiKey}"`;
-    }
-
-    if (authHeader) {
-      // Insert after "curl "
-      return command.replace(/^curl\s+/, `curl ${authHeader} `);
-    }
-
-    return command;
+    return injectAuthHeadersForUrl(command, url, this.config);
   }
 
   /**

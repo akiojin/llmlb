@@ -17,22 +17,6 @@ export class ApiError extends Error {
   }
 }
 
-function getToken(): string | null {
-  return localStorage.getItem('jwt_token')
-}
-
-function setToken(token: string): void {
-  localStorage.setItem('jwt_token', token)
-}
-
-function removeToken(): void {
-  localStorage.removeItem('jwt_token')
-}
-
-function isAuthenticated(): boolean {
-  return !!getToken()
-}
-
 async function fetchWithAuth<T>(
   endpoint: string,
   options: FetchOptions = {}
@@ -53,23 +37,26 @@ async function fetchWithAuth<T>(
     }
   }
 
-  const token = getToken()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   }
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+  const method = (fetchOptions.method || 'GET').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD') {
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken
+    }
   }
 
   const response = await fetch(url, {
     ...fetchOptions,
     headers,
+    credentials: 'include',
   })
 
   if (response.status === 401) {
-    removeToken()
     window.location.href = '/dashboard/login.html'
     throw new ApiError(401, 'Unauthorized')
   }
@@ -86,6 +73,11 @@ async function fetchWithAuth<T>(
   }
 
   return JSON.parse(text)
+}
+
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(?:^|; )llmlb_csrf=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : null
 }
 
 // Auth API
@@ -108,23 +100,18 @@ export const authApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
+      credentials: 'include',
     })
 
     if (!response.ok) {
       throw new ApiError(response.status, response.statusText)
     }
 
-    const data = await response.json()
-    setToken(data.token)
-    return data
+    return response.json()
   },
 
   logout: async () => {
-    try {
-      await fetchWithAuth('/api/auth/logout', { method: 'POST' })
-    } finally {
-      removeToken()
-    }
+    await fetchWithAuth('/api/auth/logout', { method: 'POST' })
   },
 
   me: () =>
@@ -148,19 +135,33 @@ export const authApi = {
 
 // Dashboard API
 export interface DashboardStats {
-  total_nodes: number
-  online_nodes: number
-  pending_nodes: number
-  registering_nodes: number
-  offline_nodes: number
+  /**
+   * v2 (2026-01+): "runtimes" naming returned by the API
+   * - Rust: #[serde(rename = "*_runtimes", alias = "*_nodes")]
+   */
+  total_runtimes?: number
+  online_runtimes?: number
+  pending_runtimes?: number
+  registering_runtimes?: number
+  offline_runtimes?: number
+
+  /**
+   * v1 (deprecated): "nodes" naming returned by older servers
+   */
+  total_nodes?: number
+  online_nodes?: number
+  pending_nodes?: number
+  registering_nodes?: number
+  offline_nodes?: number
+
   total_requests: number
   successful_requests: number
   failed_requests: number
   total_active_requests: number
   queued_requests: number
-  average_response_time_ms: number
-  average_gpu_usage: number
-  average_gpu_memory_usage: number
+  average_response_time_ms: number | null
+  average_gpu_usage: number | null
+  average_gpu_memory_usage: number | null
   // Token statistics
   total_input_tokens: number
   total_output_tokens: number
@@ -176,42 +177,12 @@ export interface SyncProgress {
   total_bytes: number
 }
 
-export interface DashboardNode {
-  node_id: string
-  machine_name: string
-  custom_name?: string
-  ip_address: string
-  port: number
-  status: 'online' | 'pending' | 'registering' | 'offline'
-  runtime_version: string
-  gpu_model?: string
-  gpu_count?: number
-  cpu_usage?: number
-  memory_usage?: number
-  gpu_usage?: number
-  gpu_memory_usage?: number
-  gpu_memory_total_mb?: number
-  gpu_memory_used_mb?: number
-  total_requests: number
-  uptime_seconds: number
-  last_seen: string
-  tags?: string[]
-  notes?: string
-  ready_models?: string[]
-  sync_state?: SyncState
-  sync_progress?: SyncProgress
-  sync_updated_at?: string
-  // Token statistics
-  total_input_tokens: number
-  total_output_tokens: number
-  total_tokens: number
-}
-
 /**
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 export type EndpointType = 'xllm' | 'ollama' | 'vllm' | 'openai_compatible' | 'unknown'
+export type EndpointTypeSource = 'auto' | 'manual'
 
 export interface DashboardEndpoint {
   id: string
@@ -219,6 +190,9 @@ export interface DashboardEndpoint {
   base_url: string
   status: 'pending' | 'online' | 'offline' | 'error'
   endpoint_type: EndpointType
+  endpoint_type_source: EndpointTypeSource
+  endpoint_type_reason?: string
+  endpoint_type_detected_at?: string
   health_check_interval_secs: number
   inference_timeout_secs: number
   latency_ms?: number
@@ -297,7 +271,7 @@ export interface RequestResponsesPage {
 }
 
 export interface DashboardOverview {
-  nodes: DashboardNode[]
+  endpoints: DashboardEndpoint[]
   stats: DashboardStats
   history: RequestHistoryItem[]
   generated_at: string
@@ -337,8 +311,6 @@ export interface MonthlyTokenStats extends TokenStats {
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
 
-  getNodes: () => fetchWithAuth<DashboardNode[]>('/api/dashboard/nodes'),
-
   /** SPEC-66555000: List endpoints */
   getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
@@ -376,15 +348,10 @@ export const dashboardApi = {
     fetchWithAuth<unknown>(`/api/dashboard/request-responses/${id}`),
 
   exportRequestResponses: async (format: 'csv' | 'json') => {
-    const token = getToken()
-    const headers: HeadersInit = {}
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
     const response = await fetch(
       `${API_BASE}/api/dashboard/request-responses/export?format=${format}`,
       {
-      headers,
+        credentials: 'include',
       }
     )
     if (!response.ok) {
@@ -512,18 +479,19 @@ export const endpointsApi = {
     },
     onChunk?: (chunk: string) => void
   ) => {
-    const token = localStorage.getItem('jwt_token')
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken
     }
 
     const response = await fetch(`${API_BASE}/api/endpoints/${id}/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
+      credentials: 'include',
     })
 
     if (!response.ok) {
@@ -690,28 +658,26 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
 export const modelsApi = {
   /** OpenAI互換の登録済みモデル一覧を取得 */
   getRegistered: async (): Promise<RegisteredModelView[]> => {
-    // /v1/models - OpenAI-compatible model list (includes lifecycle_status)
-    // Requires API key auth, using API key from localStorage
-    const apiKey = localStorage.getItem('llmlb-api-key') || 'sk_debug'
-    const response = await fetch('/v1/models', {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    })
-    if (!response.ok) {
-      // Get error details and throw appropriate error
-      const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }))
-      const message = errorBody.error || undefined
-      throw new ApiError(response.status, response.statusText, message)
-    }
-    const json = (await response.json()) as OpenAIModelsResponse
+    // /api/dashboard/models - JWT認証で取得
+    const json = await fetchWithAuth<OpenAIModelsResponse>('/api/dashboard/models')
     // Convert from OpenAI format to RegisteredModelView format
     return json.data.map(toRegisteredModelView)
   },
 }
 
 // API Keys API
-export type ApiKeyScope = 'endpoint' | 'api' | 'admin'
+export type ApiKeyPermission =
+  | 'openai.inference'
+  | 'openai.models.read'
+  | 'endpoints.read'
+  | 'endpoints.manage'
+  | 'api_keys.manage'
+  | 'users.manage'
+  | 'invitations.manage'
+  | 'models.manage'
+  | 'registry.read'
+  | 'logs.read'
+  | 'metrics.read'
 
 export interface ApiKey {
   id: string
@@ -721,7 +687,7 @@ export interface ApiKey {
   created_at: string
   expires_at?: string
   last_used_at?: string
-  scopes: ApiKeyScope[]
+  permissions: ApiKeyPermission[]
 }
 
 export interface CreateApiKeyResponse {
@@ -731,7 +697,7 @@ export interface CreateApiKeyResponse {
   key_prefix: string
   created_at: string
   expires_at?: string
-  scopes: ApiKeyScope[]
+  permissions: ApiKeyPermission[]
 }
 
 export const apiKeysApi = {
@@ -740,7 +706,11 @@ export const apiKeysApi = {
       (res) => res.api_keys
     ),
 
-  create: (data: { name: string; expires_at?: string; scopes: ApiKeyScope[] }) =>
+  create: (data: {
+    name: string
+    expires_at?: string
+    permissions: ApiKeyPermission[]
+  }) =>
     fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -928,4 +898,3 @@ export const chatApi = {
 }
 
 // Export utilities
-export { getToken, setToken, removeToken, isAuthenticated }

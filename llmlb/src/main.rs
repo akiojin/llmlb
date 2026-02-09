@@ -91,9 +91,18 @@ fn main() {
             use tokio::runtime::Builder;
 
             let config = ServerConfig::from_args(args.host, args.port);
+            if args.no_tray {
+                let runtime = Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build Tokio runtime for server mode");
+                runtime.block_on(run_server(config));
+                return;
+            }
             let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
+            let fallback_config = config.clone();
 
-            run_with_system_tray(tray_options, move |proxy| {
+            let result = run_with_system_tray(tray_options, move |proxy| {
                 let server_config = config.clone();
                 thread::spawn(move || {
                     let runtime = Builder::new_multi_thread()
@@ -104,6 +113,14 @@ fn main() {
                     proxy.notify_server_exit();
                 });
             });
+            if let Err(err) = result {
+                tracing::error!("System tray initialization failed: {err}");
+                let runtime = Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build Tokio runtime for server mode");
+                runtime.block_on(run_server(fallback_config));
+            }
             return;
         }
         None => {
@@ -118,8 +135,9 @@ fn main() {
 
     let config = ServerConfig::from_env();
     let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
+    let fallback_config = config.clone();
 
-    run_with_system_tray(tray_options, move |proxy| {
+    let result = run_with_system_tray(tray_options, move |proxy| {
         let server_config = config.clone();
         thread::spawn(move || {
             let runtime = Builder::new_multi_thread()
@@ -130,6 +148,14 @@ fn main() {
             proxy.notify_server_exit();
         });
     });
+    if let Err(err) = result {
+        tracing::error!("System tray initialization failed: {err}");
+        let runtime = Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build Tokio runtime for server mode");
+        runtime.block_on(run_server(fallback_config));
+    }
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -270,8 +296,59 @@ async fn reconcile_migration_checksums(pool: &sqlx::SqlitePool) -> sqlx::Result<
     Ok(())
 }
 
+fn maybe_raise_nofile_limit() {
+    #[cfg(unix)]
+    {
+        use std::cmp::min;
+
+        // macOS では launchd 起動時に open files 上限が 256 など低く設定されることがあり、
+        // 受け付け不能 (EMFILE) や SQLite の open 失敗 (SQLITE_CANTOPEN) につながる。
+        const DESIRED_NOFILE: libc::rlim_t = 65_536;
+
+        unsafe {
+            let mut current = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut current) != 0 {
+                tracing::debug!(
+                    "getrlimit(RLIMIT_NOFILE) failed: {}",
+                    std::io::Error::last_os_error()
+                );
+                return;
+            }
+
+            let target = min(DESIRED_NOFILE, current.rlim_max);
+            if current.rlim_cur >= target {
+                return;
+            }
+
+            let updated = libc::rlimit {
+                rlim_cur: target,
+                rlim_max: current.rlim_max,
+            };
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &updated) != 0 {
+                tracing::warn!(
+                    "Failed to raise RLIMIT_NOFILE from {} to {}: {}",
+                    current.rlim_cur,
+                    target,
+                    std::io::Error::last_os_error()
+                );
+                return;
+            }
+
+            tracing::info!(
+                "Raised RLIMIT_NOFILE from {} to {}",
+                current.rlim_cur,
+                target
+            );
+        }
+    }
+}
+
 async fn run_server(config: ServerConfig) {
     info!("LLM Load Balancer v{}", env!("CARGO_PKG_VERSION"));
+    maybe_raise_nofile_limit();
 
     // シングル実行制約: ロックを取得
     let _server_lock = match ServerLock::acquire(config.port) {
@@ -327,12 +404,8 @@ async fn run_server(config: ServerConfig) {
     let health_check_interval_secs: u64 =
         get_env_with_fallback_parse("LLMLB_HEALTH_CHECK_INTERVAL", "HEALTH_CHECK_INTERVAL", 30);
 
-    // 起動時にエンドポイントのヘルスチェックを実行
-    if let Err(e) = health::run_startup_health_check(&endpoint_registry).await {
-        tracing::warn!("Startup health check failed: {}", e);
-    }
-
     // エンドポイントヘルスチェッカーをバックグラウンドで開始
+    // NOTE: 起動時の並列ヘルスチェックもこのstart()内で実行し、サーバー起動をブロックしない。
     let endpoint_health_checker = health::EndpointHealthChecker::new(endpoint_registry.clone())
         .with_interval(health_check_interval_secs);
     endpoint_health_checker.start();
@@ -369,10 +442,6 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
-    // エンドポイントレジストリを初期化
-    let endpoint_registry = llmlb::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-        .await
-        .expect("Failed to initialize endpoint registry");
     info!(
         "Endpoint registry initialized with {} endpoints",
         endpoint_registry.count().await

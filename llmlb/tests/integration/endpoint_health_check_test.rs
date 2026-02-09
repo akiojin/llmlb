@@ -20,7 +20,6 @@ async fn test_endpoint_status_displayed_in_list() {
     // エンドポイント登録
     let _ = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -33,7 +32,6 @@ async fn test_endpoint_status_displayed_in_list() {
     // 一覧取得
     let response = client
         .get(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -68,7 +66,6 @@ async fn test_endpoint_online_status_after_health_check() {
     // モックエンドポイントを登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Mock Endpoint",
@@ -88,7 +85,6 @@ async fn test_endpoint_online_status_after_health_check() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -104,7 +100,6 @@ async fn test_endpoint_online_status_after_health_check() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -124,7 +119,6 @@ async fn test_endpoint_offline_status_detection() {
     // 到達不能なエンドポイントを登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Unreachable Endpoint",
@@ -144,7 +138,6 @@ async fn test_endpoint_offline_status_detection() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -160,7 +153,6 @@ async fn test_endpoint_offline_status_detection() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await
@@ -193,7 +185,6 @@ async fn test_endpoint_latency_recorded() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Latency Test",
@@ -213,7 +204,6 @@ async fn test_endpoint_latency_recorded() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

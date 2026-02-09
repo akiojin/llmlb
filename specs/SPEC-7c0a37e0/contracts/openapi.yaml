@@ -1,26 +1,26 @@
 openapi: 3.0.3
 info:
-  title: API Key Scope System
-  version: 1.0.0
-  description: APIキースコープ管理API
+  title: API Key Permissions
+  version: 2.0.0
+  description: APIキー（permissions）管理API
 
 paths:
   /api/api-keys:
     get:
       summary: APIキー一覧取得
       operationId: listApiKeys
+      description: |
+        Requires JWT (admin) or an API key with `api_keys.manage`.
       security:
-        - AdminScope: []
         - JwtAuth: []
+        - ApiKeyAuth: []
       responses:
         '200':
           description: 成功
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ApiKeyInfo'
+                $ref: '#/components/schemas/ListApiKeysResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -29,9 +29,15 @@ paths:
     post:
       summary: APIキー発行
       operationId: createApiKey
+      description: |
+        Requires JWT (admin) or an API key with `api_keys.manage`.
+
+        Notes:
+        - `permissions` is required and must be non-empty.
+        - Legacy `scopes` is deprecated and rejected (400).
       security:
-        - AdminScope: []
         - JwtAuth: []
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -45,20 +51,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateApiKeyResponse'
+        '400':
+          description: リクエスト不正
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Permissions are required"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /api/api-keys/{key_id}:
+  /api/api-keys/{id}:
+    put:
+      summary: APIキー更新
+      operationId: updateApiKey
+      description: |
+        Requires JWT (admin) or an API key with `api_keys.manage`.
+      security:
+        - JwtAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateApiKeyRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyInfo'
+        '400':
+          description: リクエスト不正
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid expires_at format"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: APIキーが見つからない
+
     delete:
       summary: APIキー削除
       operationId: deleteApiKey
+      description: |
+        Requires JWT (admin) or an API key with `api_keys.manage`.
       security:
-        - AdminScope: []
         - JwtAuth: []
+        - ApiKeyAuth: []
       parameters:
-        - name: key_id
+        - name: id
           in: path
           required: true
           schema:
@@ -76,70 +133,77 @@ paths:
 
 components:
   securitySchemes:
-    AdminScope:
-      type: http
-      scheme: bearer
-      description: adminスコープを持つAPIキー
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        API key (sk_...).
+        Alternatively, clients may send `Authorization: Bearer sk_...`.
 
     JwtAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT認証
+      description: JWT認証（Authorization: Bearer <jwt> または Cookie）
 
   schemas:
-    ApiKeyScope:
+    ApiKeyPermission:
       type: string
-      enum: [node, api, admin]
       description: |
-        APIキースコープ:
-        - node: ノード登録・ハートビート
-        - api: OpenAI互換API利用
-        - admin: 管理操作（全権限包含）
+        API key permissions (string IDs).
+      enum:
+        - openai.inference
+        - openai.models.read
+        - endpoints.read
+        - endpoints.manage
+        - api_keys.manage
+        - users.manage
+        - invitations.manage
+        - models.manage
+        - registry.read
+        - logs.read
+        - metrics.read
 
     CreateApiKeyRequest:
       type: object
       required:
         - name
-        - scopes
+        - permissions
       properties:
         name:
           type: string
           description: APIキー名
-          example: "production-node-1"
-        scopes:
-          type: array
-          items:
-            $ref: '#/components/schemas/ApiKeyScope'
-          minItems: 1
-          description: 付与するスコープ
-          example: ["node"]
-        expires_in_days:
-          type: integer
-          minimum: 1
-          maximum: 365
-          default: 90
-          description: 有効期限（日数）
-
-    CreateApiKeyResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        key:
-          type: string
-          description: APIキー（この応答でのみ表示）
-          example: "sk_live_abc123..."
-        scopes:
-          type: array
-          items:
-            $ref: '#/components/schemas/ApiKeyScope'
+          example: "my-client"
         expires_at:
           type: string
           format: date-time
+          nullable: true
+          description: 有効期限（RFC3339、未指定なら無期限）
+          example: "2026-12-31T23:59:59Z"
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKeyPermission'
+          minItems: 1
+          description: 付与する権限（複数選択）
+          example: ["openai.inference", "openai.models.read"]
+
+    UpdateApiKeyRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: APIキー名
+          example: "my-client"
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 有効期限（RFC3339、nullで無期限）
+          example: "2026-12-31T23:59:59Z"
 
     ApiKeyInfo:
       type: object
@@ -147,59 +211,79 @@ components:
         id:
           type: string
           format: uuid
+        key_prefix:
+          type: string
+          nullable: true
+          description: 表示用のキー先頭部分
+          example: "sk_live_abc123"
         name:
           type: string
-        scopes:
-          type: array
-          items:
-            $ref: '#/components/schemas/ApiKeyScope'
+        created_by:
+          type: string
+          format: uuid
+          description: 作成者のユーザーID
         created_at:
           type: string
           format: date-time
         expires_at:
           type: string
           format: date-time
-        created_by:
+          nullable: true
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKeyPermission'
+
+    CreateApiKeyResponse:
+      type: object
+      properties:
+        id:
           type: string
-          description: 作成者のユーザー名
+          format: uuid
+        key:
+          type: string
+          description: APIキー（この応答でのみ表示）
+          example: "sk_live_abc123..."
+        key_prefix:
+          type: string
+          description: 表示用のキー先頭部分
+          example: "sk_live_abc123"
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKeyPermission'
+
+    ListApiKeysResponse:
+      type: object
+      properties:
+        api_keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKeyInfo'
 
   responses:
     Unauthorized:
       description: 認証エラー
       content:
-        application/json:
+        text/plain:
           schema:
-            type: object
-            properties:
-              error:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Invalid or missing API key"
-                  type:
-                    type: string
-                    enum: [unauthorized]
-                  code:
-                    type: string
-                    enum: [invalid_api_key]
+            type: string
+            example: "Invalid API key"
 
     Forbidden:
       description: 権限エラー
       content:
-        application/json:
+        text/plain:
           schema:
-            type: object
-            properties:
-              error:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "API key does not have required scope: admin"
-                  type:
-                    type: string
-                    enum: [forbidden]
-                  code:
-                    type: string
-                    enum: [insufficient_scope]
+            type: string
+            example: "Missing required permission: api_keys.manage"
+

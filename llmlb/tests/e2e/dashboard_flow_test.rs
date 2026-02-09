@@ -9,10 +9,13 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::UserRole;
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support;
 
@@ -51,32 +54,27 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     let admin_user = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
         .await
         .expect("create admin user");
-    let admin_key = llmlb::db::api_keys::create(
-        &db_pool,
-        "admin-key",
-        admin_user.id,
-        None,
-        vec![ApiKeyScope::Admin],
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &admin_user.id.to_string(),
+        UserRole::Admin,
+        &support::lb::test_jwt_secret(),
     )
-    .await
-    .expect("create admin api key")
-    .key;
+    .expect("create admin jwt");
 
-    (api::create_app(state), db_pool, admin_key)
+    (api::create_app(state), db_pool, jwt)
 }
 
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/stats
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/stats")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -99,16 +97,15 @@ async fn test_dashboard_stats_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_overview_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/overview
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/overview")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -134,16 +131,15 @@ async fn test_dashboard_overview_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_request_history_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/request-history
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/request-history")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -168,6 +164,78 @@ async fn test_dashboard_request_history_endpoint() {
 }
 
 #[tokio::test]
+async fn test_dashboard_endpoints_include_endpoint_type() {
+    let (app, _db_pool, jwt) = build_app().await;
+
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": []
+        })))
+        .mount(&mock)
+        .await;
+
+    let create_body = json!({
+        "name": "Test vLLM",
+        "base_url": mock.uri(),
+        "endpoint_type": "vllm"
+    });
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/endpoints")
+                .header("authorization", format!("Bearer {}", jwt))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&create_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        create_response.status(),
+        StatusCode::CREATED,
+        "POST /api/endpoints should return CREATED"
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/endpoints")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/dashboard/endpoints should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let endpoints: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    let endpoints = endpoints.as_array().expect("response should be an array");
+    assert!(
+        endpoints
+            .iter()
+            .any(|endpoint| endpoint["endpoint_type"] == "vllm"),
+        "endpoint_type should be included in dashboard endpoints"
+    );
+}
+
+#[tokio::test]
 async fn test_cloud_metrics_endpoint() {
     let (app, _db_pool, admin_key) = build_app().await;
 
@@ -175,7 +243,6 @@ async fn test_cloud_metrics_endpoint() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/metrics/cloud")
                 .header("authorization", format!("Bearer {}", admin_key))
@@ -212,7 +279,6 @@ async fn test_models_loaded_endpoint_is_removed() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/models/loaded")
                 .header("authorization", format!("Bearer {}", admin_key))

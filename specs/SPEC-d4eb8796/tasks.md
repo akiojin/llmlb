@@ -291,12 +291,19 @@ APIキー削除機能を実装（DELETE /api/api-keys/:id）
 - [x] **T102** 手動検証: `specs/SPEC-d4eb8796/quickstart.md` の全手順を実行
   - 実行日: 2025-12-28
   - ダッシュボードUI: Playwright（headless）でログイン成功、ユーザー名表示を確認
-  - APIキー発行: scopes 指定で成功（api:inference / node:register）
+  - APIキー発行: permissions 指定で成功（openai.inference / openai.models.read）
   - /v1/chat/completions: ノード未登録のため 503（401 ではないことを確認）
   - ノード登録: 127.0.0.1:32769 にスタブを用意して登録成功
   - ノードヘルス: X-Node-Token ありで 200、なしで 401
   - AUTH_DISABLED=true: /api/nodes と /api/auth/me が 200、/dashboard へ未認証アクセス可
   - 実行メモ: GPU必須ノード登録・推論はこの環境では実機検証不可のため、API/設定/画面遷移の整合性を確認し、残タスクはメンテナ向けに引き継ぎ
+
+## Phase 3.9: 仕様更新（2026-02-04）
+
+- [x] **T100** [P] `specs/SPEC-d4eb8796/spec.md` に
+ダッシュボードJWTのみ・内部APIトークン廃止・/v1はAPIキー必須を追記
+- [x] **T101** [P] `specs/SPEC-d4eb8796/plan.md` に
+ダッシュボード認可方針と制約を追記
 
 ## 依存関係
 
@@ -370,6 +377,6 @@ wait
 
 ---
 
-**総タスク数**: 102
+**総タスク数**: 104
 **推定工数**: 40〜60時間（TDD厳守、品質重視）
 **次のステップ**: `/speckit.implement` またはタスクを手動で実行

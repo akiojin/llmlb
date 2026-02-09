@@ -1,5 +1,17 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = (process.env.BASE_URL || 'http://127.0.0.1:32768').replace(/\/$/, '');
+const basePort = (() => {
+  try {
+    const url = new URL(baseURL);
+    if (url.port) return Number(url.port);
+    return url.protocol === 'https:' ? 443 : 80;
+  } catch {
+    return 32768;
+  }
+})();
+const e2eDataDir = `llmlb/tests/e2e-playwright/.llmlb-${basePort}`;
+
 /**
  * Playwright E2E Test Configuration for LLM Load Balancer
  * @see https://playwright.dev/docs/test-configuration
@@ -16,7 +28,7 @@ export default defineConfig({
     ['list'],
   ],
   use: {
-    baseURL: process.env.BASE_URL || 'http://127.0.0.1:32768',
+    baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -27,9 +39,9 @@ export default defineConfig({
     : {
         command:
           process.platform === 'win32'
-            ? 'set LLMLB_DATABASE_URL=sqlite:router\\tests\\e2e-playwright\\.llmlb\\router.db&& set LLMLB_LOG_DIR=router\\tests\\e2e-playwright\\.llmlb\\logs&& cargo run -p llmlb'
-            : 'LLMLB_DATABASE_URL=sqlite:router/tests/e2e-playwright/.llmlb/router.db LLMLB_LOG_DIR=router/tests/e2e-playwright/.llmlb/logs cargo run -p llmlb',
-        url: 'http://127.0.0.1:32768/dashboard',
+            ? `set LLMLB_DATABASE_URL=sqlite:${e2eDataDir.replace(/\//g, '\\\\')}\\\\llmlb.db&& set LLMLB_LOG_DIR=${e2eDataDir.replace(/\//g, '\\\\')}\\\\logs&& cargo run -p llmlb -- serve --no-tray --port ${basePort}`
+            : `LLMLB_DATABASE_URL=sqlite:${e2eDataDir}/llmlb.db LLMLB_LOG_DIR=${e2eDataDir}/logs cargo run -p llmlb -- serve --no-tray --port ${basePort}`,
+        url: `${baseURL}/dashboard`,
         reuseExistingServer: !process.env.CI,
         timeout: 300000,
         cwd: '../../../',

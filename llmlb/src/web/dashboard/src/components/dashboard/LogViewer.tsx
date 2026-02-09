@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { type DashboardNode, type LogEntry, dashboardApi } from '@/lib/api'
+import { type LogEntry, dashboardApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -26,16 +26,9 @@ import { toast } from '@/hooks/use-toast'
  * Currently displays load balancer logs only. Can be extended when endpoints provide log APIs.
  */
 
-interface LogViewerProps {
-  /**
-   * @deprecated nodes is deprecated by SPEC-66555000. Kept for backward compatibility.
-   */
-  nodes?: DashboardNode[]
-}
-
 type LogLevel = 'all' | 'error' | 'warn' | 'info' | 'debug'
 
-export function LogViewer({ nodes: _nodes }: LogViewerProps) {
+export function LogViewer() {
   const [levelFilter, setLevelFilter] = useState<LogLevel>('all')
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)

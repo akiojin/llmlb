@@ -31,7 +31,7 @@ async fn test_viewer_can_list_endpoints() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -40,7 +40,6 @@ async fn test_viewer_can_list_endpoints() {
     // adminでエンドポイントを登録
     let _ = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
@@ -53,9 +52,7 @@ async fn test_viewer_can_list_endpoints() {
     // viewerで一覧取得
     let list_resp = client
         .get(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
-        .header("x-internal-token", "test-internal")
         .send()
         .await
         .unwrap();
@@ -85,7 +82,7 @@ async fn test_viewer_can_get_endpoint_detail() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -94,7 +91,6 @@ async fn test_viewer_can_get_endpoint_detail() {
     // adminでエンドポイントを登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Detail Test",
@@ -114,7 +110,6 @@ async fn test_viewer_can_get_endpoint_detail() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
         .send()
         .await
@@ -145,7 +140,7 @@ async fn test_viewer_cannot_create_endpoint() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -154,9 +149,7 @@ async fn test_viewer_cannot_create_endpoint() {
     // viewerでエンドポイント登録を試行
     let create_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
-        .header("x-internal-token", "test-internal")
         .json(&json!({
             "name": "Forbidden",
             "base_url": "http://localhost:11434"
@@ -191,7 +184,7 @@ async fn test_viewer_cannot_update_endpoint() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -200,7 +193,6 @@ async fn test_viewer_cannot_update_endpoint() {
     // adminでエンドポイントを登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Update Test",
@@ -220,7 +212,6 @@ async fn test_viewer_cannot_update_endpoint() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
         .json(&json!({
             "name": "Forbidden Update"
@@ -255,7 +246,7 @@ async fn test_viewer_cannot_delete_endpoint() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -264,7 +255,6 @@ async fn test_viewer_cannot_delete_endpoint() {
     // adminでエンドポイントを登録
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Delete Test",
@@ -284,7 +274,6 @@ async fn test_viewer_cannot_delete_endpoint() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", format!("Bearer {}", viewer_key))
         .send()
         .await

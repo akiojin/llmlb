@@ -9,8 +9,6 @@ use reqwest::Client;
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::types::endpoint::EndpointType;
-
 /// Ollama tags response structure
 #[derive(Debug, Deserialize)]
 struct OllamaTagsResponse {
@@ -31,9 +29,9 @@ struct OllamaModel {
 
 /// Detect Ollama endpoint by querying GET /api/tags
 ///
-/// Returns `Some(EndpointType::Ollama)` if the endpoint responds with
+/// Returns a reason string if the endpoint responds with
 /// a JSON object containing `models` array (Ollama-specific format).
-pub async fn detect_ollama(client: &Client, base_url: &str) -> Option<EndpointType> {
+pub async fn detect_ollama(client: &Client, base_url: &str) -> Option<String> {
     let url = format!("{}/api/tags", base_url);
 
     match client.get(&url).send().await {
@@ -46,7 +44,7 @@ pub async fn detect_ollama(client: &Client, base_url: &str) -> Option<EndpointTy
                             model_count = tags.models.as_ref().map(|m| m.len()),
                             "Detected Ollama endpoint"
                         );
-                        return Some(EndpointType::Ollama);
+                        return Some("Ollama: /api/tags returned models".to_string());
                     }
                     None
                 }

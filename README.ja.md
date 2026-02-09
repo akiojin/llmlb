@@ -86,10 +86,9 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 ## ダッシュボード
 
 ロードバランサーが `/dashboard` で提供します。
-内部トークン（`LLMLB_INTERNAL_API_TOKEN`）を `internal_token` クエリで渡してください。
 
 ```text
-http://localhost:32768/dashboard?internal_token=YOUR_TOKEN
+http://localhost:32768/dashboard
 ```
 
 ## エンドポイント管理
@@ -180,11 +179,11 @@ curl -X POST http://localhost:32768/api/endpoints \
 
 # エンドポイント一覧
 curl http://localhost:32768/api/endpoints \
-  -H "Authorization: Bearer sk_your_api_key"
+  -H "X-API-Key: sk_admin_scope_key"
 
 # モデル同期
 curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
-  -H "Authorization: Bearer sk_your_api_key"
+  -H "X-API-Key: sk_admin_scope_key"
 ```
 
 ### ステータス遷移
@@ -200,7 +199,7 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 
 LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Load Balancer と連携できます。
 
-MCP ????? npm/npx ??????????????????????? pnpm ??????
+MCP サーバーは npm/npx で配布しています。pnpm は本リポジトリの lint ツール用で、利用者側の必須要件ではありません。
 
 ### インストール
 
@@ -221,7 +220,8 @@ npx @llmlb/mcp-server
       "args": ["-y", "@llmlb/mcp-server"],
       "env": {
         "LLMLB_URL": "http://localhost:32768",
-        "LLMLB_API_KEY": "sk_your_api_key"
+        "LLMLB_API_KEY": "sk_api_scope_key",
+        "LLMLB_ADMIN_API_KEY": "sk_admin_scope_key"
       }
     }
   }
@@ -352,16 +352,31 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 |---------|-----------|------|
 | `LLMLB_HOST` | `0.0.0.0` | バインドアドレス |
 | `LLMLB_PORT` | `32768` | リッスンポート |
-| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/lb.db` | データベースURL |
+| `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/load balancer.db` | データベースURL |
+| `LLMLB_DATA_DIR` | `~/.llmlb` | ログ/旧リクエスト履歴の基準ディレクトリ |
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
-| `LLMLB_INTERNAL_API_TOKEN` | - | /api・/dashboard・/ws 用の内部トークン |
 | `LLMLB_LOG_LEVEL` | `info` | ログレベル |
+| `LLMLB_LOG_DIR` | `~/.llmlb/logs` | ログ保存先 |
+| `LLMLB_LOG_RETENTION_DAYS` | `7` | ログ保持日数 |
 | `LLMLB_HEALTH_CHECK_INTERVAL` | `30` | ヘルスチェック間隔（秒） |
-| `LLMLB_NODE_TIMEOUT` | `60` | ランタイムタイムアウト（秒） |
 | `LLMLB_LOAD_BALANCER_MODE` | `auto` | ロードバランサーモード |
-| `LLM_QUANTIZE_BIN` | - | `llama-quantize` のパス（Q4/Q5等の量子化用） |
+| `LLMLB_QUEUE_MAX` | `100` | キュー待機上限 |
+| `LLMLB_QUEUE_TIMEOUT_SECS` | `60` | キュー待機タイムアウト（秒） |
+| `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（旧: `REQUEST_HISTORY_RETENTION_DAYS`） |
+| `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、旧: `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`） |
+| `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（旧: `LLM_DEFAULT_EMBEDDING_MODEL`） |
+| `LLMLB_AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、旧: `AUTH_DISABLED`） |
+| `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（非推奨） |
+| `AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、非推奨） |
+| `REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（非推奨） |
+| `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、非推奨） |
+
+#### システムトレイ（Windows/macOS）
+
+Windows 10+ / macOS 12+ ではシステムトレイに常駐します。ヘッドレスで起動したい場合は
+`llmlb serve --no-tray` を利用してください。
 
 クラウドAPI:
 
@@ -446,8 +461,8 @@ LLM Load Balancer (OpenAI-compatible)
   - ロードバランサーのマニフェスト参照（`GET /api/models/registry/:model_name/manifest.json`）
 
 ### スケジューリングとヘルスチェック
-- ランタイムは `/api/runtimes` を介して登録します。CPU のみのエンドポイントも対応しています。
-- ハートビートには、ロードバランシングに使用される CPU/GPU/メモリメトリクスが含まれます。
+- エンドポイントは `/api/endpoints` を介して登録します（ダッシュボードまたはAPI）。CPU のみのエンドポイントも対応しています。
+- ヘルスチェックは push ではなく pull 型です。llmlb が定期的にエンドポイントをプローブし、状態/レイテンシを更新してロードバランシングに利用します。
 - ダッシュボードには `*_key_present` フラグが表示され、オペレーターはどのクラウドキーが設定されているかを確認できます。
 
 ## トラブルシューティング
@@ -476,7 +491,7 @@ LLM Load Balancer (OpenAI-compatible)
 - リバースプロキシ経由の場合は `/dashboard/*` の静的配信設定を確認
 
 ### OpenAI互換APIで 503 / モデル未登録
-- 全ランタイムが `initializing` の場合 503 を返すことがあります。ランタイムのモデルロードを待つか、`/api/dashboard/runtimes` で状態を確認
+- オンラインのエンドポイントが存在しない場合 503 を返すことがあります。エンドポイントの起動/モデルロードを待つか、`/api/dashboard/endpoints` または `/api/endpoints` で状態を確認
 - モデル指定がローカルに存在しない場合、ランタイムが自動プルするまで待機
 
 ### ログが多すぎる / 少なすぎる
@@ -518,20 +533,31 @@ LLM Load Balancer (OpenAI-compatible)
 
 | ロール | 権限 |
 |-------|------|
-| `admin` | `/api` 管理系 API にアクセス可能 |
-| `viewer` | `/api/auth/*` のみ（管理 API は 403） |
+| `admin` | `/api` 管理系 API とダッシュボード機能にフルアクセス |
+| `viewer` | ダッシュボード閲覧とエンドポイントREADのみ（管理操作は 403） |
 
-#### APIキー（スコープ）
+#### APIキー（permissions）
 
-| スコープ | 目的 |
-|---------|------|
-| `endpoints` | エンドポイント管理（`/api/endpoints/*`） |
-| `runtime` | ランタイム登録 + ヘルスチェック + モデル同期（`POST /api/runtimes`, `POST /api/health`, `GET /api/models`, `GET /api/models/registry/:model_name/manifest.json`）※レガシー |
-| `api` | OpenAI 互換推論 API（`/v1/*`） |
-| `admin` | 管理系 API 全般（`/api/users`, `/api/api-keys`, `/api/models/*`, `/api/runtimes/*`, `/api/endpoints/*`, `/api/dashboard/*`, `/api/metrics/*`） |
+| 権限 | 目的 |
+|---|---|
+| `openai.inference` | OpenAI互換推論API（`POST /v1/*`、ただし`/v1/models*`を除く） |
+| `openai.models.read` | OpenAI互換モデル一覧（`GET /v1/models*`） |
+| `endpoints.read` | エンドポイントREAD（`GET /api/endpoints*`） |
+| `endpoints.manage` | エンドポイントWRITE（`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`） |
+| `api_keys.manage` | APIキー管理（`/api/api-keys*`） |
+| `users.manage` | ユーザー管理（`/api/users*`） |
+| `invitations.manage` | 招待管理（`/api/invitations*`） |
+| `models.manage` | モデル登録/削除（`POST /api/models/register`, `DELETE /api/models/*`） |
+| `registry.read` | モデルレジストリ/一覧（`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`） |
+| `logs.read` | ノードログ（`GET /api/nodes/:node_id/logs`） |
+| `metrics.read` | メトリクス（`GET /api/metrics/cloud`） |
 
 **補足**:
-- `/api/auth/login` は無認証、`/api/health` は APIキー（`runtime`）+ `X-Runtime-Token` 必須。
+- `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
+- Cookie認証で変更系操作を行う場合は、`llmlb_csrf` Cookieの値を `X-CSRF-Token` ヘッダーで送信します。
+- Cookie認証の変更系操作では Origin/Referer が同一オリジンである必要があります。
+- `/api/dashboard/*` は JWTのみ（APIキー不可）。
+- `/v1/*` は APIキー必須（permissionsに応じて 403/401）。
 - デバッグビルドでは `sk_debug*` 系 API キーが利用可能（`docs/authentication.md` 参照）。
 
 ### ロードバランサー（Load Balancer）
@@ -541,54 +567,57 @@ LLM Load Balancer (OpenAI-compatible)
 - POST `/v1/chat/completions`
 - POST `/v1/completions`
 - POST `/v1/embeddings`
-- GET `/v1/models`（API キーまたは `X-Runtime-Token`）
-- GET `/v1/models/:model_id`（API キーまたは `X-Runtime-Token`）
+- POST `/v1/responses`（推奨）
+- POST `/v1/audio/transcriptions`
+- POST `/v1/audio/speech`
+- POST `/v1/images/generations`
+- POST `/v1/images/edits`
+- POST `/v1/images/variations`
+- GET `/v1/models`（API キー）
+- GET `/v1/models/:model_id`（API キー）
 
 #### エンドポイント管理
 
-- POST `/api/endpoints`（登録、admin権限）
-- GET `/api/endpoints`（一覧、admin/viewer権限）
-- GET `/api/endpoints?type=xllm`（タイプフィルター、admin/viewer権限）
-- GET `/api/endpoints/:id`（詳細、admin/viewer権限）
-- PUT `/api/endpoints/:id`（更新、admin権限）
-- DELETE `/api/endpoints/:id`（削除、admin権限）
-- POST `/api/endpoints/:id/test`（接続テスト、admin権限）
-- POST `/api/endpoints/:id/sync`（モデル同期、admin権限）
-- POST `/api/endpoints/:id/download`（モデルダウンロード、xLLMのみ、admin権限）
-- GET `/api/endpoints/:id/download/progress`（ダウンロード進捗、admin権限）
-- GET `/api/endpoints/:id/models/:model/info`（モデルメタデータ、xLLM/Ollamaのみ、admin権限）
-
-#### ランタイム管理（レガシー）
-
-- POST `/api/runtimes`（登録、APIキー: `runtime`）
-- GET `/api/runtimes`（一覧、admin権限）
-- DELETE `/api/runtimes/:runtime_id`（admin権限）
-- POST `/api/runtimes/:runtime_id/disconnect`（admin権限）
-- PUT `/api/runtimes/:runtime_id/settings`（admin権限）
-- POST `/api/health`（ランタイムからのヘルス/メトリクス送信、APIキー: `runtime` + `X-Runtime-Token`）
-- GET `/api/runtimes/:runtime_id/logs`（admin権限）
+- POST `/api/endpoints`（登録、JWT: admin / APIキー: `endpoints.manage`）
+- GET `/api/endpoints`（一覧、JWT: admin/viewer / APIキー: `endpoints.read`）
+- GET `/api/endpoints?type=xllm`（タイプフィルター、JWT: admin/viewer / APIキー: `endpoints.read`）
+- GET `/api/endpoints/:id`（詳細、JWT: admin/viewer / APIキー: `endpoints.read`）
+- GET `/api/endpoints/:id/models`（モデル一覧、JWT: admin/viewer / APIキー: `endpoints.read`）
+- PUT `/api/endpoints/:id`（更新、JWT: admin / APIキー: `endpoints.manage`）
+- DELETE `/api/endpoints/:id`（削除、JWT: admin / APIキー: `endpoints.manage`）
+- POST `/api/endpoints/:id/test`（接続テスト、JWT: admin / APIキー: `endpoints.manage`）
+- POST `/api/endpoints/:id/sync`（モデル同期、JWT: admin / APIキー: `endpoints.manage`）
+- POST `/api/endpoints/:id/download`（モデルダウンロード、xLLMのみ、JWT: admin / APIキー: `endpoints.manage`）
+- GET `/api/endpoints/:id/download/progress`（ダウンロード進捗、JWT: admin/viewer / APIキー: `endpoints.read`）
+- GET `/api/endpoints/:id/models/:model/info`（モデルメタデータ、xLLM/Ollamaのみ、JWT: admin/viewer / APIキー: `endpoints.read`）
 
 #### モデル管理
 
-- GET `/api/models`（登録済みモデル一覧、APIキー: `runtime` または `admin`）
-- POST `/api/models/register`（admin権限）
-- DELETE `/api/models/*model_name`（admin権限）
-- GET `/api/models/registry/:model_name/manifest.json`（APIキー: `runtime`）
+- GET `/api/models`（登録済みモデル一覧、JWT: admin / APIキー: `registry.read`）
+- GET `/api/models/hub`（対応モデル一覧+ステータス、JWT: admin / APIキー: `registry.read`）
+- POST `/api/models/register`（JWT: admin / APIキー: `models.manage`）
+- DELETE `/api/models/*model_name`（JWT: admin / APIキー: `models.manage`）
+- GET `/api/models/registry/:model_name/manifest.json`（APIキー: `registry.read`）
 
 #### ダッシュボード/監視
 
-- GET `/api/dashboard/overview`（admin権限）
-- GET `/api/dashboard/stats`（admin権限）
-- GET `/api/dashboard/runtimes`（admin権限）
-- GET `/api/dashboard/metrics/:runtime_id`（admin権限）
-- GET `/api/dashboard/request-history`（admin権限）
-- GET `/api/dashboard/request-responses`（admin権限）
-- GET `/api/dashboard/request-responses/:id`（admin権限）
-- GET `/api/dashboard/request-responses/export`（admin権限）
-- GET `/api/dashboard/logs/lb`（admin権限）
-- GET `/api/metrics/cloud`（admin権限）
+- `/api/dashboard/*` は JWT のみ（APIキー不可）
+- GET `/api/dashboard/overview`
+- GET `/api/dashboard/stats`
+- GET `/api/dashboard/endpoints`
+- GET `/api/dashboard/models`
+- GET `/api/dashboard/metrics/:node_id`
+- GET `/api/dashboard/request-history`（legacy）
+- GET `/api/dashboard/request-responses`
+- GET `/api/dashboard/request-responses/:id`
+- GET `/api/dashboard/request-responses/export`
+- GET `/api/dashboard/stats/tokens`
+- GET `/api/dashboard/stats/tokens/daily`
+- GET `/api/dashboard/stats/tokens/monthly`
+- GET `/api/dashboard/logs/lb`
+- GET `/api/metrics/cloud`（JWT: admin / APIキー: `metrics.read`）
+- GET `/api/nodes/:node_id/logs`（JWT: admin / APIキー: `logs.read`）
 - GET `/dashboard/*`
-- GET `/playground/*`
 
 ### ランタイム（Runtime）
 

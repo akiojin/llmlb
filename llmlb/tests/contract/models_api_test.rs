@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::db::models::ModelStorage;
 use llmlb::registry::models::ModelInfo;
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
@@ -98,7 +98,6 @@ async fn build_app() -> TestApp {
     ));
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
-    std::env::set_var("LLMLB_INTERNAL_API_TOKEN", "test-internal");
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -136,7 +135,7 @@ async fn build_app() -> TestApp {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key")
@@ -147,7 +146,7 @@ async fn build_app() -> TestApp {
         "node-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Endpoint],
+        vec![ApiKeyPermission::RegistryRead],
     )
     .await
     .expect("create node api key")
@@ -164,15 +163,11 @@ async fn build_app() -> TestApp {
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("authorization", format!("Bearer {}", admin_key))
+    Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
 fn node_request(node_key: &str) -> axum::http::request::Builder {
-    Request::builder()
-        .header("x-internal-token", "test-internal")
-        .header("authorization", format!("Bearer {}", node_key))
+    Request::builder().header("authorization", format!("Bearer {}", node_key))
 }
 
 /// モデル配布APIは廃止（ノードが /api/models/registry/:model/manifest.json から自律取得）

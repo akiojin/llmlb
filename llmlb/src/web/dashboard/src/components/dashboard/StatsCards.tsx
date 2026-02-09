@@ -1,4 +1,4 @@
-import { type DashboardStats } from '@/lib/api'
+import { type DashboardEndpoint, type DashboardStats } from '@/lib/api'
 import { formatNumber, formatDuration, formatPercentage } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -16,6 +16,7 @@ import {
 
 interface StatsCardsProps {
   stats?: DashboardStats
+  endpoints?: DashboardEndpoint[]
   isLoading: boolean
 }
 
@@ -84,17 +85,56 @@ function StatCard({
   )
 }
 
-export function StatsCards({ stats, isLoading }: StatsCardsProps) {
+export function StatsCards({ stats, endpoints, isLoading }: StatsCardsProps) {
+  const runtimeCounts = stats
+    ? {
+        total: stats.total_runtimes ?? stats.total_nodes,
+        online: stats.online_runtimes ?? stats.online_nodes,
+        pending: stats.pending_runtimes ?? stats.pending_nodes,
+        registering: stats.registering_runtimes ?? stats.registering_nodes,
+        offline: stats.offline_runtimes ?? stats.offline_nodes,
+      }
+    : undefined
+
+  const endpointCounts = endpoints
+    ? {
+        total: endpoints.length,
+        online: endpoints.filter((e) => e.status === 'online').length,
+        pending: endpoints.filter((e) => e.status === 'pending').length,
+        offline: endpoints.filter((e) => e.status === 'offline').length,
+        error: endpoints.filter((e) => e.status === 'error').length,
+      }
+    : undefined
+
+  const totalEndpoints = endpointCounts?.total ?? runtimeCounts?.total
+  const onlineEndpoints = endpointCounts?.online ?? runtimeCounts?.online
+  const pendingEndpoints = endpointCounts?.pending ?? runtimeCounts?.pending
+  const offlineEndpoints = endpointCounts?.offline ?? runtimeCounts?.offline
+  const errorEndpoints = endpointCounts?.error
+
+  const endpointsSubtitle =
+    onlineEndpoints != null &&
+    pendingEndpoints != null &&
+    offlineEndpoints != null &&
+    (errorEndpoints == null || errorEndpoints >= 0)
+      ? [
+          `${onlineEndpoints} online`,
+          `${pendingEndpoints} pending`,
+          `${offlineEndpoints} offline`,
+          ...(errorEndpoints != null && errorEndpoints > 0
+            ? [`${errorEndpoints} error`]
+            : []),
+        ].join(', ')
+      : undefined
+
   const cards = [
     {
-      title: 'Total Nodes',
-      value: stats ? formatNumber(stats.total_nodes) : '—',
-      subtitle: stats
-        ? `${stats.online_nodes} online, ${stats.pending_nodes} pending, ${stats.registering_nodes} registering, ${stats.offline_nodes} offline`
-        : undefined,
+      title: 'Total Endpoints',
+      value: totalEndpoints != null ? formatNumber(totalEndpoints) : '—',
+      subtitle: endpointsSubtitle,
       icon: <Server className="h-5 w-5 text-primary" />,
       accentColor: 'primary',
-      dataStat: 'total-nodes',
+      dataStat: 'total-endpoints',
     },
     {
       title: 'Total Requests',

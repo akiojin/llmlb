@@ -474,7 +474,7 @@ export async function ensureDashboardLogin(page: Page): Promise<void> {
     // Wait for either dashboard content or URL change
     await Promise.race([
       page.waitForURL('**/dashboard/**', { timeout: 10000 }),
-      page.waitForSelector('[data-stat="total-nodes"]', { timeout: 10000 }),
+      page.waitForSelector('[data-stat="total-endpoints"]', { timeout: 10000 }),
       page.waitForSelector('button[role="tab"]', { timeout: 10000 }),
     ]).catch(() => {
       // Ignore timeout, continue if we're on dashboard

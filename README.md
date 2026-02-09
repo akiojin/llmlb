@@ -89,6 +89,7 @@ available for compatibility.
 - **Request History Tracking**: Complete request/response logging with 7-day retention
 - **WebUI Management**: Manage endpoints, monitoring, and control through browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
+- **Self Update (User-Approved)**: Detect new GitHub Releases, notify via dashboard/tray, drain in-flight inference, then restart into the new version
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
 - **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the model name to proxy to the corresponding cloud provider while keeping the same OpenAI-compatible endpoint.
 
@@ -176,6 +177,21 @@ cargo build --release -p llmlb
 On Windows 10+ and macOS 12+, the load balancer displays a system tray icon.
 Double-click to open the dashboard. Docker/Linux runs as a headless CLI process.
 Use `llmlb serve --no-tray` to force headless mode on supported platforms.
+
+**Self Update (notification + restart):**
+
+llmlb checks GitHub Releases in the background (best-effort, cached up to 24h). When an update is
+available, it notifies via the dashboard and (Windows/macOS) the tray menu.
+
+When you approve the update ("Restart to update"), llmlb rejects new inference requests (`/v1/*`)
+with 503 + `Retry-After`, waits for in-flight inference requests (including streaming) to finish,
+then applies the update and restarts.
+
+Auto-apply method depends on the platform/install:
+
+- Portable install: replace the executable in-place when writable
+- macOS `.pkg` / Windows `.msi`: run the installer (may require elevation)
+- Linux non-writable installs: auto-apply is not supported; reinstall manually from GitHub Releases
 
 ### CLI Reference
 
@@ -690,7 +706,7 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
 | `LLMLB_HOST` | `0.0.0.0` | Bind address | - |
 | `LLMLB_PORT` | `32768` | Listen port | - |
 | `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/load balancer.db` | Database URL | `DATABASE_URL` |
-| `LLMLB_DATA_DIR` | `~/.llmlb` | Base directory for logs and legacy request history | - |
+| `LLMLB_DATA_DIR` | `~/.llmlb` | Base directory for logs, request history, and self-update cache/payload | - |
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
 | `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |

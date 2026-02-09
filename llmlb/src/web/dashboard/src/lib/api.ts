@@ -366,6 +366,53 @@ export const dashboardApi = {
 }
 
 /**
+ * System API (self-update)
+ */
+export type UpdatePayloadState =
+  | { payload: 'not_ready' }
+  | { payload: 'downloading'; started_at: string }
+  | { payload: 'ready'; kind: unknown }
+  | { payload: 'error'; message: string }
+
+export type UpdateState =
+  | { state: 'up_to_date'; checked_at?: string | null }
+  | {
+      state: 'available'
+      current: string
+      latest: string
+      release_url: string
+      portable_asset_url?: string | null
+      installer_asset_url?: string | null
+      payload: UpdatePayloadState
+      checked_at: string
+    }
+  | { state: 'draining'; latest: string; in_flight: number; requested_at: string }
+  | { state: 'applying'; latest: string; method: string }
+  | {
+      state: 'failed'
+      latest?: string | null
+      release_url?: string | null
+      message: string
+      failed_at: string
+    }
+
+export interface SystemInfo {
+  version: string
+  pid: number
+  in_flight: number
+  update: UpdateState
+}
+
+export const systemApi = {
+  getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
+  applyUpdate: () =>
+    fetchWithAuth<{ queued: boolean }>('/api/system/update/apply', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+}
+
+/**
  * Endpoints API
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)

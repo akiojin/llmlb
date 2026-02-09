@@ -23,6 +23,8 @@ pub mod openai;
 pub mod proxy;
 /// Open Responses API (SPEC-24157000)
 pub mod responses;
+/// System API (self-update)
+pub mod system;
 pub mod users;
 
 use crate::cloud_metrics;
@@ -295,6 +297,23 @@ pub fn create_app(state: AppState) -> Router {
         ))
     };
 
+    // システムAPI（更新状態/適用）
+    let system_routes = Router::new()
+        .route("/system", get(system::get_system))
+        .route("/system/update/apply", post(system::apply_update));
+    let system_routes = if auth_disabled {
+        system_routes
+    } else {
+        system_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
+            ))
+    };
+
     // エンドポイント管理API（SPEC-66555000）
     // READ: endpoints.read
     // WRITE: endpoints.manage (JWTはadminのみ)
@@ -397,6 +416,11 @@ pub fn create_app(state: AppState) -> Router {
                 crate::auth::middleware::jwt_auth_middleware,
             ))
     };
+    // Treat dashboard playground proxy as inference for drain purposes.
+    let playground_proxy_routes = playground_proxy_routes.layer(middleware::from_fn_with_state(
+        state.inference_gate.clone(),
+        crate::inference_gate::inference_gate_middleware,
+    ));
 
     // モデル配布レジストリ（registry.read が必要）
     // SPEC-66555000: POST /api/nodes（ノード自己登録）は廃止されました
@@ -448,8 +472,8 @@ pub fn create_app(state: AppState) -> Router {
     // SPEC-66555000: POST /api/health（プッシュ型ヘルスチェック）は廃止されました
     // 新しいエンドポイントはプル型ヘルスチェック（EndpointHealthChecker）を使用
 
-    // APIキー認証が必要なルート（OpenAI互換エンドポイント）
-    let api_key_routes = Router::new()
+    // APIキー認証が必要なルート（OpenAI互換の推論エンドポイント）
+    let inference_routes = Router::new()
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
@@ -464,10 +488,10 @@ pub fn create_app(state: AppState) -> Router {
         .route("/v1/images/variations", post(images::variations))
         .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES));
 
-    let api_key_protected_routes = if auth_disabled {
-        api_key_routes
+    let inference_routes = if auth_disabled {
+        inference_routes
     } else {
-        api_key_routes
+        inference_routes
             .layer(middleware::from_fn_with_state(
                 ApiKeyPermission::OpenaiInference,
                 crate::auth::middleware::require_api_key_permission_middleware,
@@ -477,6 +501,11 @@ pub fn create_app(state: AppState) -> Router {
                 crate::auth::middleware::api_key_auth_middleware,
             ))
     };
+    // Self-update drain gate: reject new inference requests and track in-flight requests.
+    let inference_routes = inference_routes.layer(middleware::from_fn_with_state(
+        state.inference_gate.clone(),
+        crate::inference_gate::inference_gate_middleware,
+    ));
 
     // `/v1/models*` は外部クライアント(APIキー)からのみ参照される
     // SPEC-66555000: ノードトークン認証は廃止されました
@@ -510,6 +539,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
         .merge(auth_routes)
+        .merge(system_routes)
         .merge(dashboard_api_routes)
         .merge(admin_routes)
         .merge(endpoint_routes)
@@ -530,7 +560,7 @@ pub fn create_app(state: AppState) -> Router {
         // `/api/*`: llmlb独自API（互換不要・versioned）
         .nest("/api", api_routes)
         // OpenAI互換API
-        .merge(api_key_protected_routes)
+        .merge(inference_routes)
         .merge(models_protected_routes)
         .merge(dashboard_routes)
         // NOTE: Playground機能は廃止され、ダッシュボード内のエンドポイント別Playgroundに移行
@@ -609,15 +639,27 @@ mod tests {
             crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
         );
         let jwt_secret = "test-secret".to_string();
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
         AppState {
             load_manager,
             request_history,
             db_pool,
             jwt_secret,
-            http_client: reqwest::Client::new(),
+            http_client,
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
             endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
         }
     }
 

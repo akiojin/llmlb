@@ -409,12 +409,15 @@ async fn fetch_repo_siblings(
     if let Ok(token) = std::env::var("HF_TOKEN") {
         req = req.bearer_auth(token);
     }
-    let resp = req.timeout(HF_HTTP_TIMEOUT).send().await.map_err(|_| {
-        // Treat transport failures similarly to non-2xx responses so callers can surface
-        // a stable "bad input / unavailable" message without leaking internals.
-        LbError::Common(CommonError::Validation(
-            "Failed to fetch specified repository".into(),
-        ))
+    let resp = req.timeout(HF_HTTP_TIMEOUT).send().await.map_err(|e| {
+        // Transport failures (timeouts/DNS/connect) are backend errors, not user input errors.
+        // Return 5xx while keeping the message stable and non-leaky.
+        let msg = "Failed to fetch specified repository".to_string();
+        if e.is_timeout() {
+            LbError::Timeout(msg)
+        } else {
+            LbError::Http(msg)
+        }
     })?;
     if !resp.status().is_success() {
         return Err(LbError::Common(CommonError::Validation(
@@ -443,11 +446,14 @@ async fn fetch_hf_file_bytes(
     if let Ok(token) = std::env::var("HF_TOKEN") {
         req = req.bearer_auth(token);
     }
-    let resp = req.timeout(HF_HTTP_TIMEOUT).send().await.map_err(|_| {
-        LbError::Common(CommonError::Validation(format!(
-            "Failed to fetch file: {}",
-            filename
-        )))
+    let resp = req.timeout(HF_HTTP_TIMEOUT).send().await.map_err(|e| {
+        // Keep message stable, but treat transport failures as 5xx.
+        let msg = format!("Failed to fetch file: {}", filename);
+        if e.is_timeout() {
+            LbError::Timeout(msg)
+        } else {
+            LbError::Http(msg)
+        }
     })?;
     if !resp.status().is_success() {
         return Err(LbError::Common(CommonError::Validation(format!(
@@ -1333,6 +1339,8 @@ pub async fn get_model_registry_manifest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use std::net::TcpListener;
 
     #[test]
     fn test_validate_model_name_valid() {
@@ -1459,5 +1467,62 @@ mod tests {
         let empty_info = HfInfo::default();
         let empty_json = serde_json::to_string(&empty_info).expect("シリアライズに失敗");
         assert_eq!(empty_json, "{}");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn hf_fetch_repo_siblings_transport_errors_are_5xx() {
+        // Pick an unused local port to force a connection error quickly.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let port = listener
+            .local_addr()
+            .expect("local addr should be available")
+            .port();
+        drop(listener);
+
+        let previous = std::env::var("HF_BASE_URL").ok();
+        std::env::set_var("HF_BASE_URL", format!("http://127.0.0.1:{}", port));
+
+        let client = reqwest::Client::new();
+        let err = match fetch_repo_siblings(&client, "openai/gpt-oss-7b").await {
+            Ok(_) => panic!("expected transport error"),
+            Err(e) => e,
+        };
+
+        assert!(matches!(err, LbError::Http(_) | LbError::Timeout(_)));
+        assert_ne!(err.status_code(), axum::http::StatusCode::BAD_REQUEST);
+
+        match previous {
+            Some(v) => std::env::set_var("HF_BASE_URL", v),
+            None => std::env::remove_var("HF_BASE_URL"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn hf_fetch_file_bytes_transport_errors_are_5xx() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let port = listener
+            .local_addr()
+            .expect("local addr should be available")
+            .port();
+        drop(listener);
+
+        let previous = std::env::var("HF_BASE_URL").ok();
+        std::env::set_var("HF_BASE_URL", format!("http://127.0.0.1:{}", port));
+
+        let client = reqwest::Client::new();
+        let err = match fetch_hf_file_bytes(&client, "openai/gpt-oss-7b", "model.gguf").await {
+            Ok(_) => panic!("expected transport error"),
+            Err(e) => e,
+        };
+
+        assert!(matches!(err, LbError::Http(_) | LbError::Timeout(_)));
+        assert_ne!(err.status_code(), axum::http::StatusCode::BAD_REQUEST);
+
+        match previous {
+            Some(v) => std::env::set_var("HF_BASE_URL", v),
+            None => std::env::remove_var("HF_BASE_URL"),
+        }
     }
 }

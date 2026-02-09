@@ -65,9 +65,12 @@ test.describe('Model Registration Workflow', () => {
         'qwen2.5-0.5b-instruct-q4_k_m.gguf'
       );
 
-      // 400 = HuggingFace API unavailable (CI環境で発生することがある)
-      if (result.status === 400) {
-        testInfo.skip(true, 'HuggingFace API unavailable - external dependency');
+      // HuggingFace is an external dependency; CI/network issues can happen.
+      if (result.status >= 500) {
+        testInfo.skip(
+          true,
+          `HuggingFace API unavailable - external dependency (HTTP ${result.status})`
+        );
         return;
       }
 
@@ -86,8 +89,8 @@ test.describe('Model Registration Workflow', () => {
 
     // NOTE: SPEC-6cd7f960 FR-6 により、/v1/models はオンラインエンドポイントのモデルのみを返す
     // 登録しただけではエンドポイントに紐付かないため、/v1/models には表示されない
-    // このテストは /api/models/registered で確認するように変更
-    test('model appears in /api/models/registered after register', async ({ request }, testInfo) => {
+    // このテストは registry 一覧の /api/models で確認する
+    test('model appears in /api/models after register', async ({ request }, testInfo) => {
       // 1. Register a HuggingFace model directly
       const result = await registerModel(
         request,
@@ -95,9 +98,12 @@ test.describe('Model Registration Workflow', () => {
         'qwen2.5-0.5b-instruct-q4_k_m.gguf'
       );
 
-      // 400 = HuggingFace API unavailable (CI環境で発生することがある)
-      if (result.status === 400) {
-        testInfo.skip(true, 'HuggingFace API unavailable - external dependency');
+      // HuggingFace is an external dependency; CI/network issues can happen.
+      if (result.status >= 500) {
+        testInfo.skip(
+          true,
+          `HuggingFace API unavailable - external dependency (HTTP ${result.status})`
+        );
         return;
       }
 
@@ -106,7 +112,7 @@ test.describe('Model Registration Workflow', () => {
 
       // 2. Verify model appears in registered models list (not /v1/models)
       // Per SPEC-6cd7f960 FR-6, /v1/models only returns models from online endpoints
-      const response = await request.get('/api/models/registered', {
+      const response = await request.get('/api/models', {
         headers: {
           Authorization: 'Bearer sk_debug',
         },

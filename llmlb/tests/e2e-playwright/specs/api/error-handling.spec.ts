@@ -16,8 +16,8 @@ test.describe('API Error Handling', () => {
   test('returns 503 when no nodes are available', async ({ request }) => {
     // This test verifies that the router returns 503 when there are no nodes
     // Skip if nodes are available (normal operation)
-    // Note: /api/runtimes was deprecated in SPEC-66555000, now using /api/dashboard/endpoints
-    const endpointsResponse = await request.get(`${API_BASE}/api/dashboard/endpoints`, {
+    // Prefer /api/endpoints because it supports API key auth in E2E/CI.
+    const endpointsResponse = await request.get(`${API_BASE}/api/endpoints`, {
       headers: { 'Authorization': 'Bearer sk_debug' }
     });
 
@@ -25,7 +25,8 @@ test.describe('API Error Handling', () => {
     if (!endpointsResponse.ok()) {
       // If we can't check endpoints, proceed with the test
     } else {
-      const endpoints = await endpointsResponse.json();
+      const data = await endpointsResponse.json();
+      const endpoints = Array.isArray(data) ? data : data.endpoints || [];
       if (Array.isArray(endpoints) && endpoints.length > 0) {
         // Check if any endpoints are online
         const onlineEndpoints = endpoints.filter((e: { status: string }) => e.status === 'online');

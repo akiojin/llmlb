@@ -14,6 +14,7 @@ import {
   cleanTestState,
   getModelCount,
   getModels,
+  getRegisteredModels,
   getDownloadingModels,
   getHubModels,
   registerModel,
@@ -138,19 +139,27 @@ test.describe('Model Registration Workflow', () => {
         'qwen2.5-0.5b-instruct-q4_k_m.gguf'
       );
 
-      // 400 = HuggingFace API unavailable (CI環境で発生することがある)
-      if (result.status === 400) {
-        testInfo.skip(true, 'HuggingFace API unavailable - external dependency');
+      // HuggingFace is an external dependency; CI/network issues can happen.
+      if (result.status >= 500 || result.status === 429) {
+        testInfo.skip(
+          true,
+          `HuggingFace API unavailable - external dependency (HTTP ${result.status})`
+        );
         return;
       }
 
       // 201 = new registration, 200 = already registered (both are valid)
       expect([200, 201]).toContain(result.status);
 
-      // 2. Verify in models list
-      const models = await getModels(request);
-      // Model should appear with some lifecycle status
-      expect(models.length).toBeGreaterThanOrEqual(1);
+      // 2. Verify it appears in the registry list (/api/models).
+      // Per SPEC-6cd7f960 FR-6, /v1/models only returns models from online endpoints,
+      // so registration alone does NOT guarantee it appears in /v1/models.
+      const registryModels = await getRegisteredModels(request);
+      expect(registryModels.some((m) => m.name === result.modelName)).toBeTruthy();
+
+      // 3. Ensure the new registry model is not mistakenly exposed via /v1/models.
+      const availableModels = await getModels(request);
+      expect(availableModels.some((m) => m.name === result.modelName)).toBe(false);
     });
 
     test('cleanup removes all models', async ({ request }) => {

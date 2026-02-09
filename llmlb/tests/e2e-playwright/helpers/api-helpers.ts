@@ -127,7 +127,7 @@ export async function getRegisteredModels(request: APIRequestContext): Promise<R
  * Get count of registered models
  */
 export async function getModelCount(request: APIRequestContext): Promise<number> {
-  const models = await getModels(request);
+  const models = await getRegisteredModels(request);
   return models.length;
 }
 

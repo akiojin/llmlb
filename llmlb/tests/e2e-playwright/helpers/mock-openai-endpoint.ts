@@ -46,10 +46,8 @@ function extractLastUserText(messages: unknown): string {
 
 export async function startMockOpenAIEndpointServer(options?: {
   models?: string[]
-  supportsResponsesApi?: boolean
 }): Promise<MockOpenAIEndpointServer> {
   const models = options?.models?.length ? options.models : ['mock-model-a', 'mock-model-b']
-  const supportsResponsesApi = options?.supportsResponsesApi ?? false
 
   // reqwest (llmlb) uses keep-alive connections; server.close() waits for them.
   // Track sockets and destroy them on shutdown so afterAll doesn't hang.
@@ -57,11 +55,6 @@ export async function startMockOpenAIEndpointServer(options?: {
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
-
-    // Basic health endpoint for llmlb's feature detection.
-    if (req.method === 'GET' && url.pathname === '/health') {
-      return writeJson(res, 200, { supports_responses_api: supportsResponsesApi })
-    }
 
     // OpenAI-compatible models listing.
     if (req.method === 'GET' && url.pathname === '/v1/models') {

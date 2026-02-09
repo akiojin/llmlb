@@ -66,8 +66,6 @@ pub struct DashboardEndpoint {
     pub registered_at: DateTime<Utc>,
     /// メモ
     pub notes: Option<String>,
-    /// Responses API対応フラグ
-    pub supports_responses_api: bool,
     /// 利用可能なモデル数
     pub model_count: usize,
 }
@@ -309,7 +307,6 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
             error_count: endpoint.error_count,
             registered_at: endpoint.registered_at,
             notes: endpoint.notes,
-            supports_responses_api: endpoint.supports_responses_api,
             model_count,
         });
     }

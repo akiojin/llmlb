@@ -444,11 +444,6 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           <span>{endpoint.name}</span>
-                          {endpoint.supports_responses_api && (
-                            <Badge variant="outline" className="text-xs">
-                              Responses API
-                            </Badge>
-                          )}
                         </div>
                       </TableCell>
                       <TableCell>

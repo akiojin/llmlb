@@ -48,28 +48,64 @@ pub struct ApiKey {
     pub created_at: DateTime<Utc>,
     /// 有効期限
     pub expires_at: Option<DateTime<Utc>>,
-    /// スコープ（権限）
-    pub scopes: Vec<ApiKeyScope>,
+    /// 付与された権限
+    pub permissions: Vec<ApiKeyPermission>,
 }
 
-/// APIキースコープ
+/// APIキー権限
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ApiKeyScope {
-    /// エンドポイント登録・同期
-    #[serde(rename = "endpoint")]
-    Endpoint,
-    /// OpenAI互換API利用
-    #[serde(rename = "api")]
-    Api,
-    /// 管理者（全権限）
-    #[serde(rename = "admin")]
-    Admin,
+pub enum ApiKeyPermission {
+    /// OpenAI互換APIの推論（/v1/chat/completions 等）
+    #[serde(rename = "openai.inference")]
+    OpenaiInference,
+    /// OpenAI互換のモデル一覧参照（/v1/models）
+    #[serde(rename = "openai.models.read")]
+    OpenaiModelsRead,
+    /// エンドポイント参照（/api/endpoints のGET系）
+    #[serde(rename = "endpoints.read")]
+    EndpointsRead,
+    /// エンドポイント管理（/api/endpoints の作成/更新/削除 等）
+    #[serde(rename = "endpoints.manage")]
+    EndpointsManage,
+    /// APIキー管理（発行/更新/削除）
+    #[serde(rename = "api_keys.manage")]
+    ApiKeysManage,
+    /// ユーザー管理
+    #[serde(rename = "users.manage")]
+    UsersManage,
+    /// 招待管理
+    #[serde(rename = "invitations.manage")]
+    InvitationsManage,
+    /// モデル管理（register/delete 等）
+    #[serde(rename = "models.manage")]
+    ModelsManage,
+    /// モデル配布レジストリ参照（/api/models/registry/*）
+    #[serde(rename = "registry.read")]
+    RegistryRead,
+    /// ログ参照（lb/node logs）
+    #[serde(rename = "logs.read")]
+    LogsRead,
+    /// メトリクス参照（/api/metrics/*）
+    #[serde(rename = "metrics.read")]
+    MetricsRead,
 }
 
-impl ApiKeyScope {
-    /// すべてのスコープ
-    pub fn all() -> Vec<ApiKeyScope> {
-        vec![ApiKeyScope::Endpoint, ApiKeyScope::Api, ApiKeyScope::Admin]
+impl ApiKeyPermission {
+    /// すべての権限
+    pub fn all() -> Vec<ApiKeyPermission> {
+        vec![
+            ApiKeyPermission::OpenaiInference,
+            ApiKeyPermission::OpenaiModelsRead,
+            ApiKeyPermission::EndpointsRead,
+            ApiKeyPermission::EndpointsManage,
+            ApiKeyPermission::ApiKeysManage,
+            ApiKeyPermission::UsersManage,
+            ApiKeyPermission::InvitationsManage,
+            ApiKeyPermission::ModelsManage,
+            ApiKeyPermission::RegistryRead,
+            ApiKeyPermission::LogsRead,
+            ApiKeyPermission::MetricsRead,
+        ]
     }
 }
 
@@ -88,8 +124,8 @@ pub struct ApiKeyWithPlaintext {
     pub created_at: DateTime<Utc>,
     /// 有効期限
     pub expires_at: Option<DateTime<Utc>>,
-    /// スコープ（権限）
-    pub scopes: Vec<ApiKeyScope>,
+    /// 付与された権限
+    pub permissions: Vec<ApiKeyPermission>,
 }
 
 /// ランタイムトークン

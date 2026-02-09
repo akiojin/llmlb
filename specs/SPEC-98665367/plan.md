@@ -10,7 +10,7 @@
 
 ## 概要
 GitHub Actions を用いて、品質チェック、PR制御、リリース作成、バイナリ配布、
-MCPサーバー公開、Visionテストを統合する。main/develop の分岐運用と
+MCPサーバー公開を統合する。main/develop の分岐運用と
 releaseブランチ運用を前提に、各ワークフローの責務を分離する。
 
 ## 既存ワークフロー構成
@@ -31,22 +31,16 @@ releaseブランチ運用を前提に、各ワークフローの責務を分離�
   - Linux (musl), Windows (msvc), macOS (intel/arm)
   - MCPサーバー npm publish
 
-### Vision テスト
-- `vision-tests.yml`: self-hosted GPU ランナーで Vision API テストを実行
-
 ## 依存関係と権限
 - Secrets: `PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`, `NPM_TOKEN`
 - submodules を含む checkout を前提
-- self-hosted GPU runner (Vision テスト) が必要
 
 ## 受け入れ条件
 - PR作成時に品質チェックが自動実行される
 - develop -> main のリリースフローが自動化されている
 - main リリースでタグ/リリース/配布が連動する
 - dependabot PR の auto-merge が機能する
-- Vision テストは手動/変更時に実行できる
 
 ## リスク/運用
-- self-hosted GPU runner 不在時は Vision テストが実行不能
 - release タグ作成の二重実行を防止するガードが必要
 - develop/main の運用ルール逸脱を PR gate で抑止する

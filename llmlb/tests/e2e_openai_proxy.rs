@@ -21,7 +21,7 @@ mod support;
 
 use support::{
     http::{spawn_lb, TestServer},
-    lb::{create_test_api_key, spawn_test_lb, spawn_test_lb_with_db},
+    lb::{create_test_api_key, spawn_test_lb_with_db},
 };
 
 #[derive(Clone)]
@@ -177,7 +177,23 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     })
     .await;
 
-    let lb = spawn_test_lb().await;
+    let (lb, db_pool) = spawn_test_lb_with_db().await;
+
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let admin_user = llmlb::db::users::create(
+        &db_pool,
+        "admin",
+        &password_hash,
+        llmlb::common::auth::UserRole::Admin,
+    )
+    .await
+    .expect("create admin user");
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &admin_user.id.to_string(),
+        llmlb::common::auth::UserRole::Admin,
+        &support::lb::test_jwt_secret(),
+    )
+    .expect("create jwt");
 
     let _endpoint_id = register_endpoint_and_sync(&lb, &node_stub).await;
 
@@ -284,7 +300,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
                 "http://{}/api/dashboard/request-history",
                 lb.addr()
             ))
-            .header("authorization", "Bearer sk_debug")
+            .header("authorization", format!("Bearer {}", jwt))
             .send()
             .await
             .expect("request history endpoint should respond")

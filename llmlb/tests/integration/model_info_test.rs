@@ -10,7 +10,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -53,7 +53,7 @@ async fn build_app() -> (Router, String, sqlx::SqlitePool) {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key")
@@ -182,7 +182,7 @@ async fn test_v1_models_returns_fixed_list() {
         "test-key",
         test_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![ApiKeyPermission::OpenaiModelsRead],
     )
     .await
     .expect("Failed to create test API key");

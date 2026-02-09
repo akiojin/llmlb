@@ -5,7 +5,7 @@
 //! 管理者として、タイプを手動で指定・変更したい
 //! （誤判別時の修正、またはオフラインエンドポイントの事前設定）。
 
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -31,7 +31,7 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
         "test-admin-key",
         admin_id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key");

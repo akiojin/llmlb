@@ -105,7 +105,6 @@ async fn sync_endpoint(lb_addr: SocketAddr, endpoint_id: &str) {
             "http://{}/api/endpoints/{}/sync",
             lb_addr, endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

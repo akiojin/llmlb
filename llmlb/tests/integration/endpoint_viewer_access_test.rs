@@ -31,7 +31,7 @@ async fn test_viewer_can_list_endpoints() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -82,7 +82,7 @@ async fn test_viewer_can_get_endpoint_detail() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -140,7 +140,7 @@ async fn test_viewer_cannot_create_endpoint() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -184,7 +184,7 @@ async fn test_viewer_cannot_update_endpoint() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")
@@ -246,7 +246,7 @@ async fn test_viewer_cannot_delete_endpoint() {
         "viewer-key",
         viewer_user.id,
         None,
-        vec![llmlb::common::auth::ApiKeyScope::Api],
+        vec![llmlb::common::auth::ApiKeyPermission::EndpointsRead],
     )
     .await
     .expect("create viewer api key")

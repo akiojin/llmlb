@@ -652,7 +652,18 @@ export const modelsApi = {
 }
 
 // API Keys API
-export type ApiKeyScope = 'endpoint' | 'api' | 'admin'
+export type ApiKeyPermission =
+  | 'openai.inference'
+  | 'openai.models.read'
+  | 'endpoints.read'
+  | 'endpoints.manage'
+  | 'api_keys.manage'
+  | 'users.manage'
+  | 'invitations.manage'
+  | 'models.manage'
+  | 'registry.read'
+  | 'logs.read'
+  | 'metrics.read'
 
 export interface ApiKey {
   id: string
@@ -662,7 +673,7 @@ export interface ApiKey {
   created_at: string
   expires_at?: string
   last_used_at?: string
-  scopes: ApiKeyScope[]
+  permissions: ApiKeyPermission[]
 }
 
 export interface CreateApiKeyResponse {
@@ -672,7 +683,7 @@ export interface CreateApiKeyResponse {
   key_prefix: string
   created_at: string
   expires_at?: string
-  scopes: ApiKeyScope[]
+  permissions: ApiKeyPermission[]
 }
 
 export const apiKeysApi = {
@@ -681,7 +692,11 @@ export const apiKeysApi = {
       (res) => res.api_keys
     ),
 
-  create: (data: { name: string; expires_at?: string; scopes: ApiKeyScope[] }) =>
+  create: (data: {
+    name: string
+    expires_at?: string
+    permissions: ApiKeyPermission[]
+  }) =>
     fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),

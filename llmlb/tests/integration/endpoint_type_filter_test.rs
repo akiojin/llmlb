@@ -5,7 +5,7 @@
 //! 管理者として、特定タイプのエンドポイントのみを
 //! フィルタリングして一覧表示したい。
 
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -31,7 +31,7 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
         "test-admin-key",
         admin_id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key");

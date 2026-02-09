@@ -3,7 +3,7 @@
 //! T0xx: config/tokenizer/シャード index が揃っていないとモデル登録を拒否する
 
 use crate::support;
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::{Client, StatusCode};
 use serde_json::json;
 use sqlx::SqlitePool;
@@ -31,7 +31,7 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
         "test-admin-key",
         admin_id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key");

@@ -26,9 +26,9 @@
 - [x] T007 [P] `.github/workflows/release.yml` にタグ作成 + GitHub Release 作成を実装
 - [x] T008 [P] `.github/workflows/publish.yml` にマルチプラットフォーム配布と MCP server publish を実装
 
-## Phase 4: Vision テスト
+## Phase 4: Vision テスト（廃止）
 
-- [x] T009 [P] `.github/workflows/vision-tests.yml` に self-hosted GPU runner の Vision テストを実装
+- [x] T009 [P] `.github/workflows/vision-tests.yml` に self-hosted GPU runner の Vision テストを実装（後に llmlb の責務外のため本repoから削除）
 
 ## Phase 5: 仕上げ
 

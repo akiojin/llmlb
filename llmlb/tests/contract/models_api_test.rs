@@ -7,7 +7,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::db::models::ModelStorage;
 use llmlb::registry::models::ModelInfo;
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
@@ -135,7 +135,7 @@ async fn build_app() -> TestApp {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key")
@@ -146,7 +146,7 @@ async fn build_app() -> TestApp {
         "node-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Endpoint],
+        vec![ApiKeyPermission::RegistryRead],
     )
     .await
     .expect("create node api key")

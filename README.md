@@ -154,7 +154,7 @@ cargo build --release -p llmlb
 
 # Access dashboard
 # Open http://localhost:32768/dashboard in browser
-# (No internal API token required; LLMLB_INTERNAL_API_TOKEN is optional (legacy))
+# (No internal API token required)
 ```
 
 **Environment Variables:**
@@ -168,7 +168,6 @@ cargo build --release -p llmlb
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username |
 | `LLMLB_ADMIN_PASSWORD` | (required) | Initial admin password |
-| `LLMLB_INTERNAL_API_TOKEN` | (optional) | Internal token for /api, /dashboard, /ws (legacy) |
 
 **Backward compatibility:** Legacy env var names are supported but deprecated (see full list below).
 
@@ -245,32 +244,14 @@ Combines multiple factors including response time, active requests, and CPU usag
 LLMLB_LOAD_BALANCER_MODE=auto cargo run -p llmlb
 ```
 
-### Health / Metrics API
+### Health / Metrics
 
-Runtimes report health + metrics to the load balancer for runtime status and load balancing decisions.
+llmlb performs **pull-based health checks** against registered endpoints. Endpoints do not push
+heartbeats to the load balancer (there is no `POST /api/health`).
 
-**Endpoint:** `POST /api/health` (requires `X-Runtime-Token` + API key with `runtime`)
-
-**Headers:**
-- `Authorization: Bearer <api_key>`
-- `X-Runtime-Token: <runtime_token>`
-
-**Request:**
-```json
-{
-  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
-  "cpu_usage": 45.5,
-  "memory_usage": 60.2,
-  "active_requests": 3,
-  "average_response_time_ms": 250.5,
-  "loaded_models": ["gpt-oss-20b"],
-  "loaded_embedding_models": [],
-  "initializing": false,
-  "ready_models": [1, 1]
-}
-```
-
-**Response:** `200 OK`
+- Endpoint status is surfaced in the dashboard and `GET /api/endpoints`.
+- Prometheus metrics are exported via `GET /api/metrics/cloud` (JWT admin or API key with
+  `metrics.read`).
 
 ## Architecture
 
@@ -381,8 +362,8 @@ curl http://lb:32768/v1/responses -d '...'
   - manifest-based selection from the load balancer (`GET /api/models/registry/:model_name/manifest.json`)
 
 ### Scheduling & Health
-- Runtimes register via `/api/runtimes`; CPU-only endpoints are also supported.
-- Heartbeats carry CPU/GPU/memory metrics used for load balancing.
+- Endpoints are registered via `/api/endpoints` (dashboard UI or API). CPU-only endpoints are also supported.
+- Health is pull-based: llmlb periodically probes endpoints and uses status/latency for load balancing.
 - Dashboard surfaces `*_key_present` flags so operators see which cloud keys are configured.
 
 ### Benefits of Proxy Pattern
@@ -691,11 +672,13 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
        "max_tokens": 300
      }'
    ```
-4. **List Registered Runtimes**
+4. **List Registered Endpoints**
    ```bash
-   curl http://lb:32768/api/runtimes \
-     # Replace with your actual API key (scope: admin)
-     -H "Authorization: Bearer sk_your_admin_key"
+   curl http://lb:32768/api/endpoints \
+     # JWT (admin/viewer):
+     -H "Authorization: Bearer <jwt>"
+     # or API key (permissions: endpoints.read):
+     # -H "X-API-Key: sk_your_endpoints_read_key"
    ```
 
 ### Environment Variables
@@ -711,7 +694,6 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
 | `LLMLB_JWT_SECRET` | (auto-generated) | JWT signing secret | `JWT_SECRET` |
 | `LLMLB_ADMIN_USERNAME` | `admin` | Initial admin username | `ADMIN_USERNAME` |
 | `LLMLB_ADMIN_PASSWORD` | (required, first run) | Initial admin password | `ADMIN_PASSWORD` |
-| `LLMLB_INTERNAL_API_TOKEN` | (optional) | Internal token for /api, /dashboard, /ws (legacy) | `INTERNAL_API_TOKEN` |
 | `LLMLB_LOG_LEVEL` | `info` | Log level (`EnvFilter`) | `LLM_LOG_LEVEL`, `RUST_LOG` |
 | `LLMLB_LOG_DIR` | `~/.llmlb/logs` | Log directory | `LLM_LOG_DIR` (deprecated) |
 | `LLMLB_LOG_RETENTION_DAYS` | `7` | Log retention days | `LLM_LOG_RETENTION_DAYS` |
@@ -791,7 +773,7 @@ Note: Engine plugins were removed in favor of built-in managers. See <<https://g
 - Check static delivery settings for `/dashboard/*` if using a reverse proxy
 
 ### OpenAI compatible API returns 503 / Model not registered
-- Returns 503 if all runtimes are `initializing`. Wait for runtime model load or check status at `/api/dashboard/runtimes`
+- Returns 503 if there are no online endpoints. Wait for endpoint startup/model load or check status at `/api/dashboard/endpoints` (JWT) or `/api/endpoints` (JWT/API key).
 - If specified model does not exist locally, wait for runtime to auto-pull
 
 ### Too many / too few logs
@@ -943,112 +925,133 @@ Note: When using the JWT cookie for mutating dashboard requests, include the CSR
 `X-CSRF-Token` header (token is provided in `llmlb_csrf` cookie). Origin/Referer must match the
 dashboard origin.
 
-#### Roles & API Key Scopes
+#### Roles & API Key Permissions
 
 **User roles (JWT):**
 
 | Role | Capabilities |
 |------|--------------|
-| `admin` | Full access to `/api` management APIs |
-| `viewer` | Can authenticate and access `/api/auth/*` only |
+| `admin` | Full access to `/api` management APIs and all dashboard features |
+| `viewer` | Read-only access to dashboard and endpoint read APIs; cannot access admin management APIs |
 
-**API key scopes:**
+**API key permissions:**
 
-| Scope | Grants |
-|-------|--------|
-| `endpoints` | Endpoint management (`/api/endpoints/*`) |
-| `runtime` | Runtime registration + health + model sync (`POST /api/runtimes`, `POST /api/health`, `GET /api/models`, `GET /api/models/registry/:model_name/manifest.json`) - Legacy |
-| `api` | OpenAI-compatible inference APIs (`/v1/*` except `/v1/models` via runtime token) |
-| `admin` | All management APIs (`/api/users`, `/api/api-keys`, `/api/models/*`, `/api/runtimes/*`, `/api/endpoints/*`, `/api/dashboard/*`, `/api/metrics/*`) |
+| Permission | Grants |
+|---|---|
+| `openai.inference` | OpenAI-compatible inference endpoints (`POST /v1/*` except `GET /v1/models*`) |
+| `openai.models.read` | Model discovery (`GET /v1/models*`) |
+| `endpoints.read` | Read-only endpoint APIs (`GET /api/endpoints*`) |
+| `endpoints.manage` | Endpoint mutations (`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`) |
+| `api_keys.manage` | API key management (`/api/api-keys*`) |
+| `users.manage` | User management (`/api/users*`) |
+| `invitations.manage` | Invitation management (`/api/invitations*`) |
+| `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
+| `registry.read` | Model registry and lists (`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`) |
+| `logs.read` | Node log proxy (`GET /api/nodes/:node_id/logs`) |
+| `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
 
 Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
+
+Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 
 #### User Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/users` | List users | JWT+Admin or API key (admin) |
-| POST | `/api/users` | Create user | JWT+Admin or API key (admin) |
-| PUT | `/api/users/:id` | Update user | JWT+Admin or API key (admin) |
-| DELETE | `/api/users/:id` | Delete user | JWT+Admin or API key (admin) |
+| GET | `/api/users` | List users | JWT+Admin or API key (`users.manage`) |
+| POST | `/api/users` | Create user | JWT+Admin or API key (`users.manage`) |
+| PUT | `/api/users/:id` | Update user | JWT+Admin or API key (`users.manage`) |
+| DELETE | `/api/users/:id` | Delete user | JWT+Admin or API key (`users.manage`) |
 
 #### API Key Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/api-keys` | List API keys | JWT+Admin or API key (admin) |
-| POST | `/api/api-keys` | Create API key | JWT+Admin or API key (admin) |
-| PUT | `/api/api-keys/:id` | Update API key | JWT+Admin or API key (admin) |
-| DELETE | `/api/api-keys/:id` | Delete API key | JWT+Admin or API key (admin) |
+| GET | `/api/api-keys` | List API keys | JWT+Admin or API key (`api_keys.manage`) |
+| POST | `/api/api-keys` | Create API key | JWT+Admin or API key (`api_keys.manage`) |
+| PUT | `/api/api-keys/:id` | Update API key | JWT+Admin or API key (`api_keys.manage`) |
+| DELETE | `/api/api-keys/:id` | Delete API key | JWT+Admin or API key (`api_keys.manage`) |
+
+#### Invitation Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/invitations` | List invitations | JWT+Admin or API key (`invitations.manage`) |
+| POST | `/api/invitations` | Create invitation | JWT+Admin or API key (`invitations.manage`) |
+| DELETE | `/api/invitations/:id` | Revoke invitation | JWT+Admin or API key (`invitations.manage`) |
 
 #### Endpoint Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/api/endpoints` | Register endpoint | JWT+Admin or API key (admin) |
-| GET | `/api/endpoints` | List endpoints | JWT+Admin/Viewer or API key (admin/endpoints) |
-| GET | `/api/endpoints/:id` | Get endpoint details | JWT+Admin/Viewer or API key (admin/endpoints) |
-| PUT | `/api/endpoints/:id` | Update endpoint | JWT+Admin or API key (admin) |
-| DELETE | `/api/endpoints/:id` | Delete endpoint | JWT+Admin or API key (admin) |
-| POST | `/api/endpoints/:id/test` | Connection test | JWT+Admin or API key (admin) |
-| POST | `/api/endpoints/:id/sync` | Sync models | JWT+Admin or API key (admin) |
-
-#### Runtime Management Endpoints (Legacy)
-
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| POST | `/api/runtimes` | Register runtime (GPU required) | API key (runtime) |
-| GET | `/api/runtimes` | List runtimes | JWT+Admin or API key (admin) |
-| DELETE | `/api/runtimes/:runtime_id` | Delete runtime | JWT+Admin or API key (admin) |
-| POST | `/api/runtimes/:runtime_id/disconnect` | Force runtime offline | JWT+Admin or API key (admin) |
-| PUT | `/api/runtimes/:runtime_id/settings` | Update runtime settings | JWT+Admin or API key (admin) |
-| GET | `/api/runtimes/metrics` | List runtime metrics | JWT+Admin or API key (admin) |
-| GET | `/api/metrics/summary` | System statistics summary | JWT+Admin or API key (admin) |
-
-#### Health Check Endpoints
-
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| POST | `/api/health` | Receive health check from runtime | Runtime Token + API key (runtime) |
+| GET | `/api/endpoints` | List endpoints | JWT (admin/viewer) or API key (`endpoints.read`) |
+| GET | `/api/endpoints/:id` | Get endpoint details | JWT (admin/viewer) or API key (`endpoints.read`) |
+| GET | `/api/endpoints/:id/models` | List endpoint models | JWT (admin/viewer) or API key (`endpoints.read`) |
+| GET | `/api/endpoints/:id/models/:model/info` | Get endpoint model info | JWT (admin/viewer) or API key (`endpoints.read`) |
+| GET | `/api/endpoints/:id/download/progress` | Download progress | JWT (admin/viewer) or API key (`endpoints.read`) |
+| POST | `/api/endpoints` | Register endpoint | JWT+Admin or API key (`endpoints.manage`) |
+| PUT | `/api/endpoints/:id` | Update endpoint | JWT+Admin or API key (`endpoints.manage`) |
+| DELETE | `/api/endpoints/:id` | Delete endpoint | JWT+Admin or API key (`endpoints.manage`) |
+| POST | `/api/endpoints/:id/test` | Connection test | JWT+Admin or API key (`endpoints.manage`) |
+| POST | `/api/endpoints/:id/sync` | Sync models | JWT+Admin or API key (`endpoints.manage`) |
+| POST | `/api/endpoints/:id/download` | Download model | JWT+Admin or API key (`endpoints.manage`) |
 
 #### OpenAI-Compatible Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/v1/chat/completions` | Chat completions API | API Key |
-| POST | `/v1/completions` | Text completions API | API Key |
-| POST | `/v1/embeddings` | Embeddings API | API Key |
-| GET | `/v1/models` | List models (Azure-style capabilities) | API Key / Runtime Token |
-| GET | `/v1/models/:model_id` | Get specific model info | API Key / Runtime Token |
+| POST | `/v1/chat/completions` | Chat completions API | API key (`openai.inference`) |
+| POST | `/v1/completions` | Text completions API | API key (`openai.inference`) |
+| POST | `/v1/embeddings` | Embeddings API | API key (`openai.inference`) |
+| POST | `/v1/responses` | Responses API | API key (`openai.inference`) |
+| POST | `/v1/audio/transcriptions` | Audio transcriptions API | API key (`openai.inference`) |
+| POST | `/v1/audio/speech` | Audio speech API | API key (`openai.inference`) |
+| POST | `/v1/images/generations` | Image generations API | API key (`openai.inference`) |
+| POST | `/v1/images/edits` | Image edits API | API key (`openai.inference`) |
+| POST | `/v1/images/variations` | Image variations API | API key (`openai.inference`) |
+| GET | `/v1/models` | List models (Azure-style capabilities) | API key (`openai.models.read`) |
+| GET | `/v1/models/:model_id` | Get specific model info | API key (`openai.models.read`) |
 
 #### Model Management Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/models` | List registered models (runtime sync) | API key (runtime or admin) |
-| POST | `/api/models/register` | Register model (HF) | JWT+Admin or API key (admin) |
-| DELETE | `/api/models/*model_name` | Delete model | JWT+Admin or API key (admin) |
-| GET | `/api/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (runtime or admin) |
+| GET | `/api/models` | List registered models | JWT+Admin or API key (`registry.read`) |
+| GET | `/api/models/hub` | List supported models + status | JWT+Admin or API key (`registry.read`) |
+| POST | `/api/models/register` | Register model (HF) | JWT+Admin or API key (`models.manage`) |
+| DELETE | `/api/models/*model_name` | Delete model | JWT+Admin or API key (`models.manage`) |
+| GET | `/api/models/registry/:model_name/manifest.json` | Get model manifest (file list) | API key (`registry.read`) |
 
 #### Dashboard Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/dashboard/runtimes` | Runtime info list | JWT+Admin or API key (admin) |
-| GET | `/api/dashboard/stats` | System statistics | JWT+Admin or API key (admin) |
-| GET | `/api/dashboard/request-history` | Request history | JWT+Admin or API key (admin) |
-| GET | `/api/dashboard/overview` | Dashboard overview | JWT+Admin or API key (admin) |
-| GET | `/api/dashboard/metrics/:runtime_id` | Runtime metrics history | JWT+Admin or API key (admin) |
-| GET | `/api/dashboard/request-responses` | Request/response list | JWT+Admin or API key (admin) |
-| GET | `/api/dashboard/request-responses/:id` | Request/response details | JWT+Admin or API key (admin) |
-| GET | `/api/dashboard/request-responses/export` | Export request/responses | JWT+Admin or API key (admin) |
+| GET | `/api/dashboard/endpoints` | Endpoint info list | JWT only |
+| GET | `/api/dashboard/models` | Dashboard models list | JWT only |
+| GET | `/api/dashboard/stats` | System statistics | JWT only |
+| GET | `/api/dashboard/request-history` | Request history (legacy) | JWT only |
+| GET | `/api/dashboard/overview` | Dashboard overview | JWT only |
+| GET | `/api/dashboard/metrics/:node_id` | Node metrics history | JWT only |
+| GET | `/api/dashboard/request-responses` | Request/response list | JWT only |
+| GET | `/api/dashboard/request-responses/:id` | Request/response details | JWT only |
+| GET | `/api/dashboard/request-responses/export` | Export request/responses | JWT only |
+| GET | `/api/dashboard/stats/tokens` | Token stats | JWT only |
+| GET | `/api/dashboard/stats/tokens/daily` | Daily token stats | JWT only |
+| GET | `/api/dashboard/stats/tokens/monthly` | Monthly token stats | JWT only |
+| GET | `/api/dashboard/logs/lb` | Load balancer logs | JWT only |
 
-#### Log Endpoints
+#### Log & Metrics Endpoints
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/dashboard/logs/lb` | Load balancer logs | JWT+Admin or API key (admin) |
-| GET | `/api/runtimes/:runtime_id/logs` | Runtime logs | JWT+Admin or API key (admin) |
+| GET | `/api/nodes/:node_id/logs` | Node logs proxy | JWT+Admin or API key (`logs.read`) |
+| GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (`metrics.read`) |
+
+#### Playground Proxy
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api/endpoints/:id/chat/completions` | Proxy to endpoint for dashboard playground | JWT only |
 
 #### Static Files & Metrics
 
@@ -1056,9 +1059,7 @@ Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_ad
 |--------|------|-------------|------|
 | GET | `/dashboard` | Dashboard UI | None |
 | GET | `/dashboard/*path` | Dashboard static files | None |
-| GET | `/playground` | Chat Playground UI | None |
-| GET | `/playground/*path` | Playground static files | None |
-| GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (admin) |
+| GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (`metrics.read`) |
 
 ### Runtime API (C++)
 
@@ -1086,24 +1087,22 @@ Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_ad
 
 ### Request/Response Examples
 
-#### POST /api/runtimes
+#### POST /api/endpoints
 
-Register a runtime.
+Register an endpoint.
+
+**Headers:**
+
+- JWT (admin): `Authorization: Bearer <jwt>`
+- or API key (permissions: `endpoints.manage`): `X-API-Key: <api_key>`
 
 **Request:**
 
-**Headers:** `Authorization: Bearer <runtime_api_key>`
-
 ```json
 {
-  "machine_name": "my-machine",
-  "ip_address": "192.168.1.100",
-  "runtime_version": "0.1.0",
-  "runtime_port": 32768,
-  "gpu_available": true,
-  "gpu_devices": [
-    { "model": "NVIDIA RTX 4090", "count": 2 }
-  ]
+  "name": "my-vllm",
+  "base_url": "http://127.0.0.1:8000",
+  "api_key": "sk-optional"
 }
 ```
 
@@ -1111,10 +1110,11 @@ Register a runtime.
 
 ```json
 {
-  "runtime_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "registered",
-  "runtime_api_port": 32769,
-  "runtime_token": "nt_xxx"
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "my-vllm",
+  "base_url": "http://127.0.0.1:8000",
+  "status": "pending",
+  "created_at": "2026-02-09T00:00:00Z"
 }
 ```
 

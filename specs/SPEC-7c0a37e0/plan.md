@@ -1,55 +1,49 @@
-# 実装計画: APIキースコープ & /api 認証強化
+# 実装計画: APIキー権限（Permissions）& /api 認証強化
 
-**機能ID**: `SPEC-k5mdhprl` ｜ **作成日**: 2025-12-20  
+**機能ID**: `SPEC-7c0a37e0` ｜ **作成日**: 2025-12-20（2026-02-09 更新）  
 **参照仕様**: [spec.md](./spec.md)
 
 ## 概要
-- APIキーにスコープを持たせ、推論・ノード登録・管理操作を分離する。
-- `/api` 管理系エンドポイントは `admin` または `admin` に限定する。
-- ノード登録/モデル配信は `node` スコープのAPIキーで実施する。
-- `/api/health` は `node` スコープのAPIキー + ノードトークンを要求する。
-- 既存APIキーは後方互換として全スコープ扱い。
+
+- APIキーに `permissions` を持たせ、外部API（`/v1/*`）と運用API（`/api/*` の一部）を最小権限で分離する。
+- `/api/dashboard/*` は **JWTのみ**（APIキー不可）に固定する（SPEC-d4eb8796）。
+- 旧`scopes`は廃止し、DBマイグレーションで`permissions`へ移行する（互換維持）。
 
 ## 技術コンテキスト
+
 - **対象領域**:
-  - `common/src/auth.rs`: APIキー/ユーザーのデータモデル拡張。
-  - `llmlb/src/db/api_keys.rs`: スコープの永続化。
-  - `llmlb/src/auth/middleware.rs`: スコープ判定・APIキー認証。
-  - `llmlb/src/api/mod.rs`: `/api`/`/v1` の認証ルート整理。
-  - `llmlb/src/web/dashboard`: APIキー作成UI。
-  - `node/`: ノード登録/モデル配信でAPIキーを使用。
+  - `llmlb/src/common/auth.rs`: `ApiKeyPermission` 列挙、`ApiKey.permissions`。
+  - `llmlb/src/db/api_keys.rs`: `permissions` の永続化・読み取り。
+  - `llmlb/src/auth/middleware.rs`: APIキー認証 + 権限チェック、JWT/JWT+APIキー併用ルートの統一。
+  - `llmlb/src/api/mod.rs`: ルート毎のrequired permission設定、`/api/dashboard/*` のJWT限定。
+  - `llmlb/src/api/api_keys.rs`: APIキー発行APIの `permissions` 化、`scopes` の 400。
+  - `llmlb/src/web/dashboard`: 権限チェックボックスUI。
+  - `llmlb/migrations/012_add_api_key_permissions.sql`: schema追加 + legacy backfill。
 - **制約**:
   - 認証スキップのフラグは禁止（CLAUDE.md）。
-  - 既存仕様（GPU必須/ノードトークン）と矛盾しない。
+  - ダッシュボード→バックエンドはJWTのみ（内部APIトークンは使用しない）。
 
-## 憲章チェック（初期）
-- **シンプルさ**: 既存の認証/DBに最小拡張。新規サービス追加なし。
-- **TDD**: Contract/Integration/E2E → 実装 → リファクタの順。
-- **開発体験**: 管理者UIからスコープ選択可能にする。
+## Phase 0: 仕様確認
 
-## Phase 0: リサーチ
-- 既存の認証経路（JWT/APIキー/ノードトークン）の確認。
-- `/api` エンドポイントと利用者（管理者/ノード/外部クライアント）整理。
+- SPEC-d4eb8796（ダッシュボードJWT限定、内部APIトークン廃止、/v1はAPIキー必須）
+- 既存 `/api` ルートの分類（dashboard専用 / 運用自動化 / 外部API）
 
 ## Phase 1: 設計
-- データモデル: APIキーに `scopes` を追加。
-- 認証設計: スコープによるアクセス制御を middleware で一元化。
-- ノード設計: `XLLM_API_KEY` を導入し、登録/配信に利用。
-- ヘルス設計: ノードのハートビートに APIキーを必須化。
 
-## Phase 2: タスク分解方針
-- **Contract/Integration**: APIキー・スコープの拒否/許可、`/api` 認証必須化。
-- **Backend**: DBマイグレーション、認証ミドルウェア、ルーティング更新。
-- **Frontend**: APIキー作成UIでスコープ選択。
-- **Node**: APIキー送信とモデル配信の認証。
-- **Docs**: README/README.ja で権限マトリクスと新規環境変数を更新。
+- permission ID の固定セットを定義し、公開契約として扱う。
+- ルートごとに required permission を割り当てる（例: `/v1/*` は `openai.*`）。
+- JWT role と API key permission の交点を明確化する:
+  - READ は viewer でも可（例: `/api/endpoints`）。
+  - WRITE は JWT admin または対応する `*.manage` 権限。
+
+## Phase 2: TDD 方針
+
+- Contract/Integration/E2E を `permissions` 前提に更新する。
+- `/api/dashboard/*` がAPIキーを受け付けないことをテストで担保する。
+- 旧`scopes`の互換（DB移行とAPI拒否）を仕様/テストで固定する。
 
 ## リスクと対応
-- **ノード登録失敗**: APIキー未設定時のエラーを明確化。
-- **権限混乱**: スコープの用途を README に明記。
-- **既存キー互換**: `scopes` 未設定時の全権限扱いを維持。
 
-## 次アクション
-- `/speckit.tasks` 相当のタスクリスト作成。
-- Contract/Integration/E2E テストの追加と更新。
-- 実装・検証を進行。
+- **旧クライアント破壊**: `scopes`を受け付けないため400を返し、移行ガイド/ドキュメントで誘導する。
+- **権限不足で詰まる**: ルート→必要権限の対応表をREADME/ドキュメントに明記する。
+- **移行ミス**: 旧`scopes`→`permissions`のマッピングをマイグレーションで固定する。

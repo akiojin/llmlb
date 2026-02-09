@@ -1,5 +1,26 @@
 # Unreleased
 
+# [3.1.0](https://github.com/akiojin/llmlb/compare/v3.0.3...v3.1.0) (2026-02-09)
+
+### Features
+
+- リクエスト履歴にフィルタ機能を追加しテストを移行 (#370)
+
+### Bug Fixes
+
+- エンドポイント作成時に自動ヘルスチェック＆同期を実行 (#374)
+- HuggingFaceリクエストにタイムアウトを追加 (#375)
+
+### Tests
+
+- APIキーE2E＋権限チェックテストを追加 (#376)
+
+### Chores
+
+- cargo依存関係を更新
+- @modelcontextprotocol/sdk を 1.26.0 に更新
+- npm_and_yarn グループの依存関係を更新 (#372)
+
 # [3.0.3](https://github.com/akiojin/llmlb/compare/v3.0.2...v3.0.3) (2026-02-02)
 
 ### Bug Fixes

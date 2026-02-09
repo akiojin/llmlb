@@ -12,9 +12,9 @@ test.describe('Dashboard Stats Grid @dashboard', () => {
     await page.waitForTimeout(500);
   });
 
-  test('S-01: Total Nodes stat card is displayed', async () => {
-    await expect(dashboard.totalNodes).toBeVisible();
-    const text = await dashboard.getTotalNodes();
+  test('S-01: Total Endpoints stat card is displayed', async () => {
+    await expect(dashboard.totalEndpoints).toBeVisible();
+    const text = await dashboard.getTotalEndpoints();
     expect(text).toBeDefined();
   });
 

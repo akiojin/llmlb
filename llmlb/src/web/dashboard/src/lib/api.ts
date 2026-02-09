@@ -135,19 +135,33 @@ export const authApi = {
 
 // Dashboard API
 export interface DashboardStats {
-  total_nodes: number
-  online_nodes: number
-  pending_nodes: number
-  registering_nodes: number
-  offline_nodes: number
+  /**
+   * v2 (2026-01+): "runtimes" naming returned by the API
+   * - Rust: #[serde(rename = "*_runtimes", alias = "*_nodes")]
+   */
+  total_runtimes?: number
+  online_runtimes?: number
+  pending_runtimes?: number
+  registering_runtimes?: number
+  offline_runtimes?: number
+
+  /**
+   * v1 (deprecated): "nodes" naming returned by older servers
+   */
+  total_nodes?: number
+  online_nodes?: number
+  pending_nodes?: number
+  registering_nodes?: number
+  offline_nodes?: number
+
   total_requests: number
   successful_requests: number
   failed_requests: number
   total_active_requests: number
   queued_requests: number
-  average_response_time_ms: number
-  average_gpu_usage: number
-  average_gpu_memory_usage: number
+  average_response_time_ms: number | null
+  average_gpu_usage: number | null
+  average_gpu_memory_usage: number | null
   // Token statistics
   total_input_tokens: number
   total_output_tokens: number

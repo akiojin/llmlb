@@ -77,6 +77,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Unix専用依存関係（シグナル送信用）
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }
+libc = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

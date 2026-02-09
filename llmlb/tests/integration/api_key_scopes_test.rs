@@ -303,3 +303,172 @@ async fn api_models_requires_registry_read_permission() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn v1_models_requires_openai_models_read_permission() {
+    let (app, db_pool) = build_app().await;
+
+    let inference_key = create_api_key(&db_pool, vec![ApiKeyPermission::OpenaiInference]).await;
+    let models_key = create_api_key(&db_pool, vec![ApiKeyPermission::OpenaiModelsRead]).await;
+
+    // Wrong scope -> 403
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .header("authorization", format!("Bearer {}", inference_key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Correct scope -> 200
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models")
+                .header("authorization", format!("Bearer {}", models_key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn api_keys_routes_require_api_keys_manage_permission() {
+    let (app, db_pool) = build_app().await;
+
+    let openai_key = create_api_key(&db_pool, vec![ApiKeyPermission::OpenaiInference]).await;
+    let manage_key = create_api_key(&db_pool, vec![ApiKeyPermission::ApiKeysManage]).await;
+
+    // No API key -> 401
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/api-keys")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // Wrong scope -> 403
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/api-keys")
+                .header("authorization", format!("Bearer {}", openai_key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Correct scope -> 200
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/api-keys")
+                .header("authorization", format!("Bearer {}", manage_key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let payload = json!({
+        "name": "managed-created-key",
+        "expires_at": null,
+        "permissions": ["openai.inference"]
+    });
+
+    // Wrong scope -> 403
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/api-keys")
+                .header("authorization", format!("Bearer {}", openai_key))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Correct scope -> 201
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/api-keys")
+                .header("authorization", format!("Bearer {}", manage_key))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let created_key = created["key"].as_str().unwrap();
+    let created_id = created["id"].as_str().unwrap();
+    assert!(created_key.starts_with("sk_"));
+
+    // Delete requires api_keys.manage (and admin role)
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/api-keys/{}", created_id))
+                .header("authorization", format!("Bearer {}", manage_key))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    // Deleted key cannot be used
+    let payload = json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "Hello"}]
+    });
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("authorization", format!("Bearer {}", created_key))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}

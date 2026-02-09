@@ -2325,6 +2325,7 @@ dependencies = [
  "image",
  "include_dir",
  "jsonwebtoken",
+ "libc",
  "mime_guess",
  "nix",
  "once_cell",

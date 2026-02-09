@@ -296,8 +296,59 @@ async fn reconcile_migration_checksums(pool: &sqlx::SqlitePool) -> sqlx::Result<
     Ok(())
 }
 
+fn maybe_raise_nofile_limit() {
+    #[cfg(unix)]
+    {
+        use std::cmp::min;
+
+        // macOS では launchd 起動時に open files 上限が 256 など低く設定されることがあり、
+        // 受け付け不能 (EMFILE) や SQLite の open 失敗 (SQLITE_CANTOPEN) につながる。
+        const DESIRED_NOFILE: libc::rlim_t = 65_536;
+
+        unsafe {
+            let mut current = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut current) != 0 {
+                tracing::debug!(
+                    "getrlimit(RLIMIT_NOFILE) failed: {}",
+                    std::io::Error::last_os_error()
+                );
+                return;
+            }
+
+            let target = min(DESIRED_NOFILE, current.rlim_max);
+            if current.rlim_cur >= target {
+                return;
+            }
+
+            let updated = libc::rlimit {
+                rlim_cur: target,
+                rlim_max: current.rlim_max,
+            };
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &updated) != 0 {
+                tracing::warn!(
+                    "Failed to raise RLIMIT_NOFILE from {} to {}: {}",
+                    current.rlim_cur,
+                    target,
+                    std::io::Error::last_os_error()
+                );
+                return;
+            }
+
+            tracing::info!(
+                "Raised RLIMIT_NOFILE from {} to {}",
+                current.rlim_cur,
+                target
+            );
+        }
+    }
+}
+
 async fn run_server(config: ServerConfig) {
     info!("LLM Load Balancer v{}", env!("CARGO_PKG_VERSION"));
+    maybe_raise_nofile_limit();
 
     // シングル実行制約: ロックを取得
     let _server_lock = match ServerLock::acquire(config.port) {

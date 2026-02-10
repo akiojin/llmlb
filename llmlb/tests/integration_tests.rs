@@ -108,6 +108,10 @@ mod responses_streaming_test;
 #[path = "integration/models_api_test.rs"]
 mod models_api_test;
 
+// SPEC-a6e55b37: self-update drain gate
+#[path = "integration/update_drain_gate_test.rs"]
+mod update_drain_gate_test;
+
 // SPEC-f8e3a1b7: /api/system API統合テスト
 #[path = "integration/api_system_test.rs"]
 mod v0_system_test;

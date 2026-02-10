@@ -633,15 +633,27 @@ mod tests {
             .expect("Failed to create endpoint registry");
         let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
         let load_manager = LoadManager::new(endpoint_registry_arc);
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
         let state = crate::AppState {
             load_manager,
             request_history,
             db_pool,
             jwt_secret: "test-secret".to_string(),
-            http_client: reqwest::Client::new(),
+            http_client,
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
             endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
         };
 
         let app = Router::new()
@@ -689,15 +701,27 @@ mod tests {
             .expect("Failed to create endpoint registry");
         let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
         let load_manager = LoadManager::new(endpoint_registry_arc);
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
         let state = crate::AppState {
             load_manager,
             request_history,
             db_pool,
             jwt_secret: "test-secret".to_string(),
-            http_client: reqwest::Client::new(),
+            http_client,
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
             endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
         };
 
         let cfg = JwtOrApiKeyPermissionConfig {
@@ -742,15 +766,27 @@ mod tests {
             .expect("Failed to create endpoint registry");
         let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
         let load_manager = LoadManager::new(endpoint_registry_arc);
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
         let state = crate::AppState {
             load_manager,
             request_history,
             db_pool,
             jwt_secret: "test-secret".to_string(),
-            http_client: reqwest::Client::new(),
+            http_client,
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
             endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
         };
 
         let cfg = JwtOrApiKeyPermissionConfig {

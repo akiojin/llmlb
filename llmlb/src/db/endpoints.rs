@@ -69,7 +69,7 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
+               registered_at, notes, capabilities,
                device_info, inference_latency_ms
         FROM endpoints
         ORDER BY registered_at DESC
@@ -89,7 +89,7 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
+               registered_at, notes, capabilities,
                device_info, inference_latency_ms
         FROM endpoints
         WHERE id = ?
@@ -171,7 +171,7 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
+               registered_at, notes, capabilities,
                device_info, inference_latency_ms
         FROM endpoints
         WHERE name = ?
@@ -195,7 +195,7 @@ pub async fn list_endpoints_by_status(
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
+               registered_at, notes, capabilities,
                device_info, inference_latency_ms
         FROM endpoints
         WHERE status = ?
@@ -220,7 +220,7 @@ pub async fn list_endpoints_by_type(
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
+               registered_at, notes, capabilities,
                device_info, inference_latency_ms
         FROM endpoints
         WHERE endpoint_type = ?
@@ -246,7 +246,7 @@ pub async fn list_endpoints_by_type_and_status(
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
+               registered_at, notes, capabilities,
                device_info, inference_latency_ms
         FROM endpoints
         WHERE endpoint_type = ? AND status = ?
@@ -361,28 +361,6 @@ pub async fn update_device_info(
         "#,
     )
     .bind(&device_info_json)
-    .bind(id.to_string())
-    .execute(pool)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
-}
-
-/// エンドポイントのResponses API対応フラグを更新
-/// （SPEC-24157000: Open Responses API対応）
-pub async fn update_endpoint_responses_api_support(
-    pool: &SqlitePool,
-    id: Uuid,
-    supports_responses_api: bool,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        UPDATE endpoints SET
-            supports_responses_api = ?
-        WHERE id = ?
-        "#,
-    )
-    .bind(supports_responses_api as i32)
     .bind(id.to_string())
     .execute(pool)
     .await?;
@@ -615,7 +593,6 @@ struct EndpointRow {
     error_count: i32,
     registered_at: String,
     notes: Option<String>,
-    supports_responses_api: i32,
     /// SPEC-66555000移行用: エンドポイントの機能一覧（JSON形式）
     capabilities: Option<String>,
     /// SPEC-f8e3a1b7: デバイス情報（JSON形式）
@@ -654,7 +631,6 @@ impl From<EndpointRow> for Endpoint {
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now()),
             notes: row.notes,
-            supports_responses_api: row.supports_responses_api != 0,
             capabilities: row
                 .capabilities
                 .and_then(|s| serde_json::from_str(&s).ok())

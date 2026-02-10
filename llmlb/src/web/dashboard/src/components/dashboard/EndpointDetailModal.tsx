@@ -228,9 +228,6 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <Badge variant={getTypeBadgeVariant(endpoint.endpoint_type)}>
                 {getTypeLabel(endpoint.endpoint_type)}
               </Badge>
-              {endpoint.supports_responses_api && (
-                <Badge variant="outline">Responses API</Badge>
-              )}
               <span className="text-sm text-muted-foreground">
                 Models: {endpoint.model_count}
               </span>

@@ -28,7 +28,6 @@ use serial_test::serial;
 
 #[derive(Clone)]
 struct ResponsesIntegrationState {
-    supports_responses_api: bool,
     model_id: String,
 }
 
@@ -38,26 +37,15 @@ async fn spawn_integration_node(state: ResponsesIntegrationState) -> TestServer 
         .route("/v1/responses", post(responses_handler))
         .route("/v1/chat/completions", post(chat_handler))
         .route("/v1/models", get(models_handler))
-        .route("/health", get(health_handler))
         .with_state(Arc::new(state));
 
     spawn_lb(app).await
 }
 
 async fn responses_handler(
-    State(state): State<Arc<ResponsesIntegrationState>>,
+    State(_state): State<Arc<ResponsesIntegrationState>>,
     Json(req): Json<Value>,
 ) -> impl axum::response::IntoResponse {
-    if !state.supports_responses_api {
-        return (
-            StatusCode::NOT_IMPLEMENTED,
-            Json(serde_json::json!({
-                "error": "Not Implemented: Responses API is not supported"
-            })),
-        )
-            .into_response();
-    }
-
     // リクエストのモデル名をそのままレスポンスに含める（パススルー検証用）
     let model = req["model"].as_str().unwrap_or("unknown");
 
@@ -119,18 +107,12 @@ async fn chat_handler(
 }
 
 async fn models_handler(State(state): State<Arc<ResponsesIntegrationState>>) -> impl IntoResponse {
-    let supported_apis = if state.supports_responses_api {
-        vec!["chat_completions", "responses"]
-    } else {
-        vec!["chat_completions"]
-    };
-
     let models = vec![serde_json::json!({
         "id": state.model_id,
         "object": "model",
         "created": 1704067200,
         "owned_by": "test",
-        "supported_apis": supported_apis
+        "supported_apis": ["chat_completions", "responses"]
     })];
 
     (
@@ -138,17 +120,6 @@ async fn models_handler(State(state): State<Arc<ResponsesIntegrationState>>) -> 
         Json(serde_json::json!({
             "object": "list",
             "data": models
-        })),
-    )
-        .into_response()
-}
-
-async fn health_handler(State(state): State<Arc<ResponsesIntegrationState>>) -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "status": "ok",
-            "supports_responses_api": state.supports_responses_api
         })),
     )
         .into_response()
@@ -164,7 +135,6 @@ async fn health_handler(State(state): State<Arc<ResponsesIntegrationState>>) -> 
 async fn res001_responses_passthrough_preserves_request_body() {
     // Responses API対応ノードを起動
     let node_stub = spawn_integration_node(ResponsesIntegrationState {
-        supports_responses_api: true,
         model_id: "integration-model".to_string(),
     })
     .await;
@@ -215,7 +185,6 @@ async fn res001_responses_passthrough_preserves_request_body() {
 async fn res001_responses_passthrough_with_tools() {
     // Responses API対応ノードを起動
     let node_stub = spawn_integration_node(ResponsesIntegrationState {
-        supports_responses_api: true,
         model_id: "tool-model".to_string(),
     })
     .await;
@@ -258,61 +227,6 @@ async fn res001_responses_passthrough_with_tools() {
 }
 
 // =============================================================================
-// RES003: 非対応バックエンドへの501エラーテスト
-// =============================================================================
-
-/// RES003: Responses API非対応バックエンドへのリクエストは501を返す
-#[tokio::test]
-#[serial]
-async fn res003_non_supporting_backend_returns_501() {
-    // Responses API非対応ノードを起動（chat_completionsのみ）
-    let node_stub = spawn_integration_node(ResponsesIntegrationState {
-        supports_responses_api: false,
-        model_id: "chat-only-model".to_string(),
-    })
-    .await;
-    let lb = spawn_test_lb().await;
-
-    // エンドポイントを登録
-    let _ = register_responses_endpoint(lb.addr(), node_stub.addr(), "chat-only-model")
-        .await
-        .expect("register endpoint must succeed");
-
-    // /v1/responses にリクエストを送信
-    let client = Client::new();
-    let response = client
-        .post(format!("http://{}/v1/responses", lb.addr()))
-        .header("x-api-key", "sk_debug")
-        .json(&serde_json::json!({
-            "model": "chat-only-model",
-            "input": "Hello"
-        }))
-        .send()
-        .await
-        .expect("request should complete");
-
-    // 501 Not Implemented を期待
-    assert_eq!(
-        response.status(),
-        ReqStatusCode::NOT_IMPLEMENTED,
-        "Should return 501 for non-Responses-API-supporting backend"
-    );
-
-    let body: Value = response.json().await.expect("valid json response");
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("Responses API")
-            || body["error"]["message"]
-                .as_str()
-                .unwrap_or("")
-                .contains("Not Implemented"),
-        "Error message should mention Responses API or Not Implemented"
-    );
-}
-
-// =============================================================================
 // RES004: 認証なしリクエストへの401エラーテスト
 // =============================================================================
 
@@ -352,26 +266,20 @@ async fn res004_request_without_auth_returns_401() {
 async fn res005_responses_route_exists() {
     let lb = spawn_test_lb().await;
 
-    // 認証付きでリクエスト（バックエンドなしでもルートは存在確認可能）
+    // 認証付きで不正リクエスト（modelフィールドなし）を送信し、
+    // 404(ルート未存在)ではなくバリデーションエラーが返ることを確認する。
     let client = Client::new();
     let response = client
         .post(format!("http://{}/v1/responses", lb.addr()))
         .header("x-api-key", "sk_debug")
         .json(&serde_json::json!({
-            "model": "test-model",
             "input": "Hello"
         }))
         .send()
         .await
         .expect("request should complete");
 
-    // 404 NOT FOUND でないことを確認
-    // 503 (バックエンドなし) または 501 (非対応) は許容
-    assert_ne!(
-        response.status(),
-        ReqStatusCode::NOT_FOUND,
-        "/v1/responses route should exist"
-    );
+    assert_eq!(response.status(), ReqStatusCode::BAD_REQUEST);
 }
 
 // =============================================================================
@@ -384,7 +292,6 @@ async fn res005_responses_route_exists() {
 async fn models_api_includes_supported_apis_field() {
     // Responses API対応ノードを起動
     let node_stub = spawn_integration_node(ResponsesIntegrationState {
-        supports_responses_api: true,
         model_id: "responses-capable-model".to_string(),
     })
     .await;
@@ -436,61 +343,5 @@ async fn models_api_includes_supported_apis_field() {
             .iter()
             .any(|api| api.as_str() == Some("responses")),
         "should support responses"
-    );
-}
-
-/// /v1/models で非対応バックエンドは chat_completions のみ表示
-#[tokio::test]
-#[serial]
-async fn models_api_shows_chat_only_for_non_responses_backend() {
-    // Responses API非対応ノードを起動
-    let node_stub = spawn_integration_node(ResponsesIntegrationState {
-        supports_responses_api: false,
-        model_id: "chat-only-model".to_string(),
-    })
-    .await;
-    let lb = spawn_test_lb().await;
-
-    let _ = register_responses_endpoint(lb.addr(), node_stub.addr(), "chat-only-model")
-        .await
-        .expect("register endpoint must succeed");
-
-    // /v1/models を取得
-    let client = Client::new();
-    let response = client
-        .get(format!("http://{}/v1/models", lb.addr()))
-        .header("x-api-key", "sk_debug")
-        .send()
-        .await
-        .expect("models request should succeed");
-
-    assert_eq!(response.status(), ReqStatusCode::OK);
-    let body: Value = response.json().await.expect("valid json response");
-
-    let models = body["data"].as_array().expect("data should be array");
-
-    // chat-only-model を探す
-    let chat_model = models
-        .iter()
-        .find(|m| m["id"].as_str() == Some("chat-only-model"));
-    assert!(chat_model.is_some(), "should find chat-only-model");
-
-    let model = chat_model.unwrap();
-    let supported_apis = model["supported_apis"]
-        .as_array()
-        .expect("supported_apis should be array");
-
-    // Responses API非対応モデルの場合
-    assert!(
-        supported_apis
-            .iter()
-            .any(|api| api.as_str() == Some("chat_completions")),
-        "should support chat_completions"
-    );
-    assert!(
-        !supported_apis
-            .iter()
-            .any(|api| api.as_str() == Some("responses")),
-        "should NOT support responses"
     );
 }

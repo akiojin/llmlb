@@ -201,7 +201,6 @@ export interface DashboardEndpoint {
   error_count: number
   registered_at: string
   notes?: string
-  supports_responses_api: boolean
   model_count: number
 }
 

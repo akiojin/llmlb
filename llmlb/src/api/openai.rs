@@ -323,10 +323,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
-                    // Responses API対応エンドポイントの場合は追加
-                    if ep.supports_responses_api {
-                        apis.insert(SupportedAPI::Responses);
-                    }
+                    // Responses APIは全エンドポイント対応前提（判定/フラグは廃止）
+                    apis.insert(SupportedAPI::Responses);
                 }
             }
         }
@@ -475,9 +473,7 @@ pub async fn get_model(
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
-                    if ep.supports_responses_api {
-                        apis.insert(SupportedAPI::Responses);
-                    }
+                    apis.insert(SupportedAPI::Responses);
                 }
             }
         }
@@ -1864,15 +1860,27 @@ mod tests {
             .expect("Failed to create endpoint registry");
         let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
         let load_manager = LoadManager::new(endpoint_registry_arc);
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
         AppState {
             load_manager,
             request_history,
             db_pool,
             jwt_secret: "test-secret".into(),
-            http_client: reqwest::Client::new(),
+            http_client,
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
             endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
         }
     }
 

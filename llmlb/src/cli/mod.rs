@@ -2,6 +2,7 @@
 //!
 //! Provides command-line interface for load balancer management.
 
+pub mod internal;
 pub mod serve;
 pub mod status;
 pub mod stop;
@@ -38,4 +39,8 @@ pub enum Commands {
     Stop(stop::StopArgs),
     /// Show status of running servers
     Status(status::StatusArgs),
+
+    /// Internal helper commands (self-update)
+    #[command(name = "__internal", hide = true)]
+    Internal(internal::InternalArgs),
 }

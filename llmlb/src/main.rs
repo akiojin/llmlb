@@ -67,6 +67,14 @@ fn main() {
 
     // Handle subcommands
     match cli.command {
+        Some(Commands::Internal(args)) => {
+            logging::init().expect("failed to initialize logging");
+            if let Err(e) = llmlb::cli::internal::execute(args.command) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
         Some(Commands::Stop(args)) => {
             let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
             if let Err(e) = runtime.block_on(llmlb::cli::stop::execute(&args)) {
@@ -96,7 +104,7 @@ fn main() {
                     .enable_all()
                     .build()
                     .expect("failed to build Tokio runtime for server mode");
-                runtime.block_on(run_server(config));
+                runtime.block_on(run_server(config, None));
                 return;
             }
             let tray_options = TrayOptions::new(&config.base_url(), &config.dashboard_url());
@@ -109,7 +117,7 @@ fn main() {
                         .enable_all()
                         .build()
                         .expect("failed to build Tokio runtime for system tray mode");
-                    runtime.block_on(run_server(server_config));
+                    runtime.block_on(run_server(server_config, Some(proxy.clone())));
                     proxy.notify_server_exit();
                 });
             });
@@ -119,7 +127,7 @@ fn main() {
                     .enable_all()
                     .build()
                     .expect("failed to build Tokio runtime for server mode");
-                runtime.block_on(run_server(fallback_config));
+                runtime.block_on(run_server(fallback_config, None));
             }
             return;
         }
@@ -144,7 +152,7 @@ fn main() {
                 .enable_all()
                 .build()
                 .expect("failed to build Tokio runtime for system tray mode");
-            runtime.block_on(run_server(server_config));
+            runtime.block_on(run_server(server_config, Some(proxy.clone())));
             proxy.notify_server_exit();
         });
     });
@@ -154,7 +162,7 @@ fn main() {
             .enable_all()
             .build()
             .expect("failed to build Tokio runtime for server mode");
-        runtime.block_on(run_server(fallback_config));
+        runtime.block_on(run_server(fallback_config, None));
     }
 }
 
@@ -165,6 +173,14 @@ async fn main() {
 
     // Handle subcommands
     match cli.command {
+        Some(Commands::Internal(args)) => {
+            logging::init().expect("failed to initialize logging");
+            if let Err(e) = llmlb::cli::internal::execute(args.command) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
         Some(Commands::Stop(args)) => {
             if let Err(e) = llmlb::cli::stop::execute(&args).await {
                 eprintln!("Error: {}", e);
@@ -346,7 +362,12 @@ fn maybe_raise_nofile_limit() {
     }
 }
 
-async fn run_server(config: ServerConfig) {
+async fn run_server(
+    config: ServerConfig,
+    #[cfg(any(target_os = "windows", target_os = "macos"))] tray_proxy: Option<
+        llmlb::gui::tray::TrayEventProxy,
+    >,
+) {
     info!("LLM Load Balancer v{}", env!("CARGO_PKG_VERSION"));
     maybe_raise_nofile_limit();
 
@@ -442,6 +463,28 @@ async fn run_server(config: ServerConfig) {
         .build()
         .expect("Failed to create HTTP client");
 
+    // Self-update components
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to initialize update manager");
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        let mgr = update_manager.clone();
+        llmlb::gui::tray::set_update_apply_handler(move || mgr.request_apply());
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    if let Some(proxy) = tray_proxy {
+        update_manager.set_tray_proxy(proxy).await;
+    }
+    update_manager.start_background_tasks();
+
     info!(
         "Endpoint registry initialized with {} endpoints",
         endpoint_registry.count().await
@@ -456,6 +499,9 @@ async fn run_server(config: ServerConfig) {
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown: shutdown.clone(),
+        update_manager,
     };
 
     let app = api::create_app(state);
@@ -470,7 +516,7 @@ async fn run_server(config: ServerConfig) {
     info!("LLM Load Balancer server listening on {}", bind_addr);
 
     // シグナルハンドリングを設定
-    let shutdown_signal = shutdown_signal();
+    let shutdown_signal = shutdown_signal(shutdown);
 
     axum::serve(
         listener,
@@ -485,7 +531,7 @@ async fn run_server(config: ServerConfig) {
 }
 
 /// シャットダウンシグナルを待機
-async fn shutdown_signal() {
+async fn shutdown_signal(shutdown: llmlb::shutdown::ShutdownController) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -509,6 +555,9 @@ async fn shutdown_signal() {
         }
         _ = terminate => {
             info!("Received SIGTERM, shutting down...");
+        }
+        _ = shutdown.wait() => {
+            info!("Shutdown requested, shutting down...");
         }
     }
 }

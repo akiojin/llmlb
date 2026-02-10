@@ -353,7 +353,7 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 | `LLMLB_HOST` | `0.0.0.0` | バインドアドレス |
 | `LLMLB_PORT` | `32768` | リッスンポート |
 | `LLMLB_DATABASE_URL` | `sqlite:~/.llmlb/load balancer.db` | データベースURL |
-| `LLMLB_DATA_DIR` | `~/.llmlb` | ログ/旧リクエスト履歴の基準ディレクトリ |
+| `LLMLB_DATA_DIR` | `~/.llmlb` | ログ/リクエスト履歴/自動アップデート（キャッシュ・payload）の基準ディレクトリ |
 | `LLMLB_JWT_SECRET` | 自動生成 | JWT署名シークレット |
 | `LLMLB_ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `LLMLB_ADMIN_PASSWORD` | - | 初期管理者パスワード |
@@ -377,6 +377,23 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 
 Windows 10+ / macOS 12+ ではシステムトレイに常駐します。ヘッドレスで起動したい場合は
 `llmlb serve --no-tray` を利用してください。
+
+#### 自動アップデート（通知 + 承認後に再起動）
+
+llmlb はバックグラウンドで GitHub Releases を確認し（ベストエフォート、最大24時間キャッシュ）、
+更新があればダッシュボードと（Windows/macOS）システムトレイに通知します。
+
+更新を承認（`Restart to update`）すると、以下の順で適用します。
+
+- 新規推論リクエスト（`/v1/*`）を 503 + `Retry-After` で拒否
+- in-flight の推論リクエスト（ストリーミング含む）が完了するまで待機（ドレイン）
+- 更新を適用して再起動
+
+自動適用方式は OS/インストール形態により分岐します。
+
+- ポータブル配置: 実行ファイルを置換（配置先が書き込み可能な場合）
+- macOS `.pkg` / Windows `.msi`: インストーラ実行（必要に応じて権限プロンプト/UAC）
+- Linux の書き込み不可配置: 自動適用は非対応（GitHub Releases から手動更新）
 
 クラウドAPI:
 

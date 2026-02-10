@@ -23,7 +23,6 @@ use serial_test::serial;
 
 #[derive(Clone)]
 struct ResponsesNodeStubState {
-    supports_responses_api: bool,
     response: ResponsesStubResponse,
 }
 
@@ -38,7 +37,6 @@ async fn spawn_responses_node_stub(state: ResponsesNodeStubState) -> TestServer 
     let app = Router::new()
         .route("/v1/responses", post(responses_handler))
         .route("/v1/models", get(models_handler))
-        .route("/health", get(health_handler))
         .with_state(Arc::new(state));
 
     spawn_lb(app).await
@@ -48,14 +46,6 @@ async fn responses_handler(
     State(state): State<Arc<ResponsesNodeStubState>>,
     Json(_req): Json<Value>,
 ) -> impl axum::response::IntoResponse {
-    if !state.supports_responses_api {
-        return (
-            StatusCode::NOT_IMPLEMENTED,
-            "Responses API not supported".to_string(),
-        )
-            .into_response();
-    }
-
     match &state.response {
         ResponsesStubResponse::Success(payload) => {
             (StatusCode::OK, Json(payload.clone())).into_response()
@@ -73,17 +63,6 @@ async fn models_handler(State(_state): State<Arc<ResponsesNodeStubState>>) -> im
     (StatusCode::OK, Json(serde_json::json!({"data": models}))).into_response()
 }
 
-async fn health_handler(State(state): State<Arc<ResponsesNodeStubState>>) -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "status": "ok",
-            "supports_responses_api": state.supports_responses_api
-        })),
-    )
-        .into_response()
-}
-
 // =============================================================================
 // T057: POST /v1/responses 基本リクエストテスト
 // =============================================================================
@@ -93,7 +72,6 @@ async fn health_handler(State(state): State<Arc<ResponsesNodeStubState>>) -> imp
 async fn responses_api_basic_request_success() {
     // Responses API対応ノードをスタブとして起動
     let node_stub = spawn_responses_node_stub(ResponsesNodeStubState {
-        supports_responses_api: true,
         response: ResponsesStubResponse::Success(serde_json::json!({
             "id": "resp_123",
             "object": "response",
@@ -150,24 +128,21 @@ async fn responses_api_basic_request_success() {
 }
 
 // =============================================================================
-// T058: 501 Not Implementedエラーテスト
+// T058: バックエンドのエラーステータスをパススルーする
 // =============================================================================
 
 #[tokio::test]
 #[serial]
-async fn responses_api_returns_501_for_non_supporting_backend() {
-    // Responses API非対応ノードをスタブとして起動
+async fn responses_api_passthroughs_backend_error_status() {
     let node_stub = spawn_responses_node_stub(ResponsesNodeStubState {
-        supports_responses_api: false,
         response: ResponsesStubResponse::Error(
             StatusCode::NOT_IMPLEMENTED,
-            "Responses API not supported".to_string(),
+            "backend_not_implemented".to_string(),
         ),
     })
     .await;
     let lb = spawn_test_lb().await;
 
-    // エンドポイントを登録（supports_responses_api: false が検出される）
     let _ = register_responses_endpoint(lb.addr(), node_stub.addr(), "test-model")
         .await
         .expect("register endpoint must succeed");
@@ -183,15 +158,11 @@ async fn responses_api_returns_501_for_non_supporting_backend() {
         }))
         .send()
         .await
-        .expect("responses request should return 501");
+        .expect("responses request should complete");
 
-    // 501 Not Implementedを確認（Responses API非対応エンドポイントしかないため）
     assert_eq!(response.status(), ReqStatusCode::NOT_IMPLEMENTED);
-    let body: Value = response.json().await.expect("valid json response");
-    assert!(body["error"]["message"]
-        .as_str()
-        .unwrap_or("")
-        .contains("Not Implemented"));
+    let body = response.text().await.expect("read body text");
+    assert_eq!(body, "backend_not_implemented");
 }
 
 // =============================================================================
@@ -253,7 +224,6 @@ async fn responses_api_streaming_passthrough() {
     // ここでは基本的なstream=trueのリクエスト受付を確認
 
     let node_stub = spawn_responses_node_stub(ResponsesNodeStubState {
-        supports_responses_api: true,
         response: ResponsesStubResponse::Success(serde_json::json!({
             "id": "resp_123",
             "object": "response"
@@ -281,8 +251,5 @@ async fn responses_api_streaming_passthrough() {
         .expect("streaming responses request should succeed");
 
     // ストリーミングリクエストが受け付けられることを確認
-    assert!(
-        response.status() == ReqStatusCode::OK
-            || response.status() == ReqStatusCode::NOT_IMPLEMENTED
-    );
+    assert_eq!(response.status(), ReqStatusCode::OK);
 }

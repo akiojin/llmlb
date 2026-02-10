@@ -201,7 +201,6 @@ export interface DashboardEndpoint {
   error_count: number
   registered_at: string
   notes?: string
-  supports_responses_api: boolean
   model_count: number
 }
 
@@ -363,6 +362,53 @@ export const dashboardApi = {
 
   getRouterLogs: (params?: { limit?: number }) =>
     fetchWithAuth<LogResponse>('/api/dashboard/logs/lb', { params }),
+}
+
+/**
+ * System API (self-update)
+ */
+export type UpdatePayloadState =
+  | { payload: 'not_ready' }
+  | { payload: 'downloading'; started_at: string }
+  | { payload: 'ready'; kind: unknown }
+  | { payload: 'error'; message: string }
+
+export type UpdateState =
+  | { state: 'up_to_date'; checked_at?: string | null }
+  | {
+      state: 'available'
+      current: string
+      latest: string
+      release_url: string
+      portable_asset_url?: string | null
+      installer_asset_url?: string | null
+      payload: UpdatePayloadState
+      checked_at: string
+    }
+  | { state: 'draining'; latest: string; in_flight: number; requested_at: string }
+  | { state: 'applying'; latest: string; method: string }
+  | {
+      state: 'failed'
+      latest?: string | null
+      release_url?: string | null
+      message: string
+      failed_at: string
+    }
+
+export interface SystemInfo {
+  version: string
+  pid: number
+  in_flight: number
+  update: UpdateState
+}
+
+export const systemApi = {
+  getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
+  applyUpdate: () =>
+    fetchWithAuth<{ queued: boolean }>('/api/system/update/apply', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
 }
 
 /**

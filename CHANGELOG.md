@@ -1,5 +1,15 @@
 # Unreleased
 
+# [4.0.0](https://github.com/akiojin/llmlb/compare/v3.1.0...v4.0.0) (2026-02-10)
+
+### Breaking Changes
+
+- OpenAI互換API: `supports_responses_api`フラグを削除 (#378)
+
+### Features
+
+- セルフアップデート通知・ドレイン・適用・再起動機能を追加 (#379)
+
 # [3.1.0](https://github.com/akiojin/llmlb/compare/v3.0.3...v3.1.0) (2026-02-09)
 
 ### Features

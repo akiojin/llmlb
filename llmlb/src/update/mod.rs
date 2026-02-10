@@ -628,10 +628,12 @@ fn default_paths() -> Result<(PathBuf, PathBuf)> {
     let data_dir = if let Ok(dir) = std::env::var("LLMLB_DATA_DIR") {
         PathBuf::from(dir)
     } else {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .context("Failed to resolve home directory")?;
-        PathBuf::from(home).join(".llmlb")
+        match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            Ok(home) => PathBuf::from(home).join(".llmlb"),
+            // Some environments (systemd services, minimal containers) may not set HOME/USERPROFILE.
+            // Self-update should not prevent startup, so use a best-effort temporary directory.
+            Err(_) => std::env::temp_dir().join("llmlb"),
+        }
     };
     Ok((data_dir.join("update-check.json"), data_dir.join("updates")))
 }
@@ -1007,6 +1009,7 @@ fn spawn_internal_run_installer(
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn sh_single_quote(s: &str) -> String {
     if s.is_empty() {
         return "''".to_string();
@@ -1015,6 +1018,7 @@ fn sh_single_quote(s: &str) -> String {
     format!("'{escaped}'")
 }
 
+#[cfg(target_os = "macos")]
 fn escape_applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -1069,6 +1073,7 @@ pub(crate) fn internal_apply_update(
     Ok(())
 }
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 pub(crate) fn internal_run_installer(
     old_pid: u32,
     target: PathBuf,
@@ -1117,6 +1122,19 @@ pub(crate) fn internal_run_installer(
 
     restart_from_args_file(&target, &args_file)?;
     Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub(crate) fn internal_run_installer(
+    _old_pid: u32,
+    _target: PathBuf,
+    _installer: PathBuf,
+    _installer_kind: InstallerKind,
+    _args_file: PathBuf,
+) -> Result<()> {
+    Err(anyhow!(
+        "installer updates are only supported on macOS/Windows"
+    ))
 }
 
 fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<()> {

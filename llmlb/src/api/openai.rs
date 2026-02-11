@@ -1326,7 +1326,12 @@ async fn proxy_openai_post(
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
 
-    let response = match client.post(&runtime_url).json(&payload).send().await {
+    let mut request_builder = client.post(&runtime_url).json(&payload);
+    if let Some(api_key) = &endpoint.api_key {
+        request_builder = request_builder.bearer_auth(api_key);
+    }
+
+    let response = match request_builder.send().await {
         Ok(res) => res,
         Err(e) => {
             let duration = start.elapsed();

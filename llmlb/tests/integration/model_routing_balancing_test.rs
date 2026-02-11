@@ -8,7 +8,7 @@ use crate::support::{
 };
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -23,6 +23,13 @@ struct EndpointStubState {
     models: Vec<String>,
 }
 
+#[derive(Clone)]
+struct AuthEndpointStubState {
+    endpoint_label: String,
+    model: String,
+    required_token: String,
+}
+
 async fn spawn_endpoint_stub(state: EndpointStubState) -> TestServer {
     let app = Router::new()
         .route("/v1/models", get(models_handler))
@@ -30,6 +37,23 @@ async fn spawn_endpoint_stub(state: EndpointStubState) -> TestServer {
         .with_state(Arc::new(state));
 
     spawn_lb(app).await
+}
+
+async fn spawn_auth_endpoint_stub(state: AuthEndpointStubState) -> TestServer {
+    let app = Router::new()
+        .route("/v1/models", get(auth_models_handler))
+        .route("/v1/chat/completions", post(auth_chat_handler))
+        .with_state(Arc::new(state));
+
+    spawn_lb(app).await
+}
+
+fn has_expected_bearer_token(headers: &HeaderMap, token: &str) -> bool {
+    let expected = format!("Bearer {}", token);
+    headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        == Some(expected.as_str())
 }
 
 async fn models_handler(State(state): State<Arc<EndpointStubState>>) -> impl IntoResponse {
@@ -50,6 +74,38 @@ async fn models_handler(State(state): State<Arc<EndpointStubState>>) -> impl Int
         StatusCode::OK,
         Json(json!({ "object": "list", "data": data })),
     )
+}
+
+async fn auth_models_handler(
+    State(state): State<Arc<AuthEndpointStubState>>,
+    headers: HeaderMap,
+) -> Response {
+    if !has_expected_bearer_token(&headers, &state.required_token) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": {
+                    "message": "missing or invalid authorization",
+                    "type": "invalid_request_error"
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "object": "list",
+            "data": [{
+                "id": state.model,
+                "object": "model",
+                "created": 0,
+                "owned_by": state.endpoint_label
+            }]
+        })),
+    )
+        .into_response()
 }
 
 async fn chat_handler(
@@ -92,20 +148,89 @@ async fn chat_handler(
         .into_response()
 }
 
+async fn auth_chat_handler(
+    State(state): State<Arc<AuthEndpointStubState>>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Response {
+    if !has_expected_bearer_token(&headers, &state.required_token) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": {
+                    "message": "missing or invalid authorization",
+                    "type": "invalid_request_error"
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    let model = payload
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+
+    if model != state.model {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": {
+                    "message": format!("model '{}' not found on {}", model, state.endpoint_label),
+                    "type": "invalid_request_error"
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "id": format!("chatcmpl-{}", state.endpoint_label),
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": format!("served-by={}", state.endpoint_label)
+                },
+                "finish_reason": "stop"
+            }]
+        })),
+    )
+        .into_response()
+}
+
 async fn register_and_sync_endpoint(
     client: &Client,
     lb_addr: SocketAddr,
     name: &str,
     base_url: &str,
 ) -> String {
+    register_and_sync_endpoint_with_api_key(client, lb_addr, name, base_url, None).await
+}
+
+async fn register_and_sync_endpoint_with_api_key(
+    client: &Client,
+    lb_addr: SocketAddr,
+    name: &str,
+    base_url: &str,
+    endpoint_api_key: Option<&str>,
+) -> String {
+    let mut payload = json!({
+        "name": name,
+        "base_url": base_url,
+        "health_check_interval_secs": 30
+    });
+    if let Some(key) = endpoint_api_key {
+        payload["api_key"] = Value::String(key.to_string());
+    }
+
     let create_resp = client
         .post(format!("http://{}/api/endpoints", lb_addr))
         .header("authorization", "Bearer sk_debug")
-        .json(&json!({
-            "name": name,
-            "base_url": base_url,
-            "health_check_interval_secs": 30
-        }))
+        .json(&payload)
         .send()
         .await
         .expect("create endpoint request");
@@ -296,4 +421,52 @@ async fn chat_completions_balances_across_endpoints_having_same_model() {
         !served_by.contains("served-by=ep-c"),
         "endpoint without qwen3-coder:30b must not receive traffic for that model"
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn chat_completions_forwards_endpoint_api_key_when_set() {
+    let lb = spawn_test_lb().await;
+    let client = Client::new();
+    let upstream_token = "upstream-secret-token";
+    let model = "api-key-model";
+
+    let ep = spawn_auth_endpoint_stub(AuthEndpointStubState {
+        endpoint_label: "ep-auth".to_string(),
+        model: model.to_string(),
+        required_token: upstream_token.to_string(),
+    })
+    .await;
+
+    register_and_sync_endpoint_with_api_key(
+        &client,
+        lb.addr(),
+        "Auth Required Endpoint",
+        &format!("http://{}", ep.addr()),
+        Some(upstream_token),
+    )
+    .await;
+
+    let resp = client
+        .post(format!("http://{}/v1/chat/completions", lb.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&json!({
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "stream": false
+        }))
+        .send()
+        .await
+        .expect("chat request");
+
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::OK,
+        "endpoint API key should be forwarded to upstream backend"
+    );
+    let body: Value = resp.json().await.expect("chat response json");
+    let content = body["choices"][0]["message"]["content"]
+        .as_str()
+        .expect("assistant content");
+    assert_eq!(content, "served-by=ep-auth");
 }

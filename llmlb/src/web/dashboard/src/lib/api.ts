@@ -202,6 +202,9 @@ export interface DashboardEndpoint {
   registered_at: string
   notes?: string
   model_count: number
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
 }
 
 /**
@@ -416,6 +419,36 @@ export const systemApi = {
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
+/**
+ * SPEC-76643000: Endpoint today stats (daily summary for a single day)
+ */
+export interface EndpointTodayStats {
+  date: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
+/**
+ * SPEC-76643000: Daily stat entry (used for trend charts)
+ */
+export interface EndpointDailyStatEntry {
+  date: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
+/**
+ * SPEC-76643000: Model-level request statistics entry
+ */
+export interface ModelStatEntry {
+  model_id: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
 export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
@@ -512,6 +545,20 @@ export const endpointsApi = {
     fetchWithAuth<ModelMetadata>(
       `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`
     ),
+
+  /** SPEC-76643000: Get today's request statistics for an endpoint */
+  getTodayStats: (id: string) =>
+    fetchWithAuth<EndpointTodayStats>(`/api/endpoints/${id}/today-stats`),
+
+  /** SPEC-76643000: Get daily request statistics for an endpoint */
+  getDailyStats: (id: string, days?: number) =>
+    fetchWithAuth<EndpointDailyStatEntry[]>(`/api/endpoints/${id}/daily-stats`, {
+      params: { days },
+    }),
+
+  /** SPEC-76643000: Get model-level request statistics */
+  getModelStats: (id: string) =>
+    fetchWithAuth<ModelStatEntry[]>(`/api/endpoints/${id}/model-stats`),
 
   /** Proxy chat completions to endpoint (JWT authenticated) */
   chatCompletions: async (

@@ -443,6 +443,7 @@ async fn run_server(
         tracing::warn!("Failed to import legacy request history: {}", err);
     }
     llmlb::db::request_history::start_cleanup_task(request_history.clone());
+    llmlb::db::endpoint_daily_stats::start_daily_stats_task(db_pool.clone());
 
     // 管理者が存在しない場合は作成
     auth::bootstrap::ensure_admin_exists(&db_pool)

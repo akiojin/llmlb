@@ -133,6 +133,38 @@ pub(crate) fn save_request_record(
     });
 }
 
+/// エンドポイントリクエスト統計を更新（Fire-and-forget）（SPEC-76643000）
+///
+/// endpointsテーブルの累計カウンタとendpoint_daily_statsの日次集計を
+/// 非同期で更新する。リクエスト処理のレイテンシに影響を与えない。
+pub(crate) fn record_endpoint_request_stats(
+    pool: sqlx::SqlitePool,
+    endpoint_id: uuid::Uuid,
+    model_id: String,
+    success: bool,
+) {
+    tokio::spawn(async move {
+        let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+        if let Err(e) =
+            crate::db::endpoints::increment_request_counters(&pool, endpoint_id, success).await
+        {
+            tracing::error!("Failed to increment endpoint request counters: {}", e);
+        }
+
+        if let Err(e) = crate::db::endpoint_daily_stats::upsert_daily_stats(
+            &pool,
+            endpoint_id,
+            &model_id,
+            &date,
+            success,
+        )
+        .await
+        {
+            tracing::error!("Failed to upsert daily stats: {}", e);
+        }
+    });
+}
 /// エンドポイントにリクエストを転送
 ///
 /// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す

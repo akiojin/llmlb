@@ -65,7 +65,7 @@ interface EndpointTableProps {
   isLoading: boolean
 }
 
-type SortField = 'name' | 'status' | 'latency_ms' | 'model_count' | 'registered_at'
+type SortField = 'name' | 'status' | 'total_requests' | 'latency_ms' | 'model_count' | 'registered_at'
 type SortDirection = 'asc' | 'desc'
 
 const PAGE_SIZE = 10
@@ -260,6 +260,9 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
           comparison = statusOrder[a.status] - statusOrder[b.status]
           break
         }
+        case 'total_requests':
+          comparison = a.total_requests - b.total_requests
+          break
         case 'latency_ms':
           comparison = (a.latency_ms ?? Infinity) - (b.latency_ms ?? Infinity)
           break
@@ -413,6 +416,13 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
+                    onClick={() => handleSort('total_requests')}
+                  >
+                    Requests
+                    <SortIcon field="total_requests" />
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('latency_ms')}
                   >
                     Latency
@@ -432,7 +442,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               <TableBody>
                 {paginatedEndpoints.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       {search || statusFilter !== 'all'
                         ? 'No endpoints match the filter criteria'
                         : 'No endpoints registered'}
@@ -467,6 +477,30 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                           <span className="ml-2 text-xs text-destructive">
                             ({endpoint.error_count} errors)
                           </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {endpoint.total_requests > 0 ? (
+                          <span
+                            className={cn(
+                              endpoint.total_requests > 0 &&
+                                endpoint.failed_requests / endpoint.total_requests >= 0.2
+                                ? 'text-destructive font-medium'
+                                : endpoint.total_requests > 0 &&
+                                    endpoint.failed_requests / endpoint.total_requests >= 0.05
+                                  ? 'text-yellow-600 dark:text-yellow-500 font-medium'
+                                  : ''
+                            )}
+                          >
+                            {endpoint.total_requests.toLocaleString()}
+                            {' '}
+                            ({(
+                              (endpoint.successful_requests / endpoint.total_requests) *
+                              100
+                            ).toFixed(1)}%)
+                          </span>
+                        ) : (
+                          '-'
                         )}
                       </TableCell>
                       <TableCell className="text-right">

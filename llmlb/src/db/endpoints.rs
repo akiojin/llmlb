@@ -70,7 +70,8 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
-               device_info, inference_latency_ms
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         ORDER BY registered_at DESC
         "#,
@@ -90,7 +91,8 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
-               device_info, inference_latency_ms
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE id = ?
         "#,
@@ -172,7 +174,8 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
-               device_info, inference_latency_ms
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE name = ?
         "#,
@@ -196,7 +199,8 @@ pub async fn list_endpoints_by_status(
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
-               device_info, inference_latency_ms
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE status = ?
         ORDER BY registered_at DESC
@@ -221,7 +225,8 @@ pub async fn list_endpoints_by_type(
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
-               device_info, inference_latency_ms
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE endpoint_type = ?
         ORDER BY registered_at DESC
@@ -247,7 +252,8 @@ pub async fn list_endpoints_by_type_and_status(
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
-               device_info, inference_latency_ms
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE endpoint_type = ? AND status = ?
         ORDER BY registered_at DESC
@@ -361,6 +367,30 @@ pub async fn update_device_info(
         "#,
     )
     .bind(&device_info_json)
+    .bind(id.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// エンドポイントのリクエストカウンタをインクリメント（SPEC-76643000）
+pub async fn increment_request_counters(
+    pool: &SqlitePool,
+    id: Uuid,
+    success: bool,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE endpoints SET
+            total_requests = total_requests + 1,
+            successful_requests = successful_requests + CASE WHEN ? THEN 1 ELSE 0 END,
+            failed_requests = failed_requests + CASE WHEN ? THEN 0 ELSE 1 END
+        WHERE id = ?
+        "#,
+    )
+    .bind(success)
+    .bind(success)
     .bind(id.to_string())
     .execute(pool)
     .await?;
@@ -599,6 +629,12 @@ struct EndpointRow {
     device_info: Option<String>,
     /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2で計算）
     inference_latency_ms: Option<f64>,
+    /// SPEC-76643000: 累計リクエスト数
+    total_requests: i64,
+    /// SPEC-76643000: 累計成功リクエスト数
+    successful_requests: i64,
+    /// SPEC-76643000: 累計失敗リクエスト数
+    failed_requests: i64,
 }
 
 impl From<EndpointRow> for Endpoint {
@@ -644,6 +680,9 @@ impl From<EndpointRow> for Endpoint {
             // SPEC-f8e3a1b7: デバイス情報とレイテンシ
             device_info: row.device_info.and_then(|s| serde_json::from_str(&s).ok()),
             inference_latency_ms: row.inference_latency_ms,
+            total_requests: row.total_requests,
+            successful_requests: row.successful_requests,
+            failed_requests: row.failed_requests,
         }
     }
 }
@@ -872,5 +911,53 @@ mod tests {
             .unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].name, "Pending EP");
+    }
+
+    #[tokio::test]
+    async fn test_increment_request_counters() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint = Endpoint::new(
+            "Counter Test".to_string(),
+            "http://localhost:9090".to_string(),
+        );
+        create_endpoint(&pool, &endpoint).await.unwrap();
+
+        // Verify initial counters are 0
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 0);
+        assert_eq!(ep.successful_requests, 0);
+        assert_eq!(ep.failed_requests, 0);
+
+        // Increment with success
+        increment_request_counters(&pool, endpoint.id, true)
+            .await
+            .unwrap();
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 1);
+        assert_eq!(ep.successful_requests, 1);
+        assert_eq!(ep.failed_requests, 0);
+
+        // Increment with failure
+        increment_request_counters(&pool, endpoint.id, false)
+            .await
+            .unwrap();
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 2);
+        assert_eq!(ep.successful_requests, 1);
+        assert_eq!(ep.failed_requests, 1);
+
+        // Multiple successes
+        increment_request_counters(&pool, endpoint.id, true)
+            .await
+            .unwrap();
+        increment_request_counters(&pool, endpoint.id, true)
+            .await
+            .unwrap();
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 4);
+        assert_eq!(ep.successful_requests, 3);
+        assert_eq!(ep.failed_requests, 1);
     }
 }

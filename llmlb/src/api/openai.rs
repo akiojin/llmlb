@@ -30,8 +30,9 @@ use crate::{
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         proxy::{
-            forward_streaming_response, save_request_record, select_available_endpoint,
-            select_available_endpoint_with_queue_for_model, QueueSelection,
+            forward_streaming_response, record_endpoint_request_stats, save_request_record,
+            select_available_endpoint, select_available_endpoint_with_queue_for_model,
+            QueueSelection,
         },
     },
     balancer::RequestOutcome,
@@ -1340,6 +1341,7 @@ async fn proxy_openai_post(
                 .finish_request(endpoint_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
 
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly
@@ -1382,6 +1384,7 @@ async fn proxy_openai_post(
             .map_err(AppError::from)?;
         // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
         update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
 
         save_request_record(
             state.request_history.clone(),
@@ -1419,6 +1422,7 @@ async fn proxy_openai_post(
             .finish_request(endpoint_id, RequestOutcome::Error, duration)
             .await
             .map_err(AppError::from)?;
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
 
         // Note: Model exclusion is handled by the health check system
         // which will mark the endpoint as offline/error if requests fail repeatedly
@@ -1479,6 +1483,7 @@ async fn proxy_openai_post(
             .finish_request(endpoint_id, RequestOutcome::Success, duration)
             .await
             .map_err(AppError::from)?;
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
 
         save_request_record(
             state.request_history.clone(),
@@ -1529,6 +1534,7 @@ async fn proxy_openai_post(
                 .map_err(AppError::from)?;
             // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
             update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
 
             // RequestResponseRecordにトークン情報を保存
             let (input_tokens, output_tokens, total_tokens) = token_usage
@@ -1570,6 +1576,7 @@ async fn proxy_openai_post(
                 .finish_request(endpoint_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
 
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly

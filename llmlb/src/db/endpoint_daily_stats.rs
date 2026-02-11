@@ -112,11 +112,17 @@ pub async fn upsert_daily_stats(
 ///
 /// 指定エンドポイントの直近N日分の日次データを日付昇順で返す。
 /// 全モデルの合計値を日付ごとに集計する。
+/// 日付はサーバーローカル時間で計算（書き込み時と一致）。
 pub async fn get_daily_stats(
     pool: &SqlitePool,
     endpoint_id: Uuid,
     days: u32,
 ) -> Result<Vec<DailyStatEntry>, sqlx::Error> {
+    let days = days.max(1);
+    let start_date = (chrono::Local::now() - chrono::Duration::days((days - 1) as i64))
+        .format("%Y-%m-%d")
+        .to_string();
+
     let rows = sqlx::query_as::<_, DailyStatRow>(
         r#"
         SELECT
@@ -126,13 +132,13 @@ pub async fn get_daily_stats(
             SUM(failed_requests) AS failed_requests
         FROM endpoint_daily_stats
         WHERE endpoint_id = ?
-          AND date >= date('now', '-' || ? || ' days')
+          AND date >= ?
         GROUP BY date
         ORDER BY date ASC
         "#,
     )
     .bind(endpoint_id.to_string())
-    .bind(days as i64)
+    .bind(&start_date)
     .fetch_all(pool)
     .await?;
 

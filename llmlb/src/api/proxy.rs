@@ -133,33 +133,6 @@ pub(crate) fn save_request_record(
     });
 }
 
-/// エンドポイント選択結果
-pub(crate) enum EndpointSelection {
-    /// エンドポイントが見つかった（Boxでヒープ割り当て、enum sizeの最適化）
-    Found(Box<Endpoint>),
-    /// モデルをサポートするエンドポイントがない
-    NotFound,
-}
-
-/// モデルIDからエンドポイントを選択（レイテンシ順）
-///
-/// EndpointRegistryからモデルをサポートするオンラインエンドポイントを検索し、
-/// 最もレイテンシが低いものを返す。
-pub(crate) async fn select_endpoint_for_model(
-    state: &AppState,
-    model_id: &str,
-) -> Result<EndpointSelection, LbError> {
-    let endpoints = state
-        .endpoint_registry
-        .find_by_model_sorted_by_latency(model_id)
-        .await;
-
-    match endpoints.into_iter().next() {
-        Some(endpoint) => Ok(EndpointSelection::Found(Box::new(endpoint))),
-        None => Ok(EndpointSelection::NotFound),
-    }
-}
-
 /// エンドポイントにリクエストを転送
 ///
 /// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す

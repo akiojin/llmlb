@@ -331,6 +331,19 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/endpoints/{id}/models/{model}/info",
             get(endpoints::get_model_info),
+        )
+        // SPEC-76643000: エンドポイント単位リクエスト統計
+        .route(
+            "/endpoints/{id}/today-stats",
+            get(dashboard::get_endpoint_today_stats),
+        )
+        .route(
+            "/endpoints/{id}/daily-stats",
+            get(dashboard::get_endpoint_daily_stats),
+        )
+        .route(
+            "/endpoints/{id}/model-stats",
+            get(dashboard::get_endpoint_model_stats),
         );
     let endpoint_read_routes = if auth_disabled {
         endpoint_read_routes.layer(middleware::from_fn_with_state(

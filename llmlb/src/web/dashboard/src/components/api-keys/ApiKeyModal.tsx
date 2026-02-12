@@ -130,12 +130,17 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     }
   }, [createOpen])
 
-  const copyToClipboard = async (text: string, id: string) => {
+  const copyToClipboard = async (
+    text: string,
+    id: string,
+    toastTitle = 'Copied to clipboard',
+    toastDescription?: string
+  ) => {
     try {
       await navigator.clipboard.writeText(text)
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 2000)
-      toast({ title: 'Copied to clipboard' })
+      toast({ title: toastTitle, description: toastDescription })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
     }
@@ -286,7 +291,9 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     id="copy-api-key"
                     variant="ghost"
                     size="icon"
-                    onClick={() => copyToClipboard(createdKey, 'created')}
+                    aria-label="Copy full API key"
+                    title="Copy full API key"
+                    onClick={() => copyToClipboard(createdKey, 'created', 'Copied full API key')}
                   >
                     {copiedId === 'created' ? (
                       <Check className="h-4 w-4" />
@@ -315,7 +322,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Permissions</TableHead>
-                      <TableHead>Key</TableHead>
+                      <TableHead>Key prefix</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -344,7 +351,16 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
-                                onClick={() => copyToClipboard(key.key_prefix!, key.id)}
+                                aria-label="Copy key prefix"
+                                title="Copy key prefix (the full key is only shown once at creation)"
+                                onClick={() =>
+                                  copyToClipboard(
+                                    key.key_prefix!,
+                                    key.id,
+                                    'Copied key prefix',
+                                    'Full API keys are only shown once at creation time.'
+                                  )
+                                }
                               >
                                 {copiedId === key.id ? (
                                   <Check className="h-3 w-3" />

@@ -154,17 +154,12 @@ export class DashboardPage {
   }
 
   /**
-   * Opens the Playground in a new tab.
-   * Note: The Playground is a separate page, not a modal.
-   * @returns The new page object for the Playground tab
+   * Opens the load balancer playground in the same tab.
    */
   async openPlayground() {
-    const [newPage] = await Promise.all([
-      this.page.context().waitForEvent('page'),
-      this.playgroundButton.click(),
-    ]);
-    await newPage.waitForLoadState('networkidle');
-    return newPage;
+    await this.playgroundButton.click();
+    await this.page.waitForURL('**/dashboard/#lb-playground');
+    return this.page;
   }
 
   /**

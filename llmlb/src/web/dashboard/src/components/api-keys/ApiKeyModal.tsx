@@ -130,12 +130,17 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     }
   }, [createOpen])
 
-  const copyToClipboard = async (text: string, id: string) => {
+  const copyToClipboard = async (
+    text: string,
+    id: string,
+    toastTitle = 'Copied to clipboard',
+    toastDescription?: string
+  ) => {
     try {
       await navigator.clipboard.writeText(text)
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 2000)
-      toast({ title: 'Copied to clipboard' })
+      toast({ title: toastTitle, description: toastDescription })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
     }
@@ -161,6 +166,13 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
       }
       return prev.filter((item) => item !== permission)
     })
+  }
+
+  const isPermissionEnabled = (permission: ApiKeyPermission) =>
+    newKeyPermissions.includes(permission)
+
+  const togglePermissionByRow = (permission: ApiKeyPermission) => {
+    togglePermission(permission, !isPermissionEnabled(permission))
   }
 
   const permissionLabels: {
@@ -279,7 +291,9 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     id="copy-api-key"
                     variant="ghost"
                     size="icon"
-                    onClick={() => copyToClipboard(createdKey, 'created')}
+                    aria-label="Copy full API key"
+                    title="Copy full API key"
+                    onClick={() => copyToClipboard(createdKey, 'created', 'Copied full API key')}
                   >
                     {copiedId === 'created' ? (
                       <Check className="h-4 w-4" />
@@ -308,7 +322,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Permissions</TableHead>
-                      <TableHead>Key</TableHead>
+                      <TableHead>Key prefix</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -337,7 +351,16 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
-                                onClick={() => copyToClipboard(key.key_prefix!, key.id)}
+                                aria-label="Copy key prefix"
+                                title="Copy key prefix (the full key is only shown once at creation)"
+                                onClick={() =>
+                                  copyToClipboard(
+                                    key.key_prefix!,
+                                    key.id,
+                                    'Copied key prefix',
+                                    'Full API keys are only shown once at creation time.'
+                                  )
+                                }
                               >
                                 {copiedId === key.id ? (
                                   <Check className="h-3 w-3" />
@@ -390,7 +413,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
 
       {/* Create Key Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto border-border bg-card text-card-foreground">
           <DialogHeader>
             <DialogTitle>Create API Key</DialogTitle>
             <DialogDescription>
@@ -417,27 +440,46 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Permissions</Label>
-              <div className="grid gap-2">
+              <Label className="text-foreground">Permissions</Label>
+              <div className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3">
                 {permissionLabels.map((permission) => {
-                  const checkboxId = `permission-${permission.value.replace(/[^a-z0-9]/gi, "-")}`;
+                  const permissionSlug = permission.value.replace(/[^a-z0-9]/gi, '-')
+                  const checkboxId = `permission-${permissionSlug}`
+                  const isChecked = isPermissionEnabled(permission.value)
                   return (
-                    <div key={permission.value} className="flex items-start gap-2 text-sm">
+                    <div
+                      key={permission.value}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`permission-row-${permissionSlug}`}
+                      className="flex cursor-pointer items-start gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2 text-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() => togglePermissionByRow(permission.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          togglePermissionByRow(permission.value)
+                        }
+                      }}
+                    >
                       <Checkbox
                         id={checkboxId}
-                        checked={newKeyPermissions.includes(permission.value)}
+                        data-testid={`permission-checkbox-${permissionSlug}`}
+                        checked={isChecked}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                        }}
                         onCheckedChange={(checked) =>
-                          togglePermission(permission.value, Boolean(checked))
+                          togglePermission(permission.value, checked === true)
                         }
                       />
-                      <label htmlFor={checkboxId} className="flex flex-col gap-1 cursor-pointer">
-                        <span className="font-mono text-xs">{permission.label}</span>
-                        <span className="text-xs text-muted-foreground">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-mono text-xs text-foreground">{permission.label}</span>
+                        <span className="text-xs leading-4 text-muted-foreground">
                           {permission.description}
                         </span>
-                      </label>
+                      </div>
                     </div>
-                  );
+                  )
                 })}
               </div>
             </div>

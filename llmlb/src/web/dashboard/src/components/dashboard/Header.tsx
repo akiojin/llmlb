@@ -18,6 +18,7 @@ import {
   Key,
   LogOut,
   Moon,
+  Network,
   Sun,
   User,
   Users,
@@ -107,6 +108,19 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
               API Keys
             </Button>
 
+            <Button
+              id="lb-playground-button"
+              variant="outline"
+              size="sm"
+              className="hidden lg:inline-flex"
+              onClick={() => {
+                window.location.hash = 'lb-playground'
+              }}
+            >
+              <Network className="mr-2 h-4 w-4" />
+              LB Playground
+            </Button>
+
             {/* Refresh Button */}
             <Button
               id="refresh-button"
@@ -154,6 +168,15 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
                 >
                   <Key className="mr-2 h-4 w-4" />
                   API Keys
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    window.location.hash = 'lb-playground'
+                  }}
+                  className="lg:hidden"
+                >
+                  <Network className="mr-2 h-4 w-4" />
+                  LB Playground
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="sm:hidden" />
 

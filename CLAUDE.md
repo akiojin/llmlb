@@ -262,6 +262,12 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 - 現在のブランチの切り替えは禁止（`git switch`, `git checkout` などを実行しない）
 - ブランチやWorktreeの作成・切り替えはリポジトリメンテナが必要時に実施する。作業者は現状の環境を維持してタスクを完了させること。
 
+### ダッシュボード静的アセット（重要）
+
+- ダッシュボードのソースは `llmlb/src/web/dashboard/src/`、ビルド成果物は `llmlb/src/web/static/` に出力される（Vite `outDir`）。
+- Rustサーバーは `llmlb/src/web/static/` を **ビルド時にバイナリへ埋め込む**。
+- ダッシュボード（TS/TSX/CSS）を修正したら必ず `pnpm --filter @llm/dashboard build` を実行し、生成物（`llmlb/src/web/static/`）をコミットしてから `llmlb` を再ビルドすること。
+
 ### ローカル検証（絶対厳守）
 
 GitHub Actions が実行する検証を**全てローカルで事前に成功させてから**コミットすること。例外は認めない。

@@ -216,16 +216,27 @@ pub struct MonthlyTokenStats {
 
 ## 集計クエリ例
 
+> NOTE: `total_tokens` は OpenAI 互換レスポンスの `usage.total_tokens` 由来だが、
+> 何らかの理由で NULL になり得る（古いレコード、部分的な記録、互換実装の揺れなど）。
+> 集計時は `total_tokens` を優先し、NULL の場合は `input_tokens + output_tokens` を推定値として用いる。
+
 ### ノード別累計
 
 ```sql
 SELECT
     runtime_id,
-    SUM(input_tokens) as total_input,
-    SUM(output_tokens) as total_output,
-    SUM(total_tokens) as total
+    COALESCE(SUM(input_tokens), 0) as total_input,
+    COALESCE(SUM(output_tokens), 0) as total_output,
+    COALESCE(
+        SUM(
+            COALESCE(
+                total_tokens,
+                COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+            )
+        ),
+        0
+    ) as total
 FROM request_history
-WHERE input_tokens IS NOT NULL
 GROUP BY runtime_id;
 ```
 
@@ -234,11 +245,18 @@ GROUP BY runtime_id;
 ```sql
 SELECT
     model,
-    SUM(input_tokens) as total_input,
-    SUM(output_tokens) as total_output,
-    SUM(total_tokens) as total
+    COALESCE(SUM(input_tokens), 0) as total_input,
+    COALESCE(SUM(output_tokens), 0) as total_output,
+    COALESCE(
+        SUM(
+            COALESCE(
+                total_tokens,
+                COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+            )
+        ),
+        0
+    ) as total
 FROM request_history
-WHERE input_tokens IS NOT NULL
 GROUP BY model;
 ```
 
@@ -247,12 +265,19 @@ GROUP BY model;
 ```sql
 SELECT
     DATE(timestamp) as date,
-    SUM(input_tokens) as total_input,
-    SUM(output_tokens) as total_output,
-    SUM(total_tokens) as total
+    COALESCE(SUM(input_tokens), 0) as total_input,
+    COALESCE(SUM(output_tokens), 0) as total_output,
+    COALESCE(
+        SUM(
+            COALESCE(
+                total_tokens,
+                COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+            )
+        ),
+        0
+    ) as total
 FROM request_history
-WHERE input_tokens IS NOT NULL
-  AND timestamp >= ?
+WHERE timestamp >= ?
   AND timestamp < ?
 GROUP BY DATE(timestamp)
 ORDER BY date DESC;
@@ -263,12 +288,19 @@ ORDER BY date DESC;
 ```sql
 SELECT
     STRFTIME('%Y-%m', timestamp) as month,
-    SUM(input_tokens) as total_input,
-    SUM(output_tokens) as total_output,
-    SUM(total_tokens) as total
+    COALESCE(SUM(input_tokens), 0) as total_input,
+    COALESCE(SUM(output_tokens), 0) as total_output,
+    COALESCE(
+        SUM(
+            COALESCE(
+                total_tokens,
+                COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+            )
+        ),
+        0
+    ) as total
 FROM request_history
-WHERE input_tokens IS NOT NULL
-  AND timestamp >= ?
+WHERE timestamp >= ?
   AND timestamp < ?
 GROUP BY STRFTIME('%Y-%m', timestamp)
 ORDER BY month DESC;
@@ -279,3 +311,4 @@ ORDER BY month DESC;
 | 日付 | 変更内容 |
 |------|----------|
 | 2026-01-04 | 初版作成 |
+| 2026-02-12 | 集計クエリ例を `total_tokens` NULL 対応（`input_tokens + output_tokens` 推定）に更新 |

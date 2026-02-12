@@ -379,6 +379,7 @@ impl EndpointHealthChecker {
         let pool = self.registry.pool().clone();
         let registry = self.registry.clone();
         let client = self.client.clone();
+        let last_auto_sync_models = self.last_auto_sync_models.clone();
 
         tokio::spawn(async move {
             match sync::sync_models(
@@ -392,23 +393,37 @@ impl EndpointHealthChecker {
             .await
             {
                 Ok(result) => {
-                    if let Err(e) = registry.refresh_model_mappings(endpoint_id).await {
-                        warn!(
-                            endpoint_id = %endpoint_id,
-                            error = %e,
-                            "Failed to refresh model mappings after auto model sync"
-                        );
+                    match registry.refresh_model_mappings(endpoint_id).await {
+                        Ok(()) => {
+                            // Update timestamp on successful completion.
+                            last_auto_sync_models
+                                .write()
+                                .await
+                                .insert(endpoint_id, Instant::now());
+                            info!(
+                                endpoint_id = %endpoint_id,
+                                endpoint_name = %endpoint_name,
+                                added = result.added,
+                                removed = result.removed,
+                                updated = result.updated,
+                                "Auto model sync completed on health check"
+                            );
+                        }
+                        Err(e) => {
+                            // Don't keep throttling when model mappings weren't refreshed successfully.
+                            last_auto_sync_models.write().await.remove(&endpoint_id);
+                            warn!(
+                                endpoint_id = %endpoint_id,
+                                endpoint_name = %endpoint_name,
+                                error = %e,
+                                "Failed to refresh model mappings after auto model sync"
+                            );
+                        }
                     }
-                    info!(
-                        endpoint_id = %endpoint_id,
-                        endpoint_name = %endpoint_name,
-                        added = result.added,
-                        removed = result.removed,
-                        updated = result.updated,
-                        "Auto model sync completed on health check"
-                    );
                 }
                 Err(e) => {
+                    // Don't keep throttling when sync failed - allow retry on the next successful health check.
+                    last_auto_sync_models.write().await.remove(&endpoint_id);
                     warn!(
                         endpoint_id = %endpoint_id,
                         endpoint_name = %endpoint_name,

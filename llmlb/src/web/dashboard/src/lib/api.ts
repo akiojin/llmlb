@@ -647,7 +647,7 @@ export interface DiscoverGgufResponse {
 }
 
 // /v1/models レスポンス
-interface OpenAIModelsResponse {
+export interface OpenAIModelsResponse {
   object: 'list'
   data: OpenAIModel[]
 }
@@ -842,7 +842,7 @@ export const usersApi = {
 // Chat API (OpenAI compatible)
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | Array<unknown>
 }
 
 export interface ChatSession {
@@ -860,13 +860,15 @@ export interface ChatCompletionRequest {
   stream?: boolean
   temperature?: number
   max_tokens?: number
+  user?: string
 }
 
 export const chatApi = {
   complete: async (
     request: ChatCompletionRequest,
     apiKey?: string,
-    onChunk?: (chunk: string) => void
+    onChunk?: (chunk: string) => void,
+    signal?: AbortSignal
   ) => {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -880,6 +882,7 @@ export const chatApi = {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
+      signal,
     })
 
     if (!response.ok) {
@@ -924,12 +927,16 @@ export const chatApi = {
     return response.json()
   },
 
-  getModels: (apiKey?: string) => {
+  getModels: async (apiKey?: string): Promise<OpenAIModelsResponse> => {
     const headers: HeadersInit = {}
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`
     }
-    return fetch(`${API_BASE}/v1/models`, { headers }).then((r) => r.json())
+    const response = await fetch(`${API_BASE}/v1/models`, { headers })
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText)
+    }
+    return response.json()
   },
 
   // Session management (local storage based for now)

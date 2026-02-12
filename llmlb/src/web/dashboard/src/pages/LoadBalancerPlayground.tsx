@@ -140,6 +140,17 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'AbortError'
+  }
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const withName = error as { name?: unknown }
+  return withName.name === 'AbortError'
+}
+
 function toNumberValue(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -261,6 +272,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const loadTestStopRef = useRef(false)
+  const loadTestAbortControllersRef = useRef<Set<AbortController>>(new Set())
   const inputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -311,10 +323,18 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
     })
   }, [modelsError])
 
-  // Set default model when models are loaded
+  // Keep selected model valid when model list changes
   useEffect(() => {
-    const models = modelsData?.data
-    if (Array.isArray(models) && !selectedModel && models.length > 0) {
+    const models = Array.isArray(modelsData?.data) ? modelsData.data : []
+    if (models.length === 0) {
+      if (selectedModel) {
+        setSelectedModel('')
+      }
+      return
+    }
+
+    const hasSelectedModel = models.some((model) => model.id === selectedModel)
+    if (!selectedModel || !hasSelectedModel) {
       setSelectedModel(models[0].id)
     }
   }, [modelsData, selectedModel])
@@ -603,6 +623,8 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
               { role: 'user', content: prompt },
             ]
           : [{ role: 'user', content: prompt }]
+        const requestAbortController = new AbortController()
+        loadTestAbortControllersRef.current.add(requestAbortController)
 
         try {
           await chatApi.complete(
@@ -614,12 +636,17 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
               max_tokens: maxTokens,
               user: runTag,
             },
-            apiKey.trim()
+            apiKey.trim(),
+            undefined,
+            requestAbortController.signal
           )
           success += 1
-        } catch {
-          error += 1
+        } catch (requestError) {
+          if (!isAbortError(requestError)) {
+            error += 1
+          }
         } finally {
+          loadTestAbortControllersRef.current.delete(requestAbortController)
           completed += 1
           setLoadTestProgress({
             total: totalRequests,
@@ -650,6 +677,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
         },
       ])
     } finally {
+      loadTestAbortControllersRef.current.clear()
       setIsLoadTesting(false)
       setIsStoppingLoadTest(false)
       loadTestStopRef.current = false
@@ -666,6 +694,10 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
       return
     }
     loadTestStopRef.current = true
+    loadTestAbortControllersRef.current.forEach((controller) => {
+      controller.abort()
+    })
+    loadTestAbortControllersRef.current.clear()
     setIsStoppingLoadTest(true)
   }
 

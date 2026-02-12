@@ -85,5 +85,9 @@ mod request_history_api_test;
 #[path = "contract/responses_api_test.rs"]
 mod responses_api_test;
 
+// SPEC-76643000: エンドポイント日次統計API契約テスト
+#[path = "contract/endpoint_daily_stats_api_test.rs"]
+mod endpoint_daily_stats_api_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

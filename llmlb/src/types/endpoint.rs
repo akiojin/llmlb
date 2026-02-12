@@ -377,6 +377,15 @@ pub struct Endpoint {
     /// ヘルスチェックのlatency_msとは別に、実際の推論時間を追跡
     #[serde(default)]
     pub inference_latency_ms: Option<f64>,
+    /// 累計リクエスト数（SPEC-76643000）
+    #[serde(default)]
+    pub total_requests: i64,
+    /// 累計成功リクエスト数（SPEC-76643000）
+    #[serde(default)]
+    pub successful_requests: i64,
+    /// 累計失敗リクエスト数（SPEC-76643000）
+    #[serde(default)]
+    pub failed_requests: i64,
 }
 
 impl Endpoint {
@@ -408,6 +417,9 @@ impl Endpoint {
             active_requests: None,
             device_info: None,
             inference_latency_ms: None,
+            total_requests: 0,
+            successful_requests: 0,
+            failed_requests: 0,
         }
     }
 
@@ -547,6 +559,26 @@ pub struct EndpointHealthCheck {
     pub status_before: EndpointStatus,
     /// チェック後の状態
     pub status_after: EndpointStatus,
+}
+
+/// エンドポイント日次集計レコード（SPEC-76643000）
+///
+/// エンドポイント×モデル×日付の粒度で集計されたリクエスト統計。
+/// 永続保存され、トレンド分析とモデル別分析の基盤となる。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointDailyStats {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// モデルID
+    pub model_id: String,
+    /// 日付（YYYY-MM-DD形式、サーバーローカル時間）
+    pub date: String,
+    /// 当日のリクエスト合計数
+    pub total_requests: i64,
+    /// 当日の成功リクエスト数
+    pub successful_requests: i64,
+    /// 当日の失敗リクエスト数
+    pub failed_requests: i64,
 }
 
 #[cfg(test)]

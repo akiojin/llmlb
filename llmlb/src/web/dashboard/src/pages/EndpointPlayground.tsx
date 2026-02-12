@@ -104,11 +104,12 @@ function getStatusBadgeVariant(
 function getStatusIndicatorColor(status: DashboardEndpoint['status'] | undefined): string {
   switch (status) {
     case 'online':
-      return 'text-green-500'
+      return 'text-success'
     case 'pending':
-      return 'text-yellow-500'
+      return 'text-warning'
     case 'offline':
-      return 'text-destructive'
+      // SPEC-66555000: offline should be a lighter red than error.
+      return 'text-destructive/70'
     case 'error':
       return 'text-destructive'
     default:

@@ -163,6 +163,13 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     })
   }
 
+  const isPermissionEnabled = (permission: ApiKeyPermission) =>
+    newKeyPermissions.includes(permission)
+
+  const togglePermissionByRow = (permission: ApiKeyPermission) => {
+    togglePermission(permission, !isPermissionEnabled(permission))
+  }
+
   const permissionLabels: {
     value: ApiKeyPermission
     label: string
@@ -390,7 +397,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
 
       {/* Create Key Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto border-border bg-card text-card-foreground">
           <DialogHeader>
             <DialogTitle>Create API Key</DialogTitle>
             <DialogDescription>
@@ -417,27 +424,46 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Permissions</Label>
-              <div className="grid gap-2">
+              <Label className="text-foreground">Permissions</Label>
+              <div className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3">
                 {permissionLabels.map((permission) => {
-                  const checkboxId = `permission-${permission.value.replace(/[^a-z0-9]/gi, "-")}`;
+                  const permissionSlug = permission.value.replace(/[^a-z0-9]/gi, '-')
+                  const checkboxId = `permission-${permissionSlug}`
+                  const isChecked = isPermissionEnabled(permission.value)
                   return (
-                    <div key={permission.value} className="flex items-start gap-2 text-sm">
+                    <div
+                      key={permission.value}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`permission-row-${permissionSlug}`}
+                      className="flex cursor-pointer items-start gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2 text-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() => togglePermissionByRow(permission.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          togglePermissionByRow(permission.value)
+                        }
+                      }}
+                    >
                       <Checkbox
                         id={checkboxId}
-                        checked={newKeyPermissions.includes(permission.value)}
+                        data-testid={`permission-checkbox-${permissionSlug}`}
+                        checked={isChecked}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                        }}
                         onCheckedChange={(checked) =>
-                          togglePermission(permission.value, Boolean(checked))
+                          togglePermission(permission.value, checked === true)
                         }
                       />
-                      <label htmlFor={checkboxId} className="flex flex-col gap-1 cursor-pointer">
-                        <span className="font-mono text-xs">{permission.label}</span>
-                        <span className="text-xs text-muted-foreground">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-mono text-xs text-foreground">{permission.label}</span>
+                        <span className="text-xs leading-4 text-muted-foreground">
                           {permission.description}
                         </span>
-                      </label>
+                      </div>
                     </div>
-                  );
+                  )
                 })}
               </div>
             </div>

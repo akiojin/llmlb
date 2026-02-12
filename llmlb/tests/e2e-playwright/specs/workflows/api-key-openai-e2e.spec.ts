@@ -107,6 +107,25 @@ test.describe('API Key Create + OpenAI API Calls @api-keys', () => {
     const createDialog = page.getByRole('dialog').filter({ hasText: 'Create API Key' })
     await expect(createDialog).toBeVisible({ timeout: 10000 })
 
+    // Default permissions: openai.inference and openai.models.read are enabled.
+    const inferenceCheckbox = createDialog.locator('#permission-openai-inference')
+    const modelsReadCheckbox = createDialog.locator('#permission-openai-models-read')
+    await expect(inferenceCheckbox).toHaveAttribute('data-state', 'checked')
+    await expect(modelsReadCheckbox).toHaveAttribute('data-state', 'checked')
+
+    // Permission row click toggles selection.
+    const endpointsReadRow = createDialog.locator('#permission-endpoints-read').locator('xpath=ancestor::div[@role="button"][1]')
+    const endpointsReadCheckbox = createDialog.locator('#permission-endpoints-read')
+    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'unchecked')
+    await endpointsReadRow.click()
+    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'checked')
+    await endpointsReadRow.click()
+    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'unchecked')
+
+    // Checkbox itself remains directly clickable.
+    await endpointsReadCheckbox.click()
+    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'checked')
+
     await createDialog.locator('#api-key-name').fill(apiKeyName)
     await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
 

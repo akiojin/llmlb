@@ -10,6 +10,7 @@
 use crate::db::endpoints as db;
 use crate::detection::detect_endpoint_type_with_client;
 use crate::registry::endpoints::EndpointRegistry;
+use crate::sync;
 use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus, EndpointType};
 use chrono::Utc;
 use reqwest::Client;
@@ -29,6 +30,8 @@ pub struct GpuInfo {
     pub active_requests: Option<u32>,
 }
 use std::time::{Duration, Instant};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -54,6 +57,10 @@ pub struct EndpointHealthChecker {
     client: Client,
     /// チェック間隔（秒）
     check_interval_secs: u64,
+    /// 同一エンドポイントに対するモデル自動同期の最短間隔
+    auto_sync_models_interval: Duration,
+    /// エンドポイントごとの最終モデル同期時刻（スロットリング用）
+    last_auto_sync_models: Arc<RwLock<HashMap<Uuid, Instant>>>,
 }
 
 impl EndpointHealthChecker {
@@ -68,6 +75,8 @@ impl EndpointHealthChecker {
             registry,
             client,
             check_interval_secs: DEFAULT_CHECK_INTERVAL_SECS,
+            auto_sync_models_interval: crate::config::get_auto_sync_models_interval(),
+            last_auto_sync_models: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -298,6 +307,10 @@ impl EndpointHealthChecker {
             }
         }
 
+        if success {
+            self.maybe_auto_sync_models(endpoint, new_status).await;
+        }
+
         // ヘルスチェック履歴を記録
         let health_check = EndpointHealthCheck {
             id: 0, // DBで自動採番
@@ -338,6 +351,73 @@ impl EndpointHealthChecker {
                 .unwrap_or_else(|| "Unknown error".to_string())
                 .into())
         }
+    }
+
+    async fn maybe_auto_sync_models(&self, endpoint: &Endpoint, new_status: EndpointStatus) {
+        if new_status != EndpointStatus::Online {
+            return;
+        }
+
+        // Auto model sync runs on successful health checks, but is throttled per endpoint.
+        let now = Instant::now();
+        {
+            let mut last = self.last_auto_sync_models.write().await;
+            if let Some(prev) = last.get(&endpoint.id) {
+                if prev.elapsed() < self.auto_sync_models_interval {
+                    return;
+                }
+            }
+            last.insert(endpoint.id, now);
+        }
+
+        let endpoint_id = endpoint.id;
+        let endpoint_name = endpoint.name.clone();
+        let base_url = endpoint.base_url.clone();
+        let api_key = endpoint.api_key.clone();
+        let timeout_secs = endpoint.inference_timeout_secs as u64;
+
+        let pool = self.registry.pool().clone();
+        let registry = self.registry.clone();
+        let client = self.client.clone();
+
+        tokio::spawn(async move {
+            match sync::sync_models(
+                &pool,
+                &client,
+                endpoint_id,
+                &base_url,
+                api_key.as_deref(),
+                timeout_secs,
+            )
+            .await
+            {
+                Ok(result) => {
+                    if let Err(e) = registry.refresh_model_mappings(endpoint_id).await {
+                        warn!(
+                            endpoint_id = %endpoint_id,
+                            error = %e,
+                            "Failed to refresh model mappings after auto model sync"
+                        );
+                    }
+                    info!(
+                        endpoint_id = %endpoint_id,
+                        endpoint_name = %endpoint_name,
+                        added = result.added,
+                        removed = result.removed,
+                        updated = result.updated,
+                        "Auto model sync completed on health check"
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        endpoint_id = %endpoint_id,
+                        endpoint_name = %endpoint_name,
+                        error = %e,
+                        "Auto model sync failed on health check"
+                    );
+                }
+            }
+        });
     }
 
     /// `/api/health`を呼び出してGPU情報を取得

@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiKeysApi, type ApiKey, type ApiKeyPermission } from '@/lib/api'
+import {
+  apiKeysApi,
+  type ApiKey,
+  type ApiKeyPermission,
+  type CreateApiKeyResponse,
+} from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -67,10 +72,20 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Fetch API keys
-  const { data: apiKeys, isLoading, refetch } = useQuery({
+  const {
+    data: apiKeys,
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['api-keys'],
     queryFn: apiKeysApi.list,
     enabled: open,
+    // Plaintext keys are only shown once at creation time. We must not auto-refresh
+    // this query while the modal is open, otherwise it becomes unclear whether the
+    // key is still "copyable".
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   })
 
   // Create API key mutation
@@ -80,9 +95,26 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
       expires_at?: string
       permissions: ApiKeyPermission[]
     }) => apiKeysApi.create(data),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['api-keys'] })
-      setCreatedKey((data as { key: string }).key)
+    onSuccess: (data: CreateApiKeyResponse) => {
+      // Update list without refetching, so the "created key" stays visible/copyable
+      // until the user explicitly refreshes or closes the modal.
+      queryClient.setQueryData(['api-keys'], (old?: ApiKey[]) => {
+        const next = Array.isArray(old) ? old : []
+        const withoutDup = next.filter((k) => k.id !== data.id)
+        const created: ApiKey = {
+          id: data.id,
+          name: data.name,
+          key_prefix: data.key_prefix,
+          created_at: data.created_at,
+          expires_at: data.expires_at,
+          permissions: data.permissions,
+        }
+        return [created, ...withoutDup]
+      })
+
+      setCreatedKey(data.key)
+      setShowKey(null)
+      setCopiedId(null)
       setNewKeyName('')
       setNewKeyExpires('')
       setNewKeyPermissions(['openai.inference', 'openai.models.read'])
@@ -119,8 +151,20 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     if (!open) {
       setCreatedKey(null)
       setShowKey(null)
+      setCopiedId(null)
     }
   }, [open])
+
+  // Enforce: plaintext keys are copyable only immediately after creation.
+  // Any background refetch/refresh should make copying impossible, requiring re-creation.
+  useEffect(() => {
+    if (!open) return
+    if (!createdKey) return
+    if (!isFetching) return
+    setCreatedKey(null)
+    setShowKey(null)
+    setCopiedId(null)
+  }, [open, createdKey, isFetching])
 
   useEffect(() => {
     if (!createOpen) {

@@ -193,7 +193,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   }, [endpointModels, selectedModel])
 
   const selectedModelMaxTokens = endpointModels?.models?.find(m => m.model_id === selectedModel)?.max_tokens
-  const effectiveMaxTokens = useMaxContext && selectedModelMaxTokens ? selectedModelMaxTokens : maxTokens
+  const effectiveMaxTokens = useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens
 
   // Scroll to bottom
   useEffect(() => {
@@ -824,22 +824,22 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
                   id="use-max-context"
                   checked={useMaxContext}
                   onCheckedChange={(checked) => setUseMaxContext(checked === true)}
-                  disabled={!selectedModelMaxTokens}
+                  disabled={selectedModelMaxTokens == null && !useMaxContext}
                 />
                 <Label
                   htmlFor="use-max-context"
-                  className={cn("text-sm font-normal", !selectedModelMaxTokens && "text-muted-foreground")}
+                  className={cn("text-sm font-normal", selectedModelMaxTokens == null && "text-muted-foreground")}
                 >
-                  Use model max context{selectedModelMaxTokens ? ` (${selectedModelMaxTokens.toLocaleString()})` : ' (unknown)'}
+                  Use model max context{selectedModelMaxTokens != null ? ` (${selectedModelMaxTokens.toLocaleString()})` : ' (unknown)'}
                 </Label>
               </div>
               <Input
                 type="number"
-                value={useMaxContext && selectedModelMaxTokens ? selectedModelMaxTokens : maxTokens}
+                value={useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens}
                 onChange={(e) => setMaxTokens(parseInt(e.target.value) || 2048)}
                 min={1}
                 max={131072}
-                disabled={useMaxContext && !!selectedModelMaxTokens}
+                disabled={useMaxContext && selectedModelMaxTokens != null}
               />
             </div>
           </div>

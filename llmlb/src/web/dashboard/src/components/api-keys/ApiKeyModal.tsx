@@ -258,7 +258,20 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                 <Plus className="mr-2 h-4 w-4" />
                 Create Key
               </Button>
-              <Button variant="outline" size="icon" onClick={() => refetch()}>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Refresh API keys"
+                title="Refresh API keys"
+                onClick={() => {
+                  // Enforce: plaintext keys are copyable only immediately after creation.
+                  // Any "refresh" action should make copying impossible, requiring re-creation.
+                  setCreatedKey(null)
+                  setShowKey(null)
+                  setCopiedId(null)
+                  refetch()
+                }}
+              >
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -344,30 +357,12 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         <TableCell>
                           {key.key_prefix ? (
                             <div className="flex items-center gap-2">
-                              <code className="text-xs font-mono">
+                              <code
+                                className="text-xs font-mono"
+                                title="Key prefix only. Full API keys are shown once at creation time; if lost, create a new key."
+                              >
                                 {key.key_prefix}...
                               </code>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                aria-label="Copy key prefix"
-                                title="Copy key prefix (the full key is only shown once at creation)"
-                                onClick={() =>
-                                  copyToClipboard(
-                                    key.key_prefix!,
-                                    key.id,
-                                    'Copied key prefix',
-                                    'Full API keys are only shown once at creation time.'
-                                  )
-                                }
-                              >
-                                {copiedId === key.id ? (
-                                  <Check className="h-3 w-3" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
-                              </Button>
                             </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">

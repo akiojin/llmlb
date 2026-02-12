@@ -2,13 +2,18 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import Dashboard from '@/pages/Dashboard'
 import EndpointPlayground from '@/pages/EndpointPlayground'
+import LoadBalancerPlayground from '@/pages/LoadBalancerPlayground'
 
 type Route =
   | { type: 'dashboard' }
+  | { type: 'lb-playground' }
   | { type: 'playground'; endpointId: string }
 
 function parseHash(): Route {
   const hash = window.location.hash.slice(1) // Remove #
+  if (hash === 'lb-playground') {
+    return { type: 'lb-playground' }
+  }
   if (hash.startsWith('playground/')) {
     const endpointId = hash.slice('playground/'.length)
     if (endpointId) {
@@ -57,6 +62,8 @@ function App() {
   }
 
   switch (route.type) {
+    case 'lb-playground':
+      return <LoadBalancerPlayground onBack={navigateToDashboard} />
     case 'playground':
       return (
         <EndpointPlayground

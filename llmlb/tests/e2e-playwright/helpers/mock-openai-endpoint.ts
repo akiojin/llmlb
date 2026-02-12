@@ -46,8 +46,10 @@ function extractLastUserText(messages: unknown): string {
 
 export async function startMockOpenAIEndpointServer(options?: {
   models?: string[]
+  responseDelayMs?: number
 }): Promise<MockOpenAIEndpointServer> {
   const models = options?.models?.length ? options.models : ['mock-model-a', 'mock-model-b']
+  const responseDelayMs = Math.max(0, options?.responseDelayMs ?? 0)
 
   // reqwest (llmlb) uses keep-alive connections; server.close() waits for them.
   // Track sockets and destroy them on shutdown so afterAll doesn't hang.
@@ -87,6 +89,9 @@ export async function startMockOpenAIEndpointServer(options?: {
       const reply = `MOCK_OK model=${model} user=${lastUser}`
 
       const stream = parsed?.stream === true
+      if (responseDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+      }
       if (!stream) {
         const created = Math.floor(Date.now() / 1000)
         return writeJson(res, 200, {

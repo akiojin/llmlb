@@ -38,6 +38,7 @@ Webブラウザからアクセスできるリアルタイムダッシュボー�
 4. **前提** LB Playgroundで有効なAPIキーが設定済み、**実行** `/v1/models` を取得してモデルを選択し送信、**結果** `/v1/chat/completions` 経由で応答が表示される（stream ON/OFF両対応）
 5. **前提** LB Playgroundで負荷試験モードを選択済み、**実行** 試験開始（既定: 200件 / 並列10 / 間隔0ms）、**結果** 進捗が表示され停止操作も可能である
 6. **前提** LB Playgroundで送信または負荷試験を完了、**実行** 配分表示を確認、**結果** `request-responses` を根拠にエンドポイント別の件数/成功失敗/平均応答時間が可視化される
+7. **前提** Playground を表示中、**実行** Settings の Max Tokens を「手動値」と「Use model max context」で切り替え、モデルを変更する、**結果** 選択中モデルの `max_tokens` が既知なら入力欄は自動値に固定され、未知なら手動入力が有効のままになる。モデル変更後もチェックボックスが「チェック済みなのにdisabledで解除できない」状態にならず、利用者は常にOFFに戻せる
 
 **受け入れシナリオ（ノード管理機能）**:
 
@@ -203,6 +204,10 @@ WebUIでノード個別の設定を表示・変更できる。
   - APIキー入力はUI上で行い、ブラウザの `localStorage` に保持する
   - 通常チャット（stream ON/OFF）と負荷試験モード（既定: 200件/並列10/間隔0ms）を提供する
   - 負荷試験結果は `GET /api/dashboard/request-responses` と `request_body.user` タグを使って集計し、エンドポイント配分を表示する
+- 共通:
+  - Settings ダイアログで `system_prompt` / `stream` / `temperature` / `max_tokens` を設定できる
+  - `max_tokens` は手動指定に加えて、選択中モデルの `max_tokens` が既知の場合に「Use model max context」で自動使用できる（自動使用中は入力欄が無効化される）
+  - 選択中モデルの `max_tokens` が不明（null/未取得）の場合は `(unknown)` と表示し、チェックボックスはOFFのときのみ無効化する（「チェック済みなのにdisabledで解除できない」状態を作らない）
 
 ### FR-027: テーマカラー切り替え
 

@@ -183,7 +183,7 @@ export class DashboardPage {
     await this.refreshButton.click();
   }
 
-  async filterNodesByStatus(status: 'all' | 'online' | 'offline') {
+  async filterNodesByStatus(status: 'all' | 'online' | 'pending' | 'offline' | 'error') {
     await this.filterStatus.selectOption(status);
   }
 

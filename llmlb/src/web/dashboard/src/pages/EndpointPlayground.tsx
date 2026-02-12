@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { endpointsApi, chatApi, ApiError } from '@/lib/api'
+import { endpointsApi, chatApi, ApiError, type DashboardEndpoint } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -81,6 +81,53 @@ function getErrorMessage(status: number): string {
       return 'Request timed out.'
     default:
       return `Server error occurred (HTTP ${status})`
+  }
+}
+
+function getStatusBadgeVariant(
+  status: DashboardEndpoint['status'] | undefined
+): 'online' | 'pending' | 'offline' | 'destructive' | 'outline' {
+  switch (status) {
+    case 'online':
+      return 'online'
+    case 'pending':
+      return 'pending'
+    case 'offline':
+      return 'offline'
+    case 'error':
+      return 'destructive'
+    default:
+      return 'outline'
+  }
+}
+
+function getStatusIndicatorColor(status: DashboardEndpoint['status'] | undefined): string {
+  switch (status) {
+    case 'online':
+      return 'text-green-500'
+    case 'pending':
+      return 'text-yellow-500'
+    case 'offline':
+      return 'text-muted-foreground'
+    case 'error':
+      return 'text-destructive'
+    default:
+      return 'text-muted-foreground'
+  }
+}
+
+function getStatusLabel(status: DashboardEndpoint['status'] | undefined): string {
+  switch (status) {
+    case 'online':
+      return 'Online'
+    case 'pending':
+      return 'Pending'
+    case 'offline':
+      return 'Offline'
+    case 'error':
+      return 'Error'
+    default:
+      return 'Unknown'
   }
 }
 
@@ -392,8 +439,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           )}
           <div className="text-xs text-muted-foreground">
             <span className="font-medium">Status:</span>{' '}
-            <Badge variant={endpoint?.status === 'online' ? 'default' : 'secondary'} className="text-xs">
-              {endpoint?.status}
+            <Badge variant={getStatusBadgeVariant(endpoint?.status)} className="text-xs">
+              {getStatusLabel(endpoint?.status)}
             </Badge>
           </div>
           <div className="text-xs text-muted-foreground">
@@ -468,11 +515,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             </Select>
 
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CircleDot className={cn(
-                "h-3 w-3",
-                endpoint?.status === 'online' ? 'text-green-500' : 'text-yellow-500'
-              )} />
-              {endpoint?.status === 'online' ? 'Online' : endpoint?.status}
+              <CircleDot className={cn("h-3 w-3", getStatusIndicatorColor(endpoint?.status))} />
+              {getStatusLabel(endpoint?.status)}
             </span>
 
             {streamEnabled && (

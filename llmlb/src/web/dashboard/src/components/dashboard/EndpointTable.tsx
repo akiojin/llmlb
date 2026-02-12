@@ -72,14 +72,14 @@ const PAGE_SIZE = 10
 
 function getStatusBadgeVariant(
   status: DashboardEndpoint['status']
-): 'default' | 'destructive' | 'outline' | 'secondary' {
+): 'online' | 'pending' | 'offline' | 'destructive' | 'outline' {
   switch (status) {
     case 'online':
-      return 'default'
+      return 'online'
     case 'pending':
-      return 'secondary'
+      return 'pending'
     case 'offline':
-      return 'outline'
+      return 'offline'
     case 'error':
       return 'destructive'
     default:

@@ -537,6 +537,10 @@ mod tests {
     use crate::db::test_utils::TEST_LOCK;
     use serde_json::json;
     use sqlx::SqlitePool;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
     use std::time::{Duration, Instant};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -634,7 +638,9 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let endpoint = Endpoint::new("Test".to_string(), mock.uri());
+        let mut endpoint = Endpoint::new("Test".to_string(), mock.uri());
+        // Avoid type re-detection consuming the first /v1/models call.
+        endpoint.endpoint_type = EndpointType::Ollama;
         registry.add(endpoint.clone()).await.unwrap();
 
         let checker = EndpointHealthChecker::new(registry.clone());
@@ -649,6 +655,80 @@ mod tests {
             }
             if Instant::now() > deadline {
                 panic!("Timed out waiting for auto model sync after health check");
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auto_model_sync_retries_after_failure() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .mount(&mock)
+            .await;
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_clone = calls.clone();
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(move |_req: &wiremock::Request| {
+                let n = calls_clone.fetch_add(1, Ordering::SeqCst);
+                if n == 0 {
+                    ResponseTemplate::new(500)
+                } else {
+                    ResponseTemplate::new(200).set_body_json(json!({
+                        "object": "list",
+                        "data": [
+                            {"id": "auto-retry-model-1", "object": "model"},
+                        ]
+                    }))
+                }
+            })
+            .mount(&mock)
+            .await;
+
+        let mut endpoint = Endpoint::new("Test".to_string(), mock.uri());
+        // Avoid type re-detection consuming the first /v1/models call.
+        endpoint.endpoint_type = EndpointType::Ollama;
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let mut checker = EndpointHealthChecker::new(registry.clone());
+        // Ensure a failed sync would normally be throttled for a long time.
+        checker.auto_sync_models_interval = Duration::from_secs(60 * 60);
+
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        // Wait for the initial auto sync attempt to hit /v1/models and fail.
+        let attempt_deadline = Instant::now() + Duration::from_secs(1);
+        while calls.load(Ordering::SeqCst) < 1 {
+            if Instant::now() > attempt_deadline {
+                panic!("Timed out waiting for initial auto model sync attempt");
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // A subsequent successful health check should retry auto sync even if the normal interval is long,
+        // because the previous sync attempt failed.
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let models = registry.list_models(endpoint.id).await.unwrap();
+            if models
+                .iter()
+                .any(|model| model.model_id == "auto-retry-model-1")
+            {
+                break;
+            }
+            if Instant::now() > deadline {
+                panic!("Timed out waiting for auto model sync retry after failure");
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }

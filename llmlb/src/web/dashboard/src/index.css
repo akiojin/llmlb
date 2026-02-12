@@ -2,6 +2,9 @@
 
 @import "tailwindcss";
 
+/* Tailwind v4 loads configuration via the @config directive. */
+@config "../tailwind.config.js";
+
 @layer base {
   :root {
     /* Mission Control - Light Theme */

@@ -6,6 +6,36 @@ import path from 'node:path';
 
 test.describe.configure({ mode: 'serial' });
 
+function parseAlphaToken(token: string): number {
+  const t = token.trim();
+  if (t.endsWith('%')) return Number(t.slice(0, -1)) / 100;
+  return Number(t);
+}
+
+function parseCssColorAlpha(value: string): number {
+  const v = value.trim();
+
+  if (v === 'transparent') return 0;
+
+  // Modern browsers generally normalize to rgb()/rgba() but support both comma and space syntax.
+  // - rgb(12, 34, 56)
+  // - rgba(12, 34, 56, 0.2)
+  // - rgb(12 34 56 / 0.2)
+  //
+  // Newer Chromium may return CSS Color 4 values (e.g. oklab(... / 0.2)).
+  // We only need alpha to detect "no CSS generated" regressions, so parse alpha broadly.
+  const rgbaComma = v.match(/^rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+%?)\s*\)$/);
+  if (rgbaComma) return parseAlphaToken(rgbaComma[1]);
+
+  const alphaSlash = v.match(/\/\s*([\d.]+%?)\s*\)$/);
+  if (alphaSlash) return parseAlphaToken(alphaSlash[1]);
+
+  // Any other color function without an explicit alpha is treated as fully opaque.
+  if (v.endsWith(')')) return 1;
+
+  throw new Error(`Unsupported CSS color format: ${value}`);
+}
+
 function statusBadgeClassExpectations(status: 'pending' | 'online' | 'offline' | 'error') {
   switch (status) {
     case 'online':
@@ -41,6 +71,28 @@ async function expectStatusBadgeClasses(badge: Locator, status: 'pending' | 'onl
   for (const re of expectations.excludes) {
     await expect(badge).not.toHaveClass(re);
   }
+}
+
+async function expectStatusBadgeStyles(badge: Locator, status: 'pending' | 'online' | 'offline' | 'error') {
+  // This catches "class is present but CSS isn't generated" regressions (the original bug report).
+  const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const alpha = parseCssColorAlpha(bg);
+
+  // Badge backgrounds should never be fully transparent.
+  expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThan(0);
+
+  if (status === 'error') {
+    // Error uses solid destructive background.
+    expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThanOrEqual(0.95);
+  } else {
+    // online/pending/offline use `/20` variants (tinted background).
+    expect(alpha, `backgroundColor was ${bg}`).toBeLessThan(0.95);
+  }
+}
+
+async function expectStatusBadge(badge: Locator, status: 'pending' | 'online' | 'offline' | 'error') {
+  await expectStatusBadgeClasses(badge, status);
+  await expectStatusBadgeStyles(badge, status);
 }
 
 test.describe('Endpoint Status Colors @dashboard', () => {
@@ -91,7 +143,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const okStatusCell = okRow.locator('td').nth(3);
       const okBadge = okStatusCell.locator('div').first();
       await expect(okBadge).toHaveText('Pending', { timeout: 20000 });
-      await expectStatusBadgeClasses(okBadge, 'pending');
+      await expectStatusBadge(okBadge, 'pending');
       await shot('dashboard-pending');
 
       // Detail modal (pending)
@@ -99,7 +151,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const pendingDialog = page.getByRole('dialog').filter({ hasText: endpointOkName });
       await expect(pendingDialog).toBeVisible({ timeout: 20000 });
       const pendingDialogStatusBadge = pendingDialog.locator('div.rounded-full').filter({ hasText: /^Pending$/ }).first();
-      await expectStatusBadgeClasses(pendingDialogStatusBadge, 'pending');
+      await expectStatusBadge(pendingDialogStatusBadge, 'pending');
       await shot('detail-pending');
       await page.keyboard.press('Escape');
 
@@ -113,7 +165,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const pendingIndicator = page.locator('span').filter({ hasText: /^Pending$/ }).first();
       await expect(pendingIndicator.locator('svg').first()).toHaveClass(/text-warning/);
       const pendingPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Pending$/ }).first();
-      await expectStatusBadgeClasses(pendingPlaygroundBadge, 'pending');
+      await expectStatusBadge(pendingPlaygroundBadge, 'pending');
       await shot('playground-pending');
 
       // Back to Dashboard
@@ -127,7 +179,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await expect(okRow.getByText('Online', { exact: true })).toBeVisible({ timeout: 20000 });
 
       const okBadgeOnline = okRow.locator('td').nth(3).locator('div').first();
-      await expectStatusBadgeClasses(okBadgeOnline, 'online');
+      await expectStatusBadge(okBadgeOnline, 'online');
       await shot('dashboard-online');
 
       // Detail modal (online)
@@ -135,7 +187,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const onlineDialog = page.getByRole('dialog').filter({ hasText: endpointOkName });
       await expect(onlineDialog).toBeVisible({ timeout: 20000 });
       const onlineDialogStatusBadge = onlineDialog.locator('div.rounded-full').filter({ hasText: /^Online$/ }).first();
-      await expectStatusBadgeClasses(onlineDialogStatusBadge, 'online');
+      await expectStatusBadge(onlineDialogStatusBadge, 'online');
       await shot('detail-online');
       await page.keyboard.press('Escape');
 
@@ -145,7 +197,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const onlineIndicator = page.locator('span').filter({ hasText: /^Online$/ }).first();
       await expect(onlineIndicator.locator('svg').first()).toHaveClass(/text-success/);
       const onlinePlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Online$/ }).first();
-      await expectStatusBadgeClasses(onlinePlaygroundBadge, 'online');
+      await expectStatusBadge(onlinePlaygroundBadge, 'online');
       await shot('playground-online');
 
       // Back to Dashboard
@@ -170,7 +222,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await expect(badRow.getByText('Error', { exact: true })).toBeVisible({ timeout: 20000 });
 
       const badBadgeError = badRow.locator('td').nth(3).locator('div').first();
-      await expectStatusBadgeClasses(badBadgeError, 'error');
+      await expectStatusBadge(badBadgeError, 'error');
       await shot('dashboard-error');
 
       // Detail modal (error)
@@ -178,7 +230,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const errorDialog = page.getByRole('dialog').filter({ hasText: endpointBadName });
       await expect(errorDialog).toBeVisible({ timeout: 20000 });
       const errorDialogStatusBadge = errorDialog.locator('div.rounded-full').filter({ hasText: /^Error$/ }).first();
-      await expectStatusBadgeClasses(errorDialogStatusBadge, 'error');
+      await expectStatusBadge(errorDialogStatusBadge, 'error');
       await shot('detail-error');
       await page.keyboard.press('Escape');
 
@@ -192,7 +244,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const errorIndicator = page.locator('span').filter({ hasText: /^Error$/ }).first();
       await expect(errorIndicator.locator('svg').first()).toHaveClass(/text-destructive/);
       const errorPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Error$/ }).first();
-      await expectStatusBadgeClasses(errorPlaygroundBadge, 'error');
+      await expectStatusBadge(errorPlaygroundBadge, 'error');
       await shot('playground-error');
 
       // Back to Dashboard
@@ -220,7 +272,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       }
       await expect(offlineText).toBeVisible({ timeout: 20000 });
       const badBadgeOffline = badRow.locator('td').nth(3).locator('div').first();
-      await expectStatusBadgeClasses(badBadgeOffline, 'offline');
+      await expectStatusBadge(badBadgeOffline, 'offline');
       await shot('dashboard-offline');
 
       // Detail modal (offline)
@@ -228,7 +280,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const offlineDialog = page.getByRole('dialog').filter({ hasText: endpointBadName });
       await expect(offlineDialog).toBeVisible({ timeout: 20000 });
       const offlineDialogStatusBadge = offlineDialog.locator('div.rounded-full').filter({ hasText: /^Offline$/ }).first();
-      await expectStatusBadgeClasses(offlineDialogStatusBadge, 'offline');
+      await expectStatusBadge(offlineDialogStatusBadge, 'offline');
       await shot('detail-offline');
       await page.keyboard.press('Escape');
 
@@ -238,7 +290,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const offlineIndicator = page.locator('span').filter({ hasText: /^Offline$/ }).first();
       await expect(offlineIndicator.locator('svg').first()).toHaveClass(/text-destructive\/70/);
       const offlinePlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Offline$/ }).first();
-      await expectStatusBadgeClasses(offlinePlaygroundBadge, 'offline');
+      await expectStatusBadge(offlinePlaygroundBadge, 'offline');
       await shot('playground-offline');
     } finally {
       await deleteEndpointsByName(request, endpointOkName);

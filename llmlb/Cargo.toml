@@ -52,7 +52,7 @@ sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio
 bcrypt = "0.18"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 sha2 = "0.10"
-rand = "0.9"
+rand = "0.10"
 rpassword = "7.3"
 
 # CLI
@@ -71,7 +71,7 @@ tiktoken-rs = "0.9.1"
 semver = "1.0"
 flate2 = "1.0"
 tar = "0.4"
-zip = "2.4"
+zip = "7.4"
 
 [build-dependencies]
 winresource = "0.1.27"

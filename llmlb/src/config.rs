@@ -124,6 +124,22 @@ pub fn is_auth_disabled() -> bool {
         .unwrap_or(false)
 }
 
+/// エンドポイントのモデル自動同期の最短間隔を取得
+///
+/// ヘルスチェック成功時にモデル同期（`GET /v1/models` + DB反映）を実行する際、
+/// 同一エンドポイントに対して過剰に同期しないためのスロットリングに使用する。
+///
+/// 環境変数 `LLMLB_AUTO_SYNC_MODELS_INTERVAL_SECS` から取得し、
+/// 未設定の場合は 15 分（900 秒）を使用する。
+pub fn get_auto_sync_models_interval() -> Duration {
+    let secs = get_env_with_fallback_parse(
+        "LLMLB_AUTO_SYNC_MODELS_INTERVAL_SECS",
+        "AUTO_SYNC_MODELS_INTERVAL_SECS",
+        900u64,
+    );
+    Duration::from_secs(secs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +279,22 @@ mod tests {
         assert!(!is_auth_disabled());
         std::env::remove_var("LLMLB_AUTH_DISABLED");
         std::env::remove_var("AUTH_DISABLED");
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_auto_sync_models_interval_default() {
+        std::env::remove_var("LLMLB_AUTO_SYNC_MODELS_INTERVAL_SECS");
+        std::env::remove_var("AUTO_SYNC_MODELS_INTERVAL_SECS");
+        assert_eq!(get_auto_sync_models_interval(), Duration::from_secs(900));
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_auto_sync_models_interval_from_env() {
+        std::env::set_var("LLMLB_AUTO_SYNC_MODELS_INTERVAL_SECS", "60");
+        std::env::remove_var("AUTO_SYNC_MODELS_INTERVAL_SECS");
+        assert_eq!(get_auto_sync_models_interval(), Duration::from_secs(60));
+        std::env::remove_var("LLMLB_AUTO_SYNC_MODELS_INTERVAL_SECS");
     }
 }

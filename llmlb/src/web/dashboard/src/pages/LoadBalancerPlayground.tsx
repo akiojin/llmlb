@@ -270,6 +270,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
   const [isRefreshingDistribution, setIsRefreshingDistribution] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const isMountedRef = useRef(true)
   const abortControllerRef = useRef<AbortController | null>(null)
   const loadTestStopRef = useRef(false)
   const loadTestAbortControllersRef = useRef<Set<AbortController>>(new Set())
@@ -343,6 +344,22 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Cleanup on unmount: abort any in-flight requests (chat + load-test) so we don't
+  // keep hammering the backend after leaving the page.
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+
+      abortControllerRef.current?.abort()
+
+      loadTestStopRef.current = true
+      loadTestAbortControllersRef.current.forEach((controller) => {
+        controller.abort()
+      })
+      loadTestAbortControllersRef.current.clear()
+    }
+  }, [])
 
   const clearApiKey = useCallback(() => {
     setApiKey('')
@@ -559,9 +576,13 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
         setMessages(messages)
       }
     } finally {
-      setIsStreaming(false)
+      if (isMountedRef.current) {
+        setIsStreaming(false)
+      }
       abortControllerRef.current = null
-      inputRef.current?.focus()
+      if (isMountedRef.current) {
+        inputRef.current?.focus()
+      }
     }
   }
 
@@ -648,12 +669,14 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
         } finally {
           loadTestAbortControllersRef.current.delete(requestAbortController)
           completed += 1
-          setLoadTestProgress({
-            total: totalRequests,
-            completed,
-            success,
-            error,
-          })
+          if (isMountedRef.current) {
+            setLoadTestProgress({
+              total: totalRequests,
+              completed,
+              success,
+              error,
+            })
+          }
         }
 
         if (intervalMs > 0) {
@@ -665,6 +688,10 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
     try {
       const workers = Array.from({ length: concurrency }, () => worker())
       await Promise.all(workers)
+
+      if (!isMountedRef.current) {
+        return
+      }
 
       const finalCount = completed
       await fetchDistributionForRun(runId, finalCount)
@@ -678,8 +705,10 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
       ])
     } finally {
       loadTestAbortControllersRef.current.clear()
-      setIsLoadTesting(false)
-      setIsStoppingLoadTest(false)
+      if (isMountedRef.current) {
+        setIsLoadTesting(false)
+        setIsStoppingLoadTest(false)
+      }
       loadTestStopRef.current = false
     }
   }

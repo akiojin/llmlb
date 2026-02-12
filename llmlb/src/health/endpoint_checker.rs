@@ -455,7 +455,11 @@ impl EndpointHealthChecker {
 mod tests {
     use super::*;
     use crate::db::test_utils::TEST_LOCK;
+    use serde_json::json;
     use sqlx::SqlitePool;
+    use std::time::{Duration, Instant};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:")
@@ -529,5 +533,44 @@ mod tests {
         // online + error_count=1 → offline（2回目の失敗でoffline）
         let new_status = checker.determine_failure_status(&endpoint, EndpointStatus::Online);
         assert_eq!(new_status, EndpointStatus::Offline);
+    }
+
+    #[tokio::test]
+    async fn test_health_check_triggers_auto_model_sync() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "object": "list",
+                "data": [
+                    {"id": "auto-model-1", "object": "model"},
+                    {"id": "auto-model-2", "object": "model"}
+                ]
+            })))
+            .mount(&mock)
+            .await;
+
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri());
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        // Auto sync is expected to run asynchronously after a successful health check.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let models = registry.list_models(endpoint.id).await.unwrap();
+            if models.iter().any(|m| m.model_id == "auto-model-1") {
+                break;
+            }
+            if Instant::now() > deadline {
+                panic!("Timed out waiting for auto model sync after health check");
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     }
 }

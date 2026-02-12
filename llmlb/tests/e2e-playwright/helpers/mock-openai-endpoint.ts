@@ -58,9 +58,21 @@ export async function startMockOpenAIEndpointServer(options?: {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
 
+    // llmlb health checker prefers /api/health (Phase 1.4). Keep it fast so
+    // E2E tests don't depend on /v1/models latency.
+    if (req.method === 'GET' && url.pathname === '/api/health') {
+      return writeJson(res, 200, {
+        gpu: { device_count: 0 },
+        load: { active_requests: 0 },
+      })
+    }
+
     // OpenAI-compatible models listing.
     if (req.method === 'GET' && url.pathname === '/v1/models') {
       const created = Math.floor(Date.now() / 1000)
+      if (responseDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+      }
       return writeJson(res, 200, {
         object: 'list',
         data: models.map((id) => ({

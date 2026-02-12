@@ -108,7 +108,7 @@ function getStatusIndicatorColor(status: DashboardEndpoint['status'] | undefined
     case 'pending':
       return 'text-yellow-500'
     case 'offline':
-      return 'text-muted-foreground'
+      return 'text-destructive'
     case 'error':
       return 'text-destructive'
     default:

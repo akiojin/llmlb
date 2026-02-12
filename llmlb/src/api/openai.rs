@@ -311,6 +311,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
     // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
+    let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
     {
         let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
@@ -325,6 +326,14 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                     }
                     // Responses APIは全エンドポイント対応前提（判定/フラグは廃止）
                     apis.insert(SupportedAPI::Responses);
+
+                    // max_tokens を集約（複数エンドポイントにある場合は最大値を採用）
+                    let entry = endpoint_model_max_tokens
+                        .entry(model.model_id.clone())
+                        .or_insert(None);
+                    if let Some(mt) = model.max_tokens {
+                        *entry = Some(entry.map_or(mt, |existing| existing.max(mt)));
+                    }
                 }
             }
         }
@@ -373,6 +382,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "description": m.description,
                 "chat_template": m.chat_template,
                 "supported_apis": supported_apis,
+                "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
             });
             data.push(obj);
         } else {
@@ -385,6 +395,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "download_progress": null,
                 "ready": ready,
                 "supported_apis": supported_apis,
+                "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
             });
             data.push(obj);
         }
@@ -407,6 +418,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "download_progress": null,
             "ready": true,
             "supported_apis": supported_apis,
+            "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
         });
         data.push(obj);
     }
@@ -428,6 +440,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "download_progress": null,
             "ready": true,
             "supported_apis": vec!["chat_completions"],
+            "max_tokens": null,
         });
         data.push(obj);
     }

@@ -671,6 +671,7 @@ export interface OpenAIModel {
   tags?: string[]
   description?: string
   chat_template?: string
+  max_tokens?: number
 }
 
 // /api/models/discover-gguf response types

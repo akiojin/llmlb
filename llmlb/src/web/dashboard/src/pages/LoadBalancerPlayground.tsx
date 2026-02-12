@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -250,6 +251,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
   const [streamEnabled, setStreamEnabled] = useState(true)
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(16384)
+  const [useMaxContext, setUseMaxContext] = useState(false)
 
   // Load test state
   const [loadTestTotalRequests, setLoadTestTotalRequests] = useState(
@@ -339,6 +341,9 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
       setSelectedModel(models[0].id)
     }
   }, [modelsData, selectedModel])
+
+  const selectedModelMaxTokens = modelsData?.data?.find(m => m.id === selectedModel)?.max_tokens
+  const effectiveMaxTokens = useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens
 
   // Scroll to bottom
   useEffect(() => {
@@ -518,7 +523,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
             messages: requestMessages,
             stream: true,
             temperature,
-            max_tokens: maxTokens,
+            max_tokens: effectiveMaxTokens,
             user: runTag,
           },
           apiKey.trim(),
@@ -542,7 +547,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
             messages: requestMessages,
             stream: false,
             temperature,
-            max_tokens: maxTokens,
+            max_tokens: effectiveMaxTokens,
             user: runTag,
           },
           apiKey.trim(),
@@ -654,7 +659,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
               messages: requestMessages,
               stream: false,
               temperature,
-              max_tokens: maxTokens,
+              max_tokens: effectiveMaxTokens,
               user: runTag,
             },
             apiKey.trim(),
@@ -748,7 +753,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
       messages: requestMessages,
       stream: streamEnabled,
       temperature,
-      max_tokens: maxTokens,
+      max_tokens: effectiveMaxTokens,
     },
     null,
     2
@@ -1365,12 +1370,27 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
 
             <div className="space-y-2">
               <Label>Max Tokens</Label>
+              <div className="flex items-center space-x-2 mb-2">
+                <Checkbox
+                  id="lb-use-max-context"
+                  checked={useMaxContext}
+                  onCheckedChange={(checked) => setUseMaxContext(checked === true)}
+                  disabled={selectedModelMaxTokens == null && !useMaxContext}
+                />
+                <Label
+                  htmlFor="lb-use-max-context"
+                  className={cn("text-sm font-normal", selectedModelMaxTokens == null && "text-muted-foreground")}
+                >
+                  Use model max context{selectedModelMaxTokens != null ? ` (${selectedModelMaxTokens.toLocaleString()})` : ' (unknown)'}
+                </Label>
+              </div>
               <Input
                 type="number"
-                value={maxTokens}
+                value={useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens}
                 onChange={(e) => setMaxTokens(Number.parseInt(e.target.value, 10) || 2048)}
                 min={1}
-                max={32768}
+                max={131072}
+                disabled={useMaxContext && selectedModelMaxTokens != null}
               />
             </div>
           </div>

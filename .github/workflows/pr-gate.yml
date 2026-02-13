@@ -11,16 +11,16 @@ jobs:
     name: Check PR Source (release/* only)
     runs-on: ubuntu-latest
     steps:
-      - name: Verify PR is from release branch
+      - name: Verify PR is from release or develop branch
         run: |
           HEAD_REF="${{ github.head_ref }}"
           BASE_REF="${{ github.base_ref }}"
 
           echo "PR: ${HEAD_REF} -> ${BASE_REF}"
 
-          if [[ "$BASE_REF" == "main" && ! "$HEAD_REF" =~ ^release/ ]]; then
-            echo "::error::Direct PRs to main are not allowed. Please create a release branch (release/*) and submit a PR from there."
+          if [[ "$BASE_REF" == "main" && ! "$HEAD_REF" =~ ^(release/|develop$) ]]; then
+            echo "::error::Direct PRs to main are not allowed. Please use develop or a release branch (release/*)."
             exit 1
           fi
 
-          echo "✓ PR source branch is valid (release branch)"
+          echo "✓ PR source branch is valid"

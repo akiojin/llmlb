@@ -263,4 +263,173 @@ export class DashboardPage {
     const selector = `th[data-sort="${column}"]`;
     await this.page.click(selector);
   }
+
+  // --- Statistics Tab (T008) ---
+
+  async goToStatisticsTab() {
+    await this.page.click('button[role="tab"]:has-text("Statistics")');
+    await this.page.waitForTimeout(300);
+  }
+
+  async switchToDaily() {
+    await this.page.click('button:has-text("Daily")');
+    await this.page.waitForTimeout(300);
+  }
+
+  async switchToMonthly() {
+    await this.page.click('button:has-text("Monthly")');
+    await this.page.waitForTimeout(300);
+  }
+
+  async getTokenStatsCards(): Promise<{
+    totalRequests: string;
+    inputTokens: string;
+    outputTokens: string;
+    totalTokens: string;
+  }> {
+    const getText = async (selector: string) =>
+      (await this.page.locator(selector).textContent()) ?? '';
+    return {
+      totalRequests: await getText('[data-stat="total-requests"]'),
+      inputTokens: await getText('[data-stat="input-tokens"]'),
+      outputTokens: await getText('[data-stat="output-tokens"]'),
+      totalTokens: await getText('[data-stat="total-tokens"]'),
+    };
+  }
+
+  // --- History Tab (T009) ---
+
+  async goToHistoryTab() {
+    await this.page.click('button[role="tab"]:has-text("History")');
+    await this.page.waitForTimeout(300);
+  }
+
+  getHistoryRows(): Locator {
+    return this.page.locator(DashboardSelectors.history.historyTbody).locator('tr');
+  }
+
+  async clickHistoryRow(index: number) {
+    await this.getHistoryRows().nth(index).click();
+    await this.page.waitForTimeout(300);
+  }
+
+  getHistoryDetailModal(): Locator {
+    return this.page.locator(DashboardSelectors.modals.requestModal);
+  }
+
+  async switchDetailTab(tab: 'overview' | 'request' | 'response') {
+    const modal = this.getHistoryDetailModal();
+    await modal.locator(`button[role="tab"]:has-text("${tab}")`).click({ force: true });
+    await this.page.waitForTimeout(300);
+  }
+
+  async goToHistoryPage(direction: 'next' | 'prev') {
+    const selector =
+      direction === 'next'
+        ? DashboardSelectors.history.pageNext
+        : DashboardSelectors.history.pagePrev;
+    await this.page.click(selector);
+    await this.page.waitForTimeout(300);
+  }
+
+  getHistoryPagination(): Locator {
+    return this.page.locator(DashboardSelectors.history.pageInfo);
+  }
+
+  // --- Logs Tab (T010) ---
+
+  async goToLogsTab() {
+    await this.page.click('button[role="tab"]:has-text("Logs")');
+    await this.page.waitForTimeout(300);
+  }
+
+  getRouterLogEntries(): Locator {
+    return this.page.locator(DashboardSelectors.logs.routerList).locator('> *');
+  }
+
+  async clickRefreshRouterLogs() {
+    await this.page.click(DashboardSelectors.logs.routerRefresh);
+    await this.page.waitForTimeout(300);
+  }
+
+  async selectEndpointForLogs(endpointName: string) {
+    await this.page.locator(DashboardSelectors.logs.nodeSelect).selectOption({ label: endpointName });
+    await this.page.waitForTimeout(300);
+  }
+
+  getEndpointLogEntries(): Locator {
+    return this.page.locator(DashboardSelectors.logs.nodeList).locator('> *');
+  }
+
+  async clickRefreshEndpointLogs() {
+    await this.page.click(DashboardSelectors.logs.nodeRefresh);
+    await this.page.waitForTimeout(300);
+  }
+
+  // --- User Management (T011) ---
+
+  async openUserManagement() {
+    // Click user dropdown in header, then click "Users" menu item
+    await this.page.click('#user-menu-button');
+    await this.page.waitForTimeout(200);
+    await this.page.click('a:has-text("Users"), button:has-text("Users")');
+    await this.page.waitForTimeout(300);
+  }
+
+  getUserRows(): Locator {
+    return this.page.locator('#users-table tbody tr, #user-list .user-row');
+  }
+
+  async clickAddUser() {
+    await this.page.click('button:has-text("Add User")');
+    await this.page.waitForTimeout(300);
+  }
+
+  async fillUserForm(username: string, password: string, role: string) {
+    await this.page.fill('#new-username, input[name="username"]', username);
+    await this.page.fill('#new-password, input[name="password"]', password);
+    await this.page.locator('#new-role, select[name="role"]').selectOption(role);
+  }
+
+  async submitUserForm() {
+    await this.page.click('button[type="submit"]:has-text("Create"), button:has-text("Save")');
+    await this.page.waitForTimeout(300);
+  }
+
+  // --- Endpoint Edit (T012) ---
+
+  async openEndpointDetail(endpointName: string) {
+    const row = this.nodesBody.locator('tr', { hasText: endpointName });
+    await row.locator('button[title="Details"]').click();
+    await this.page.waitForTimeout(300);
+  }
+
+  async editDisplayName(newName: string) {
+    const modal = this.page.locator(DashboardSelectors.modals.nodeModal);
+    await modal.locator('input[name="display_name"], #node-display-name').fill(newName);
+  }
+
+  async editHealthCheckInterval(seconds: number) {
+    const modal = this.page.locator(DashboardSelectors.modals.nodeModal);
+    await modal
+      .locator('input[name="health_check_interval"], #node-health-check-interval')
+      .fill(String(seconds));
+  }
+
+  async editInferenceTimeout(seconds: number) {
+    const modal = this.page.locator(DashboardSelectors.modals.nodeModal);
+    await modal
+      .locator('input[name="inference_timeout"], #node-inference-timeout')
+      .fill(String(seconds));
+  }
+
+  async editNotes(text: string) {
+    const modal = this.page.locator(DashboardSelectors.modals.nodeModal);
+    await modal.locator('textarea[name="notes"], #node-notes').fill(text);
+  }
+
+  async saveEndpointChanges() {
+    await this.page.click(DashboardSelectors.modals.nodeModalSave);
+    await this.page.waitForTimeout(300);
+  }
 }

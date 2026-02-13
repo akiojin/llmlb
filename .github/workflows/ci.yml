@@ -107,7 +107,13 @@ jobs:
         with:
           toolchain: stable
       - name: Bootstrap pest_generator
-        run: cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+        run: |
+          if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
+            cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
+          else
+            echo "Skipping pest_generator bootstrap: vendor/pest_generator/bootstrap/Cargo.toml not found"
+          fi
+        shell: bash
       - name: Install cargo-llvm-cov
         run: |
           rustup component add llvm-tools-preview

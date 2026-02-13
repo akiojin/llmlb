@@ -398,6 +398,27 @@ pub async fn increment_request_counters(
     Ok(result.rows_affected() > 0)
 }
 
+/// エンドポイントの累計リクエスト統計を集計して取得（TOPカード永続化用）
+pub async fn get_request_totals(pool: &SqlitePool) -> Result<EndpointRequestTotals, sqlx::Error> {
+    let row = sqlx::query_as::<_, EndpointRequestTotalsRow>(
+        r#"
+        SELECT
+            COALESCE(SUM(total_requests), 0) as total_requests,
+            COALESCE(SUM(successful_requests), 0) as successful_requests,
+            COALESCE(SUM(failed_requests), 0) as failed_requests
+        FROM endpoints
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(EndpointRequestTotals {
+        total_requests: row.total_requests,
+        successful_requests: row.successful_requests,
+        failed_requests: row.failed_requests,
+    })
+}
+
 // --- EndpointModel CRUD ---
 
 /// エンドポイントにモデルを追加
@@ -599,6 +620,24 @@ pub async fn cleanup_old_health_checks(pool: &SqlitePool) -> Result<u64, sqlx::E
 }
 
 // --- Internal Row Types ---
+
+#[derive(sqlx::FromRow)]
+struct EndpointRequestTotalsRow {
+    total_requests: i64,
+    successful_requests: i64,
+    failed_requests: i64,
+}
+
+/// エンドポイント集計リクエスト数の合計値。
+#[derive(Debug, Clone, Copy)]
+pub struct EndpointRequestTotals {
+    /// 全リクエスト数。
+    pub total_requests: i64,
+    /// 成功リクエスト数。
+    pub successful_requests: i64,
+    /// 失敗リクエスト数。
+    pub failed_requests: i64,
+}
 
 #[derive(sqlx::FromRow)]
 struct EndpointRow {
@@ -959,5 +998,31 @@ mod tests {
         assert_eq!(ep.total_requests, 4);
         assert_eq!(ep.successful_requests, 3);
         assert_eq!(ep.failed_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_request_totals() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let ep1 = Endpoint::new("Totals A".to_string(), "http://localhost:9091".to_string());
+        let ep2 = Endpoint::new("Totals B".to_string(), "http://localhost:9092".to_string());
+        create_endpoint(&pool, &ep1).await.unwrap();
+        create_endpoint(&pool, &ep2).await.unwrap();
+
+        increment_request_counters(&pool, ep1.id, true)
+            .await
+            .unwrap();
+        increment_request_counters(&pool, ep1.id, false)
+            .await
+            .unwrap();
+        increment_request_counters(&pool, ep2.id, true)
+            .await
+            .unwrap();
+
+        let totals = get_request_totals(&pool).await.unwrap();
+        assert_eq!(totals.total_requests, 3);
+        assert_eq!(totals.successful_requests, 2);
+        assert_eq!(totals.failed_requests, 1);
     }
 }

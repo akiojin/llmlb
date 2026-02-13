@@ -43,6 +43,11 @@ export function formatNumber(num: number | null | undefined): string {
   return num.toLocaleString()
 }
 
+export function formatFullNumber(num: number | null | undefined): string {
+  if (num == null) return '-'
+  return num.toLocaleString('ja-JP')
+}
+
 export function formatPercentage(value: number | null | undefined, decimals = 1): string {
   if (value == null) return '-'
   return `${value.toFixed(decimals)}%`

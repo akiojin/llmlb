@@ -43,24 +43,29 @@ test.describe('Dashboard Endpoints Tab @dashboard', () => {
   });
 
   test('E-04: Table headers are clickable for sorting', async ({ page }) => {
-    // Find sortable table headers (those with cursor-pointer class)
-    const sortableHeaders = page.locator('th.cursor-pointer');
-    const count = await sortableHeaders.count();
-    expect(count).toBeGreaterThan(0);
+    // Wait for table to be fully rendered
+    const table = page.locator('table');
+    await expect(table).toBeVisible({ timeout: 10000 });
 
-    // Click first sortable header
-    if (count > 0) {
-      await sortableHeaders.first().click();
-      // Should not throw error
-      expect(true).toBe(true);
-    }
+    // Find the Status header which has a sort indicator
+    const statusHeader = page.locator('th').filter({ hasText: 'Status' });
+    await expect(statusHeader).toBeVisible({ timeout: 5000 });
+
+    // Click the Status header to sort
+    await statusHeader.click();
+    // Should not throw error - sorting works
+    expect(true).toBe(true);
   });
 
   test('E-05: Table shows endpoint information', async ({ page }) => {
+    // Wait for table to be fully rendered
+    const table = page.locator('table');
+    await expect(table).toBeVisible({ timeout: 10000 });
+
     // Table should have headers for endpoint info
     const headers = page.locator('th');
     const headerCount = await headers.count();
-    // Expect at least: Name, URL, Status, Latency, Models, Last Seen, Actions
+    // Expect at least: Name, URL, Type, Status, Requests, Latency, Models, Last Seen, Actions
     expect(headerCount).toBeGreaterThanOrEqual(6);
   });
 
@@ -96,25 +101,61 @@ test.describe('Dashboard Endpoints Tab @dashboard', () => {
   });
 
   test('E-11: Status badge shows correct color', async ({ page }) => {
-    // Status badges should exist in the table if there are endpoints
     const tableBody = page.locator('tbody');
     const rows = tableBody.locator('tr');
     const rowCount = await rows.count();
 
-    if (rowCount > 0) {
-      // Check if empty message is displayed
-      const emptyCell = tableBody.locator('td[colspan]');
-      const hasEmptyMessage = await emptyCell.isVisible().catch(() => false);
+    if (rowCount === 0) {
+      test.skip(true, 'No endpoint rows found');
+    }
 
-      if (!hasEmptyMessage) {
-        // Look for badge elements
-        const badges = tableBody.locator('[class*="inline-flex"][class*="rounded"]');
-        const badgeCount = await badges.count();
-        expect(badgeCount).toBeGreaterThanOrEqual(0);
+    const emptyCell = tableBody.locator('td[colspan]');
+    const hasEmptyMessage = await emptyCell.isVisible().catch(() => false);
+    if (hasEmptyMessage) {
+      test.skip(true, 'No endpoints registered');
+    }
+
+    let verifiedRows = 0;
+
+    for (let i = 0; i < rowCount; i += 1) {
+      const row = rows.nth(i);
+      const statusBadge = row.locator('td').nth(3).locator('div.inline-flex').first();
+      const isBadgeVisible = await statusBadge.isVisible().catch(() => false);
+
+      if (!isBadgeVisible) {
+        continue;
+      }
+
+      const label = ((await statusBadge.textContent()) ?? '').trim();
+      const className = (await statusBadge.getAttribute('class')) ?? '';
+
+      switch (label) {
+        case 'Online':
+          expect(className).toContain('bg-success/20');
+          expect(className).toContain('text-success');
+          verifiedRows += 1;
+          break;
+        case 'Pending':
+          expect(className).toContain('bg-warning/20');
+          expect(className).toContain('text-warning');
+          verifiedRows += 1;
+          break;
+        case 'Offline':
+          expect(className).toContain('bg-destructive/20');
+          expect(className).toContain('text-destructive');
+          verifiedRows += 1;
+          break;
+        case 'Error':
+          expect(className).toContain('bg-destructive');
+          expect(className).toContain('text-destructive-foreground');
+          verifiedRows += 1;
+          break;
+        default:
+          break;
       }
     }
-    // Test passes regardless - verifying UI structure
-    expect(true).toBe(true);
+
+    expect(verifiedRows).toBeGreaterThan(0);
   });
 
   test('E-12: Endpoint detail button works', async ({ page }) => {

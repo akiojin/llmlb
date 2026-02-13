@@ -1,5 +1,46 @@
 # Unreleased
 
+# [4.1.0](https://github.com/akiojin/llmlb/compare/v4.0.0...v4.1.0) (2026-02-13)
+
+### Features
+
+- ロードバランサーPlaygroundを追加 (#384)
+- エンドポイント単位リクエスト統計機能を追加 (#382)
+- ステータス色を統一しSpec-first TDDフローを導入 (#383)
+
+### Bug Fixes
+
+- max_tokensのnull対応とmax contextトグル不具合を修正 (#392)
+- ヘルスチェック成功時にエンドポイントモデルを自動同期 (#388)
+- Total TokensをStatisticsと整合 (#387)
+- APIキー一覧でkey prefixを完全マスク＆選択不可に (#385)
+- APIキーは作成直後のみコピー可能に (#385)
+- エンドポイントステータス色をSPEC-66555000に準拠 (#386)
+- OpenAI APIのエンドポイントAPIキー保持を修正
+- モデル対応エンドポイント間のトラフィック分散を修正
+
+### Tests
+
+- SPEC-62241000: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
+
+### Documentation
+
+- NULL total_tokensの集計例を文書化 (#391)
+
+### CI
+
+- publish dispatchにactions:write権限を追加
+
+# [4.0.0](https://github.com/akiojin/llmlb/compare/v3.1.0...v4.0.0) (2026-02-10)
+
+### Breaking Changes
+
+- OpenAI互換API: `supports_responses_api`フラグを削除 (#378)
+
+### Features
+
+- セルフアップデート通知・ドレイン・適用・再起動機能を追加 (#379)
+
 # [3.1.0](https://github.com/akiojin/llmlb/compare/v3.0.3...v3.1.0) (2026-02-09)
 
 ### Features

@@ -358,6 +358,8 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 - [x] T135 [P] `llmlb/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` にタイプ列を追加
 - [x] T136 [P] `llmlb/src/web/dashboard/src/components/dashboard/EndpointDetailModal.tsx` にタイプ表示・ダウンロードUI追加
 - [x] T137 [P] `llmlb/src/web/dashboard/src/components/dashboard/ModelDownloadDialog.tsx` を新規作成（xLLMエンドポイント用）
+- [x] T152 [P] `llmlb/src/web/dashboard/src/components/dashboard/EndpointTable.tsx` `EndpointDetailModal.tsx` `EndpointPlayground.tsx` にステータス色分け（online/pending/offline/error）を統一
+- [x] T153 [P] `llmlb/tests/e2e-playwright/specs/dashboard/dashboard-nodes.spec.ts` にステータスバッジ色分け検証を追加
 
 ### Phase 4.6: Unit Tests
 

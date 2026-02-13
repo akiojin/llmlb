@@ -24,7 +24,13 @@ test.describe('Dashboard Header Controls @dashboard', () => {
     expect(theme2).toBe(initialTheme);
   });
 
-  // H-02 は削除済み: Playgroundボタンはエンドポイント別に移行
+  test('H-02: LB Playground button navigates to #lb-playground', async ({ page }) => {
+    const button = page.locator('#lb-playground-button');
+    await expect(button).toBeVisible({ timeout: 10000 });
+    await button.click();
+    await expect(page).toHaveURL(/#lb-playground/);
+    await expect(page.locator('#lb-playground-sidebar')).toBeVisible({ timeout: 10000 });
+  });
 
   test('H-03: API Keys button opens API Keys modal', async ({ page }) => {
     // Click the API Keys button

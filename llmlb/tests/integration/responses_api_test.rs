@@ -9,7 +9,7 @@
 //! RES004: 認証なしリクエストへの401エラー
 //! RES005: ルート存在確認
 
-use std::sync::Arc;
+use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
 use crate::support::{
     http::{spawn_lb, TestServer},
@@ -29,6 +29,12 @@ use serial_test::serial;
 #[derive(Clone)]
 struct ResponsesIntegrationState {
     model_id: String,
+}
+
+#[derive(Clone)]
+struct ResponsesRoutingState {
+    endpoint_label: String,
+    models: Vec<String>,
 }
 
 /// Responses API対応のモックノードを起動
@@ -123,6 +129,128 @@ async fn models_handler(State(state): State<Arc<ResponsesIntegrationState>>) -> 
         })),
     )
         .into_response()
+}
+
+async fn spawn_routing_node(state: ResponsesRoutingState) -> TestServer {
+    let app = Router::new()
+        .route("/v1/responses", post(routing_responses_handler))
+        .route("/v1/models", get(routing_models_handler))
+        .with_state(Arc::new(state));
+
+    spawn_lb(app).await
+}
+
+async fn routing_responses_handler(
+    State(state): State<Arc<ResponsesRoutingState>>,
+    Json(req): Json<Value>,
+) -> impl IntoResponse {
+    let model = req["model"].as_str().unwrap_or_default();
+
+    if !state.models.iter().any(|m| m == model) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!("model '{}' not found on {}", model, state.endpoint_label),
+                    "type": "invalid_request_error"
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "id": format!("resp-{}", state.endpoint_label),
+            "object": "response",
+            "model": model,
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": format!("served-by={}", state.endpoint_label)
+                        }
+                    ]
+                }
+            ]
+        })),
+    )
+        .into_response()
+}
+
+async fn routing_models_handler(
+    State(state): State<Arc<ResponsesRoutingState>>,
+) -> impl IntoResponse {
+    let data: Vec<Value> = state
+        .models
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "object": "model",
+                "created": 0,
+                "owned_by": state.endpoint_label,
+                "supported_apis": ["chat_completions", "responses"]
+            })
+        })
+        .collect();
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "object": "list", "data": data })),
+    )
+        .into_response()
+}
+
+async fn register_and_sync_endpoint(
+    client: &Client,
+    lb_addr: SocketAddr,
+    name: &str,
+    base_url: &str,
+) -> String {
+    let create_resp = client
+        .post(format!("http://{}/api/endpoints", lb_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&serde_json::json!({
+            "name": name,
+            "base_url": base_url,
+            "health_check_interval_secs": 30
+        }))
+        .send()
+        .await
+        .expect("create endpoint request");
+    assert_eq!(create_resp.status(), ReqStatusCode::CREATED);
+
+    let created: Value = create_resp.json().await.expect("create endpoint json");
+    let endpoint_id = created["id"].as_str().expect("endpoint id").to_string();
+
+    let test_resp = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/test",
+            lb_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint test request");
+    assert_eq!(test_resp.status(), ReqStatusCode::OK);
+
+    let sync_resp = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/sync",
+            lb_addr, endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("endpoint sync request");
+    assert_eq!(sync_resp.status(), ReqStatusCode::OK);
+
+    endpoint_id
 }
 
 // =============================================================================
@@ -224,6 +352,88 @@ async fn res001_responses_passthrough_with_tools() {
 
     // ツール定義がそのままパススルーされることを確認
     assert_eq!(response.status(), ReqStatusCode::OK);
+}
+
+/// RES001: 同一モデルを持つ複数エンドポイント間で /v1/responses が分散される
+#[tokio::test]
+#[serial]
+async fn res001_responses_balances_across_endpoints_having_same_model() {
+    let lb = spawn_test_lb().await;
+    let client = Client::new();
+
+    let ep_a = spawn_routing_node(ResponsesRoutingState {
+        endpoint_label: "ep-a".to_string(),
+        models: vec!["shared-model".to_string(), "qwen3-coder:30b".to_string()],
+    })
+    .await;
+    let ep_b = spawn_routing_node(ResponsesRoutingState {
+        endpoint_label: "ep-b".to_string(),
+        models: vec!["shared-model".to_string(), "qwen3-coder:30b".to_string()],
+    })
+    .await;
+    let ep_c = spawn_routing_node(ResponsesRoutingState {
+        endpoint_label: "ep-c".to_string(),
+        models: vec!["shared-model".to_string()],
+    })
+    .await;
+
+    register_and_sync_endpoint(
+        &client,
+        lb.addr(),
+        "Responses Balance Endpoint A",
+        &format!("http://{}", ep_a.addr()),
+    )
+    .await;
+    register_and_sync_endpoint(
+        &client,
+        lb.addr(),
+        "Responses Balance Endpoint B",
+        &format!("http://{}", ep_b.addr()),
+    )
+    .await;
+    register_and_sync_endpoint(
+        &client,
+        lb.addr(),
+        "Responses Balance Endpoint C",
+        &format!("http://{}", ep_c.addr()),
+    )
+    .await;
+
+    let mut served_by: HashSet<String> = HashSet::new();
+
+    for _ in 0..12 {
+        let response = client
+            .post(format!("http://{}/v1/responses", lb.addr()))
+            .header("x-api-key", "sk_debug")
+            .json(&serde_json::json!({
+                "model": "qwen3-coder:30b",
+                "input": "ping"
+            }))
+            .send()
+            .await
+            .expect("responses request should succeed");
+        assert_eq!(response.status(), ReqStatusCode::OK);
+
+        let body: Value = response.json().await.expect("valid json response");
+        let text = body["output"][0]["content"][0]["text"]
+            .as_str()
+            .expect("output text")
+            .to_string();
+        served_by.insert(text);
+    }
+
+    assert!(
+        served_by.contains("served-by=ep-a"),
+        "qwen3-coder:30b should be served by endpoint A"
+    );
+    assert!(
+        served_by.contains("served-by=ep-b"),
+        "qwen3-coder:30b should be served by endpoint B"
+    );
+    assert!(
+        !served_by.contains("served-by=ep-c"),
+        "endpoint without qwen3-coder:30b must not receive traffic for that model"
+    );
 }
 
 // =============================================================================

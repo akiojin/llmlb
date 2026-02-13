@@ -202,6 +202,9 @@ export interface DashboardEndpoint {
   registered_at: string
   notes?: string
   model_count: number
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
 }
 
 /**
@@ -416,6 +419,36 @@ export const systemApi = {
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
+/**
+ * SPEC-76643000: Endpoint today stats (daily summary for a single day)
+ */
+export interface EndpointTodayStats {
+  date: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
+/**
+ * SPEC-76643000: Daily stat entry (used for trend charts)
+ */
+export interface EndpointDailyStatEntry {
+  date: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
+/**
+ * SPEC-76643000: Model-level request statistics entry
+ */
+export interface ModelStatEntry {
+  model_id: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
 export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
@@ -486,7 +519,7 @@ export const endpointsApi = {
       models: Array<{
         model_id: string
         capabilities?: string[]
-        max_tokens?: number
+        max_tokens?: number | null
         last_checked?: string
       }>
     }>(`/api/endpoints/${id}/models`),
@@ -512,6 +545,20 @@ export const endpointsApi = {
     fetchWithAuth<ModelMetadata>(
       `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`
     ),
+
+  /** SPEC-76643000: Get today's request statistics for an endpoint */
+  getTodayStats: (id: string) =>
+    fetchWithAuth<EndpointTodayStats>(`/api/endpoints/${id}/today-stats`),
+
+  /** SPEC-76643000: Get daily request statistics for an endpoint */
+  getDailyStats: (id: string, days?: number) =>
+    fetchWithAuth<EndpointDailyStatEntry[]>(`/api/endpoints/${id}/daily-stats`, {
+      params: { days },
+    }),
+
+  /** SPEC-76643000: Get model-level request statistics */
+  getModelStats: (id: string) =>
+    fetchWithAuth<ModelStatEntry[]>(`/api/endpoints/${id}/model-stats`),
 
   /** Proxy chat completions to endpoint (JWT authenticated) */
   chatCompletions: async (
@@ -624,6 +671,7 @@ export interface OpenAIModel {
   tags?: string[]
   description?: string
   chat_template?: string
+  max_tokens?: number | null
 }
 
 // /api/models/discover-gguf response types
@@ -647,7 +695,7 @@ export interface DiscoverGgufResponse {
 }
 
 // /v1/models レスポンス
-interface OpenAIModelsResponse {
+export interface OpenAIModelsResponse {
   object: 'list'
   data: OpenAIModel[]
 }
@@ -842,7 +890,7 @@ export const usersApi = {
 // Chat API (OpenAI compatible)
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | Array<unknown>
 }
 
 export interface ChatSession {
@@ -860,13 +908,15 @@ export interface ChatCompletionRequest {
   stream?: boolean
   temperature?: number
   max_tokens?: number
+  user?: string
 }
 
 export const chatApi = {
   complete: async (
     request: ChatCompletionRequest,
     apiKey?: string,
-    onChunk?: (chunk: string) => void
+    onChunk?: (chunk: string) => void,
+    signal?: AbortSignal
   ) => {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -880,6 +930,7 @@ export const chatApi = {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
+      signal,
     })
 
     if (!response.ok) {
@@ -924,12 +975,16 @@ export const chatApi = {
     return response.json()
   },
 
-  getModels: (apiKey?: string) => {
+  getModels: async (apiKey?: string): Promise<OpenAIModelsResponse> => {
     const headers: HeadersInit = {}
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`
     }
-    return fetch(`${API_BASE}/v1/models`, { headers }).then((r) => r.json())
+    const response = await fetch(`${API_BASE}/v1/models`, { headers })
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText)
+    }
+    return response.json()
   },
 
   // Session management (local storage based for now)

@@ -124,7 +124,7 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
             {/* Refresh Button */}
             <Button
               id="refresh-button"
-              variant="ghost"
+              variant="outline"
               size="icon"
               onClick={handleRefresh}
               disabled={isRefreshing}
@@ -135,7 +135,7 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
             </Button>
 
             {/* Theme Toggle */}
-            <Button id="theme-toggle" variant="ghost" size="icon" onClick={toggleTheme}>
+            <Button id="theme-toggle" variant="outline" size="icon" onClick={toggleTheme}>
               {theme === 'dark' ? (
                 <Sun className="h-4 w-4" />
               ) : (
@@ -146,7 +146,7 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative">
+                <Button variant="outline" size="icon" className="relative">
                   <User className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>

@@ -19,6 +19,7 @@ import { EndpointTable } from '@/components/dashboard/EndpointTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2 } from 'lucide-react'
 
@@ -189,10 +190,9 @@ export default function Dashboard() {
                   Release
                 </a>
               )}
-              <button
+              <Button
                 onClick={onApply}
                 disabled={!canApply || isApplyingUpdate || applying}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
                 title={
                   !isAdmin
                     ? 'Admin role is required'
@@ -207,7 +207,7 @@ export default function Dashboard() {
                   <ArrowUpCircle className="h-4 w-4" />
                 )}
                 Restart to update
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -228,12 +228,9 @@ export default function Dashboard() {
               {error instanceof Error ? error.message : 'An error occurred'}
             </p>
           </div>
-          <button
-            onClick={() => refetch()}
-            className="text-sm text-primary hover:underline"
-          >
+          <Button variant="link" onClick={() => refetch()}>
             Try again
-          </button>
+          </Button>
         </div>
       </div>
     )

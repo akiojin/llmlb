@@ -318,7 +318,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
               <TabsContent value="request" className="mt-4">
                 <div className="relative">
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className="absolute right-2 top-2"
                     onClick={() =>
@@ -345,7 +345,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
               <TabsContent value="response" className="mt-4">
                 <div className="relative">
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className="absolute right-2 top-2"
                     onClick={() =>

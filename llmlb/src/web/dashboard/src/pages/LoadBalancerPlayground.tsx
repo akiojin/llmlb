@@ -821,7 +821,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Dashboard
           </Button>
-          <Button variant="ghost" className="w-full justify-start" onClick={() => setSettingsOpen(true)}>
+          <Button variant="outline" className="w-full justify-start" onClick={() => setSettingsOpen(true)}>
             <Settings className="mr-2 h-4 w-4" />
             Settings
           </Button>
@@ -873,7 +873,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
             <div className="inline-flex rounded-md border border-border p-1">
               <Button
                 size="sm"
-                variant={mode === 'chat' ? 'default' : 'ghost'}
+                variant={mode === 'chat' ? 'default' : 'outline'}
                 onClick={() => setMode('chat')}
                 className="h-7"
                 id="lb-mode-chat"
@@ -883,7 +883,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
               </Button>
               <Button
                 size="sm"
-                variant={mode === 'load_test' ? 'default' : 'ghost'}
+                variant={mode === 'load_test' ? 'default' : 'outline'}
                 onClick={() => setMode('load_test')}
                 className="h-7"
                 id="lb-mode-load-test"
@@ -1166,12 +1166,14 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
                       <>
                         <img src={att.data} alt={att.name} className="h-16 w-16 object-cover" />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <button
+                          <Button
+                            variant="destructive"
+                            size="icon"
                             onClick={() => removeAttachment(i)}
-                            className="text-white bg-destructive rounded-full p-1 hover:bg-destructive/80"
+                            className="rounded-full p-1 h-auto w-auto"
                           >
                             <X className="h-3 w-3" />
-                          </button>
+                          </Button>
                         </div>
                       </>
                     ) : (
@@ -1412,7 +1414,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
 
           <div className="relative">
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               className="absolute right-2 top-2"
               onClick={() => void copyToClipboard(generateCurl())}

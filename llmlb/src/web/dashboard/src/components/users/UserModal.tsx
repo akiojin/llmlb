@@ -247,7 +247,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => setEditUser(user)}
@@ -255,7 +255,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => setDeleteUser(user)}

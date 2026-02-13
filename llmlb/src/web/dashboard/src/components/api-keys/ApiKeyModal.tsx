@@ -334,7 +334,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     {showKey === 'created' ? createdKey : '•'.repeat(32)}
                   </code>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
                     onClick={() => setShowKey(showKey === 'created' ? null : 'created')}
                   >
@@ -346,7 +346,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   </Button>
                   <Button
                     id="copy-api-key"
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
                     aria-label="Copy full API key"
                     title="Copy full API key"
@@ -424,7 +424,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => setDeleteKey(key)}

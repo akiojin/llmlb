@@ -234,7 +234,7 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
                         <TableCell className="text-right">
                           {invitation.status === 'active' && !isExpired(invitation.expires_at) && (
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => setRevokeInvitation(invitation)}

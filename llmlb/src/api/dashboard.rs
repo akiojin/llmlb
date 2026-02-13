@@ -356,15 +356,36 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         }
     }
 
+    let mut total_requests = summary.total_requests;
+    let mut successful_requests = summary.successful_requests;
+    let mut failed_requests = summary.failed_requests;
+    let to_u64 = |value: i64| -> u64 {
+        if value < 0 {
+            0
+        } else {
+            value as u64
+        }
+    };
+    match crate::db::endpoints::get_request_totals(&state.db_pool).await {
+        Ok(request_totals) => {
+            total_requests = to_u64(request_totals.total_requests);
+            successful_requests = to_u64(request_totals.successful_requests);
+            failed_requests = to_u64(request_totals.failed_requests);
+        }
+        Err(e) => {
+            warn!("Failed to query persisted request totals: {}", e);
+        }
+    }
+
     DashboardStats {
         total_nodes: summary.total_nodes,
         online_nodes: summary.online_nodes,
         pending_nodes: summary.pending_nodes,
         registering_nodes: summary.registering_nodes,
         offline_nodes: summary.offline_nodes,
-        total_requests: summary.total_requests,
-        successful_requests: summary.successful_requests,
-        failed_requests: summary.failed_requests,
+        total_requests,
+        successful_requests,
+        failed_requests,
         total_active_requests: summary.total_active_requests,
         queued_requests: summary.queued_requests,
         average_response_time_ms: summary.average_response_time_ms,

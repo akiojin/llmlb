@@ -1,5 +1,5 @@
 import { type DashboardEndpoint, type DashboardStats } from '@/lib/api'
-import { formatNumber, formatDuration, formatPercentage } from '@/lib/utils'
+import { formatDuration, formatFullNumber, formatPercentage } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Server,
@@ -130,7 +130,7 @@ export function StatsCards({ stats, endpoints, isLoading }: StatsCardsProps) {
   const cards = [
     {
       title: 'Total Endpoints',
-      value: totalEndpoints != null ? formatNumber(totalEndpoints) : '—',
+      value: totalEndpoints != null ? formatFullNumber(totalEndpoints) : '—',
       subtitle: endpointsSubtitle,
       icon: <Server className="h-5 w-5 text-primary" />,
       accentColor: 'primary',
@@ -138,9 +138,9 @@ export function StatsCards({ stats, endpoints, isLoading }: StatsCardsProps) {
     },
     {
       title: 'Total Requests',
-      value: stats ? formatNumber(stats.total_requests) : '—',
+      value: stats ? formatFullNumber(stats.total_requests) : '—',
       subtitle: stats
-        ? `${formatNumber(stats.successful_requests)} successful`
+        ? `${formatFullNumber(stats.successful_requests)} successful`
         : undefined,
       icon: <Activity className="h-5 w-5 text-chart-2" />,
       accentColor: 'chart-2',
@@ -148,9 +148,11 @@ export function StatsCards({ stats, endpoints, isLoading }: StatsCardsProps) {
     },
     {
       title: 'Total Tokens',
-      value: stats ? formatNumber(stats.total_tokens) : '—',
+      value: stats ? formatFullNumber(stats.total_tokens) : '—',
       subtitle: stats
-        ? `In: ${formatNumber(stats.total_input_tokens)} / Out: ${formatNumber(stats.total_output_tokens)}`
+        ? `In: ${formatFullNumber(stats.total_input_tokens)} / Out: ${formatFullNumber(
+            stats.total_output_tokens
+          )}`
         : undefined,
       icon: <MessageSquare className="h-5 w-5 text-chart-5" />,
       accentColor: 'chart-5',
@@ -158,14 +160,14 @@ export function StatsCards({ stats, endpoints, isLoading }: StatsCardsProps) {
     },
     {
       title: 'Active Requests',
-      value: stats ? formatNumber(stats.total_active_requests) : '—',
+      value: stats ? formatFullNumber(stats.total_active_requests) : '—',
       icon: <Cpu className="h-5 w-5 text-chart-1" />,
       accentColor: 'chart-1',
       dataStat: 'active-requests',
     },
     {
       title: 'Queued Requests',
-      value: stats ? formatNumber(stats.queued_requests) : '—',
+      value: stats ? formatFullNumber(stats.queued_requests) : '—',
       icon: <Hourglass className="h-5 w-5 text-chart-5" />,
       accentColor: 'chart-5',
       dataStat: 'queued-requests',
@@ -179,7 +181,7 @@ export function StatsCards({ stats, endpoints, isLoading }: StatsCardsProps) {
             )
           : '—',
       subtitle: stats
-        ? `${formatNumber(stats.failed_requests)} failed`
+        ? `${formatFullNumber(stats.failed_requests)} failed`
         : undefined,
       icon:
         stats && stats.failed_requests > 0 ? (

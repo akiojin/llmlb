@@ -24,8 +24,6 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tokio::io::AsyncWriteExt;
-use tokio_util::io::ReaderStream;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -544,63 +542,52 @@ pub async fn export_request_responses(
 
     match query.format {
         RequestHistoryExportFormat::Json => {
-            let storage = state.request_history.clone();
-            let filter = filter.clone();
-            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
             let mut page_data = Some(first_page.clone());
+            let mut body = Vec::new();
+            body.push(b'[');
+            let mut first = true;
 
-            tokio::spawn(async move {
-                if writer.write_all(b"[").await.is_err() {
-                    return;
-                }
-                let mut first = true;
-                loop {
-                    let data = if let Some(data) = page_data.take() {
-                        data
-                    } else {
-                        match storage
-                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
-                            .await
-                        {
-                            Ok(data) => data,
-                            Err(err) => {
-                                warn!("Failed to export request history page {}: {}", page, err);
-                                break;
-                            }
-                        }
-                    };
+            loop {
+                let data = if let Some(data) = page_data.take() {
+                    data
+                } else {
+                    state
+                        .request_history
+                        .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                        .await
+                        .map_err(|err| {
+                            warn!("Failed to export request history page {}: {}", page, err);
+                            AppError::from(err)
+                        })?
+                };
 
-                    if data.records.is_empty() {
-                        break;
-                    }
-
-                    for record in data.records {
-                        let json = match serde_json::to_vec(&record) {
-                            Ok(json) => json,
-                            Err(err) => {
-                                warn!("Failed to serialize request history record: {}", err);
-                                return;
-                            }
-                        };
-                        if !first && writer.write_all(b",").await.is_err() {
-                            return;
-                        }
-                        first = false;
-                        if writer.write_all(&json).await.is_err() {
-                            return;
-                        }
-                    }
-
-                    if page * EXPORT_PAGE_SIZE >= data.total_count {
-                        break;
-                    }
-                    page += 1;
+                if data.records.is_empty() {
+                    break;
                 }
 
-                let _ = writer.write_all(b"]").await;
-                let _ = writer.shutdown().await;
-            });
+                for record in data.records {
+                    let json = serde_json::to_vec(&record).map_err(|err| {
+                        warn!("Failed to serialize request history record: {}", err);
+                        AppError::from(LbError::Internal(format!(
+                            "Failed to serialize request history record: {}",
+                            err
+                        )))
+                    })?;
+                    if !first {
+                        body.push(b',');
+                    }
+                    first = false;
+                    body.extend_from_slice(&json);
+                }
+
+                if page * EXPORT_PAGE_SIZE >= data.total_count {
+                    break;
+                }
+                page += 1;
+            }
+
+            body.push(b']');
 
             let response = Response::builder()
                 .status(StatusCode::OK)
@@ -609,120 +596,98 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.json\"",
                 )
-                .body(Body::from_stream(ReaderStream::new(reader)))
+                .body(Body::from(body))
                 .unwrap();
             Ok(response)
         }
         RequestHistoryExportFormat::Csv => {
-            let storage = state.request_history.clone();
-            let filter = filter.clone();
-            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
             let mut page_data = Some(first_page.clone());
+            let mut csv_writer = csv::Writer::from_writer(vec![]);
+            csv_writer
+                .write_record([
+                    "id",
+                    "timestamp",
+                    "request_type",
+                    "model",
+                    "runtime_id",
+                    "runtime_machine_name",
+                    "runtime_ip",
+                    "client_ip",
+                    "duration_ms",
+                    "status",
+                    "completed_at",
+                ])
+                .map_err(|err| {
+                    AppError::from(LbError::Internal(format!(
+                        "Failed to write CSV header: {}",
+                        err
+                    )))
+                })?;
 
-            tokio::spawn(async move {
-                let mut header = csv::Writer::from_writer(vec![]);
-                if header
-                    .write_record([
-                        "id",
-                        "timestamp",
-                        "request_type",
-                        "model",
-                        "runtime_id",
-                        "runtime_machine_name",
-                        "runtime_ip",
-                        "client_ip",
-                        "duration_ms",
-                        "status",
-                        "completed_at",
-                    ])
-                    .is_err()
-                {
-                    return;
-                }
-                let header_bytes = match header.into_inner() {
-                    Ok(data) => data,
-                    Err(err) => {
-                        warn!("Failed to finalize CSV header: {}", err);
-                        return;
-                    }
+            loop {
+                let data = if let Some(data) = page_data.take() {
+                    data
+                } else {
+                    state
+                        .request_history
+                        .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                        .await
+                        .map_err(|err| {
+                            warn!("Failed to export request history page {}: {}", page, err);
+                            AppError::from(err)
+                        })?
                 };
-                if writer.write_all(&header_bytes).await.is_err() {
-                    return;
+
+                if data.records.is_empty() {
+                    break;
                 }
 
-                loop {
-                    let data = if let Some(data) = page_data.take() {
-                        data
-                    } else {
-                        match storage
-                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
-                            .await
-                        {
-                            Ok(data) => data,
-                            Err(err) => {
-                                warn!("Failed to export request history page {}: {}", page, err);
-                                break;
-                            }
+                for record in data.records {
+                    let status_str = match &record.status {
+                        crate::common::protocol::RecordStatus::Success => "success".to_string(),
+                        crate::common::protocol::RecordStatus::Error { message } => {
+                            format!("error: {}", message)
                         }
                     };
 
-                    if data.records.is_empty() {
-                        break;
-                    }
-
-                    for record in data.records {
-                        let status_str = match &record.status {
-                            crate::common::protocol::RecordStatus::Success => "success".to_string(),
-                            crate::common::protocol::RecordStatus::Error { message } => {
-                                format!("error: {}", message)
-                            }
-                        };
-
-                        let mut row = csv::Writer::from_writer(vec![]);
-                        if row
-                            .write_record(&[
-                                record.id.to_string(),
-                                record.timestamp.to_rfc3339(),
-                                format!("{:?}", record.request_type),
-                                record.model,
-                                record.node_id.to_string(),
-                                record.node_machine_name,
-                                record.node_ip.to_string(),
-                                record
-                                    .client_ip
-                                    .map(|ip| ip.to_string())
-                                    .unwrap_or_default(),
-                                record.duration_ms.to_string(),
-                                status_str,
-                                record.completed_at.to_rfc3339(),
-                            ])
-                            .is_err()
-                        {
-                            return;
-                        }
-
-                        let row_bytes = match row.into_inner() {
-                            Ok(data) => data,
-                            Err(err) => {
-                                warn!("Failed to finalize CSV row: {}", err);
-                                return;
-                            }
-                        };
-
-                        if writer.write_all(&row_bytes).await.is_err() {
-                            return;
-                        }
-                    }
-
-                    if page * EXPORT_PAGE_SIZE >= data.total_count {
-                        break;
-                    }
-                    page += 1;
+                    csv_writer
+                        .write_record(&[
+                            record.id.to_string(),
+                            record.timestamp.to_rfc3339(),
+                            format!("{:?}", record.request_type),
+                            record.model,
+                            record.node_id.to_string(),
+                            record.node_machine_name,
+                            record.node_ip.to_string(),
+                            record
+                                .client_ip
+                                .map(|ip| ip.to_string())
+                                .unwrap_or_default(),
+                            record.duration_ms.to_string(),
+                            status_str,
+                            record.completed_at.to_rfc3339(),
+                        ])
+                        .map_err(|err| {
+                            AppError::from(LbError::Internal(format!(
+                                "Failed to write CSV row: {}",
+                                err
+                            )))
+                        })?;
                 }
 
-                let _ = writer.shutdown().await;
-            });
+                if page * EXPORT_PAGE_SIZE >= data.total_count {
+                    break;
+                }
+                page += 1;
+            }
+
+            let body = csv_writer.into_inner().map_err(|err| {
+                AppError::from(LbError::Internal(format!(
+                    "Failed to finalize CSV export: {}",
+                    err
+                )))
+            })?;
 
             let response = Response::builder()
                 .status(StatusCode::OK)
@@ -731,7 +696,7 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.csv\"",
                 )
-                .body(Body::from_stream(ReaderStream::new(reader)))
+                .body(Body::from(body))
                 .unwrap();
 
             Ok(response)

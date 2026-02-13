@@ -3,7 +3,7 @@
 use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext};
 use crate::common::error::LbError;
 use chrono::{DateTime, Utc};
-use rand::Rng;
+use rand::RngExt;
 use serde_json;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;

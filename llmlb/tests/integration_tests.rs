@@ -110,7 +110,6 @@ mod models_api_test;
 
 #[path = "integration/model_routing_balancing_test.rs"]
 mod model_routing_balancing_test;
-
 // SPEC-a6e55b37: self-update drain gate
 #[path = "integration/update_drain_gate_test.rs"]
 mod update_drain_gate_test;

@@ -10,6 +10,7 @@ use axum::{
     Router,
 };
 use llmlb::common::auth::UserRole;
+use llmlb::common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::json;
 use std::sync::Arc;
@@ -79,7 +80,33 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
 
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
-    let (app, _db_pool, jwt) = build_app().await;
+    let (app, db_pool, jwt) = build_app().await;
+
+    // Seed request_history with token usage to ensure `/api/dashboard/stats` token totals
+    // match the persisted statistics (used by the Statistics tab).
+    let storage = llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone());
+    let now = chrono::Utc::now();
+    let record = RequestResponseRecord {
+        id: uuid::Uuid::new_v4(),
+        timestamp: now,
+        request_type: RequestType::Chat,
+        model: "test-model".to_string(),
+        node_id: uuid::Uuid::new_v4(),
+        node_machine_name: "test-endpoint".to_string(),
+        node_ip: "127.0.0.1".parse().unwrap(),
+        client_ip: None,
+        request_body: json!({"messages":[{"role":"user","content":"hi"}]}),
+        response_body: Some(
+            json!({"choices":[{"message":{"role":"assistant","content":"hello"}}]}),
+        ),
+        duration_ms: 123,
+        status: RecordStatus::Success,
+        completed_at: now,
+        input_tokens: Some(150),
+        output_tokens: Some(50),
+        total_tokens: Some(200),
+    };
+    storage.save_record(&record).await.unwrap();
 
     // GET /api/dashboard/stats
     let response = app
@@ -106,6 +133,22 @@ async fn test_dashboard_stats_endpoint() {
     let stats: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert!(stats.is_object(), "Response should be a stats object");
+
+    assert_eq!(
+        stats["total_input_tokens"].as_u64(),
+        Some(150),
+        "total_input_tokens should come from request_history"
+    );
+    assert_eq!(
+        stats["total_output_tokens"].as_u64(),
+        Some(50),
+        "total_output_tokens should come from request_history"
+    );
+    assert_eq!(
+        stats["total_tokens"].as_u64(),
+        Some(200),
+        "total_tokens should come from request_history"
+    );
 }
 
 #[tokio::test]

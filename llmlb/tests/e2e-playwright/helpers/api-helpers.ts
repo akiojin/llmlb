@@ -486,6 +486,212 @@ export async function ensureDashboardLogin(page: Page): Promise<void> {
 }
 
 // ============================================================================
+// User Management Helpers
+// ============================================================================
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  role: string;
+}
+
+/**
+ * List all users
+ */
+export async function listUsers(request: APIRequestContext): Promise<UserInfo[]> {
+  const response = await request.get(`${API_BASE}/api/users`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data : data.users || [];
+}
+
+/**
+ * Create a new user
+ */
+export async function createUser(
+  request: APIRequestContext,
+  username: string,
+  password: string,
+  role: 'admin' | 'viewer'
+): Promise<UserInfo> {
+  const response = await request.post(`${API_BASE}/api/users`, {
+    headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+    data: { username, password, role },
+  });
+  if (!response.ok()) {
+    return { id: '', username: '', role: '' };
+  }
+  return response.json();
+}
+
+/**
+ * Update a user's role
+ */
+export async function updateUserRole(
+  request: APIRequestContext,
+  userId: string,
+  role: 'admin' | 'viewer'
+): Promise<void> {
+  await request.put(`${API_BASE}/api/users/${encodeURIComponent(userId)}`, {
+    headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+    data: { role },
+  });
+}
+
+/**
+ * Delete a user by id
+ */
+export async function deleteUser(
+  request: APIRequestContext,
+  userId: string
+): Promise<boolean> {
+  const response = await request.delete(`${API_BASE}/api/users/${encodeURIComponent(userId)}`, {
+    headers: AUTH_HEADER,
+  });
+  return response.status() === 204 || response.status() === 200;
+}
+
+// ============================================================================
+// API Key Management Helpers
+// ============================================================================
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  key_prefix: string;
+  permissions: string[];
+  expires_at: string | null;
+}
+
+export interface CreatedApiKey {
+  id: string;
+  key: string;
+}
+
+/**
+ * Create an API key with specified permissions
+ */
+export async function createApiKeyWithPermissions(
+  request: APIRequestContext,
+  name: string,
+  permissions: string[],
+  expiresAt?: string
+): Promise<CreatedApiKey> {
+  const payload: Record<string, unknown> = { name, permissions };
+  if (expiresAt) {
+    payload.expires_at = expiresAt;
+  }
+  const response = await request.post(`${API_BASE}/api/api-keys`, {
+    headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+    data: payload,
+  });
+  if (!response.ok()) {
+    return { id: '', key: '' };
+  }
+  return response.json();
+}
+
+/**
+ * Delete an API key by id
+ */
+export async function deleteApiKey(
+  request: APIRequestContext,
+  keyId: string
+): Promise<boolean> {
+  const response = await request.delete(`${API_BASE}/api/api-keys/${encodeURIComponent(keyId)}`, {
+    headers: AUTH_HEADER,
+  });
+  return response.status() === 204 || response.status() === 200;
+}
+
+/**
+ * List all API keys
+ */
+export async function listApiKeys(request: APIRequestContext): Promise<ApiKeyInfo[]> {
+  const response = await request.get(`${API_BASE}/api/api-keys`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data : data.api_keys || [];
+}
+
+// ============================================================================
+// Logs, Metrics & System Helpers
+// ============================================================================
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+/**
+ * Get load balancer logs
+ */
+export async function getLbLogs(request: APIRequestContext): Promise<LogEntry[]> {
+  const response = await request.get(`${API_BASE}/api/dashboard/logs/lb`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data : data.logs || [];
+}
+
+/**
+ * Get logs for a specific endpoint
+ */
+export async function getEndpointLogs(
+  request: APIRequestContext,
+  endpointId: string
+): Promise<LogEntry[]> {
+  const response = await request.get(`${API_BASE}/api/nodes/${encodeURIComponent(endpointId)}/logs`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return [];
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data : data.logs || [];
+}
+
+/**
+ * Get Prometheus metrics (raw text format)
+ */
+export async function getPrometheusMetrics(request: APIRequestContext): Promise<string> {
+  const response = await request.get(`${API_BASE}/api/metrics/cloud`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return '';
+  }
+  return response.text();
+}
+
+/**
+ * Get system information
+ */
+export async function getSystemInfo(
+  request: APIRequestContext
+): Promise<{ version?: string; [key: string]: unknown }> {
+  const response = await request.get(`${API_BASE}/api/system`, {
+    headers: AUTH_HEADER,
+  });
+  if (!response.ok()) {
+    return {};
+  }
+  return response.json();
+}
+
+// ============================================================================
 // Test Setup/Cleanup
 // ============================================================================
 

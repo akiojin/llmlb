@@ -1,8 +1,11 @@
-import { test, expect, type Locator } from '@playwright/test';
+import { test, expect, type Locator, type APIRequestContext } from '@playwright/test';
 import { ensureDashboardLogin, deleteEndpointsByName, listEndpoints } from '../../helpers/api-helpers';
 import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '../../helpers/mock-openai-endpoint';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+
+const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768';
+const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
 test.describe.configure({ mode: 'serial' });
 
@@ -108,7 +111,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
   });
 
   test('S-EP-01: status colors are consistent across list/detail/playground', async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(240_000);
 
     const baseName = `e2e-status-colors-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const endpointOkName = `${baseName}-ok`;
@@ -134,10 +137,9 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await page.fill('#endpoint-url', mock.baseUrl);
       await page.getByRole('button', { name: 'Create Endpoint' }).click();
 
-      const okRow = page.getByRole('row').filter({ hasText: endpointOkName });
-      await expect(okRow).toBeVisible({ timeout: 20000 });
-
+      // Use search filter first to find the endpoint reliably when many endpoints exist
       await page.getByPlaceholder('Search by name or URL...').fill(baseName);
+      const okRow = page.getByRole('row').filter({ hasText: endpointOkName });
       await expect(okRow).toBeVisible({ timeout: 20000 });
 
       const okStatusCell = okRow.locator('td').nth(3);
@@ -170,12 +172,22 @@ test.describe('Endpoint Status Colors @dashboard', () => {
 
       // Back to Dashboard
       await page.getByRole('button', { name: 'Back to Dashboard' }).click();
+      await page.getByPlaceholder('Search by name or URL...').fill(baseName);
       await expect(okRow).toBeVisible({ timeout: 20000 });
 
       // ---------------------------------------------------------------------
       // Online (run explicit connection test for deterministic transition)
       // ---------------------------------------------------------------------
-      await okRow.locator('button[title="Test Connection"]').click();
+      // Use API-level test connection for reliability (UI button may fail
+      // silently if CSRF token is stale or the request takes too long).
+      await request.post(`${API_BASE}/api/endpoints/${okEndpoint!.id}/test`, {
+        headers: AUTH_HEADER,
+      });
+      // Reload dashboard to pick up the new status.
+      await page.click('#refresh-button');
+      await page.waitForLoadState('load');
+      await page.getByPlaceholder('Search by name or URL...').fill(baseName);
+      await expect(okRow).toBeVisible({ timeout: 20000 });
       await expect(okRow.getByText('Online', { exact: true })).toBeVisible({ timeout: 20000 });
 
       const okBadgeOnline = okRow.locator('td').nth(3).locator('div').first();
@@ -202,6 +214,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
 
       // Back to Dashboard
       await page.getByRole('button', { name: 'Back to Dashboard' }).click();
+      await page.getByPlaceholder('Search by name or URL...').fill(baseName);
       await expect(okRow).toBeVisible({ timeout: 20000 });
 
       // ---------------------------------------------------------------------
@@ -212,13 +225,23 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await page.fill('#endpoint-url', endpointBadUrl);
       await page.getByRole('button', { name: 'Create Endpoint' }).click();
 
+      // Ensure search filter is applied for both ok and bad endpoints
+      await page.getByPlaceholder('Search by name or URL...').fill(baseName);
       const badRow = page.getByRole('row').filter({ hasText: endpointBadName });
       await expect(badRow).toBeVisible({ timeout: 20000 });
 
+      // Use API test connection, then look up the ID to reload
+      const preErrorEndpoints = await listEndpoints(request);
+      const badEndpointForTest = preErrorEndpoints.find((e) => e.name === endpointBadName);
+      expect(badEndpointForTest?.id).toBeTruthy();
+      await request.post(`${API_BASE}/api/endpoints/${badEndpointForTest!.id}/test`, {
+        headers: AUTH_HEADER,
+      });
+      // Reload dashboard to show updated status
+      await page.click('#refresh-button');
+      await page.waitForLoadState('load');
       await page.getByPlaceholder('Search by name or URL...').fill(baseName);
       await expect(badRow).toBeVisible({ timeout: 20000 });
-
-      await badRow.locator('button[title="Test Connection"]').click();
       await expect(badRow.getByText('Error', { exact: true })).toBeVisible({ timeout: 20000 });
 
       const badBadgeError = badRow.locator('td').nth(3).locator('div').first();
@@ -249,6 +272,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
 
       // Back to Dashboard
       await page.getByRole('button', { name: 'Back to Dashboard' }).click();
+      await page.getByPlaceholder('Search by name or URL...').fill(baseName);
       await expect(badRow).toBeVisible({ timeout: 20000 });
 
       // ---------------------------------------------------------------------

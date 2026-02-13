@@ -399,20 +399,12 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {key.key_prefix ? (
-                            <div className="flex items-center gap-2">
-                              <code
-                                className="text-xs font-mono"
-                                title="Key prefix only. Full API keys are shown once at creation time; if lost, create a new key."
-                              >
-                                {key.key_prefix}...
-                              </code>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              {key.id.slice(0, 8)}...
-                            </span>
-                          )}
+                          <span
+                            className="text-xs text-muted-foreground select-none"
+                            title="API keys are shown once at creation time; if lost, create a new key."
+                          >
+                            ••••••••••
+                          </span>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {formatRelativeTime(key.created_at)}

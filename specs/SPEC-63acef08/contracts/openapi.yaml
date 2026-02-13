@@ -313,6 +313,10 @@ components:
                 type: string
               owned_by:
                 type: string
+              max_tokens:
+                type: integer
+                nullable: true
+                description: 最大トークン数（不明な場合はnull）
 
     Error:
       type: object

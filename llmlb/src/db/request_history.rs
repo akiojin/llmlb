@@ -401,7 +401,15 @@ impl RequestHistoryStorage {
             SELECT
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
                 COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-                COALESCE(SUM(total_tokens), 0) as total_tokens
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            total_tokens,
+                            COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+                        )
+                    ),
+                    0
+                ) as total_tokens
             FROM request_history
             "#,
         )
@@ -424,7 +432,15 @@ impl RequestHistoryStorage {
                 model,
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
                 COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            total_tokens,
+                            COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+                        )
+                    ),
+                    0
+                ) as total_tokens,
                 COUNT(*) as request_count
             FROM request_history
             GROUP BY model
@@ -458,7 +474,15 @@ impl RequestHistoryStorage {
                 node_machine_name,
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
                 COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            total_tokens,
+                            COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+                        )
+                    ),
+                    0
+                ) as total_tokens,
                 COUNT(*) as request_count
             FROM request_history
             GROUP BY node_id
@@ -496,7 +520,15 @@ impl RequestHistoryStorage {
                 DATE(timestamp) as date,
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
                 COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            total_tokens,
+                            COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+                        )
+                    ),
+                    0
+                ) as total_tokens,
                 COUNT(*) as request_count
             FROM request_history
             WHERE timestamp >= DATE('now', '-' || ? || ' days')
@@ -532,7 +564,15 @@ impl RequestHistoryStorage {
                 strftime('%Y-%m', timestamp) as month,
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
                 COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            total_tokens,
+                            COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)
+                        )
+                    ),
+                    0
+                ) as total_tokens,
                 COUNT(*) as request_count
             FROM request_history
             WHERE timestamp >= DATE('now', '-' || ? || ' months')
@@ -1133,6 +1173,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_token_aggregation_total_infers_total_tokens_when_null() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let now = Utc::now();
+
+        // total_tokens が NULL の場合は input_tokens + output_tokens を合算する
+        let mut record_1 = create_test_record(now);
+        record_1.input_tokens = Some(100);
+        record_1.output_tokens = Some(50);
+        record_1.total_tokens = None;
+        storage.save_record(&record_1).await.unwrap();
+
+        // output_tokens が NULL の場合は input_tokens のみをカウントする（SQL上は +0 になる）
+        let mut record_2 = create_test_record(now - Duration::seconds(1));
+        record_2.input_tokens = Some(10);
+        record_2.output_tokens = None;
+        record_2.total_tokens = None;
+        storage.save_record(&record_2).await.unwrap();
+
+        // input_tokens が NULL の場合は output_tokens のみをカウントする（SQL上は 0+output になる）
+        let mut record_3 = create_test_record(now - Duration::seconds(2));
+        record_3.input_tokens = None;
+        record_3.output_tokens = Some(5);
+        record_3.total_tokens = None;
+        storage.save_record(&record_3).await.unwrap();
+
+        // total_tokens がある場合はそれを優先する
+        let mut record_4 = create_test_record(now - Duration::seconds(3));
+        record_4.input_tokens = None;
+        record_4.output_tokens = None;
+        record_4.total_tokens = Some(7);
+        storage.save_record(&record_4).await.unwrap();
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 110);
+        assert_eq!(stats.total_output_tokens, 55);
+        assert_eq!(stats.total_tokens, 172);
+    }
+
+    #[tokio::test]
     async fn test_token_aggregation_by_model() {
         let pool = create_test_pool().await;
         let storage = RequestHistoryStorage::new(pool);
@@ -1164,6 +1245,35 @@ mod tests {
         let model_b_stats = stats.iter().find(|s| s.model == "model-b").unwrap();
         assert_eq!(model_b_stats.total_input_tokens, 200);
         assert_eq!(model_b_stats.total_output_tokens, 100);
+    }
+
+    #[tokio::test]
+    async fn test_token_aggregation_by_model_infers_total_tokens_when_null() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record_a = create_test_record(Utc::now());
+        record_a.model = "model-a".to_string();
+        record_a.input_tokens = Some(100);
+        record_a.output_tokens = Some(50);
+        record_a.total_tokens = None;
+        storage.save_record(&record_a).await.unwrap();
+
+        let mut record_b = create_test_record(Utc::now());
+        record_b.id = Uuid::new_v4();
+        record_b.model = "model-b".to_string();
+        record_b.input_tokens = Some(10);
+        record_b.output_tokens = None;
+        record_b.total_tokens = None;
+        storage.save_record(&record_b).await.unwrap();
+
+        let stats = storage.get_token_statistics_by_model().await.unwrap();
+
+        let model_a_stats = stats.iter().find(|s| s.model == "model-a").unwrap();
+        assert_eq!(model_a_stats.total_tokens, 150);
+
+        let model_b_stats = stats.iter().find(|s| s.model == "model-b").unwrap();
+        assert_eq!(model_b_stats.total_tokens, 10);
     }
 
     #[tokio::test]
@@ -1199,5 +1309,43 @@ mod tests {
 
         let node_2_stats = stats.iter().find(|s| s.node_id == node_id_2).unwrap();
         assert_eq!(node_2_stats.total_input_tokens, 200);
+    }
+
+    #[tokio::test]
+    async fn test_daily_token_stats_infer_total_tokens_when_null() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record = create_test_record(Utc::now());
+        record.input_tokens = Some(100);
+        record.output_tokens = Some(50);
+        record.total_tokens = None;
+        storage.save_record(&record).await.unwrap();
+
+        let stats = storage.get_daily_token_statistics(30).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 100);
+        assert_eq!(stats[0].total_output_tokens, 50);
+        assert_eq!(stats[0].total_tokens, 150);
+        assert_eq!(stats[0].request_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_monthly_token_stats_infer_total_tokens_when_null() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record = create_test_record(Utc::now());
+        record.input_tokens = Some(100);
+        record.output_tokens = Some(50);
+        record.total_tokens = None;
+        storage.save_record(&record).await.unwrap();
+
+        let stats = storage.get_monthly_token_statistics(12).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 100);
+        assert_eq!(stats[0].total_output_tokens, 50);
+        assert_eq!(stats[0].total_tokens, 150);
+        assert_eq!(stats[0].request_count, 1);
     }
 }

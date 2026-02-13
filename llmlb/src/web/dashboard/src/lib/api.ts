@@ -519,7 +519,7 @@ export const endpointsApi = {
       models: Array<{
         model_id: string
         capabilities?: string[]
-        max_tokens?: number
+        max_tokens?: number | null
         last_checked?: string
       }>
     }>(`/api/endpoints/${id}/models`),
@@ -671,6 +671,7 @@ export interface OpenAIModel {
   tags?: string[]
   description?: string
   chat_template?: string
+  max_tokens?: number | null
 }
 
 // /api/models/discover-gguf response types

@@ -47,9 +47,17 @@ function extractLastUserText(messages: unknown): string {
 export async function startMockOpenAIEndpointServer(options?: {
   models?: string[]
   responseDelayMs?: number
+  supportAudio?: boolean
+  supportImages?: boolean
+  supportResponses?: boolean
+  endpointType?: 'xllm' | 'ollama' | 'vllm' | 'openai'
 }): Promise<MockOpenAIEndpointServer> {
   const models = options?.models?.length ? options.models : ['mock-model-a', 'mock-model-b']
   const responseDelayMs = Math.max(0, options?.responseDelayMs ?? 0)
+  const supportAudio = options?.supportAudio ?? false
+  const supportImages = options?.supportImages ?? false
+  const supportResponses = options?.supportResponses ?? false
+  const endpointType = options?.endpointType
 
   // reqwest (llmlb) uses keep-alive connections; server.close() waits for them.
   // Track sockets and destroy them on shutdown so afterAll doesn't hang.
@@ -73,13 +81,14 @@ export async function startMockOpenAIEndpointServer(options?: {
       if (responseDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
       }
+      const ownedBy = endpointType === 'vllm' ? 'vllm' : 'mock'
       return writeJson(res, 200, {
         object: 'list',
         data: models.map((id) => ({
           id,
           object: 'model',
           created,
-          owned_by: 'mock',
+          owned_by: ownedBy,
         })),
       })
     }
@@ -135,6 +144,136 @@ export async function startMockOpenAIEndpointServer(options?: {
       sseWrite(res, '[DONE]')
       res.end()
       return
+    }
+
+    // --- Audio API handlers (when supportAudio is enabled) ---
+    if (supportAudio) {
+      if (req.method === 'POST' && url.pathname === '/v1/audio/transcriptions') {
+        // Consume multipart body (we don't parse it, just drain the stream)
+        await readBody(req)
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        return writeJson(res, 200, { text: `MOCK_TRANSCRIPTION model=${models[0]}` })
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v1/audio/speech') {
+        await readBody(req)
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        const audioData = Buffer.from('MOCK_AUDIO_DATA')
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': audioData.length,
+        })
+        res.end(audioData)
+        return
+      }
+    }
+
+    // --- Image API handlers (when supportImages is enabled) ---
+    if (supportImages) {
+      if (req.method === 'POST' && url.pathname === '/v1/images/generations') {
+        await readBody(req)
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        return writeJson(res, 200, {
+          created: Math.floor(Date.now() / 1000),
+          data: [{ url: 'https://mock.example.com/image.png' }],
+        })
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v1/images/edits') {
+        await readBody(req)
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        return writeJson(res, 200, {
+          created: Math.floor(Date.now() / 1000),
+          data: [{ url: 'https://mock.example.com/image.png' }],
+        })
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v1/images/variations') {
+        await readBody(req)
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        return writeJson(res, 200, {
+          created: Math.floor(Date.now() / 1000),
+          data: [{ url: 'https://mock.example.com/image.png' }],
+        })
+      }
+    }
+
+    // --- Responses API handler (when supportResponses is enabled) ---
+    if (supportResponses) {
+      if (req.method === 'POST' && url.pathname === '/v1/responses') {
+        let parsed: any
+        try {
+          const bodyText = await readBody(req)
+          parsed = JSON.parse(bodyText || '{}')
+        } catch {
+          return writeJson(res, 400, {
+            error: { message: 'invalid_json', type: 'invalid_request_error' },
+          })
+        }
+        const model = typeof parsed?.model === 'string' ? parsed.model : models[0]
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        const created = Math.floor(Date.now() / 1000)
+        return writeJson(res, 200, {
+          id: `resp_mock_${created}`,
+          object: 'response',
+          created_at: created,
+          output: [
+            {
+              type: 'message',
+              role: 'assistant',
+              content: [
+                {
+                  type: 'output_text',
+                  text: `MOCK_RESPONSE model=${model}`,
+                },
+              ],
+            },
+          ],
+        })
+      }
+    }
+
+    // --- Endpoint type-specific handlers ---
+    if (endpointType === 'xllm') {
+      // Rust detection queries GET /api/system and expects `xllm_version` field
+      if (req.method === 'GET' && url.pathname === '/api/system') {
+        return writeJson(res, 200, {
+          xllm_version: '0.1.0',
+          server_name: 'mock-xllm',
+          gpu: { device_count: 1 },
+        })
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v0/models/download') {
+        await readBody(req)
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        return writeJson(res, 200, { status: 'started', task_id: 'mock-task-1' })
+      }
+    }
+
+    if (endpointType === 'ollama') {
+      if (req.method === 'GET' && url.pathname === '/api/tags') {
+        if (responseDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelayMs))
+        }
+        return writeJson(res, 200, {
+          models: [{ name: 'mock-model', size: 1000000 }],
+        })
+      }
     }
 
     // Default: Not found.

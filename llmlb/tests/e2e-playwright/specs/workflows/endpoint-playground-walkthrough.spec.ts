@@ -33,6 +33,11 @@ test.describe('Endpoint Playground Walkthrough @playground', () => {
     await page.fill('#endpoint-url', mock.baseUrl)
     await page.getByRole('button', { name: 'Create Endpoint' }).click()
 
+    // Use search to filter the table to our endpoint (avoids pagination issues)
+    const searchInput = page.getByPlaceholder('Search by name or URL...')
+    await expect(searchInput).toBeVisible({ timeout: 20000 })
+    await searchInput.fill(endpointName)
+
     // The endpoints table should include the newly created endpoint.
     const row = page.getByRole('row').filter({ hasText: endpointName })
     await expect(row).toBeVisible({ timeout: 20000 })
@@ -50,8 +55,15 @@ test.describe('Endpoint Playground Walkthrough @playground', () => {
     // Sync models (the "Open Playground" button requires models).
     await row.locator('button[title="Sync Models"]').click()
 
+    // Wait for the row to stabilize after sync (React re-renders the table)
+    await page.waitForTimeout(2000)
+
+    // Re-locate the row after potential DOM re-render (search is still active)
+    const rowAfterSync = page.getByRole('row').filter({ hasText: endpointName })
+    await expect(rowAfterSync).toBeVisible({ timeout: 10000 })
+
     // Open detail modal, then open Playground.
-    await row.locator('button[title="Details"]').click()
+    await rowAfterSync.locator('button[title="Details"]').click()
     const detailsDialog = page.getByRole('dialog').filter({ hasText: endpointName })
     await expect(detailsDialog).toBeVisible({ timeout: 20000 })
 
@@ -79,9 +91,14 @@ test.describe('Endpoint Playground Walkthrough @playground', () => {
 
     // Go back to dashboard and delete via UI to cover the deletion flow.
     await page.getByRole('button', { name: 'Back to Dashboard' }).click()
-    await expect(row).toBeVisible({ timeout: 20000 })
+    // Use search to find our endpoint (avoids pagination issues)
+    const searchAfterReturn = page.getByPlaceholder('Search by name or URL...')
+    await expect(searchAfterReturn).toBeVisible({ timeout: 20000 })
+    await searchAfterReturn.fill(endpointName)
+    const rowAfterReturn = page.getByRole('row').filter({ hasText: endpointName })
+    await expect(rowAfterReturn).toBeVisible({ timeout: 20000 })
 
-    await row.locator('button[title="Delete"]').click()
+    await rowAfterReturn.locator('button[title="Delete"]').click()
     // Delete confirmation is an AlertDialog (role=alertdialog).
     const deleteDialog = page.getByRole('alertdialog').filter({ hasText: 'Delete Endpoint?' })
     await expect(deleteDialog).toBeVisible({ timeout: 20000 })

@@ -336,6 +336,26 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
     let google_key_present = std::env::var("GOOGLE_API_KEY").is_ok();
     let anthropic_key_present = std::env::var("ANTHROPIC_API_KEY").is_ok();
 
+    // Token totals must be consistent with the persisted request history.
+    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
+    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
+    let mut total_input_tokens = summary.total_input_tokens;
+    let mut total_output_tokens = summary.total_output_tokens;
+    let mut total_tokens = summary.total_tokens;
+    match state.request_history.get_token_statistics().await {
+        Ok(stats) => {
+            total_input_tokens = stats.total_input_tokens;
+            total_output_tokens = stats.total_output_tokens;
+            total_tokens = stats.total_tokens;
+        }
+        Err(e) => {
+            warn!(
+                "Failed to query token statistics from request history: {}",
+                e
+            );
+        }
+    }
+
     DashboardStats {
         total_nodes: summary.total_nodes,
         online_nodes: summary.online_nodes,
@@ -356,9 +376,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         openai_key_present,
         google_key_present,
         anthropic_key_present,
-        total_input_tokens: summary.total_input_tokens,
-        total_output_tokens: summary.total_output_tokens,
-        total_tokens: summary.total_tokens,
+        total_input_tokens,
+        total_output_tokens,
+        total_tokens,
     }
 }
 

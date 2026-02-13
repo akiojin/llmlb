@@ -20,6 +20,10 @@ fn test_json_serialization() {
         "\"vllm\""
     );
     assert_eq!(
+        serde_json::to_string(&EndpointType::LmStudio).unwrap(),
+        "\"lm_studio\""
+    );
+    assert_eq!(
         serde_json::to_string(&EndpointType::OpenaiCompatible).unwrap(),
         "\"openai_compatible\""
     );
@@ -45,6 +49,10 @@ fn test_json_deserialization() {
         EndpointType::Vllm
     );
     assert_eq!(
+        serde_json::from_str::<EndpointType>("\"lm_studio\"").unwrap(),
+        EndpointType::LmStudio
+    );
+    assert_eq!(
         serde_json::from_str::<EndpointType>("\"openai_compatible\"").unwrap(),
         EndpointType::OpenaiCompatible
     );
@@ -61,6 +69,7 @@ fn test_json_roundtrip() {
         EndpointType::Xllm,
         EndpointType::Ollama,
         EndpointType::Vllm,
+        EndpointType::LmStudio,
         EndpointType::OpenaiCompatible,
         EndpointType::Unknown,
     ];
@@ -81,6 +90,10 @@ fn test_from_str_valid() {
         EndpointType::Ollama
     );
     assert_eq!("vllm".parse::<EndpointType>().unwrap(), EndpointType::Vllm);
+    assert_eq!(
+        "lm_studio".parse::<EndpointType>().unwrap(),
+        EndpointType::LmStudio
+    );
     assert_eq!(
         "openai_compatible".parse::<EndpointType>().unwrap(),
         EndpointType::OpenaiCompatible
@@ -116,6 +129,7 @@ fn test_display() {
         EndpointType::Xllm,
         EndpointType::Ollama,
         EndpointType::Vllm,
+        EndpointType::LmStudio,
         EndpointType::OpenaiCompatible,
         EndpointType::Unknown,
     ];
@@ -131,6 +145,7 @@ fn test_as_str() {
     assert_eq!(EndpointType::Xllm.as_str(), "xllm");
     assert_eq!(EndpointType::Ollama.as_str(), "ollama");
     assert_eq!(EndpointType::Vllm.as_str(), "vllm");
+    assert_eq!(EndpointType::LmStudio.as_str(), "lm_studio");
     assert_eq!(EndpointType::OpenaiCompatible.as_str(), "openai_compatible");
     assert_eq!(EndpointType::Unknown.as_str(), "unknown");
 }

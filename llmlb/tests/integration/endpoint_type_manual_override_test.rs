@@ -206,7 +206,14 @@ async fn test_all_valid_types_can_be_specified() {
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    let valid_types = ["xllm", "ollama", "vllm", "openai_compatible", "unknown"];
+    let valid_types = [
+        "xllm",
+        "ollama",
+        "vllm",
+        "lm_studio",
+        "openai_compatible",
+        "unknown",
+    ];
 
     for (i, endpoint_type) in valid_types.iter().enumerate() {
         let response = client

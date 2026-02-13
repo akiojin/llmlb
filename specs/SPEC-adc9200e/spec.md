@@ -2,7 +2,7 @@
 
 ## ステータス
 
-- **状態**: Draft
+- **状態**: Complete
 - **作成日**: 2026-02-13
 - **ブランチ**: bugfix/clarify-button-visibility
 

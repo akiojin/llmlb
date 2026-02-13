@@ -513,7 +513,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => setSelectedEndpoint(endpoint)}
                             title="Details"
@@ -521,7 +521,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             <Info className="h-4 w-4" />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => handleTest(endpoint)}
                             disabled={isTesting === endpoint.id}
@@ -532,7 +532,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => handleSync(endpoint)}
                             disabled={isSyncing === endpoint.id || endpoint.status !== 'online'}
@@ -543,7 +543,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => setDeletingEndpoint(endpoint)}
                             title="Delete"

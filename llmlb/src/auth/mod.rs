@@ -67,7 +67,7 @@ pub fn clear_csrf_cookie(secure: bool) -> String {
 
 /// ランダムトークン生成
 pub fn generate_random_token(length: usize) -> String {
-    use rand::Rng;
+    use rand::RngExt;
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::rng();
     (0..length)

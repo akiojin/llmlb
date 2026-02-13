@@ -17,6 +17,7 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 include_dir = "0.7"
 mime_guess = "2.0"
+http-body = "1.0"
 
 # シリアライゼーション
 serde = { workspace = true }
@@ -51,7 +52,7 @@ sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio
 bcrypt = "0.18"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 sha2 = "0.10"
-rand = "0.9"
+rand = "0.10"
 rpassword = "7.3"
 
 # CLI
@@ -66,6 +67,12 @@ regex = "1.10"
 # Token counting
 tiktoken-rs = "0.9.1"
 
+# Self-update
+semver = "1.0"
+flate2 = "1.0"
+tar = "0.4"
+zip = { version = "7", default-features = false, features = ["deflate", "bzip2", "zstd"] }
+
 [build-dependencies]
 winresource = "0.1.27"
 
@@ -77,6 +84,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Unix専用依存関係（シグナル送信用）
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }
+libc = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

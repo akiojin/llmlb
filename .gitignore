@@ -102,6 +102,7 @@ coverage/
 **/reports/
 **/.playwright/
 .playwright-mcp/
+llmlb/tests/e2e-playwright/.llmlb*/
 router/tests/e2e-playwright/bun.lock
 router/tests/e2e-playwright/.llm-router/
 .llm-router/

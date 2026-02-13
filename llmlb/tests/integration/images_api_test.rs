@@ -38,15 +38,27 @@ async fn build_app() -> Router {
         llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
+    let http_client = reqwest::Client::new();
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to create update manager");
     let state = AppState {
         load_manager,
         request_history,
         db_pool,
         jwt_secret,
-        http_client: reqwest::Client::new(),
+        http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown,
+        update_manager,
     };
 
     api::create_app(state)

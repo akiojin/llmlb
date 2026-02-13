@@ -37,6 +37,7 @@ export function ModelDownloadDialog({
   const queryClient = useQueryClient()
   const [modelName, setModelName] = useState('')
   const [status, setStatus] = useState<DownloadStatus>('idle')
+  const [taskId, setTaskId] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [progressMessage, setProgressMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -47,6 +48,7 @@ export function ModelDownloadDialog({
     if (!open) {
       setModelName('')
       setStatus('idle')
+      setTaskId(null)
       setProgress(0)
       setProgressMessage('')
       setErrorMessage('')
@@ -70,12 +72,13 @@ export function ModelDownloadDialog({
   const downloadMutation = useMutation({
     mutationFn: (data: { model: string }) =>
       endpointsApi.downloadModel(endpoint!.id, data),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setStatus('downloading')
+      setTaskId(data.task_id)
       setProgress(0)
       setProgressMessage('Starting download...')
       // Start polling for progress
-      startProgressPolling()
+      startProgressPolling(data.task_id)
     },
     onError: (error) => {
       setStatus('error')
@@ -88,7 +91,7 @@ export function ModelDownloadDialog({
     },
   })
 
-  const startProgressPolling = () => {
+  const startProgressPolling = (downloadTaskId: string) => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current)
     }
@@ -97,9 +100,17 @@ export function ModelDownloadDialog({
       if (!endpoint) return
 
       try {
-        const result = await endpointsApi.getDownloadProgress(endpoint.id, modelName)
+        const result = await endpointsApi.getDownloadProgress(endpoint.id)
+        const task =
+          result.tasks.find((t) => t.task_id === downloadTaskId) ||
+          result.tasks.find((t) => t.model === modelName)
 
-        if (result.status === 'completed') {
+        if (!task) {
+          setProgressMessage('Waiting for download to start...')
+          return
+        }
+
+        if (task.status === 'completed') {
           setStatus('completed')
           setProgress(100)
           setProgressMessage('Download completed')
@@ -113,21 +124,17 @@ export function ModelDownloadDialog({
             title: 'Download Completed',
             description: `Model ${modelName} has been downloaded successfully`,
           })
-        } else if (result.status === 'error') {
+        } else if (task.status === 'failed' || task.status === 'cancelled') {
           setStatus('error')
-          setErrorMessage(result.error || 'Download failed')
+          setErrorMessage(task.error || 'Download failed')
           setProgressMessage('')
           if (pollingRef.current) {
             clearInterval(pollingRef.current)
             pollingRef.current = null
           }
-        } else if (result.status === 'downloading') {
-          setProgress(result.progress || 0)
-          setProgressMessage(
-            result.downloaded_bytes && result.total_bytes
-              ? `${formatBytes(result.downloaded_bytes)} / ${formatBytes(result.total_bytes)}`
-              : 'Downloading...'
-          )
+        } else if (task.status === 'downloading' || task.status === 'pending') {
+          setProgress(task.progress || 0)
+          setProgressMessage(buildProgressMessage(task))
         }
       } catch {
         // Polling error - might be temporary, keep trying
@@ -168,7 +175,16 @@ export function ModelDownloadDialog({
   if (!endpoint || endpoint.endpoint_type !== 'xllm') return null
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          onOpenChange(true)
+          return
+        }
+        handleClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -258,10 +274,18 @@ export function ModelDownloadDialog({
   )
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+function buildProgressMessage(task: { speed_mbps?: number; eta_seconds?: number }): string {
+  const parts: string[] = []
+  if (task.speed_mbps != null) parts.push(`${task.speed_mbps.toFixed(1)} Mbps`)
+  if (task.eta_seconds != null) parts.push(`ETA ${formatEta(task.eta_seconds)}`)
+  return parts.join(' / ') || 'Downloading...'
+}
+
+function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds)) return '-'
+  const s = Math.max(0, Math.floor(seconds))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  if (m <= 0) return `${r}s`
+  return `${m}m ${r}s`
 }

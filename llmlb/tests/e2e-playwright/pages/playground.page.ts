@@ -155,4 +155,37 @@ export class PlaygroundPage {
       await this.errorClose.click();
     }
   }
+
+  // --- Playground Settings (T013) ---
+
+  async setTemperature(value: number) {
+    const input = this.page.locator('#temperature, input[name="temperature"]');
+    await input.fill(String(value));
+    await this.page.waitForTimeout(200);
+  }
+
+  async setMaxTokens(value: number) {
+    const input = this.page.locator('#max-tokens, input[name="max_tokens"]');
+    await input.fill(String(value));
+    await this.page.waitForTimeout(200);
+  }
+
+  async toggleStreaming() {
+    await this.streamToggle.click();
+    await this.page.waitForTimeout(200);
+  }
+
+  async getStreamingState(): Promise<boolean> {
+    return this.streamToggle.isChecked();
+  }
+
+  async openCurlDialog() {
+    await this.copyCurl.click();
+    await this.page.waitForTimeout(300);
+  }
+
+  async getCurlCommand(): Promise<string> {
+    const curlText = this.page.locator('#curl-command, .curl-command, pre code');
+    return (await curlText.textContent()) ?? '';
+  }
 }

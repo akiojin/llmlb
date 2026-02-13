@@ -5,7 +5,7 @@
 //! 管理者として、特定タイプのエンドポイントのみを
 //! フィルタリングして一覧表示したい。
 
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -31,7 +31,7 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
         "test-admin-key",
         admin_id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key");
@@ -95,15 +95,6 @@ async fn test_list_endpoints_without_type_filter() {
         "Endpoint 3",
         "http://localhost:9003",
         "vllm",
-    )
-    .await;
-    let _ = create_endpoint(
-        &client,
-        server.addr(),
-        &admin_key,
-        "Endpoint 4",
-        "http://localhost:9004",
-        "lm_studio",
     )
     .await;
 

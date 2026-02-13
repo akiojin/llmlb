@@ -13,12 +13,12 @@
 ## Phase 3.1: 検証
 
 - [x] T001 spec.mdの画面一覧が実装ファイルと一致することを確認
-  - 実装確認: `llmlb/src/web/static/` に `index.html`, `login.html`, `register.html`, `playground.html` が存在
+  - 実装確認: `llmlb/src/web/static/` に `index.html`, `login.html`, `register.html` が存在し、PlaygroundはSPAハッシュルートで提供される
 - [x] T002 [P] 各画面IDと関連SPECのリンクが正しいことを確認
-  - 確認: 認証系は SPEC-d4eb8796、ダッシュボード/Playground は SPEC-712c20cf/SPEC-5fc9fe92 ほかに紐付け
+  - 確認: 認証系は SPEC-d4eb8796、Endpoint Playground/LB Playground は SPEC-712c20cf（必要に応じて SPEC-5fc9fe92）に紐付け
 - [x] T003 [P] 画面遷移図が実装のルーティングと一致することを確認
   - 確認: `/dashboard/login.html` ↔ `/dashboard/register.html` の相互リンク、ログイン後 `/dashboard/` へ遷移
-  - Playground は `/playground` ルートで提供（ヘッダーからは `/dashboard/playground.html` を開く実装）
+  - Playground は `#playground/:endpointId`（Endpoint詳細導線）と `#lb-playground`（ヘッダー導線）で提供される
 
 ## Phase 3.2: 整合性チェック
 

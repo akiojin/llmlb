@@ -9,8 +9,12 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
-use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb::common::auth::UserRole;
+use llmlb::common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
+use llmlb::{
+    api, balancer::LoadManager, db::endpoints as db_endpoints,
+    registry::endpoints::EndpointRegistry, types::endpoint::Endpoint, AppState,
+};
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -39,38 +43,73 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     );
     let jwt_secret = support::lb::test_jwt_secret();
 
+    let http_client = reqwest::Client::new();
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to create update manager");
+
     let state = AppState {
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
         jwt_secret,
-        http_client: reqwest::Client::new(),
+        http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown,
+        update_manager,
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
     let admin_user = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
         .await
         .expect("create admin user");
-    let admin_key = llmlb::db::api_keys::create(
-        &db_pool,
-        "admin-key",
-        admin_user.id,
-        None,
-        vec![ApiKeyScope::Admin],
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &admin_user.id.to_string(),
+        UserRole::Admin,
+        &support::lb::test_jwt_secret(),
     )
-    .await
-    .expect("create admin api key")
-    .key;
+    .expect("create admin jwt");
 
-    (api::create_app(state), db_pool, admin_key)
+    (api::create_app(state), db_pool, jwt)
 }
 
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, db_pool, jwt) = build_app().await;
+
+    // Seed request_history with token usage to ensure `/api/dashboard/stats` token totals
+    // match the persisted statistics (used by the Statistics tab).
+    let storage = llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone());
+    let now = chrono::Utc::now();
+    let record = RequestResponseRecord {
+        id: uuid::Uuid::new_v4(),
+        timestamp: now,
+        request_type: RequestType::Chat,
+        model: "test-model".to_string(),
+        node_id: uuid::Uuid::new_v4(),
+        node_machine_name: "test-endpoint".to_string(),
+        node_ip: "127.0.0.1".parse().unwrap(),
+        client_ip: None,
+        request_body: json!({"messages":[{"role":"user","content":"hi"}]}),
+        response_body: Some(
+            json!({"choices":[{"message":{"role":"assistant","content":"hello"}}]}),
+        ),
+        duration_ms: 123,
+        status: RecordStatus::Success,
+        completed_at: now,
+        input_tokens: Some(150),
+        output_tokens: Some(50),
+        total_tokens: Some(200),
+    };
+    storage.save_record(&record).await.unwrap();
 
     // GET /api/dashboard/stats
     let response = app
@@ -78,7 +117,7 @@ async fn test_dashboard_stats_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/stats")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -97,11 +136,154 @@ async fn test_dashboard_stats_endpoint() {
     let stats: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert!(stats.is_object(), "Response should be a stats object");
+
+    assert_eq!(
+        stats["total_input_tokens"].as_u64(),
+        Some(150),
+        "total_input_tokens should come from request_history"
+    );
+    assert_eq!(
+        stats["total_output_tokens"].as_u64(),
+        Some(50),
+        "total_output_tokens should come from request_history"
+    );
+    assert_eq!(
+        stats["total_tokens"].as_u64(),
+        Some(200),
+        "total_tokens should come from request_history"
+    );
+}
+
+#[tokio::test]
+async fn test_dashboard_overview_stats_reflects_persisted_request_totals() {
+    let (app, db_pool, jwt) = build_app().await;
+
+    let endpoint = Endpoint::new(
+        "Overview Persistence Test".to_string(),
+        "http://127.0.0.1:65500".to_string(),
+    );
+    db_endpoints::create_endpoint(&db_pool, &endpoint)
+        .await
+        .expect("create endpoint");
+
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
+        .await
+        .expect("increment failed request counter");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/overview")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/dashboard/overview should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let overview: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let stats = overview["stats"]
+        .as_object()
+        .expect("overview should include stats");
+
+    assert_eq!(
+        stats["total_requests"].as_u64(),
+        Some(3),
+        "Total requests in overview should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["successful_requests"].as_u64(),
+        Some(2),
+        "Successful requests in overview should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["failed_requests"].as_u64(),
+        Some(1),
+        "Failed requests in overview should reflect persisted endpoint counters"
+    );
+}
+
+#[tokio::test]
+async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
+    let (app, db_pool, jwt) = build_app().await;
+
+    let endpoint = Endpoint::new(
+        "Stats Persistence Test".to_string(),
+        "http://127.0.0.1:65535".to_string(),
+    );
+    db_endpoints::create_endpoint(&db_pool, &endpoint)
+        .await
+        .expect("create endpoint");
+
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
+        .await
+        .expect("increment failed request counter");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/stats")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/dashboard/stats should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let stats: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(
+        stats["total_requests"].as_u64(),
+        Some(3),
+        "Total requests should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["successful_requests"].as_u64(),
+        Some(2),
+        "Successful requests should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["failed_requests"].as_u64(),
+        Some(1),
+        "Failed requests should reflect persisted endpoint counters"
+    );
 }
 
 #[tokio::test]
 async fn test_dashboard_overview_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/overview
     let response = app
@@ -109,7 +291,7 @@ async fn test_dashboard_overview_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/overview")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -135,7 +317,7 @@ async fn test_dashboard_overview_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_request_history_endpoint() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     // GET /api/dashboard/request-history
     let response = app
@@ -143,7 +325,7 @@ async fn test_dashboard_request_history_endpoint() {
             Request::builder()
                 .method("GET")
                 .uri("/api/dashboard/request-history")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -169,7 +351,7 @@ async fn test_dashboard_request_history_endpoint() {
 
 #[tokio::test]
 async fn test_dashboard_endpoints_include_endpoint_type() {
-    let (app, _db_pool, admin_key) = build_app().await;
+    let (app, _db_pool, jwt) = build_app().await;
 
     let mock = MockServer::start().await;
     Mock::given(method("GET"))
@@ -191,10 +373,9 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
         .clone()
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("POST")
                 .uri("/api/endpoints")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&create_body).unwrap()))
                 .unwrap(),
@@ -211,10 +392,9 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
     let response = app
         .oneshot(
             Request::builder()
-                .header("x-internal-token", "test-internal")
                 .method("GET")
                 .uri("/api/dashboard/endpoints")
-                .header("authorization", format!("Bearer {}", admin_key))
+                .header("authorization", format!("Bearer {}", jwt))
                 .body(Body::empty())
                 .unwrap(),
         )

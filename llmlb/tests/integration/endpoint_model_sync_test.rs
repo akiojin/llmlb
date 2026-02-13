@@ -265,7 +265,6 @@ async fn test_auto_test_and_sync_on_create() {
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Auto Sync Test",
@@ -286,7 +285,6 @@ async fn test_auto_test_and_sync_on_create() {
                 server.addr(),
                 endpoint_id
             ))
-            .header("x-internal-token", "test-internal")
             .header("authorization", "Bearer sk_debug")
             .send()
             .await
@@ -314,7 +312,6 @@ async fn test_auto_test_and_sync_on_create() {
             server.addr(),
             endpoint_id
         ))
-        .header("x-internal-token", "test-internal")
         .header("authorization", "Bearer sk_debug")
         .send()
         .await

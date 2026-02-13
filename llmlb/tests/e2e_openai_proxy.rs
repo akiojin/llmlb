@@ -21,7 +21,7 @@ mod support;
 
 use support::{
     http::{spawn_lb, TestServer},
-    lb::{create_test_api_key, spawn_test_lb, spawn_test_lb_with_db},
+    lb::{create_test_api_key, spawn_test_lb_with_db},
 };
 
 #[derive(Clone)]
@@ -177,7 +177,23 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     })
     .await;
 
-    let lb = spawn_test_lb().await;
+    let (lb, db_pool) = spawn_test_lb_with_db().await;
+
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let admin_user = llmlb::db::users::create(
+        &db_pool,
+        "admin",
+        &password_hash,
+        llmlb::common::auth::UserRole::Admin,
+    )
+    .await
+    .expect("create admin user");
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &admin_user.id.to_string(),
+        llmlb::common::auth::UserRole::Admin,
+        &support::lb::test_jwt_secret(),
+    )
+    .expect("create jwt");
 
     let _endpoint_id = register_endpoint_and_sync(&lb, &node_stub).await;
 
@@ -284,7 +300,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
                 "http://{}/api/dashboard/request-history",
                 lb.addr()
             ))
-            .header("authorization", "Bearer sk_debug")
+            .header("authorization", format!("Bearer {}", jwt))
             .send()
             .await
             .expect("request history endpoint should respond")
@@ -333,7 +349,19 @@ async fn openai_v1_models_list_with_registered_node() {
     let (lb, db_pool) = spawn_test_lb_with_db().await;
 
     // SPEC-66555000: Endpoints API経由でエンドポイントを登録＆モデル同期
-    let _ = register_responses_endpoint(lb.addr(), node_stub.addr(), "gpt-oss-20b").await;
+    let endpoint_id = register_responses_endpoint(lb.addr(), node_stub.addr(), "gpt-oss-20b")
+        .await
+        .expect("endpoint registration should succeed");
+    let endpoint_uuid =
+        uuid::Uuid::parse_str(&endpoint_id).expect("endpoint id should be a valid UUID");
+
+    // /v1/models の max_tokens が number|null で返ることを検証するため、
+    // 1モデルだけDBに max_tokens を入れておく（他モデルはnullのまま）。
+    let updated =
+        llmlb::db::endpoints::update_model_max_tokens(&db_pool, endpoint_uuid, "gpt-oss-20b", 4096)
+            .await
+            .expect("update_model_max_tokens should succeed");
+    assert!(updated, "endpoint model row should be updated");
 
     // APIキーを取得
     let api_key = create_test_api_key(lb.addr(), &db_pool).await;
@@ -364,6 +392,37 @@ async fn openai_v1_models_list_with_registered_node() {
         models_payload["object"].as_str(),
         Some("list"),
         "'object' field must be 'list'"
+    );
+
+    let models = models_payload["data"]
+        .as_array()
+        .expect("'data' field must be an array");
+
+    let gpt = models
+        .iter()
+        .find(|model| model["id"].as_str() == Some("gpt-oss-20b"))
+        .expect("gpt-oss-20b should be present in /v1/models response");
+    assert!(
+        gpt.get("max_tokens").is_some(),
+        "model objects must include 'max_tokens'"
+    );
+    assert_eq!(
+        gpt["max_tokens"].as_u64(),
+        Some(4096),
+        "known max_tokens should be returned as a number"
+    );
+
+    let missing = models
+        .iter()
+        .find(|model| model["id"].as_str() == Some("missing-model"))
+        .expect("missing-model should be present in /v1/models response");
+    assert!(
+        missing.get("max_tokens").is_some(),
+        "model objects must include 'max_tokens'"
+    );
+    assert!(
+        missing["max_tokens"].is_null(),
+        "unknown max_tokens should be returned as null"
     );
 
     lb.stop().await;

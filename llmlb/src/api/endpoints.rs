@@ -232,8 +232,6 @@ pub struct EndpointResponse {
     pub registered_at: String,
     /// メモ
     pub notes: Option<String>,
-    /// Responses API対応フラグ（SPEC-24157000）
-    pub supports_responses_api: bool,
     /// デバイス情報（SPEC-f8e3a1b7: /api/systemから取得）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_info: Option<crate::types::endpoint::DeviceInfo>,
@@ -264,7 +262,6 @@ impl From<Endpoint> for EndpointResponse {
             error_count: ep.error_count,
             registered_at: ep.registered_at.to_rfc3339(),
             notes: ep.notes,
-            supports_responses_api: ep.supports_responses_api,
             device_info: ep.device_info,
             model_count: None,
             models: None,
@@ -506,37 +503,6 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
                     .await;
-
-                // SPEC-24157000: Responses API対応を検出
-                // /health エンドポイントで supports_responses_api フラグを確認
-                let health_url = format!("{}/health", endpoint.base_url.trim_end_matches('/'));
-                let mut health_request = state.http_client.get(&health_url);
-                if let Some(ref api_key) = endpoint.api_key {
-                    health_request =
-                        health_request.header("Authorization", format!("Bearer {}", api_key));
-                }
-
-                if let Ok(health_response) = health_request
-                    .timeout(std::time::Duration::from_secs(10))
-                    .send()
-                    .await
-                {
-                    if let Ok(health_json) = health_response.json::<serde_json::Value>().await {
-                        let supports_responses_api = health_json["supports_responses_api"]
-                            .as_bool()
-                            .unwrap_or(false);
-                        // EndpointRegistryキャッシュも更新
-                        let _ = state
-                            .endpoint_registry
-                            .update_responses_api_support(endpoint.id, supports_responses_api)
-                            .await;
-                        tracing::debug!(
-                            endpoint_id = %endpoint.id,
-                            supports_responses_api = supports_responses_api,
-                            "Detected Responses API support"
-                        );
-                    }
-                }
 
                 // モデル数を計算
                 let model_count = models_found.as_ref().map(|m| m.len()).unwrap_or(0);

@@ -53,10 +53,9 @@ impl EndpointTypeDetection {
 /// Tries detection in priority order:
 /// 1. xLLM (GET /api/system - xllm_version field)
 /// 2. Ollama (GET /api/tags)
-/// 3. LM Studio (GET /api/v1/models, Server header, owned_by)
-/// 4. vLLM (Server header check)
-/// 5. OpenAI-compatible (GET /v1/models)
-/// 6. Unknown (fallback)
+/// 3. vLLM (Server header check)
+/// 4. OpenAI-compatible (GET /v1/models)
+/// 5. Unknown (fallback)
 pub async fn detect_endpoint_type(base_url: &str, api_key: Option<&str>) -> EndpointTypeDetection {
     let client = Client::builder()
         .timeout(DETECTION_TIMEOUT)
@@ -88,19 +87,13 @@ pub async fn detect_endpoint_type_with_client(
         return EndpointTypeDetection::new(EndpointType::Ollama, Some(reason));
     }
 
-    // Priority 3: LM Studio detection
-    if let Some(reason) = detect_lm_studio(client, base_url, api_key).await {
-        debug!(endpoint_type = "lm_studio", "Detected LM Studio endpoint");
-        return EndpointTypeDetection::new(EndpointType::LmStudio, Some(reason));
-    }
-
-    // Priority 4: vLLM detection
+    // Priority 3: vLLM detection
     if let Some(reason) = detect_vllm(client, base_url, api_key).await {
         debug!(endpoint_type = "vllm", "Detected vLLM endpoint");
         return EndpointTypeDetection::new(EndpointType::Vllm, Some(reason));
     }
 
-    // Priority 5: OpenAI-compatible detection
+    // Priority 4: OpenAI-compatible detection
     if let Some(reason) = detect_openai_compatible(client, base_url, api_key).await {
         debug!(
             endpoint_type = "openai_compatible",

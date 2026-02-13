@@ -5,7 +5,7 @@
 //! 管理者として、エンドポイント登録時に自動的にタイプ
 //! （xLLM/Ollama/vLLM/OpenAI互換）を判別してほしい。
 
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::health::EndpointHealthChecker;
 use llmlb::registry::endpoints::EndpointRegistry;
 use reqwest::Client;
@@ -38,7 +38,7 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
         "test-admin-key",
         admin_id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key");
@@ -221,63 +221,6 @@ async fn test_endpoint_type_detection_ollama() {
     assert!(body["endpoint_type_detected_at"].is_string());
 }
 
-/// US6: LM Studio判別（SPEC-46452000）
-#[tokio::test]
-async fn test_endpoint_type_detection_lm_studio() {
-    let (server, db_pool) = spawn_test_lb_with_db().await;
-    let client = Client::new();
-    let admin_key = create_admin_api_key(&db_pool).await;
-
-    let mock = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/api/system"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&mock)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/tags"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&mock)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v1/models"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "object": "list",
-            "data": [{
-                "id": "meta-llama-3.1-8b-instruct",
-                "object": "model",
-                "type": "llm",
-                "publisher": "lmstudio-community",
-                "arch": "llama",
-                "state": "loaded",
-                "max_context_length": 131072
-            }]
-        })))
-        .mount(&mock)
-        .await;
-
-    let response = client
-        .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("authorization", format!("Bearer {}", admin_key))
-        .json(&json!({
-            "name": "LM Studio Endpoint",
-            "base_url": mock.uri()
-        }))
-        .send()
-        .await
-        .expect("registration request failed");
-
-    assert_eq!(response.status().as_u16(), 201);
-    let body: Value = response.json().await.unwrap();
-    assert_eq!(body["endpoint_type"], "lm_studio");
-    assert_eq!(body["endpoint_type_source"], "auto");
-    assert!(body["endpoint_type_reason"]
-        .as_str()
-        .unwrap_or("")
-        .contains("LM Studio"));
-    assert!(body["endpoint_type_detected_at"].is_string());
-}
-
 /// US6-シナリオ5: vLLM判別（Serverヘッダー）
 #[tokio::test]
 async fn test_endpoint_type_detection_vllm() {
@@ -293,11 +236,6 @@ async fn test_endpoint_type_detection_vllm() {
         .await;
     Mock::given(method("GET"))
         .and(path("/api/tags"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&mock)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v1/models"))
         .respond_with(ResponseTemplate::new(404))
         .mount(&mock)
         .await;
@@ -351,11 +289,6 @@ async fn test_endpoint_type_detection_openai_compatible() {
         .mount(&mock)
         .await;
     Mock::given(method("GET"))
-        .and(path("/api/v1/models"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&mock)
-        .await;
-    Mock::given(method("GET"))
         .and(path("/v1/models"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
@@ -400,11 +333,6 @@ async fn test_endpoint_type_redetection_on_online() {
         .await;
     Mock::given(method("GET"))
         .and(path("/api/tags"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&mock)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api/v1/models"))
         .respond_with(ResponseTemplate::new(404))
         .mount(&mock)
         .await;

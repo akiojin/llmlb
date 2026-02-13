@@ -135,19 +135,33 @@ export const authApi = {
 
 // Dashboard API
 export interface DashboardStats {
-  total_nodes: number
-  online_nodes: number
-  pending_nodes: number
-  registering_nodes: number
-  offline_nodes: number
+  /**
+   * v2 (2026-01+): "runtimes" naming returned by the API
+   * - Rust: #[serde(rename = "*_runtimes", alias = "*_nodes")]
+   */
+  total_runtimes?: number
+  online_runtimes?: number
+  pending_runtimes?: number
+  registering_runtimes?: number
+  offline_runtimes?: number
+
+  /**
+   * v1 (deprecated): "nodes" naming returned by older servers
+   */
+  total_nodes?: number
+  online_nodes?: number
+  pending_nodes?: number
+  registering_nodes?: number
+  offline_nodes?: number
+
   total_requests: number
   successful_requests: number
   failed_requests: number
   total_active_requests: number
   queued_requests: number
-  average_response_time_ms: number
-  average_gpu_usage: number
-  average_gpu_memory_usage: number
+  average_response_time_ms: number | null
+  average_gpu_usage: number | null
+  average_gpu_memory_usage: number | null
   // Token statistics
   total_input_tokens: number
   total_output_tokens: number
@@ -187,8 +201,10 @@ export interface DashboardEndpoint {
   error_count: number
   registered_at: string
   notes?: string
-  supports_responses_api: boolean
   model_count: number
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
 }
 
 /**
@@ -352,10 +368,87 @@ export const dashboardApi = {
 }
 
 /**
+ * System API (self-update)
+ */
+export type UpdatePayloadState =
+  | { payload: 'not_ready' }
+  | { payload: 'downloading'; started_at: string }
+  | { payload: 'ready'; kind: unknown }
+  | { payload: 'error'; message: string }
+
+export type UpdateState =
+  | { state: 'up_to_date'; checked_at?: string | null }
+  | {
+      state: 'available'
+      current: string
+      latest: string
+      release_url: string
+      portable_asset_url?: string | null
+      installer_asset_url?: string | null
+      payload: UpdatePayloadState
+      checked_at: string
+    }
+  | { state: 'draining'; latest: string; in_flight: number; requested_at: string }
+  | { state: 'applying'; latest: string; method: string }
+  | {
+      state: 'failed'
+      latest?: string | null
+      release_url?: string | null
+      message: string
+      failed_at: string
+    }
+
+export interface SystemInfo {
+  version: string
+  pid: number
+  in_flight: number
+  update: UpdateState
+}
+
+export const systemApi = {
+  getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
+  applyUpdate: () =>
+    fetchWithAuth<{ queued: boolean }>('/api/system/update/apply', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+}
+
+/**
  * Endpoints API
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
+/**
+ * SPEC-76643000: Endpoint today stats (daily summary for a single day)
+ */
+export interface EndpointTodayStats {
+  date: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
+/**
+ * SPEC-76643000: Daily stat entry (used for trend charts)
+ */
+export interface EndpointDailyStatEntry {
+  date: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
+/**
+ * SPEC-76643000: Model-level request statistics entry
+ */
+export interface ModelStatEntry {
+  model_id: string
+  total_requests: number
+  successful_requests: number
+  failed_requests: number
+}
+
 export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
@@ -426,7 +519,7 @@ export const endpointsApi = {
       models: Array<{
         model_id: string
         capabilities?: string[]
-        max_tokens?: number
+        max_tokens?: number | null
         last_checked?: string
       }>
     }>(`/api/endpoints/${id}/models`),
@@ -452,6 +545,20 @@ export const endpointsApi = {
     fetchWithAuth<ModelMetadata>(
       `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`
     ),
+
+  /** SPEC-76643000: Get today's request statistics for an endpoint */
+  getTodayStats: (id: string) =>
+    fetchWithAuth<EndpointTodayStats>(`/api/endpoints/${id}/today-stats`),
+
+  /** SPEC-76643000: Get daily request statistics for an endpoint */
+  getDailyStats: (id: string, days?: number) =>
+    fetchWithAuth<EndpointDailyStatEntry[]>(`/api/endpoints/${id}/daily-stats`, {
+      params: { days },
+    }),
+
+  /** SPEC-76643000: Get model-level request statistics */
+  getModelStats: (id: string) =>
+    fetchWithAuth<ModelStatEntry[]>(`/api/endpoints/${id}/model-stats`),
 
   /** Proxy chat completions to endpoint (JWT authenticated) */
   chatCompletions: async (
@@ -564,6 +671,7 @@ export interface OpenAIModel {
   tags?: string[]
   description?: string
   chat_template?: string
+  max_tokens?: number | null
 }
 
 // /api/models/discover-gguf response types
@@ -587,7 +695,7 @@ export interface DiscoverGgufResponse {
 }
 
 // /v1/models レスポンス
-interface OpenAIModelsResponse {
+export interface OpenAIModelsResponse {
   object: 'list'
   data: OpenAIModel[]
 }
@@ -652,7 +760,18 @@ export const modelsApi = {
 }
 
 // API Keys API
-export type ApiKeyScope = 'endpoint' | 'api' | 'admin'
+export type ApiKeyPermission =
+  | 'openai.inference'
+  | 'openai.models.read'
+  | 'endpoints.read'
+  | 'endpoints.manage'
+  | 'api_keys.manage'
+  | 'users.manage'
+  | 'invitations.manage'
+  | 'models.manage'
+  | 'registry.read'
+  | 'logs.read'
+  | 'metrics.read'
 
 export interface ApiKey {
   id: string
@@ -662,7 +781,7 @@ export interface ApiKey {
   created_at: string
   expires_at?: string
   last_used_at?: string
-  scopes: ApiKeyScope[]
+  permissions: ApiKeyPermission[]
 }
 
 export interface CreateApiKeyResponse {
@@ -672,7 +791,7 @@ export interface CreateApiKeyResponse {
   key_prefix: string
   created_at: string
   expires_at?: string
-  scopes: ApiKeyScope[]
+  permissions: ApiKeyPermission[]
 }
 
 export const apiKeysApi = {
@@ -681,7 +800,11 @@ export const apiKeysApi = {
       (res) => res.api_keys
     ),
 
-  create: (data: { name: string; expires_at?: string; scopes: ApiKeyScope[] }) =>
+  create: (data: {
+    name: string
+    expires_at?: string
+    permissions: ApiKeyPermission[]
+  }) =>
     fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -767,7 +890,7 @@ export const usersApi = {
 // Chat API (OpenAI compatible)
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | Array<unknown>
 }
 
 export interface ChatSession {
@@ -785,13 +908,15 @@ export interface ChatCompletionRequest {
   stream?: boolean
   temperature?: number
   max_tokens?: number
+  user?: string
 }
 
 export const chatApi = {
   complete: async (
     request: ChatCompletionRequest,
     apiKey?: string,
-    onChunk?: (chunk: string) => void
+    onChunk?: (chunk: string) => void,
+    signal?: AbortSignal
   ) => {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -805,6 +930,7 @@ export const chatApi = {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
+      signal,
     })
 
     if (!response.ok) {
@@ -849,12 +975,16 @@ export const chatApi = {
     return response.json()
   },
 
-  getModels: (apiKey?: string) => {
+  getModels: async (apiKey?: string): Promise<OpenAIModelsResponse> => {
     const headers: HeadersInit = {}
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`
     }
-    return fetch(`${API_BASE}/v1/models`, { headers }).then((r) => r.json())
+    const response = await fetch(`${API_BASE}/v1/models`, { headers })
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText)
+    }
+    return response.json()
   },
 
   // Session management (local storage based for now)

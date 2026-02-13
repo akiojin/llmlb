@@ -1,5 +1,5 @@
-import { type DashboardStats } from '@/lib/api'
-import { formatNumber, formatDuration, formatPercentage } from '@/lib/utils'
+import { type DashboardEndpoint, type DashboardStats } from '@/lib/api'
+import { formatDuration, formatFullNumber, formatPercentage } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Server,
@@ -16,6 +16,7 @@ import {
 
 interface StatsCardsProps {
   stats?: DashboardStats
+  endpoints?: DashboardEndpoint[]
   isLoading: boolean
 }
 
@@ -84,23 +85,62 @@ function StatCard({
   )
 }
 
-export function StatsCards({ stats, isLoading }: StatsCardsProps) {
+export function StatsCards({ stats, endpoints, isLoading }: StatsCardsProps) {
+  const runtimeCounts = stats
+    ? {
+        total: stats.total_runtimes ?? stats.total_nodes,
+        online: stats.online_runtimes ?? stats.online_nodes,
+        pending: stats.pending_runtimes ?? stats.pending_nodes,
+        registering: stats.registering_runtimes ?? stats.registering_nodes,
+        offline: stats.offline_runtimes ?? stats.offline_nodes,
+      }
+    : undefined
+
+  const endpointCounts = endpoints
+    ? {
+        total: endpoints.length,
+        online: endpoints.filter((e) => e.status === 'online').length,
+        pending: endpoints.filter((e) => e.status === 'pending').length,
+        offline: endpoints.filter((e) => e.status === 'offline').length,
+        error: endpoints.filter((e) => e.status === 'error').length,
+      }
+    : undefined
+
+  const totalEndpoints = endpointCounts?.total ?? runtimeCounts?.total
+  const onlineEndpoints = endpointCounts?.online ?? runtimeCounts?.online
+  const pendingEndpoints = endpointCounts?.pending ?? runtimeCounts?.pending
+  const offlineEndpoints = endpointCounts?.offline ?? runtimeCounts?.offline
+  const errorEndpoints = endpointCounts?.error
+
+  const endpointsSubtitle =
+    onlineEndpoints != null &&
+    pendingEndpoints != null &&
+    offlineEndpoints != null &&
+    (errorEndpoints == null || errorEndpoints >= 0)
+      ? [
+          `${onlineEndpoints} online`,
+          `${pendingEndpoints} pending`,
+          `${offlineEndpoints} offline`,
+          ...(errorEndpoints != null && errorEndpoints > 0
+            ? [`${errorEndpoints} error`]
+            : []),
+        ].join(', ')
+      : undefined
+
   const cards = [
     {
-      title: 'Total Nodes',
-      value: stats ? formatNumber(stats.total_nodes) : '—',
-      subtitle: stats
-        ? `${stats.online_nodes} online, ${stats.pending_nodes} pending, ${stats.registering_nodes} registering, ${stats.offline_nodes} offline`
-        : undefined,
+      title: 'Total Endpoints',
+      value: totalEndpoints != null ? formatFullNumber(totalEndpoints) : '—',
+      subtitle: endpointsSubtitle,
       icon: <Server className="h-5 w-5 text-primary" />,
       accentColor: 'primary',
-      dataStat: 'total-nodes',
+      dataStat: 'total-endpoints',
     },
     {
       title: 'Total Requests',
-      value: stats ? formatNumber(stats.total_requests) : '—',
+      value: stats ? formatFullNumber(stats.total_requests) : '—',
       subtitle: stats
-        ? `${formatNumber(stats.successful_requests)} successful`
+        ? `${formatFullNumber(stats.successful_requests)} successful`
         : undefined,
       icon: <Activity className="h-5 w-5 text-chart-2" />,
       accentColor: 'chart-2',
@@ -108,9 +148,11 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
     },
     {
       title: 'Total Tokens',
-      value: stats ? formatNumber(stats.total_tokens) : '—',
+      value: stats ? formatFullNumber(stats.total_tokens) : '—',
       subtitle: stats
-        ? `In: ${formatNumber(stats.total_input_tokens)} / Out: ${formatNumber(stats.total_output_tokens)}`
+        ? `In: ${formatFullNumber(stats.total_input_tokens)} / Out: ${formatFullNumber(
+            stats.total_output_tokens
+          )}`
         : undefined,
       icon: <MessageSquare className="h-5 w-5 text-chart-5" />,
       accentColor: 'chart-5',
@@ -118,14 +160,14 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
     },
     {
       title: 'Active Requests',
-      value: stats ? formatNumber(stats.total_active_requests) : '—',
+      value: stats ? formatFullNumber(stats.total_active_requests) : '—',
       icon: <Cpu className="h-5 w-5 text-chart-1" />,
       accentColor: 'chart-1',
       dataStat: 'active-requests',
     },
     {
       title: 'Queued Requests',
-      value: stats ? formatNumber(stats.queued_requests) : '—',
+      value: stats ? formatFullNumber(stats.queued_requests) : '—',
       icon: <Hourglass className="h-5 w-5 text-chart-5" />,
       accentColor: 'chart-5',
       dataStat: 'queued-requests',
@@ -139,7 +181,7 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
             )
           : '—',
       subtitle: stats
-        ? `${formatNumber(stats.failed_requests)} failed`
+        ? `${formatFullNumber(stats.failed_requests)} failed`
         : undefined,
       icon:
         stats && stats.failed_requests > 0 ? (

@@ -24,6 +24,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
+use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -64,10 +66,14 @@ pub struct DashboardEndpoint {
     pub registered_at: DateTime<Utc>,
     /// メモ
     pub notes: Option<String>,
-    /// Responses API対応フラグ
-    pub supports_responses_api: bool,
     /// 利用可能なモデル数
     pub model_count: usize,
+    /// 累計リクエスト数
+    pub total_requests: i64,
+    /// 成功リクエスト数
+    pub successful_requests: i64,
+    /// 失敗リクエスト数
+    pub failed_requests: i64,
 }
 
 /// システム統計レスポンス
@@ -307,8 +313,10 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
             error_count: endpoint.error_count,
             registered_at: endpoint.registered_at,
             notes: endpoint.notes,
-            supports_responses_api: endpoint.supports_responses_api,
             model_count,
+            total_requests: endpoint.total_requests,
+            successful_requests: endpoint.successful_requests,
+            failed_requests: endpoint.failed_requests,
         });
     }
 
@@ -328,15 +336,56 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
     let google_key_present = std::env::var("GOOGLE_API_KEY").is_ok();
     let anthropic_key_present = std::env::var("ANTHROPIC_API_KEY").is_ok();
 
+    // Token totals must be consistent with the persisted request history.
+    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
+    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
+    let mut total_input_tokens = summary.total_input_tokens;
+    let mut total_output_tokens = summary.total_output_tokens;
+    let mut total_tokens = summary.total_tokens;
+    match state.request_history.get_token_statistics().await {
+        Ok(stats) => {
+            total_input_tokens = stats.total_input_tokens;
+            total_output_tokens = stats.total_output_tokens;
+            total_tokens = stats.total_tokens;
+        }
+        Err(e) => {
+            warn!(
+                "Failed to query token statistics from request history: {}",
+                e
+            );
+        }
+    }
+
+    let mut total_requests = summary.total_requests;
+    let mut successful_requests = summary.successful_requests;
+    let mut failed_requests = summary.failed_requests;
+    let to_u64 = |value: i64| -> u64 {
+        if value < 0 {
+            0
+        } else {
+            value as u64
+        }
+    };
+    match crate::db::endpoints::get_request_totals(&state.db_pool).await {
+        Ok(request_totals) => {
+            total_requests = to_u64(request_totals.total_requests);
+            successful_requests = to_u64(request_totals.successful_requests);
+            failed_requests = to_u64(request_totals.failed_requests);
+        }
+        Err(e) => {
+            warn!("Failed to query persisted request totals: {}", e);
+        }
+    }
+
     DashboardStats {
         total_nodes: summary.total_nodes,
         online_nodes: summary.online_nodes,
         pending_nodes: summary.pending_nodes,
         registering_nodes: summary.registering_nodes,
         offline_nodes: summary.offline_nodes,
-        total_requests: summary.total_requests,
-        successful_requests: summary.successful_requests,
-        failed_requests: summary.failed_requests,
+        total_requests,
+        successful_requests,
+        failed_requests,
         total_active_requests: summary.total_active_requests,
         queued_requests: summary.queued_requests,
         average_response_time_ms: summary.average_response_time_ms,
@@ -348,9 +397,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         openai_key_present,
         google_key_present,
         anthropic_key_present,
-        total_input_tokens: summary.total_input_tokens,
-        total_output_tokens: summary.total_output_tokens,
-        total_tokens: summary.total_tokens,
+        total_input_tokens,
+        total_output_tokens,
+        total_tokens,
     }
 }
 
@@ -542,52 +591,63 @@ pub async fn export_request_responses(
 
     match query.format {
         RequestHistoryExportFormat::Json => {
+            let storage = state.request_history.clone();
+            let filter = filter.clone();
+            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
             let mut page_data = Some(first_page.clone());
-            let mut body = Vec::new();
-            body.push(b'[');
-            let mut first = true;
 
-            loop {
-                let data = if let Some(data) = page_data.take() {
-                    data
-                } else {
-                    state
-                        .request_history
-                        .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
-                        .await
-                        .map_err(|err| {
-                            warn!("Failed to export request history page {}: {}", page, err);
-                            AppError::from(err)
-                        })?
-                };
-
-                if data.records.is_empty() {
-                    break;
+            tokio::spawn(async move {
+                if writer.write_all(b"[").await.is_err() {
+                    return;
                 }
+                let mut first = true;
+                loop {
+                    let data = if let Some(data) = page_data.take() {
+                        data
+                    } else {
+                        match storage
+                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                            .await
+                        {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to export request history page {}: {}", page, err);
+                                break;
+                            }
+                        }
+                    };
 
-                for record in data.records {
-                    let json = serde_json::to_vec(&record).map_err(|err| {
-                        warn!("Failed to serialize request history record: {}", err);
-                        AppError::from(LbError::Internal(format!(
-                            "Failed to serialize request history record: {}",
-                            err
-                        )))
-                    })?;
-                    if !first {
-                        body.push(b',');
+                    if data.records.is_empty() {
+                        break;
                     }
-                    first = false;
-                    body.extend_from_slice(&json);
+
+                    for record in data.records {
+                        let json = match serde_json::to_vec(&record) {
+                            Ok(json) => json,
+                            Err(err) => {
+                                warn!("Failed to serialize request history record: {}", err);
+                                return;
+                            }
+                        };
+                        if !first && writer.write_all(b",").await.is_err() {
+                            return;
+                        }
+                        first = false;
+                        if writer.write_all(&json).await.is_err() {
+                            return;
+                        }
+                    }
+
+                    if page * EXPORT_PAGE_SIZE >= data.total_count {
+                        break;
+                    }
+                    page += 1;
                 }
 
-                if page * EXPORT_PAGE_SIZE >= data.total_count {
-                    break;
-                }
-                page += 1;
-            }
-
-            body.push(b']');
+                let _ = writer.write_all(b"]").await;
+                let _ = writer.shutdown().await;
+            });
 
             let response = Response::builder()
                 .status(StatusCode::OK)
@@ -596,98 +656,120 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.json\"",
                 )
-                .body(Body::from(body))
+                .body(Body::from_stream(ReaderStream::new(reader)))
                 .unwrap();
             Ok(response)
         }
         RequestHistoryExportFormat::Csv => {
+            let storage = state.request_history.clone();
+            let filter = filter.clone();
+            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
             let mut page_data = Some(first_page.clone());
-            let mut csv_writer = csv::Writer::from_writer(vec![]);
-            csv_writer
-                .write_record([
-                    "id",
-                    "timestamp",
-                    "request_type",
-                    "model",
-                    "runtime_id",
-                    "runtime_machine_name",
-                    "runtime_ip",
-                    "client_ip",
-                    "duration_ms",
-                    "status",
-                    "completed_at",
-                ])
-                .map_err(|err| {
-                    AppError::from(LbError::Internal(format!(
-                        "Failed to write CSV header: {}",
-                        err
-                    )))
-                })?;
 
-            loop {
-                let data = if let Some(data) = page_data.take() {
-                    data
-                } else {
-                    state
-                        .request_history
-                        .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
-                        .await
-                        .map_err(|err| {
-                            warn!("Failed to export request history page {}: {}", page, err);
-                            AppError::from(err)
-                        })?
+            tokio::spawn(async move {
+                let mut header = csv::Writer::from_writer(vec![]);
+                if header
+                    .write_record([
+                        "id",
+                        "timestamp",
+                        "request_type",
+                        "model",
+                        "runtime_id",
+                        "runtime_machine_name",
+                        "runtime_ip",
+                        "client_ip",
+                        "duration_ms",
+                        "status",
+                        "completed_at",
+                    ])
+                    .is_err()
+                {
+                    return;
+                }
+                let header_bytes = match header.into_inner() {
+                    Ok(data) => data,
+                    Err(err) => {
+                        warn!("Failed to finalize CSV header: {}", err);
+                        return;
+                    }
                 };
-
-                if data.records.is_empty() {
-                    break;
+                if writer.write_all(&header_bytes).await.is_err() {
+                    return;
                 }
 
-                for record in data.records {
-                    let status_str = match &record.status {
-                        crate::common::protocol::RecordStatus::Success => "success".to_string(),
-                        crate::common::protocol::RecordStatus::Error { message } => {
-                            format!("error: {}", message)
+                loop {
+                    let data = if let Some(data) = page_data.take() {
+                        data
+                    } else {
+                        match storage
+                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                            .await
+                        {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to export request history page {}: {}", page, err);
+                                break;
+                            }
                         }
                     };
 
-                    csv_writer
-                        .write_record(&[
-                            record.id.to_string(),
-                            record.timestamp.to_rfc3339(),
-                            format!("{:?}", record.request_type),
-                            record.model,
-                            record.node_id.to_string(),
-                            record.node_machine_name,
-                            record.node_ip.to_string(),
-                            record
-                                .client_ip
-                                .map(|ip| ip.to_string())
-                                .unwrap_or_default(),
-                            record.duration_ms.to_string(),
-                            status_str,
-                            record.completed_at.to_rfc3339(),
-                        ])
-                        .map_err(|err| {
-                            AppError::from(LbError::Internal(format!(
-                                "Failed to write CSV row: {}",
-                                err
-                            )))
-                        })?;
+                    if data.records.is_empty() {
+                        break;
+                    }
+
+                    for record in data.records {
+                        let status_str = match &record.status {
+                            crate::common::protocol::RecordStatus::Success => "success".to_string(),
+                            crate::common::protocol::RecordStatus::Error { message } => {
+                                format!("error: {}", message)
+                            }
+                        };
+
+                        let mut row = csv::Writer::from_writer(vec![]);
+                        if row
+                            .write_record(&[
+                                record.id.to_string(),
+                                record.timestamp.to_rfc3339(),
+                                format!("{:?}", record.request_type),
+                                record.model,
+                                record.node_id.to_string(),
+                                record.node_machine_name,
+                                record.node_ip.to_string(),
+                                record
+                                    .client_ip
+                                    .map(|ip| ip.to_string())
+                                    .unwrap_or_default(),
+                                record.duration_ms.to_string(),
+                                status_str,
+                                record.completed_at.to_rfc3339(),
+                            ])
+                            .is_err()
+                        {
+                            return;
+                        }
+
+                        let row_bytes = match row.into_inner() {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to finalize CSV row: {}", err);
+                                return;
+                            }
+                        };
+
+                        if writer.write_all(&row_bytes).await.is_err() {
+                            return;
+                        }
+                    }
+
+                    if page * EXPORT_PAGE_SIZE >= data.total_count {
+                        break;
+                    }
+                    page += 1;
                 }
 
-                if page * EXPORT_PAGE_SIZE >= data.total_count {
-                    break;
-                }
-                page += 1;
-            }
-
-            let body = csv_writer.into_inner().map_err(|err| {
-                AppError::from(LbError::Internal(format!(
-                    "Failed to finalize CSV export: {}",
-                    err
-                )))
-            })?;
+                let _ = writer.shutdown().await;
+            });
 
             let response = Response::builder()
                 .status(StatusCode::OK)
@@ -696,12 +778,62 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.csv\"",
                 )
-                .body(Body::from(body))
+                .body(Body::from_stream(ReaderStream::new(reader)))
                 .unwrap();
 
             Ok(response)
         }
     }
+}
+
+/// GET /api/endpoints/{id}/today-stats - 当日リクエスト統計
+///
+/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 5)
+pub async fn get_endpoint_today_stats(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Result<Json<crate::db::endpoint_daily_stats::DailyStatEntry>, AppError> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let stats = crate::db::endpoint_daily_stats::get_today_stats(&state.db_pool, id, &today)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+    Ok(Json(stats))
+}
+
+/// GET /api/endpoints/{id}/daily-stats - 日次リクエスト統計
+///
+/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 6)
+pub async fn get_endpoint_daily_stats(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+    Query(query): Query<EndpointDailyStatsQuery>,
+) -> Result<Json<Vec<crate::db::endpoint_daily_stats::DailyStatEntry>>, AppError> {
+    let days = query.days.unwrap_or(7).min(365);
+    let stats = crate::db::endpoint_daily_stats::get_daily_stats(&state.db_pool, id, days)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+    Ok(Json(stats))
+}
+
+/// エンドポイント日次統計クエリパラメータ
+#[derive(Debug, Clone, Deserialize)]
+pub struct EndpointDailyStatsQuery {
+    /// 取得する日数（デフォルト: 7、最大: 365）
+    #[serde(default)]
+    pub days: Option<u32>,
+}
+
+/// GET /api/endpoints/{id}/model-stats - モデル別リクエスト統計
+///
+/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 7)
+pub async fn get_endpoint_model_stats(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
+    let stats = crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, id)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+    Ok(Json(stats))
 }
 
 /// GET /api/dashboard/models - ダッシュボード向けモデル一覧

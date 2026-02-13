@@ -45,25 +45,6 @@
           }
         }
       }
-    },
-    "/api/models/registered": {
-      "get": {
-        "summary": "Registered models list（Playground UI用）",
-        "description": "Playgroundのモデル選択UIで利用するモデル一覧。各モデルの画像/音声入力対応状況（対応/非対応/不明）を含む。",
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/PlaygroundRegisteredModel" }
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {

@@ -34,15 +34,28 @@ pub async fn create_test_lb() -> (Router, SqlitePool) {
     // LoadManagerはEndpointRegistryを使用
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
 
+    let http_client = reqwest::Client::new();
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to create update manager");
+
     let state = AppState {
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
         jwt_secret,
-        http_client: reqwest::Client::new(),
+        http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown,
+        update_manager,
     };
 
     let app = api::create_app(state);
@@ -92,15 +105,28 @@ pub async fn spawn_test_lb() -> TestServer {
     // LoadManagerはEndpointRegistryを使用
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
 
+    let http_client = reqwest::Client::new();
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to create update manager");
+
     let state = AppState {
         load_manager,
         request_history,
         db_pool,
         jwt_secret,
-        http_client: reqwest::Client::new(),
+        http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown,
+        update_manager,
     };
 
     let app = api::create_app(state);
@@ -130,15 +156,28 @@ pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
     // LoadManagerはEndpointRegistryを使用
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
 
+    let http_client = reqwest::Client::new();
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to create update manager");
+
     let state = AppState {
         load_manager: load_manager.clone(),
         request_history,
         db_pool,
         jwt_secret,
-        http_client: reqwest::Client::new(),
+        http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown,
+        update_manager,
     };
 
     let app = api::create_app(state);
@@ -430,7 +469,7 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
         .json(&json!({
             "name": "Test API Key",
             "expires_at": null,
-            "scopes": ["api"]
+            "permissions": ["openai.inference", "openai.models.read"]
         }))
         .send()
         .await
@@ -466,15 +505,28 @@ pub async fn spawn_test_lb_with_db() -> (TestServer, SqlitePool) {
     // LoadManagerはEndpointRegistryを使用
     let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
 
+    let http_client = reqwest::Client::new();
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to create update manager");
+
     let state = AppState {
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
         jwt_secret,
-        http_client: reqwest::Client::new(),
+        http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown,
+        update_manager,
     };
 
     let app = api::create_app(state);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { endpointsApi, chatApi, ApiError } from '@/lib/api'
+import { endpointsApi, chatApi, ApiError, type DashboardEndpoint } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -84,6 +85,54 @@ function getErrorMessage(status: number): string {
   }
 }
 
+function getStatusBadgeVariant(
+  status: DashboardEndpoint['status'] | undefined
+): 'online' | 'pending' | 'offline' | 'destructive' | 'outline' {
+  switch (status) {
+    case 'online':
+      return 'online'
+    case 'pending':
+      return 'pending'
+    case 'offline':
+      return 'offline'
+    case 'error':
+      return 'destructive'
+    default:
+      return 'outline'
+  }
+}
+
+function getStatusIndicatorColor(status: DashboardEndpoint['status'] | undefined): string {
+  switch (status) {
+    case 'online':
+      return 'text-success'
+    case 'pending':
+      return 'text-warning'
+    case 'offline':
+      // SPEC-66555000: offline should be a lighter red than error.
+      return 'text-destructive/70'
+    case 'error':
+      return 'text-destructive'
+    default:
+      return 'text-muted-foreground'
+  }
+}
+
+function getStatusLabel(status: DashboardEndpoint['status'] | undefined): string {
+  switch (status) {
+    case 'online':
+      return 'Online'
+    case 'pending':
+      return 'Pending'
+    case 'offline':
+      return 'Offline'
+    case 'error':
+      return 'Error'
+    default:
+      return 'Unknown'
+  }
+}
+
 export default function EndpointPlayground({ endpointId, onBack }: EndpointPlaygroundProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -98,6 +147,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   const [streamEnabled, setStreamEnabled] = useState(true)
   const [temperature, setTemperature] = useState(0.7)
   const [maxTokens, setMaxTokens] = useState(16384)
+  const [useMaxContext, setUseMaxContext] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -141,6 +191,9 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
       setSelectedModel(endpointModels.models[0].model_id)
     }
   }, [endpointModels, selectedModel])
+
+  const selectedModelMaxTokens = endpointModels?.models?.find(m => m.model_id === selectedModel)?.max_tokens
+  const effectiveMaxTokens = useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens
 
   // Scroll to bottom
   useEffect(() => {
@@ -250,7 +303,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             messages: requestMessages,
             stream: true,
             temperature,
-            max_tokens: maxTokens,
+            max_tokens: effectiveMaxTokens,
           },
           (chunk) => {
             assistantContent += chunk
@@ -273,7 +326,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             messages: requestMessages,
             stream: false,
             temperature,
-            max_tokens: maxTokens,
+            max_tokens: effectiveMaxTokens,
           }
         )
 
@@ -324,7 +377,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
       messages: requestMessages,
       stream: streamEnabled,
       temperature,
-      max_tokens: maxTokens,
+      max_tokens: effectiveMaxTokens,
     },
     null,
     2
@@ -392,8 +445,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           )}
           <div className="text-xs text-muted-foreground">
             <span className="font-medium">Status:</span>{' '}
-            <Badge variant={endpoint?.status === 'online' ? 'default' : 'secondary'} className="text-xs">
-              {endpoint?.status}
+            <Badge variant={getStatusBadgeVariant(endpoint?.status)} className="text-xs">
+              {getStatusLabel(endpoint?.status)}
             </Badge>
           </div>
           <div className="text-xs text-muted-foreground">
@@ -414,7 +467,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             Back to Dashboard
           </Button>
           <Button
-            variant="ghost"
+            variant="outline"
             className="w-full justify-start"
             onClick={() => setSettingsOpen(true)}
           >
@@ -468,11 +521,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             </Select>
 
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CircleDot className={cn(
-                "h-3 w-3",
-                endpoint?.status === 'online' ? 'text-green-500' : 'text-yellow-500'
-              )} />
-              {endpoint?.status === 'online' ? 'Online' : endpoint?.status}
+              <CircleDot className={cn("h-3 w-3", getStatusIndicatorColor(endpoint?.status))} />
+              {getStatusLabel(endpoint?.status)}
             </span>
 
             {streamEnabled && (
@@ -618,24 +668,28 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
                           className="h-16 w-16 object-cover"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <button
+                          <Button
+                            variant="destructive"
+                            size="icon"
                             onClick={() => removeAttachment(idx)}
-                            className="text-white bg-destructive rounded-full p-1 hover:bg-destructive/80"
+                            className="rounded-full p-1 h-auto w-auto"
                           >
                             <X className="h-3 w-3" />
-                          </button>
+                          </Button>
                         </div>
                       </>
                     )}
                     {attachment.type === 'audio' && (
                       <div className="h-16 w-16 flex flex-col items-center justify-center bg-muted gap-1">
                         <Mic className="h-5 w-5 text-muted-foreground" />
-                        <button
+                        <Button
+                          variant="destructive"
+                          size="icon"
                           onClick={() => removeAttachment(idx)}
-                          className="absolute -top-2 -right-2 text-white bg-destructive rounded-full p-0.5 hover:bg-destructive/80"
+                          className="absolute -top-2 -right-2 rounded-full p-0.5 h-auto w-auto"
                         >
                           <X className="h-3 w-3" />
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -769,12 +823,27 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             </div>
             <div className="space-y-2">
               <Label>Max Tokens</Label>
+              <div className="flex items-center space-x-2 mb-2">
+                <Checkbox
+                  id="use-max-context"
+                  checked={useMaxContext}
+                  onCheckedChange={(checked) => setUseMaxContext(checked === true)}
+                  disabled={selectedModelMaxTokens == null && !useMaxContext}
+                />
+                <Label
+                  htmlFor="use-max-context"
+                  className={cn("text-sm font-normal", selectedModelMaxTokens == null && "text-muted-foreground")}
+                >
+                  Use model max context{selectedModelMaxTokens != null ? ` (${selectedModelMaxTokens.toLocaleString()})` : ' (unknown)'}
+                </Label>
+              </div>
               <Input
                 type="number"
-                value={maxTokens}
+                value={useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens}
                 onChange={(e) => setMaxTokens(parseInt(e.target.value) || 2048)}
                 min={1}
-                max={32000}
+                max={131072}
+                disabled={useMaxContext && selectedModelMaxTokens != null}
               />
             </div>
           </div>
@@ -795,7 +864,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           </DialogHeader>
           <div className="relative">
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               className="absolute right-2 top-2"
               onClick={() => copyToClipboard(generateCurl())}

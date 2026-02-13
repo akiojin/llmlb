@@ -9,7 +9,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -45,15 +45,27 @@ async fn build_app() -> TestApp {
         llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
     let jwt_secret = "test-secret".to_string();
+    let http_client = reqwest::Client::new();
+    let inference_gate = llmlb::inference_gate::InferenceGate::default();
+    let shutdown = llmlb::shutdown::ShutdownController::default();
+    let update_manager = llmlb::update::UpdateManager::new(
+        http_client.clone(),
+        inference_gate.clone(),
+        shutdown.clone(),
+    )
+    .expect("Failed to create update manager");
     let state = AppState {
         load_manager,
         request_history,
         db_pool: db_pool.clone(),
         jwt_secret,
-        http_client: reqwest::Client::new(),
+        http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
         endpoint_registry,
+        inference_gate,
+        shutdown,
+        update_manager,
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -66,7 +78,7 @@ async fn build_app() -> TestApp {
         "admin-key",
         admin_user.id,
         None,
-        vec![ApiKeyScope::Admin],
+        ApiKeyPermission::all(),
     )
     .await
     .expect("create admin api key")

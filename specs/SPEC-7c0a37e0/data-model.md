@@ -1,21 +1,48 @@
-# データモデル: APIキースコープシステム
+# データモデル: APIキー権限（Permissions）システム
 
 ## エンティティ定義
 
-### ApiKeyScope
+### ApiKeyPermission
 
-APIキーに付与できるスコープ。
+APIキーに付与できる権限（permissions）。
 
 ```rust
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ApiKeyScope {
-    /// ノード登録・ハートビート用
-    Node,
-    /// OpenAI互換API利用用
-    Api,
-    /// 管理操作用（全権限を包含）
-    Admin,
+#[serde(rename_all = "snake_case")]
+pub enum ApiKeyPermission {
+    /// OpenAI互換APIの推論（/v1/chat/completions 等）
+    #[serde(rename = "openai.inference")]
+    OpenaiInference,
+    /// OpenAI互換APIのモデル一覧取得（/v1/models*）
+    #[serde(rename = "openai.models.read")]
+    OpenaiModelsRead,
+    /// /api/endpoints の読み取り
+    #[serde(rename = "endpoints.read")]
+    EndpointsRead,
+    /// /api/endpoints の作成・更新・削除
+    #[serde(rename = "endpoints.manage")]
+    EndpointsManage,
+    /// /api/api-keys の管理
+    #[serde(rename = "api_keys.manage")]
+    ApiKeysManage,
+    /// /api/users の管理
+    #[serde(rename = "users.manage")]
+    UsersManage,
+    /// /api/invitations の管理
+    #[serde(rename = "invitations.manage")]
+    InvitationsManage,
+    /// /api/models/register, DELETE /api/models/* の管理
+    #[serde(rename = "models.manage")]
+    ModelsManage,
+    /// /api/models/registry/* の読み取り
+    #[serde(rename = "registry.read")]
+    RegistryRead,
+    /// /api/nodes/:node_id/logs の読み取り
+    #[serde(rename = "logs.read")]
+    LogsRead,
+    /// /api/metrics/cloud の読み取り
+    #[serde(rename = "metrics.read")]
+    MetricsRead,
 }
 ```
 
@@ -28,10 +55,11 @@ pub struct ApiKey {
     pub id: Uuid,
     pub name: String,
     pub key_hash: String,
+    pub key_prefix: Option<String>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
-    pub scopes: Vec<ApiKeyScope>,
+    pub permissions: Vec<ApiKeyPermission>,
 }
 ```
 
@@ -48,33 +76,34 @@ pub enum UserRole {
 }
 ```
 
-## スコープとエンドポイントのマッピング
+## 権限とエンドポイントのマッピング
 
-| エンドポイント | 必要なスコープ |
-|---------------|---------------|
-| POST /api/nodes | `node` |
-| GET /api/health | `node` + ノードトークン |
-| GET /api/models/registry/:name/manifest.json | `node` |
-| POST /v1/chat/completions | `api` |
-| POST /v1/embeddings | `api` |
-| GET /v1/models | `api` |
-| POST /v1/models/register | `admin` |
-| DELETE /v1/models/:name | `admin` |
-| GET /api/users | `admin` |
-| GET /api/api-keys | `admin` |
-| GET /api/metrics/* | `admin` |
-| GET /api/dashboard/* | `admin` または JWT |
+| エンドポイント | 必要な認証/権限 |
+|---|---|
+| `POST /v1/chat/completions` など（`POST /v1/*`） | APIキー + `openai.inference` |
+| `GET /v1/models*` | APIキー + `openai.models.read` |
+| `GET /api/endpoints*` | JWT（admin/viewer）または APIキー + `endpoints.read` |
+| `POST/PUT/DELETE /api/endpoints*` | JWT（admin）または APIキー + `endpoints.manage` |
+| `GET /api/users*` | JWT（admin）または APIキー + `users.manage` |
+| `GET /api/api-keys*` | JWT（admin）または APIキー + `api_keys.manage` |
+| `GET /api/invitations*` | JWT（admin）または APIキー + `invitations.manage` |
+| `POST /api/models/register` / `DELETE /api/models/*` | JWT（admin）または APIキー + `models.manage` |
+| `GET /api/models/registry/:name/manifest.json` | APIキー + `registry.read`（JWT不可） |
+| `GET /api/models` / `GET /api/models/hub` | JWT（admin）または APIキー + `registry.read` |
+| `GET /api/nodes/:node_id/logs` | JWT（admin）または APIキー + `logs.read` |
+| `GET /api/metrics/cloud` | JWT（admin）または APIキー + `metrics.read` |
+| `GET /api/dashboard/*` | JWTのみ（APIキー不可） |
 
-## デバッグAPIキー
+## デバッグAPIキー（開発用）
 
 開発モード（`#[cfg(debug_assertions)]`）で有効。
 
-| キー | スコープ | 用途 |
-|------|---------|------|
-| `sk_debug` | すべて | 後方互換性 |
-| `sk_debug_runtime` | `node` | ノード登録テスト |
-| `sk_debug_api` | `api` | API利用テスト |
-| `sk_debug_admin` | `admin` | 管理操作テスト |
+| キー | 権限 | 用途 |
+|---|---|---|
+| `sk_debug` | 全権限 | 後方互換 |
+| `sk_debug_admin` | 全権限 | 管理操作テスト |
+| `sk_debug_api` | `openai.inference`, `openai.models.read` | OpenAI互換APIテスト |
+| `sk_debug_runtime` | `registry.read` | レジストリアクセス（旧runtime用途の置き換え） |
 
 ## データベーススキーマ
 
@@ -88,16 +117,17 @@ CREATE TABLE api_keys (
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL,
     expires_at TEXT,
-    scopes TEXT NOT NULL DEFAULT '["api"]'
+    scopes TEXT, -- legacy
+    permissions TEXT -- JSON array (current)
 );
 ```
 
-### scopesカラム
+### permissionsカラム
 
 JSON配列として格納。
 
 ```json
-["node", "api"]
+["openai.inference", "openai.models.read"]
 ```
 
 ## 認証フロー
@@ -117,35 +147,12 @@ JSON配列として格納。
      +-- 期限切れ → 401 Unauthorized
      |
      v
-[スコープ確認]
+[権限確認]
      |
      +-- 権限なし → 403 Forbidden
      |
      v
 [リクエスト処理]
-```
-
-### ノードヘルスチェック認証
-
-```text
-[リクエスト]
-     |
-     v
-[Authorization: Bearer sk_xxxx]
-[X-Node-Token: node_xxxx]
-     |
-     v
-[APIキー検証（nodeスコープ）]
-     |
-     +-- 失敗 → 401/403
-     |
-     v
-[ノードトークン検証]
-     |
-     +-- 失敗 → 401 Unauthorized
-     |
-     v
-[ヘルスチェック処理]
 ```
 
 ## エラーレスポンス
@@ -167,23 +174,14 @@ JSON配列として格納。
 ```json
 {
   "error": {
-    "message": "API key does not have required scope: node",
+    "message": "Missing required permission: openai.inference",
     "type": "forbidden",
-    "code": "insufficient_scope"
+    "code": "insufficient_permission"
   }
 }
 ```
 
 ## 後方互換性
 
-スコープが未設定のAPIキーは全スコープとして扱う。
-
-```rust
-fn get_effective_scopes(api_key: &ApiKey) -> Vec<ApiKeyScope> {
-    if api_key.scopes.is_empty() {
-        vec![ApiKeyScope::Node, ApiKeyScope::Api, ApiKeyScope::Admin]
-    } else {
-        api_key.scopes.clone()
-    }
-}
-```
+旧`scopes`を持つ既存APIキーは、DBマイグレーションで`permissions`へ移行する。
+（例: `admin` → 全権限、`api` → `openai.*`、`endpoint` → `registry.read` など）

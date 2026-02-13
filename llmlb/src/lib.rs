@@ -74,6 +74,15 @@ pub mod sync;
 /// サーバーインスタンスの排他制御（シングル実行制約）
 pub mod lock;
 
+/// Inference request gate (self-update drain)
+pub mod inference_gate;
+
+/// Shutdown controller (self-update restart)
+pub mod shutdown;
+
+/// Self-update manager
+pub mod update;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {
@@ -93,6 +102,15 @@ pub struct AppState {
     pub event_bus: events::SharedEventBus,
     /// エンドポイントレジストリ
     pub endpoint_registry: registry::endpoints::EndpointRegistry,
+
+    /// Inference gate (used for self-update drain)
+    pub inference_gate: inference_gate::InferenceGate,
+
+    /// Cooperative shutdown controller
+    pub shutdown: shutdown::ShutdownController,
+
+    /// Self-update manager
+    pub update_manager: update::UpdateManager,
 }
 
 #[cfg(test)]

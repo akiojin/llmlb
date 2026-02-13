@@ -355,9 +355,6 @@ pub struct Endpoint {
     pub registered_at: DateTime<Utc>,
     /// メモ
     pub notes: Option<String>,
-    /// Responses API対応フラグ（SPEC-24157000）
-    #[serde(default)]
-    pub supports_responses_api: bool,
     /// エンドポイントの機能一覧（SPEC-66555000移行用）
     /// 画像生成、音声認識等の特殊機能をサポートするかを示す
     #[serde(default)]
@@ -384,6 +381,15 @@ pub struct Endpoint {
     /// ヘルスチェックのlatency_msとは別に、実際の推論時間を追跡
     #[serde(default)]
     pub inference_latency_ms: Option<f64>,
+    /// 累計リクエスト数（SPEC-76643000）
+    #[serde(default)]
+    pub total_requests: i64,
+    /// 累計成功リクエスト数（SPEC-76643000）
+    #[serde(default)]
+    pub successful_requests: i64,
+    /// 累計失敗リクエスト数（SPEC-76643000）
+    #[serde(default)]
+    pub failed_requests: i64,
 }
 
 impl Endpoint {
@@ -407,7 +413,6 @@ impl Endpoint {
             error_count: 0,
             registered_at: Utc::now(),
             notes: None,
-            supports_responses_api: false,
             capabilities: vec![EndpointCapability::ChatCompletion], // デフォルトはチャット機能
             gpu_device_count: None,
             gpu_total_memory_bytes: None,
@@ -416,6 +421,9 @@ impl Endpoint {
             active_requests: None,
             device_info: None,
             inference_latency_ms: None,
+            total_requests: 0,
+            successful_requests: 0,
+            failed_requests: 0,
         }
     }
 
@@ -557,6 +565,26 @@ pub struct EndpointHealthCheck {
     pub status_after: EndpointStatus,
 }
 
+/// エンドポイント日次集計レコード（SPEC-76643000）
+///
+/// エンドポイント×モデル×日付の粒度で集計されたリクエスト統計。
+/// 永続保存され、トレンド分析とモデル別分析の基盤となる。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointDailyStats {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// モデルID
+    pub model_id: String,
+    /// 日付（YYYY-MM-DD形式、サーバーローカル時間）
+    pub date: String,
+    /// 当日のリクエスト合計数
+    pub total_requests: i64,
+    /// 当日の成功リクエスト数
+    pub successful_requests: i64,
+    /// 当日の失敗リクエスト数
+    pub failed_requests: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,7 +642,6 @@ mod tests {
         assert_eq!(endpoint.health_check_interval_secs, 30);
         assert_eq!(endpoint.inference_timeout_secs, 120);
         assert_eq!(endpoint.error_count, 0);
-        assert!(!endpoint.supports_responses_api);
         // デフォルトでChatCompletion機能を持つ
         assert!(endpoint.has_capability(EndpointCapability::ChatCompletion));
         assert!(!endpoint.has_capability(EndpointCapability::ImageGeneration));

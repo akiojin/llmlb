@@ -65,21 +65,21 @@ interface EndpointTableProps {
   isLoading: boolean
 }
 
-type SortField = 'name' | 'status' | 'latency_ms' | 'model_count' | 'registered_at'
+type SortField = 'name' | 'status' | 'total_requests' | 'latency_ms' | 'model_count' | 'registered_at'
 type SortDirection = 'asc' | 'desc'
 
 const PAGE_SIZE = 10
 
 function getStatusBadgeVariant(
   status: DashboardEndpoint['status']
-): 'default' | 'destructive' | 'outline' | 'secondary' {
+): 'online' | 'pending' | 'offline' | 'destructive' | 'outline' {
   switch (status) {
     case 'online':
-      return 'default'
+      return 'online'
     case 'pending':
-      return 'secondary'
+      return 'pending'
     case 'offline':
-      return 'outline'
+      return 'offline'
     case 'error':
       return 'destructive'
     default:
@@ -260,6 +260,9 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
           comparison = statusOrder[a.status] - statusOrder[b.status]
           break
         }
+        case 'total_requests':
+          comparison = a.total_requests - b.total_requests
+          break
         case 'latency_ms':
           comparison = (a.latency_ms ?? Infinity) - (b.latency_ms ?? Infinity)
           break
@@ -413,6 +416,13 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
+                    onClick={() => handleSort('total_requests')}
+                  >
+                    Requests
+                    <SortIcon field="total_requests" />
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('latency_ms')}
                   >
                     Latency
@@ -432,7 +442,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               <TableBody>
                 {paginatedEndpoints.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       {search || statusFilter !== 'all'
                         ? 'No endpoints match the filter criteria'
                         : 'No endpoints registered'}
@@ -444,11 +454,6 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           <span>{endpoint.name}</span>
-                          {endpoint.supports_responses_api && (
-                            <Badge variant="outline" className="text-xs">
-                              Responses API
-                            </Badge>
-                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -475,6 +480,30 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
+                        {endpoint.total_requests > 0 ? (
+                          <span
+                            className={cn(
+                              endpoint.total_requests > 0 &&
+                                endpoint.failed_requests / endpoint.total_requests >= 0.2
+                                ? 'text-destructive font-medium'
+                                : endpoint.total_requests > 0 &&
+                                    endpoint.failed_requests / endpoint.total_requests >= 0.05
+                                  ? 'text-yellow-600 dark:text-yellow-500 font-medium'
+                                  : ''
+                            )}
+                          >
+                            {endpoint.total_requests.toLocaleString()}
+                            {' '}
+                            ({(
+                              (endpoint.successful_requests / endpoint.total_requests) *
+                              100
+                            ).toFixed(1)}%)
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
                         {endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-'}
                       </TableCell>
                       <TableCell className="text-right">{endpoint.model_count}</TableCell>
@@ -484,7 +513,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => setSelectedEndpoint(endpoint)}
                             title="Details"
@@ -492,7 +521,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             <Info className="h-4 w-4" />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => handleTest(endpoint)}
                             disabled={isTesting === endpoint.id}
@@ -503,7 +532,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => handleSync(endpoint)}
                             disabled={isSyncing === endpoint.id || endpoint.status !== 'online'}
@@ -514,7 +543,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => setDeletingEndpoint(endpoint)}
                             title="Delete"

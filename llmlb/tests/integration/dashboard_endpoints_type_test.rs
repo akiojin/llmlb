@@ -3,14 +3,14 @@
 //! Dashboard UI expects `endpoint_type` and related metadata from
 //! `GET /api/dashboard/endpoints` (Type column + detail modal).
 
-use llmlb::common::auth::{ApiKeyScope, UserRole};
+use llmlb::common::auth::UserRole;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
 use crate::support::lb::spawn_test_lb_with_db;
 
-async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
+async fn create_admin_jwt(db_pool: &SqlitePool) -> String {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
     let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin).await;
     let admin_id = match created {
@@ -24,29 +24,24 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
         }
     };
 
-    let api_key = llmlb::db::api_keys::create(
-        db_pool,
-        "test-admin-key-dashboard-endpoints",
-        admin_id,
-        None,
-        vec![ApiKeyScope::Admin],
+    llmlb::auth::jwt::create_jwt(
+        &admin_id.to_string(),
+        UserRole::Admin,
+        &crate::support::lb::test_jwt_secret(),
     )
-    .await
-    .expect("create admin api key");
-
-    api_key.key
+    .expect("create admin jwt")
 }
 
 #[tokio::test]
 async fn test_dashboard_endpoints_includes_endpoint_type_metadata() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
-    let admin_key = create_admin_api_key(&db_pool).await;
+    let jwt = create_admin_jwt(&db_pool).await;
 
     // Register endpoint with manual type to ensure metadata is set.
     let create_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("authorization", format!("Bearer {}", admin_key))
+        .header("authorization", format!("Bearer {}", jwt))
         .json(&json!({
             "name": "Type for Dashboard",
             "base_url": "http://localhost:8080",
@@ -63,7 +58,7 @@ async fn test_dashboard_endpoints_includes_endpoint_type_metadata() {
 
     let dash_resp = client
         .get(format!("http://{}/api/dashboard/endpoints", server.addr()))
-        .header("authorization", format!("Bearer {}", admin_key))
+        .header("authorization", format!("Bearer {}", jwt))
         .send()
         .await
         .unwrap();

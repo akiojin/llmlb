@@ -30,9 +30,9 @@ use crate::{
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         proxy::{
-            forward_streaming_response, forward_to_endpoint, save_request_record,
+            forward_streaming_response, record_endpoint_request_stats, save_request_record,
             select_available_endpoint, select_available_endpoint_with_queue_for_model,
-            select_endpoint_for_model, EndpointSelection, QueueSelection,
+            QueueSelection,
         },
     },
     balancer::RequestOutcome,
@@ -311,6 +311,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
     // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
+    let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
     {
         let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
@@ -323,9 +324,15 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
-                    // Responses API対応エンドポイントの場合は追加
-                    if ep.supports_responses_api {
-                        apis.insert(SupportedAPI::Responses);
+                    // Responses APIは全エンドポイント対応前提（判定/フラグは廃止）
+                    apis.insert(SupportedAPI::Responses);
+
+                    // max_tokens を集約（複数エンドポイントにある場合は最大値を採用）
+                    let entry = endpoint_model_max_tokens
+                        .entry(model.model_id.clone())
+                        .or_insert(None);
+                    if let Some(mt) = model.max_tokens {
+                        *entry = Some(entry.map_or(mt, |existing| existing.max(mt)));
                     }
                 }
             }
@@ -375,6 +382,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "description": m.description,
                 "chat_template": m.chat_template,
                 "supported_apis": supported_apis,
+                "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
             });
             data.push(obj);
         } else {
@@ -387,6 +395,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "download_progress": null,
                 "ready": ready,
                 "supported_apis": supported_apis,
+                "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
             });
             data.push(obj);
         }
@@ -409,6 +418,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "download_progress": null,
             "ready": true,
             "supported_apis": supported_apis,
+            "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
         });
         data.push(obj);
     }
@@ -430,6 +440,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "download_progress": null,
             "ready": true,
             "supported_apis": vec!["chat_completions"],
+            "max_tokens": null,
         });
         data.push(obj);
     }
@@ -475,9 +486,7 @@ pub async fn get_model(
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
-                    if ep.supports_responses_api {
-                        apis.insert(SupportedAPI::Responses);
-                    }
+                    apis.insert(SupportedAPI::Responses);
                 }
             }
         }
@@ -1176,203 +1185,6 @@ async fn proxy_openai_post(
             .await;
     }
 
-    // Endpoint-based routing: check if model exists in EndpointRegistry
-    if let Ok(EndpointSelection::Found(endpoint)) = select_endpoint_for_model(state, &model).await {
-        let snapshot = state.load_manager.snapshot(endpoint.id).await.ok();
-        let is_busy = snapshot
-            .as_ref()
-            .map(|s| s.active_requests > 0)
-            .unwrap_or(false);
-
-        if !is_busy {
-            let record_id = Uuid::new_v4();
-            let timestamp = Utc::now();
-            let request_body = sanitize_openai_payload_for_history(&payload);
-            let body_bytes = serde_json::to_vec(&payload).map_err(|e| {
-                AppError::from(LbError::Http(format!("Failed to serialize payload: {}", e)))
-            })?;
-            let start = Instant::now();
-
-            state
-                .load_manager
-                .begin_request(endpoint.id)
-                .await
-                .map_err(AppError::from)?;
-
-            let response = match forward_to_endpoint(
-                &state.http_client,
-                &endpoint,
-                target_path,
-                body_bytes,
-                stream,
-            )
-            .await
-            {
-                Ok(res) => res,
-                Err(e) => {
-                    let duration = start.elapsed();
-                    state
-                        .load_manager
-                        .finish_request(endpoint.id, RequestOutcome::Error, duration)
-                        .await
-                        .map_err(AppError::from)?;
-                    save_request_record(
-                        state.request_history.clone(),
-                        RequestResponseRecord {
-                            id: record_id,
-                            timestamp,
-                            request_type,
-                            model: model.clone(),
-                            node_id: endpoint.id,
-                            node_machine_name: endpoint.name.clone(),
-                            node_ip: UNSPECIFIED_IP,
-                            client_ip: None,
-                            request_body,
-                            response_body: None,
-                            duration_ms: duration.as_millis() as u64,
-                            status: RecordStatus::Error {
-                                message: format!("Endpoint request failed: {}", e),
-                            },
-                            completed_at: Utc::now(),
-                            input_tokens: None,
-                            output_tokens: None,
-                            total_tokens: None,
-                        },
-                    );
-                    return Err(e.into());
-                }
-            };
-
-            let duration = start.elapsed();
-
-            if stream {
-                state
-                    .load_manager
-                    .finish_request(endpoint.id, RequestOutcome::Success, duration)
-                    .await
-                    .map_err(AppError::from)?;
-                // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
-                update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
-
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord {
-                        id: record_id,
-                        timestamp,
-                        request_type,
-                        model: model.clone(),
-                        node_id: endpoint.id,
-                        node_machine_name: endpoint.name.clone(),
-                        node_ip: UNSPECIFIED_IP,
-                        client_ip: None,
-                        request_body,
-                        response_body: None,
-                        duration_ms: duration.as_millis() as u64,
-                        status: RecordStatus::Success,
-                        completed_at: Utc::now(),
-                        input_tokens: None,
-                        output_tokens: None,
-                        total_tokens: None,
-                    },
-                );
-                return forward_streaming_response(response).map_err(AppError::from);
-            }
-
-            // Non-streaming: read response body
-            let status = response.status();
-            let body_bytes = match response.bytes().await {
-                Ok(bytes) => bytes,
-                Err(err) => {
-                    state
-                        .load_manager
-                        .finish_request(endpoint.id, RequestOutcome::Error, duration)
-                        .await
-                        .map_err(AppError::from)?;
-
-                    save_request_record(
-                        state.request_history.clone(),
-                        RequestResponseRecord {
-                            id: record_id,
-                            timestamp,
-                            request_type,
-                            model: model.clone(),
-                            node_id: endpoint.id,
-                            node_machine_name: endpoint.name.clone(),
-                            node_ip: UNSPECIFIED_IP,
-                            client_ip: None,
-                            request_body: request_body.clone(),
-                            response_body: None,
-                            duration_ms: duration.as_millis() as u64,
-                            status: RecordStatus::Error {
-                                message: format!("Failed to read endpoint response body: {}", err),
-                            },
-                            completed_at: Utc::now(),
-                            input_tokens: None,
-                            output_tokens: None,
-                            total_tokens: None,
-                        },
-                    );
-
-                    return Err(map_reqwest_error(err));
-                }
-            };
-            let response_body_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
-            let token_usage = response_body_value
-                .as_ref()
-                .and_then(extract_usage_from_response);
-
-            let outcome = if status.is_success() {
-                RequestOutcome::Success
-            } else {
-                RequestOutcome::Error
-            };
-            state
-                .load_manager
-                .finish_request(endpoint.id, outcome, duration)
-                .await
-                .map_err(AppError::from)?;
-
-            // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
-            if status.is_success() {
-                update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
-            }
-
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model: model.clone(),
-                    node_id: endpoint.id,
-                    node_machine_name: endpoint.name.clone(),
-                    node_ip: UNSPECIFIED_IP,
-                    client_ip: None,
-                    request_body,
-                    response_body: response_body_value,
-                    duration_ms: duration.as_millis() as u64,
-                    status: if status.is_success() {
-                        RecordStatus::Success
-                    } else {
-                        RecordStatus::Error {
-                            message: format!("Endpoint returned {}", status),
-                        }
-                    },
-                    completed_at: Utc::now(),
-                    input_tokens: token_usage.as_ref().and_then(|u| u.input_tokens),
-                    output_tokens: token_usage.as_ref().and_then(|u| u.output_tokens),
-                    total_tokens: token_usage.as_ref().and_then(|u| u.total_tokens),
-                },
-            );
-
-            return Ok(Response::builder()
-                .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK))
-                .header(CONTENT_TYPE, "application/json")
-                .body(Body::from(body_bytes))
-                .expect("Response builder should not fail with valid status and body"));
-        }
-    }
-
     // Check if any endpoint has this model
     if state
         .endpoint_registry
@@ -1528,7 +1340,12 @@ async fn proxy_openai_post(
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
 
-    let response = match client.post(&runtime_url).json(&payload).send().await {
+    let mut request_builder = client.post(&runtime_url).json(&payload);
+    if let Some(api_key) = &endpoint.api_key {
+        request_builder = request_builder.bearer_auth(api_key);
+    }
+
+    let response = match request_builder.send().await {
         Ok(res) => res,
         Err(e) => {
             let duration = start.elapsed();
@@ -1537,6 +1354,7 @@ async fn proxy_openai_post(
                 .finish_request(endpoint_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
 
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly
@@ -1577,6 +1395,9 @@ async fn proxy_openai_post(
             .finish_request(endpoint_id, RequestOutcome::Success, duration)
             .await
             .map_err(AppError::from)?;
+        // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+        update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
 
         save_request_record(
             state.request_history.clone(),
@@ -1614,12 +1435,14 @@ async fn proxy_openai_post(
             .finish_request(endpoint_id, RequestOutcome::Error, duration)
             .await
             .map_err(AppError::from)?;
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
 
         // Note: Model exclusion is handled by the health check system
         // which will mark the endpoint as offline/error if requests fail repeatedly
 
         let status = response.status();
-        let status_code = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        // OpenAI互換経路では upstream 非2xx は 502 に正規化して返す
+        let status_code = StatusCode::BAD_GATEWAY;
         let body_bytes = response.bytes().await.unwrap_or_default();
         let message = if body_bytes.is_empty() {
             status.to_string()
@@ -1673,6 +1496,7 @@ async fn proxy_openai_post(
             .finish_request(endpoint_id, RequestOutcome::Success, duration)
             .await
             .map_err(AppError::from)?;
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
 
         save_request_record(
             state.request_history.clone(),
@@ -1721,6 +1545,9 @@ async fn proxy_openai_post(
                 )
                 .await
                 .map_err(AppError::from)?;
+            // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+            update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
 
             // RequestResponseRecordにトークン情報を保存
             let (input_tokens, output_tokens, total_tokens) = token_usage
@@ -1762,6 +1589,7 @@ async fn proxy_openai_post(
                 .finish_request(endpoint_id, RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
 
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly
@@ -1899,15 +1727,27 @@ mod tests {
             .expect("Failed to create endpoint registry");
         let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
         let load_manager = LoadManager::new(endpoint_registry_arc);
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
         AppState {
             load_manager,
             request_history,
             db_pool,
             jwt_secret: "test-secret".into(),
-            http_client: reqwest::Client::new(),
+            http_client,
             queue_config: crate::config::QueueConfig::from_env(),
             event_bus: crate::events::create_shared_event_bus(),
             endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
         }
     }
 
@@ -2288,10 +2128,22 @@ mod tests {
         // wait for async save_request_record
         tokio::time::sleep(Duration::from_millis(50)).await;
 
+        // login (dashboard is JWT-only; API keys are rejected for /api/dashboard/*)
+        let login_resp = client
+            .post(format!("http://{addr}/api/auth/login"))
+            .header("content-type", "application/json")
+            .json(&json!({"username":"admin","password":"test"}))
+            .send()
+            .await
+            .expect("login request");
+        assert_eq!(login_resp.status(), reqwest::StatusCode::OK);
+        let login_body: serde_json::Value = login_resp.json().await.expect("login json");
+        let jwt_token = login_body["token"].as_str().expect("login token");
+
         // fetch dashboard history
         let history_resp = client
             .get(format!("http://{addr}/api/dashboard/request-responses"))
-            .header("authorization", "Bearer sk_debug_admin")
+            .header("authorization", format!("Bearer {jwt_token}"))
             .send()
             .await
             .expect("history request");

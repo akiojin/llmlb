@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiKeysApi, type ApiKey, type ApiKeyScope } from '@/lib/api'
+import {
+  apiKeysApi,
+  type ApiKey,
+  type ApiKeyPermission,
+  type CreateApiKeyResponse,
+} from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -58,16 +63,29 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyExpires, setNewKeyExpires] = useState('')
-  const [newKeyScopes, setNewKeyScopes] = useState<ApiKeyScope[]>(['api'])
+  const [newKeyPermissions, setNewKeyPermissions] = useState<ApiKeyPermission[]>([
+    'openai.inference',
+    'openai.models.read',
+  ])
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Fetch API keys
-  const { data: apiKeys, isLoading, refetch } = useQuery({
+  const {
+    data: apiKeys,
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['api-keys'],
     queryFn: apiKeysApi.list,
     enabled: open,
+    // Plaintext keys are only shown once at creation time. We must not auto-refresh
+    // this query while the modal is open, otherwise it becomes unclear whether the
+    // key is still "copyable".
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   })
 
   // Create API key mutation
@@ -75,14 +93,31 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     mutationFn: (data: {
       name: string
       expires_at?: string
-      scopes: ApiKeyScope[]
+      permissions: ApiKeyPermission[]
     }) => apiKeysApi.create(data),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['api-keys'] })
-      setCreatedKey((data as { key: string }).key)
+    onSuccess: (data: CreateApiKeyResponse) => {
+      // Update list without refetching, so the "created key" stays visible/copyable
+      // until the user explicitly refreshes or closes the modal.
+      queryClient.setQueryData(['api-keys'], (old?: ApiKey[]) => {
+        const next = Array.isArray(old) ? old : []
+        const withoutDup = next.filter((k) => k.id !== data.id)
+        const created: ApiKey = {
+          id: data.id,
+          name: data.name,
+          key_prefix: data.key_prefix,
+          created_at: data.created_at,
+          expires_at: data.expires_at,
+          permissions: data.permissions,
+        }
+        return [created, ...withoutDup]
+      })
+
+      setCreatedKey(data.key)
+      setShowKey(null)
+      setCopiedId(null)
       setNewKeyName('')
       setNewKeyExpires('')
-      setNewKeyScopes(['api'])
+      setNewKeyPermissions(['openai.inference', 'openai.models.read'])
       toast({ title: 'API key created' })
     },
     onError: (error) => {
@@ -116,23 +151,40 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     if (!open) {
       setCreatedKey(null)
       setShowKey(null)
+      setCopiedId(null)
     }
   }, [open])
+
+  // Enforce: plaintext keys are copyable only immediately after creation.
+  // Any background refetch/refresh should make copying impossible, requiring re-creation.
+  useEffect(() => {
+    if (!open) return
+    if (!createdKey) return
+    if (!isFetching) return
+    setCreatedKey(null)
+    setShowKey(null)
+    setCopiedId(null)
+  }, [open, createdKey, isFetching])
 
   useEffect(() => {
     if (!createOpen) {
       setNewKeyName('')
       setNewKeyExpires('')
-      setNewKeyScopes(['api'])
+      setNewKeyPermissions(['openai.inference', 'openai.models.read'])
     }
   }, [createOpen])
 
-  const copyToClipboard = async (text: string, id: string) => {
+  const copyToClipboard = async (
+    text: string,
+    id: string,
+    toastTitle = 'Copied to clipboard',
+    toastDescription?: string
+  ) => {
     try {
       await navigator.clipboard.writeText(text)
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 2000)
-      toast({ title: 'Copied to clipboard' })
+      toast({ title: toastTitle, description: toastDescription })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
     }
@@ -142,7 +194,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     createMutation.mutate({
       name: newKeyName,
       expires_at: newKeyExpires || undefined,
-      scopes: newKeyScopes,
+      permissions: newKeyPermissions,
     })
   }
 
@@ -151,30 +203,81 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     return new Date(expiresAt) < new Date()
   }
 
-  const toggleScope = (scope: ApiKeyScope, enabled: boolean) => {
-    setNewKeyScopes((prev) => {
+  const togglePermission = (permission: ApiKeyPermission, enabled: boolean) => {
+    setNewKeyPermissions((prev) => {
       if (enabled) {
-        return prev.includes(scope) ? prev : [...prev, scope]
+        return prev.includes(permission) ? prev : [...prev, permission]
       }
-      return prev.filter((item) => item !== scope)
+      return prev.filter((item) => item !== permission)
     })
   }
 
-  const scopeLabels: { value: ApiKeyScope; label: string; description: string }[] = [
+  const isPermissionEnabled = (permission: ApiKeyPermission) =>
+    newKeyPermissions.includes(permission)
+
+  const togglePermissionByRow = (permission: ApiKeyPermission) => {
+    togglePermission(permission, !isPermissionEnabled(permission))
+  }
+
+  const permissionLabels: {
+    value: ApiKeyPermission
+    label: string
+    description: string
+  }[] = [
     {
-      value: 'api',
-      label: 'api',
-      description: 'OpenAI-compatible API inference access',
+      value: 'openai.inference',
+      label: 'openai.inference',
+      description: 'OpenAI-compatible inference access (/v1/chat/completions, etc.)',
     },
     {
-      value: 'endpoint',
-      label: 'endpoint',
-      description: 'Endpoint registration and sync',
+      value: 'openai.models.read',
+      label: 'openai.models.read',
+      description: 'OpenAI-compatible model listing access (/v1/models)',
     },
     {
-      value: 'admin',
-      label: 'admin',
-      description: 'Administrator (full access)',
+      value: 'endpoints.read',
+      label: 'endpoints.read',
+      description: 'Read endpoints via /api/endpoints (GET)',
+    },
+    {
+      value: 'endpoints.manage',
+      label: 'endpoints.manage',
+      description: 'Manage endpoints via /api/endpoints (POST/PUT/DELETE)',
+    },
+    {
+      value: 'api_keys.manage',
+      label: 'api_keys.manage',
+      description: 'Manage API keys (/api/api-keys)',
+    },
+    {
+      value: 'users.manage',
+      label: 'users.manage',
+      description: 'Manage users (/api/users)',
+    },
+    {
+      value: 'invitations.manage',
+      label: 'invitations.manage',
+      description: 'Manage invitations (/api/invitations)',
+    },
+    {
+      value: 'models.manage',
+      label: 'models.manage',
+      description: 'Manage models (/api/models/register, delete)',
+    },
+    {
+      value: 'registry.read',
+      label: 'registry.read',
+      description: 'Read model registry (/api/models/registry/*)',
+    },
+    {
+      value: 'logs.read',
+      label: 'logs.read',
+      description: 'Read logs (/api/nodes/*/logs)',
+    },
+    {
+      value: 'metrics.read',
+      label: 'metrics.read',
+      description: 'Read metrics (/api/metrics/*)',
     },
   ]
 
@@ -199,7 +302,20 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                 <Plus className="mr-2 h-4 w-4" />
                 Create Key
               </Button>
-              <Button variant="outline" size="icon" onClick={() => refetch()}>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Refresh API keys"
+                title="Refresh API keys"
+                onClick={() => {
+                  // Enforce: plaintext keys are copyable only immediately after creation.
+                  // Any "refresh" action should make copying impossible, requiring re-creation.
+                  setCreatedKey(null)
+                  setShowKey(null)
+                  setCopiedId(null)
+                  refetch()
+                }}
+              >
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -218,7 +334,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     {showKey === 'created' ? createdKey : '•'.repeat(32)}
                   </code>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
                     onClick={() => setShowKey(showKey === 'created' ? null : 'created')}
                   >
@@ -230,9 +346,11 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   </Button>
                   <Button
                     id="copy-api-key"
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
-                    onClick={() => copyToClipboard(createdKey, 'created')}
+                    aria-label="Copy full API key"
+                    title="Copy full API key"
+                    onClick={() => copyToClipboard(createdKey, 'created', 'Copied full API key')}
                   >
                     {copiedId === 'created' ? (
                       <Check className="h-4 w-4" />
@@ -260,8 +378,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
-                      <TableHead>Scopes</TableHead>
-                      <TableHead>Key</TableHead>
+                      <TableHead>Permissions</TableHead>
+                      <TableHead>Key prefix</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -273,37 +391,20 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         <TableCell className="font-medium">{key.name}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {key.scopes.map((scope) => (
-                              <Badge key={scope} variant="secondary">
-                                {scope}
+                            {key.permissions.map((permission) => (
+                              <Badge key={permission} variant="secondary">
+                                {permission}
                               </Badge>
                             ))}
                           </div>
                         </TableCell>
                         <TableCell>
-                          {key.key_prefix ? (
-                            <div className="flex items-center gap-2">
-                              <code className="text-xs font-mono">
-                                {key.key_prefix}...
-                              </code>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => copyToClipboard(key.key_prefix!, key.id)}
-                              >
-                                {copiedId === key.id ? (
-                                  <Check className="h-3 w-3" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              {key.id.slice(0, 8)}...
-                            </span>
-                          )}
+                          <span
+                            className="text-xs text-muted-foreground select-none"
+                            title="API keys are shown once at creation time; if lost, create a new key."
+                          >
+                            ••••••••••
+                          </span>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {formatRelativeTime(key.created_at)}
@@ -323,7 +424,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => setDeleteKey(key)}
@@ -343,7 +444,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
 
       {/* Create Key Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto border-border bg-card text-card-foreground">
           <DialogHeader>
             <DialogTitle>Create API Key</DialogTitle>
             <DialogDescription>
@@ -370,27 +471,46 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Scopes</Label>
-              <div className="grid gap-2">
-                {scopeLabels.map((scope) => {
-                  const checkboxId = `scope-${scope.value.replace(/[^a-z0-9]/gi, "-")}`;
+              <Label className="text-foreground">Permissions</Label>
+              <div className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3">
+                {permissionLabels.map((permission) => {
+                  const permissionSlug = permission.value.replace(/[^a-z0-9]/gi, '-')
+                  const checkboxId = `permission-${permissionSlug}`
+                  const isChecked = isPermissionEnabled(permission.value)
                   return (
-                    <div key={scope.value} className="flex items-start gap-2 text-sm">
+                    <div
+                      key={permission.value}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`permission-row-${permissionSlug}`}
+                      className="flex cursor-pointer items-start gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2 text-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() => togglePermissionByRow(permission.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          togglePermissionByRow(permission.value)
+                        }
+                      }}
+                    >
                       <Checkbox
                         id={checkboxId}
-                        checked={newKeyScopes.includes(scope.value)}
+                        data-testid={`permission-checkbox-${permissionSlug}`}
+                        checked={isChecked}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                        }}
                         onCheckedChange={(checked) =>
-                          toggleScope(scope.value, Boolean(checked))
+                          togglePermission(permission.value, checked === true)
                         }
                       />
-                      <label htmlFor={checkboxId} className="flex flex-col gap-1 cursor-pointer">
-                        <span className="font-mono text-xs">{scope.label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {scope.description}
+                      <div className="flex flex-col gap-1">
+                        <span className="font-mono text-xs text-foreground">{permission.label}</span>
+                        <span className="text-xs leading-4 text-muted-foreground">
+                          {permission.description}
                         </span>
-                      </label>
+                      </div>
                     </div>
-                  );
+                  )
                 })}
               </div>
             </div>
@@ -401,7 +521,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!newKeyName || newKeyScopes.length === 0 || createMutation.isPending}
+              disabled={!newKeyName || newKeyPermissions.length === 0 || createMutation.isPending}
             >
               {createMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

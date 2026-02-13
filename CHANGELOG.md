@@ -1,5 +1,86 @@
 # Unreleased
 
+# [4.2.0](https://github.com/akiojin/llmlb/compare/v4.1.0...v4.2.0) (2026-02-13)
+
+### Features
+
+- セルフアップデート通知・ドレイン・適用・再起動機能を追加 (#394)
+
+### Bug Fixes
+
+- ダッシュボードのボタン視認性・押下フィードバックを改善 (#396)
+- リクエスト履歴モーダルのタブ切替時にボタンが維持されるよう修正 (#395)
+
+### CI
+
+- develop→main PR許可とcoverageのpest_generator存在チェックを追加
+
+### Chores
+
+- rand 0.10, zip 7, clap 4.5.58 にメジャーアップデート
+
+# [4.1.0](https://github.com/akiojin/llmlb/compare/v4.0.0...v4.1.0) (2026-02-13)
+
+### Features
+
+- ロードバランサーPlaygroundを追加 (#384)
+- エンドポイント単位リクエスト統計機能を追加 (#382)
+- ステータス色を統一しSpec-first TDDフローを導入 (#383)
+
+### Bug Fixes
+
+- max_tokensのnull対応とmax contextトグル不具合を修正 (#392)
+- ヘルスチェック成功時にエンドポイントモデルを自動同期 (#388)
+- Total TokensをStatisticsと整合 (#387)
+- APIキー一覧でkey prefixを完全マスク＆選択不可に (#385)
+- APIキーは作成直後のみコピー可能に (#385)
+- エンドポイントステータス色をSPEC-66555000に準拠 (#386)
+- OpenAI APIのエンドポイントAPIキー保持を修正
+- モデル対応エンドポイント間のトラフィック分散を修正
+
+### Tests
+
+- SPEC-62241000: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
+
+### Documentation
+
+- NULL total_tokensの集計例を文書化 (#391)
+
+### CI
+
+- publish dispatchにactions:write権限を追加
+
+# [4.0.0](https://github.com/akiojin/llmlb/compare/v3.1.0...v4.0.0) (2026-02-10)
+
+### Breaking Changes
+
+- OpenAI互換API: `supports_responses_api`フラグを削除 (#378)
+
+### Features
+
+- セルフアップデート通知・ドレイン・適用・再起動機能を追加 (#379)
+
+# [3.1.0](https://github.com/akiojin/llmlb/compare/v3.0.3...v3.1.0) (2026-02-09)
+
+### Features
+
+- リクエスト履歴にフィルタ機能を追加しテストを移行 (#370)
+
+### Bug Fixes
+
+- エンドポイント作成時に自動ヘルスチェック＆同期を実行 (#374)
+- HuggingFaceリクエストにタイムアウトを追加 (#375)
+
+### Tests
+
+- APIキーE2E＋権限チェックテストを追加 (#376)
+
+### Chores
+
+- cargo依存関係を更新
+- @modelcontextprotocol/sdk を 1.26.0 に更新
+- npm_and_yarn グループの依存関係を更新 (#372)
+
 # [3.0.3](https://github.com/akiojin/llmlb/compare/v3.0.2...v3.0.3) (2026-02-02)
 
 ### Bug Fixes

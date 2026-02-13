@@ -1,9 +1,9 @@
 // T053-T054: APIキーCRUD操作とキー生成
 
-use crate::common::auth::{ApiKey, ApiKeyScope, ApiKeyWithPlaintext};
+use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext};
 use crate::common::error::LbError;
 use chrono::{DateTime, Utc};
-use rand::Rng;
+use rand::RngExt;
 use serde_json;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
@@ -26,7 +26,7 @@ pub async fn create(
     name: &str,
     created_by: Uuid,
     expires_at: Option<DateTime<Utc>>,
-    scopes: Vec<ApiKeyScope>,
+    permissions: Vec<ApiKeyPermission>,
 ) -> Result<ApiKeyWithPlaintext, LbError> {
     let id = Uuid::new_v4();
     let key = generate_api_key();
@@ -34,10 +34,10 @@ pub async fn create(
     let key_prefix = key.chars().take(10).collect::<String>();
     let created_at = Utc::now();
 
-    let scopes_json = serialize_scopes(&scopes)?;
+    let permissions_json = serialize_permissions(&permissions)?;
 
     sqlx::query(
-        "INSERT INTO api_keys (id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes)
+        "INSERT INTO api_keys (id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
@@ -47,7 +47,7 @@ pub async fn create(
     .bind(created_by.to_string())
     .bind(created_at.to_rfc3339())
     .bind(expires_at.map(|dt| dt.to_rfc3339()))
-    .bind(scopes_json)
+    .bind(permissions_json)
     .execute(pool)
     .await
     .map_err(|e| LbError::Database(format!("Failed to create API key: {}", e)))?;
@@ -59,7 +59,7 @@ pub async fn create(
         name: name.to_string(),
         created_at,
         expires_at,
-        scopes,
+        permissions,
     })
 }
 
@@ -75,7 +75,7 @@ pub async fn create(
 /// * `Err(LbError)` - 検索失敗
 pub async fn find_by_hash(pool: &SqlitePool, key_hash: &str) -> Result<Option<ApiKey>, LbError> {
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE key_hash = ?"
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions FROM api_keys WHERE key_hash = ?"
     )
     .bind(key_hash)
     .fetch_optional(pool)
@@ -95,7 +95,7 @@ pub async fn find_by_hash(pool: &SqlitePool, key_hash: &str) -> Result<Option<Ap
 /// * `Err(LbError)` - 取得失敗
 pub async fn list(pool: &SqlitePool) -> Result<Vec<ApiKey>, LbError> {
     let rows = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes FROM api_keys ORDER BY created_at DESC"
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions FROM api_keys ORDER BY created_at DESC"
     )
     .fetch_all(pool)
     .await
@@ -136,7 +136,7 @@ pub async fn update(
 
     // 更新後のAPIキーを取得
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, scopes FROM api_keys WHERE id = ?",
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions FROM api_keys WHERE id = ?",
     )
     .bind(id.to_string())
     .fetch_optional(pool)
@@ -207,7 +207,7 @@ struct ApiKeyRow {
     created_by: String,
     created_at: String,
     expires_at: Option<String>,
-    scopes: Option<String>,
+    permissions: Option<String>,
 }
 
 impl ApiKeyRow {
@@ -223,7 +223,7 @@ impl ApiKeyRow {
                 .map(|dt| dt.with_timezone(&Utc))
         });
 
-        let scopes = parse_scopes(self.scopes);
+        let permissions = parse_permissions(self.permissions);
 
         ApiKey {
             id,
@@ -233,26 +233,27 @@ impl ApiKeyRow {
             created_by,
             created_at,
             expires_at,
-            scopes,
+            permissions,
         }
     }
 }
 
-fn parse_scopes(scopes: Option<String>) -> Vec<ApiKeyScope> {
-    match scopes {
+fn parse_permissions(permissions: Option<String>) -> Vec<ApiKeyPermission> {
+    match permissions {
         None => {
-            // Backward compatibility: NULL scopes mean full access.
-            ApiKeyScope::all()
-        }
-        Some(raw) if raw.trim().is_empty() => {
-            warn!("API key scopes are empty; treating as no scopes");
+            // Migration should backfill, but be safe: default-deny.
+            warn!("API key permissions are NULL; treating as no permissions");
             Vec::new()
         }
-        Some(raw) => match serde_json::from_str::<Vec<ApiKeyScope>>(&raw) {
-            Ok(scopes) => scopes,
+        Some(raw) if raw.trim().is_empty() => {
+            warn!("API key permissions are empty; treating as no permissions");
+            Vec::new()
+        }
+        Some(raw) => match serde_json::from_str::<Vec<ApiKeyPermission>>(&raw) {
+            Ok(permissions) => permissions,
             Err(err) => {
                 warn!(
-                    "Failed to parse API key scopes JSON; treating as no scopes: {}",
+                    "Failed to parse API key permissions JSON; treating as no permissions: {}",
                     err
                 );
                 Vec::new()
@@ -261,9 +262,9 @@ fn parse_scopes(scopes: Option<String>) -> Vec<ApiKeyScope> {
     }
 }
 
-fn serialize_scopes(scopes: &[ApiKeyScope]) -> Result<String, LbError> {
-    serde_json::to_string(scopes)
-        .map_err(|e| LbError::Database(format!("Failed to serialize scopes: {}", e)))
+fn serialize_permissions(permissions: &[ApiKeyPermission]) -> Result<String, LbError> {
+    serde_json::to_string(permissions)
+        .map_err(|e| LbError::Database(format!("Failed to serialize permissions: {}", e)))
 }
 
 #[cfg(test)]
@@ -280,16 +281,22 @@ mod tests {
     }
 
     #[test]
-    fn parse_scopes_handles_null_and_invalid_values() {
-        assert_eq!(parse_scopes(None), ApiKeyScope::all());
-        assert!(parse_scopes(Some("".to_string())).is_empty());
-        assert!(parse_scopes(Some("not-json".to_string())).is_empty());
+    fn parse_permissions_handles_null_and_invalid_values() {
+        assert!(parse_permissions(None).is_empty());
+        assert!(parse_permissions(Some("".to_string())).is_empty());
+        assert!(parse_permissions(Some("not-json".to_string())).is_empty());
     }
 
     #[test]
-    fn parse_scopes_parses_valid_json() {
-        let raw = serde_json::to_string(&vec![ApiKeyScope::Api]).unwrap();
-        assert_eq!(parse_scopes(Some(raw)), vec![ApiKeyScope::Api]);
+    fn parse_permissions_parses_valid_json() {
+        let raw = serde_json::to_string(&vec![
+            crate::common::auth::ApiKeyPermission::OpenaiInference,
+        ])
+        .unwrap();
+        assert_eq!(
+            parse_permissions(Some(raw)),
+            vec![crate::common::auth::ApiKeyPermission::OpenaiInference]
+        );
     }
 
     #[tokio::test]
@@ -309,10 +316,15 @@ mod tests {
             .unwrap();
 
         // APIキーを作成
-        let api_key_with_plaintext =
-            create(&pool, "Test API Key", user.id, None, vec![ApiKeyScope::Api])
-                .await
-                .expect("Failed to create API key");
+        let api_key_with_plaintext = create(
+            &pool,
+            "Test API Key",
+            user.id,
+            None,
+            vec![crate::common::auth::ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .expect("Failed to create API key");
 
         assert!(api_key_with_plaintext.key.starts_with("sk_"));
         assert_eq!(api_key_with_plaintext.name, "Test API Key");
@@ -327,7 +339,10 @@ mod tests {
         let found_key = found.unwrap();
         assert_eq!(found_key.name, "Test API Key");
         assert_eq!(found_key.created_by, user.id);
-        assert_eq!(found_key.scopes, vec![ApiKeyScope::Api]);
+        assert_eq!(
+            found_key.permissions,
+            vec![crate::common::auth::ApiKeyPermission::OpenaiInference]
+        );
     }
 
     #[tokio::test]
@@ -338,12 +353,24 @@ mod tests {
             .await
             .unwrap();
 
-        create(&pool, "Key 1", user.id, None, vec![ApiKeyScope::Api])
-            .await
-            .unwrap();
-        create(&pool, "Key 2", user.id, None, vec![ApiKeyScope::Api])
-            .await
-            .unwrap();
+        create(
+            &pool,
+            "Key 1",
+            user.id,
+            None,
+            vec![crate::common::auth::ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
+        create(
+            &pool,
+            "Key 2",
+            user.id,
+            None,
+            vec![crate::common::auth::ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
 
         let keys = list(&pool).await.unwrap();
         assert_eq!(keys.len(), 2);
@@ -357,9 +384,15 @@ mod tests {
             .await
             .unwrap();
 
-        let api_key = create(&pool, "Test Key", user.id, None, vec![ApiKeyScope::Api])
-            .await
-            .unwrap();
+        let api_key = create(
+            &pool,
+            "Test Key",
+            user.id,
+            None,
+            vec![crate::common::auth::ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
 
         delete(&pool, api_key.id).await.unwrap();
 

@@ -69,8 +69,9 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
-               device_info, inference_latency_ms
+               registered_at, notes, capabilities,
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         ORDER BY registered_at DESC
         "#,
@@ -89,8 +90,9 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
-               device_info, inference_latency_ms
+               registered_at, notes, capabilities,
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE id = ?
         "#,
@@ -171,8 +173,9 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
-               device_info, inference_latency_ms
+               registered_at, notes, capabilities,
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE name = ?
         "#,
@@ -195,8 +198,9 @@ pub async fn list_endpoints_by_status(
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
-               device_info, inference_latency_ms
+               registered_at, notes, capabilities,
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE status = ?
         ORDER BY registered_at DESC
@@ -220,8 +224,9 @@ pub async fn list_endpoints_by_type(
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
-               device_info, inference_latency_ms
+               registered_at, notes, capabilities,
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE endpoint_type = ?
         ORDER BY registered_at DESC
@@ -246,8 +251,9 @@ pub async fn list_endpoints_by_type_and_status(
                endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
-               registered_at, notes, supports_responses_api, capabilities,
-               device_info, inference_latency_ms
+               registered_at, notes, capabilities,
+               device_info, inference_latency_ms,
+               total_requests, successful_requests, failed_requests
         FROM endpoints
         WHERE endpoint_type = ? AND status = ?
         ORDER BY registered_at DESC
@@ -368,26 +374,49 @@ pub async fn update_device_info(
     Ok(result.rows_affected() > 0)
 }
 
-/// エンドポイントのResponses API対応フラグを更新
-/// （SPEC-24157000: Open Responses API対応）
-pub async fn update_endpoint_responses_api_support(
+/// エンドポイントのリクエストカウンタをインクリメント（SPEC-76643000）
+pub async fn increment_request_counters(
     pool: &SqlitePool,
     id: Uuid,
-    supports_responses_api: bool,
+    success: bool,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
         UPDATE endpoints SET
-            supports_responses_api = ?
+            total_requests = total_requests + 1,
+            successful_requests = successful_requests + CASE WHEN ? THEN 1 ELSE 0 END,
+            failed_requests = failed_requests + CASE WHEN ? THEN 0 ELSE 1 END
         WHERE id = ?
         "#,
     )
-    .bind(supports_responses_api as i32)
+    .bind(success)
+    .bind(success)
     .bind(id.to_string())
     .execute(pool)
     .await?;
 
     Ok(result.rows_affected() > 0)
+}
+
+/// エンドポイントの累計リクエスト統計を集計して取得（TOPカード永続化用）
+pub async fn get_request_totals(pool: &SqlitePool) -> Result<EndpointRequestTotals, sqlx::Error> {
+    let row = sqlx::query_as::<_, EndpointRequestTotalsRow>(
+        r#"
+        SELECT
+            COALESCE(SUM(total_requests), 0) as total_requests,
+            COALESCE(SUM(successful_requests), 0) as successful_requests,
+            COALESCE(SUM(failed_requests), 0) as failed_requests
+        FROM endpoints
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(EndpointRequestTotals {
+        total_requests: row.total_requests,
+        successful_requests: row.successful_requests,
+        failed_requests: row.failed_requests,
+    })
 }
 
 // --- EndpointModel CRUD ---
@@ -593,6 +622,24 @@ pub async fn cleanup_old_health_checks(pool: &SqlitePool) -> Result<u64, sqlx::E
 // --- Internal Row Types ---
 
 #[derive(sqlx::FromRow)]
+struct EndpointRequestTotalsRow {
+    total_requests: i64,
+    successful_requests: i64,
+    failed_requests: i64,
+}
+
+/// エンドポイント集計リクエスト数の合計値。
+#[derive(Debug, Clone, Copy)]
+pub struct EndpointRequestTotals {
+    /// 全リクエスト数。
+    pub total_requests: i64,
+    /// 成功リクエスト数。
+    pub successful_requests: i64,
+    /// 失敗リクエスト数。
+    pub failed_requests: i64,
+}
+
+#[derive(sqlx::FromRow)]
 struct EndpointRow {
     id: String,
     name: String,
@@ -615,13 +662,18 @@ struct EndpointRow {
     error_count: i32,
     registered_at: String,
     notes: Option<String>,
-    supports_responses_api: i32,
     /// SPEC-66555000移行用: エンドポイントの機能一覧（JSON形式）
     capabilities: Option<String>,
     /// SPEC-f8e3a1b7: デバイス情報（JSON形式）
     device_info: Option<String>,
     /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2で計算）
     inference_latency_ms: Option<f64>,
+    /// SPEC-76643000: 累計リクエスト数
+    total_requests: i64,
+    /// SPEC-76643000: 累計成功リクエスト数
+    successful_requests: i64,
+    /// SPEC-76643000: 累計失敗リクエスト数
+    failed_requests: i64,
 }
 
 impl From<EndpointRow> for Endpoint {
@@ -654,7 +706,6 @@ impl From<EndpointRow> for Endpoint {
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now()),
             notes: row.notes,
-            supports_responses_api: row.supports_responses_api != 0,
             capabilities: row
                 .capabilities
                 .and_then(|s| serde_json::from_str(&s).ok())
@@ -668,6 +719,9 @@ impl From<EndpointRow> for Endpoint {
             // SPEC-f8e3a1b7: デバイス情報とレイテンシ
             device_info: row.device_info.and_then(|s| serde_json::from_str(&s).ok()),
             inference_latency_ms: row.inference_latency_ms,
+            total_requests: row.total_requests,
+            successful_requests: row.successful_requests,
+            failed_requests: row.failed_requests,
         }
     }
 }
@@ -896,5 +950,79 @@ mod tests {
             .unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].name, "Pending EP");
+    }
+
+    #[tokio::test]
+    async fn test_increment_request_counters() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint = Endpoint::new(
+            "Counter Test".to_string(),
+            "http://localhost:9090".to_string(),
+        );
+        create_endpoint(&pool, &endpoint).await.unwrap();
+
+        // Verify initial counters are 0
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 0);
+        assert_eq!(ep.successful_requests, 0);
+        assert_eq!(ep.failed_requests, 0);
+
+        // Increment with success
+        increment_request_counters(&pool, endpoint.id, true)
+            .await
+            .unwrap();
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 1);
+        assert_eq!(ep.successful_requests, 1);
+        assert_eq!(ep.failed_requests, 0);
+
+        // Increment with failure
+        increment_request_counters(&pool, endpoint.id, false)
+            .await
+            .unwrap();
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 2);
+        assert_eq!(ep.successful_requests, 1);
+        assert_eq!(ep.failed_requests, 1);
+
+        // Multiple successes
+        increment_request_counters(&pool, endpoint.id, true)
+            .await
+            .unwrap();
+        increment_request_counters(&pool, endpoint.id, true)
+            .await
+            .unwrap();
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.total_requests, 4);
+        assert_eq!(ep.successful_requests, 3);
+        assert_eq!(ep.failed_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_request_totals() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let ep1 = Endpoint::new("Totals A".to_string(), "http://localhost:9091".to_string());
+        let ep2 = Endpoint::new("Totals B".to_string(), "http://localhost:9092".to_string());
+        create_endpoint(&pool, &ep1).await.unwrap();
+        create_endpoint(&pool, &ep2).await.unwrap();
+
+        increment_request_counters(&pool, ep1.id, true)
+            .await
+            .unwrap();
+        increment_request_counters(&pool, ep1.id, false)
+            .await
+            .unwrap();
+        increment_request_counters(&pool, ep2.id, true)
+            .await
+            .unwrap();
+
+        let totals = get_request_totals(&pool).await.unwrap();
+        assert_eq!(totals.total_requests, 3);
+        assert_eq!(totals.successful_requests, 2);
+        assert_eq!(totals.failed_requests, 1);
     }
 }

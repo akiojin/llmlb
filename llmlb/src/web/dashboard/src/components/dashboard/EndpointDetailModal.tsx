@@ -18,8 +18,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2, Download } from 'lucide-react'
+import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2, Download, Activity } from 'lucide-react'
 import { ModelDownloadDialog } from './ModelDownloadDialog'
+import { EndpointModelStatsTable } from './EndpointModelStatsTable'
+import { EndpointRequestChart } from './EndpointRequestChart'
 
 /**
  * SPEC-66555000: Router-Driven Endpoint Registration System
@@ -34,14 +36,14 @@ interface EndpointDetailModalProps {
 
 function getStatusBadgeVariant(
   status: DashboardEndpoint['status']
-): 'default' | 'destructive' | 'outline' | 'secondary' {
+): 'online' | 'pending' | 'offline' | 'destructive' | 'outline' {
   switch (status) {
     case 'online':
-      return 'default'
+      return 'online'
     case 'pending':
-      return 'secondary'
+      return 'pending'
     case 'offline':
-      return 'outline'
+      return 'offline'
     case 'error':
       return 'destructive'
     default:
@@ -121,6 +123,13 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
   const { data: modelsData, isLoading: isLoadingModels } = useQuery({
     queryKey: ['endpoint-models', endpoint?.id],
     queryFn: () => endpointsApi.getModels(endpoint!.id),
+    enabled: !!endpoint?.id && open,
+  })
+
+  // SPEC-76643000: Fetch today's request statistics
+  const { data: todayStats, isLoading: isLoadingTodayStats } = useQuery({
+    queryKey: ['endpoint-today-stats', endpoint?.id],
+    queryFn: () => endpointsApi.getTodayStats(endpoint!.id),
     enabled: !!endpoint?.id && open,
   })
 
@@ -228,9 +237,6 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <Badge variant={getTypeBadgeVariant(endpoint.endpoint_type)}>
                 {getTypeLabel(endpoint.endpoint_type)}
               </Badge>
-              {endpoint.supports_responses_api && (
-                <Badge variant="outline">Responses API</Badge>
-              )}
               <span className="text-sm text-muted-foreground">
                 Models: {endpoint.model_count}
               </span>
@@ -256,6 +262,84 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               </Button>
             </div>
           </div>
+
+          <Separator />
+
+          {/* SPEC-76643000: Request Statistics Cards */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Total Requests */}
+            <div className="rounded-lg border p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Total Requests</span>
+              </div>
+              <span className="text-xl font-bold">
+                {endpoint.total_requests > 0
+                  ? endpoint.total_requests.toLocaleString()
+                  : '-'}
+              </span>
+            </div>
+
+            {/* Today's Requests */}
+            <div className="rounded-lg border p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Today</span>
+              </div>
+              {isLoadingTodayStats ? (
+                <div className="h-7 w-16 rounded bg-muted animate-pulse" />
+              ) : (
+                <span className="text-xl font-bold">
+                  {todayStats && todayStats.total_requests > 0
+                    ? todayStats.total_requests.toLocaleString()
+                    : '-'}
+                </span>
+              )}
+            </div>
+
+            {/* Success Rate */}
+            <div className="rounded-lg border p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Success Rate</span>
+              </div>
+              {(() => {
+                const total = endpoint.total_requests
+                if (total === 0) {
+                  return <span className="text-xl font-bold">-</span>
+                }
+                const successRate = (endpoint.successful_requests / total) * 100
+                const errorRate = 100 - successRate
+                let colorClass = ''
+                if (errorRate >= 20) {
+                  colorClass = 'text-red-600'
+                } else if (errorRate >= 5) {
+                  colorClass = 'text-yellow-600'
+                }
+                return (
+                  <span className={`text-xl font-bold ${colorClass}`}>
+                    {successRate.toFixed(1)}%
+                  </span>
+                )
+              })()}
+            </div>
+
+            {/* Average Response Time */}
+            <div className="rounded-lg border p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Avg Response</span>
+              </div>
+              <span className="text-xl font-bold">
+                {endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-'}
+              </span>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* SPEC-76643000: Daily Request Trend Chart (Phase 6) */}
+          <EndpointRequestChart endpointId={endpoint.id} />
 
           <Separator />
 
@@ -382,6 +466,11 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               </div>
             </ScrollArea>
           </div>
+
+          <Separator />
+
+          {/* Model Request Stats Section - SPEC-76643000 */}
+          <EndpointModelStatsTable endpointId={endpoint.id} enabled={open} />
 
           <Separator />
 

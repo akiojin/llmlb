@@ -18,7 +18,24 @@
 - ローカル/クラウド/すべてのモデルフィルタとセッション復元は埋め込み表示でも利用できること。
 - TDD遵守: UIの静的配信・埋め込み有無・アクセシビリティ属性をE2E/スモークテストでRED→GREENの順に追加すること。
 
+## 追加要件（2026-02-12更新）
+- ダッシュボードに LB Playground（`#lb-playground`）導線を追加し、エンドポイント別 Playground（`#playground/:endpointId`）と併存させること。
+- LB Playgroundは APIキー入力方式（`/v1/models`, `/v1/chat/completions`）を採用し、APIキーを localStorage に保存できること。
+- LB Playgroundで通常チャット、配分可視化、負荷試験（既定: 200件/並列10/間隔0ms）を提供すること。
+- 配分可視化は `GET /api/dashboard/request-responses` と `request_body.user` の run tag を使って集計すること。
+
 ---
+
+## 本日のToDo (2026-02-12)
+
+- [x] **T801 (RED)** `llmlb/tests/e2e-playwright/specs/dashboard/dashboard-header.spec.ts` に `#lb-playground` 遷移テストを追加
+- [x] **T802 (RED)** `llmlb/tests/e2e-playwright/specs/workflows/lb-playground-walkthrough.spec.ts` を追加し、APIキー必須・通常送信・負荷試験・配分可視化を検証
+- [x] **T803 (GREEN)** `llmlb/src/web/dashboard/src/App.tsx` に `#lb-playground` ルートを追加
+- [x] **T804 (GREEN)** `llmlb/src/web/dashboard/src/components/dashboard/Header.tsx` に `LB Playground` 導線を追加
+- [x] **T805 (GREEN)** `llmlb/src/web/dashboard/src/pages/LoadBalancerPlayground.tsx` を新規実装
+- [x] **T806 (GREEN)** `llmlb/src/web/dashboard/src/lib/api.ts` を拡張（APIキー送信・userタグ・abort対応）
+- [x] **T807 (DOCS)** `specs/SPEC-712c20cf/spec.md`, `specs/SPEC-ea015fbb/*`, `README*.md`, `docs/dashboard.md` を現行仕様に更新
+- [x] **T808 (BUILD)** `pnpm --filter @llm/dashboard build` を実行し、`llmlb/src/web/static/` を更新
 
 ## 本日のToDo (2025-11-01)
 

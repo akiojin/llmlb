@@ -205,7 +205,10 @@ pub async fn sync_models_with_type(
 
     // SPEC-66555000: xLLM/Ollamaの場合はmax_tokensを取得
     if let Some(ep_type) = endpoint_type {
-        if ep_type == EndpointType::Xllm || ep_type == EndpointType::Ollama {
+        if ep_type == EndpointType::Xllm
+            || ep_type == EndpointType::Ollama
+            || ep_type == EndpointType::LmStudio
+        {
             // 非同期でmax_tokensを取得（同期をブロックしない）
             let models_to_update: Vec<_> =
                 synced_models.iter().map(|m| m.model_id.clone()).collect();

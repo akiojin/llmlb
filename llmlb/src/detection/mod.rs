@@ -2,8 +2,9 @@
 //!
 //! SPEC-66555000: Automatic endpoint type detection
 //!
-//! Detection priority: xLLM > Ollama > vLLM > OpenAI-compatible
+//! Detection priority: xLLM > Ollama > LM Studio > vLLM > OpenAI-compatible
 
+mod lm_studio;
 mod ollama;
 mod vllm;
 mod xllm;
@@ -15,6 +16,7 @@ use tracing::{debug, warn};
 
 use crate::types::endpoint::EndpointType;
 
+pub use lm_studio::detect_lm_studio;
 pub use ollama::detect_ollama;
 pub use vllm::detect_vllm;
 pub use xllm::detect_xllm;

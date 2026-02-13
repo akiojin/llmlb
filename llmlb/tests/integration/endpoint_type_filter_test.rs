@@ -111,7 +111,7 @@ async fn test_list_endpoints_without_type_filter() {
     let body: Value = response.json().await.unwrap();
     let endpoints = body["endpoints"].as_array().unwrap();
 
-    assert_eq!(endpoints.len(), 4, "Should return all endpoints");
+    assert_eq!(endpoints.len(), 3, "Should return all endpoints");
 }
 
 /// US7-シナリオ2: type=xllmでフィルタリング

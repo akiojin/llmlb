@@ -5,8 +5,6 @@ use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 
-use anyhow::{Context, Result};
-
 #[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 

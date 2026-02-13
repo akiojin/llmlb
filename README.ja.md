@@ -91,6 +91,13 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 http://localhost:32768/dashboard
 ```
 
+### Playground ルート
+
+- Endpoint Playground: `/dashboard/#playground/:endpointId`
+  - `POST /api/endpoints/:id/chat/completions` を使って特定エンドポイントへ直接送信（JWT）
+- LB Playground: `/dashboard/#lb-playground`
+  - `GET /v1/models`, `POST /v1/chat/completions` を使ってロードバランサー経由で検証（APIキー）
+
 ## エンドポイント管理
 
 ロードバランサーは外部の推論サーバー（Ollama、vLLM、xLLM等）を「エンドポイント」として一元管理します。
@@ -634,7 +641,12 @@ LLM Load Balancer (OpenAI-compatible)
 - GET `/api/dashboard/logs/lb`
 - GET `/api/metrics/cloud`（JWT: admin / APIキー: `metrics.read`）
 - GET `/api/nodes/:node_id/logs`（JWT: admin / APIキー: `logs.read`）
+- POST `/api/endpoints/:id/chat/completions`（Endpoint Playground 用、JWTのみ）
 - GET `/dashboard/*`
+
+注記:
+- `POST /api/endpoints/:id/chat/completions` は Endpoint Playground（`#playground/:endpointId`）専用です。
+- LB Playground（`#lb-playground`）は OpenAI 互換API（`/v1/models`, `/v1/chat/completions`）を APIキー認証で利用します。
 
 ### ランタイム（Runtime）
 

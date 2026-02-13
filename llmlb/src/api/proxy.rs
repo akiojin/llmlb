@@ -133,33 +133,38 @@ pub(crate) fn save_request_record(
     });
 }
 
-/// エンドポイント選択結果
-pub(crate) enum EndpointSelection {
-    /// エンドポイントが見つかった（Boxでヒープ割り当て、enum sizeの最適化）
-    Found(Box<Endpoint>),
-    /// モデルをサポートするエンドポイントがない
-    NotFound,
-}
-
-/// モデルIDからエンドポイントを選択（レイテンシ順）
+/// エンドポイントリクエスト統計を更新（Fire-and-forget）（SPEC-76643000）
 ///
-/// EndpointRegistryからモデルをサポートするオンラインエンドポイントを検索し、
-/// 最もレイテンシが低いものを返す。
-pub(crate) async fn select_endpoint_for_model(
-    state: &AppState,
-    model_id: &str,
-) -> Result<EndpointSelection, LbError> {
-    let endpoints = state
-        .endpoint_registry
-        .find_by_model_sorted_by_latency(model_id)
-        .await;
+/// endpointsテーブルの累計カウンタとendpoint_daily_statsの日次集計を
+/// 非同期で更新する。リクエスト処理のレイテンシに影響を与えない。
+pub(crate) fn record_endpoint_request_stats(
+    pool: sqlx::SqlitePool,
+    endpoint_id: uuid::Uuid,
+    model_id: String,
+    success: bool,
+) {
+    tokio::spawn(async move {
+        let date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-    match endpoints.into_iter().next() {
-        Some(endpoint) => Ok(EndpointSelection::Found(Box::new(endpoint))),
-        None => Ok(EndpointSelection::NotFound),
-    }
+        if let Err(e) =
+            crate::db::endpoints::increment_request_counters(&pool, endpoint_id, success).await
+        {
+            tracing::error!("Failed to increment endpoint request counters: {}", e);
+        }
+
+        if let Err(e) = crate::db::endpoint_daily_stats::upsert_daily_stats(
+            &pool,
+            endpoint_id,
+            &model_id,
+            &date,
+            success,
+        )
+        .await
+        {
+            tracing::error!("Failed to upsert daily stats: {}", e);
+        }
+    });
 }
-
 /// エンドポイントにリクエストを転送
 ///
 /// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す

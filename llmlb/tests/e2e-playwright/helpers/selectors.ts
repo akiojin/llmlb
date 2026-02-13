@@ -7,7 +7,7 @@ export const DashboardSelectors = {
   // Header Controls
   header: {
     themeToggle: '#theme-toggle',
-    playgroundButton: '#chat-open',
+    playgroundButton: '#lb-playground-button',
     apiKeysButton: '#api-keys-button',
     refreshButton: '#refresh-button',
     connectionStatus: '#connection-status',

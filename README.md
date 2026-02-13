@@ -430,6 +430,13 @@ Use it to monitor endpoints, view request history, inspect logs, and manage mode
    http://localhost:32768/dashboard
    ```
 
+### Playground routes
+
+- Endpoint Playground: `/dashboard/#playground/:endpointId`
+  - For direct endpoint verification via `POST /api/endpoints/:id/chat/completions` (JWT session)
+- LB Playground: `/dashboard/#lb-playground`
+  - For load-balancer routing tests via `GET /v1/models` and `POST /v1/chat/completions` (API key)
+
 ## Endpoint Management
 
 the load balancer centrally manages external inference servers (Ollama, vLLM, xLLM, etc.) as "endpoints".
@@ -1068,6 +1075,10 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | POST | `/api/endpoints/:id/chat/completions` | Proxy to endpoint for dashboard playground | JWT only |
+
+Notes:
+- The proxy above is for **endpoint-specific** playground (`#playground/:endpointId`).
+- LB Playground (`#lb-playground`) uses the standard OpenAI-compatible routes (`/v1/models`, `/v1/chat/completions`) with API key auth.
 
 #### Static Files & Metrics
 

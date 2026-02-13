@@ -68,6 +68,12 @@ pub struct DashboardEndpoint {
     pub notes: Option<String>,
     /// 利用可能なモデル数
     pub model_count: usize,
+    /// 累計リクエスト数
+    pub total_requests: i64,
+    /// 成功リクエスト数
+    pub successful_requests: i64,
+    /// 失敗リクエスト数
+    pub failed_requests: i64,
 }
 
 /// システム統計レスポンス
@@ -308,6 +314,9 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
             registered_at: endpoint.registered_at,
             notes: endpoint.notes,
             model_count,
+            total_requests: endpoint.total_requests,
+            successful_requests: endpoint.successful_requests,
+            failed_requests: endpoint.failed_requests,
         });
     }
 
@@ -326,6 +335,26 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
     let openai_key_present = std::env::var("OPENAI_API_KEY").is_ok();
     let google_key_present = std::env::var("GOOGLE_API_KEY").is_ok();
     let anthropic_key_present = std::env::var("ANTHROPIC_API_KEY").is_ok();
+
+    // Token totals must be consistent with the persisted request history.
+    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
+    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
+    let mut total_input_tokens = summary.total_input_tokens;
+    let mut total_output_tokens = summary.total_output_tokens;
+    let mut total_tokens = summary.total_tokens;
+    match state.request_history.get_token_statistics().await {
+        Ok(stats) => {
+            total_input_tokens = stats.total_input_tokens;
+            total_output_tokens = stats.total_output_tokens;
+            total_tokens = stats.total_tokens;
+        }
+        Err(e) => {
+            warn!(
+                "Failed to query token statistics from request history: {}",
+                e
+            );
+        }
+    }
 
     DashboardStats {
         total_nodes: summary.total_nodes,
@@ -347,9 +376,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         openai_key_present,
         google_key_present,
         anthropic_key_present,
-        total_input_tokens: summary.total_input_tokens,
-        total_output_tokens: summary.total_output_tokens,
-        total_tokens: summary.total_tokens,
+        total_input_tokens,
+        total_output_tokens,
+        total_tokens,
     }
 }
 
@@ -734,6 +763,56 @@ pub async fn export_request_responses(
             Ok(response)
         }
     }
+}
+
+/// GET /api/endpoints/{id}/today-stats - 当日リクエスト統計
+///
+/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 5)
+pub async fn get_endpoint_today_stats(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Result<Json<crate::db::endpoint_daily_stats::DailyStatEntry>, AppError> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let stats = crate::db::endpoint_daily_stats::get_today_stats(&state.db_pool, id, &today)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+    Ok(Json(stats))
+}
+
+/// GET /api/endpoints/{id}/daily-stats - 日次リクエスト統計
+///
+/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 6)
+pub async fn get_endpoint_daily_stats(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+    Query(query): Query<EndpointDailyStatsQuery>,
+) -> Result<Json<Vec<crate::db::endpoint_daily_stats::DailyStatEntry>>, AppError> {
+    let days = query.days.unwrap_or(7).min(365);
+    let stats = crate::db::endpoint_daily_stats::get_daily_stats(&state.db_pool, id, days)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+    Ok(Json(stats))
+}
+
+/// エンドポイント日次統計クエリパラメータ
+#[derive(Debug, Clone, Deserialize)]
+pub struct EndpointDailyStatsQuery {
+    /// 取得する日数（デフォルト: 7、最大: 365）
+    #[serde(default)]
+    pub days: Option<u32>,
+}
+
+/// GET /api/endpoints/{id}/model-stats - モデル別リクエスト統計
+///
+/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 7)
+pub async fn get_endpoint_model_stats(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
+    let stats = crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, id)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+    Ok(Json(stats))
 }
 
 /// GET /api/dashboard/models - ダッシュボード向けモデル一覧

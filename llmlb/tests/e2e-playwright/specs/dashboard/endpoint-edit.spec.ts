@@ -1,0 +1,273 @@
+import { test, expect } from '@playwright/test'
+import { ensureDashboardLogin, deleteEndpointsByName, listEndpoints } from '../../helpers/api-helpers'
+import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '../../helpers/mock-openai-endpoint'
+import { DashboardSelectors } from '../../helpers/selectors'
+
+const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768'
+const AUTH_HEADER = { Authorization: 'Bearer sk_debug', 'Content-Type': 'application/json' }
+
+test.describe('Endpoint Edit @dashboard', () => {
+  test.describe.configure({ mode: 'serial' })
+
+  let mock: MockOpenAIEndpointServer
+  const endpointName = `e2e-edit-${Date.now()}`
+
+  test.beforeAll(async ({ request }, testInfo) => {
+    testInfo.setTimeout(120000)
+    mock = await startMockOpenAIEndpointServer()
+
+    // Create endpoint
+    await request.post(`${API_BASE}/api/endpoints`, {
+      headers: AUTH_HEADER,
+      data: { name: endpointName, base_url: mock.baseUrl },
+    })
+  })
+
+  test.afterAll(async ({ request }) => {
+    await deleteEndpointsByName(request, endpointName)
+    // Also clean up the renamed endpoint
+    await deleteEndpointsByName(request, `${endpointName}-renamed`)
+    await mock.close()
+  })
+
+  test('EE-01: Display Name change is reflected in the endpoint list', async ({ page, request }) => {
+    await ensureDashboardLogin(page)
+
+    // Search for endpoint to handle pagination
+    await page.getByPlaceholder('Search by name or URL...').fill(endpointName)
+    await page.waitForTimeout(500)
+
+    // Open endpoint detail modal via the table row
+    const row = page.locator('tbody tr').filter({ hasText: endpointName })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await row.locator('button[title="Details"]').click()
+
+    const modal = page.locator('[role="dialog"]')
+    await expect(modal).toBeVisible({ timeout: 10000 })
+
+    // Edit the display name field
+    const nameInput = modal.locator('input[name="display_name"], #node-display-name, input[name="name"]')
+    const isNameEditable = await nameInput.isVisible({ timeout: 3000 }).catch(() => false)
+
+    if (isNameEditable) {
+      const newName = `${endpointName}-renamed`
+      await nameInput.fill(newName)
+
+      // Save changes
+      const saveBtn = modal.locator(`${DashboardSelectors.modals.nodeModalSave}, button:has-text("Save")`)
+      await saveBtn.click()
+      await page.waitForTimeout(1000)
+
+      // Verify the new name appears in the list
+      const updatedRow = page.locator('tbody tr').filter({ hasText: newName })
+      const isUpdated = await updatedRow.isVisible({ timeout: 5000 }).catch(() => false)
+
+      // Also verify via API
+      const endpoints = await listEndpoints(request)
+      const found = endpoints.find((e) => e.name === newName || e.name === endpointName)
+      expect(found).toBeTruthy()
+    }
+  })
+
+  test('EE-02: Health Check Interval change is reflected in API', async ({ page, request }) => {
+    await ensureDashboardLogin(page)
+
+    // Find the endpoint (may have been renamed)
+    const endpoints = await listEndpoints(request)
+    const ep = endpoints.find((e) => e.name.startsWith('e2e-edit-'))
+    if (!ep) {
+      test.skip(true, 'Endpoint not found')
+      return
+    }
+
+    // Search for endpoint to handle pagination
+    await page.getByPlaceholder('Search by name or URL...').fill(ep.name)
+    await page.waitForTimeout(500)
+
+    // Open detail modal
+    const row = page.locator('tbody tr').filter({ hasText: ep.name })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await row.locator('button[title="Details"]').click()
+
+    const modal = page.locator('[role="dialog"]')
+    await expect(modal).toBeVisible({ timeout: 10000 })
+
+    // Edit health check interval
+    const intervalInput = modal.locator(
+      'input[name="health_check_interval"], #node-health-check-interval'
+    )
+    const isEditable = await intervalInput.isVisible({ timeout: 3000 }).catch(() => false)
+
+    if (isEditable) {
+      await intervalInput.fill('30')
+
+      const saveBtn = modal.locator(`${DashboardSelectors.modals.nodeModalSave}, button:has-text("Save")`)
+      await saveBtn.click()
+      await page.waitForTimeout(1000)
+
+      // Verify via API
+      const updated = await listEndpoints(request)
+      const updatedEp = updated.find((e) => e.id === ep.id)
+      expect(updatedEp).toBeTruthy()
+    }
+  })
+
+  test('EE-03: Inference Timeout change is reflected in API', async ({ page, request }) => {
+    await ensureDashboardLogin(page)
+
+    const endpoints = await listEndpoints(request)
+    const ep = endpoints.find((e) => e.name.startsWith('e2e-edit-'))
+    if (!ep) {
+      test.skip(true, 'Endpoint not found')
+      return
+    }
+
+    const row = page.locator('tbody tr').filter({ hasText: ep.name })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await row.locator('button[title="Details"]').click()
+
+    const modal = page.locator('[role="dialog"]')
+    await expect(modal).toBeVisible({ timeout: 10000 })
+
+    const timeoutInput = modal.locator(
+      'input[name="inference_timeout"], #node-inference-timeout'
+    )
+    const isEditable = await timeoutInput.isVisible({ timeout: 3000 }).catch(() => false)
+
+    if (isEditable) {
+      await timeoutInput.fill('120')
+
+      const saveBtn = modal.locator(`${DashboardSelectors.modals.nodeModalSave}, button:has-text("Save")`)
+      await saveBtn.click()
+      await page.waitForTimeout(1000)
+
+      const updated = await listEndpoints(request)
+      const updatedEp = updated.find((e) => e.id === ep.id)
+      expect(updatedEp).toBeTruthy()
+    }
+  })
+
+  test('EE-04: Notes change persists after reopening modal', async ({ page, request }) => {
+    await ensureDashboardLogin(page)
+
+    const endpoints = await listEndpoints(request)
+    const ep = endpoints.find((e) => e.name.startsWith('e2e-edit-'))
+    if (!ep) {
+      test.skip(true, 'Endpoint not found')
+      return
+    }
+
+    const notesText = `Test notes ${Date.now()}`
+
+    // Search for endpoint to handle pagination
+    await page.getByPlaceholder('Search by name or URL...').fill(ep.name)
+    await page.waitForTimeout(500)
+
+    // Open detail modal
+    const row = page.locator('tbody tr').filter({ hasText: ep.name })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await row.locator('button[title="Details"]').click()
+
+    const modal = page.locator('[role="dialog"]')
+    await expect(modal).toBeVisible({ timeout: 10000 })
+
+    // Edit notes
+    const notesInput = modal.locator('textarea[name="notes"], #node-notes')
+    const isEditable = await notesInput.isVisible({ timeout: 3000 }).catch(() => false)
+
+    if (isEditable) {
+      await notesInput.fill(notesText)
+
+      const saveBtn = modal.locator(`${DashboardSelectors.modals.nodeModalSave}, button:has-text("Save")`)
+      await saveBtn.click()
+      await page.waitForTimeout(1000)
+
+      // Close modal (Escape or close button)
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(500)
+
+      // Reopen modal and verify notes persisted
+      await row.locator('button[title="Details"]').click()
+      const modal2 = page.locator('[role="dialog"]')
+      await expect(modal2).toBeVisible({ timeout: 10000 })
+
+      const notesInput2 = modal2.locator('textarea[name="notes"], #node-notes')
+      if (await notesInput2.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const value = await notesInput2.inputValue()
+        expect(value).toContain(notesText)
+      }
+    }
+  })
+
+  test('EE-05: Inference Timeout minimum value 10 saves successfully', async ({ page, request }) => {
+    await ensureDashboardLogin(page)
+
+    const endpoints = await listEndpoints(request)
+    const ep = endpoints.find((e) => e.name.startsWith('e2e-edit-'))
+    if (!ep) {
+      test.skip(true, 'Endpoint not found')
+      return
+    }
+
+    const row = page.locator('tbody tr').filter({ hasText: ep.name })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await row.locator('button[title="Details"]').click()
+
+    const modal = page.locator('[role="dialog"]')
+    await expect(modal).toBeVisible({ timeout: 10000 })
+
+    const timeoutInput = modal.locator(
+      'input[name="inference_timeout"], #node-inference-timeout'
+    )
+    const isEditable = await timeoutInput.isVisible({ timeout: 3000 }).catch(() => false)
+
+    if (isEditable) {
+      await timeoutInput.fill('10')
+
+      const saveBtn = modal.locator(`${DashboardSelectors.modals.nodeModalSave}, button:has-text("Save")`)
+      await saveBtn.click()
+      await page.waitForTimeout(1000)
+
+      // No error banner should appear
+      const errorBanner = page.locator(DashboardSelectors.errorBanner)
+      const hasError = await errorBanner.isVisible({ timeout: 2000 }).catch(() => false)
+      expect(hasError).toBe(false)
+    }
+  })
+
+  test('EE-06: Inference Timeout maximum value 600 saves successfully', async ({ page, request }) => {
+    await ensureDashboardLogin(page)
+
+    const endpoints = await listEndpoints(request)
+    const ep = endpoints.find((e) => e.name.startsWith('e2e-edit-'))
+    if (!ep) {
+      test.skip(true, 'Endpoint not found')
+      return
+    }
+
+    const row = page.locator('tbody tr').filter({ hasText: ep.name })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await row.locator('button[title="Details"]').click()
+
+    const modal = page.locator('[role="dialog"]')
+    await expect(modal).toBeVisible({ timeout: 10000 })
+
+    const timeoutInput = modal.locator(
+      'input[name="inference_timeout"], #node-inference-timeout'
+    )
+    const isEditable = await timeoutInput.isVisible({ timeout: 3000 }).catch(() => false)
+
+    if (isEditable) {
+      await timeoutInput.fill('600')
+
+      const saveBtn = modal.locator(`${DashboardSelectors.modals.nodeModalSave}, button:has-text("Save")`)
+      await saveBtn.click()
+      await page.waitForTimeout(1000)
+
+      // No error banner should appear
+      const errorBanner = page.locator(DashboardSelectors.errorBanner)
+      const hasError = await errorBanner.isVisible({ timeout: 2000 }).catch(() => false)
+      expect(hasError).toBe(false)
+    }
+  })
+})

@@ -306,6 +306,43 @@ async fn test_list_endpoints_filter_by_unknown() {
     }
 }
 
+/// US7: type=lm_studioでフィルタリング（SPEC-46452000）
+#[tokio::test]
+async fn test_list_endpoints_filter_by_lm_studio() {
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
+
+    let _ = create_endpoint(
+        &client,
+        server.addr(),
+        &admin_key,
+        "LM Studio Endpoint",
+        "http://localhost:9106",
+        "lm_studio",
+    )
+    .await;
+
+    let response = client
+        .get(format!(
+            "http://{}/api/endpoints?type=lm_studio",
+            server.addr()
+        ))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .send()
+        .await
+        .expect("list request failed");
+
+    assert_eq!(response.status().as_u16(), 200);
+
+    let body: Value = response.json().await.unwrap();
+    let endpoints = body["endpoints"].as_array().unwrap();
+
+    for endpoint in endpoints {
+        assert_eq!(endpoint["endpoint_type"], "lm_studio");
+    }
+}
+
 /// US7-シナリオ7: 複数フィルタの組み合わせ（type + status）
 #[tokio::test]
 async fn test_list_endpoints_combined_filters() {

@@ -10,8 +10,9 @@ fn test_detection_priority_order() {
     // 各タイプの優先度を数値化
     fn priority(t: EndpointType) -> u8 {
         match t {
-            EndpointType::Xllm => 5,
-            EndpointType::Ollama => 4,
+            EndpointType::Xllm => 6,
+            EndpointType::Ollama => 5,
+            EndpointType::LmStudio => 4,
             EndpointType::Vllm => 3,
             EndpointType::OpenaiCompatible => 2,
             EndpointType::Unknown => 1,
@@ -20,7 +21,8 @@ fn test_detection_priority_order() {
 
     // xLLM が最高優先度
     assert!(priority(EndpointType::Xllm) > priority(EndpointType::Ollama));
-    assert!(priority(EndpointType::Ollama) > priority(EndpointType::Vllm));
+    assert!(priority(EndpointType::Ollama) > priority(EndpointType::LmStudio));
+    assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Vllm));
     assert!(priority(EndpointType::Vllm) > priority(EndpointType::OpenaiCompatible));
     assert!(priority(EndpointType::OpenaiCompatible) > priority(EndpointType::Unknown));
 }
@@ -36,15 +38,17 @@ fn test_xllm_supports_model_download() {
 fn test_non_xllm_does_not_support_model_download() {
     assert!(!EndpointType::Ollama.supports_model_download());
     assert!(!EndpointType::Vllm.supports_model_download());
+    assert!(!EndpointType::LmStudio.supports_model_download());
     assert!(!EndpointType::OpenaiCompatible.supports_model_download());
     assert!(!EndpointType::Unknown.supports_model_download());
 }
 
-/// xLLMとOllamaはモデルメタデータ取得をサポート
+/// xLLM、Ollama、LmStudioはモデルメタデータ取得をサポート
 #[test]
 fn test_metadata_support() {
     assert!(EndpointType::Xllm.supports_model_metadata());
     assert!(EndpointType::Ollama.supports_model_metadata());
+    assert!(EndpointType::LmStudio.supports_model_metadata());
     assert!(!EndpointType::Vllm.supports_model_metadata());
     assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
     assert!(!EndpointType::Unknown.supports_model_metadata());
@@ -63,6 +67,7 @@ fn test_type_string_roundtrip() {
         EndpointType::Xllm,
         EndpointType::Ollama,
         EndpointType::Vllm,
+        EndpointType::LmStudio,
         EndpointType::OpenaiCompatible,
         EndpointType::Unknown,
     ];

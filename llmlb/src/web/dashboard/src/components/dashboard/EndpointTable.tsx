@@ -111,6 +111,8 @@ function getTypeLabel(type: EndpointType): string {
       return 'Ollama'
     case 'vllm':
       return 'vLLM'
+    case 'lm_studio':
+      return 'LM Studio'
     case 'openai_compatible':
       return 'OpenAI'
     case 'unknown':
@@ -141,6 +143,8 @@ function getTypeBadgeVariant(
     case 'ollama':
       return 'secondary'
     case 'vllm':
+      return 'secondary'
+    case 'lm_studio':
       return 'secondary'
     case 'openai_compatible':
       return 'outline'
@@ -387,6 +391,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 <SelectItem value="xllm">xLLM</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
                 <SelectItem value="vllm">vLLM</SelectItem>
+                <SelectItem value="lm_studio">LM Studio</SelectItem>
                 <SelectItem value="openai_compatible">OpenAI</SelectItem>
                 <SelectItem value="unknown">Unknown</SelectItem>
               </SelectContent>

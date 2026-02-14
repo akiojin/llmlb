@@ -131,6 +131,8 @@ pub enum EndpointType {
     Ollama,
     /// vLLMサーバー
     Vllm,
+    /// LM Studioサーバー
+    LmStudio,
     /// その他のOpenAI互換API
     OpenaiCompatible,
     /// 判別不能（オフライン時）
@@ -145,6 +147,7 @@ impl EndpointType {
             Self::Xllm => "xllm",
             Self::Ollama => "ollama",
             Self::Vllm => "vllm",
+            Self::LmStudio => "lm_studio",
             Self::OpenaiCompatible => "openai_compatible",
             Self::Unknown => "unknown",
         }
@@ -157,7 +160,7 @@ impl EndpointType {
 
     /// モデルメタデータ取得をサポートするか
     pub fn supports_model_metadata(&self) -> bool {
-        matches!(self, Self::Xllm | Self::Ollama)
+        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio)
     }
 }
 
@@ -169,6 +172,7 @@ impl FromStr for EndpointType {
             "xllm" => Self::Xllm,
             "ollama" => Self::Ollama,
             "vllm" => Self::Vllm,
+            "lm_studio" => Self::LmStudio,
             "openai_compatible" => Self::OpenaiCompatible,
             _ => Self::Unknown,
         })
@@ -819,6 +823,10 @@ mod tests {
             "\"vllm\""
         );
         assert_eq!(
+            serde_json::to_string(&EndpointType::LmStudio).unwrap(),
+            "\"lm_studio\""
+        );
+        assert_eq!(
             serde_json::to_string(&EndpointType::OpenaiCompatible).unwrap(),
             "\"openai_compatible\""
         );
@@ -829,6 +837,12 @@ mod tests {
     }
 
     #[test]
+    fn test_endpoint_type_deserialization_lm_studio() {
+        let deserialized: EndpointType = serde_json::from_str("\"lm_studio\"").unwrap();
+        assert_eq!(deserialized, EndpointType::LmStudio);
+    }
+
+    #[test]
     fn test_endpoint_type_from_str() {
         assert_eq!("xllm".parse::<EndpointType>().unwrap(), EndpointType::Xllm);
         assert_eq!(
@@ -836,6 +850,10 @@ mod tests {
             EndpointType::Ollama
         );
         assert_eq!("vllm".parse::<EndpointType>().unwrap(), EndpointType::Vllm);
+        assert_eq!(
+            "lm_studio".parse::<EndpointType>().unwrap(),
+            EndpointType::LmStudio
+        );
         assert_eq!(
             "openai_compatible".parse::<EndpointType>().unwrap(),
             EndpointType::OpenaiCompatible
@@ -856,6 +874,7 @@ mod tests {
         assert_eq!(EndpointType::Xllm.as_str(), "xllm");
         assert_eq!(EndpointType::Ollama.as_str(), "ollama");
         assert_eq!(EndpointType::Vllm.as_str(), "vllm");
+        assert_eq!(EndpointType::LmStudio.as_str(), "lm_studio");
         assert_eq!(EndpointType::OpenaiCompatible.as_str(), "openai_compatible");
         assert_eq!(EndpointType::Unknown.as_str(), "unknown");
     }
@@ -866,15 +885,17 @@ mod tests {
         assert!(EndpointType::Xllm.supports_model_download());
         assert!(!EndpointType::Ollama.supports_model_download());
         assert!(!EndpointType::Vllm.supports_model_download());
+        assert!(!EndpointType::LmStudio.supports_model_download());
         assert!(!EndpointType::OpenaiCompatible.supports_model_download());
         assert!(!EndpointType::Unknown.supports_model_download());
     }
 
     #[test]
     fn test_endpoint_type_supports_model_metadata() {
-        // xLLMとOllamaがメタデータ取得をサポート
+        // xLLM、Ollama、LmStudioがメタデータ取得をサポート
         assert!(EndpointType::Xllm.supports_model_metadata());
         assert!(EndpointType::Ollama.supports_model_metadata());
+        assert!(EndpointType::LmStudio.supports_model_metadata());
         assert!(!EndpointType::Vllm.supports_model_metadata());
         assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
         assert!(!EndpointType::Unknown.supports_model_metadata());

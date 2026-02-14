@@ -74,6 +74,8 @@ function getTypeLabel(type: EndpointType | undefined): string {
       return 'Ollama'
     case 'vllm':
       return 'vLLM'
+    case 'lm_studio':
+      return 'LM Studio'
     case 'openai_compatible':
       return 'OpenAI Compatible'
     case 'unknown':
@@ -91,6 +93,7 @@ function getTypeBadgeVariant(
       return 'default'
     case 'ollama':
     case 'vllm':
+    case 'lm_studio':
       return 'secondary'
     default:
       return 'outline'

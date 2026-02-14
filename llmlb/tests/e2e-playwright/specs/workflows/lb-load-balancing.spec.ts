@@ -5,8 +5,40 @@ import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '..
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768'
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug', 'Content-Type': 'application/json' }
 const SHARED_MODEL = 'lb-test-model'
+const FAILOVER_WAIT_TIMEOUT_MS = 20000
+const FAILOVER_POLL_INTERVAL_MS = 1000
 
 test.describe.configure({ mode: 'serial' })
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForFailoverReady(
+  request: Parameters<typeof listEndpoints>[0],
+  primaryName: string,
+  secondaryName: string
+): Promise<{ primaryStatus: string; secondaryStatus: string }> {
+  const deadline = Date.now() + FAILOVER_WAIT_TIMEOUT_MS
+  let primaryStatus = 'unknown'
+  let secondaryStatus = 'unknown'
+
+  while (Date.now() < deadline) {
+    const endpoints = await listEndpoints(request)
+    primaryStatus = endpoints.find((e) => e.name === primaryName)?.status ?? 'missing'
+    secondaryStatus = endpoints.find((e) => e.name === secondaryName)?.status ?? 'missing'
+
+    // Treat non-online primary as failed over once secondary is healthy.
+    if (secondaryStatus === 'online' && primaryStatus !== 'online') {
+      return { primaryStatus, secondaryStatus }
+    }
+    await sleep(FAILOVER_POLL_INTERVAL_MS)
+  }
+
+  throw new Error(
+    `Failover not ready within ${FAILOVER_WAIT_TIMEOUT_MS}ms (primary=${primaryStatus}, secondary=${secondaryStatus})`
+  )
+}
 
 test.describe('LB Load Balancing @workflows', () => {
   test('LB-01: レイテンシ優先ルーティング', async ({ request }) => {
@@ -191,20 +223,35 @@ test.describe('LB Load Balancing @workflows', () => {
       // Shut down primary
       await primaryMock.close()
 
-      // Wait for health check cycle
-      await new Promise((resolve) => setTimeout(resolve, 5000))
+      const failoverStatus = await waitForFailoverReady(request, primaryName, secondaryName)
 
-      // Request should succeed via secondary (failover)
-      const chatResp = await request.post(`${API_BASE}/v1/chat/completions`, {
-        headers: AUTH_HEADER,
-        data: {
-          model: SHARED_MODEL,
-          messages: [{ role: 'user', content: 'failover-test' }],
-        },
-      })
-      expect(chatResp.ok()).toBeTruthy()
-      const body = await chatResp.json()
-      expect(body.choices?.[0]?.message?.content).toContain('MOCK_OK')
+      // Retry briefly to absorb in-flight transition windows on CI.
+      let body: { choices?: Array<{ message?: { content?: string } }> } | null = null
+      let lastStatus = -1
+      for (let i = 0; i < 8; i++) {
+        const chatResp = await request.post(`${API_BASE}/v1/chat/completions`, {
+          headers: AUTH_HEADER,
+          data: {
+            model: SHARED_MODEL,
+            messages: [{ role: 'user', content: 'failover-test' }],
+          },
+        })
+        lastStatus = chatResp.status()
+        if (chatResp.ok()) {
+          const parsed = await chatResp.json()
+          if (parsed.choices?.[0]?.message?.content?.includes('MOCK_OK')) {
+            body = parsed
+            break
+          }
+        }
+        await sleep(FAILOVER_POLL_INTERVAL_MS)
+      }
+
+      expect(
+        body,
+        `failover request never succeeded (lastStatus=${lastStatus}, primary=${failoverStatus.primaryStatus}, secondary=${failoverStatus.secondaryStatus})`
+      ).not.toBeNull()
+      expect(body!.choices?.[0]?.message?.content).toContain('MOCK_OK')
     } finally {
       await deleteEndpointsByName(request, primaryName)
       await deleteEndpointsByName(request, secondaryName)

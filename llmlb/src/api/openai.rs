@@ -1330,7 +1330,7 @@ async fn proxy_openai_post(
     // (今後、RequestResponseRecordのフィールドをリネームすべき)
     let endpoint_host: std::net::IpAddr = UNSPECIFIED_IP;
 
-    state
+    let request_lease = state
         .load_manager
         .begin_request(endpoint_id)
         .await
@@ -1349,9 +1349,8 @@ async fn proxy_openai_post(
         Ok(res) => res,
         Err(e) => {
             let duration = start.elapsed();
-            state
-                .load_manager
-                .finish_request(endpoint_id, RequestOutcome::Error, duration)
+            request_lease
+                .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
@@ -1390,9 +1389,8 @@ async fn proxy_openai_post(
     // ストリームの場合はレスポンスをそのままパススルー
     if stream {
         let duration = start.elapsed();
-        state
-            .load_manager
-            .finish_request(endpoint_id, RequestOutcome::Success, duration)
+        request_lease
+            .complete(RequestOutcome::Success, duration)
             .await
             .map_err(AppError::from)?;
         // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
@@ -1430,9 +1428,8 @@ async fn proxy_openai_post(
 
     if !response.status().is_success() {
         let duration = start.elapsed();
-        state
-            .load_manager
-            .finish_request(endpoint_id, RequestOutcome::Error, duration)
+        request_lease
+            .complete(RequestOutcome::Error, duration)
             .await
             .map_err(AppError::from)?;
         record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
@@ -1489,44 +1486,6 @@ async fn proxy_openai_post(
         return Ok(response);
     }
 
-    if stream {
-        let duration = start.elapsed();
-        state
-            .load_manager
-            .finish_request(endpoint_id, RequestOutcome::Success, duration)
-            .await
-            .map_err(AppError::from)?;
-        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
-
-        save_request_record(
-            state.request_history.clone(),
-            RequestResponseRecord {
-                id: record_id,
-                timestamp,
-                request_type,
-                model,
-                node_id: endpoint_id,
-                node_machine_name: endpoint_name,
-                node_ip: endpoint_host,
-                client_ip: None,
-                request_body,
-                response_body: None,
-                duration_ms: duration.as_millis() as u64,
-                status: RecordStatus::Success,
-                completed_at: Utc::now(),
-                input_tokens: None,
-                output_tokens: None,
-                total_tokens: None,
-            },
-        );
-
-        let mut axum_response = forward_streaming_response(response).map_err(AppError::from)?;
-        if let Some(wait_ms) = queued_wait_ms {
-            add_queue_headers(&mut axum_response, wait_ms);
-        }
-        return Ok(axum_response);
-    }
-
     let parsed = response.json::<Value>().await;
     let duration = start.elapsed();
 
@@ -1535,14 +1494,8 @@ async fn proxy_openai_post(
             // レスポンスからトークン使用量を抽出
             let token_usage = extract_usage_from_response(&body);
 
-            state
-                .load_manager
-                .finish_request_with_tokens(
-                    endpoint_id,
-                    RequestOutcome::Success,
-                    duration,
-                    token_usage.clone(),
-                )
+            request_lease
+                .complete_with_tokens(RequestOutcome::Success, duration, token_usage.clone())
                 .await
                 .map_err(AppError::from)?;
             // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
@@ -1584,9 +1537,8 @@ async fn proxy_openai_post(
             Ok(response)
         }
         Err(e) => {
-            state
-                .load_manager
-                .finish_request(endpoint_id, RequestOutcome::Error, duration)
+            request_lease
+                .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
@@ -1628,7 +1580,7 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
     let endpoint = select_available_endpoint(state).await?;
     let endpoint_id = endpoint.id;
 
-    state
+    let request_lease = state
         .load_manager
         .begin_request(endpoint_id)
         .await
@@ -1651,9 +1603,8 @@ async fn proxy_openai_get(state: &AppState, target_path: &str) -> Result<Respons
     } else {
         RequestOutcome::Error
     };
-    state
-        .load_manager
-        .finish_request(endpoint_id, outcome, duration)
+    request_lease
+        .complete(outcome, duration)
         .await
         .map_err(AppError::from)?;
 

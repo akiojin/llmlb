@@ -210,7 +210,7 @@ pub async fn post_responses(
         AppError::from(LbError::Http(e.to_string()))
     })?;
 
-    state
+    let request_lease = state
         .load_manager
         .begin_request(endpoint.id)
         .await
@@ -230,9 +230,8 @@ pub async fn post_responses(
             Ok(response) => response,
             Err(e) => {
                 let duration = start.elapsed();
-                state
-                    .load_manager
-                    .finish_request(endpoint.id, RequestOutcome::Error, duration)
+                request_lease
+                    .complete(RequestOutcome::Error, duration)
                     .await
                     .map_err(AppError::from)?;
                 return Err(AppError::from(e));
@@ -249,9 +248,8 @@ pub async fn post_responses(
         } else {
             RequestOutcome::Error
         };
-        state
-            .load_manager
-            .finish_request(endpoint.id, outcome, duration)
+        request_lease
+            .complete(outcome, duration)
             .await
             .map_err(AppError::from)?;
 
@@ -274,9 +272,8 @@ pub async fn post_responses(
         Ok(bytes) => bytes,
         Err(e) => {
             error!("Failed to read response body: {}", e);
-            state
-                .load_manager
-                .finish_request(endpoint.id, RequestOutcome::Error, duration)
+            request_lease
+                .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
             return Err(AppError::from(LbError::Http(e.to_string())));
@@ -288,9 +285,8 @@ pub async fn post_responses(
     } else {
         RequestOutcome::Error
     };
-    state
-        .load_manager
-        .finish_request(endpoint.id, outcome, duration)
+    request_lease
+        .complete(outcome, duration)
         .await
         .map_err(AppError::from)?;
 

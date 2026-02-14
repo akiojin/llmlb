@@ -164,7 +164,11 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await page.goto(`/dashboard/#playground/${okEndpoint!.id}`);
       await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
 
-      const pendingIndicator = page.locator('span').filter({ hasText: /^Pending$/ }).first();
+      const pendingIndicator = page
+        .locator('span')
+        .filter({ has: page.locator('svg') })
+        .filter({ hasText: /^Pending$/ })
+        .first();
       await expect(pendingIndicator.locator('svg').first()).toHaveClass(/text-warning/);
       const pendingPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Pending$/ }).first();
       await expectStatusBadge(pendingPlaygroundBadge, 'pending');
@@ -264,7 +268,11 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       // Playground (error)
       await page.goto(`/dashboard/#playground/${badEndpoint!.id}`);
       await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
-      const errorIndicator = page.locator('span').filter({ hasText: /^Error$/ }).first();
+      const errorIndicator = page
+        .locator('span')
+        .filter({ has: page.locator('svg') })
+        .filter({ hasText: /^Error$/ })
+        .first();
       await expect(errorIndicator.locator('svg').first()).toHaveClass(/text-destructive/);
       const errorPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Error$/ }).first();
       await expectStatusBadge(errorPlaygroundBadge, 'error');
@@ -311,7 +319,11 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       // Playground (offline)
       await page.goto(`/dashboard/#playground/${badEndpoint!.id}`);
       await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
-      const offlineIndicator = page.locator('span').filter({ hasText: /^Offline$/ }).first();
+      const offlineIndicator = page
+        .locator('span')
+        .filter({ has: page.locator('svg') })
+        .filter({ hasText: /^Offline$/ })
+        .first();
       await expect(offlineIndicator.locator('svg').first()).toHaveClass(/text-destructive\/70/);
       const offlinePlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Offline$/ }).first();
       await expectStatusBadge(offlinePlaygroundBadge, 'offline');

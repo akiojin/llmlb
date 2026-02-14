@@ -9,7 +9,7 @@ import {
   type OpenAIModelsResponse,
   type RequestResponseRecord,
 } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { copyToClipboard, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -760,9 +760,9 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
   )}'`
   }
 
-  const copyToClipboard = async (text: string) => {
+  const handleCopyCurl = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Copied to clipboard' })
@@ -1417,7 +1417,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
               variant="outline"
               size="sm"
               className="absolute right-2 top-2"
-              onClick={() => void copyToClipboard(generateCurl())}
+              onClick={() => void handleCopyCurl(generateCurl())}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </Button>

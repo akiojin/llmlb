@@ -100,5 +100,68 @@ export function generateId(): string {
 }
 
 export function copyToClipboard(text: string): Promise<void> {
-  return navigator.clipboard.writeText(text)
+  if (typeof text !== 'string' || text.length === 0) {
+    return Promise.reject(new Error('Clipboard value is empty'))
+  }
+
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+    return fallbackCopyToClipboard(text)
+  }
+
+  return navigator.clipboard.writeText(text).catch(() => fallbackCopyToClipboard(text))
+}
+
+function fallbackCopyToClipboard(text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement('textarea')
+    const activeElement = document.activeElement as HTMLElement | null
+    const selection = window.getSelection()
+    const activeRange = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null
+
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.top = '0'
+    textarea.style.left = '0'
+    textarea.style.width = '1px'
+    textarea.style.height = '1px'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    textarea.style.zIndex = '-1'
+
+    const cleanup = () => {
+      if (textarea.parentElement) {
+        document.body.removeChild(textarea)
+      }
+
+      if (selection) {
+        selection.removeAllRanges()
+        if (activeRange) {
+          selection.addRange(activeRange)
+        }
+      }
+
+      if (activeElement?.isConnected) {
+        activeElement.focus()
+      }
+    }
+
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    textarea.setSelectionRange(0, textarea.value.length)
+
+    try {
+      const success = document.execCommand('copy')
+      cleanup()
+      if (success) {
+        resolve()
+      } else {
+        reject(new Error('Fallback copy failed'))
+      }
+    } catch (error) {
+      cleanup()
+      reject(error)
+    }
+  })
 }

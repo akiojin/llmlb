@@ -105,7 +105,9 @@ test.describe('API Key Lifecycle @api', () => {
     // Read the plaintext key
     const createdAlert = apiKeysModal.getByText('API Key Created Successfully').locator('..')
     await expect(createdAlert).toBeVisible({ timeout: 10000 })
-    await createdAlert.locator('button:not(#copy-api-key)').first().click()
+    await createdAlert.locator('#copy-api-key').click()
+    await expect(page.locator('[role="status"]').filter({ hasText: 'Copied full API key' }).first()).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('[role="status"]').filter({ hasText: 'Failed to copy' })).toHaveCount(0)
     const apiKeyCode = createdAlert.locator('code')
     await expect(apiKeyCode).toContainText('sk_', { timeout: 10000 })
     const apiKey = (await apiKeyCode.textContent())?.trim() || ''

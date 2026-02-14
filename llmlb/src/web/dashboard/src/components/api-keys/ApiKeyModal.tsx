@@ -346,6 +346,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     size="icon"
                     aria-label="Copy full API key"
                     title="Copy full API key"
+                    data-copied={copiedId === 'created' ? 'true' : 'false'}
                     onClick={() => handleCopy(createdKey, 'created')}
                   >
                     {copiedId === 'created' ? (

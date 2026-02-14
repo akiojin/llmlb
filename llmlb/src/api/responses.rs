@@ -210,7 +210,7 @@ pub async fn post_responses(
         AppError::from(LbError::Http(e.to_string()))
     })?;
 
-    state
+    let request_lease = state
         .load_manager
         .begin_request(endpoint.id)
         .await
@@ -230,9 +230,8 @@ pub async fn post_responses(
             Ok(response) => response,
             Err(e) => {
                 let duration = start.elapsed();
-                state
-                    .load_manager
-                    .finish_request(endpoint.id, RequestOutcome::Error, duration)
+                request_lease
+                    .complete(RequestOutcome::Error, duration)
                     .await
                     .map_err(AppError::from)?;
                 record_endpoint_request_stats(
@@ -256,9 +255,8 @@ pub async fn post_responses(
             RequestOutcome::Error
         };
         let succeeded = response_status.is_success();
-        state
-            .load_manager
-            .finish_request(endpoint.id, outcome, duration)
+        request_lease
+            .complete(outcome, duration)
             .await
             .map_err(AppError::from)?;
 
@@ -283,9 +281,8 @@ pub async fn post_responses(
         Ok(bytes) => bytes,
         Err(e) => {
             error!("Failed to read response body: {}", e);
-            state
-                .load_manager
-                .finish_request(endpoint.id, RequestOutcome::Error, duration)
+            request_lease
+                .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), false);
@@ -299,9 +296,8 @@ pub async fn post_responses(
         RequestOutcome::Error
     };
     let succeeded = status.is_success();
-    state
-        .load_manager
-        .finish_request(endpoint.id, outcome, duration)
+    request_lease
+        .complete(outcome, duration)
         .await
         .map_err(AppError::from)?;
     record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), succeeded);

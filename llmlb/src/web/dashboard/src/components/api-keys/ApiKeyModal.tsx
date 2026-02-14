@@ -331,6 +331,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   <Button
                     variant="outline"
                     size="icon"
+                    aria-label={showKey === 'created' ? 'Hide API key' : 'Show API key'}
                     onClick={() => setShowKey(showKey === 'created' ? null : 'created')}
                   >
                     {showKey === 'created' ? (

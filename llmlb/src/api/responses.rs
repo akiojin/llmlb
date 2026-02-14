@@ -23,7 +23,7 @@ use crate::{
         error::AppError,
         models::load_registered_model,
         proxy::{
-            forward_streaming_response, forward_to_endpoint,
+            forward_streaming_response, forward_to_endpoint, record_endpoint_request_stats,
             select_available_endpoint_with_queue_for_model, QueueSelection,
         },
     },
@@ -234,6 +234,12 @@ pub async fn post_responses(
                     .complete(RequestOutcome::Error, duration)
                     .await
                     .map_err(AppError::from)?;
+                record_endpoint_request_stats(
+                    state.db_pool.clone(),
+                    endpoint.id,
+                    model.clone(),
+                    false,
+                );
                 return Err(AppError::from(e));
             }
         };
@@ -248,10 +254,13 @@ pub async fn post_responses(
         } else {
             RequestOutcome::Error
         };
+        let succeeded = response_status.is_success();
         request_lease
             .complete(outcome, duration)
             .await
             .map_err(AppError::from)?;
+
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), succeeded);
 
         // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
         if response_status.is_success() {
@@ -276,6 +285,7 @@ pub async fn post_responses(
                 .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), false);
             return Err(AppError::from(LbError::Http(e.to_string())));
         }
     };
@@ -285,10 +295,12 @@ pub async fn post_responses(
     } else {
         RequestOutcome::Error
     };
+    let succeeded = status.is_success();
     request_lease
         .complete(outcome, duration)
         .await
         .map_err(AppError::from)?;
+    record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), succeeded);
 
     // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
     if status.is_success() {

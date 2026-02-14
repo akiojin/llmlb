@@ -2136,6 +2136,82 @@ mod tests {
             "expected NOT_FOUND for unregistered model"
         );
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_routing_body_read_failure_releases_active_request() {
+        use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut read_buf = [0u8; 4096];
+                let _ = socket.read(&mut read_buf).await;
+                // Intentionally send fewer bytes than Content-Length to force body read failure.
+                let response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 256\r\nConnection: close\r\n\r\n{\"id\":\"truncated\"}";
+                let _ = socket.write_all(response).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+
+        let mut endpoint = Endpoint::new("broken-endpoint".to_string(), format!("http://{addr}"));
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "broken-model".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+            })
+            .await
+            .expect("add endpoint model");
+
+        let payload = json!({
+            "model": "broken-model",
+            "messages": [{"role":"user","content":"hello"}]
+        });
+        let result = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "broken-model".to_string(),
+            false,
+            RequestType::Chat,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "expected upstream body read failure to return error"
+        );
+
+        let snapshot = state
+            .load_manager
+            .snapshot(endpoint_id)
+            .await
+            .expect("snapshot");
+        assert_eq!(
+            snapshot.active_requests, 0,
+            "active request count must be released on body read error"
+        );
+    }
+
     #[tokio::test]
     #[serial]
     async fn streaming_allowed_for_cloud_prefix() {

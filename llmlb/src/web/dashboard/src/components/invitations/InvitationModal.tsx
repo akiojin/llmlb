@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { invitationsApi, type Invitation, type CreateInvitationResponse } from '@/lib/api'
-import { formatRelativeTime } from '@/lib/utils'
+import { copyToClipboard, formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -113,9 +113,13 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
 
   const handleCopy = async () => {
     if (createdCode?.code) {
-      await navigator.clipboard.writeText(createdCode.code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      try {
+        await copyToClipboard(createdCode.code)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch {
+        toast({ title: 'Failed to copy', variant: 'destructive' })
+      }
     }
   }
 

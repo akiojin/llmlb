@@ -100,5 +100,40 @@ export function generateId(): string {
 }
 
 export function copyToClipboard(text: string): Promise<void> {
-  return navigator.clipboard.writeText(text)
+  if (typeof text !== 'string' || text.length === 0) {
+    return Promise.reject(new Error('Clipboard value is empty'))
+  }
+
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+    return fallbackCopyToClipboard(text)
+  }
+
+  return navigator.clipboard.writeText(text).catch(() => fallbackCopyToClipboard(text))
+}
+
+function fallbackCopyToClipboard(text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+
+    try {
+      const success = document.execCommand('copy')
+      document.body.removeChild(textarea)
+      if (success) {
+        resolve()
+      } else {
+        reject(new Error('Fallback copy failed'))
+      }
+    } catch (error) {
+      document.body.removeChild(textarea)
+      reject(error)
+    }
+  })
 }

@@ -365,7 +365,7 @@ xLLMエンドポイントのモデルダウンロード機能のUIフローが�
 - **FR-025**: 全テストはモックサーバーを活用し、外部依存（xLLM/Ollama/vLLM/HuggingFace等）なしで実行可能でなければならない
 - **FR-026**: 全テストは既存のPlaywright Page Object Modelパターンに準拠しなければならない
 - **FR-027**: 全テストは既存の68テストと共存し、既存テストを破壊しないこと
-- **FR-028**: APIキー作成・HistoryのRequest/Response・cURLコピーにおいて、`navigator.clipboard`が利用できない/失敗する環境でもコピー操作が成功し、`Failed to copy`トーストが表示されないこと
+- **FR-028**: APIキー作成・HistoryのRequest/Response・cURLコピーにおいて、`navigator.clipboard`が利用できない/失敗する環境でも、フォールバックコピーが機能し、`Failed to copy`トーストが表示されないこと
 
 ### 主要エンティティ
 
@@ -385,4 +385,4 @@ xLLMエンドポイントのモデルダウンロード機能のUIフローが�
 - **SC-005**: 既存の61パステストが引き続き全てパスすること
 - **SC-006**: 11種類のAPI権限と主要エンドポイントの全組み合わせテストがパスすること
 - **SC-007**: 100+同時リクエストの負荷テストで全リクエストが成功すること
-- **SC-008**: APIキー作成後のコピー、History/Playgroundのコピーボタンが`Failed to copy`を出力せずに成功通知まで到達すること
+- **SC-008**: APIキー作成後のコピー、History/Playgroundのコピーボタンが`Failed to copy`を出力せず、`Copied full API key`などの成功通知まで到達し、対象データが正しく貼り付け可能であること

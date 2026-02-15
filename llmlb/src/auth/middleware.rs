@@ -11,6 +11,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use jsonwebtoken::decode_header;
 use sha2::{Digest, Sha256};
+use std::str::FromStr;
 use uuid::Uuid;
 
 #[cfg(debug_assertions)]
@@ -133,13 +134,23 @@ fn method_requires_csrf(method: &axum::http::Method) -> bool {
 }
 
 fn expected_origin(headers: &HeaderMap) -> Option<String> {
-    let host = headers
+    let host_raw = headers
         .get("x-forwarded-host")
         .or_else(|| headers.get(header::HOST))
         .and_then(|value| value.to_str().ok())?;
-    let proto = headers
+    let host = host_raw
+        .split(',')
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let proto_raw = headers
         .get("x-forwarded-proto")
         .and_then(|value| value.to_str().ok())
+        .unwrap_or("http");
+    let proto = proto_raw
+        .split(',')
+        .next()
+        .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("http");
     Some(format!("{}://{}", proto, host))
@@ -173,7 +184,39 @@ fn origin_matches(headers: &HeaderMap) -> bool {
         Some(value) => value,
         None => return false,
     };
-    provided.eq_ignore_ascii_case(&expected)
+    match (
+        normalize_origin_for_compare(&provided),
+        normalize_origin_for_compare(&expected),
+    ) {
+        (Some(provided), Some(expected)) => provided == expected,
+        _ => false,
+    }
+}
+
+fn normalize_origin_for_compare(origin: &str) -> Option<(String, String, u16)> {
+    let (scheme, rest) = origin.split_once("://")?;
+    let authority = rest.split('/').next()?.trim();
+    if authority.is_empty() {
+        return None;
+    }
+    let authority = axum::http::uri::Authority::from_str(authority).ok()?;
+    let scheme = scheme.trim().to_ascii_lowercase();
+    let host = authority.host().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() {
+        return None;
+    }
+    let port = authority
+        .port_u16()
+        .or_else(|| default_port_for_scheme(&scheme))?;
+    Some((scheme, host, port))
+}
+
+fn default_port_for_scheme(scheme: &str) -> Option<u16> {
+    match scheme {
+        "http" => Some(80),
+        "https" => Some(443),
+        _ => None,
+    }
 }
 
 fn request_is_secure(headers: &HeaderMap) -> bool {
@@ -609,6 +652,39 @@ mod tests {
         // 異なる入力は異なるハッシュを生成
         let hash3 = hash_with_sha256("different_input");
         assert_ne!(hash, hash3);
+    }
+
+    #[test]
+    fn origin_matches_accepts_default_https_port_variants() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-host", "example.com:443".parse().unwrap());
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        headers.insert(header::ORIGIN, "https://example.com".parse().unwrap());
+
+        assert!(origin_matches(&headers));
+    }
+
+    #[test]
+    fn origin_matches_rejects_different_non_default_port() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-host", "example.com:8443".parse().unwrap());
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        headers.insert(header::ORIGIN, "https://example.com".parse().unwrap());
+
+        assert!(!origin_matches(&headers));
+    }
+
+    #[test]
+    fn origin_matches_handles_forwarded_lists() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-host",
+            "example.com:443, proxy.internal".parse().unwrap(),
+        );
+        headers.insert("x-forwarded-proto", "https, http".parse().unwrap());
+        headers.insert(header::ORIGIN, "https://example.com".parse().unwrap());
+
+        assert!(origin_matches(&headers));
     }
 
     #[tokio::test]

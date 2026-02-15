@@ -2,6 +2,7 @@
 //!
 //! SPEC-66555000: Fetch model metadata (context_length, etc.) from various endpoint types
 
+pub mod lm_studio;
 pub mod ollama;
 pub mod xllm;
 
@@ -60,6 +61,22 @@ pub struct ModelMetadata {
     /// Parameter count (e.g., "7B", "70B")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_size: Option<String>,
+
+    /// Model format (e.g., "gguf", "safetensors")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+
+    /// Whether the model supports vision/image input
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_vision: Option<bool>,
+
+    /// Whether the model supports tool/function calling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_tool_use: Option<bool>,
+
+    /// Quantization bits per weight (e.g., 4.0, 8.0)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantization_bits: Option<f32>,
 }
 
 /// Fetch model metadata from an endpoint
@@ -85,6 +102,9 @@ pub async fn get_model_metadata(
     match endpoint_type {
         EndpointType::Xllm => xllm::get_xllm_model_metadata(client, base_url, api_key, model).await,
         EndpointType::Ollama => ollama::get_ollama_model_metadata(client, base_url, model).await,
+        EndpointType::LmStudio => {
+            lm_studio::get_lm_studio_model_metadata(client, base_url, api_key, model).await
+        }
         EndpointType::Vllm => {
             // vLLM doesn't have a standard metadata endpoint
             // Return minimal metadata
@@ -125,6 +145,10 @@ mod tests {
             quantization: Some("Q4_K_M".to_string()),
             family: Some("llama".to_string()),
             parameter_size: Some("1B".to_string()),
+            format: None,
+            supports_vision: None,
+            supports_tool_use: None,
+            quantization_bits: None,
         };
 
         let json = serde_json::to_string(&metadata).unwrap();
@@ -167,5 +191,68 @@ mod tests {
             err.to_string(),
             "Metadata retrieval not supported for endpoint type: unknown"
         );
+    }
+
+    #[test]
+    fn test_model_metadata_new_fields_default() {
+        let metadata = ModelMetadata::default();
+        assert!(metadata.format.is_none());
+        assert!(metadata.supports_vision.is_none());
+        assert!(metadata.supports_tool_use.is_none());
+        assert!(metadata.quantization_bits.is_none());
+    }
+
+    #[test]
+    fn test_model_metadata_new_fields_serialization() {
+        let metadata = ModelMetadata {
+            model: "test-model".to_string(),
+            context_length: None,
+            size_bytes: None,
+            quantization: None,
+            family: None,
+            parameter_size: None,
+            format: Some("gguf".to_string()),
+            supports_vision: Some(true),
+            supports_tool_use: Some(false),
+            quantization_bits: Some(4.5),
+        };
+
+        let json = serde_json::to_string(&metadata).unwrap();
+        assert!(json.contains("\"format\":\"gguf\""));
+        assert!(json.contains("\"supports_vision\":true"));
+        assert!(json.contains("\"supports_tool_use\":false"));
+        assert!(json.contains("\"quantization_bits\":4.5"));
+    }
+
+    #[test]
+    fn test_model_metadata_new_fields_skip_none() {
+        let metadata = ModelMetadata {
+            model: "test-model".to_string(),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&metadata).unwrap();
+        assert!(!json.contains("format"));
+        assert!(!json.contains("supports_vision"));
+        assert!(!json.contains("supports_tool_use"));
+        assert!(!json.contains("quantization_bits"));
+    }
+
+    #[test]
+    fn test_model_metadata_new_fields_deserialization() {
+        let json = r#"{
+            "model": "vision-model",
+            "format": "gguf",
+            "supports_vision": true,
+            "supports_tool_use": true,
+            "quantization_bits": 8.0
+        }"#;
+
+        let metadata: ModelMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(metadata.model, "vision-model");
+        assert_eq!(metadata.format, Some("gguf".to_string()));
+        assert_eq!(metadata.supports_vision, Some(true));
+        assert_eq!(metadata.supports_tool_use, Some(true));
+        assert_eq!(metadata.quantization_bits, Some(8.0));
     }
 }

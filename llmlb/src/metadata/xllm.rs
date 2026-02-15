@@ -94,6 +94,7 @@ pub async fn get_xllm_model_metadata(
         quantization: info.quantization,
         family: info.family,
         parameter_size: info.parameter_size,
+        ..Default::default()
     })
 }
 

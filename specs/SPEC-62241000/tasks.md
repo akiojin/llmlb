@@ -98,7 +98,7 @@
 **独立テスト**: APIキーの各フェーズで動作検証
 
 - [ ] T017 [US4] `llmlb/tests/e2e-playwright/specs/api/api-key-lifecycle.spec.ts` を新規作成。以下のテストケースを実装:
-  1. `AKL-01`: ダッシュボードからAPIキー作成→コピー→そのキーでAPIアクセス成功
+  1. `AKL-01`: ダッシュボードからAPIキー作成→コピー実行→`Failed to copy`非表示→そのキーでAPIアクセス成功
   2. `AKL-02`: 有効期限付きAPIキーをAPI直接作成 (expires_at を過去日時に設定)→APIアクセス→401
   3. `AKL-03`: 有効なAPIキー存在→ダッシュボードから削除→そのキーでAPIアクセス→401
   4. `AKL-04`: 複数APIキー存在（有効+期限切れ）→API Keys一覧表示→期限切れキーに「Expired」バッジ確認

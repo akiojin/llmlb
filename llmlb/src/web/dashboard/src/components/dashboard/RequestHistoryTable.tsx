@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { type RequestHistoryItem } from '@/lib/api'
-import { formatDuration, formatRelativeTime, cn } from '@/lib/utils'
+import { copyToClipboard, formatDuration, formatRelativeTime, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -59,9 +59,9 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
     currentPage * pageSize
   )
 
-  const copyToClipboard = async (text: string, field: string) => {
+  const handleCopy = async (text: string, field: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       setCopiedField(field)
       setTimeout(() => setCopiedField(null), 2000)
       toast({ title: 'Copied to clipboard' })
@@ -322,7 +322,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     size="sm"
                     className="absolute right-2 top-2"
                     onClick={() =>
-                      copyToClipboard(
+                      handleCopy(
                         serializeBody(selectedRequest.request_body, 'request'),
                         'request'
                       )
@@ -349,7 +349,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     size="sm"
                     className="absolute right-2 top-2"
                     onClick={() =>
-                      copyToClipboard(
+                      handleCopy(
                         serializeBody(selectedRequest.response_body, 'response'),
                         'response'
                       )

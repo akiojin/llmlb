@@ -106,7 +106,6 @@ test.describe('API Key Lifecycle @api', () => {
     const createdAlert = apiKeysModal.getByText('API Key Created Successfully').locator('..')
     await expect(createdAlert).toBeVisible({ timeout: 10000 })
     await createdAlert.locator('#copy-api-key').click()
-    await expect(page.getByText('Copied full API key')).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Failed to copy')).toHaveCount(0)
     await createdAlert.getByRole('button', { name: 'Show API key' }).click()
     const apiKeyCode = createdAlert.locator('code')

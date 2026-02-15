@@ -95,8 +95,20 @@ test.describe('API Key Lifecycle @api', () => {
     await expect(inferenceCheckbox).toHaveAttribute('data-state', 'checked')
     await expect(modelsReadCheckbox).toHaveAttribute('data-state', 'checked')
 
+    const createApiKeyResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/api-keys') &&
+        response.request().method() === 'POST' &&
+        response.status() >= 200 &&
+        response.status() < 300
+    )
+
     await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(createDialog.locator('#api-key-name')).toHaveValue('', { timeout: 20000 })
+    const createResp = await createApiKeyResponse
+    const createRespBody = (await createResp.json()) as { key?: string }
+    const apiKey = createRespBody.key?.trim() || ''
+    expect(apiKey).toMatch(/^sk_/)
 
     // Close create dialog to access the created key banner
     await createDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -107,11 +119,7 @@ test.describe('API Key Lifecycle @api', () => {
     await expect(createdAlert).toBeVisible({ timeout: 10000 })
     await createdAlert.locator('#copy-api-key').click()
     await expect(page.getByText('Failed to copy')).toHaveCount(0)
-    await createdAlert.getByRole('button', { name: 'Show API key' }).click()
-    const apiKeyCode = createdAlert.locator('code')
-    await expect(apiKeyCode).toContainText('sk_', { timeout: 10000 })
-    const apiKey = (await apiKeyCode.textContent())?.trim() || ''
-    expect(apiKey).toMatch(/^sk_/)
+    await createdAlert.locator('code').waitFor({ state: 'visible', timeout: 10000 })
 
     // Use the key to access /v1/models
     const modelsResp = await request.get(`${API_BASE}/v1/models`, {

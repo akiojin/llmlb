@@ -104,25 +104,8 @@ export function copyToClipboard(text: string): Promise<void> {
     return Promise.reject(new Error('Clipboard value is empty'))
   }
 
-  const persistForManualFallback = () => {
-    if (typeof window === 'undefined' || !window.localStorage) {
-      return
-    }
-
-    try {
-      window.localStorage.setItem('llmlb-fallback-clipboard', text)
-    } catch {
-      // Ignore localStorage write failures; clipboard copy should remain a
-      // best-effort UX in restricted browser contexts.
-    }
-  }
-
   const fallbackCopy = async (): Promise<void> => {
-    try {
-      await fallbackCopyToClipboard(text)
-    } catch {
-      persistForManualFallback()
-    }
+    return fallbackCopyToClipboard(text)
   }
 
   if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {

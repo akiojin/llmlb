@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { endpointsApi, chatApi, ApiError, type DashboardEndpoint } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { copyToClipboard, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -385,9 +385,9 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   }
 
   // Copy to clipboard
-  const copyToClipboard = async (text: string) => {
+  const handleCopyCurl = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Copied to clipboard' })
@@ -867,7 +867,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
               variant="outline"
               size="sm"
               className="absolute right-2 top-2"
-              onClick={() => copyToClipboard(generateCurl())}
+              onClick={() => void handleCopyCurl(generateCurl())}
               disabled={!hasBaseUrl}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

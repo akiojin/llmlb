@@ -1,5 +1,18 @@
 # Unreleased
 
+# [4.3.0](https://github.com/akiojin/llmlb/compare/v4.2.1...v4.3.0) (2026-02-16)
+
+### Features
+
+- Modelsタブにリクエスト数カラム追加とStatus/Readyカラム統合
+- 手動アップデートチェック機能を追加 (#406)
+
+### Bug Fixes
+
+- ダッシュボードのモデルエンドポイントスコーピングとmax token伝播を修正 (#407)
+- release.yml npm versionエラーとPRマージ時のskip問題を修正
+- HF APIタイムアウト時のインテグレーションテスト失敗を修正
+
 # [4.2.1](https://github.com/akiojin/llmlb/compare/v4.2.0...v4.2.1) (2026-02-15)
 
 ### Bug Fixes

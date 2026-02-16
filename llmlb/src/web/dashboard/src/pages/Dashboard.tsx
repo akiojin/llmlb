@@ -3,12 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import {
   dashboardApi,
   systemApi,
+  modelsApi,
   type SystemInfo,
   type UpdateState,
   type DashboardOverview,
   type DashboardEndpoint,
   type RequestHistoryItem,
   type RequestResponsesPage,
+  type RegisteredModelView,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
@@ -16,12 +18,13 @@ import { toast } from '@/hooks/use-toast'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { EndpointTable } from '@/components/dashboard/EndpointTable'
+import { ModelsTable } from '@/components/dashboard/ModelsTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, RefreshCcw } from 'lucide-react'
+import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, Package, RefreshCcw } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -65,6 +68,13 @@ export default function Dashboard() {
       queryKey: ['request-responses'],
       queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
       refetchInterval: pollingInterval,
+    })
+
+  // SPEC-8795f98f: Fetch models for Models tab
+  const { data: modelsData, isLoading: isLoadingModels, refetch: refetchModels } =
+    useQuery<RegisteredModelView[]>({
+      queryKey: ['dashboard-models'],
+      queryFn: () => modelsApi.getRegistered(),
     })
 
   // SPEC-66555000: Fetch endpoints list
@@ -310,10 +320,14 @@ export default function Dashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="endpoints" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
             <TabsTrigger value="endpoints" className="gap-2">
               <Globe className="h-4 w-4" />
               <span className="hidden sm:inline">Endpoints</span>
+            </TabsTrigger>
+            <TabsTrigger value="models" className="gap-2">
+              <Package className="h-4 w-4" />
+              <span className="hidden sm:inline">Models</span>
             </TabsTrigger>
             <TabsTrigger value="statistics" className="gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -331,6 +345,15 @@ export default function Dashboard() {
 
           <TabsContent value="endpoints" className="animate-fade-in">
             <EndpointTable endpoints={endpointsData || []} isLoading={isLoadingEndpoints} />
+          </TabsContent>
+
+          <TabsContent value="models" className="animate-fade-in">
+            <ModelsTable
+              models={modelsData || []}
+              endpoints={endpointsData || []}
+              isLoading={isLoadingModels}
+              onRefresh={() => refetchModels()}
+            />
           </TabsContent>
 
           <TabsContent value="statistics" className="animate-fade-in">

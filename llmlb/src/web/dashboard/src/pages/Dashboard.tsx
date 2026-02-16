@@ -20,7 +20,7 @@ import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, RefreshCcw } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
   const fetchStartRef = useRef<number | null>(null)
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
 
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
@@ -91,11 +92,12 @@ export default function Dashboard() {
 
   const updateBanner = useMemo(() => {
     const update = systemInfo?.update as UpdateState | undefined
-    if (!update || update.state === 'up_to_date') return null
+    if (!update) return null
 
     const isAdmin = user?.role === 'admin'
     const canApply = isAdmin && (update.state === 'available' || update.state === 'failed')
     const applying = update.state === 'draining' || update.state === 'applying'
+    const canCheck = isAdmin && !applying
 
     let title = 'Update'
     let description = ''
@@ -115,6 +117,15 @@ export default function Dashboard() {
       } else {
         payloadHint = 'Preparing...'
       }
+    } else if (update.state === 'up_to_date') {
+      title = 'Up to date'
+      const checkedAt = update.checked_at ?? null
+      if (checkedAt) {
+        const asDate = new Date(checkedAt)
+        description = `Last checked: ${Number.isNaN(asDate.valueOf()) ? checkedAt : asDate.toLocaleString()}`
+      } else {
+        description = 'Last checked: unknown'
+      }
     } else if (update.state === 'draining') {
       title = `Updating to v${update.latest}`
       description = `Waiting for in-flight requests: ${update.in_flight}`
@@ -125,6 +136,25 @@ export default function Dashboard() {
       title = 'Update failed'
       description = update.message
       link = update.release_url || null
+    }
+
+    const onCheck = async () => {
+      setIsCheckingUpdate(true)
+      try {
+        await systemApi.checkUpdate()
+        toast({
+          title: 'Checked for updates',
+        })
+      } catch (e) {
+        toast({
+          title: 'Update check failed',
+          description: e instanceof Error ? e.message : String(e),
+          variant: 'destructive',
+        })
+      } finally {
+        setIsCheckingUpdate(false)
+        await refetchSystemInfo()
+      }
     }
 
     const onApply = async () => {
@@ -190,9 +220,9 @@ export default function Dashboard() {
                 </a>
               )}
               <button
-                onClick={onApply}
-                disabled={!canApply || isApplyingUpdate || applying}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                onClick={onCheck}
+                disabled={!canCheck || isCheckingUpdate || isApplyingUpdate}
+                className="inline-flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm hover:bg-background disabled:opacity-50"
                 title={
                   !isAdmin
                     ? 'Admin role is required'
@@ -201,19 +231,40 @@ export default function Dashboard() {
                     : undefined
                 }
               >
-                {isApplyingUpdate ? (
+                {isCheckingUpdate ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <ArrowUpCircle className="h-4 w-4" />
+                  <RefreshCcw className="h-4 w-4" />
                 )}
-                Restart to update
+                Check for updates
               </button>
+              {(update.state === 'available' || update.state === 'failed' || applying) && (
+                <button
+                  onClick={onApply}
+                  disabled={!canApply || isApplyingUpdate || applying}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                  title={
+                    !isAdmin
+                      ? 'Admin role is required'
+                      : applying
+                      ? 'Update is in progress'
+                      : undefined
+                  }
+                >
+                  {isApplyingUpdate ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowUpCircle className="h-4 w-4" />
+                  )}
+                  Restart to update
+                </button>
+              )}
             </div>
           </div>
         </div>
       </section>
     )
-  }, [systemInfo?.update, user?.role, isApplyingUpdate, refetchSystemInfo])
+  }, [systemInfo?.update, user?.role, isApplyingUpdate, isCheckingUpdate, refetchSystemInfo])
 
   if (error) {
     return (

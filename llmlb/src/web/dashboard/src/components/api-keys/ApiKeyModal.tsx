@@ -6,7 +6,7 @@ import {
   type ApiKeyPermission,
   type CreateApiKeyResponse,
 } from '@/lib/api'
-import { formatRelativeTime } from '@/lib/utils'
+import { copyToClipboard, formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -174,17 +174,12 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     }
   }, [createOpen])
 
-  const copyToClipboard = async (
-    text: string,
-    id: string,
-    toastTitle = 'Copied to clipboard',
-    toastDescription?: string
-  ) => {
+  const handleCopy = async (text: string, id: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 2000)
-      toast({ title: toastTitle, description: toastDescription })
+      toast({ title: 'Copied full API key' })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
     }
@@ -334,8 +329,9 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     {showKey === 'created' ? createdKey : '•'.repeat(32)}
                   </code>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
+                    aria-label={showKey === 'created' ? 'Hide API key' : 'Show API key'}
                     onClick={() => setShowKey(showKey === 'created' ? null : 'created')}
                   >
                     {showKey === 'created' ? (
@@ -346,11 +342,12 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   </Button>
                   <Button
                     id="copy-api-key"
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
                     aria-label="Copy full API key"
                     title="Copy full API key"
-                    onClick={() => copyToClipboard(createdKey, 'created', 'Copied full API key')}
+                    data-copied={copiedId === 'created' ? 'true' : 'false'}
+                    onClick={() => handleCopy(createdKey, 'created')}
                   >
                     {copiedId === 'created' ? (
                       <Check className="h-4 w-4" />
@@ -424,7 +421,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => setDeleteKey(key)}

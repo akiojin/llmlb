@@ -111,6 +111,8 @@ function getTypeLabel(type: EndpointType): string {
       return 'Ollama'
     case 'vllm':
       return 'vLLM'
+    case 'lm_studio':
+      return 'LM Studio'
     case 'openai_compatible':
       return 'OpenAI'
     case 'unknown':
@@ -141,6 +143,8 @@ function getTypeBadgeVariant(
     case 'ollama':
       return 'secondary'
     case 'vllm':
+      return 'secondary'
+    case 'lm_studio':
       return 'secondary'
     case 'openai_compatible':
       return 'outline'
@@ -387,6 +391,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 <SelectItem value="xllm">xLLM</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
                 <SelectItem value="vllm">vLLM</SelectItem>
+                <SelectItem value="lm_studio">LM Studio</SelectItem>
                 <SelectItem value="openai_compatible">OpenAI</SelectItem>
                 <SelectItem value="unknown">Unknown</SelectItem>
               </SelectContent>
@@ -513,7 +518,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => setSelectedEndpoint(endpoint)}
                             title="Details"
@@ -521,7 +526,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             <Info className="h-4 w-4" />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => handleTest(endpoint)}
                             disabled={isTesting === endpoint.id}
@@ -532,7 +537,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => handleSync(endpoint)}
                             disabled={isSyncing === endpoint.id || endpoint.status !== 'online'}
@@ -543,7 +548,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                             />
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={() => setDeletingEndpoint(endpoint)}
                             title="Delete"

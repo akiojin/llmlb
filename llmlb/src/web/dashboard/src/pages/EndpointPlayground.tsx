@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { endpointsApi, chatApi, ApiError, type DashboardEndpoint } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { copyToClipboard, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -385,9 +385,9 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   }
 
   // Copy to clipboard
-  const copyToClipboard = async (text: string) => {
+  const handleCopyCurl = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Copied to clipboard' })
@@ -467,7 +467,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             Back to Dashboard
           </Button>
           <Button
-            variant="ghost"
+            variant="outline"
             className="w-full justify-start"
             onClick={() => setSettingsOpen(true)}
           >
@@ -668,24 +668,28 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
                           className="h-16 w-16 object-cover"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <button
+                          <Button
+                            variant="destructive"
+                            size="icon"
                             onClick={() => removeAttachment(idx)}
-                            className="text-white bg-destructive rounded-full p-1 hover:bg-destructive/80"
+                            className="rounded-full p-1 h-auto w-auto"
                           >
                             <X className="h-3 w-3" />
-                          </button>
+                          </Button>
                         </div>
                       </>
                     )}
                     {attachment.type === 'audio' && (
                       <div className="h-16 w-16 flex flex-col items-center justify-center bg-muted gap-1">
                         <Mic className="h-5 w-5 text-muted-foreground" />
-                        <button
+                        <Button
+                          variant="destructive"
+                          size="icon"
                           onClick={() => removeAttachment(idx)}
-                          className="absolute -top-2 -right-2 text-white bg-destructive rounded-full p-0.5 hover:bg-destructive/80"
+                          className="absolute -top-2 -right-2 rounded-full p-0.5 h-auto w-auto"
                         >
                           <X className="h-3 w-3" />
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -860,10 +864,10 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           </DialogHeader>
           <div className="relative">
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               className="absolute right-2 top-2"
-              onClick={() => copyToClipboard(generateCurl())}
+              onClick={() => void handleCopyCurl(generateCurl())}
               disabled={!hasBaseUrl}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

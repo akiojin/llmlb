@@ -1,5 +1,38 @@
 # Unreleased
 
+# [4.2.1](https://github.com/akiojin/llmlb/compare/v4.2.0...v4.2.1) (2026-02-15)
+
+### Bug Fixes
+
+- APIキーコピーフローの安定化とE2Eテスト改善 (#404)
+- ロードバランサーの失効アクティブカウンタによるキュータイムアウトを防止 (#402)
+- ダッシュボードのボタン視認性・押下フィードバック改善 (SPEC-adc9200e) (#400)
+- direct-routeロード漏洩防止と部分エクスポート失敗修正 (#399)
+- ダッシュボードトップカードのリクエスト合計を永続化 (#398)
+
+### Chores
+
+- npm/yarnグループの依存関係を11件更新 (#390)
+
+# [4.2.0](https://github.com/akiojin/llmlb/compare/v4.1.0...v4.2.0) (2026-02-13)
+
+### Features
+
+- セルフアップデート通知・ドレイン・適用・再起動機能を追加 (#394)
+
+### Bug Fixes
+
+- ダッシュボードのボタン視認性・押下フィードバックを改善 (#396)
+- リクエスト履歴モーダルのタブ切替時にボタンが維持されるよう修正 (#395)
+
+### CI
+
+- develop→main PR許可とcoverageのpest_generator存在チェックを追加
+
+### Chores
+
+- rand 0.10, zip 7, clap 4.5.58 にメジャーアップデート
+
 # [4.1.0](https://github.com/akiojin/llmlb/compare/v4.0.0...v4.1.0) (2026-02-13)
 
 ### Features

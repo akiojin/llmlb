@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { type RequestHistoryItem } from '@/lib/api'
-import { formatDuration, formatRelativeTime, cn } from '@/lib/utils'
+import { copyToClipboard, formatDuration, formatRelativeTime, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -59,14 +59,26 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
     currentPage * pageSize
   )
 
-  const copyToClipboard = async (text: string, field: string) => {
+  const handleCopy = async (text: string, field: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       setCopiedField(field)
       setTimeout(() => setCopiedField(null), 2000)
       toast({ title: 'Copied to clipboard' })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
+    }
+  }
+
+  const serializeBody = (body: unknown, kind: 'request' | 'response') => {
+    try {
+      const value = JSON.stringify(body, null, 2)
+      if (value === undefined) {
+        return `No ${kind} body`
+      }
+      return value
+    } catch {
+      return `Unable to display ${kind} body`
     }
   }
 
@@ -232,7 +244,10 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
       </Card>
 
       {/* Request Detail Modal */}
-      <Dialog open={!!selectedRequest} onOpenChange={() => setSelectedRequest(null)}>
+      <Dialog
+        open={!!selectedRequest}
+        onOpenChange={(open) => !open && setSelectedRequest(null)}
+      >
         <DialogContent id="request-modal" className="max-w-2xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -303,12 +318,12 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
               <TabsContent value="request" className="mt-4">
                 <div className="relative">
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className="absolute right-2 top-2"
                     onClick={() =>
-                      copyToClipboard(
-                        JSON.stringify(selectedRequest.request_body, null, 2),
+                      handleCopy(
+                        serializeBody(selectedRequest.request_body, 'request'),
                         'request'
                       )
                     }
@@ -321,7 +336,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
                     <pre className="p-4 text-xs">
-                      {JSON.stringify(selectedRequest.request_body, null, 2) || 'No request body'}
+                      {serializeBody(selectedRequest.request_body, 'request')}
                     </pre>
                   </ScrollArea>
                 </div>
@@ -330,12 +345,12 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
               <TabsContent value="response" className="mt-4">
                 <div className="relative">
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className="absolute right-2 top-2"
                     onClick={() =>
-                      copyToClipboard(
-                        JSON.stringify(selectedRequest.response_body, null, 2),
+                      handleCopy(
+                        serializeBody(selectedRequest.response_body, 'response'),
                         'response'
                       )
                     }
@@ -348,7 +363,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
                     <pre className="p-4 text-xs">
-                      {JSON.stringify(selectedRequest.response_body, null, 2) || 'No response body'}
+                      {serializeBody(selectedRequest.response_body, 'response')}
                     </pre>
                   </ScrollArea>
                 </div>

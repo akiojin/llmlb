@@ -11,7 +11,10 @@ use axum::{
 };
 use llmlb::common::auth::UserRole;
 use llmlb::common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
-use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
+use llmlb::{
+    api, balancer::LoadManager, db::endpoints as db_endpoints,
+    registry::endpoints::EndpointRegistry, types::endpoint::Endpoint, AppState,
+};
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -148,6 +151,133 @@ async fn test_dashboard_stats_endpoint() {
         stats["total_tokens"].as_u64(),
         Some(200),
         "total_tokens should come from request_history"
+    );
+}
+
+#[tokio::test]
+async fn test_dashboard_overview_stats_reflects_persisted_request_totals() {
+    let (app, db_pool, jwt) = build_app().await;
+
+    let endpoint = Endpoint::new(
+        "Overview Persistence Test".to_string(),
+        "http://127.0.0.1:65500".to_string(),
+    );
+    db_endpoints::create_endpoint(&db_pool, &endpoint)
+        .await
+        .expect("create endpoint");
+
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
+        .await
+        .expect("increment failed request counter");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/overview")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/dashboard/overview should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let overview: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let stats = overview["stats"]
+        .as_object()
+        .expect("overview should include stats");
+
+    assert_eq!(
+        stats["total_requests"].as_u64(),
+        Some(3),
+        "Total requests in overview should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["successful_requests"].as_u64(),
+        Some(2),
+        "Successful requests in overview should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["failed_requests"].as_u64(),
+        Some(1),
+        "Failed requests in overview should reflect persisted endpoint counters"
+    );
+}
+
+#[tokio::test]
+async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
+    let (app, db_pool, jwt) = build_app().await;
+
+    let endpoint = Endpoint::new(
+        "Stats Persistence Test".to_string(),
+        "http://127.0.0.1:65535".to_string(),
+    );
+    db_endpoints::create_endpoint(&db_pool, &endpoint)
+        .await
+        .expect("create endpoint");
+
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
+        .await
+        .expect("increment failed request counter");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/stats")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "GET /api/dashboard/stats should return OK"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let stats: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(
+        stats["total_requests"].as_u64(),
+        Some(3),
+        "Total requests should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["successful_requests"].as_u64(),
+        Some(2),
+        "Successful requests should reflect persisted endpoint counters"
+    );
+    assert_eq!(
+        stats["failed_requests"].as_u64(),
+        Some(1),
+        "Failed requests should reflect persisted endpoint counters"
     );
 }
 

@@ -181,7 +181,13 @@ export interface SyncProgress {
  * SPEC-66555000: Router-Driven Endpoint Registration System
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
-export type EndpointType = 'xllm' | 'ollama' | 'vllm' | 'openai_compatible' | 'unknown'
+export type EndpointType =
+  | 'xllm'
+  | 'ollama'
+  | 'vllm'
+  | 'lm_studio'
+  | 'openai_compatible'
+  | 'unknown'
 export type EndpointTypeSource = 'auto' | 'manual'
 
 export interface DashboardEndpoint {

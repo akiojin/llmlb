@@ -53,12 +53,26 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
         .select_idle_endpoint_for_model(model_id)
         .await?
     {
-        Some(endpoint) => Ok(QueueSelection::Ready {
-            endpoint: Box::new(endpoint),
-            queued_wait_ms: None,
-        }),
+        Some(endpoint) => {
+            tracing::debug!(
+                model = %model_id,
+                endpoint_id = %endpoint.id,
+                endpoint_name = %endpoint.name,
+                "Selected idle endpoint immediately"
+            );
+            Ok(QueueSelection::Ready {
+                endpoint: Box::new(endpoint),
+                queued_wait_ms: None,
+            })
+        }
         None => {
             let wait_start = Instant::now();
+            tracing::debug!(
+                model = %model_id,
+                max_waiters = queue_config.max_waiters,
+                timeout_secs = queue_config.timeout.as_secs(),
+                "No idle endpoint available; waiting in queue"
+            );
             match state
                 .load_manager
                 .wait_for_idle_node_with_timeout_for_model(
@@ -68,20 +82,49 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
                 )
                 .await
             {
-                WaitResult::CapacityExceeded => Ok(QueueSelection::CapacityExceeded),
-                WaitResult::Timeout => Ok(QueueSelection::Timeout {
-                    waited_ms: wait_start.elapsed().as_millis(),
-                }),
+                WaitResult::CapacityExceeded => {
+                    tracing::warn!(
+                        model = %model_id,
+                        max_waiters = queue_config.max_waiters,
+                        "Request queue capacity exceeded while waiting for idle endpoint"
+                    );
+                    Ok(QueueSelection::CapacityExceeded)
+                }
+                WaitResult::Timeout => {
+                    let waited_ms = wait_start.elapsed().as_millis();
+                    tracing::warn!(
+                        model = %model_id,
+                        waited_ms = waited_ms,
+                        "Timed out waiting for idle endpoint"
+                    );
+                    Ok(QueueSelection::Timeout { waited_ms })
+                }
                 WaitResult::Ready => match state
                     .load_manager
                     .select_idle_endpoint_for_model(model_id)
                     .await?
                 {
-                    Some(endpoint) => Ok(QueueSelection::Ready {
-                        endpoint: Box::new(endpoint),
-                        queued_wait_ms: Some(wait_start.elapsed().as_millis()),
-                    }),
-                    None => Err(LbError::NoNodesAvailable),
+                    Some(endpoint) => {
+                        let queued_wait_ms = wait_start.elapsed().as_millis();
+                        tracing::debug!(
+                            model = %model_id,
+                            endpoint_id = %endpoint.id,
+                            endpoint_name = %endpoint.name,
+                            queued_wait_ms = queued_wait_ms,
+                            "Selected endpoint after queue wait"
+                        );
+                        Ok(QueueSelection::Ready {
+                            endpoint: Box::new(endpoint),
+                            queued_wait_ms: Some(queued_wait_ms),
+                        })
+                    }
+                    None => {
+                        tracing::warn!(
+                            model = %model_id,
+                            "Queue waiter was notified but no idle endpoint became selectable"
+                        );
+                        Err(LbError::NoNodesAvailable)
+                    }
                 },
             }
         }

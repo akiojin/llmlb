@@ -312,12 +312,17 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
+    let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
     {
         let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
                 for model in models {
+                    endpoint_model_ids
+                        .entry(model.model_id.clone())
+                        .or_default()
+                        .insert(ep.id.to_string());
                     let apis = endpoint_model_apis
                         .entry(model.model_id.clone())
                         .or_default();
@@ -361,6 +366,14 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             .get(model_id)
             .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
             .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+        let endpoint_ids: Vec<String> = endpoint_model_ids
+            .get(model_id)
+            .map(|ids| {
+                let mut ids: Vec<String> = ids.iter().cloned().collect();
+                ids.sort();
+                ids
+            })
+            .unwrap_or_default();
 
         if let Some(m) = registered_map.get(model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();
@@ -383,6 +396,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "chat_template": m.chat_template,
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+                "endpoint_ids": endpoint_ids,
             });
             data.push(obj);
         } else {
@@ -396,6 +410,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "ready": ready,
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+                "endpoint_ids": endpoint_ids,
             });
             data.push(obj);
         }
@@ -409,6 +424,14 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         seen_models.insert(model_id.clone());
 
         let supported_apis: Vec<String> = apis.iter().map(|a| a.as_str().to_string()).collect();
+        let endpoint_ids: Vec<String> = endpoint_model_ids
+            .get(model_id)
+            .map(|ids| {
+                let mut ids: Vec<String> = ids.iter().cloned().collect();
+                ids.sort();
+                ids
+            })
+            .unwrap_or_default();
         let obj = json!({
             "id": model_id,
             "object": "model",
@@ -419,6 +442,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "ready": true,
             "supported_apis": supported_apis,
             "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+            "endpoint_ids": endpoint_ids,
         });
         data.push(obj);
     }
@@ -441,6 +465,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "ready": true,
             "supported_apis": vec!["chat_completions"],
             "max_tokens": null,
+            "endpoint_ids": Vec::<String>::new(),
         });
         data.push(obj);
     }

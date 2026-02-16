@@ -678,6 +678,7 @@ export interface OpenAIModel {
   description?: string
   chat_template?: string
   max_tokens?: number | null
+  endpoint_ids?: string[]
 }
 
 // /api/models/discover-gguf response types
@@ -723,6 +724,8 @@ export interface RegisteredModelView {
   tags: string[]
   capabilities?: ModelCapabilities
   chat_template?: string
+  max_tokens?: number | null
+  endpoint_ids?: string[]
 }
 
 // OpenAIModel を RegisteredModelView に変換
@@ -748,6 +751,8 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
     capabilities: model.capabilities,
     tags: model.tags ?? [],
     chat_template: model.chat_template,
+    max_tokens: model.max_tokens,
+    endpoint_ids: model.endpoint_ids ?? [],
   }
 }
 
@@ -772,6 +777,7 @@ export interface AggregatedModel {
   ready: boolean
   capabilities: ModelCapabilities
   endpointCount: number
+  endpointIds: string[]
   ownedBy?: string
   source?: string
   sizeBytes?: number
@@ -825,6 +831,8 @@ export function aggregateModels(models: RegisteredModelView[]): AggregatedModel[
     let repo: string | undefined
     let filename: string | undefined
     let chatTemplate: string | undefined
+    let maxTokens: number | null | undefined
+    const endpointIds = new Set<string>()
 
     for (const m of group) {
       if (LIFECYCLE_PRIORITY[m.lifecycle_status] > LIFECYCLE_PRIORITY[bestStatus]) {
@@ -852,19 +860,34 @@ export function aggregateModels(models: RegisteredModelView[]): AggregatedModel[
       if (repo === undefined && m.repo) repo = m.repo
       if (filename === undefined && m.filename) filename = m.filename
       if (chatTemplate === undefined && m.chat_template) chatTemplate = m.chat_template
+      if (m.max_tokens !== undefined) {
+        if (m.max_tokens == null) {
+          if (maxTokens === undefined) maxTokens = null
+        } else {
+          maxTokens =
+            maxTokens == null || maxTokens === undefined
+              ? m.max_tokens
+              : Math.max(maxTokens, m.max_tokens)
+        }
+      }
+      for (const endpointId of m.endpoint_ids ?? []) {
+        endpointIds.add(endpointId)
+      }
     }
+    const endpointIdList = Array.from(endpointIds).sort()
 
     result.push({
       id,
       bestStatus,
       ready,
       capabilities: caps,
-      endpointCount: group.length,
+      endpointCount: endpointIdList.length,
+      endpointIds: endpointIdList,
       ownedBy,
       source,
       sizeBytes,
       requiredMemoryBytes,
-      maxTokens: null,
+      maxTokens: maxTokens ?? null,
       tags: allTags,
       description,
       repo,

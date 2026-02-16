@@ -608,11 +608,18 @@ function ModelRow({
   onToggleExpand: () => void
   endpoints: DashboardEndpoint[]
 }) {
+  const modelEndpointIdSet = new Set(model.endpointIds)
+  const modelEndpoints = endpoints.filter((ep) => modelEndpointIdSet.has(ep.id))
+
   return (
     <>
       <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onToggleExpand}>
         <TableCell className="w-8 px-2">
-          <Button variant="ghost" size="icon" className="h-6 w-6">
+          <Button
+            variant="secondary"
+            size="icon"
+            className="h-6 w-6 bg-transparent shadow-none hover:bg-muted/70"
+          >
             {isExpanded ? (
               <ChevronDown className="h-4 w-4" />
             ) : (
@@ -628,9 +635,9 @@ function ModelRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-7 w-7 bg-transparent shadow-none hover:bg-muted/70"
                   disabled={!model.ready}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -653,13 +660,19 @@ function ModelRow({
                 Endpoints ({model.endpointCount} source{model.endpointCount !== 1 ? 's' : ''})
               </div>
               <div className="space-y-1 rounded-md border bg-background">
-                {endpoints.map((ep) => (
-                  <EndpointStatsRow
-                    key={ep.id}
-                    endpoint={ep}
-                    modelId={model.id}
-                  />
-                ))}
+                {modelEndpoints.length > 0 ? (
+                  modelEndpoints.map((ep) => (
+                    <EndpointStatsRow
+                      key={ep.id}
+                      endpoint={ep}
+                      modelId={model.id}
+                    />
+                  ))
+                ) : (
+                  <div className="py-2 px-3 text-xs text-muted-foreground">
+                    No endpoints currently serve this model
+                  </div>
+                )}
               </div>
             </div>
           </TableCell>

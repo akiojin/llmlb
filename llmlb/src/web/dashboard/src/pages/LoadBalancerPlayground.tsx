@@ -338,8 +338,15 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
 
   // Keep selected model valid when model list changes
   useEffect(() => {
-    if (initialModel) return // Skip auto-selection when initialModel is set
     const models = Array.isArray(modelsData?.data) ? modelsData.data : []
+    const hasInitialModel = initialModel
+      ? models.some((model) => model.id === initialModel)
+      : false
+
+    if (hasInitialModel) {
+      return
+    }
+
     if (models.length === 0) {
       if (selectedModel) {
         setSelectedModel('')

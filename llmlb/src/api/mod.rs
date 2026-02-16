@@ -300,6 +300,7 @@ pub fn create_app(state: AppState) -> Router {
     // システムAPI（更新状態/適用）
     let system_routes = Router::new()
         .route("/system", get(system::get_system))
+        .route("/system/update/check", post(system::check_update))
         .route("/system/update/apply", post(system::apply_update));
     let system_routes = if auth_disabled {
         system_routes

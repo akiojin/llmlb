@@ -303,9 +303,30 @@ impl UpdateManager {
                         // Refresh state before applying (e.g., first click immediately after boot, or retry after failure).
                         if let Err(e) = mgr.check_and_maybe_download(true).await {
                             tracing::warn!("update check failed before apply: {e}");
+
+                            // If GitHub is temporarily unreachable, fall back to the cached state so we can still
+                            // apply a previously discovered update.
+                            let already_available = {
+                                let st = mgr.inner.state.read().await;
+                                matches!(&*st, UpdateState::Available { .. })
+                            };
+                            if !already_available {
+                                if let Some(cache) =
+                                    load_cache(&mgr.inner.cache_path).ok().flatten()
+                                {
+                                    if let Err(err) = mgr.apply_cache(cache).await {
+                                        tracing::warn!(
+                                            "update cache apply failed before apply: {err}"
+                                        );
+                                    }
+                                }
+                            }
                         }
 
-                        let is_available = matches!(*mgr.inner.state.read().await, UpdateState::Available { .. });
+                        let is_available = {
+                            let st = mgr.inner.state.read().await;
+                            matches!(&*st, UpdateState::Available { .. })
+                        };
                         if !is_available {
                             continue;
                         }

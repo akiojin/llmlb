@@ -277,6 +277,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
   const abortControllerRef = useRef<AbortController | null>(null)
   const loadTestStopRef = useRef(false)
   const loadTestAbortControllersRef = useRef<Set<AbortController>>(new Set())
+  const appliedInitialModelRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -329,12 +330,19 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
 
   // SPEC-8795f98f: Apply initialModel from URL parameter
   useEffect(() => {
-    if (!initialModel || !modelsData?.data) return
-    const exists = modelsData.data.some((m) => m.id === initialModel)
-    if (exists) {
-      setSelectedModel(initialModel)
+    if (!initialModel) {
+      appliedInitialModelRef.current = null
+      return
     }
-  }, [initialModel, modelsData])
+    if (!modelsData?.data) return
+
+    const exists = modelsData.data.some((m) => m.id === initialModel)
+    if (!exists) return
+    if (appliedInitialModelRef.current === initialModel) return
+
+    setSelectedModel(initialModel)
+    appliedInitialModelRef.current = initialModel
+  }, [initialModel, modelsData?.data])
 
   // Keep selected model valid when model list changes
   useEffect(() => {

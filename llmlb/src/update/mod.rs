@@ -241,6 +241,19 @@ impl UpdateManager {
         self.inner.state.read().await.clone()
     }
 
+    /// Force an update check now (ignores TTL cache).
+    ///
+    /// Intended for the dashboard "Check for updates" button.
+    pub async fn check_now(&self) -> Result<UpdateState> {
+        match self.check_and_maybe_download(true).await {
+            Ok(()) => Ok(self.state().await),
+            Err(err) => {
+                self.record_check_failure(err.to_string()).await;
+                Err(err)
+            }
+        }
+    }
+
     /// Return the current in-flight inference request count.
     pub async fn in_flight(&self) -> usize {
         self.inner.gate.in_flight()
@@ -265,8 +278,8 @@ impl UpdateManager {
         }
         let mgr = self.clone();
         tokio::spawn(async move {
-            if let Err(e) = mgr.check_and_maybe_download().await {
-                tracing::debug!("update check failed: {e}");
+            if let Err(e) = mgr.check_and_maybe_download(false).await {
+                tracing::warn!("update check failed: {e}");
             }
 
             let mut interval = tokio::time::interval(Duration::from_secs(60 * 60));
@@ -277,8 +290,8 @@ impl UpdateManager {
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
-                        if let Err(e) = mgr.check_and_maybe_download().await {
-                            tracing::debug!("update check failed: {e}");
+                        if let Err(e) = mgr.check_and_maybe_download(false).await {
+                            tracing::warn!("update check failed: {e}");
                         }
                     }
                     _ = mgr.inner.apply_notify.notified() => {
@@ -288,11 +301,32 @@ impl UpdateManager {
                         }
 
                         // Refresh state before applying (e.g., first click immediately after boot, or retry after failure).
-                        if let Err(e) = mgr.check_and_maybe_download().await {
+                        if let Err(e) = mgr.check_and_maybe_download(true).await {
                             tracing::warn!("update check failed before apply: {e}");
+
+                            // If GitHub is temporarily unreachable, fall back to the cached state so we can still
+                            // apply a previously discovered update.
+                            let already_available = {
+                                let st = mgr.inner.state.read().await;
+                                matches!(&*st, UpdateState::Available { .. })
+                            };
+                            if !already_available {
+                                if let Some(cache) =
+                                    load_cache(&mgr.inner.cache_path).ok().flatten()
+                                {
+                                    if let Err(err) = mgr.apply_cache(cache).await {
+                                        tracing::warn!(
+                                            "update cache apply failed before apply: {err}"
+                                        );
+                                    }
+                                }
+                            }
                         }
 
-                        let is_available = matches!(*mgr.inner.state.read().await, UpdateState::Available { .. });
+                        let is_available = {
+                            let st = mgr.inner.state.read().await;
+                            matches!(&*st, UpdateState::Available { .. })
+                        };
                         if !is_available {
                             continue;
                         }
@@ -324,37 +358,48 @@ impl UpdateManager {
         });
     }
 
-    async fn check_and_maybe_download(&self) -> Result<()> {
-        if let Some(cache) = load_cache(&self.inner.cache_path).ok().flatten() {
-            let age = Utc::now().signed_duration_since(cache.last_checked_at);
-            if age.to_std().unwrap_or(Duration::MAX) < self.inner.ttl {
-                self.apply_cache(cache).await?;
-                #[cfg(any(target_os = "windows", target_os = "macos"))]
-                {
-                    match &*self.inner.state.read().await {
-                        UpdateState::Available { latest, .. } => {
-                            notify_tray_available(&self.inner.tray_proxy, latest.clone()).await;
+    async fn check_and_maybe_download(&self, force: bool) -> Result<()> {
+        if !force {
+            if let Some(cache) = load_cache(&self.inner.cache_path).ok().flatten() {
+                let age = Utc::now().signed_duration_since(cache.last_checked_at);
+                if age.to_std().unwrap_or(Duration::MAX) < self.inner.ttl {
+                    self.apply_cache(cache).await?;
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
+                    {
+                        match &*self.inner.state.read().await {
+                            UpdateState::Available { latest, .. } => {
+                                notify_tray_available(&self.inner.tray_proxy, latest.clone()).await;
+                            }
+                            UpdateState::UpToDate { .. } => {
+                                notify_tray_up_to_date(&self.inner.tray_proxy).await;
+                            }
+                            _ => {}
                         }
-                        UpdateState::UpToDate { .. } => {
-                            notify_tray_up_to_date(&self.inner.tray_proxy).await;
-                        }
-                        _ => {}
                     }
+                    // Start download if update is available.
+                    if matches!(
+                        self.inner.state.read().await.clone(),
+                        UpdateState::Available { .. }
+                    ) {
+                        let _ = self.ensure_payload_ready().await;
+                    }
+                    return Ok(());
                 }
-                // Start download if update is available.
-                if matches!(
-                    self.inner.state.read().await.clone(),
-                    UpdateState::Available { .. }
-                ) {
-                    let _ = self.ensure_payload_ready().await;
-                }
-                return Ok(());
             }
         }
 
-        let release =
-            fetch_latest_release(&self.inner.http_client, &self.inner.owner, &self.inner.repo)
-                .await?;
+        let timeout = if force {
+            Duration::from_secs(10)
+        } else {
+            Duration::from_secs(2)
+        };
+        let release = fetch_latest_release(
+            &self.inner.http_client,
+            &self.inner.owner,
+            &self.inner.repo,
+            timeout,
+        )
+        .await?;
         let latest = parse_tag_to_version(&release.tag_name)?;
         if latest <= self.inner.current_version {
             *self.inner.state.write().await = UpdateState::UpToDate {
@@ -441,6 +486,35 @@ impl UpdateManager {
             checked_at: cache.last_checked_at,
         };
         Ok(())
+    }
+
+    async fn record_check_failure(&self, message: String) {
+        let mut st = self.inner.state.write().await;
+        let (latest, release_url) = match &*st {
+            UpdateState::Available {
+                latest,
+                release_url,
+                ..
+            } => (Some(latest.clone()), Some(release_url.clone())),
+            UpdateState::Draining { latest, .. } => (Some(latest.clone()), None),
+            UpdateState::Applying { latest, .. } => (Some(latest.clone()), None),
+            UpdateState::Failed {
+                latest,
+                release_url,
+                ..
+            } => (latest.clone(), release_url.clone()),
+            _ => (None, None),
+        };
+
+        *st = UpdateState::Failed {
+            latest,
+            release_url,
+            message: message.clone(),
+            failed_at: Utc::now(),
+        };
+
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        notify_tray_failed(&self.inner.tray_proxy, message).await;
     }
 
     async fn ensure_payload_ready(&self) -> Result<PayloadKind> {
@@ -681,6 +755,7 @@ async fn fetch_latest_release(
     client: &reqwest::Client,
     owner: &str,
     repo: &str,
+    timeout: Duration,
 ) -> Result<GitHubRelease> {
     let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
     let user_agent = format!("llmlb/{}", env!("CARGO_PKG_VERSION"));
@@ -688,7 +763,7 @@ async fn fetch_latest_release(
         .get(url)
         .header("accept", "application/vnd.github+json")
         .header("user-agent", user_agent)
-        .timeout(Duration::from_secs(2))
+        .timeout(timeout)
         .send()
         .await
         .context("Failed to call GitHub Releases API")?;

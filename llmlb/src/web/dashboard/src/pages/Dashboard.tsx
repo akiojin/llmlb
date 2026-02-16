@@ -3,12 +3,14 @@ import { useQuery } from '@tanstack/react-query'
 import {
   dashboardApi,
   systemApi,
+  modelsApi,
   type SystemInfo,
   type UpdateState,
   type DashboardOverview,
   type DashboardEndpoint,
   type RequestHistoryItem,
   type RequestResponsesPage,
+  type RegisteredModelView,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
@@ -16,12 +18,13 @@ import { toast } from '@/hooks/use-toast'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { EndpointTable } from '@/components/dashboard/EndpointTable'
+import { ModelsTable } from '@/components/dashboard/ModelsTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, Package, RefreshCcw } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -30,6 +33,7 @@ export default function Dashboard() {
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
   const fetchStartRef = useRef<number | null>(null)
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
 
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
@@ -66,6 +70,13 @@ export default function Dashboard() {
       refetchInterval: pollingInterval,
     })
 
+  // SPEC-8795f98f: Fetch models for Models tab
+  const { data: modelsData, isLoading: isLoadingModels, refetch: refetchModels } =
+    useQuery<RegisteredModelView[]>({
+      queryKey: ['dashboard-models'],
+      queryFn: () => modelsApi.getRegistered(),
+    })
+
   // SPEC-66555000: Fetch endpoints list
   const { data: endpointsData, isLoading: isLoadingEndpoints } = useQuery<DashboardEndpoint[]>({
     queryKey: ['dashboard-endpoints'],
@@ -92,11 +103,12 @@ export default function Dashboard() {
 
   const updateBanner = useMemo(() => {
     const update = systemInfo?.update as UpdateState | undefined
-    if (!update || update.state === 'up_to_date') return null
+    if (!update) return null
 
     const isAdmin = user?.role === 'admin'
     const canApply = isAdmin && (update.state === 'available' || update.state === 'failed')
     const applying = update.state === 'draining' || update.state === 'applying'
+    const canCheck = isAdmin && !applying
 
     let title = 'Update'
     let description = ''
@@ -116,6 +128,15 @@ export default function Dashboard() {
       } else {
         payloadHint = 'Preparing...'
       }
+    } else if (update.state === 'up_to_date') {
+      title = 'Up to date'
+      const checkedAt = update.checked_at ?? null
+      if (checkedAt) {
+        const asDate = new Date(checkedAt)
+        description = `Last checked: ${Number.isNaN(asDate.valueOf()) ? checkedAt : asDate.toLocaleString()}`
+      } else {
+        description = 'Last checked: unknown'
+      }
     } else if (update.state === 'draining') {
       title = `Updating to v${update.latest}`
       description = `Waiting for in-flight requests: ${update.in_flight}`
@@ -126,6 +147,25 @@ export default function Dashboard() {
       title = 'Update failed'
       description = update.message
       link = update.release_url || null
+    }
+
+    const onCheck = async () => {
+      setIsCheckingUpdate(true)
+      try {
+        await systemApi.checkUpdate()
+        toast({
+          title: 'Checked for updates',
+        })
+      } catch (e) {
+        toast({
+          title: 'Update check failed',
+          description: e instanceof Error ? e.message : String(e),
+          variant: 'destructive',
+        })
+      } finally {
+        setIsCheckingUpdate(false)
+        await refetchSystemInfo()
+      }
     }
 
     const onApply = async () => {
@@ -191,29 +231,50 @@ export default function Dashboard() {
                 </a>
               )}
               <Button
-                onClick={onApply}
-                disabled={!canApply || isApplyingUpdate || applying}
+                variant="outline"
+                onClick={onCheck}
+                disabled={!canCheck || isCheckingUpdate || isApplyingUpdate}
                 title={
                   !isAdmin
                     ? 'Admin role is required'
                     : applying
-                    ? 'Update is in progress'
-                    : undefined
+                      ? 'Update is in progress'
+                      : undefined
                 }
               >
-                {isApplyingUpdate ? (
+                {isCheckingUpdate ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <ArrowUpCircle className="h-4 w-4" />
+                  <RefreshCcw className="h-4 w-4" />
                 )}
-                Restart to update
+                Check for updates
               </Button>
+              {(update.state === 'available' || update.state === 'failed' || applying) && (
+                <Button
+                  onClick={onApply}
+                  disabled={!canApply || isApplyingUpdate || applying}
+                  title={
+                    !isAdmin
+                      ? 'Admin role is required'
+                      : applying
+                        ? 'Update is in progress'
+                        : undefined
+                  }
+                >
+                  {isApplyingUpdate ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowUpCircle className="h-4 w-4" />
+                  )}
+                  Restart to update
+                </Button>
+              )}
             </div>
           </div>
         </div>
       </section>
     )
-  }, [systemInfo?.update, user?.role, isApplyingUpdate, refetchSystemInfo])
+  }, [systemInfo?.update, user?.role, isApplyingUpdate, isCheckingUpdate, refetchSystemInfo])
 
   if (error) {
     return (
@@ -259,10 +320,14 @@ export default function Dashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="endpoints" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
             <TabsTrigger value="endpoints" className="gap-2">
               <Globe className="h-4 w-4" />
               <span className="hidden sm:inline">Endpoints</span>
+            </TabsTrigger>
+            <TabsTrigger value="models" className="gap-2">
+              <Package className="h-4 w-4" />
+              <span className="hidden sm:inline">Models</span>
             </TabsTrigger>
             <TabsTrigger value="statistics" className="gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -280,6 +345,15 @@ export default function Dashboard() {
 
           <TabsContent value="endpoints" className="animate-fade-in">
             <EndpointTable endpoints={endpointsData || []} isLoading={isLoadingEndpoints} />
+          </TabsContent>
+
+          <TabsContent value="models" className="animate-fade-in">
+            <ModelsTable
+              models={modelsData || []}
+              endpoints={endpointsData || []}
+              isLoading={isLoadingModels}
+              onRefresh={() => refetchModels()}
+            />
           </TabsContent>
 
           <TabsContent value="statistics" className="animate-fade-in">

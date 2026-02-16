@@ -19,6 +19,11 @@ struct SystemInfoResponse {
     update: crate::update::UpdateState,
 }
 
+#[derive(Debug, Serialize)]
+struct CheckUpdateResponse {
+    update: crate::update::UpdateState,
+}
+
 /// GET /api/system
 pub async fn get_system(State(state): State<AppState>) -> Response {
     let update = state.update_manager.state().await;
@@ -30,6 +35,30 @@ pub async fn get_system(State(state): State<AppState>) -> Response {
         update,
     })
     .into_response()
+}
+
+/// POST /api/system/update/check
+///
+/// Force an update check now (ignores TTL cache).
+///
+/// Admin only when auth is enabled.
+pub async fn check_update(
+    State(state): State<AppState>,
+    claims: Option<Extension<Claims>>,
+) -> Response {
+    if !crate::config::is_auth_disabled() {
+        let Some(Extension(claims)) = claims else {
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        };
+        if claims.role != UserRole::Admin {
+            return (StatusCode::FORBIDDEN, "Admin access required").into_response();
+        }
+    }
+
+    match state.update_manager.check_now().await {
+        Ok(update) => (StatusCode::OK, Json(CheckUpdateResponse { update })).into_response(),
+        Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
+    }
 }
 
 /// POST /api/system/update/apply

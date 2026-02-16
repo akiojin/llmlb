@@ -6,13 +6,19 @@ import LoadBalancerPlayground from '@/pages/LoadBalancerPlayground'
 
 type Route =
   | { type: 'dashboard' }
-  | { type: 'lb-playground' }
+  | { type: 'lb-playground'; initialModel?: string }
   | { type: 'playground'; endpointId: string }
 
 function parseHash(): Route {
   const hash = window.location.hash.slice(1) // Remove #
-  if (hash === 'lb-playground') {
-    return { type: 'lb-playground' }
+  if (hash === 'lb-playground' || hash.startsWith('lb-playground?')) {
+    let initialModel: string | undefined
+    const qIdx = hash.indexOf('?')
+    if (qIdx >= 0) {
+      const params = new URLSearchParams(hash.slice(qIdx + 1))
+      initialModel = params.get('model') ?? undefined
+    }
+    return { type: 'lb-playground', initialModel }
   }
   if (hash.startsWith('playground/')) {
     const endpointId = hash.slice('playground/'.length)
@@ -63,7 +69,7 @@ function App() {
 
   switch (route.type) {
     case 'lb-playground':
-      return <LoadBalancerPlayground onBack={navigateToDashboard} />
+      return <LoadBalancerPlayground onBack={navigateToDashboard} initialModel={route.initialModel} />
     case 'playground':
       return (
         <EndpointPlayground

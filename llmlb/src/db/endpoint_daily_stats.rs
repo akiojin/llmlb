@@ -173,6 +173,29 @@ pub async fn get_model_stats(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
+/// 全エンドポイント横断のモデル別集計データを取得
+///
+/// endpoint_daily_stats テーブルの全エンドポイントを通じた
+/// モデル別累計統計を返す。リクエスト数の降順で返す。
+pub async fn get_all_model_stats(pool: &SqlitePool) -> Result<Vec<ModelStatEntry>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, ModelStatRow>(
+        r#"
+        SELECT
+            model_id,
+            SUM(total_requests) AS total_requests,
+            SUM(successful_requests) AS successful_requests,
+            SUM(failed_requests) AS failed_requests
+        FROM endpoint_daily_stats
+        GROUP BY model_id
+        ORDER BY total_requests DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| r.into()).collect())
+}
+
 /// 当日の集計データを取得
 ///
 /// 指定エンドポイントの指定日付のデータを返す。

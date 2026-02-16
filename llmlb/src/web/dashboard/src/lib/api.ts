@@ -765,6 +765,117 @@ export const modelsApi = {
   },
 }
 
+// SPEC-8795f98f: Aggregated model view for Models tab
+export interface AggregatedModel {
+  id: string
+  bestStatus: LifecycleStatus
+  ready: boolean
+  capabilities: ModelCapabilities
+  endpointCount: number
+  ownedBy?: string
+  source?: string
+  sizeBytes?: number
+  requiredMemoryBytes?: number
+  maxTokens?: number | null
+  tags: string[]
+  description?: string
+  repo?: string
+  filename?: string
+  chatTemplate?: string
+}
+
+const LIFECYCLE_PRIORITY: Record<LifecycleStatus, number> = {
+  registered: 4,
+  caching: 3,
+  pending: 2,
+  error: 1,
+}
+
+export function aggregateModels(models: RegisteredModelView[]): AggregatedModel[] {
+  const groups = new Map<string, RegisteredModelView[]>()
+  for (const model of models) {
+    const group = groups.get(model.name)
+    if (group) {
+      group.push(model)
+    } else {
+      groups.set(model.name, [model])
+    }
+  }
+
+  const result: AggregatedModel[] = []
+  for (const [id, group] of groups) {
+    let bestStatus: LifecycleStatus = 'error'
+    let ready = false
+    const caps: ModelCapabilities = {
+      chat_completion: false,
+      completion: false,
+      embeddings: false,
+      fine_tune: false,
+      inference: false,
+      text_to_speech: false,
+      speech_to_text: false,
+      image_generation: false,
+    }
+    const allTags: string[] = []
+    let ownedBy: string | undefined
+    let source: string | undefined
+    let sizeBytes: number | undefined
+    let requiredMemoryBytes: number | undefined
+    let description: string | undefined
+    let repo: string | undefined
+    let filename: string | undefined
+    let chatTemplate: string | undefined
+
+    for (const m of group) {
+      if (LIFECYCLE_PRIORITY[m.lifecycle_status] > LIFECYCLE_PRIORITY[bestStatus]) {
+        bestStatus = m.lifecycle_status
+      }
+      if (m.ready) ready = true
+      if (m.capabilities) {
+        caps.chat_completion = caps.chat_completion || m.capabilities.chat_completion
+        caps.completion = caps.completion || m.capabilities.completion
+        caps.embeddings = caps.embeddings || m.capabilities.embeddings
+        caps.fine_tune = caps.fine_tune || m.capabilities.fine_tune
+        caps.inference = caps.inference || m.capabilities.inference
+        caps.text_to_speech = caps.text_to_speech || m.capabilities.text_to_speech
+        caps.speech_to_text = caps.speech_to_text || m.capabilities.speech_to_text
+        caps.image_generation = caps.image_generation || m.capabilities.image_generation
+      }
+      for (const tag of m.tags) {
+        if (!allTags.includes(tag)) allTags.push(tag)
+      }
+      if (ownedBy === undefined && m.owned_by) ownedBy = m.owned_by
+      if (source === undefined && m.source) source = m.source
+      if (sizeBytes === undefined && m.size_gb != null) sizeBytes = m.size_gb * 1024 * 1024 * 1024
+      if (requiredMemoryBytes === undefined && m.required_memory_gb != null) requiredMemoryBytes = m.required_memory_gb * 1024 * 1024 * 1024
+      if (description === undefined && m.description) description = m.description
+      if (repo === undefined && m.repo) repo = m.repo
+      if (filename === undefined && m.filename) filename = m.filename
+      if (chatTemplate === undefined && m.chat_template) chatTemplate = m.chat_template
+    }
+
+    result.push({
+      id,
+      bestStatus,
+      ready,
+      capabilities: caps,
+      endpointCount: group.length,
+      ownedBy,
+      source,
+      sizeBytes,
+      requiredMemoryBytes,
+      maxTokens: null,
+      tags: allTags,
+      description,
+      repo,
+      filename,
+      chatTemplate,
+    })
+  }
+
+  return result
+}
+
 // API Keys API
 export type ApiKeyPermission =
   | 'openai.inference'

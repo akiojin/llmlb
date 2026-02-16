@@ -109,6 +109,7 @@ interface DistributionSummary {
 
 interface LoadBalancerPlaygroundProps {
   onBack: () => void
+  initialModel?: string
 }
 
 function getErrorMessage(status: number): string {
@@ -228,7 +229,7 @@ function transformMessage(msg: Message): ChatMessage {
   return { role: msg.role, content }
 }
 
-export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroundProps) {
+export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBalancerPlaygroundProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -326,8 +327,18 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
     })
   }, [modelsError])
 
+  // SPEC-8795f98f: Apply initialModel from URL parameter
+  useEffect(() => {
+    if (!initialModel || !modelsData?.data) return
+    const exists = modelsData.data.some((m) => m.id === initialModel)
+    if (exists) {
+      setSelectedModel(initialModel)
+    }
+  }, [initialModel, modelsData])
+
   // Keep selected model valid when model list changes
   useEffect(() => {
+    if (initialModel) return // Skip auto-selection when initialModel is set
     const models = Array.isArray(modelsData?.data) ? modelsData.data : []
     if (models.length === 0) {
       if (selectedModel) {
@@ -340,7 +351,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
     if (!selectedModel || !hasSelectedModel) {
       setSelectedModel(models[0].id)
     }
-  }, [modelsData, selectedModel])
+  }, [modelsData, selectedModel, initialModel])
 
   const selectedModelMaxTokens = modelsData?.data?.find(m => m.id === selectedModel)?.max_tokens
   const effectiveMaxTokens = useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens

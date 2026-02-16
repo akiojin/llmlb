@@ -230,6 +230,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
           <DialogDescription>{endpoint.base_url}</DialogDescription>
         </DialogHeader>
 
+        <ScrollArea className="max-h-[calc(100vh-12rem)]">
         <div className="space-y-6 py-4">
           {/* Status Section */}
           <div className="flex items-center justify-between">
@@ -532,6 +533,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
             </div>
           </div>
         </div>
+        </ScrollArea>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

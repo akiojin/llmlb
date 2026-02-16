@@ -371,6 +371,10 @@ export const dashboardApi = {
 
   getRouterLogs: (params?: { limit?: number }) =>
     fetchWithAuth<LogResponse>('/api/dashboard/logs/lb', { params }),
+
+  /** 全エンドポイント横断のモデル別リクエスト統計 */
+  getAllModelStats: () =>
+    fetchWithAuth<ModelStatEntry[]>('/api/dashboard/model-stats'),
 }
 
 /**

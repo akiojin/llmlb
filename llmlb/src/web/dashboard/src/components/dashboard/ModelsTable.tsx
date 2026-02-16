@@ -6,8 +6,10 @@ import {
   type LifecycleStatus,
   type AggregatedModel,
   type ModelCapabilities,
+  type ModelStatEntry,
   aggregateModels,
   endpointsApi,
+  dashboardApi,
 } from '@/lib/api'
 import { formatBytes } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -72,7 +74,7 @@ interface ModelsTableProps {
   onRefresh?: () => void
 }
 
-type SortField = 'id' | 'bestStatus' | 'sizeBytes' | 'ownedBy'
+type SortField = 'id' | 'bestStatus' | 'sizeBytes' | 'ownedBy' | 'totalRequests'
 type SortDirection = 'asc' | 'desc'
 
 const LIFECYCLE_PRIORITY: Record<LifecycleStatus, number> = {
@@ -199,7 +201,7 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({
     id: true,
     bestStatus: true,
-    ready: true,
+    totalRequests: true,
     capabilities: true,
     sizeBytes: true,
     ownedBy: true,
@@ -214,6 +216,21 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
   })
 
   const aggregated = useMemo(() => aggregateModels(models), [models])
+
+  const { data: allModelStats } = useQuery({
+    queryKey: ['all-model-stats'],
+    queryFn: () => dashboardApi.getAllModelStats(),
+  })
+
+  const modelStatsMap = useMemo(() => {
+    const map = new Map<string, ModelStatEntry>()
+    if (allModelStats) {
+      for (const stat of allModelStats) {
+        map.set(stat.model_id, stat)
+      }
+    }
+    return map
+  }, [allModelStats])
 
   const columns: ColumnDef[] = useMemo(
     () => [
@@ -232,21 +249,42 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
         label: 'Status',
         defaultVisible: true,
         render: (m) => (
-          <Badge variant={getLifecycleBadgeVariant(m.bestStatus)}>
-            {getLifecycleLabel(m.bestStatus)}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`inline-block h-2 w-2 rounded-full shrink-0 ${m.ready ? 'bg-green-500' : 'bg-gray-300'}`}
+              title={m.ready ? 'Ready' : 'Not Ready'}
+            />
+            <Badge variant={getLifecycleBadgeVariant(m.bestStatus)}>
+              {getLifecycleLabel(m.bestStatus)}
+            </Badge>
+          </div>
         ),
       },
       {
-        key: 'ready',
-        label: 'Ready',
+        key: 'totalRequests',
+        label: 'Requests',
         defaultVisible: true,
-        render: (m) => (
-          <span
-            className={`inline-block h-2.5 w-2.5 rounded-full ${m.ready ? 'bg-green-500' : 'bg-gray-300'}`}
-            title={m.ready ? 'Ready' : 'Not Ready'}
-          />
-        ),
+        render: (m) => {
+          const stat = modelStatsMap.get(m.id)
+          if (!stat || stat.total_requests === 0) {
+            return <span className="text-sm text-muted-foreground">-</span>
+          }
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-sm tabular-nums">{stat.total_requests.toLocaleString()}</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="text-xs space-y-0.5">
+                    <div className="text-green-400">OK: {stat.successful_requests.toLocaleString()}</div>
+                    <div className="text-red-400">Fail: {stat.failed_requests.toLocaleString()}</div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
+        },
       },
       {
         key: 'capabilities',
@@ -346,7 +384,7 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
         ),
       },
     ],
-    []
+    [modelStatsMap]
   )
 
   const visibleColumns = useMemo(
@@ -388,10 +426,13 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
         case 'ownedBy':
           cmp = (a.ownedBy ?? '').localeCompare(b.ownedBy ?? '')
           break
+        case 'totalRequests':
+          cmp = (modelStatsMap.get(a.id)?.total_requests ?? 0) - (modelStatsMap.get(b.id)?.total_requests ?? 0)
+          break
       }
       return sortDirection === 'asc' ? cmp : -cmp
     })
-  }, [filtered, sortField, sortDirection])
+  }, [filtered, sortField, sortDirection, modelStatsMap])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -544,7 +585,7 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
               <TableRow>
                 <TableHead className="w-8" />
                 {visibleColumns.map((col) => {
-                  const sortable: SortField[] = ['id', 'bestStatus', 'sizeBytes', 'ownedBy']
+                  const sortable: SortField[] = ['id', 'bestStatus', 'sizeBytes', 'ownedBy', 'totalRequests']
                   const isSortable = sortable.includes(col.key as SortField)
                   return (
                     <TableHead

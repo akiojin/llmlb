@@ -286,7 +286,12 @@ pub fn create_app(state: AppState) -> Router {
             "/dashboard/stats/tokens/monthly",
             get(dashboard::get_monthly_token_stats),
         )
-        .route("/dashboard/logs/lb", get(logs::get_lb_logs));
+        .route("/dashboard/logs/lb", get(logs::get_lb_logs))
+        // モデル別リクエスト統計（全エンドポイント横断）
+        .route(
+            "/dashboard/model-stats",
+            get(dashboard::get_all_model_stats),
+        );
 
     let dashboard_api_routes = if auth_disabled {
         dashboard_api_routes

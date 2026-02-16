@@ -801,6 +801,16 @@ pub async fn get_endpoint_model_stats(
     Ok(Json(stats))
 }
 
+/// GET /api/dashboard/model-stats - 全エンドポイント横断のモデル別リクエスト統計
+pub async fn get_all_model_stats(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
+    let stats = crate::db::endpoint_daily_stats::get_all_model_stats(&state.db_pool)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+    Ok(Json(stats))
+}
+
 /// GET /api/dashboard/models - ダッシュボード向けモデル一覧
 pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppError> {
     crate::api::openai::list_models(State(state)).await

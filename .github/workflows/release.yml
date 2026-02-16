@@ -25,9 +25,11 @@ jobs:
     name: Create Tag and Release
     runs-on: ubuntu-latest
     # chore(release): コミット または手動実行時のみ実行
+    # Note: PRマージ時はコミットメッセージが "Merge pull request #N ...\n\nchore(release): vX.Y.Z"
+    # となるため、startsWith ではなく contains で判定する
     if: |
       github.event_name == 'workflow_dispatch' ||
-      startsWith(github.event.head_commit.message, 'chore(release):') ||
+      contains(github.event.head_commit.message, 'chore(release):') ||
       contains(github.event.head_commit.message, 'from akiojin/release/')
     outputs:
       tag_name: ${{ steps.tag.outputs.tag_name }}
@@ -149,7 +151,11 @@ jobs:
         working-directory: mcp-server
         env:
           RELEASE_VERSION: ${{ needs.create-tag.outputs.version }}
-        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
+        run: |
+          jq --arg v "$RELEASE_VERSION" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          echo "Updated version to $RELEASE_VERSION"
+          cat package.json | jq .version
 
       - name: Publish to npm
         if: steps.check.outputs.skip != 'true'

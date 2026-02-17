@@ -320,7 +320,7 @@ async fn proxy_completions_propagates_upstream_error() {
 }
 
 #[tokio::test]
-async fn proxy_completions_queue_overflow_returns_429() {
+async fn proxy_completions_queue_config_does_not_block_round_robin_forwarding() {
     set_queue_env(0, 5);
 
     let stub_state = QueueStubState::new();
@@ -406,13 +406,14 @@ async fn proxy_completions_queue_overflow_returns_429() {
         .await
         .expect("second request should be sent");
 
-    assert_eq!(second_resp.status(), ReqStatusCode::TOO_MANY_REQUESTS);
-    assert!(second_resp.headers().get("retry-after").is_some());
+    assert_eq!(second_resp.status(), ReqStatusCode::OK);
+    assert!(second_resp.headers().get("retry-after").is_none());
     let body: Value = second_resp.json().await.expect("second response json");
     assert_eq!(
-        body["error"]["message"],
-        serde_json::Value::String("Request queue is full".to_string())
+        body["id"],
+        serde_json::Value::String("queue-stub".to_string())
     );
+    assert_eq!(stub_state.request_count.load(Ordering::SeqCst), 2);
 
     stub_state.release_first.notify_waiters();
 

@@ -49,14 +49,14 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
 ) -> Result<QueueSelection, LbError> {
     let endpoint = state
         .load_manager
-        .select_endpoint_round_robin_direct_for_model(model_id)
+        .select_endpoint_round_robin_ready_for_model(model_id)
         .await?;
 
     tracing::debug!(
         model = %model_id,
         endpoint_id = %endpoint.id,
         endpoint_name = %endpoint.name,
-        "Selected endpoint by round-robin"
+        "Selected ready endpoint by round-robin"
     );
 
     Ok(QueueSelection::Ready {

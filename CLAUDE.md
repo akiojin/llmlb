@@ -23,7 +23,7 @@ llmlb/
 ├── specs/           # 機能仕様書（SPEC-XXXXXXXX/）
 ├── memory/          # プロジェクト憲章・メモリファイル
 ├── docs/            # ドキュメント
-├── mcp-server/      # MCPサーバー（Claude Desktop連携）
+├── .claude-plugin/   # Claude Codeプラグイン定義（skills含む）
 ├── poc/             # 概念実証・実験コード
 ├── vendor/          # サードパーティ依存（サブモジュール）
 └── .specify/        # Spec Kit設定・スクリプト

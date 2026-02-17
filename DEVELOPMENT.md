@@ -8,7 +8,7 @@ Steps for working on this repository locally.
 - CMake + C++20 compiler for xLLM
 - Docker (optional)
 - pnpm (for workspace tooling such as markdownlint)
-- npm (for mcp-server)
+- Python 3 (optional, for Codex `.skill` packaging helper scripts)
 
 ## Setup
 ```bash

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "llmlb-skills",
+  "version": "1.0.0",
+  "description": "Claude Code plugin marketplace metadata for llmlb assistant CLI workflows.",
+  "owner": {
+    "name": "akiojin",
+    "url": "https://github.com/akiojin"
+  },
+  "plugins": [
+    {
+      "name": "llmlb-cli",
+      "description": "CLI-first assistant workflows for llmlb (curl/openapi/guide).",
+      "version": "0.1.0",
+      "source": "./.claude-plugin/plugins/llmlb-cli",
+      "category": "development",
+      "keywords": ["llmlb", "cli", "assistant", "openapi", "claude-code"]
+    }
+  ]
+}

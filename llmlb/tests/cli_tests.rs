@@ -75,6 +75,33 @@ fn test_stop_subcommand_parses() {
     assert!(cli.is_ok());
 }
 
+/// Test assistant curl subcommand parses
+#[test]
+fn test_assistant_curl_subcommand_parses() {
+    let cli = Cli::try_parse_from([
+        "llmlb",
+        "assistant",
+        "curl",
+        "--command",
+        "curl http://localhost:32768/v1/models",
+    ]);
+    assert!(cli.is_ok());
+}
+
+/// Test assistant openapi subcommand parses
+#[test]
+fn test_assistant_openapi_subcommand_parses() {
+    let cli = Cli::try_parse_from(["llmlb", "assistant", "openapi"]);
+    assert!(cli.is_ok());
+}
+
+/// Test assistant guide subcommand parses
+#[test]
+fn test_assistant_guide_subcommand_parses() {
+    let cli = Cli::try_parse_from(["llmlb", "assistant", "guide", "--category", "overview"]);
+    assert!(cli.is_ok());
+}
+
 /// Test unknown argument is rejected
 #[test]
 fn test_unknown_arg_rejected() {

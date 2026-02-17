@@ -298,6 +298,7 @@ mod tests {
         let endpoint = crate::types::endpoint::Endpoint::new(
             "Test Endpoint".to_string(),
             "http://localhost:8080".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
         );
         crate::db::endpoints::create_endpoint(&pool, &endpoint)
             .await
@@ -347,6 +348,7 @@ mod tests {
         let endpoint = crate::types::endpoint::Endpoint::new(
             "Test Endpoint".to_string(),
             "http://localhost:8080".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
         );
         crate::db::endpoints::create_endpoint(&pool, &endpoint)
             .await
@@ -381,6 +383,7 @@ mod tests {
         let endpoint = crate::types::endpoint::Endpoint::new(
             "Test Endpoint".to_string(),
             "http://localhost:8080".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
         );
         crate::db::endpoints::create_endpoint(&pool, &endpoint)
             .await

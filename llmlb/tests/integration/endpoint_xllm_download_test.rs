@@ -9,6 +9,8 @@ use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::lb::spawn_test_lb_with_db;
 
@@ -38,26 +40,41 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     api_key.key
 }
 
+/// xLLMとして検出されるモックサーバーを作成するヘルパー
+async fn create_xllm_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
 /// US8-シナリオ1: xLLMエンドポイントでモデルダウンロードをリクエスト
 #[tokio::test]
 async fn test_xllm_model_download_request() {
+    let mock = create_xllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // xLLMタイプのエンドポイントを登録（モックが必要）
+    // xLLMタイプのエンドポイントを登録（自動検出でxLLMとして登録される）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "xllm"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
@@ -88,6 +105,8 @@ async fn test_xllm_model_download_request() {
 /// US8-シナリオ2: ダウンロード進捗を確認
 #[tokio::test]
 async fn test_xllm_model_download_progress() {
+    let mock = create_xllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -98,13 +117,13 @@ async fn test_xllm_model_download_progress() {
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "xllm"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
@@ -154,6 +173,8 @@ async fn test_xllm_model_download_progress() {
 /// US8-シナリオ3: 複数モデルの同時ダウンロード
 #[tokio::test]
 async fn test_xllm_model_download_multiple() {
+    let mock = create_xllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -164,13 +185,13 @@ async fn test_xllm_model_download_multiple() {
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "xllm"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
@@ -213,6 +234,8 @@ async fn test_xllm_model_download_multiple() {
 #[tokio::test]
 #[ignore = "ダウンロードAPI未実装 - 全タスク実装後に有効化"]
 async fn test_xllm_model_download_completion() {
+    let mock = create_xllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -223,13 +246,13 @@ async fn test_xllm_model_download_completion() {
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "xLLM Server",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "xllm"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 

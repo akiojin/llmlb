@@ -120,7 +120,6 @@ pub async fn get_model_metadata(
                 ..Default::default()
             })
         }
-        EndpointType::Unknown => Err(MetadataError::UnsupportedType("unknown".to_string())),
     }
 }
 

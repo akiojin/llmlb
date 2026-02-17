@@ -11,7 +11,7 @@ use crate::common::{
 use crate::db::request_history::{FilterStatus, RecordFilter};
 use crate::{
     balancer::RequestHistoryPoint,
-    types::endpoint::{EndpointStatus, EndpointType, EndpointTypeSource},
+    types::endpoint::{EndpointStatus, EndpointType},
     AppState,
 };
 use axum::{
@@ -42,12 +42,6 @@ pub struct DashboardEndpoint {
     pub status: EndpointStatus,
     /// エンドポイントタイプ（xLLM/Ollama/vLLM 等）
     pub endpoint_type: EndpointType,
-    /// エンドポイントタイプ判定ソース（自動/手動）
-    pub endpoint_type_source: EndpointTypeSource,
-    /// 判定理由（自動判別/手動指定）
-    pub endpoint_type_reason: Option<String>,
-    /// 判定時刻
-    pub endpoint_type_detected_at: Option<DateTime<Utc>>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -300,9 +294,6 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
             base_url: endpoint.base_url,
             status: endpoint.status,
             endpoint_type: endpoint.endpoint_type,
-            endpoint_type_source: endpoint.endpoint_type_source,
-            endpoint_type_reason: endpoint.endpoint_type_reason,
-            endpoint_type_detected_at: endpoint.endpoint_type_detected_at,
             health_check_interval_secs: endpoint.health_check_interval_secs,
             inference_timeout_secs: endpoint.inference_timeout_secs,
             latency_ms: endpoint.latency_ms,

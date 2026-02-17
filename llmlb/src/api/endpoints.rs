@@ -4,11 +4,11 @@
 
 use crate::common::auth::{Claims, UserRole};
 use crate::db::{download_tasks as tasks_db, endpoints as db};
-use crate::detection::detect_endpoint_type_with_client;
+use crate::detection::{detect_endpoint_type_with_client, DetectionError};
 use crate::sync::{self, SyncError};
 use crate::types::endpoint::{
-    DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus,
-    EndpointType, EndpointTypeSource, GpuDevice, ModelDownloadTask,
+    DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus, GpuDevice,
+    ModelDownloadTask,
 };
 use crate::AppState;
 use axum::{
@@ -17,7 +17,6 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use chrono::Utc;
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::time::Duration;
@@ -57,13 +56,6 @@ pub struct CreateEndpointRequest {
     /// エンドポイントの機能一覧（画像生成、音声認識等）
     #[serde(default)]
     pub capabilities: Vec<EndpointCapability>,
-    /// エンドポイントタイプ（手動指定、SPEC-66555000）
-    /// 指定しない場合は自動判別
-    #[serde(default)]
-    pub endpoint_type: Option<EndpointType>,
-    /// エンドポイントタイプ判定理由（手動指定時のみ）
-    #[serde(default)]
-    pub endpoint_type_reason: Option<String>,
 }
 
 fn default_health_check_interval() -> u32 {
@@ -187,12 +179,6 @@ pub struct UpdateEndpointRequest {
     /// メモ（None=未指定, Some(None)=削除, Some(Some(v))=設定）
     #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub notes: Option<Option<String>>,
-    /// エンドポイントタイプ（手動変更、SPEC-66555000）
-    #[serde(default)]
-    pub endpoint_type: Option<EndpointType>,
-    /// エンドポイントタイプ判定理由（手動変更時のみ）
-    #[serde(default)]
-    pub endpoint_type_reason: Option<String>,
 }
 
 /// エンドポイントレスポンス
@@ -208,14 +194,6 @@ pub struct EndpointResponse {
     pub status: String,
     /// エンドポイントタイプ（SPEC-66555000）
     pub endpoint_type: String,
-    /// タイプ判定ソース（auto/manual）
-    pub endpoint_type_source: String,
-    /// 判定理由
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub endpoint_type_reason: Option<String>,
-    /// 判定時刻
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub endpoint_type_detected_at: Option<String>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -251,9 +229,6 @@ impl From<Endpoint> for EndpointResponse {
             base_url: ep.base_url,
             status: ep.status.as_str().to_string(),
             endpoint_type: ep.endpoint_type.as_str().to_string(),
-            endpoint_type_source: ep.endpoint_type_source.as_str().to_string(),
-            endpoint_type_reason: ep.endpoint_type_reason,
-            endpoint_type_detected_at: ep.endpoint_type_detected_at.map(|dt| dt.to_rfc3339()),
             health_check_interval_secs: ep.health_check_interval_secs,
             inference_timeout_secs: ep.inference_timeout_secs,
             latency_ms: ep.latency_ms,
@@ -634,47 +609,42 @@ pub async fn create_endpoint(
         Ok(None) => {} // OK - 名前は一意
     }
 
-    // SPEC-66555000: 手動指定があればバリデーション
-    if let Some(ref manual_type) = req.endpoint_type {
-        // EndpointType::Unknown以外の不正な値はDeserializeで弾かれるのでここでは追加チェック不要
-        tracing::debug!(
-            endpoint_type = %manual_type.as_str(),
-            "Manual endpoint type specified"
-        );
-    }
+    // SPEC-66555000: 自動検出（手動指定は廃止、対応タイプのみ許可）
+    let detection_result =
+        detect_endpoint_type_with_client(&state.http_client, &req.base_url, req.api_key.as_deref())
+            .await;
 
-    let mut endpoint = Endpoint::new(req.name, req.base_url.clone());
+    let detected_type = match detection_result {
+        Ok(result) => result.endpoint_type,
+        Err(DetectionError::Unreachable(msg)) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(ErrorResponse {
+                    error: format!("Endpoint unreachable: {}", msg),
+                    code: "ENDPOINT_UNREACHABLE".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        Err(DetectionError::UnsupportedType(msg)) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ErrorResponse {
+                    error: format!("Unsupported endpoint type: {}", msg),
+                    code: "UNSUPPORTED_ENDPOINT_TYPE".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let mut endpoint = Endpoint::new(req.name, req.base_url.clone(), detected_type);
     endpoint.api_key = req.api_key.clone();
     endpoint.health_check_interval_secs = req.health_check_interval_secs;
     endpoint.inference_timeout_secs = req.inference_timeout_secs;
     endpoint.notes = req.notes;
     if !req.capabilities.is_empty() {
         endpoint.capabilities = req.capabilities;
-    }
-
-    // SPEC-66555000: タイプ判別（手動指定優先）
-    if let Some(manual_type) = req.endpoint_type {
-        endpoint.endpoint_type = manual_type;
-        endpoint.endpoint_type_source = EndpointTypeSource::Manual;
-        endpoint.endpoint_type_reason = Some(
-            req.endpoint_type_reason
-                .unwrap_or_else(|| "manual override".to_string()),
-        );
-        endpoint.endpoint_type_detected_at = Some(Utc::now());
-    } else {
-        // 自動判別（非同期で行うとレスポンスが遅くなるが、登録時は同期で判別）
-        let detection = detect_endpoint_type_with_client(
-            &state.http_client,
-            &req.base_url,
-            req.api_key.as_deref(),
-        )
-        .await;
-        endpoint.endpoint_type = detection.endpoint_type;
-        endpoint.endpoint_type_source = EndpointTypeSource::Auto;
-        endpoint.endpoint_type_reason = detection.reason;
-        if endpoint.endpoint_type != EndpointType::Unknown {
-            endpoint.endpoint_type_detected_at = Some(Utc::now());
-        }
     }
 
     match db::create_endpoint(&state.db_pool, &endpoint).await {
@@ -990,6 +960,7 @@ pub async fn update_endpoint(
     }
 
     // 更新内容を適用
+    let original_base_url = existing.base_url.clone();
     let mut updated = existing;
     if let Some(name) = req.name {
         updated.name = name;
@@ -1011,15 +982,40 @@ pub async fn update_endpoint(
         updated.notes = notes_value;
     }
 
-    // SPEC-66555000: エンドポイントタイプの手動変更
-    if let Some(endpoint_type) = req.endpoint_type {
-        updated.endpoint_type = endpoint_type;
-        updated.endpoint_type_source = EndpointTypeSource::Manual;
-        updated.endpoint_type_reason = Some(
-            req.endpoint_type_reason
-                .unwrap_or_else(|| "manual override".to_string()),
-        );
-        updated.endpoint_type_detected_at = Some(Utc::now());
+    // SPEC-66555000: base_url変更時はタイプを再検出
+    if updated.base_url != original_base_url {
+        let detection_result = detect_endpoint_type_with_client(
+            &state.http_client,
+            &updated.base_url,
+            updated.api_key.as_deref(),
+        )
+        .await;
+
+        match detection_result {
+            Ok(result) => {
+                updated.endpoint_type = result.endpoint_type;
+            }
+            Err(DetectionError::Unreachable(msg)) => {
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(ErrorResponse {
+                        error: format!("Endpoint unreachable: {}", msg),
+                        code: "ENDPOINT_UNREACHABLE".to_string(),
+                    }),
+                )
+                    .into_response();
+            }
+            Err(DetectionError::UnsupportedType(msg)) => {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(ErrorResponse {
+                        error: format!("Unsupported endpoint type: {}", msg),
+                        code: "UNSUPPORTED_ENDPOINT_TYPE".to_string(),
+                    }),
+                )
+                    .into_response();
+            }
+        }
     }
 
     match db::update_endpoint(&state.db_pool, &updated).await {

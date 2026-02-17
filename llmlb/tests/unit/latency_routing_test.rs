@@ -5,7 +5,7 @@
 //! - レイテンシNone時のソート挙動
 //! - 同一レイテンシ時の挙動
 
-use llmlb::types::endpoint::{Endpoint, EndpointStatus};
+use llmlb::types::endpoint::{Endpoint, EndpointStatus, EndpointType};
 use std::cmp::Ordering;
 
 /// レイテンシでソートするためのヘルパー関数
@@ -178,6 +178,7 @@ fn create_endpoint_with_latency(name: &str, latency_ms: u32) -> Endpoint {
     let mut endpoint = Endpoint::new(
         name.to_string(),
         format!("http://{}.local:8080", name.to_lowercase()),
+        EndpointType::Xllm,
     );
     endpoint.status = EndpointStatus::Online;
     endpoint.latency_ms = Some(latency_ms);
@@ -188,6 +189,7 @@ fn create_endpoint_without_latency(name: &str) -> Endpoint {
     let mut endpoint = Endpoint::new(
         name.to_string(),
         format!("http://{}.local:8080", name.to_lowercase()),
+        EndpointType::Xllm,
     );
     endpoint.status = EndpointStatus::Online;
     endpoint.latency_ms = None;

@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct TestApp {
     app: Router,
@@ -96,12 +98,22 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_filter_by_type_xllm() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let TestApp { app, admin_key } = build_app().await;
 
-    // エンドポイントを登録（タイプは自動判別されるが、ここではテスト用に手動設定が必要）
+    // エンドポイントを登録（タイプは自動判別される）
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": mock.uri()
     });
 
     let response = app
@@ -136,8 +148,8 @@ async fn test_list_endpoints_filter_by_type_xllm() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
 
-    // NOTE: 実装前なのでフィルタは動作しない（全エンドポイントが返る）
-    // 実装後はxLLMタイプのエンドポイントのみが返るはず
+    // NOTE: 自動検出によりOpenAI互換と判定される可能性がある
+    // フィルタが動作していれば、xllm以外のタイプはマッチしない
     assert!(body["endpoints"].is_array());
 }
 
@@ -244,12 +256,22 @@ async fn test_list_endpoints_filter_by_invalid_type() {
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_response_includes_endpoint_type() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let TestApp { app, admin_key } = build_app().await;
 
     // エンドポイントを登録
     let payload = json!({
         "name": "Test Endpoint",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let response = app
@@ -292,10 +314,9 @@ async fn test_list_endpoints_response_includes_endpoint_type() {
             endpoint["endpoint_type"].is_string(),
             "endpoint_type field should be present and be a string"
         );
-        // デフォルト値は "unknown"
         let endpoint_type = endpoint["endpoint_type"].as_str().unwrap();
         assert!(
-            ["xllm", "ollama", "vllm", "openai_compatible", "unknown"].contains(&endpoint_type),
+            ["xllm", "ollama", "vllm", "lm_studio", "openai_compatible"].contains(&endpoint_type),
             "endpoint_type should be a valid value, got: {}",
             endpoint_type
         );

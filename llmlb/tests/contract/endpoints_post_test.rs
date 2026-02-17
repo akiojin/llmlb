@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct TestApp {
     app: Router,
@@ -96,11 +98,21 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_success() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let TestApp { app, admin_key } = build_app().await;
 
     let payload = json!({
         "name": "Test Ollama",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let response = app
@@ -123,7 +135,7 @@ async fn test_create_endpoint_success() {
     // 契約に基づくレスポンス検証
     assert!(body["id"].is_string(), "id should be a UUID string");
     assert_eq!(body["name"], "Test Ollama");
-    assert_eq!(body["base_url"], "http://localhost:11434");
+    assert_eq!(body["base_url"], mock.uri());
     assert_eq!(body["status"], "pending");
     assert_eq!(body["health_check_interval_secs"], 30);
     assert!(body["last_seen"].is_null());
@@ -136,12 +148,21 @@ async fn test_create_endpoint_success() {
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_with_optional_fields() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let TestApp { app, admin_key } = build_app().await;
 
     let payload = json!({
         "name": "Production vLLM",
-        // 外部ネットワークに依存するとCI/ローカルでハングし得るため、到達不能でも即時に失敗するローカルURLを使う
-        "base_url": "http://127.0.0.1:18000",
+        "base_url": mock.uri(),
         "api_key": "sk-secret-key",
         "health_check_interval_secs": 60,
         "notes": "Production server"
@@ -228,11 +249,21 @@ async fn test_create_endpoint_invalid_url() {
 #[serial]
 #[ignore = "TDD RED: URL重複チェック未実装"]
 async fn test_create_endpoint_duplicate_url() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let TestApp { app, admin_key } = build_app().await;
 
     let payload = json!({
         "name": "First",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     // 最初の登録
@@ -253,7 +284,7 @@ async fn test_create_endpoint_duplicate_url() {
     // 重複登録
     let dup_payload = json!({
         "name": "Second",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let dup_response = app

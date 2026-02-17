@@ -13,6 +13,7 @@ use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::{json, Value};
 use serial_test::serial;
+use sqlx::SqlitePool;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -22,6 +23,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 struct TestApp {
     app: Router,
     admin_key: String,
+    db_pool: SqlitePool,
 }
 
 async fn build_app() -> TestApp {
@@ -88,7 +90,11 @@ async fn build_app() -> TestApp {
     .key;
 
     let app = api::create_app(state);
-    TestApp { app, admin_key }
+    TestApp {
+        app,
+        admin_key,
+        db_pool,
+    }
 }
 
 fn admin_request(admin_key: &str) -> axum::http::request::Builder {
@@ -115,7 +121,7 @@ async fn test_endpoint_sync_success() {
         .mount(&mock)
         .await;
 
-    let TestApp { app, admin_key } = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     // エンドポイント登録
     let payload = json!({
@@ -180,7 +186,7 @@ async fn test_endpoint_sync_success() {
 #[tokio::test]
 #[serial]
 async fn test_endpoint_sync_not_found() {
-    let TestApp { app, admin_key } = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     let response = app
         .oneshot(
@@ -200,12 +206,27 @@ async fn test_endpoint_sync_not_found() {
 #[tokio::test]
 #[serial]
 async fn test_endpoint_sync_offline() {
-    let TestApp { app, admin_key } = build_app().await;
+    // MockServerで登録を成功させた後、DBのbase_urlを到達不能アドレスに直接変更
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
 
-    // 到達不能なエンドポイントを登録
+    let TestApp {
+        app,
+        admin_key,
+        db_pool,
+    } = build_app().await;
+
+    // エンドポイント登録（MockServerが稼働中なので成功する）
     let payload = json!({
         "name": "Offline Endpoint",
-        "base_url": "http://127.0.0.1:59999"
+        "base_url": mock.uri()
     });
 
     let create_response = app
@@ -221,11 +242,21 @@ async fn test_endpoint_sync_offline() {
         .await
         .unwrap();
 
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
     let create_body = to_bytes(create_response.into_body(), usize::MAX)
         .await
         .unwrap();
     let create_body: Value = serde_json::from_slice(&create_body).unwrap();
-    let endpoint_id = create_body["id"].as_str().unwrap();
+    let endpoint_id = create_body["id"].as_str().unwrap().to_string();
+
+    // DBのbase_urlを到達不能なアドレスに直接変更（API経由だと再検出が走るため）
+    sqlx::query("UPDATE endpoints SET base_url = ? WHERE id = ?")
+        .bind("http://127.0.0.1:59999")
+        .bind(&endpoint_id)
+        .execute(&db_pool)
+        .await
+        .expect("Failed to update base_url in DB");
 
     // モデル同期（失敗が予想される）
     let response = app
@@ -279,7 +310,7 @@ async fn test_endpoint_sync_empty_models() {
         .mount(&mock)
         .await;
 
-    let TestApp { app, admin_key } = build_app().await;
+    let TestApp { app, admin_key, .. } = build_app().await;
 
     // エンドポイント登録
     let payload = json!({

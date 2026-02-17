@@ -244,7 +244,7 @@ mod tests {
     #[tokio::test]
     #[allow(deprecated)] // get_node_logs is deprecated
     async fn node_logs_endpoint_fetches_remote_entries() {
-        use crate::types::endpoint::{Endpoint, EndpointStatus};
+        use crate::types::endpoint::{Endpoint, EndpointStatus, EndpointType};
 
         let _guard = TEST_LOCK.lock().await;
         let mock = MockServer::start().await;
@@ -261,7 +261,11 @@ mod tests {
         let state = lb_state().await;
 
         // EndpointRegistryにエンドポイントを追加
-        let mut endpoint = Endpoint::new("endpoint-1".to_string(), mock.uri());
+        let mut endpoint = Endpoint::new(
+            "endpoint-1".to_string(),
+            mock.uri(),
+            EndpointType::OpenaiCompatible,
+        );
         endpoint.status = EndpointStatus::Online;
         endpoint.gpu_device_count = Some(1);
         endpoint.gpu_total_memory_bytes = Some(8_000_000_000);

@@ -6,12 +6,31 @@
 
 use reqwest::Client;
 use serde_json::{json, Value};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::lb::spawn_test_lb;
+
+/// OpenAI互換として検出されるモックサーバーを作成するヘルパー
+async fn create_openai_compatible_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
 
 /// 同じ名前のエンドポイントを登録しようとすると400エラー
 #[tokio::test]
 async fn test_duplicate_name_rejected() {
+    let mock1 = create_openai_compatible_mock().await;
+    let mock2 = create_openai_compatible_mock().await;
+
     let server = spawn_test_lb().await;
     let client = Client::new();
 
@@ -21,7 +40,7 @@ async fn test_duplicate_name_rejected() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production Ollama",
-            "base_url": "http://localhost:11434"
+            "base_url": mock1.uri()
         }))
         .send()
         .await
@@ -35,7 +54,7 @@ async fn test_duplicate_name_rejected() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production Ollama",
-            "base_url": "http://localhost:8000"
+            "base_url": mock2.uri()
         }))
         .send()
         .await
@@ -48,6 +67,9 @@ async fn test_duplicate_name_rejected() {
 /// 大文字小文字を区別して名前を検証
 #[tokio::test]
 async fn test_name_case_sensitivity() {
+    let mock1 = create_openai_compatible_mock().await;
+    let mock2 = create_openai_compatible_mock().await;
+
     let server = spawn_test_lb().await;
     let client = Client::new();
 
@@ -57,7 +79,7 @@ async fn test_name_case_sensitivity() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Production",
-            "base_url": "http://localhost:11434"
+            "base_url": mock1.uri()
         }))
         .send()
         .await
@@ -69,7 +91,7 @@ async fn test_name_case_sensitivity() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "PRODUCTION",
-            "base_url": "http://localhost:8000"
+            "base_url": mock2.uri()
         }))
         .send()
         .await
@@ -82,6 +104,9 @@ async fn test_name_case_sensitivity() {
 /// 削除後に同じ名前を再利用可能
 #[tokio::test]
 async fn test_name_reusable_after_deletion() {
+    let mock1 = create_openai_compatible_mock().await;
+    let mock2 = create_openai_compatible_mock().await;
+
     let server = spawn_test_lb().await;
     let client = Client::new();
 
@@ -91,7 +116,7 @@ async fn test_name_reusable_after_deletion() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Reusable Name",
-            "base_url": "http://localhost:11434"
+            "base_url": mock1.uri()
         }))
         .send()
         .await
@@ -118,7 +143,7 @@ async fn test_name_reusable_after_deletion() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Reusable Name",
-            "base_url": "http://localhost:8000"
+            "base_url": mock2.uri()
         }))
         .send()
         .await
@@ -130,6 +155,9 @@ async fn test_name_reusable_after_deletion() {
 /// 更新時に他のエンドポイントの名前と重複を防止
 #[tokio::test]
 async fn test_update_name_uniqueness() {
+    let mock1 = create_openai_compatible_mock().await;
+    let mock2 = create_openai_compatible_mock().await;
+
     let server = spawn_test_lb().await;
     let client = Client::new();
 
@@ -139,7 +167,7 @@ async fn test_update_name_uniqueness() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Endpoint A",
-            "base_url": "http://localhost:11434"
+            "base_url": mock1.uri()
         }))
         .send()
         .await
@@ -150,7 +178,7 @@ async fn test_update_name_uniqueness() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Endpoint B",
-            "base_url": "http://localhost:8000"
+            "base_url": mock2.uri()
         }))
         .send()
         .await

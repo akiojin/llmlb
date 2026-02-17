@@ -4,18 +4,17 @@
 
 use llmlb::types::endpoint::EndpointType;
 
-/// 判別優先度のテスト: xLLM > Ollama > vLLM > OpenAI-compatible > Unknown
+/// 判別優先度のテスト: xLLM > Ollama > vLLM > OpenAI-compatible
 #[test]
 fn test_detection_priority_order() {
     // 各タイプの優先度を数値化
     fn priority(t: EndpointType) -> u8 {
         match t {
-            EndpointType::Xllm => 6,
-            EndpointType::Ollama => 5,
-            EndpointType::LmStudio => 4,
-            EndpointType::Vllm => 3,
-            EndpointType::OpenaiCompatible => 2,
-            EndpointType::Unknown => 1,
+            EndpointType::Xllm => 5,
+            EndpointType::Ollama => 4,
+            EndpointType::LmStudio => 3,
+            EndpointType::Vllm => 2,
+            EndpointType::OpenaiCompatible => 1,
         }
     }
 
@@ -24,7 +23,6 @@ fn test_detection_priority_order() {
     assert!(priority(EndpointType::Ollama) > priority(EndpointType::LmStudio));
     assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Vllm));
     assert!(priority(EndpointType::Vllm) > priority(EndpointType::OpenaiCompatible));
-    assert!(priority(EndpointType::OpenaiCompatible) > priority(EndpointType::Unknown));
 }
 
 /// xLLMエンドポイントはモデルダウンロードをサポート
@@ -40,7 +38,6 @@ fn test_non_xllm_does_not_support_model_download() {
     assert!(!EndpointType::Vllm.supports_model_download());
     assert!(!EndpointType::LmStudio.supports_model_download());
     assert!(!EndpointType::OpenaiCompatible.supports_model_download());
-    assert!(!EndpointType::Unknown.supports_model_download());
 }
 
 /// xLLM、Ollama、LmStudioはモデルメタデータ取得をサポート
@@ -51,13 +48,6 @@ fn test_metadata_support() {
     assert!(EndpointType::LmStudio.supports_model_metadata());
     assert!(!EndpointType::Vllm.supports_model_metadata());
     assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
-    assert!(!EndpointType::Unknown.supports_model_metadata());
-}
-
-/// デフォルトタイプはUnknown（オフライン時のフォールバック）
-#[test]
-fn test_default_type_is_unknown() {
-    assert_eq!(EndpointType::default(), EndpointType::Unknown);
 }
 
 /// タイプの文字列変換は双方向で一貫性がある
@@ -69,7 +59,6 @@ fn test_type_string_roundtrip() {
         EndpointType::Vllm,
         EndpointType::LmStudio,
         EndpointType::OpenaiCompatible,
-        EndpointType::Unknown,
     ];
 
     for t in types {
@@ -79,16 +68,11 @@ fn test_type_string_roundtrip() {
     }
 }
 
-/// 不正な文字列はUnknownにフォールバック
+/// 不正な文字列はエラーを返す
 #[test]
-fn test_invalid_string_fallback() {
-    assert_eq!(
-        "invalid".parse::<EndpointType>().unwrap(),
-        EndpointType::Unknown
-    );
-    assert_eq!("".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
-    assert_eq!(
-        "XLLM".parse::<EndpointType>().unwrap(),
-        EndpointType::Unknown
-    ); // 大文字は不正
+fn test_invalid_string_returns_error() {
+    assert!("invalid".parse::<EndpointType>().is_err());
+    assert!("".parse::<EndpointType>().is_err());
+    assert!("XLLM".parse::<EndpointType>().is_err()); // 大文字は不正
+    assert!("unknown".parse::<EndpointType>().is_err());
 }

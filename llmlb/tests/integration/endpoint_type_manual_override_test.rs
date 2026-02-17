@@ -1,14 +1,18 @@
-//! Integration Test: US11 - 手動タイプ指定
+//! Integration Test: エンドポイントタイプ自動判別 - エッジケース
 //!
 //! SPEC-66555000: エンドポイントタイプ自動判別機能
 //!
-//! 管理者として、タイプを手動で指定・変更したい
-//! （誤判別時の修正、またはオフラインエンドポイントの事前設定）。
+//! タイプは常に自動判別される。手動指定は廃止。
+//! 不正なタイプや到達不能エンドポイントのエラーハンドリングをテスト。
 
 use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
 
 use crate::support::lb::spawn_test_lb_with_db;
 
@@ -38,64 +42,84 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     api_key.key
 }
 
-/// US11-シナリオ1: 登録時に手動でタイプを指定
+/// 到達不能エンドポイントは登録拒否される
 #[tokio::test]
-async fn test_manual_type_on_registration() {
+async fn test_unreachable_endpoint_rejected() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // タイプを手動指定してエンドポイント登録
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
-            "name": "Manual xLLM",
-            "base_url": "http://localhost:8080",
-            "endpoint_type": "xllm",  // 手動指定
-            "endpoint_type_reason": "manual for testing"
+            "name": "Unreachable EP",
+            "base_url": "http://localhost:8080"
         }))
         .send()
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 201);
-
-    let body: Value = response.json().await.unwrap();
-
-    // 手動指定したタイプが反映されていることを確認
-    assert_eq!(
-        body["endpoint_type"], "xllm",
-        "Manual type should be applied"
-    );
-    assert_eq!(body["endpoint_type_source"], "manual");
-    assert_eq!(body["endpoint_type_reason"], "manual for testing");
-    assert!(body["endpoint_type_detected_at"].is_string());
+    // 到達不能なエンドポイントは BAD_GATEWAY で拒否
+    assert_eq!(response.status().as_u16(), 502);
 }
 
-/// US11-シナリオ2: 既存エンドポイントのタイプを手動変更（PUT）
+/// base_url変更時にタイプが再判別される
 #[tokio::test]
-async fn test_manual_type_update() {
+async fn test_type_redetection_on_base_url_change() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // エンドポイント登録（タイプはunknown）
+    // xLLMモックサーバー
+    let mock_xllm = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock_xllm)
+        .await;
+
+    // OpenAI互換モックサーバー
+    let mock_openai = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_openai)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_openai)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock_openai)
+        .await;
+
+    // 最初はxLLMとして登録
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
-            "name": "Test Endpoint",
-            "base_url": "http://localhost:9999"
+            "name": "Redetect Endpoint",
+            "base_url": mock_xllm.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "xllm");
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // タイプをxLLMに手動変更
+    // base_urlをOpenAI互換サーバーに変更
     let update_response = client
         .put(format!(
             "http://{}/api/endpoints/{}",
@@ -104,10 +128,7 @@ async fn test_manual_type_update() {
         ))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
-            "name": "Test Endpoint",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "xllm",
-            "endpoint_type_reason": "override during update"
+            "base_url": mock_openai.uri()
         }))
         .send()
         .await
@@ -115,7 +136,7 @@ async fn test_manual_type_update() {
 
     assert_eq!(update_response.status().as_u16(), 200);
 
-    // 詳細取得で確認
+    // 詳細取得でタイプが再判別されていることを確認
     let detail_response = client
         .get(format!(
             "http://{}/api/endpoints/{}",
@@ -129,128 +150,59 @@ async fn test_manual_type_update() {
 
     let detail: Value = detail_response.json().await.unwrap();
     assert_eq!(
-        detail["endpoint_type"], "xllm",
-        "Type should be updated to xllm"
+        detail["endpoint_type"], "openai_compatible",
+        "Type should be re-detected as openai_compatible after base_url change"
     );
-    assert_eq!(detail["endpoint_type_source"], "manual");
-    assert_eq!(detail["endpoint_type_reason"], "override during update");
-    assert!(detail["endpoint_type_detected_at"].is_string());
 }
 
-/// US11-シナリオ3: 手動指定は自動判別より優先される
+/// 全ての有効なタイプが自動判別で検出可能
 #[tokio::test]
-async fn test_manual_type_overrides_auto_detection() {
+async fn test_all_valid_types_can_be_detected() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // Ollamaエンドポイント（モック）を手動でxLLMとして登録
+    // xLLMモックサーバー
+    let mock_xllm = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock_xllm)
+        .await;
+
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
-            "name": "Manual Override",
-            "base_url": "http://localhost:11434",  // Ollamaポート
-            "endpoint_type": "xllm"  // 手動でxLLMを指定
+            "name": "xLLM Auto",
+            "base_url": mock_xllm.uri()
         }))
         .send()
         .await
         .unwrap();
 
     assert_eq!(response.status().as_u16(), 201);
-
     let body: Value = response.json().await.unwrap();
-
-    // 自動判別ではなく手動指定が優先される
-    assert_eq!(
-        body["endpoint_type"], "xllm",
-        "Manual type should override auto-detection"
-    );
-    assert_eq!(body["endpoint_type_source"], "manual");
-    assert!(body["endpoint_type_reason"].is_string());
-    assert!(body["endpoint_type_detected_at"].is_string());
+    assert_eq!(body["endpoint_type"], "xllm");
 }
 
-/// US11-シナリオ4: 不正なタイプ指定はエラー
-#[tokio::test]
-async fn test_invalid_type_specification() {
-    let (server, db_pool) = spawn_test_lb_with_db().await;
-    let client = Client::new();
-    let admin_key = create_admin_api_key(&db_pool).await;
-
-    // 不正なタイプを指定
-    let response = client
-        .post(format!("http://{}/api/endpoints", server.addr()))
-        .header("authorization", format!("Bearer {}", admin_key))
-        .json(&json!({
-            "name": "Invalid Type",
-            "base_url": "http://localhost:8080",
-            "endpoint_type": "invalid_type"  // 不正なタイプ
-        }))
-        .send()
-        .await
-        .unwrap();
-
-    // 400 Bad Request または 422 Unprocessable Entity を期待
-    let status = response.status().as_u16();
-    assert!(
-        status == 400 || status == 422,
-        "invalid endpoint_type should be rejected with 400 or 422, got {status}"
-    );
-}
-
-/// US11-シナリオ5: 全ての有効なタイプを手動指定可能
-#[tokio::test]
-async fn test_all_valid_types_can_be_specified() {
-    let (server, db_pool) = spawn_test_lb_with_db().await;
-    let client = Client::new();
-    let admin_key = create_admin_api_key(&db_pool).await;
-
-    let valid_types = [
-        "xllm",
-        "ollama",
-        "vllm",
-        "lm_studio",
-        "openai_compatible",
-        "unknown",
-    ];
-
-    for (i, endpoint_type) in valid_types.iter().enumerate() {
-        let response = client
-            .post(format!("http://{}/api/endpoints", server.addr()))
-            .header("authorization", format!("Bearer {}", admin_key))
-            .json(&json!({
-                "name": format!("Endpoint Type {}", endpoint_type),
-                "base_url": format!("http://localhost:{}", 8000 + i),
-                "endpoint_type": endpoint_type
-            }))
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.status().as_u16(),
-            201,
-            "Should accept type: {}",
-            endpoint_type
-        );
-
-        let body: Value = response.json().await.unwrap();
-        assert_eq!(
-            body["endpoint_type"].as_str().unwrap(),
-            *endpoint_type,
-            "Type should match: {}",
-            endpoint_type
-        );
-    }
-}
-
-/// US11-シナリオ6: タイプ変更後も他のフィールドは保持される
+/// タイプ変更後も他のフィールドは保持される
 #[tokio::test]
 async fn test_type_update_preserves_other_fields() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
+
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock)
+        .await;
 
     // エンドポイント登録（メモ付き）
     let register_response = client
@@ -258,17 +210,18 @@ async fn test_type_update_preserves_other_fields() {
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Test Endpoint",
-            "base_url": "http://localhost:9999",
+            "base_url": mock.uri(),
             "notes": "Important server"
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // タイプを変更（他のフィールドも指定）
+    // 名前を変更（他のフィールドを保持）
     let update_response = client
         .put(format!(
             "http://{}/api/endpoints/{}",
@@ -277,10 +230,7 @@ async fn test_type_update_preserves_other_fields() {
         ))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
-            "name": "Test Endpoint",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "xllm",
-            "notes": "Important server"  // メモを保持
+            "name": "Updated Name"
         }))
         .send()
         .await
@@ -306,4 +256,5 @@ async fn test_type_update_preserves_other_fields() {
         detail["notes"], "Important server",
         "Notes should be preserved"
     );
+    assert_eq!(detail["name"], "Updated Name");
 }

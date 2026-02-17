@@ -161,6 +161,7 @@ async fn test_dashboard_overview_stats_reflects_persisted_request_totals() {
     let endpoint = Endpoint::new(
         "Overview Persistence Test".to_string(),
         "http://127.0.0.1:65500".to_string(),
+        llmlb::types::endpoint::EndpointType::OpenaiCompatible,
     );
     db_endpoints::create_endpoint(&db_pool, &endpoint)
         .await
@@ -226,6 +227,7 @@ async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
     let endpoint = Endpoint::new(
         "Stats Persistence Test".to_string(),
         "http://127.0.0.1:65535".to_string(),
+        llmlb::types::endpoint::EndpointType::OpenaiCompatible,
     );
     db_endpoints::create_endpoint(&db_pool, &endpoint)
         .await
@@ -364,9 +366,8 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
         .await;
 
     let create_body = json!({
-        "name": "Test vLLM",
-        "base_url": mock.uri(),
-        "endpoint_type": "vllm"
+        "name": "Test Endpoint",
+        "base_url": mock.uri()
     });
 
     let create_response = app
@@ -414,9 +415,10 @@ async fn test_dashboard_endpoints_include_endpoint_type() {
 
     let endpoints = endpoints.as_array().expect("response should be an array");
     assert!(
-        endpoints
-            .iter()
-            .any(|endpoint| endpoint["endpoint_type"] == "vllm"),
+        endpoints.iter().any(|endpoint| {
+            let et = endpoint["endpoint_type"].as_str().unwrap_or("");
+            ["xllm", "ollama", "vllm", "lm_studio", "openai_compatible"].contains(&et)
+        }),
         "endpoint_type should be included in dashboard endpoints"
     );
 }

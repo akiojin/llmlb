@@ -9,6 +9,8 @@ use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::lb::spawn_test_lb_with_db;
 
@@ -38,26 +40,74 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     api_key.key
 }
 
-/// US8-拒否シナリオ1: unknownタイプのエンドポイントでダウンロード拒否
+/// OpenAI互換として検出されるモックサーバーを作成するヘルパー
+async fn create_openai_compatible_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
+/// Ollamaとして検出されるモックサーバーを作成するヘルパー
+async fn create_ollama_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{"name": "llama3:8b", "size": 4000000000_i64}]
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
+/// vLLMとして検出されるモックサーバーを作成するヘルパー
+async fn create_vllm_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("server", "vLLM/0.4.0")
+                .set_body_json(json!({
+                    "object": "list",
+                    "data": [{"id": "test-model", "object": "model", "owned_by": "vllm"}]
+                })),
+        )
+        .mount(&mock)
+        .await;
+    mock
+}
+
+/// US8-拒否シナリオ1: 非xLLMタイプのエンドポイントでダウンロード拒否
+/// エンドポイントはOpenAI互換として自動検出される
 #[tokio::test]
-async fn test_download_reject_unknown_type() {
+async fn test_download_reject_non_xllm_type() {
+    let mock = create_openai_compatible_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // エンドポイント登録（オフラインなのでunknownタイプ）
+    // エンドポイント登録（自動検出でopenai_compatibleとして登録される）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Offline Endpoint",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "unknown"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
@@ -89,23 +139,25 @@ async fn test_download_reject_unknown_type() {
 /// US8-拒否シナリオ2: Ollamaタイプのエンドポイントでダウンロード拒否
 #[tokio::test]
 async fn test_download_reject_ollama_type() {
+    let mock = create_ollama_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // Ollamaエンドポイント登録（モックが必要）
+    // Ollamaエンドポイント登録（自動検出でollamaとして登録される）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Ollama Server",
-            "base_url": "http://localhost:11434",  // Ollamaモック
-            "endpoint_type": "ollama"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
@@ -131,23 +183,25 @@ async fn test_download_reject_ollama_type() {
 /// US8-拒否シナリオ3: vLLMタイプのエンドポイントでダウンロード拒否
 #[tokio::test]
 async fn test_download_reject_vllm_type() {
+    let mock = create_vllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // vLLMエンドポイント登録（モックが必要）
+    // vLLMエンドポイント登録（自動検出でvllmとして登録される）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "vLLM Server",
-            "base_url": "http://localhost:8000",  // vLLMモック
-            "endpoint_type": "vllm"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
@@ -173,23 +227,25 @@ async fn test_download_reject_vllm_type() {
 /// US8-拒否シナリオ4: OpenAI互換タイプのエンドポイントでダウンロード拒否
 #[tokio::test]
 async fn test_download_reject_openai_compatible_type() {
+    let mock = create_openai_compatible_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // OpenAI互換エンドポイント登録（モックが必要）
+    // OpenAI互換エンドポイント登録（自動検出でopenai_compatibleとして登録される）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "OpenAI Compatible Server",
-            "base_url": "http://localhost:8001",  // OpenAI互換モック
-            "endpoint_type": "openai_compatible"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
@@ -215,23 +271,25 @@ async fn test_download_reject_openai_compatible_type() {
 /// US8-拒否シナリオ5: エラーメッセージの検証
 #[tokio::test]
 async fn test_download_reject_error_message() {
+    let mock = create_openai_compatible_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // unknownタイプのエンドポイントを登録
+    // 非xLLMエンドポイントを登録（自動検出でopenai_compatibleとして登録される）
     let register_response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Test Endpoint",
-            "base_url": "http://localhost:9999",
-            "endpoint_type": "unknown"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(register_response.status().as_u16(), 201);
     let body: Value = register_response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 

@@ -10,6 +10,7 @@ use reqwest::Url;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashSet;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -214,7 +215,7 @@ async fn execute_curl(args: &CurlArgs, config: &AssistantConfig) -> Result<()> {
             executed_command: mask_sensitive(&args.command),
         };
         print_curl_result(&result, args.json)?;
-        return Ok(());
+        return Err(curl_failure_error(&result));
     }
 
     let Some(url) = extract_url(&args.command) else {
@@ -227,7 +228,7 @@ async fn execute_curl(args: &CurlArgs, config: &AssistantConfig) -> Result<()> {
             executed_command: mask_sensitive(&args.command),
         };
         print_curl_result(&result, args.json)?;
-        return Ok(());
+        return Err(curl_failure_error(&result));
     };
 
     if let Err(reason) = validate_host(&url, &config.router_url) {
@@ -240,7 +241,7 @@ async fn execute_curl(args: &CurlArgs, config: &AssistantConfig) -> Result<()> {
             executed_command: mask_sensitive(&args.command),
         };
         print_curl_result(&result, args.json)?;
-        return Ok(());
+        return Err(curl_failure_error(&result));
     }
 
     let command = if args.no_auto_auth {
@@ -272,6 +273,10 @@ async fn execute_curl(args: &CurlArgs, config: &AssistantConfig) -> Result<()> {
     };
 
     print_curl_result(&result, args.json)?;
+    if !result.success {
+        return Err(curl_failure_error(&result));
+    }
+
     Ok(())
 }
 
@@ -319,6 +324,20 @@ fn print_curl_result(result: &CurlResult, as_json: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn curl_failure_error(result: &CurlResult) -> anyhow::Error {
+    if let Some(message) = result.error.as_deref() {
+        return anyhow!(message.to_string());
+    }
+
+    if let Some(status_code) = result.status_code {
+        return anyhow!(format!(
+            "HTTP request failed with status code {status_code}"
+        ));
+    }
+
+    anyhow!("assistant curl command failed")
 }
 
 fn sanitize_command(command: &str) -> std::result::Result<(), String> {
@@ -631,14 +650,35 @@ fn mask_sensitive(command: &str) -> String {
 }
 
 fn load_openapi_value(path: Option<&PathBuf>, env_path: Option<&PathBuf>) -> Value {
-    let candidate = path.or(env_path);
+    let mut candidates = Vec::new();
 
-    if let Some(path) = candidate {
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(path) {
+    if let Some(path) = path {
+        candidates.push(path.clone());
+    }
+
+    if let Some(path) = env_path {
+        candidates.push(path.clone());
+    }
+
+    // Backward-compatible default: search docs/openapi.yaml from cwd to ancestors.
+    if candidates.is_empty() {
+        if let Some(path) = find_openapi_in_ancestors(
+            std::env::current_dir()
+                .ok()
+                .as_deref()
+                .unwrap_or(Path::new(".")),
+        ) {
+            candidates.push(path);
+        }
+    }
+
+    for candidate in candidates {
+        if candidate.exists() {
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
                 if let Ok(json_value) = serde_json::from_str::<Value>(&content) {
                     return json_value;
                 }
+
                 if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
                     if let Ok(json_value) = serde_json::to_value(yaml_value) {
                         return json_value;
@@ -649,6 +689,16 @@ fn load_openapi_value(path: Option<&PathBuf>, env_path: Option<&PathBuf>) -> Val
     }
 
     default_openapi_spec()
+}
+
+fn find_openapi_in_ancestors(start: &Path) -> Option<PathBuf> {
+    for dir in start.ancestors() {
+        let candidate = dir.join("docs").join("openapi.yaml");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn default_openapi_spec() -> Value {
@@ -988,6 +1038,59 @@ mod tests {
         let value = load_openapi_value(Some(&PathBuf::from("/tmp/not-found-openapi.yaml")), None);
         assert_eq!(value["openapi"], "3.1.0");
         assert!(value["paths"].is_object());
+    }
+
+    #[test]
+    fn find_openapi_in_ancestors_discovers_docs_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let nested = tmp.path().join("nested").join("deeper");
+        std::fs::create_dir_all(&nested).expect("create nested");
+
+        let docs_dir = tmp.path().join("docs");
+        std::fs::create_dir_all(&docs_dir).expect("create docs");
+        let openapi_path = docs_dir.join("openapi.yaml");
+        std::fs::write(
+            &openapi_path,
+            r#"
+openapi: 3.1.0
+info:
+  title: Test OpenAPI
+  version: 1.0.0
+paths: {}
+"#,
+        )
+        .expect("write openapi");
+
+        let found = find_openapi_in_ancestors(&nested).expect("must find docs/openapi.yaml");
+        assert_eq!(found, openapi_path);
+    }
+
+    #[tokio::test]
+    async fn execute_curl_returns_err_for_invalid_command() {
+        let cfg = test_config(|_| {});
+        let args = CurlArgs {
+            command: "wget http://localhost:32768/v1/models".to_string(),
+            no_auto_auth: false,
+            timeout: None,
+            json: true,
+        };
+
+        let result = execute_curl(&args, &cfg).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn execute_curl_returns_err_for_disallowed_host() {
+        let cfg = test_config(|_| {});
+        let args = CurlArgs {
+            command: "curl http://example.com/v1/models".to_string(),
+            no_auto_auth: false,
+            timeout: None,
+            json: true,
+        };
+
+        let result = execute_curl(&args, &cfg).await;
+        assert!(result.is_err());
     }
 
     #[test]

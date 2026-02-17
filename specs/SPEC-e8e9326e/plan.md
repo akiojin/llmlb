@@ -6,14 +6,14 @@
 - エンドポイントタイプの自動判別（xLLM検出）とAPIルーティングのみを扱う。
 - xLLMのモデル実装・運用詳細はxLLMリポジトリに移管済み。
 
-**機能ID**: `SPEC-66555000` | **日付**: 2026-01-14 | **仕様**: [spec.md](./spec.md)
-**入力**: `specs/SPEC-66555000/spec.md`の機能仕様
+**機能ID**: `SPEC-e8e9326e` | **日付**: 2026-01-14 | **仕様**: [spec.md](./spec.md)
+**入力**: `specs/SPEC-e8e9326e/spec.md`の機能仕様
 
 ## 実行フロー (/speckit.plan コマンドのスコープ)
 
 ```text
 1. 入力パスから機能仕様を読み込み
-   → 完了: SPEC-66555000/spec.md を読み込み済み
+   → 完了: SPEC-e8e9326e/spec.md を読み込み済み
 2. 技術コンテキストを記入 (要明確化をスキャン)
    → 完了: Rust/SQLite/axum、プロジェクトタイプ single
 3. 下記の憲章チェックセクションを評価
@@ -123,7 +123,7 @@ Ollama/vLLM等の外部OpenAI互換APIも統一的に管理できるようにな
 ### ドキュメント (この機能)
 
 ```text
-specs/SPEC-66555000/
+specs/SPEC-e8e9326e/
 ├── plan.md              # このファイル (/speckit.plan コマンド出力)
 ├── research.md          # Phase 0 出力 (/speckit.plan コマンド)
 ├── data-model.md        # Phase 1 出力 (/speckit.plan コマンド)

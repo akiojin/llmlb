@@ -17,7 +17,7 @@ import {
 import { Download, Loader2, CheckCircle, XCircle } from 'lucide-react'
 
 /**
- * SPEC-66555000: xLLM Model Download Dialog
+ * SPEC-e8e9326e: xLLM Model Download Dialog
  * Allows downloading models to xLLM endpoints
  */
 

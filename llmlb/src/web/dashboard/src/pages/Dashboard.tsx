@@ -66,7 +66,7 @@ export default function Dashboard() {
       refetchInterval: pollingInterval,
     })
 
-  // SPEC-66555000: Fetch endpoints list
+  // SPEC-e8e9326e: Fetch endpoints list
   const { data: endpointsData, isLoading: isLoadingEndpoints } = useQuery<DashboardEndpoint[]>({
     queryKey: ['dashboard-endpoints'],
     queryFn: () => dashboardApi.getEndpoints(),

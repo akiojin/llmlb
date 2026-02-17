@@ -1,6 +1,6 @@
 //! エンドポイントデータベース操作
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
 use crate::types::endpoint::{
     Endpoint, EndpointHealthCheck, EndpointModel, EndpointStatus, SupportedAPI,
@@ -197,7 +197,7 @@ pub async fn list_endpoints_by_status(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
-/// タイプでフィルタしてエンドポイント一覧を取得（SPEC-66555000）
+/// タイプでフィルタしてエンドポイント一覧を取得（SPEC-e8e9326e）
 pub async fn list_endpoints_by_type(
     pool: &SqlitePool,
     endpoint_type: crate::types::endpoint::EndpointType,
@@ -222,7 +222,7 @@ pub async fn list_endpoints_by_type(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
-/// タイプとステータスでフィルタしてエンドポイント一覧を取得（SPEC-66555000）
+/// タイプとステータスでフィルタしてエンドポイント一覧を取得（SPEC-e8e9326e）
 pub async fn list_endpoints_by_type_and_status(
     pool: &SqlitePool,
     endpoint_type: crate::types::endpoint::EndpointType,
@@ -249,7 +249,7 @@ pub async fn list_endpoints_by_type_and_status(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
-/// エンドポイントのタイプを更新（SPEC-66555000）
+/// エンドポイントのタイプを更新（SPEC-e8e9326e）
 pub async fn update_endpoint_type(
     pool: &SqlitePool,
     id: Uuid,
@@ -450,7 +450,7 @@ pub async fn update_endpoint_model(
     Ok(result.rows_affected() > 0)
 }
 
-/// モデルのmax_tokensのみを更新（SPEC-66555000）
+/// モデルのmax_tokensのみを更新（SPEC-e8e9326e）
 ///
 /// メタデータ取得後にcontext_lengthをmax_tokensとして保存する。
 pub async fn update_model_max_tokens(
@@ -619,7 +619,7 @@ struct EndpointRow {
     base_url: String,
     api_key_encrypted: Option<String>,
     status: String,
-    /// SPEC-66555000: エンドポイントタイプ
+    /// SPEC-e8e9326e: エンドポイントタイプ
     endpoint_type: String,
     health_check_interval_secs: i32,
     inference_timeout_secs: i32,
@@ -629,7 +629,7 @@ struct EndpointRow {
     error_count: i32,
     registered_at: String,
     notes: Option<String>,
-    /// SPEC-66555000移行用: エンドポイントの機能一覧（JSON形式）
+    /// SPEC-e8e9326e移行用: エンドポイントの機能一覧（JSON形式）
     capabilities: Option<String>,
     /// SPEC-f8e3a1b7: デバイス情報（JSON形式）
     device_info: Option<String>,

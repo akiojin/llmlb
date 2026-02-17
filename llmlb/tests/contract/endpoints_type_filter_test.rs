@@ -1,6 +1,6 @@
 //! Contract Test: GET /api/endpoints?type=xxx
 //!
-//! SPEC-66555000: エンドポイントタイプフィルタリングAPI契約テスト
+//! SPEC-e8e9326e: エンドポイントタイプフィルタリングAPI契約テスト
 //!
 //! US7: タイプでエンドポイントをフィルタリング
 

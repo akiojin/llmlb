@@ -1,6 +1,6 @@
 //! エンドポイント型定義
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -118,7 +118,7 @@ impl std::fmt::Display for EndpointStatus {
     }
 }
 
-/// エンドポイントタイプ（SPEC-66555000追加要件 2026-01-26）
+/// エンドポイントタイプ（SPEC-e8e9326e追加要件 2026-01-26）
 ///
 /// エンドポイントの種別を表す列挙型。
 /// 登録時に自動判別され、タイプに応じた機能制御に使用される。
@@ -194,7 +194,7 @@ impl std::fmt::Display for EndpointType {
     }
 }
 
-/// ダウンロードタスクの状態（SPEC-66555000追加要件 2026-01-26）
+/// ダウンロードタスクの状態（SPEC-e8e9326e追加要件 2026-01-26）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadStatus {
@@ -247,7 +247,7 @@ impl std::fmt::Display for DownloadStatus {
 
 /// エンドポイントの機能タイプ
 ///
-/// NodeのRuntimeTypeに相当する機能分類（SPEC-66555000移行用）
+/// NodeのRuntimeTypeに相当する機能分類（SPEC-e8e9326e移行用）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointCapability {
@@ -298,7 +298,7 @@ pub struct Endpoint {
     pub api_key: Option<String>,
     /// 現在の状態
     pub status: EndpointStatus,
-    /// エンドポイントタイプ（SPEC-66555000追加要件 2026-01-26）
+    /// エンドポイントタイプ（SPEC-e8e9326e追加要件 2026-01-26）
     /// 登録時に自動検出される。対応する5タイプのみ許可。
     pub endpoint_type: EndpointType,
     /// ヘルスチェック間隔（秒）
@@ -317,7 +317,7 @@ pub struct Endpoint {
     pub registered_at: DateTime<Utc>,
     /// メモ
     pub notes: Option<String>,
-    /// エンドポイントの機能一覧（SPEC-66555000移行用）
+    /// エンドポイントの機能一覧（SPEC-e8e9326e移行用）
     /// 画像生成、音声認識等の特殊機能をサポートするかを示す
     #[serde(default)]
     pub capabilities: Vec<EndpointCapability>,
@@ -433,7 +433,7 @@ pub struct EndpointModel {
     pub model_id: String,
     /// 能力（chat, embeddings等）
     pub capabilities: Option<Vec<String>>,
-    /// 最大トークン数（SPEC-66555000追加要件 2026-01-26）
+    /// 最大トークン数（SPEC-e8e9326e追加要件 2026-01-26）
     pub max_tokens: Option<u32>,
     /// 最終確認時刻
     pub last_checked: Option<DateTime<Utc>>,
@@ -449,7 +449,7 @@ impl EndpointModel {
     }
 }
 
-/// モデルダウンロードタスク（SPEC-66555000追加要件 2026-01-26）
+/// モデルダウンロードタスク（SPEC-e8e9326e追加要件 2026-01-26）
 ///
 /// xLLMエンドポイント専用のモデルダウンロード進捗管理
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -804,7 +804,7 @@ mod tests {
         assert_eq!(deserialized.gpu_devices.len(), 1);
     }
 
-    // SPEC-66555000: エンドポイントタイプ自動判別機能テスト
+    // SPEC-e8e9326e: エンドポイントタイプ自動判別機能テスト
 
     #[test]
     fn test_endpoint_type_serialization() {

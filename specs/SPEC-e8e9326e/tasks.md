@@ -1,8 +1,8 @@
 # タスク: ロードバランサー主導エンドポイント登録システム
 
-**機能ID**: `SPEC-66555000`
+**機能ID**: `SPEC-e8e9326e`
 **ステータス**: 部分完了（Phase 4 実装済み、テスト/ハーネス未復帰あり）
-**入力**: `/specs/SPEC-66555000/` の設計ドキュメント
+**入力**: `/specs/SPEC-e8e9326e/` の設計ドキュメント
 **前提条件**: plan.md, research.md, data-model.md, contracts/endpoints-api.md, quickstart.md
 
 ## 実行フロー
@@ -159,7 +159,7 @@
 
 ### ドキュメント・検証
 
-- [x] T041 `specs/SPEC-66555000/quickstart.md` の検証ステップを実行
+- [x] T041 `specs/SPEC-e8e9326e/quickstart.md` の検証ステップを実行
 - [x] T042 `README.md` または `README.ja.md` にエンドポイント管理の説明追加
 
 ## 依存関係
@@ -369,7 +369,7 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 
 ### Phase 4.7: 検証・ドキュメント
 
-- [x] T141 `specs/SPEC-66555000/quickstart.md` にタイプ判別の検証ステップを追加・実行
+- [x] T141 `specs/SPEC-e8e9326e/quickstart.md` にタイプ判別の検証ステップを追加・実行
 - [x] T142 `README.ja.md` にエンドポイントタイプとxLLM連携の説明を追加
 - [ ] T143 追加要件のcontract/integrationテストがCIで常時実行可能になったことを確認し、完了報告を更新
 

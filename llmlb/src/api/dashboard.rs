@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 /// エンドポイントのダッシュボード表示用サマリー
 ///
-/// SPEC-66555000: llmlb主導エンドポイント登録システム
+/// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardEndpoint {
     /// エンドポイントID
@@ -125,7 +125,7 @@ pub struct DashboardStats {
 /// ダッシュボード概要レスポンス
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardOverview {
-    /// エンドポイント一覧（SPEC-66555000）
+    /// エンドポイント一覧（SPEC-e8e9326e）
     pub endpoints: Vec<DashboardEndpoint>,
     /// システム統計
     pub stats: DashboardStats,
@@ -139,7 +139,7 @@ pub struct DashboardOverview {
 
 /// GET /api/dashboard/endpoints
 ///
-/// SPEC-66555000: llmlb主導エンドポイント登録システム
+/// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 pub async fn get_endpoints(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
     Json(collect_endpoints(&state).await)
 }
@@ -276,7 +276,7 @@ pub async fn get_monthly_token_stats(
 
 /// エンドポイント一覧を収集
 ///
-/// SPEC-66555000: llmlb主導エンドポイント登録システム
+/// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
     let endpoint_registry = &state.endpoint_registry;
     let endpoints = endpoint_registry.list().await;
@@ -798,4 +798,4 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
 }
 
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
-// 関連: SPEC-66555000
+// 関連: SPEC-e8e9326e

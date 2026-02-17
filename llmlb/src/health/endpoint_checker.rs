@@ -271,7 +271,7 @@ impl EndpointHealthChecker {
                 .await;
         }
 
-        // SPEC-66555000: offline→online遷移時にタイプ再検出
+        // SPEC-e8e9326e: offline→online遷移時にタイプ再検出
         let was_offline = matches!(
             status_before,
             EndpointStatus::Offline | EndpointStatus::Error

@@ -1,6 +1,6 @@
 //! エンドポイント管理API
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
 use crate::common::auth::{Claims, UserRole};
 use crate::db::{download_tasks as tasks_db, endpoints as db};
@@ -192,7 +192,7 @@ pub struct EndpointResponse {
     pub base_url: String,
     /// 現在の状態
     pub status: String,
-    /// エンドポイントタイプ（SPEC-66555000）
+    /// エンドポイントタイプ（SPEC-e8e9326e）
     pub endpoint_type: String,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
@@ -260,7 +260,7 @@ pub struct ListEndpointsQuery {
     #[serde(default)]
     pub status: Option<String>,
     /// タイプでフィルタ（xllm, ollama, vllm, openai_compatible, unknown）
-    /// SPEC-66555000
+    /// SPEC-e8e9326e
     #[serde(default, rename = "type")]
     pub endpoint_type: Option<String>,
 }
@@ -334,16 +334,16 @@ pub struct TestConnectionResponse {
     pub endpoint_info: Option<EndpointTestInfo>,
 }
 
-// --- SPEC-66555000: ダウンロード・メタデータ関連型 ---
+// --- SPEC-e8e9326e: ダウンロード・メタデータ関連型 ---
 
-/// ダウンロードリクエスト（SPEC-66555000）
+/// ダウンロードリクエスト（SPEC-e8e9326e）
 #[derive(Debug, Deserialize)]
 pub struct DownloadModelRequest {
     /// ダウンロードするモデル名
     pub model: String,
 }
 
-/// ダウンロードタスクレスポンス（SPEC-66555000）
+/// ダウンロードタスクレスポンス（SPEC-e8e9326e）
 #[derive(Debug, Serialize)]
 pub struct DownloadTaskResponse {
     /// タスクID
@@ -379,7 +379,7 @@ impl From<ModelDownloadTask> for DownloadTaskResponse {
     }
 }
 
-/// ダウンロード進捗一覧レスポンス（SPEC-66555000）
+/// ダウンロード進捗一覧レスポンス（SPEC-e8e9326e）
 #[derive(Debug, Serialize)]
 pub struct DownloadProgressResponse {
     /// エンドポイントID
@@ -388,7 +388,7 @@ pub struct DownloadProgressResponse {
     pub tasks: Vec<DownloadTaskResponse>,
 }
 
-/// モデル情報レスポンス（SPEC-66555000）
+/// モデル情報レスポンス（SPEC-e8e9326e）
 #[derive(Debug, Serialize)]
 pub struct ModelInfoResponse {
     /// モデルID
@@ -609,7 +609,7 @@ pub async fn create_endpoint(
         Ok(None) => {} // OK - 名前は一意
     }
 
-    // SPEC-66555000: 自動検出（手動指定は廃止、対応タイプのみ許可）
+    // SPEC-e8e9326e: 自動検出（手動指定は廃止、対応タイプのみ許可）
     let detection_result =
         detect_endpoint_type_with_client(&state.http_client, &req.base_url, req.api_key.as_deref())
             .await;
@@ -783,7 +783,7 @@ pub async fn list_endpoints(
                 endpoints
             };
 
-            // SPEC-66555000: タイプでフィルタ
+            // SPEC-e8e9326e: タイプでフィルタ
             if let Some(ref endpoint_type) = query.endpoint_type {
                 filtered_endpoints.retain(|ep| ep.endpoint_type.as_str() == endpoint_type);
             }
@@ -982,7 +982,7 @@ pub async fn update_endpoint(
         updated.notes = notes_value;
     }
 
-    // SPEC-66555000: base_url変更時はタイプを再検出
+    // SPEC-e8e9326e: base_url変更時はタイプを再検出
     if updated.base_url != original_base_url {
         let detection_result = detect_endpoint_type_with_client(
             &state.http_client,
@@ -1426,7 +1426,7 @@ pub async fn proxy_chat_completions(
     }
 }
 
-// --- SPEC-66555000: ダウンロード・メタデータ関連ハンドラー ---
+// --- SPEC-e8e9326e: ダウンロード・メタデータ関連ハンドラー ---
 
 /// POST /api/endpoints/:id/download - モデルダウンロードリクエスト（xLLMのみ）
 pub async fn download_model(
@@ -1466,7 +1466,7 @@ pub async fn download_model(
         }
     };
 
-    // SPEC-66555000: xLLMタイプのみダウンロード許可
+    // SPEC-e8e9326e: xLLMタイプのみダウンロード許可
     if !endpoint.endpoint_type.supports_model_download() {
         return (
             StatusCode::BAD_REQUEST,
@@ -1593,7 +1593,7 @@ pub async fn get_model_info(
         }
     };
 
-    // SPEC-66555000: メタデータ取得はxLLM/Ollamaのみサポート
+    // SPEC-e8e9326e: メタデータ取得はxLLM/Ollamaのみサポート
     if !endpoint.endpoint_type.supports_model_metadata() {
         return (
             StatusCode::BAD_REQUEST,

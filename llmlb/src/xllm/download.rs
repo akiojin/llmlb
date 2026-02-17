@@ -1,6 +1,6 @@
 //! xLLM Model Download Client
 //!
-//! SPEC-66555000: Model download request and progress tracking for xLLM endpoints
+//! SPEC-e8e9326e: Model download request and progress tracking for xLLM endpoints
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

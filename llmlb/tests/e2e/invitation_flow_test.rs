@@ -2,7 +2,7 @@
 //!
 //! 完全な招待コードフロー（発行 → ユーザー登録 → ログイン）
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::Body,

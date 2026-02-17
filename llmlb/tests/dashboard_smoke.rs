@@ -3,7 +3,7 @@
 //! Axum ロードバランサーを直接呼び出し、ダッシュボードの主要なHTTP経路が期待通りに
 //! 応答することを確認する。UI機能の最小限のE2E保証として利用する。
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、一部のテストは
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、一部のテストは
 //! EndpointRegistryベースのテストに移行が必要です。
 
 mod support;
@@ -89,7 +89,7 @@ async fn dashboard_static_index_is_react_app() {
     );
 }
 
-// NOTE: 以下のテストはSPEC-66555000（NodeRegistry廃止）により削除済み:
+// NOTE: 以下のテストはSPEC-e8e9326e（NodeRegistry廃止）により削除済み:
 // - dashboard_nodes_and_stats_reflect_registry
 // - dashboard_request_history_tracks_activity
 // - dashboard_overview_returns_combined_payload

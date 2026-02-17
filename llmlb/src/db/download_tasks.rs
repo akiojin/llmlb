@@ -1,6 +1,6 @@
 //! Model Download Tasks Database Operations
 //!
-//! SPEC-66555000: xLLM Model Download Task Management
+//! SPEC-e8e9326e: xLLM Model Download Task Management
 
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;

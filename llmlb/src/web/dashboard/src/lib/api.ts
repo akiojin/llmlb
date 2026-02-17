@@ -178,7 +178,7 @@ export interface SyncProgress {
 }
 
 /**
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 export type EndpointType =
@@ -209,7 +209,7 @@ export interface DashboardEndpoint {
 }
 
 /**
- * SPEC-66555000: Model download task for xLLM endpoints
+ * SPEC-e8e9326e: Model download task for xLLM endpoints
  */
 export interface DownloadTask {
   task_id: string
@@ -223,7 +223,7 @@ export interface DownloadTask {
 }
 
 /**
- * SPEC-66555000: Model metadata from endpoint
+ * SPEC-e8e9326e: Model metadata from endpoint
  */
 export interface ModelMetadata {
   model: string
@@ -314,7 +314,7 @@ export interface MonthlyTokenStats extends TokenStats {
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
 
-  /** SPEC-66555000: List endpoints */
+  /** SPEC-e8e9326e: List endpoints */
   getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
   getStats: () => fetchWithAuth<DashboardStats>('/api/dashboard/stats'),
@@ -417,7 +417,7 @@ export const systemApi = {
 
 /**
  * Endpoints API
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 /**
@@ -454,7 +454,7 @@ export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
-  /** SPEC-66555000: List endpoints by type */
+  /** SPEC-e8e9326e: List endpoints by type */
   listByType: (type: EndpointType) =>
     fetchWithAuth<DashboardEndpoint[]>('/api/endpoints', {
       params: { type },
@@ -523,7 +523,7 @@ export const endpointsApi = {
       }>
     }>(`/api/endpoints/${id}/models`),
 
-  /** SPEC-66555000: Download model (xLLM only) */
+  /** SPEC-e8e9326e: Download model (xLLM only) */
   downloadModel: (
     id: string,
     data: { model: string; filename?: string }
@@ -533,13 +533,13 @@ export const endpointsApi = {
       body: JSON.stringify(data),
     }),
 
-  /** SPEC-66555000: Get download progress (xLLM only) */
+  /** SPEC-e8e9326e: Get download progress (xLLM only) */
   getDownloadProgress: (id: string) =>
     fetchWithAuth<{ tasks: DownloadTask[] }>(
       `/api/endpoints/${id}/download/progress`
     ),
 
-  /** SPEC-66555000: Get model metadata */
+  /** SPEC-e8e9326e: Get model metadata */
   getModelInfo: (id: string, model: string) =>
     fetchWithAuth<ModelMetadata>(
       `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`

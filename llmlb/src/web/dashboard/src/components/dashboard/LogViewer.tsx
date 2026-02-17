@@ -19,7 +19,7 @@ import { FileText, RefreshCw, Trash2, Server, Download } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 
 /**
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Log Viewer Component
  *
  * Note: Endpoints are external services (Ollama, vLLM, etc.) that do not push logs to the load balancer.

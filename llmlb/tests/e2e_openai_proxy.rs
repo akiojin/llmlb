@@ -330,7 +330,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     node_stub.stop().await;
 }
 
-/// SPEC-66555000: Endpoints APIを使用してモデルを登録しテストする
+/// SPEC-e8e9326e: Endpoints APIを使用してモデルを登録しテストする
 #[tokio::test]
 async fn openai_v1_models_list_with_registered_node() {
     use support::lb::register_responses_endpoint;
@@ -348,7 +348,7 @@ async fn openai_v1_models_list_with_registered_node() {
 
     let (lb, db_pool) = spawn_test_lb_with_db().await;
 
-    // SPEC-66555000: Endpoints API経由でエンドポイントを登録＆モデル同期
+    // SPEC-e8e9326e: Endpoints API経由でエンドポイントを登録＆モデル同期
     let endpoint_id = register_responses_endpoint(lb.addr(), node_stub.addr(), "gpt-oss-20b")
         .await
         .expect("endpoint registration should succeed");
@@ -429,7 +429,7 @@ async fn openai_v1_models_list_with_registered_node() {
     node_stub.stop().await;
 }
 
-/// SPEC-66555000: Endpoints APIを使用してモデルを登録しテストする
+/// SPEC-e8e9326e: Endpoints APIを使用してモデルを登録しテストする
 #[tokio::test]
 async fn openai_v1_models_get_specific() {
     use support::lb::register_responses_endpoint;
@@ -447,7 +447,7 @@ async fn openai_v1_models_get_specific() {
 
     let (lb, db_pool) = spawn_test_lb_with_db().await;
 
-    // SPEC-66555000: Endpoints API経由でエンドポイントを登録＆モデル同期
+    // SPEC-e8e9326e: Endpoints API経由でエンドポイントを登録＆モデル同期
     let endpoint_id = register_responses_endpoint(lb.addr(), node_stub.addr(), "gpt-oss-20b").await;
     assert!(
         endpoint_id.is_ok(),
@@ -475,7 +475,7 @@ async fn openai_v1_models_get_specific() {
     node_stub.stop().await;
 }
 
-/// SPEC-66555000: Endpoints APIを使用してモデルを登録しテストする
+/// SPEC-e8e9326e: Endpoints APIを使用してモデルを登録しテストする
 #[tokio::test]
 async fn openai_v1_models_not_found() {
     use support::lb::register_responses_endpoint;
@@ -493,7 +493,7 @@ async fn openai_v1_models_not_found() {
 
     let (lb, db_pool) = spawn_test_lb_with_db().await;
 
-    // SPEC-66555000: Endpoints API経由でエンドポイントを登録＆モデル同期
+    // SPEC-e8e9326e: Endpoints API経由でエンドポイントを登録＆モデル同期
     let _ = register_responses_endpoint(lb.addr(), node_stub.addr(), "gpt-oss-20b").await;
 
     // APIキーを取得

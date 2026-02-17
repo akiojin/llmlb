@@ -2,7 +2,7 @@
 //!
 //! /api と /v1 の各エンドポイントで permissions が正しく強制されることを確認する。
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::Body,

@@ -56,7 +56,7 @@ import {
 } from 'lucide-react'
 
 /**
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Endpoint List Component
  */
 
@@ -102,7 +102,7 @@ function getStatusLabel(status: DashboardEndpoint['status']): string {
   }
 }
 
-/** SPEC-66555000: Get display label for endpoint type */
+/** SPEC-e8e9326e: Get display label for endpoint type */
 function getTypeLabel(type: EndpointType): string {
   switch (type) {
     case 'xllm':
@@ -123,7 +123,7 @@ function getTypeLabel(type: EndpointType): string {
 }
 
 
-/** SPEC-66555000: Get badge variant for endpoint type */
+/** SPEC-e8e9326e: Get badge variant for endpoint type */
 function getTypeBadgeVariant(
   type: EndpointType
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
@@ -365,7 +365,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 <SelectItem value="error">Error</SelectItem>
               </SelectContent>
             </Select>
-            {/* SPEC-66555000: Type filter */}
+            {/* SPEC-e8e9326e: Type filter */}
             <Select
               value={typeFilter}
               onValueChange={(value: typeof typeFilter) => {

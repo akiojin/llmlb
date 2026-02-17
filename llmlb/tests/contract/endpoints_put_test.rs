@@ -1,8 +1,8 @@
 //! Contract Test: PUT /api/endpoints/:id
 //!
-//! SPEC-66555000: エンドポイント更新API契約テスト
+//! SPEC-e8e9326e: エンドポイント更新API契約テスト
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},

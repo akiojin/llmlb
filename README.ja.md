@@ -200,7 +200,7 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 - **offline**: ヘルスチェック失敗
 - **error**: 接続エラー
 
-詳細は [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quickstart.md) を参照。
+詳細は [specs/SPEC-e8e9326e/quickstart.md](./specs/SPEC-e8e9326e/quickstart.md) を参照。
 
 ## LLM アシスタント向け MCP サーバー
 

@@ -13,7 +13,7 @@ mod models_metadata_test;
 #[path = "integration/migration_test.rs"]
 mod migration_test;
 
-// NOTE: audio_api_test.rs was deleted as part of NodeRegistry removal (SPEC-66555000)
+// NOTE: audio_api_test.rs was deleted as part of NodeRegistry removal (SPEC-e8e9326e)
 // All tests depended on deprecated /api/internal/test/register-node endpoint
 
 #[path = "integration/images_api_test.rs"]
@@ -28,7 +28,7 @@ mod test_proxy_completions;
 #[path = "integration/test_dashboard.rs"]
 mod test_dashboard;
 
-// SPEC-66555000: エンドポイント管理統合テスト
+// SPEC-e8e9326e: エンドポイント管理統合テスト
 #[path = "integration/endpoint_registration_test.rs"]
 mod endpoint_registration_test;
 
@@ -56,7 +56,7 @@ mod endpoint_auto_recovery_test;
 #[path = "integration/endpoint_viewer_access_test.rs"]
 mod endpoint_viewer_access_test;
 
-// SPEC-66555000: エンドポイントタイプ関連の統合テスト
+// SPEC-e8e9326e: エンドポイントタイプ関連の統合テスト
 #[path = "integration/endpoint_type_detection_test.rs"]
 mod endpoint_type_detection_test;
 

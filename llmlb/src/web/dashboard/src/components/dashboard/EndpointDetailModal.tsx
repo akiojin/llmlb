@@ -24,7 +24,7 @@ import { EndpointModelStatsTable } from './EndpointModelStatsTable'
 import { EndpointRequestChart } from './EndpointRequestChart'
 
 /**
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Endpoint Detail Modal
  */
 

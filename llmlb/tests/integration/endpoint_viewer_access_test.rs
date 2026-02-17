@@ -1,6 +1,6 @@
 //! Integration Test: T016d - viewerロール制限
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 //!
 //! viewerロールはGET操作のみ許可、変更操作は禁止することを検証する。
 

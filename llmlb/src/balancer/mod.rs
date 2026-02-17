@@ -93,7 +93,7 @@ mod tests {
     use super::*;
     use std::time::Duration as StdDuration;
 
-    // NOTE: SPEC-66555000によりNodeRegistryは廃止されました。
+    // NOTE: SPEC-e8e9326eによりNodeRegistryは廃止されました。
     // SPEC-f8e3a1b7によりNode型は削除され、Endpoint型に移行しました。
     // compare_average_ms_orders_values テストは関数削除に伴い削除されました。
 

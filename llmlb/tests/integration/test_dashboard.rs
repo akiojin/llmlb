@@ -2,7 +2,7 @@
 //!
 //! WebSocket接続 → リアルタイム更新 → ノード状態変化の受信
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::Router;
 use futures::StreamExt;

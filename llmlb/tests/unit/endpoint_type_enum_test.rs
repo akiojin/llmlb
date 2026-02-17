@@ -1,4 +1,4 @@
-//! SPEC-66555000: EndpointType列挙型のシリアライズ/デシリアライズテスト
+//! SPEC-e8e9326e: EndpointType列挙型のシリアライズ/デシリアライズテスト
 //!
 //! T139: EndpointType列挙型のunit test
 

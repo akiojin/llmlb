@@ -1,6 +1,6 @@
 //! Endpoint Type Detection Module
 //!
-//! SPEC-66555000: Automatic endpoint type detection
+//! SPEC-e8e9326e: Automatic endpoint type detection
 //!
 //! Detection priority: xLLM > Ollama > LM Studio > vLLM > OpenAI-compatible
 

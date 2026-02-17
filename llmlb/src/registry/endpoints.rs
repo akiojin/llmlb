@@ -107,7 +107,7 @@ impl EndpointRegistry {
             .collect()
     }
 
-    /// 指定した機能を持つオンラインエンドポイントを取得（SPEC-66555000移行用）
+    /// 指定した機能を持つオンラインエンドポイントを取得（SPEC-e8e9326e移行用）
     ///
     /// NodeRegistryのRuntimeTypeベースのフィルタリングを置き換える。
     /// 例: ImageGeneration機能を持つエンドポイント → 画像生成リクエストの転送先
@@ -272,7 +272,7 @@ impl EndpointRegistry {
         }
     }
 
-    /// エンドポイントのタイプを更新（DBとキャッシュ両方）（SPEC-66555000）
+    /// エンドポイントのタイプを更新（DBとキャッシュ両方）（SPEC-e8e9326e）
     ///
     /// ヘルスチェック時のoffline→online遷移時に再検出して更新する。
     pub async fn update_endpoint_type(

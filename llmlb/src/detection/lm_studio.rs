@@ -1,6 +1,6 @@
 //! LM Studio Endpoint Type Detection
 //!
-//! SPEC-66555000: LM Studio detection via /api/v1/models and /v1/models
+//! SPEC-e8e9326e: LM Studio detection via /api/v1/models and /v1/models
 //!
 //! LM Studio endpoints expose /api/v1/models with LM Studio-specific fields
 //! (publisher, arch, state) and may include "lm-studio" in Server header

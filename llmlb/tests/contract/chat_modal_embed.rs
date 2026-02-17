@@ -3,7 +3,7 @@
 //! The dashboard is now a React single-page application.
 //! This test verifies the React app shell is served correctly.
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{body::to_bytes, http::Request, Router};
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};

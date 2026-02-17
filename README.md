@@ -93,53 +93,47 @@ available for compatibility.
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
 - **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the model name to proxy to the corresponding cloud provider while keeping the same OpenAI-compatible endpoint.
 
-## MCP Server for LLM Assistants
+## Assistant CLI for LLM Assistants
 
-LLM assistants (like Claude Code) can interact with LLM Load Balancer through a dedicated
-MCP server. This is the recommended approach over using Bash with curl commands
-directly.
-The MCP server is installed and run with npm/npx; the repository root uses pnpm
-for workspace tasks.
+As of February 17, 2026, the former MCP server package (`@llmlb/mcp-server`) and npm
+distribution have been removed. Assistant workflows now use built-in CLI commands.
 
-### Why MCP Server over Bash + curl?
+### Why `llmlb assistant`?
 
-| Feature | MCP Server | Bash + curl |
-|---------|------------|-------------|
-| Authentication | Auto-injected | Manual header management |
-| Security | Host whitelist, injection prevention | No built-in protection |
-| Shell injection | Protected (shell: false) | Vulnerable |
-| API documentation | Built-in as MCP resources | External reference needed |
-| Credential handling | Automatic masking in logs | Exposed in command history |
-| Timeout management | Configurable per-request | Manual implementation |
-| Error handling | Structured JSON responses | Raw text parsing |
+| Feature | `llmlb assistant` | Manual Bash + curl |
+|---------|-------------------|--------------------|
+| Authentication | Auto-injected from env | Manual header management |
+| Security | Host whitelist + injection prevention | No built-in protection |
+| Sensitive data | Masked in command echo/output | Exposed in shell history |
+| API docs | `assistant openapi` / `assistant guide` | External reference needed |
+| Timeout handling | Built-in per request | Manual implementation |
 
-### Installation
+### Core Commands
 
 ```bash
-npm install -g @llmlb/mcp-server
-# or
-npx @llmlb/mcp-server
+# execute_curl equivalent
+llmlb assistant curl --command "curl http://localhost:32768/v1/models"
+
+# print OpenAPI JSON
+llmlb assistant openapi
+
+# print API guide text
+llmlb assistant guide --category overview
 ```
 
-### Configuration (.mcp.json)
+### Skills / Plugins
 
-```json
-{
-  "mcpServers": {
-    "llmlb": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@llmlb/mcp-server"],
-      "env": {
-        "LLMLB_URL": "http://localhost:32768",
-        "LLMLB_API_KEY": "sk_your_api_key"
-      }
-    }
-  }
-}
+- Claude Code plugin metadata: `.claude-plugin/marketplace.json`
+- Claude plugin entry: `.claude-plugin/plugins/llmlb-cli/plugin.json`
+- Claude skill mirror: `.claude/skills/llmlb-cli-usage/SKILL.md`
+- Codex skill: `.codex/skills/llmlb-cli-usage/SKILL.md`
+- Codex packaged output directory: `codex-skills/dist/`
+
+```bash
+python3 .codex/skills/.system/skill-creator/scripts/package_skill.py \
+  .codex/skills/llmlb-cli-usage \
+  codex-skills/dist
 ```
-
-For detailed documentation, see [mcp-server/README.md](./mcp-server/README.md).
 
 ## Quick Start
 
@@ -410,7 +404,9 @@ curl http://lb:32768/v1/responses -d '...'
 llmlb/
 ├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy, common types)
 ├── xllm (external)     # <https://github.com/akiojin/xLLM>
-├── mcp-server/          # MCP server (for LLM assistants like Claude Code)
+├── .claude-plugin/      # Claude Code plugin metadata and bundled skills
+├── .codex/skills/       # Codex skills (source)
+├── codex-skills/dist/   # Packaged Codex .skill artifacts
 └── specs/               # Specifications (Spec-Driven Development)
 ```
 

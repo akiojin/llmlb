@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "llmlb-cli",
+  "version": "0.1.0",
+  "description": "Claude Code plugin for llmlb assistant CLI usage patterns.",
+  "skills": [
+    "skills/llmlb-cli-usage/SKILL.md"
+  ]
+}

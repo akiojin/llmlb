@@ -1,5 +1,19 @@
 # Unreleased
 
+# [4.4.0](https://github.com/akiojin/llmlb/compare/v4.3.0...v4.4.0) (2026-02-17)
+
+### Features
+
+- MCPサーバーをassistant CLIとplugin/skillワークフローに移行 (#410)
+
+### Bug Fixes
+
+- モデル内ルーティングを純粋ラウンドロビンに統一 (#411)
+
+### Chores
+
+- リリースコマンドにorigin/develop pull ステップを追加
+
 # [4.3.0](https://github.com/akiojin/llmlb/compare/v4.2.1...v4.3.0) (2026-02-16)
 
 ### Features

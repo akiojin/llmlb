@@ -12,18 +12,31 @@ LLM（Claude）がバージョン更新とリリースコミットを作成し�
 ```text
 /release 実行
     ↓
-① LLMがバージョン更新（Cargo.toml, CHANGELOG.md）
+① origin/develop を pull してローカルを最新化
     ↓
-② chore(release): vX.Y.Z コミット作成
+② LLMがバージョン更新（Cargo.toml, CHANGELOG.md）
     ↓
-③ develop → main マージ (prepare-release.yml または手動PR)
+③ chore(release): vX.Y.Z コミット作成
     ↓
-④ release.yml がタグ作成 → GitHub Release作成
+④ develop → main マージ (prepare-release.yml または手動PR)
     ↓
-⑤ publish.yml がバイナリビルド → Release にアタッチ
+⑤ release.yml がタグ作成 → GitHub Release作成
+    ↓
+⑥ publish.yml がバイナリビルド → Release にアタッチ
 ```
 
 ## 手順
+
+### 0. ローカルを最新化（必須）
+
+origin/develop の最新を取得し、ローカル develop を更新する：
+
+```bash
+git fetch origin
+git pull origin develop
+```
+
+未コミットの変更がある場合はリリースを中断し、先に解決すること。
 
 ### 1. バージョン更新
 

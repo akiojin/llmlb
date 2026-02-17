@@ -127,27 +127,3 @@ jobs:
         with:
           name: rust-lcov
           path: coverage-rust/lcov.info
-
-  mcp-server:
-    name: MCP Server (lint/test)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.20.0
-      - name: Install dependencies
-        working-directory: mcp-server
-        run: pnpm install --frozen-lockfile
-      - name: Type check
-        working-directory: mcp-server
-        run: pnpm typecheck
-      - name: Build
-        working-directory: mcp-server
-        run: pnpm build
-      - name: Test
-        working-directory: mcp-server
-        run: pnpm test

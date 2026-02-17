@@ -92,7 +92,7 @@ pub enum AdmissionDecision {
 mod tests {
     use super::*;
     use crate::db::test_utils::TEST_LOCK;
-    use crate::types::endpoint::Endpoint;
+    use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
     use sqlx::SqlitePool;
     use std::sync::Arc;
     use std::time::Duration as StdDuration;
@@ -322,6 +322,78 @@ mod tests {
         let snapshot = final_snapshot.expect("lease auto-complete should drain active requests");
         assert_eq!(snapshot.active_requests, 0);
         assert_eq!(snapshot.failed_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn select_endpoint_round_robin_ready_for_model_excludes_initializing_endpoints() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        let registry = EndpointRegistry::new(pool)
+            .await
+            .expect("Failed to create endpoint registry");
+
+        let mut ready_endpoint = Endpoint::new(
+            "ready-endpoint".to_string(),
+            "http://localhost:11080".to_string(),
+        );
+        ready_endpoint.status = EndpointStatus::Online;
+        let ready_endpoint_id = ready_endpoint.id;
+        registry
+            .add(ready_endpoint)
+            .await
+            .expect("Failed to add ready endpoint");
+
+        let mut initializing_endpoint = Endpoint::new(
+            "initializing-endpoint".to_string(),
+            "http://localhost:11081".to_string(),
+        );
+        initializing_endpoint.status = EndpointStatus::Online;
+        let initializing_endpoint_id = initializing_endpoint.id;
+        registry
+            .add(initializing_endpoint)
+            .await
+            .expect("Failed to add initializing endpoint");
+
+        let model_id = "gpt-oss:latest".to_string();
+        for endpoint_id in [ready_endpoint_id, initializing_endpoint_id] {
+            registry
+                .add_model(&EndpointModel {
+                    endpoint_id,
+                    model_id: model_id.clone(),
+                    capabilities: None,
+                    max_tokens: None,
+                    last_checked: None,
+                    supported_apis: vec![SupportedAPI::ChatCompletions],
+                })
+                .await
+                .expect("Failed to add endpoint model");
+        }
+
+        let load_manager = LoadManager::new(Arc::new(registry));
+        load_manager
+            .upsert_initial_state(ready_endpoint_id, false, Some((1, 1)))
+            .await;
+        load_manager
+            .upsert_initial_state(initializing_endpoint_id, true, Some((0, 1)))
+            .await;
+
+        for _ in 0..4 {
+            let selected = load_manager
+                .select_endpoint_round_robin_ready_for_model(&model_id)
+                .await
+                .expect("selection should succeed");
+            assert_eq!(
+                selected.id, ready_endpoint_id,
+                "initializing endpoint must not be selected"
+            );
+        }
     }
 
     // SPEC-f8e3a1b7: NodeRegistry依存のトークン・ルーティングテストは削除されました
@@ -1590,6 +1662,30 @@ impl LoadManager {
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
         let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
         self.select_endpoint_round_robin_from_endpoints(endpoints)
+    }
+
+    /// 指定モデルに対応する初期化完了エンドポイントをラウンドロビンで選択（Endpoint版）
+    ///
+    /// 初期化中ノードを除外し、未準備ノードへの転送を避ける。
+    pub async fn select_endpoint_round_robin_ready_for_model(
+        &self,
+        model_id: &str,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        let ready_endpoints: Vec<_> = {
+            let state = self.state.read().await;
+            endpoints
+                .into_iter()
+                .filter(|ep| {
+                    state
+                        .get(&ep.id)
+                        .map(|load| !load.initializing)
+                        .unwrap_or(true)
+                })
+                .collect()
+        };
+
+        self.select_endpoint_round_robin_from_endpoints(ready_endpoints)
     }
 
     /// 候補エンドポイントから純粋なラウンドロビンで選択（Endpoint版）

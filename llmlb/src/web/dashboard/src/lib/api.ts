@@ -188,17 +188,12 @@ export type EndpointType =
   | 'lm_studio'
   | 'openai_compatible'
   | 'unknown'
-export type EndpointTypeSource = 'auto' | 'manual'
-
 export interface DashboardEndpoint {
   id: string
   name: string
   base_url: string
   status: 'pending' | 'online' | 'offline' | 'error'
   endpoint_type: EndpointType
-  endpoint_type_source: EndpointTypeSource
-  endpoint_type_reason?: string
-  endpoint_type_detected_at?: string
   health_check_interval_secs: number
   inference_timeout_secs: number
   latency_ms?: number
@@ -473,7 +468,6 @@ export const endpointsApi = {
     health_check_interval_secs?: number
     inference_timeout_secs?: number
     notes?: string
-    endpoint_type?: EndpointType
   }) =>
     fetchWithAuth<DashboardEndpoint>('/api/endpoints', {
       method: 'POST',
@@ -493,7 +487,6 @@ export const endpointsApi = {
       health_check_interval_secs?: number
       inference_timeout_secs?: number
       notes?: string
-      endpoint_type?: EndpointType
     }
   ) =>
     fetchWithAuth<DashboardEndpoint>(`/api/endpoints/${id}`, {

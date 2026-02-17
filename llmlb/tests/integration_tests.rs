@@ -63,8 +63,8 @@ mod endpoint_type_detection_test;
 #[path = "integration/endpoint_type_filter_test.rs"]
 mod endpoint_type_filter_test;
 
-#[path = "integration/endpoint_type_manual_override_test.rs"]
-mod endpoint_type_manual_override_test;
+#[path = "integration/endpoint_type_auto_detection_test.rs"]
+mod endpoint_type_auto_detection_test;
 
 #[path = "integration/dashboard_endpoints_type_test.rs"]
 mod dashboard_endpoints_type_test;

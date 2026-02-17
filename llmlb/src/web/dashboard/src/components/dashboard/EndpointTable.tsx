@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
-import { formatDate, formatRelativeTime, cn } from '@/lib/utils'
+import { formatRelativeTime, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -122,16 +122,6 @@ function getTypeLabel(type: EndpointType): string {
   }
 }
 
-function buildTypeTooltip(endpoint: DashboardEndpoint): string {
-  const parts = [`Type source: ${endpoint.endpoint_type_source}`]
-  if (endpoint.endpoint_type_reason) {
-    parts.push(`Reason: ${endpoint.endpoint_type_reason}`)
-  }
-  if (endpoint.endpoint_type_detected_at) {
-    parts.push(`Detected: ${formatDate(endpoint.endpoint_type_detected_at)}`)
-  }
-  return parts.join(' | ')
-}
 
 /** SPEC-66555000: Get badge variant for endpoint type */
 function getTypeBadgeVariant(
@@ -469,7 +459,6 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       <TableCell>
                         <Badge
                           variant={getTypeBadgeVariant(endpoint.endpoint_type)}
-                          title={buildTypeTooltip(endpoint)}
                         >
                           {getTypeLabel(endpoint.endpoint_type)}
                         </Badge>
@@ -664,6 +653,9 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               />
               <p className="text-xs text-muted-foreground">
                 The base URL of the OpenAI-compatible API endpoint
+              </p>
+              <p className="text-xs text-muted-foreground">
+                タイプは自動検出されます
               </p>
             </div>
             <div className="grid gap-2">

@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Loader2, BarChart3 } from 'lucide-react'
 
 /**
- * SPEC-76643000: Model-level request statistics table
+ * SPEC-8c32349f: Model-level request statistics table
  * Displays per-model request breakdown for a given endpoint.
  */
 

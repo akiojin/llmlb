@@ -9,6 +9,6 @@
 - NodeがHFから直接取得し、実行環境に応じてアーティファクトを選択する方針に統一。
 
 ## 代替仕様
-- `SPEC-11106000`（HF URL登録）
+- `SPEC-68551ec8`（HF URL登録）
 - `SPEC-08d2b908`（モデル管理 統合仕様）
 - `SPEC-dcaeaec4` / `SPEC-48678000 (moved to xLLM repo)`（Node主導のモデル解決）

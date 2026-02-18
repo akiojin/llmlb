@@ -1,6 +1,6 @@
 //! エンドポイント日次統計API の Contract Tests
 //!
-//! SPEC-76643000 Phase 6 T020: GET /api/endpoints/:id/daily-stats
+//! SPEC-8c32349f Phase 6 T020: GET /api/endpoints/:id/daily-stats
 //! 期間指定で日次集計データの配列を返すことを確認。
 
 use axum::{

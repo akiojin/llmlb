@@ -209,7 +209,7 @@ URL登録は維持しつつ、Nodeがマニフェストに従い直接取得す�
 
 ### 直接依存（このSPECが依存するもの）
 
-- SPEC-11106000（HuggingFace URL登録）: URL登録機能を継承
+- SPEC-68551ec8（HuggingFace URL登録）: URL登録機能を継承
 - SPEC-dcaeaec4（モデルストレージ）: ダウンロード・キャッシュ機能を利用
 - SPEC-d4eb8796（認証・アクセス制御）: ダッシュボード認証
 - SPEC-94621a1f（ノード管理）: ノードとの通信・同期
@@ -221,7 +221,7 @@ URL登録は維持しつつ、Nodeがマニフェストに従い直接取得す�
 
 ### 関連仕様
 
-- SPEC-82491000（クラウドプロバイダー統合）: OpenAI/Anthropic/Googleモデル連携
+- SPEC-996e37bf（クラウドプロバイダー統合）: OpenAI/Anthropic/Googleモデル連携
 - SPEC-d7feaa2c（エンジンローダー抽象化）: 量子化選択（`modelname:量子化`形式）
 
 ## 除外事項

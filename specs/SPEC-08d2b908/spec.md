@@ -40,7 +40,7 @@
 
 ## 詳細仕様（参照）
 - **モデルストレージと解決**: `SPEC-dcaeaec4`, `SPEC-48678000 (moved to xLLM repo)`
-- **HF URL登録**: `SPEC-11106000`
+- **HF URL登録**: `SPEC-68551ec8`
 - **ready判定/削除整合**: `SPEC-6c2d9f1e`
 - **旧仕様（形式選択）**: `SPEC-a61b24f2`（廃止）
 
@@ -51,6 +51,6 @@
 
 ## 依存関係
 - `SPEC-dcaeaec4`（モデルストレージ）
-- `SPEC-11106000`（登録フロー）
+- `SPEC-68551ec8`（登録フロー）
 - `SPEC-48678000 (moved to xLLM repo)`（モデル解決）
 - `SPEC-6c2d9f1e`（ready/削除の整合）

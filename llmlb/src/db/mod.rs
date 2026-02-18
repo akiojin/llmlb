@@ -21,7 +21,7 @@ pub mod migrations;
 /// エンドポイント管理
 pub mod endpoints;
 
-/// エンドポイント日次統計（SPEC-76643000）
+/// エンドポイント日次統計（SPEC-8c32349f）
 pub mod endpoint_daily_stats;
 
 /// ダウンロードタスク管理（SPEC-e8e9326e）

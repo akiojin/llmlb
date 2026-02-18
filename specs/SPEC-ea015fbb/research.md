@@ -79,6 +79,6 @@ LLM Load Balancer Web UIの全画面構成と画面遷移を把握し、索引�
 | SPEC-d4eb8796 | 認証・アクセス制御 |
 | SPEC-fbc50d97 | 履歴保存 |
 | SPEC-5fc9fe92 | Playgroundマルチモーダル |
-| SPEC-11106000 | モデル登録 |
+| SPEC-68551ec8 | モデル登録 |
 | SPEC-1f2a9c3d | ログAPI |
 | SPEC-026b2cde | ページネーション |

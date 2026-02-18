@@ -36,7 +36,7 @@ LLM Load Balancer Web UIを構成する全画面の一覧、各画面の目的�
 | SEC-003 | SCR-010 | NodeTable | ノード一覧・状態表示・GPU情報・管理操作 | SPEC-712c20cf (FR-018, FR-029) |
 | SEC-004 | SCR-010 | RequestHistoryTable | リクエスト履歴一覧（ページネーション付き） | SPEC-fbc50d97, SPEC-026b2cde |
 | SEC-005 | SCR-010 | LogViewer | ロードバランサーログ表示 | SPEC-1f2a9c3d |
-| SEC-006 | SCR-010 | ModelsSection | モデル一覧・割り当て状況・登録 | SPEC-11106000, SPEC-47649000, SPEC-712c20cf (FR-031) |
+| SEC-006 | SCR-010 | ModelsSection | モデル一覧・割り当て状況・登録 | SPEC-68551ec8, SPEC-f408aae2, SPEC-712c20cf (FR-031) |
 | SEC-007 | SCR-010 | CloudProvidersSection | クラウドプロバイダー状況・認証管理 | SPEC-4b6e9f2a, SPEC-712c20cf (FR-030) |
 
 ### モーダル・ダイアログ
@@ -46,7 +46,7 @@ LLM Load Balancer Web UIを構成する全画面の一覧、各画面の目的�
 | MOD-001 | SCR-010 | NodeSettingsModal | ノード設定編集 | SPEC-712c20cf |
 | MOD-002 | SCR-010 | NodeDeleteConfirm | ノード削除確認 | SPEC-712c20cf |
 | MOD-003 | SCR-010 | RequestDetailModal | リクエスト詳細表示 | SPEC-fbc50d97 |
-| MOD-004 | SCR-010 | ModelRegisterModal | モデル登録フォーム | SPEC-11106000 |
+| MOD-004 | SCR-010 | ModelRegisterModal | モデル登録フォーム | SPEC-68551ec8 |
 
 ## 画面遷移図
 
@@ -131,7 +131,7 @@ Playgroundから戻った後も保持されていることを期待する。
 - SPEC-d4eb8796（認証・アクセス制御）- 認証系画面の詳細仕様
 - SPEC-fbc50d97（履歴保存）- 履歴表示の詳細仕様
 - SPEC-5fc9fe92（Playgroundマルチモーダル）- Playgroundの詳細仕様
-- SPEC-11106000（モデル登録）- モデル管理UIの詳細仕様
+- SPEC-68551ec8（モデル登録）- モデル管理UIの詳細仕様
 - SPEC-1f2a9c3d（ログAPI）- ログ表示の詳細仕様
 - SPEC-026b2cde（ページネーション）- 履歴ページネーションの詳細仕様
 

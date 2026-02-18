@@ -1,6 +1,6 @@
 //! Open Responses API エンドポイント (/v1/responses)
 //!
-//! SPEC-24157000: OpenAI互換API完全準拠 - Open Responses API対応
+//! SPEC-0f1de549: OpenAI互換API完全準拠 - Open Responses API対応
 //!
 //! このモジュールは /v1/responses エンドポイントへのリクエストを
 //! Responses API対応バックエンド（Ollama、vLLM、xLLM等）にパススルーする。

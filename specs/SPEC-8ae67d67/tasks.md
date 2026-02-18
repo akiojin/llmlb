@@ -12,4 +12,4 @@
 - マニフェストに基づき、HFから直接ダウンロードする
   - `GET /api/models/registry/:model_name/manifest.json`
 
-関連: `SPEC-dcaeaec4`, `SPEC-11106000/contracts/api_models.md`
+関連: `SPEC-dcaeaec4`, `SPEC-68551ec8/contracts/api_models.md`

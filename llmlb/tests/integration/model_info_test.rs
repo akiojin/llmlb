@@ -253,7 +253,7 @@ async fn test_v1_models_returns_fixed_list() {
         .expect("data must be an array of models");
 
     // ローカルモデルのみをフィルタ（クラウドプロバイダープレフィックスを除外）
-    // SPEC-82491000でクラウドモデルが追加されたため、ローカルモデルのみを検証
+    // SPEC-996e37bfでクラウドモデルが追加されたため、ローカルモデルのみを検証
     let cloud_prefixes = ["openai:", "google:", "anthropic:"];
     let local_ids: Vec<String> = data
         .iter()

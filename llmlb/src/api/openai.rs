@@ -309,7 +309,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         registered_map.insert(model.name.clone(), model);
     }
 
-    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    // SPEC-0f1de549: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
     let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
@@ -416,7 +416,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         }
     }
 
-    // SPEC-24157000: エンドポイント専用モデルを追加（ノードにないモデル）
+    // SPEC-0f1de549: エンドポイント専用モデルを追加（ノードにないモデル）
     for (model_id, apis) in &endpoint_model_apis {
         if seen_models.contains(model_id) {
             continue;
@@ -450,7 +450,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     // NOTE: SPEC-6cd7f960 FR-6により、登録済みだがオンラインエンドポイントにないモデルは
     // /v1/models に含めない（利用可能なモデルのみを返す）
 
-    // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
+    // クラウドプロバイダーのモデル一覧を追加（SPEC-996e37bf）
 
     let cloud_models = super::cloud_models::get_cached_models(&state.http_client).await;
     for cm in cloud_models {
@@ -483,7 +483,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 ///
-/// SPEC-24157000: Endpoints APIで登録されたモデルも検索対象に含める
+/// SPEC-0f1de549: Endpoints APIで登録されたモデルも検索対象に含める
 #[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_model(
     State(state): State<AppState>,
@@ -497,7 +497,7 @@ pub async fn get_model(
         registered_map.insert(model.name.clone(), model);
     }
 
-    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    // SPEC-0f1de549: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     {
         let registry = &state.endpoint_registry;

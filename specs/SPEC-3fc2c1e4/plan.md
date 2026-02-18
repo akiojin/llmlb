@@ -32,7 +32,7 @@
   - `SPEC-6c2d9f1e` の FR-002 に「再変換」が残っている。
   - 決定事項: 自動変換は禁止。再取得（再ダウンロード）のみ。
 - **音声エンジンの不一致（対応済み）**  
-  - `SPEC-26006000` / `SPEC-6c2d9f1e` が whisper.cpp/ONNX 前提。
+  - `SPEC-617247d2` / `SPEC-6c2d9f1e` が whisper.cpp/ONNX 前提。
   - 決定事項: ASRはwhisper.cpp（GGUF運用）、TTSはONNX Runtime、Python依存なし。
 - **画像生成エンジンの不一致（対応済み / 要調査あり）**  
   - `SPEC-ae3f974e` が stable-diffusion.cpp + GGML/GGUF 前提。
@@ -41,7 +41,7 @@
 - **画像認識エンジンの未確定（対応済み）**  
   - `SPEC-e03a404c` は llama.cpp 等を示唆しているが、新エンジン方針と整合が取れていない。
 - **モデルソース種別の不足（対応済み）**  
-  - `SPEC-47649000` に `hf_safetensors` のソース種別が未記載。
+  - `SPEC-f408aae2` に `hf_safetensors` のソース種別が未記載。
 - **chat_template(Jinja)完全互換の欠落（未対応）**  
   - 完全互換要件は会話で合意済みだが、独立SPECが未作成（`SPEC-d7feaa2c` に保留として残存）。
 - **GGUFアーキテクチャ仕様の位置づけ（対応済み）**  

@@ -100,14 +100,20 @@ async function expectStatusBadge(badge: Locator, status: 'pending' | 'online' | 
 
 test.describe('Endpoint Status Colors @dashboard', () => {
   let mock: MockOpenAIEndpointServer;
+  let mockBad: MockOpenAIEndpointServer;
+  let mockBadClosed = false;
 
   test.beforeAll(async () => {
     // Delay /v1/models so newly created endpoints remain Pending long enough to assert color mapping.
     mock = await startMockOpenAIEndpointServer({ responseDelayMs: 3000 });
+    mockBad = await startMockOpenAIEndpointServer();
   });
 
   test.afterAll(async () => {
     await mock.close();
+    if (!mockBadClosed) {
+      await mockBad.close();
+    }
   });
 
   test('S-EP-01: status colors are consistent across list/detail/playground', async ({ page, request }) => {
@@ -116,7 +122,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
     const baseName = `e2e-status-colors-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const endpointOkName = `${baseName}-ok`;
     const endpointBadName = `${baseName}-bad`;
-    const endpointBadUrl = 'http://127.0.0.1:1';
+    const endpointBadUrl = mockBad.baseUrl;
 
     const artifactDir = path.join('test-results', 'status-colors');
     await mkdir(artifactDir, { recursive: true });
@@ -238,6 +244,10 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const preErrorEndpoints = await listEndpoints(request);
       const badEndpointForTest = preErrorEndpoints.find((e) => e.name === endpointBadName);
       expect(badEndpointForTest?.id).toBeTruthy();
+      if (!mockBadClosed) {
+        await mockBad.close();
+        mockBadClosed = true;
+      }
       await request.post(`${API_BASE}/api/endpoints/${badEndpointForTest!.id}/test`, {
         headers: AUTH_HEADER,
       });

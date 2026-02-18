@@ -16,6 +16,8 @@ use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct TestApp {
     app: Router,
@@ -93,16 +95,30 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
     Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
+async fn start_detectable_endpoint_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model"}]
+        })))
+        .mount(&server)
+        .await;
+    server
+}
+
 /// DELETE /api/endpoints/:id - 正常系: エンドポイント削除成功
 #[tokio::test]
 #[serial]
 async fn test_delete_endpoint_success() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録
     let payload = json!({
         "name": "To Be Deleted",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let create_response = app
@@ -199,11 +215,12 @@ async fn test_delete_endpoint_unauthorized() {
 #[serial]
 async fn test_delete_endpoint_removes_from_list() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録
     let payload = json!({
         "name": "To Be Deleted",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let create_response = app

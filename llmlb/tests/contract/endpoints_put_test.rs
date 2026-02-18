@@ -16,6 +16,8 @@ use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct TestApp {
     app: Router,
@@ -93,16 +95,30 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
     Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
+async fn start_detectable_endpoint_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model"}]
+        })))
+        .mount(&server)
+        .await;
+    server
+}
+
 /// PUT /api/endpoints/:id - 正常系: 名前の更新
 #[tokio::test]
 #[serial]
 async fn test_update_endpoint_name() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録
     let payload = json!({
         "name": "Original Name",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let create_response = app
@@ -148,7 +164,7 @@ async fn test_update_endpoint_name() {
 
     assert_eq!(body["id"], endpoint_id);
     assert_eq!(body["name"], "Updated Name");
-    assert_eq!(body["base_url"], "http://localhost:11434");
+    assert_eq!(body["base_url"], mock.uri());
 }
 
 /// PUT /api/endpoints/:id - 正常系: ヘルスチェック間隔の更新
@@ -156,11 +172,12 @@ async fn test_update_endpoint_name() {
 #[serial]
 async fn test_update_endpoint_health_check_interval() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録
     let payload = json!({
         "name": "Test",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let create_response = app
@@ -212,11 +229,12 @@ async fn test_update_endpoint_health_check_interval() {
 #[serial]
 async fn test_update_endpoint_notes() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録（notes付き）
     let payload = json!({
         "name": "Test",
-        "base_url": "http://localhost:11434",
+        "base_url": mock.uri(),
         "notes": "Initial notes"
     });
 
@@ -294,11 +312,12 @@ async fn test_update_endpoint_not_found() {
 #[serial]
 async fn test_update_endpoint_validation_error() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録
     let payload = json!({
         "name": "Test",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.uri()
     });
 
     let create_response = app

@@ -16,6 +16,8 @@ use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 struct TestApp {
     app: Router,
@@ -93,16 +95,30 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
     Request::builder().header("authorization", format!("Bearer {}", admin_key))
 }
 
+async fn start_detectable_endpoint_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model"}]
+        })))
+        .mount(&server)
+        .await;
+    server
+}
+
 /// GET /api/endpoints/:id - 正常系: エンドポイント詳細取得
 #[tokio::test]
 #[serial]
 async fn test_get_endpoint_detail_success() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録
     let payload = json!({
         "name": "Test Ollama",
-        "base_url": "http://localhost:11434",
+        "base_url": mock.uri(),
         "notes": "Test notes"
     });
 
@@ -146,7 +162,7 @@ async fn test_get_endpoint_detail_success() {
     // 契約に基づくレスポンス検証
     assert_eq!(body["id"], endpoint_id);
     assert_eq!(body["name"], "Test Ollama");
-    assert_eq!(body["base_url"], "http://localhost:11434");
+    assert_eq!(body["base_url"], mock.uri());
     // 登録直後に非同期の接続テスト/同期処理が走るため、
     // 実行タイミングによって status は pending 以外にもなり得る。
     let status = body["status"].as_str().expect("status should be string");

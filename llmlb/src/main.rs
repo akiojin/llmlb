@@ -389,6 +389,8 @@ async fn redetect_all_endpoints(
     use llmlb::detection::detect_endpoint_type_with_client;
     use tracing::warn;
 
+    const STARTUP_REDETECTION_TIMEOUT_SECS: u64 = 10;
+
     let endpoints = registry.list().await;
     let total = endpoints.len();
 
@@ -406,15 +408,20 @@ async fn redetect_all_endpoints(
     let mut updated: usize = 0;
 
     for ep in &endpoints {
-        match detect_endpoint_type_with_client(http_client, &ep.base_url, ep.api_key.as_deref())
-            .await
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(STARTUP_REDETECTION_TIMEOUT_SECS),
+            detect_endpoint_type_with_client(http_client, &ep.base_url, ep.api_key.as_deref()),
+        )
+        .await
         {
-            Ok(result) => {
-                if result.endpoint_type != ep.endpoint_type
-                    && registry
-                        .update_endpoint_type(ep.id, result.endpoint_type)
-                        .await
-                        .is_ok()
+            Ok(Ok(result)) => {
+                if result.endpoint_type == ep.endpoint_type {
+                    continue;
+                }
+                if registry
+                    .update_endpoint_type(ep.id, result.endpoint_type)
+                    .await
+                    .is_ok()
                 {
                     info!(
                         endpoint_id = %ep.id,
@@ -426,12 +433,21 @@ async fn redetect_all_endpoints(
                     updated += 1;
                 }
             }
-            Err(err) => {
+            Ok(Err(err)) => {
                 warn!(
                     endpoint_id = %ep.id,
                     name = %ep.name,
                     error = %err,
                     "Endpoint type re-detection failed on startup; keeping existing configuration"
+                );
+                failed += 1;
+            }
+            Err(_) => {
+                warn!(
+                    endpoint_id = %ep.id,
+                    name = %ep.name,
+                    timeout_secs = STARTUP_REDETECTION_TIMEOUT_SECS,
+                    "Endpoint type re-detection timed out on startup; keeping existing configuration"
                 );
                 failed += 1;
             }

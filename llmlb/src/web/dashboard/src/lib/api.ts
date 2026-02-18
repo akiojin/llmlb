@@ -178,7 +178,7 @@ export interface SyncProgress {
 }
 
 /**
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 export type EndpointType =
@@ -188,17 +188,12 @@ export type EndpointType =
   | 'lm_studio'
   | 'openai_compatible'
   | 'unknown'
-export type EndpointTypeSource = 'auto' | 'manual'
-
 export interface DashboardEndpoint {
   id: string
   name: string
   base_url: string
   status: 'pending' | 'online' | 'offline' | 'error'
   endpoint_type: EndpointType
-  endpoint_type_source: EndpointTypeSource
-  endpoint_type_reason?: string
-  endpoint_type_detected_at?: string
   health_check_interval_secs: number
   inference_timeout_secs: number
   latency_ms?: number
@@ -214,7 +209,7 @@ export interface DashboardEndpoint {
 }
 
 /**
- * SPEC-66555000: Model download task for xLLM endpoints
+ * SPEC-e8e9326e: Model download task for xLLM endpoints
  */
 export interface DownloadTask {
   task_id: string
@@ -228,7 +223,7 @@ export interface DownloadTask {
 }
 
 /**
- * SPEC-66555000: Model metadata from endpoint
+ * SPEC-e8e9326e: Model metadata from endpoint
  */
 export interface ModelMetadata {
   model: string
@@ -319,7 +314,7 @@ export interface MonthlyTokenStats extends TokenStats {
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
 
-  /** SPEC-66555000: List endpoints */
+  /** SPEC-e8e9326e: List endpoints */
   getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
   getStats: () => fetchWithAuth<DashboardStats>('/api/dashboard/stats'),
@@ -371,10 +366,6 @@ export const dashboardApi = {
 
   getRouterLogs: (params?: { limit?: number }) =>
     fetchWithAuth<LogResponse>('/api/dashboard/logs/lb', { params }),
-
-  /** 全エンドポイント横断のモデル別リクエスト統計 */
-  getAllModelStats: () =>
-    fetchWithAuth<ModelStatEntry[]>('/api/dashboard/model-stats'),
 }
 
 /**
@@ -417,11 +408,6 @@ export interface SystemInfo {
 
 export const systemApi = {
   getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
-  checkUpdate: () =>
-    fetchWithAuth<{ update: UpdateState }>('/api/system/update/check', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    }),
   applyUpdate: () =>
     fetchWithAuth<{ queued: boolean }>('/api/system/update/apply', {
       method: 'POST',
@@ -431,7 +417,7 @@ export const systemApi = {
 
 /**
  * Endpoints API
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 /**
@@ -468,7 +454,7 @@ export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
-  /** SPEC-66555000: List endpoints by type */
+  /** SPEC-e8e9326e: List endpoints by type */
   listByType: (type: EndpointType) =>
     fetchWithAuth<DashboardEndpoint[]>('/api/endpoints', {
       params: { type },
@@ -482,7 +468,6 @@ export const endpointsApi = {
     health_check_interval_secs?: number
     inference_timeout_secs?: number
     notes?: string
-    endpoint_type?: EndpointType
   }) =>
     fetchWithAuth<DashboardEndpoint>('/api/endpoints', {
       method: 'POST',
@@ -502,7 +487,6 @@ export const endpointsApi = {
       health_check_interval_secs?: number
       inference_timeout_secs?: number
       notes?: string
-      endpoint_type?: EndpointType
     }
   ) =>
     fetchWithAuth<DashboardEndpoint>(`/api/endpoints/${id}`, {
@@ -539,7 +523,7 @@ export const endpointsApi = {
       }>
     }>(`/api/endpoints/${id}/models`),
 
-  /** SPEC-66555000: Download model (xLLM only) */
+  /** SPEC-e8e9326e: Download model (xLLM only) */
   downloadModel: (
     id: string,
     data: { model: string; filename?: string }
@@ -549,13 +533,13 @@ export const endpointsApi = {
       body: JSON.stringify(data),
     }),
 
-  /** SPEC-66555000: Get download progress (xLLM only) */
+  /** SPEC-e8e9326e: Get download progress (xLLM only) */
   getDownloadProgress: (id: string) =>
     fetchWithAuth<{ tasks: DownloadTask[] }>(
       `/api/endpoints/${id}/download/progress`
     ),
 
-  /** SPEC-66555000: Get model metadata */
+  /** SPEC-e8e9326e: Get model metadata */
   getModelInfo: (id: string, model: string) =>
     fetchWithAuth<ModelMetadata>(
       `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`
@@ -687,7 +671,6 @@ export interface OpenAIModel {
   description?: string
   chat_template?: string
   max_tokens?: number | null
-  endpoint_ids?: string[]
 }
 
 // /api/models/discover-gguf response types
@@ -733,8 +716,6 @@ export interface RegisteredModelView {
   tags: string[]
   capabilities?: ModelCapabilities
   chat_template?: string
-  max_tokens?: number | null
-  endpoint_ids?: string[]
 }
 
 // OpenAIModel を RegisteredModelView に変換
@@ -760,8 +741,6 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
     capabilities: model.capabilities,
     tags: model.tags ?? [],
     chat_template: model.chat_template,
-    max_tokens: model.max_tokens,
-    endpoint_ids: model.endpoint_ids ?? [],
   }
 }
 
@@ -777,135 +756,6 @@ export const modelsApi = {
     // Convert from OpenAI format to RegisteredModelView format
     return json.data.map(toRegisteredModelView)
   },
-}
-
-// SPEC-8795f98f: Aggregated model view for Models tab
-export interface AggregatedModel {
-  id: string
-  bestStatus: LifecycleStatus
-  ready: boolean
-  capabilities: ModelCapabilities
-  endpointCount: number
-  endpointIds: string[]
-  ownedBy?: string
-  source?: string
-  sizeBytes?: number
-  requiredMemoryBytes?: number
-  maxTokens?: number | null
-  tags: string[]
-  description?: string
-  repo?: string
-  filename?: string
-  chatTemplate?: string
-}
-
-const LIFECYCLE_PRIORITY: Record<LifecycleStatus, number> = {
-  registered: 4,
-  caching: 3,
-  pending: 2,
-  error: 1,
-}
-
-export function aggregateModels(models: RegisteredModelView[]): AggregatedModel[] {
-  const groups = new Map<string, RegisteredModelView[]>()
-  for (const model of models) {
-    const group = groups.get(model.name)
-    if (group) {
-      group.push(model)
-    } else {
-      groups.set(model.name, [model])
-    }
-  }
-
-  const result: AggregatedModel[] = []
-  for (const [id, group] of groups) {
-    let bestStatus: LifecycleStatus = 'error'
-    let ready = false
-    const caps: ModelCapabilities = {
-      chat_completion: false,
-      completion: false,
-      embeddings: false,
-      fine_tune: false,
-      inference: false,
-      text_to_speech: false,
-      speech_to_text: false,
-      image_generation: false,
-    }
-    const allTags: string[] = []
-    let ownedBy: string | undefined
-    let source: string | undefined
-    let sizeBytes: number | undefined
-    let requiredMemoryBytes: number | undefined
-    let description: string | undefined
-    let repo: string | undefined
-    let filename: string | undefined
-    let chatTemplate: string | undefined
-    let maxTokens: number | null | undefined
-    const endpointIds = new Set<string>()
-
-    for (const m of group) {
-      if (LIFECYCLE_PRIORITY[m.lifecycle_status] > LIFECYCLE_PRIORITY[bestStatus]) {
-        bestStatus = m.lifecycle_status
-      }
-      if (m.ready) ready = true
-      if (m.capabilities) {
-        caps.chat_completion = caps.chat_completion || m.capabilities.chat_completion
-        caps.completion = caps.completion || m.capabilities.completion
-        caps.embeddings = caps.embeddings || m.capabilities.embeddings
-        caps.fine_tune = caps.fine_tune || m.capabilities.fine_tune
-        caps.inference = caps.inference || m.capabilities.inference
-        caps.text_to_speech = caps.text_to_speech || m.capabilities.text_to_speech
-        caps.speech_to_text = caps.speech_to_text || m.capabilities.speech_to_text
-        caps.image_generation = caps.image_generation || m.capabilities.image_generation
-      }
-      for (const tag of m.tags) {
-        if (!allTags.includes(tag)) allTags.push(tag)
-      }
-      if (ownedBy === undefined && m.owned_by) ownedBy = m.owned_by
-      if (source === undefined && m.source) source = m.source
-      if (sizeBytes === undefined && m.size_gb != null) sizeBytes = m.size_gb * 1024 * 1024 * 1024
-      if (requiredMemoryBytes === undefined && m.required_memory_gb != null) requiredMemoryBytes = m.required_memory_gb * 1024 * 1024 * 1024
-      if (description === undefined && m.description) description = m.description
-      if (repo === undefined && m.repo) repo = m.repo
-      if (filename === undefined && m.filename) filename = m.filename
-      if (chatTemplate === undefined && m.chat_template) chatTemplate = m.chat_template
-      if (m.max_tokens !== undefined) {
-        if (m.max_tokens == null) {
-          if (maxTokens === undefined) maxTokens = null
-        } else {
-          maxTokens =
-            maxTokens == null || maxTokens === undefined
-              ? m.max_tokens
-              : Math.max(maxTokens, m.max_tokens)
-        }
-      }
-      for (const endpointId of m.endpoint_ids ?? []) {
-        endpointIds.add(endpointId)
-      }
-    }
-    const endpointIdList = Array.from(endpointIds).sort()
-
-    result.push({
-      id,
-      bestStatus,
-      ready,
-      capabilities: caps,
-      endpointCount: endpointIdList.length,
-      endpointIds: endpointIdList,
-      ownedBy,
-      source,
-      sizeBytes,
-      requiredMemoryBytes,
-      maxTokens: maxTokens ?? null,
-      tags: allTags,
-      description,
-      repo,
-      filename,
-      chatTemplate,
-    })
-  }
-
-  return result
 }
 
 // API Keys API

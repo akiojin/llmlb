@@ -478,7 +478,7 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 - **offline**: Health check failed
 - **error**: Connection error
 
-For details, see [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quickstart.md).
+For details, see [specs/SPEC-e8e9326e/quickstart.md](./specs/SPEC-e8e9326e/quickstart.md).
 
 ## Hugging Face registration (safetensors / GGUF)
 

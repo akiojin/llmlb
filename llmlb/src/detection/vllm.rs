@@ -1,6 +1,6 @@
 //! vLLM Endpoint Type Detection
 //!
-//! SPEC-66555000: vLLM detection via Server header
+//! SPEC-e8e9326e: vLLM detection via Server header
 //!
 //! vLLM endpoints typically include "vllm" in the Server response header
 //! or respond to /v1/models in a specific way.

@@ -109,7 +109,7 @@ function getStatusIndicatorColor(status: DashboardEndpoint['status'] | undefined
     case 'pending':
       return 'text-warning'
     case 'offline':
-      // SPEC-66555000: offline should be a lighter red than error.
+      // SPEC-e8e9326e: offline should be a lighter red than error.
       return 'text-destructive/70'
     case 'error':
       return 'text-destructive'

@@ -377,6 +377,86 @@ fn maybe_raise_nofile_limit() {
     }
 }
 
+/// サーバー起動時に全エンドポイントのタイプを再検出する
+///
+/// 前回起動時から変更されている可能性があるため、登録済みの全エンドポイントに対して
+/// タイプ検出を実行し、変更があれば更新する。
+/// 検出失敗時は既存設定を保持し、ヘルスチェックでの再評価に委ねる。
+async fn redetect_all_endpoints(
+    registry: &llmlb::registry::endpoints::EndpointRegistry,
+    http_client: &reqwest::Client,
+) {
+    use llmlb::detection::detect_endpoint_type_with_client;
+    use tracing::warn;
+
+    const STARTUP_REDETECTION_TIMEOUT_SECS: u64 = 10;
+
+    let endpoints = registry.list().await;
+    let total = endpoints.len();
+
+    if total == 0 {
+        info!("No endpoints registered; skipping startup re-detection");
+        return;
+    }
+
+    info!(
+        total = total,
+        "Starting endpoint type re-detection on server startup"
+    );
+
+    let mut failed: usize = 0;
+    let mut updated: usize = 0;
+
+    for ep in &endpoints {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(STARTUP_REDETECTION_TIMEOUT_SECS),
+            detect_endpoint_type_with_client(http_client, &ep.base_url, ep.api_key.as_deref()),
+        )
+        .await
+        {
+            Ok(Ok(result)) => {
+                if result.endpoint_type == ep.endpoint_type {
+                    continue;
+                }
+                if registry
+                    .update_endpoint_type(ep.id, result.endpoint_type)
+                    .await
+                    .is_ok()
+                {
+                    info!(
+                        endpoint_id = %ep.id,
+                        name = %ep.name,
+                        old_type = ?ep.endpoint_type,
+                        new_type = ?result.endpoint_type,
+                        "Endpoint type changed during re-detection"
+                    );
+                    updated += 1;
+                }
+            }
+            Ok(Err(err)) => {
+                warn!(
+                    endpoint_id = %ep.id,
+                    name = %ep.name,
+                    error = %err,
+                    "Endpoint type re-detection failed on startup; keeping existing configuration"
+                );
+                failed += 1;
+            }
+            Err(_) => {
+                warn!(
+                    endpoint_id = %ep.id,
+                    name = %ep.name,
+                    timeout_secs = STARTUP_REDETECTION_TIMEOUT_SECS,
+                    "Endpoint type re-detection timed out on startup; keeping existing configuration"
+                );
+                failed += 1;
+            }
+        }
+    }
+
+    info!(total, failed, updated, "Endpoint re-detection complete");
+}
+
 async fn run_server(
     config: ServerConfig,
     #[cfg(any(target_os = "windows", target_os = "macos"))] tray_proxy: Option<
@@ -437,6 +517,18 @@ async fn run_server(
     let load_manager = balancer::LoadManager::new(endpoint_registry_arc.clone());
     info!("Storage initialized successfully");
 
+    // HTTPクライアント（接続プーリング有効）を作成
+    // NOTE: re-detection やヘルスチェック等で使用するため、早期に作成する
+    let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(32)
+        .pool_idle_timeout(std::time::Duration::from_secs(60))
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .build()
+        .expect("Failed to create HTTP client");
+
+    // サーバー起動時のエンドポイントタイプ再検出
+    redetect_all_endpoints(&endpoint_registry, &http_client).await;
+
     let health_check_interval_secs: u64 =
         get_env_with_fallback_parse("LLMLB_HEALTH_CHECK_INTERVAL", "HEALTH_CHECK_INTERVAL", 30);
 
@@ -470,14 +562,6 @@ async fn run_server(
         llmlb::jwt_secret::get_or_create_jwt_secret().expect("Failed to get or create JWT secret");
 
     info!("Authentication system initialized");
-
-    // HTTPクライアント（接続プーリング有効）を作成
-    let http_client = reqwest::Client::builder()
-        .pool_max_idle_per_host(32)
-        .pool_idle_timeout(std::time::Duration::from_secs(60))
-        .tcp_keepalive(std::time::Duration::from_secs(30))
-        .build()
-        .expect("Failed to create HTTP client");
 
     // Self-update components
     let inference_gate = llmlb::inference_gate::InferenceGate::default();

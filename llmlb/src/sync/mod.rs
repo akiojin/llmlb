@@ -100,7 +100,7 @@ pub async fn sync_models(
 /// 3. 既存モデルと比較（差分計算）
 /// 4. DBを更新（削除→追加）
 /// 5. capabilitiesを自動判定
-/// 6. xLLM/Ollamaの場合はmax_tokensを取得（SPEC-66555000）
+/// 6. xLLM/Ollamaの場合はmax_tokensを取得（SPEC-e8e9326e）
 pub async fn sync_models_with_type(
     pool: &SqlitePool,
     client: &Client,
@@ -203,7 +203,7 @@ pub async fn sync_models_with_type(
         synced_models.push(model);
     }
 
-    // SPEC-66555000: xLLM/Ollamaの場合はmax_tokensを取得
+    // SPEC-e8e9326e: xLLM/Ollamaの場合はmax_tokensを取得
     if let Some(ep_type) = endpoint_type {
         if ep_type == EndpointType::Xllm
             || ep_type == EndpointType::Ollama

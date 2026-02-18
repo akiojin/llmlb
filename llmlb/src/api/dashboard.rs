@@ -11,7 +11,7 @@ use crate::common::{
 use crate::db::request_history::{FilterStatus, RecordFilter};
 use crate::{
     balancer::RequestHistoryPoint,
-    types::endpoint::{EndpointStatus, EndpointType, EndpointTypeSource},
+    types::endpoint::{EndpointStatus, EndpointType},
     AppState,
 };
 use axum::{
@@ -24,12 +24,14 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
+use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
 use tracing::warn;
 use uuid::Uuid;
 
 /// エンドポイントのダッシュボード表示用サマリー
 ///
-/// SPEC-66555000: llmlb主導エンドポイント登録システム
+/// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardEndpoint {
     /// エンドポイントID
@@ -42,12 +44,6 @@ pub struct DashboardEndpoint {
     pub status: EndpointStatus,
     /// エンドポイントタイプ（xLLM/Ollama/vLLM 等）
     pub endpoint_type: EndpointType,
-    /// エンドポイントタイプ判定ソース（自動/手動）
-    pub endpoint_type_source: EndpointTypeSource,
-    /// 判定理由（自動判別/手動指定）
-    pub endpoint_type_reason: Option<String>,
-    /// 判定時刻
-    pub endpoint_type_detected_at: Option<DateTime<Utc>>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -131,7 +127,7 @@ pub struct DashboardStats {
 /// ダッシュボード概要レスポンス
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DashboardOverview {
-    /// エンドポイント一覧（SPEC-66555000）
+    /// エンドポイント一覧（SPEC-e8e9326e）
     pub endpoints: Vec<DashboardEndpoint>,
     /// システム統計
     pub stats: DashboardStats,
@@ -145,7 +141,7 @@ pub struct DashboardOverview {
 
 /// GET /api/dashboard/endpoints
 ///
-/// SPEC-66555000: llmlb主導エンドポイント登録システム
+/// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 pub async fn get_endpoints(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
     Json(collect_endpoints(&state).await)
 }
@@ -282,7 +278,7 @@ pub async fn get_monthly_token_stats(
 
 /// エンドポイント一覧を収集
 ///
-/// SPEC-66555000: llmlb主導エンドポイント登録システム
+/// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
     let endpoint_registry = &state.endpoint_registry;
     let endpoints = endpoint_registry.list().await;
@@ -300,9 +296,6 @@ async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
             base_url: endpoint.base_url,
             status: endpoint.status,
             endpoint_type: endpoint.endpoint_type,
-            endpoint_type_source: endpoint.endpoint_type_source,
-            endpoint_type_reason: endpoint.endpoint_type_reason,
-            endpoint_type_detected_at: endpoint.endpoint_type_detected_at,
             health_check_interval_secs: endpoint.health_check_interval_secs,
             inference_timeout_secs: endpoint.inference_timeout_secs,
             latency_ms: endpoint.latency_ms,
@@ -589,52 +582,62 @@ pub async fn export_request_responses(
 
     match query.format {
         RequestHistoryExportFormat::Json => {
+            let storage = state.request_history.clone();
+            let filter = filter.clone();
+            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
             let mut page_data = Some(first_page.clone());
-            let mut body = Vec::new();
-            body.push(b'[');
-            let mut first = true;
-
-            loop {
-                let data = if let Some(data) = page_data.take() {
-                    data
-                } else {
-                    state
-                        .request_history
-                        .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
-                        .await
-                        .map_err(|err| {
-                            warn!("Failed to export request history page {}: {}", page, err);
-                            AppError::from(err)
-                        })?
-                };
-
-                if data.records.is_empty() {
-                    break;
+            tokio::spawn(async move {
+                if writer.write_all(b"[").await.is_err() {
+                    return;
                 }
+                let mut first = true;
+                loop {
+                    let data = if let Some(data) = page_data.take() {
+                        data
+                    } else {
+                        match storage
+                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                            .await
+                        {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to export request history page {}: {}", page, err);
+                                break;
+                            }
+                        }
+                    };
 
-                for record in data.records {
-                    let json = serde_json::to_vec(&record).map_err(|err| {
-                        warn!("Failed to serialize request history record: {}", err);
-                        AppError::from(LbError::Internal(format!(
-                            "Failed to serialize request history record: {}",
-                            err
-                        )))
-                    })?;
-                    if !first {
-                        body.push(b',');
+                    if data.records.is_empty() {
+                        break;
                     }
-                    first = false;
-                    body.extend_from_slice(&json);
+
+                    for record in data.records {
+                        let json = match serde_json::to_vec(&record) {
+                            Ok(json) => json,
+                            Err(err) => {
+                                warn!("Failed to serialize request history record: {}", err);
+                                return;
+                            }
+                        };
+                        if !first && writer.write_all(b",").await.is_err() {
+                            return;
+                        }
+                        first = false;
+                        if writer.write_all(&json).await.is_err() {
+                            return;
+                        }
+                    }
+
+                    if page * EXPORT_PAGE_SIZE >= data.total_count {
+                        break;
+                    }
+                    page += 1;
                 }
 
-                if page * EXPORT_PAGE_SIZE >= data.total_count {
-                    break;
-                }
-                page += 1;
-            }
-
-            body.push(b']');
+                let _ = writer.write_all(b"]").await;
+                let _ = writer.shutdown().await;
+            });
 
             let response = Response::builder()
                 .status(StatusCode::OK)
@@ -643,98 +646,119 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.json\"",
                 )
-                .body(Body::from(body))
+                .body(Body::from_stream(ReaderStream::new(reader)))
                 .unwrap();
             Ok(response)
         }
         RequestHistoryExportFormat::Csv => {
+            let storage = state.request_history.clone();
+            let filter = filter.clone();
+            let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
             let mut page_data = Some(first_page.clone());
-            let mut csv_writer = csv::Writer::from_writer(vec![]);
-            csv_writer
-                .write_record([
-                    "id",
-                    "timestamp",
-                    "request_type",
-                    "model",
-                    "runtime_id",
-                    "runtime_machine_name",
-                    "runtime_ip",
-                    "client_ip",
-                    "duration_ms",
-                    "status",
-                    "completed_at",
-                ])
-                .map_err(|err| {
-                    AppError::from(LbError::Internal(format!(
-                        "Failed to write CSV header: {}",
-                        err
-                    )))
-                })?;
-
-            loop {
-                let data = if let Some(data) = page_data.take() {
-                    data
-                } else {
-                    state
-                        .request_history
-                        .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
-                        .await
-                        .map_err(|err| {
-                            warn!("Failed to export request history page {}: {}", page, err);
-                            AppError::from(err)
-                        })?
+            tokio::spawn(async move {
+                let mut header = csv::Writer::from_writer(vec![]);
+                if header
+                    .write_record([
+                        "id",
+                        "timestamp",
+                        "request_type",
+                        "model",
+                        "runtime_id",
+                        "runtime_machine_name",
+                        "runtime_ip",
+                        "client_ip",
+                        "duration_ms",
+                        "status",
+                        "completed_at",
+                    ])
+                    .is_err()
+                {
+                    return;
+                }
+                let header_bytes = match header.into_inner() {
+                    Ok(data) => data,
+                    Err(err) => {
+                        warn!("Failed to finalize CSV header: {}", err);
+                        return;
+                    }
                 };
-
-                if data.records.is_empty() {
-                    break;
+                if writer.write_all(&header_bytes).await.is_err() {
+                    return;
                 }
 
-                for record in data.records {
-                    let status_str = match &record.status {
-                        crate::common::protocol::RecordStatus::Success => "success".to_string(),
-                        crate::common::protocol::RecordStatus::Error { message } => {
-                            format!("error: {}", message)
+                loop {
+                    let data = if let Some(data) = page_data.take() {
+                        data
+                    } else {
+                        match storage
+                            .filter_and_paginate(&filter, page, EXPORT_PAGE_SIZE)
+                            .await
+                        {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to export request history page {}: {}", page, err);
+                                break;
+                            }
                         }
                     };
 
-                    csv_writer
-                        .write_record(&[
-                            record.id.to_string(),
-                            record.timestamp.to_rfc3339(),
-                            format!("{:?}", record.request_type),
-                            record.model,
-                            record.node_id.to_string(),
-                            record.node_machine_name,
-                            record.node_ip.to_string(),
-                            record
-                                .client_ip
-                                .map(|ip| ip.to_string())
-                                .unwrap_or_default(),
-                            record.duration_ms.to_string(),
-                            status_str,
-                            record.completed_at.to_rfc3339(),
-                        ])
-                        .map_err(|err| {
-                            AppError::from(LbError::Internal(format!(
-                                "Failed to write CSV row: {}",
-                                err
-                            )))
-                        })?;
+                    if data.records.is_empty() {
+                        break;
+                    }
+
+                    for record in data.records {
+                        let status_str = match &record.status {
+                            crate::common::protocol::RecordStatus::Success => "success".to_string(),
+                            crate::common::protocol::RecordStatus::Error { message } => {
+                                format!("error: {}", message)
+                            }
+                        };
+
+                        let mut row = csv::Writer::from_writer(vec![]);
+                        if row
+                            .write_record(&[
+                                record.id.to_string(),
+                                record.timestamp.to_rfc3339(),
+                                format!("{:?}", record.request_type),
+                                record.model,
+                                record.node_id.to_string(),
+                                record.node_machine_name,
+                                record.node_ip.to_string(),
+                                record
+                                    .client_ip
+                                    .map(|ip| ip.to_string())
+                                    .unwrap_or_default(),
+                                record.duration_ms.to_string(),
+                                status_str,
+                                record.completed_at.to_rfc3339(),
+                            ])
+                            .is_err()
+                        {
+                            return;
+                        }
+
+                        let row_bytes = match row.into_inner() {
+                            Ok(data) => data,
+                            Err(err) => {
+                                warn!("Failed to finalize CSV row: {}", err);
+                                return;
+                            }
+                        };
+
+                        if writer.write_all(&row_bytes).await.is_err() {
+                            return;
+                        }
+                    }
+
+                    if page * EXPORT_PAGE_SIZE >= data.total_count {
+                        break;
+                    }
+                    page += 1;
                 }
 
-                if page * EXPORT_PAGE_SIZE >= data.total_count {
-                    break;
-                }
-                page += 1;
-            }
-
-            let body = csv_writer.into_inner().map_err(|err| {
-                AppError::from(LbError::Internal(format!(
-                    "Failed to finalize CSV export: {}",
-                    err
-                )))
-            })?;
+                let _ = writer.shutdown().await;
+            });
 
             let response = Response::builder()
                 .status(StatusCode::OK)
@@ -743,7 +767,7 @@ pub async fn export_request_responses(
                     "Content-Disposition",
                     "attachment; filename=\"request_history.csv\"",
                 )
-                .body(Body::from(body))
+                .body(Body::from_stream(ReaderStream::new(reader)))
                 .unwrap();
 
             Ok(response)
@@ -801,7 +825,9 @@ pub async fn get_endpoint_model_stats(
     Ok(Json(stats))
 }
 
-/// GET /api/dashboard/model-stats - 全エンドポイント横断のモデル別リクエスト統計
+/// GET /api/dashboard/all-model-stats - 全エンドポイント横断のモデル別統計
+///
+/// SPEC-76643000: ダッシュボード向けモデル別集計
 pub async fn get_all_model_stats(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
@@ -817,4 +843,4 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
 }
 
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
-// 関連: SPEC-66555000
+// 関連: SPEC-e8e9326e

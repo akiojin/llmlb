@@ -100,7 +100,7 @@ impl ImageBackend {
 /// 画像生成対応バックエンドを選択
 /// EndpointRegistry経由でのみ検索（NodeRegistryフォールバック廃止）
 async fn select_image_backend(state: &AppState) -> Result<ImageBackend, LbError> {
-    // EndpointRegistry経由で検索（SPEC-66555000: 新方式のみ）
+    // EndpointRegistry経由で検索（SPEC-e8e9326e: 新方式のみ）
     let endpoints = state
         .endpoint_registry
         .list_online_by_capability(EndpointCapability::ImageGeneration)

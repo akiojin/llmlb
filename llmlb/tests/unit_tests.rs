@@ -3,7 +3,7 @@
 #[path = "unit/gpu_model_selector_test.rs"]
 mod gpu_model_selector_test;
 
-// SPEC-66555000: エンドポイント関連テスト
+// SPEC-e8e9326e: エンドポイント関連テスト
 #[path = "unit/endpoint_status_test.rs"]
 mod endpoint_status_test;
 
@@ -13,7 +13,7 @@ mod endpoint_validation_test;
 #[path = "unit/latency_routing_test.rs"]
 mod latency_routing_test;
 
-// SPEC-66555000: エンドポイントタイプ関連テスト
+// SPEC-e8e9326e: エンドポイントタイプ関連テスト
 #[path = "unit/endpoint_type_detection_test.rs"]
 mod endpoint_type_detection_test;
 

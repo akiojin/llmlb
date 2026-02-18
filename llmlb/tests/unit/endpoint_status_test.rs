@@ -1,6 +1,6 @@
 //! EndpointStatus遷移のUnit Test
 //!
-//! SPEC-66555000 T034: EndpointStatus遷移のテスト
+//! SPEC-e8e9326e T034: EndpointStatus遷移のテスト
 //! - pending → offline の即時遷移
 //! - 各ステータスからの遷移パターン
 

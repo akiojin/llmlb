@@ -107,7 +107,7 @@ impl EndpointRegistry {
             .collect()
     }
 
-    /// 指定した機能を持つオンラインエンドポイントを取得（SPEC-66555000移行用）
+    /// 指定した機能を持つオンラインエンドポイントを取得（SPEC-e8e9326e移行用）
     ///
     /// NodeRegistryのRuntimeTypeベースのフィルタリングを置き換える。
     /// 例: ImageGeneration機能を持つエンドポイント → 画像生成リクエストの転送先
@@ -272,38 +272,22 @@ impl EndpointRegistry {
         }
     }
 
-    /// エンドポイントのタイプを更新（DBとキャッシュ両方）（SPEC-66555000）
+    /// エンドポイントのタイプを更新（DBとキャッシュ両方）（SPEC-e8e9326e）
     ///
-    /// ヘルスチェック時にUnknownタイプのエンドポイントがオンラインになった場合に、
-    /// タイプを再判別して更新する。
+    /// ヘルスチェック時のoffline→online遷移時に再検出して更新する。
     pub async fn update_endpoint_type(
         &self,
         id: Uuid,
         endpoint_type: EndpointType,
-        endpoint_type_source: crate::types::endpoint::EndpointTypeSource,
-        endpoint_type_reason: Option<String>,
-        endpoint_type_detected_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<bool, sqlx::Error> {
         // DBを更新
-        let detected_at = endpoint_type_detected_at.map(|dt| dt.to_rfc3339());
-        let updated = db::update_endpoint_type(
-            &self.pool,
-            id,
-            endpoint_type,
-            endpoint_type_source,
-            endpoint_type_reason.as_deref(),
-            detected_at,
-        )
-        .await?;
+        let updated = db::update_endpoint_type(&self.pool, id, endpoint_type).await?;
 
         if updated {
             // キャッシュを更新
             let mut endpoints = self.endpoints.write().await;
             if let Some(endpoint) = endpoints.get_mut(&id) {
                 endpoint.endpoint_type = endpoint_type;
-                endpoint.endpoint_type_source = endpoint_type_source;
-                endpoint.endpoint_type_reason = endpoint_type_reason;
-                endpoint.endpoint_type_detected_at = endpoint_type_detected_at;
             }
         }
 
@@ -584,6 +568,7 @@ mod tests {
         let endpoint = Endpoint::new(
             "Test Endpoint".to_string(),
             "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
         );
         let endpoint_id = endpoint.id;
 
@@ -613,7 +598,11 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
 
         // エンドポイントを追加
-        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:11434".to_string());
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint.status = EndpointStatus::Online;
         let endpoint_id = endpoint.id;
 
@@ -648,7 +637,11 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
 
         // エンドポイントを追加
-        let endpoint = Endpoint::new("Test".to_string(), "http://localhost:11434".to_string());
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
         let endpoint_id = endpoint.id;
 
         registry.add(endpoint).await.unwrap();
@@ -679,14 +672,18 @@ mod tests {
         let mut ep_chat = Endpoint::new(
             "Chat Only".to_string(),
             "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
         );
         ep_chat.status = EndpointStatus::Online;
         ep_chat.capabilities = vec![EndpointCapability::ChatCompletion];
         registry.add(ep_chat).await.unwrap();
 
         // 画像生成機能を持つエンドポイント
-        let mut ep_image =
-            Endpoint::new("Image Gen".to_string(), "http://localhost:7860".to_string());
+        let mut ep_image = Endpoint::new(
+            "Image Gen".to_string(),
+            "http://localhost:7860".to_string(),
+            EndpointType::Xllm,
+        );
         ep_image.status = EndpointStatus::Online;
         ep_image.capabilities = vec![
             EndpointCapability::ChatCompletion,
@@ -696,7 +693,11 @@ mod tests {
         registry.add(ep_image).await.unwrap();
 
         // 音声認識機能を持つエンドポイント（オフライン）
-        let mut ep_audio = Endpoint::new("ASR".to_string(), "http://localhost:8080".to_string());
+        let mut ep_audio = Endpoint::new(
+            "ASR".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         ep_audio.status = EndpointStatus::Offline;
         ep_audio.capabilities = vec![EndpointCapability::AudioTranscription];
         registry.add(ep_audio).await.unwrap();

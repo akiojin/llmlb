@@ -6,7 +6,7 @@ pub mod support;
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 
-// SPEC-66555000: エンドポイント管理API契約テスト
+// SPEC-e8e9326e: エンドポイント管理API契約テスト
 #[path = "contract/endpoints_post_test.rs"]
 mod endpoints_post_test;
 
@@ -28,7 +28,7 @@ mod endpoints_test_test;
 #[path = "contract/endpoints_sync_test.rs"]
 mod endpoints_sync_test;
 
-// SPEC-66555000: エンドポイントタイプ関連の契約テスト
+// SPEC-e8e9326e: エンドポイントタイプ関連の契約テスト
 #[path = "contract/endpoints_type_filter_test.rs"]
 mod endpoints_type_filter_test;
 

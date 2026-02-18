@@ -1,6 +1,6 @@
 //! エンドポイントデータベース操作
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
 use crate::types::endpoint::{
     Endpoint, EndpointHealthCheck, EndpointModel, EndpointStatus, SupportedAPI,
@@ -15,8 +15,6 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     let registered_at = endpoint.registered_at.to_rfc3339();
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
     let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
-    let endpoint_type_source = endpoint.endpoint_type_source.as_str();
-    let endpoint_type_detected_at = endpoint.endpoint_type_detected_at.map(|dt| dt.to_rfc3339());
     // SPEC-f8e3a1b7: デバイス情報と推論レイテンシ
     let device_info = endpoint
         .device_info
@@ -28,11 +26,10 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
         r#"
         INSERT INTO endpoints (
             id, name, base_url, api_key_encrypted, status, endpoint_type,
-            endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
             health_check_interval_secs, inference_timeout_secs,
             latency_ms, last_seen, last_error, error_count,
             registered_at, notes, capabilities, device_info, inference_latency_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -41,9 +38,6 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     .bind(&endpoint.api_key)
     .bind(status)
     .bind(endpoint_type)
-    .bind(endpoint_type_source)
-    .bind(&endpoint.endpoint_type_reason)
-    .bind(&endpoint_type_detected_at)
     .bind(endpoint.health_check_interval_secs as i32)
     .bind(endpoint.inference_timeout_secs as i32)
     .bind(endpoint.latency_ms.map(|v| v as i32))
@@ -66,7 +60,6 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
-               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
@@ -87,7 +80,6 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
     let row = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
-               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
@@ -109,8 +101,6 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     let id = endpoint.id.to_string();
     let status = endpoint.status.as_str();
     let endpoint_type = endpoint.endpoint_type.as_str();
-    let endpoint_type_source = endpoint.endpoint_type_source.as_str();
-    let endpoint_type_detected_at = endpoint.endpoint_type_detected_at.map(|dt| dt.to_rfc3339());
     let last_seen = endpoint.last_seen.map(|dt| dt.to_rfc3339());
     let capabilities = serde_json::to_string(&endpoint.capabilities).unwrap_or_default();
     // SPEC-f8e3a1b7: デバイス情報と推論レイテンシ
@@ -123,7 +113,6 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
         r#"
         UPDATE endpoints SET
             name = ?, base_url = ?, api_key_encrypted = ?, status = ?, endpoint_type = ?,
-            endpoint_type_source = ?, endpoint_type_reason = ?, endpoint_type_detected_at = ?,
             health_check_interval_secs = ?, inference_timeout_secs = ?,
             latency_ms = ?, last_seen = ?, last_error = ?, error_count = ?,
             notes = ?, capabilities = ?, device_info = ?, inference_latency_ms = ?
@@ -135,9 +124,6 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     .bind(&endpoint.api_key)
     .bind(status)
     .bind(endpoint_type)
-    .bind(endpoint_type_source)
-    .bind(&endpoint.endpoint_type_reason)
-    .bind(&endpoint_type_detected_at)
     .bind(endpoint.health_check_interval_secs as i32)
     .bind(endpoint.inference_timeout_secs as i32)
     .bind(endpoint.latency_ms.map(|v| v as i32))
@@ -170,7 +156,6 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
     let row = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
-               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
@@ -195,7 +180,6 @@ pub async fn list_endpoints_by_status(
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
-               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
@@ -213,7 +197,7 @@ pub async fn list_endpoints_by_status(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
-/// タイプでフィルタしてエンドポイント一覧を取得（SPEC-66555000）
+/// タイプでフィルタしてエンドポイント一覧を取得（SPEC-e8e9326e）
 pub async fn list_endpoints_by_type(
     pool: &SqlitePool,
     endpoint_type: crate::types::endpoint::EndpointType,
@@ -221,7 +205,6 @@ pub async fn list_endpoints_by_type(
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
-               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
@@ -239,7 +222,7 @@ pub async fn list_endpoints_by_type(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
-/// タイプとステータスでフィルタしてエンドポイント一覧を取得（SPEC-66555000）
+/// タイプとステータスでフィルタしてエンドポイント一覧を取得（SPEC-e8e9326e）
 pub async fn list_endpoints_by_type_and_status(
     pool: &SqlitePool,
     endpoint_type: crate::types::endpoint::EndpointType,
@@ -248,7 +231,6 @@ pub async fn list_endpoints_by_type_and_status(
     let rows = sqlx::query_as::<_, EndpointRow>(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
-               endpoint_type_source, endpoint_type_reason, endpoint_type_detected_at,
                health_check_interval_secs, inference_timeout_secs,
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
@@ -267,29 +249,20 @@ pub async fn list_endpoints_by_type_and_status(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
-/// エンドポイントのタイプを更新（SPEC-66555000）
+/// エンドポイントのタイプを更新（SPEC-e8e9326e）
 pub async fn update_endpoint_type(
     pool: &SqlitePool,
     id: Uuid,
     endpoint_type: crate::types::endpoint::EndpointType,
-    endpoint_type_source: crate::types::endpoint::EndpointTypeSource,
-    endpoint_type_reason: Option<&str>,
-    endpoint_type_detected_at: Option<String>,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
         UPDATE endpoints SET
-            endpoint_type = ?,
-            endpoint_type_source = ?,
-            endpoint_type_reason = ?,
-            endpoint_type_detected_at = ?
+            endpoint_type = ?
         WHERE id = ?
         "#,
     )
     .bind(endpoint_type.as_str())
-    .bind(endpoint_type_source.as_str())
-    .bind(endpoint_type_reason)
-    .bind(endpoint_type_detected_at)
     .bind(id.to_string())
     .execute(pool)
     .await?;
@@ -477,7 +450,7 @@ pub async fn update_endpoint_model(
     Ok(result.rows_affected() > 0)
 }
 
-/// モデルのmax_tokensのみを更新（SPEC-66555000）
+/// モデルのmax_tokensのみを更新（SPEC-e8e9326e）
 ///
 /// メタデータ取得後にcontext_lengthをmax_tokensとして保存する。
 pub async fn update_model_max_tokens(
@@ -646,14 +619,8 @@ struct EndpointRow {
     base_url: String,
     api_key_encrypted: Option<String>,
     status: String,
-    /// SPEC-66555000: エンドポイントタイプ
+    /// SPEC-e8e9326e: エンドポイントタイプ
     endpoint_type: String,
-    /// SPEC-66555000: タイプ判定ソース
-    endpoint_type_source: String,
-    /// SPEC-66555000: 判定理由
-    endpoint_type_reason: Option<String>,
-    /// SPEC-66555000: 判定時刻
-    endpoint_type_detected_at: Option<String>,
     health_check_interval_secs: i32,
     inference_timeout_secs: i32,
     latency_ms: Option<i32>,
@@ -662,7 +629,7 @@ struct EndpointRow {
     error_count: i32,
     registered_at: String,
     notes: Option<String>,
-    /// SPEC-66555000移行用: エンドポイントの機能一覧（JSON形式）
+    /// SPEC-e8e9326e移行用: エンドポイントの機能一覧（JSON形式）
     capabilities: Option<String>,
     /// SPEC-f8e3a1b7: デバイス情報（JSON形式）
     device_info: Option<String>,
@@ -686,13 +653,10 @@ impl From<EndpointRow> for Endpoint {
             base_url: row.base_url,
             api_key: row.api_key_encrypted,
             status: row.status.parse().unwrap_or_default(),
-            endpoint_type: row.endpoint_type.parse().unwrap_or_default(),
-            endpoint_type_source: row.endpoint_type_source.parse().unwrap_or_default(),
-            endpoint_type_reason: row.endpoint_type_reason,
-            endpoint_type_detected_at: row
-                .endpoint_type_detected_at
-                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                .map(|dt| dt.with_timezone(&chrono::Utc)),
+            endpoint_type: row
+                .endpoint_type
+                .parse()
+                .unwrap_or(crate::types::endpoint::EndpointType::OpenaiCompatible),
             health_check_interval_secs: row.health_check_interval_secs as u32,
             inference_timeout_secs: row.inference_timeout_secs as u32,
             latency_ms: row.latency_ms.map(|v| v as u32),
@@ -809,6 +773,7 @@ mod tests {
         let endpoint = Endpoint::new(
             "Test Endpoint".to_string(),
             "http://localhost:8080".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
         );
         create_endpoint(&pool, &endpoint).await.unwrap();
 
@@ -849,6 +814,7 @@ mod tests {
         let endpoint = Endpoint::new(
             "Model Test".to_string(),
             "http://localhost:8081".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
         );
         create_endpoint(&pool, &endpoint).await.unwrap();
 
@@ -891,6 +857,7 @@ mod tests {
         let endpoint = Endpoint::new(
             "Health Test".to_string(),
             "http://localhost:8082".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
         );
         create_endpoint(&pool, &endpoint).await.unwrap();
 
@@ -921,13 +888,18 @@ mod tests {
         let pool = setup_test_db().await;
 
         // Create endpoints with different statuses
-        let mut ep1 = Endpoint::new("Online EP".to_string(), "http://localhost:8083".to_string());
+        let mut ep1 = Endpoint::new(
+            "Online EP".to_string(),
+            "http://localhost:8083".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
+        );
         ep1.status = EndpointStatus::Online;
         create_endpoint(&pool, &ep1).await.unwrap();
 
         let mut ep2 = Endpoint::new(
             "Offline EP".to_string(),
             "http://localhost:8084".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
         );
         ep2.status = EndpointStatus::Offline;
         create_endpoint(&pool, &ep2).await.unwrap();
@@ -935,6 +907,7 @@ mod tests {
         let ep3 = Endpoint::new(
             "Pending EP".to_string(),
             "http://localhost:8085".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
         );
         create_endpoint(&pool, &ep3).await.unwrap();
 
@@ -960,6 +933,7 @@ mod tests {
         let endpoint = Endpoint::new(
             "Counter Test".to_string(),
             "http://localhost:9090".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
         );
         create_endpoint(&pool, &endpoint).await.unwrap();
 
@@ -1005,8 +979,16 @@ mod tests {
         let _lock = TEST_LOCK.lock().await;
         let pool = setup_test_db().await;
 
-        let ep1 = Endpoint::new("Totals A".to_string(), "http://localhost:9091".to_string());
-        let ep2 = Endpoint::new("Totals B".to_string(), "http://localhost:9092".to_string());
+        let ep1 = Endpoint::new(
+            "Totals A".to_string(),
+            "http://localhost:9091".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
+        );
+        let ep2 = Endpoint::new(
+            "Totals B".to_string(),
+            "http://localhost:9092".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
+        );
         create_endpoint(&pool, &ep1).await.unwrap();
         create_endpoint(&pool, &ep2).await.unwrap();
 

@@ -24,7 +24,7 @@ pub mod endpoints;
 /// エンドポイント日次統計（SPEC-76643000）
 pub mod endpoint_daily_stats;
 
-/// ダウンロードタスク管理（SPEC-66555000）
+/// ダウンロードタスク管理（SPEC-e8e9326e）
 pub mod download_tasks;
 
 #[cfg(test)]

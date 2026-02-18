@@ -1,6 +1,6 @@
 //! Contract Test: GET /api/endpoints/:id/download/progress
 //!
-//! SPEC-66555000: エンドポイントダウンロード進捗API契約テスト
+//! SPEC-e8e9326e: エンドポイントダウンロード進捗API契約テスト
 //!
 //! US8: xLLMエンドポイントのモデルダウンロード進捗を確認
 

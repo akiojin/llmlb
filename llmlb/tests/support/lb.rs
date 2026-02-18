@@ -195,7 +195,7 @@ pub async fn register_node(
     Ok(response)
 }
 
-/// SPEC-66555000: POST /api/runtimes は廃止されました。
+/// SPEC-e8e9326e: POST /api/runtimes は廃止されました。
 /// このヘルパー関数は後方互換性のために残されていますが、
 /// 新しいテストは Endpoints API を使用してください。
 ///
@@ -234,7 +234,7 @@ pub async fn register_node_with_runtimes(
 }
 
 /// 音声認識（ASR）対応エンドポイントを登録する
-/// （SPEC-66555000: EndpointRegistry経由）
+/// （SPEC-e8e9326e: EndpointRegistry経由）
 #[allow(dead_code)]
 pub async fn register_audio_transcription_endpoint(
     lb_addr: SocketAddr,
@@ -250,7 +250,7 @@ pub async fn register_audio_transcription_endpoint(
 }
 
 /// 音声合成（TTS）対応エンドポイントを登録する
-/// （SPEC-66555000: EndpointRegistry経由）
+/// （SPEC-e8e9326e: EndpointRegistry経由）
 #[allow(dead_code)]
 pub async fn register_audio_speech_endpoint(
     lb_addr: SocketAddr,
@@ -266,7 +266,7 @@ pub async fn register_audio_speech_endpoint(
 }
 
 /// 画像生成対応エンドポイントを登録する
-/// （SPEC-66555000: EndpointRegistry経由）
+/// （SPEC-e8e9326e: EndpointRegistry経由）
 #[allow(dead_code)]
 pub async fn register_image_generation_endpoint(
     lb_addr: SocketAddr,
@@ -282,7 +282,7 @@ pub async fn register_image_generation_endpoint(
 }
 
 /// 指定したcapabilitiesでエンドポイントを登録する
-/// （SPEC-66555000: EndpointRegistry経由）
+/// （SPEC-e8e9326e: EndpointRegistry経由）
 #[allow(dead_code)]
 pub async fn register_endpoint_with_capabilities(
     lb_addr: SocketAddr,

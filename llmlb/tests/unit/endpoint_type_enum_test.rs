@@ -1,4 +1,4 @@
-//! SPEC-66555000: EndpointType列挙型のシリアライズ/デシリアライズテスト
+//! SPEC-e8e9326e: EndpointType列挙型のシリアライズ/デシリアライズテスト
 //!
 //! T139: EndpointType列挙型のunit test
 
@@ -27,10 +27,6 @@ fn test_json_serialization() {
         serde_json::to_string(&EndpointType::OpenaiCompatible).unwrap(),
         "\"openai_compatible\""
     );
-    assert_eq!(
-        serde_json::to_string(&EndpointType::Unknown).unwrap(),
-        "\"unknown\""
-    );
 }
 
 /// JSON デシリアライズ: snake_case形式
@@ -56,10 +52,6 @@ fn test_json_deserialization() {
         serde_json::from_str::<EndpointType>("\"openai_compatible\"").unwrap(),
         EndpointType::OpenaiCompatible
     );
-    assert_eq!(
-        serde_json::from_str::<EndpointType>("\"unknown\"").unwrap(),
-        EndpointType::Unknown
-    );
 }
 
 /// JSON ラウンドトリップ
@@ -71,7 +63,6 @@ fn test_json_roundtrip() {
         EndpointType::Vllm,
         EndpointType::LmStudio,
         EndpointType::OpenaiCompatible,
-        EndpointType::Unknown,
     ];
 
     for original in types {
@@ -98,28 +89,16 @@ fn test_from_str_valid() {
         "openai_compatible".parse::<EndpointType>().unwrap(),
         EndpointType::OpenaiCompatible
     );
-    assert_eq!(
-        "unknown".parse::<EndpointType>().unwrap(),
-        EndpointType::Unknown
-    );
 }
 
-/// FromStr: 不正値はUnknownにフォールバック
+/// FromStr: 不正値はエラーを返す
 #[test]
-fn test_from_str_invalid_fallback() {
-    assert_eq!(
-        "invalid_type".parse::<EndpointType>().unwrap(),
-        EndpointType::Unknown
-    );
-    assert_eq!("".parse::<EndpointType>().unwrap(), EndpointType::Unknown);
-    assert_eq!(
-        "XLLM".parse::<EndpointType>().unwrap(),
-        EndpointType::Unknown
-    );
-    assert_eq!(
-        "Ollama".parse::<EndpointType>().unwrap(),
-        EndpointType::Unknown
-    );
+fn test_from_str_invalid_returns_error() {
+    assert!("invalid_type".parse::<EndpointType>().is_err());
+    assert!("".parse::<EndpointType>().is_err());
+    assert!("XLLM".parse::<EndpointType>().is_err());
+    assert!("Ollama".parse::<EndpointType>().is_err());
+    assert!("unknown".parse::<EndpointType>().is_err());
 }
 
 /// Display: as_str()と一致
@@ -131,7 +110,6 @@ fn test_display() {
         EndpointType::Vllm,
         EndpointType::LmStudio,
         EndpointType::OpenaiCompatible,
-        EndpointType::Unknown,
     ];
 
     for t in types {
@@ -147,14 +125,6 @@ fn test_as_str() {
     assert_eq!(EndpointType::Vllm.as_str(), "vllm");
     assert_eq!(EndpointType::LmStudio.as_str(), "lm_studio");
     assert_eq!(EndpointType::OpenaiCompatible.as_str(), "openai_compatible");
-    assert_eq!(EndpointType::Unknown.as_str(), "unknown");
-}
-
-/// Default: Unknown
-#[test]
-fn test_default() {
-    let default_type: EndpointType = Default::default();
-    assert_eq!(default_type, EndpointType::Unknown);
 }
 
 /// Clone と Copy
@@ -180,8 +150,11 @@ fn test_partial_eq() {
 fn test_endpoint_type_in_endpoint_json() {
     use llmlb::types::endpoint::Endpoint;
 
-    let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
-    endpoint.endpoint_type = EndpointType::Xllm;
+    let endpoint = Endpoint::new(
+        "Test".to_string(),
+        "http://localhost:8080".to_string(),
+        EndpointType::Xllm,
+    );
 
     let json = serde_json::to_string(&endpoint).unwrap();
     assert!(json.contains("\"endpoint_type\":\"xllm\""));

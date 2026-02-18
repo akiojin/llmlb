@@ -1,6 +1,6 @@
 //! エンドポイント型定義
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -118,11 +118,12 @@ impl std::fmt::Display for EndpointStatus {
     }
 }
 
-/// エンドポイントタイプ（SPEC-66555000追加要件 2026-01-26）
+/// エンドポイントタイプ（SPEC-e8e9326e追加要件 2026-01-26）
 ///
 /// エンドポイントの種別を表す列挙型。
 /// 登録時に自動判別され、タイプに応じた機能制御に使用される。
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+/// 対応する5タイプのみ許可し、検出できないエンドポイントの登録は拒否する。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointType {
     /// 本プロジェクト独自の推論エンジン（xLLM）
@@ -135,9 +136,6 @@ pub enum EndpointType {
     LmStudio,
     /// その他のOpenAI互換API
     OpenaiCompatible,
-    /// 判別不能（オフライン時）
-    #[default]
-    Unknown,
 }
 
 impl EndpointType {
@@ -149,7 +147,6 @@ impl EndpointType {
             Self::Vllm => "vllm",
             Self::LmStudio => "lm_studio",
             Self::OpenaiCompatible => "openai_compatible",
-            Self::Unknown => "unknown",
         }
     }
 
@@ -164,18 +161,30 @@ impl EndpointType {
     }
 }
 
+/// EndpointType のパースエラー
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseEndpointTypeError(pub String);
+
+impl std::fmt::Display for ParseEndpointTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown endpoint type: '{}'", self.0)
+    }
+}
+
+impl std::error::Error for ParseEndpointTypeError {}
+
 impl FromStr for EndpointType {
-    type Err = std::convert::Infallible;
+    type Err = ParseEndpointTypeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "xllm" => Self::Xllm,
-            "ollama" => Self::Ollama,
-            "vllm" => Self::Vllm,
-            "lm_studio" => Self::LmStudio,
-            "openai_compatible" => Self::OpenaiCompatible,
-            _ => Self::Unknown,
-        })
+        match s {
+            "xllm" => Ok(Self::Xllm),
+            "ollama" => Ok(Self::Ollama),
+            "vllm" => Ok(Self::Vllm),
+            "lm_studio" => Ok(Self::LmStudio),
+            "openai_compatible" => Ok(Self::OpenaiCompatible),
+            _ => Err(ParseEndpointTypeError(s.to_string())),
+        }
     }
 }
 
@@ -185,45 +194,7 @@ impl std::fmt::Display for EndpointType {
     }
 }
 
-/// エンドポイントタイプ判定ソース（SPEC-66555000追加要件 2026-02-06）
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum EndpointTypeSource {
-    /// 自動判別
-    #[default]
-    Auto,
-    /// 手動指定
-    Manual,
-}
-
-impl EndpointTypeSource {
-    /// EndpointTypeSourceを文字列に変換
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Manual => "manual",
-        }
-    }
-}
-
-impl FromStr for EndpointTypeSource {
-    type Err = std::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "manual" => Self::Manual,
-            _ => Self::Auto,
-        })
-    }
-}
-
-impl std::fmt::Display for EndpointTypeSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// ダウンロードタスクの状態（SPEC-66555000追加要件 2026-01-26）
+/// ダウンロードタスクの状態（SPEC-e8e9326e追加要件 2026-01-26）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadStatus {
@@ -276,7 +247,7 @@ impl std::fmt::Display for DownloadStatus {
 
 /// エンドポイントの機能タイプ
 ///
-/// NodeのRuntimeTypeに相当する機能分類（SPEC-66555000移行用）
+/// NodeのRuntimeTypeに相当する機能分類（SPEC-e8e9326e移行用）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointCapability {
@@ -327,18 +298,9 @@ pub struct Endpoint {
     pub api_key: Option<String>,
     /// 現在の状態
     pub status: EndpointStatus,
-    /// エンドポイントタイプ（SPEC-66555000追加要件 2026-01-26）
-    #[serde(default)]
+    /// エンドポイントタイプ（SPEC-e8e9326e追加要件 2026-01-26）
+    /// 登録時に自動検出される。対応する5タイプのみ許可。
     pub endpoint_type: EndpointType,
-    /// エンドポイントタイプ判定ソース（SPEC-66555000追加要件 2026-02-06）
-    #[serde(default)]
-    pub endpoint_type_source: EndpointTypeSource,
-    /// 判定理由（自動判別/手動指定）
-    #[serde(default)]
-    pub endpoint_type_reason: Option<String>,
-    /// 判定時刻
-    #[serde(default)]
-    pub endpoint_type_detected_at: Option<DateTime<Utc>>,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,
     /// 推論タイムアウト（秒）
@@ -355,7 +317,7 @@ pub struct Endpoint {
     pub registered_at: DateTime<Utc>,
     /// メモ
     pub notes: Option<String>,
-    /// エンドポイントの機能一覧（SPEC-66555000移行用）
+    /// エンドポイントの機能一覧（SPEC-e8e9326e移行用）
     /// 画像生成、音声認識等の特殊機能をサポートするかを示す
     #[serde(default)]
     pub capabilities: Vec<EndpointCapability>,
@@ -394,17 +356,16 @@ pub struct Endpoint {
 
 impl Endpoint {
     /// 新しいエンドポイントを作成
-    pub fn new(name: String, base_url: String) -> Self {
+    ///
+    /// `endpoint_type` は登録時に自動検出された結果を指定する。
+    pub fn new(name: String, base_url: String, endpoint_type: EndpointType) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
             base_url,
             api_key: None,
             status: EndpointStatus::Pending,
-            endpoint_type: EndpointType::Unknown,
-            endpoint_type_source: EndpointTypeSource::Auto,
-            endpoint_type_reason: None,
-            endpoint_type_detected_at: None,
+            endpoint_type,
             health_check_interval_secs: 30,
             inference_timeout_secs: 120,
             latency_ms: None,
@@ -472,7 +433,7 @@ pub struct EndpointModel {
     pub model_id: String,
     /// 能力（chat, embeddings等）
     pub capabilities: Option<Vec<String>>,
-    /// 最大トークン数（SPEC-66555000追加要件 2026-01-26）
+    /// 最大トークン数（SPEC-e8e9326e追加要件 2026-01-26）
     pub max_tokens: Option<u32>,
     /// 最終確認時刻
     pub last_checked: Option<DateTime<Utc>>,
@@ -488,7 +449,7 @@ impl EndpointModel {
     }
 }
 
-/// モデルダウンロードタスク（SPEC-66555000追加要件 2026-01-26）
+/// モデルダウンロードタスク（SPEC-e8e9326e追加要件 2026-01-26）
 ///
 /// xLLMエンドポイント専用のモデルダウンロード進捗管理
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -635,10 +596,15 @@ mod tests {
 
     #[test]
     fn test_endpoint_new() {
-        let endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         assert_eq!(endpoint.name, "Test");
         assert_eq!(endpoint.base_url, "http://localhost:8080");
         assert_eq!(endpoint.status, EndpointStatus::Pending);
+        assert_eq!(endpoint.endpoint_type, EndpointType::Xllm);
         assert_eq!(endpoint.health_check_interval_secs, 30);
         assert_eq!(endpoint.inference_timeout_secs, 120);
         assert_eq!(endpoint.error_count, 0);
@@ -698,7 +664,11 @@ mod tests {
 
     #[test]
     fn test_endpoint_api_key_not_serialized() {
-        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint.api_key = Some("secret".to_string());
 
         let json = serde_json::to_string(&endpoint).unwrap();
@@ -711,7 +681,11 @@ mod tests {
     #[test]
     fn test_update_inference_latency_initial() {
         // 初回更新: None → Some(value)
-        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         assert!(endpoint.inference_latency_ms.is_none());
 
         endpoint.update_inference_latency(100.0);
@@ -723,7 +697,11 @@ mod tests {
         // EMA計算: α=0.2
         // new_ema = α * new + (1 - α) * old
         // new_ema = 0.2 * 200 + 0.8 * 100 = 40 + 80 = 120
-        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint.inference_latency_ms = Some(100.0);
 
         endpoint.update_inference_latency(200.0);
@@ -738,7 +716,11 @@ mod tests {
     #[test]
     fn test_reset_inference_latency() {
         // オフライン時にINFINITYにリセット
-        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint.inference_latency_ms = Some(100.0);
 
         endpoint.reset_inference_latency();
@@ -748,16 +730,28 @@ mod tests {
     #[test]
     fn test_get_inference_latency_for_sort() {
         // None → INFINITY
-        let endpoint1 = Endpoint::new("Test1".to_string(), "http://localhost:8080".to_string());
+        let endpoint1 = Endpoint::new(
+            "Test1".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         assert_eq!(endpoint1.get_inference_latency_for_sort(), f64::INFINITY);
 
         // Some(value) → value
-        let mut endpoint2 = Endpoint::new("Test2".to_string(), "http://localhost:8081".to_string());
+        let mut endpoint2 = Endpoint::new(
+            "Test2".to_string(),
+            "http://localhost:8081".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint2.inference_latency_ms = Some(50.0);
         assert_eq!(endpoint2.get_inference_latency_for_sort(), 50.0);
 
         // Some(INFINITY) → INFINITY
-        let mut endpoint3 = Endpoint::new("Test3".to_string(), "http://localhost:8082".to_string());
+        let mut endpoint3 = Endpoint::new(
+            "Test3".to_string(),
+            "http://localhost:8082".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint3.reset_inference_latency();
         assert_eq!(endpoint3.get_inference_latency_for_sort(), f64::INFINITY);
     }
@@ -765,7 +759,11 @@ mod tests {
     #[test]
     fn test_update_inference_latency_from_infinity() {
         // INFINITY状態からの復帰: 新しい値がそのまま設定される
-        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint.reset_inference_latency();
         assert_eq!(endpoint.inference_latency_ms, Some(f64::INFINITY));
 
@@ -806,7 +804,7 @@ mod tests {
         assert_eq!(deserialized.gpu_devices.len(), 1);
     }
 
-    // SPEC-66555000: エンドポイントタイプ自動判別機能テスト
+    // SPEC-e8e9326e: エンドポイントタイプ自動判別機能テスト
 
     #[test]
     fn test_endpoint_type_serialization() {
@@ -829,10 +827,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&EndpointType::OpenaiCompatible).unwrap(),
             "\"openai_compatible\""
-        );
-        assert_eq!(
-            serde_json::to_string(&EndpointType::Unknown).unwrap(),
-            "\"unknown\""
         );
     }
 
@@ -858,15 +852,9 @@ mod tests {
             "openai_compatible".parse::<EndpointType>().unwrap(),
             EndpointType::OpenaiCompatible
         );
-        assert_eq!(
-            "unknown".parse::<EndpointType>().unwrap(),
-            EndpointType::Unknown
-        );
-        // 未知の値はUnknownにフォールバック
-        assert_eq!(
-            "invalid".parse::<EndpointType>().unwrap(),
-            EndpointType::Unknown
-        );
+        // 未知の値はエラーを返す
+        assert!("unknown".parse::<EndpointType>().is_err());
+        assert!("invalid".parse::<EndpointType>().is_err());
     }
 
     #[test]
@@ -876,7 +864,6 @@ mod tests {
         assert_eq!(EndpointType::Vllm.as_str(), "vllm");
         assert_eq!(EndpointType::LmStudio.as_str(), "lm_studio");
         assert_eq!(EndpointType::OpenaiCompatible.as_str(), "openai_compatible");
-        assert_eq!(EndpointType::Unknown.as_str(), "unknown");
     }
 
     #[test]
@@ -887,7 +874,6 @@ mod tests {
         assert!(!EndpointType::Vllm.supports_model_download());
         assert!(!EndpointType::LmStudio.supports_model_download());
         assert!(!EndpointType::OpenaiCompatible.supports_model_download());
-        assert!(!EndpointType::Unknown.supports_model_download());
     }
 
     #[test]
@@ -898,13 +884,6 @@ mod tests {
         assert!(EndpointType::LmStudio.supports_model_metadata());
         assert!(!EndpointType::Vllm.supports_model_metadata());
         assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
-        assert!(!EndpointType::Unknown.supports_model_metadata());
-    }
-
-    #[test]
-    fn test_endpoint_type_default() {
-        // デフォルトはUnknown
-        assert_eq!(EndpointType::default(), EndpointType::Unknown);
     }
 
     #[test]
@@ -1003,9 +982,12 @@ mod tests {
 
     #[test]
     fn test_endpoint_new_has_endpoint_type() {
-        let endpoint = Endpoint::new("Test".to_string(), "http://localhost:8080".to_string());
-        // デフォルトはUnknown
-        assert_eq!(endpoint.endpoint_type, EndpointType::Unknown);
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        assert_eq!(endpoint.endpoint_type, EndpointType::OpenaiCompatible);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Ollama Model Metadata Retrieval
 //!
-//! SPEC-66555000: Fetch model metadata from Ollama endpoints via POST /api/show
+//! SPEC-e8e9326e: Fetch model metadata from Ollama endpoints via POST /api/show
 
 use super::{MetadataError, ModelMetadata};
 use reqwest::Client;

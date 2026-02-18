@@ -2,7 +2,7 @@
 //!
 //! TDD RED: モデル一覧とエンドポイント別インストール状況の表示
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use crate::support::{ollama::spawn_mock_ollama, xllm::spawn_mock_xllm};
 use axum::{
@@ -102,7 +102,7 @@ async fn test_available_models_endpoint_is_removed() {
     );
 }
 
-// NOTE: T019 (test_list_installed_models_on_endpoint) はSPEC-66555000（NodeRegistry廃止）により削除。
+// NOTE: T019 (test_list_installed_models_on_endpoint) はSPEC-e8e9326e（NodeRegistry廃止）により削除。
 // EndpointRegistryベースのモデル同期テストは llmlb/tests/contract/endpoints_sync_test.rs で実装済み。
 
 /// T020: 複数エンドポイントのロード済みモデルの反映テスト

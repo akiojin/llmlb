@@ -1,6 +1,6 @@
 //! Integration Test: メトリクス収集
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、コメントアウトされたNodeRegistry参照は削除済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、コメントアウトされたNodeRegistry参照は削除済み。
 //!
 //! ⚠️ このテストはTDD RED状態の統合テストです。
 //! メトリクス機能はSPEC-589f2df1で実装済みであり、

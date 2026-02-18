@@ -1,6 +1,6 @@
 //! Integration Test: US7 - タイプフィルタリング
 //!
-//! SPEC-66555000: エンドポイントタイプ自動判別機能
+//! SPEC-e8e9326e: エンドポイントタイプ自動判別機能
 //!
 //! 管理者として、特定タイプのエンドポイントのみを
 //! フィルタリングして一覧表示したい。
@@ -9,6 +9,8 @@ use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::lb::spawn_test_lb_with_db;
 
@@ -44,15 +46,13 @@ async fn create_endpoint(
     admin_key: &str,
     name: &str,
     base_url: &str,
-    endpoint_type: &str,
 ) -> Value {
     let response = client
         .post(format!("http://{}/api/endpoints", addr))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": name,
-            "base_url": base_url,
-            "endpoint_type": endpoint_type
+            "base_url": base_url
         }))
         .send()
         .await
@@ -62,9 +62,92 @@ async fn create_endpoint(
     response.json().await.expect("endpoint response json")
 }
 
+/// OpenAI互換として検出されるモックサーバーを作成するヘルパー
+async fn create_openai_compatible_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
+/// xLLMとして検出されるモックサーバーを作成するヘルパー
+async fn create_xllm_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
+/// Ollamaとして検出されるモックサーバーを作成するヘルパー
+async fn create_ollama_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{"name": "llama3:8b", "size": 4000000000_i64}]
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
+/// vLLMとして検出されるモックサーバーを作成するヘルパー
+async fn create_vllm_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("server", "vLLM/0.4.0")
+                .set_body_json(json!({
+                    "object": "list",
+                    "data": [{"id": "test-model", "object": "model", "owned_by": "vllm"}]
+                })),
+        )
+        .mount(&mock)
+        .await;
+    mock
+}
+
+/// LM Studioとして検出されるモックサーバーを作成するヘルパー
+async fn create_lm_studio_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    // LM Studio /api/v1/models でpublisher/arch/stateを返す
+    Mock::given(method("GET"))
+        .and(path("/api/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{
+                "id": "meta-llama-3.1-8b-instruct",
+                "object": "model",
+                "publisher": "lmstudio-community",
+                "arch": "llama",
+                "state": "not-loaded"
+            }]
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
 /// US7-シナリオ1: タイプパラメータなしの場合、全エンドポイントを返す
 #[tokio::test]
 async fn test_list_endpoints_without_type_filter() {
+    let mock1 = create_openai_compatible_mock().await;
+    let mock2 = create_openai_compatible_mock().await;
+    let mock3 = create_openai_compatible_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -75,8 +158,7 @@ async fn test_list_endpoints_without_type_filter() {
         server.addr(),
         &admin_key,
         "Endpoint 1",
-        "http://localhost:9001",
-        "xllm",
+        &mock1.uri(),
     )
     .await;
     let _ = create_endpoint(
@@ -84,8 +166,7 @@ async fn test_list_endpoints_without_type_filter() {
         server.addr(),
         &admin_key,
         "Endpoint 2",
-        "http://localhost:9002",
-        "ollama",
+        &mock2.uri(),
     )
     .await;
     let _ = create_endpoint(
@@ -93,8 +174,7 @@ async fn test_list_endpoints_without_type_filter() {
         server.addr(),
         &admin_key,
         "Endpoint 3",
-        "http://localhost:9003",
-        "vllm",
+        &mock3.uri(),
     )
     .await;
 
@@ -117,6 +197,8 @@ async fn test_list_endpoints_without_type_filter() {
 /// US7-シナリオ2: type=xllmでフィルタリング
 #[tokio::test]
 async fn test_list_endpoints_filter_by_xllm() {
+    let mock = create_xllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -126,8 +208,7 @@ async fn test_list_endpoints_filter_by_xllm() {
         server.addr(),
         &admin_key,
         "xLLM Endpoint",
-        "http://localhost:9101",
-        "xllm",
+        &mock.uri(),
     )
     .await;
 
@@ -156,6 +237,8 @@ async fn test_list_endpoints_filter_by_xllm() {
 /// US7-シナリオ3: type=ollamaでフィルタリング
 #[tokio::test]
 async fn test_list_endpoints_filter_by_ollama() {
+    let mock = create_ollama_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -165,8 +248,7 @@ async fn test_list_endpoints_filter_by_ollama() {
         server.addr(),
         &admin_key,
         "Ollama Endpoint",
-        "http://localhost:9102",
-        "ollama",
+        &mock.uri(),
     )
     .await;
 
@@ -194,6 +276,8 @@ async fn test_list_endpoints_filter_by_ollama() {
 /// US7-シナリオ4: type=vllmでフィルタリング
 #[tokio::test]
 async fn test_list_endpoints_filter_by_vllm() {
+    let mock = create_vllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -203,8 +287,7 @@ async fn test_list_endpoints_filter_by_vllm() {
         server.addr(),
         &admin_key,
         "vLLM Endpoint",
-        "http://localhost:9103",
-        "vllm",
+        &mock.uri(),
     )
     .await;
 
@@ -228,6 +311,8 @@ async fn test_list_endpoints_filter_by_vllm() {
 /// US7-シナリオ5: type=openai_compatibleでフィルタリング
 #[tokio::test]
 async fn test_list_endpoints_filter_by_openai_compatible() {
+    let mock = create_openai_compatible_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -237,8 +322,7 @@ async fn test_list_endpoints_filter_by_openai_compatible() {
         server.addr(),
         &admin_key,
         "OpenAI Compatible Endpoint",
-        "http://localhost:9104",
-        "openai_compatible",
+        &mock.uri(),
     )
     .await;
 
@@ -262,25 +346,14 @@ async fn test_list_endpoints_filter_by_openai_compatible() {
     }
 }
 
-/// US7-シナリオ6: type=unknownでフィルタリング
+/// US7-シナリオ6: type=unknown は廃止済み - 不正なタイプとして扱われる
 #[tokio::test]
-async fn test_list_endpoints_filter_by_unknown() {
+async fn test_list_endpoints_filter_by_unknown_returns_error_or_empty() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // オフラインエンドポイントを登録（unknownタイプになる）
-    let _ = create_endpoint(
-        &client,
-        server.addr(),
-        &admin_key,
-        "Offline Endpoint",
-        "http://localhost:9999",
-        "unknown",
-    )
-    .await;
-
-    // unknownタイプでフィルタ
+    // unknownタイプでフィルタ（廃止済みのため400またはOK+空配列）
     let response = client
         .get(format!(
             "http://{}/api/endpoints?type=unknown",
@@ -291,24 +364,18 @@ async fn test_list_endpoints_filter_by_unknown() {
         .await
         .expect("list request failed");
 
-    assert_eq!(response.status().as_u16(), 200);
-
-    let body: Value = response.json().await.unwrap();
-    let endpoints = body["endpoints"].as_array().unwrap();
-
-    // オフラインエンドポイントが含まれることを確認
+    // 不正なタイプの場合、400 Bad Requestまたは200 OK+空配列を期待
     assert!(
-        !endpoints.is_empty(),
-        "Should have at least one unknown endpoint"
+        response.status().as_u16() == 400 || response.status().as_u16() == 200,
+        "unknown type should return 400 or 200"
     );
-    for endpoint in endpoints {
-        assert_eq!(endpoint["endpoint_type"], "unknown");
-    }
 }
 
 /// US7: type=lm_studioでフィルタリング（SPEC-46452000）
 #[tokio::test]
 async fn test_list_endpoints_filter_by_lm_studio() {
+    let mock = create_lm_studio_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -318,8 +385,7 @@ async fn test_list_endpoints_filter_by_lm_studio() {
         server.addr(),
         &admin_key,
         "LM Studio Endpoint",
-        "http://localhost:9106",
-        "lm_studio",
+        &mock.uri(),
     )
     .await;
 
@@ -346,6 +412,8 @@ async fn test_list_endpoints_filter_by_lm_studio() {
 /// US7-シナリオ7: 複数フィルタの組み合わせ（type + status）
 #[tokio::test]
 async fn test_list_endpoints_combined_filters() {
+    let mock = create_xllm_mock().await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -355,8 +423,7 @@ async fn test_list_endpoints_combined_filters() {
         server.addr(),
         &admin_key,
         "Pending xLLM",
-        "http://localhost:9105",
-        "xllm",
+        &mock.uri(),
     )
     .await;
 

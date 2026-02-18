@@ -1,6 +1,6 @@
 //! Integration Test: US6 - エンドポイントタイプ自動判別
 //!
-//! SPEC-66555000: エンドポイントタイプ自動判別機能
+//! SPEC-e8e9326e: エンドポイントタイプ自動判別機能
 //!
 //! 管理者として、エンドポイント登録時に自動的にタイプ
 //! （xLLM/Ollama/vLLM/OpenAI互換）を判別してほしい。
@@ -11,7 +11,6 @@ use llmlb::registry::endpoints::EndpointRegistry;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
-use uuid::Uuid;
 use wiremock::{
     matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
@@ -45,40 +44,28 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     api_key.key
 }
 
-/// US6-シナリオ1: エンドポイント登録時にタイプが自動判別される
-/// NOTE: 実際のエンドポイントがないとタイプ判別できないため、unknownになる
+/// US6-シナリオ1: オフラインエンドポイント登録はエラーを返す
+/// NOTE: 到達不能なエンドポイントは BAD_GATEWAY で拒否される
 #[tokio::test]
 async fn test_endpoint_type_auto_detection_offline() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
-    // エンドポイント登録（接続先がないのでタイプはunknownになる）
+    // エンドポイント登録（接続先がないのでエラーになる）
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
-            "name": "Unknown Endpoint",
+            "name": "Unreachable Endpoint",
             "base_url": "http://localhost:9999"
         }))
         .send()
         .await
         .expect("registration request failed");
 
-    assert_eq!(response.status().as_u16(), 201);
-
-    let body: Value = response.json().await.unwrap();
-
-    // endpoint_typeフィールドが存在し、オフラインの場合はunknownになる
-    assert!(
-        body["endpoint_type"].is_string(),
-        "endpoint_type should be present in response"
-    );
-    assert_eq!(
-        body["endpoint_type"], "unknown",
-        "Offline endpoint should have unknown type"
-    );
-    assert_eq!(body["endpoint_type_source"], "auto");
+    // 到達不能なエンドポイントは BAD_GATEWAY で拒否される
+    assert_eq!(response.status().as_u16(), 502);
 }
 
 /// US6-シナリオ2: 判別の優先順位（xLLM > Ollama > vLLM > OpenAI互換）
@@ -134,12 +121,6 @@ async fn test_endpoint_type_detection_priority() {
         body["endpoint_type"], "xllm",
         "xLLM should win priority over other detections"
     );
-    assert_eq!(body["endpoint_type_source"], "auto");
-    assert!(body["endpoint_type_reason"]
-        .as_str()
-        .unwrap_or("")
-        .contains("xLLM"));
-    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ3: xLLM判別（/api/systemエンドポイント）
@@ -171,12 +152,6 @@ async fn test_endpoint_type_detection_xllm() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "xllm");
-    assert_eq!(body["endpoint_type_source"], "auto");
-    assert!(body["endpoint_type_reason"]
-        .as_str()
-        .unwrap_or("")
-        .contains("xLLM"));
-    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ4: Ollama判別（/api/tagsエンドポイント）
@@ -213,12 +188,6 @@ async fn test_endpoint_type_detection_ollama() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "ollama");
-    assert_eq!(body["endpoint_type_source"], "auto");
-    assert!(body["endpoint_type_reason"]
-        .as_str()
-        .unwrap_or("")
-        .contains("Ollama"));
-    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ5: vLLM判別（Serverヘッダー）
@@ -262,12 +231,6 @@ async fn test_endpoint_type_detection_vllm() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "vllm");
-    assert_eq!(body["endpoint_type_source"], "auto");
-    assert!(body["endpoint_type_reason"]
-        .as_str()
-        .unwrap_or("")
-        .contains("vLLM"));
-    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ6: OpenAI互換判別（フォールバック）
@@ -310,12 +273,6 @@ async fn test_endpoint_type_detection_openai_compatible() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "openai_compatible");
-    assert_eq!(body["endpoint_type_source"], "auto");
-    assert!(body["endpoint_type_reason"]
-        .as_str()
-        .unwrap_or("")
-        .contains("OpenAI"));
-    assert!(body["endpoint_type_detected_at"].is_string());
 }
 
 /// US6-シナリオ7: オンライン復帰時のタイプ再判別
@@ -350,41 +307,24 @@ async fn test_endpoint_type_redetection_on_online() {
         .mount(&mock)
         .await;
 
-    // 最初はオフラインでunknownタイプ
+    // モックサーバーをbase_urlにして登録（OpenAI互換として判定される）
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Test Endpoint",
-            "base_url": "http://localhost:9999"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .expect("registration request failed");
 
+    assert_eq!(response.status().as_u16(), 201);
     let body: Value = response.json().await.unwrap();
-    assert_eq!(body["endpoint_type"], "unknown");
-    assert_eq!(body["endpoint_type_source"], "auto");
+    assert_eq!(body["endpoint_type"], "openai_compatible");
 
     let endpoint_id = body["id"].as_str().expect("endpoint id");
-    let endpoint_uuid = Uuid::parse_str(endpoint_id).expect("endpoint uuid");
-
-    // base_url をオンラインのモックへ更新
-    let update_response = client
-        .put(format!(
-            "http://{}/api/endpoints/{}",
-            server.addr(),
-            endpoint_id
-        ))
-        .header("authorization", format!("Bearer {}", admin_key))
-        .json(&json!({
-            "base_url": mock.uri()
-        }))
-        .send()
-        .await
-        .expect("update request failed");
-
-    assert_eq!(update_response.status().as_u16(), 200);
+    let endpoint_uuid = uuid::Uuid::parse_str(endpoint_id).expect("endpoint uuid");
 
     let registry = EndpointRegistry::new(db_pool.clone())
         .await
@@ -405,11 +345,4 @@ async fn test_endpoint_type_redetection_on_online() {
         .expect("get endpoint")
         .expect("endpoint exists");
     assert_eq!(updated.endpoint_type.as_str(), "openai_compatible");
-    assert_eq!(updated.endpoint_type_source.as_str(), "auto");
-    assert!(updated
-        .endpoint_type_reason
-        .as_deref()
-        .unwrap_or("")
-        .contains("OpenAI"));
-    assert!(updated.endpoint_type_detected_at.is_some());
 }

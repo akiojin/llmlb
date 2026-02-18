@@ -3,12 +3,12 @@
 mod password_test;
 mod jwt_test;
 
-// SPEC-66555000: エンドポイント関連テスト
+// SPEC-e8e9326e: エンドポイント関連テスト
 mod endpoint_status_test;
 mod endpoint_validation_test;
 mod latency_routing_test;
 
-// SPEC-66555000: エンドポイントタイプ自動判別機能テスト (T138-T140)
+// SPEC-e8e9326e: エンドポイントタイプ自動判別機能テスト (T138-T140)
 mod endpoint_type_detection_test;
 mod endpoint_type_enum_test;
 mod download_status_test;

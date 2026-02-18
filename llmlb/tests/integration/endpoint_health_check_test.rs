@@ -1,6 +1,6 @@
 //! Integration Test: US2 - 稼働状況監視
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 //!
 //! 管理者として、登録したエンドポイントの稼働状況をリアルタイムで確認したい。
 
@@ -14,20 +14,32 @@ use crate::support::lb::spawn_test_lb;
 /// US2-シナリオ1: エンドポイント一覧で稼働状況が表示される
 #[tokio::test]
 async fn test_endpoint_status_displayed_in_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let server = spawn_test_lb().await;
     let client = Client::new();
 
     // エンドポイント登録
-    let _ = client
+    let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
+
+    assert_eq!(reg_resp.status().as_u16(), 201);
 
     // 一覧取得
     let response = client
@@ -113,23 +125,38 @@ async fn test_endpoint_online_status_after_health_check() {
 /// US2-シナリオ3: オフラインエンドポイントの検知
 #[tokio::test]
 async fn test_endpoint_offline_status_detection() {
+    // 登録時の自動検出用にモックを起動
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let server = spawn_test_lb().await;
     let client = Client::new();
 
-    // 到達不能なエンドポイントを登録
+    // エンドポイント登録（自動検出で成功）
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Unreachable Endpoint",
-            "base_url": "http://127.0.0.1:59999"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(reg_resp.status().as_u16(), 201);
     let reg_body: Value = reg_resp.json().await.unwrap();
     let endpoint_id = reg_body["id"].as_str().unwrap();
+
+    // モックをリセット（接続テストが失敗するようにする）
+    mock.reset().await;
 
     // 接続テストでオフラインを検知
     let test_resp = client

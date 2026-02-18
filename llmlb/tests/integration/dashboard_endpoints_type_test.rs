@@ -1,12 +1,16 @@
-//! Integration Test: Dashboard endpoints response includes endpoint type metadata
+//! Integration Test: Dashboard endpoints response includes endpoint type
 //!
-//! Dashboard UI expects `endpoint_type` and related metadata from
+//! Dashboard UI expects `endpoint_type` from
 //! `GET /api/dashboard/endpoints` (Type column + detail modal).
 
 use llmlb::common::auth::UserRole;
 use reqwest::Client;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
 
 use crate::support::lb::spawn_test_lb_with_db;
 
@@ -33,20 +37,27 @@ async fn create_admin_jwt(db_pool: &SqlitePool) -> String {
 }
 
 #[tokio::test]
-async fn test_dashboard_endpoints_includes_endpoint_type_metadata() {
+async fn test_dashboard_endpoints_includes_endpoint_type() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let jwt = create_admin_jwt(&db_pool).await;
 
-    // Register endpoint with manual type to ensure metadata is set.
+    // Register endpoint with mock server for auto-detection
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "xllm_version": "0.1.0"
+        })))
+        .mount(&mock)
+        .await;
+
     let create_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", jwt))
         .json(&json!({
             "name": "Type for Dashboard",
-            "base_url": "http://localhost:8080",
-            "endpoint_type": "xllm",
-            "endpoint_type_reason": "manual for dashboard test"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -71,13 +82,4 @@ async fn test_dashboard_endpoints_includes_endpoint_type_metadata() {
         .expect("Endpoint should exist in dashboard list");
 
     assert_eq!(endpoint["endpoint_type"], "xllm");
-    assert_eq!(endpoint["endpoint_type_source"], "manual");
-    assert_eq!(
-        endpoint["endpoint_type_reason"],
-        "manual for dashboard test"
-    );
-    assert!(
-        endpoint["endpoint_type_detected_at"].is_string(),
-        "endpoint_type_detected_at should be set"
-    );
 }

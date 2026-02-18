@@ -1,7 +1,7 @@
 //! Integration Test: Open Responses API
 //!
-//! SPEC-99024000: Open Responses API対応
-//! SPEC-24157000: OpenAI互換API完全準拠 - Open Responses API対応
+//! SPEC-92a1bd54: Open Responses API対応
+//! SPEC-0f1de549: OpenAI互換API完全準拠 - Open Responses API対応
 //!
 //! RES001: Responses API対応バックエンドへのリクエスト転送
 //! RES002: ストリーミング（responses_streaming_test.rsで実装）

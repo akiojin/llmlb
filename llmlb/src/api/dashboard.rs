@@ -777,7 +777,7 @@ pub async fn export_request_responses(
 
 /// GET /api/endpoints/{id}/today-stats - 当日リクエスト統計
 ///
-/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 5)
+/// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 5)
 pub async fn get_endpoint_today_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
@@ -791,7 +791,7 @@ pub async fn get_endpoint_today_stats(
 
 /// GET /api/endpoints/{id}/daily-stats - 日次リクエスト統計
 ///
-/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 6)
+/// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 6)
 pub async fn get_endpoint_daily_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
@@ -814,7 +814,7 @@ pub struct EndpointDailyStatsQuery {
 
 /// GET /api/endpoints/{id}/model-stats - モデル別リクエスト統計
 ///
-/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 7)
+/// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 7)
 pub async fn get_endpoint_model_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
@@ -827,7 +827,7 @@ pub async fn get_endpoint_model_stats(
 
 /// GET /api/dashboard/all-model-stats - 全エンドポイント横断のモデル別統計
 ///
-/// SPEC-76643000: ダッシュボード向けモデル別集計
+/// SPEC-8c32349f: ダッシュボード向けモデル別集計
 pub async fn get_all_model_stats(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {

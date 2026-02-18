@@ -104,7 +104,7 @@
 
 ### Tests
 
-- SPEC-62241000: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
+- SPEC-a472f11f: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
 
 ### Documentation
 

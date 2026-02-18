@@ -18,8 +18,8 @@
 
 - [x] T001 依存SPECの実装状況確認
   - SPEC-63acef08 (統一APIプロキシ) ✅ 実装済み
-  - SPEC-32637000 (capabilities検証) ✅ 実装済み
-  - SPEC-47649000 (モデルメタデータ) ✅ 実装済み
+  - SPEC-dcf8677f (capabilities検証) ✅ 実装済み
+  - SPEC-f408aae2 (モデルメタデータ) ✅ 実装済み
 
 ## Phase 3.2: テストファースト (TDD RED)
 

@@ -98,7 +98,7 @@ mod test_health_monitor;
 #[path = "integration/test_proxy.rs"]
 mod test_proxy;
 
-// SPEC-24157000: Open Responses API統合テスト
+// SPEC-0f1de549: Open Responses API統合テスト
 #[path = "integration/responses_api_test.rs"]
 mod responses_api_test;
 

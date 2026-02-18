@@ -16,4 +16,4 @@
   - `GET /v1/models`
   - `DELETE /v1/models/:model_name`
 
-詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。
+詳細は `SPEC-dcaeaec4` と `SPEC-68551ec8/contracts/api_models.md` を参照してください。

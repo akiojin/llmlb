@@ -1,6 +1,6 @@
 //! Contract Test: Open Responses API (/v1/responses)
 //!
-//! SPEC-24157000: OpenAI互換API完全準拠 - Open Responses API対応
+//! SPEC-0f1de549: OpenAI互換API完全準拠 - Open Responses API対応
 //!
 //! これらのテストはTDD REDフェーズとして作成され、実装前に失敗する。
 

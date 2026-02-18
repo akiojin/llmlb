@@ -13,7 +13,7 @@
 
 ## 更新対象
 - `specs/specs.md`（カテゴリ分割/依存関係）
-- `SPEC-11106000`, `SPEC-dcaeaec4`, `SPEC-6c2d9f1e`, `SPEC-48678000 (moved to xLLM repo)`
+- `SPEC-68551ec8`, `SPEC-dcaeaec4`, `SPEC-6c2d9f1e`, `SPEC-48678000 (moved to xLLM repo)`
 - `SPEC-a61b24f2`（旧仕様として廃止整理）
 
 ## 進め方

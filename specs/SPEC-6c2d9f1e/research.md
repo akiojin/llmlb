@@ -125,6 +125,6 @@ pub enum RuntimeType {
 
 ## 参考資料
 
-- SPEC-11106000: HuggingFace登録/キャッシュ
-- SPEC-26006000: 音声対応(TTS+ASR)
-- SPEC-32637000: capabilities検証
+- SPEC-68551ec8: HuggingFace登録/キャッシュ
+- SPEC-617247d2: 音声対応(TTS+ASR)
+- SPEC-dcf8677f: capabilities検証

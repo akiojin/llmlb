@@ -116,7 +116,7 @@ Runtime
 - `SPEC-d7feaa2c`（ランタイムエンジンローダー抽象化）
 - `SPEC-08d2b908`（モデル管理統合）
 - `SPEC-a61b24f2`（登録時の形式選択: safetensors/GGUF）
-- `SPEC-11106000`（HF URL 登録フロー、キャッシュ/ダウンロード）
+- `SPEC-68551ec8`（HF URL 登録フロー、キャッシュ/ダウンロード）
 
 ## 成功基準 *(必須)*
 1. `openai/gpt-oss-20b` を `format=safetensors` で登録し、GPU ランタイムで `POST /v1/chat/completions` が成功する。

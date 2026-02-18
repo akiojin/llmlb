@@ -42,7 +42,7 @@ pub struct GpuDevice {
     pub used_memory_bytes: u64,
 }
 
-/// モデルがサポートするAPI種別（SPEC-24157000）
+/// モデルがサポートするAPI種別（SPEC-0f1de549）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum SupportedAPI {
@@ -343,13 +343,13 @@ pub struct Endpoint {
     /// ヘルスチェックのlatency_msとは別に、実際の推論時間を追跡
     #[serde(default)]
     pub inference_latency_ms: Option<f64>,
-    /// 累計リクエスト数（SPEC-76643000）
+    /// 累計リクエスト数（SPEC-8c32349f）
     #[serde(default)]
     pub total_requests: i64,
-    /// 累計成功リクエスト数（SPEC-76643000）
+    /// 累計成功リクエスト数（SPEC-8c32349f）
     #[serde(default)]
     pub successful_requests: i64,
-    /// 累計失敗リクエスト数（SPEC-76643000）
+    /// 累計失敗リクエスト数（SPEC-8c32349f）
     #[serde(default)]
     pub failed_requests: i64,
 }
@@ -437,7 +437,7 @@ pub struct EndpointModel {
     pub max_tokens: Option<u32>,
     /// 最終確認時刻
     pub last_checked: Option<DateTime<Utc>>,
-    /// サポートするAPI一覧（SPEC-24157000）
+    /// サポートするAPI一覧（SPEC-0f1de549）
     #[serde(default = "EndpointModel::default_supported_apis")]
     pub supported_apis: Vec<SupportedAPI>,
 }
@@ -526,7 +526,7 @@ pub struct EndpointHealthCheck {
     pub status_after: EndpointStatus,
 }
 
-/// エンドポイント日次集計レコード（SPEC-76643000）
+/// エンドポイント日次集計レコード（SPEC-8c32349f）
 ///
 /// エンドポイント×モデル×日付の粒度で集計されたリクエスト統計。
 /// 永続保存され、トレンド分析とモデル別分析の基盤となる。
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn test_supported_api_serialization() {
-        // SupportedAPI列挙型のシリアライズテスト (SPEC-24157000)
+        // SupportedAPI列挙型のシリアライズテスト (SPEC-0f1de549)
         assert_eq!(
             serde_json::to_string(&SupportedAPI::ChatCompletions).unwrap(),
             "\"chat_completions\""
@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_endpoint_model_default_supported_apis() {
-        // EndpointModelのデフォルトサポートAPI (SPEC-24157000)
+        // EndpointModelのデフォルトサポートAPI (SPEC-0f1de549)
         let json = r#"{"endpoint_id":"00000000-0000-0000-0000-000000000000","model_id":"test"}"#;
         let model: EndpointModel = serde_json::from_str(json).unwrap();
         assert_eq!(model.supported_apis.len(), 1);

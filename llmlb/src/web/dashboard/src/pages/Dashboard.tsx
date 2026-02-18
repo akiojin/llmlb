@@ -247,6 +247,7 @@ export default function Dashboard() {
         isConnected={!error}
         lastRefreshed={lastRefreshed}
         fetchTimeMs={fetchTimeMs}
+        systemVersion={systemInfo?.version ?? null}
       />
 
       {/* Main Content */}

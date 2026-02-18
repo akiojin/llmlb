@@ -6,14 +6,30 @@
 
 use reqwest::Client;
 use serde_json::{json, Value};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::lb::spawn_test_lb;
+
+async fn start_detectable_endpoint_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model"}]
+        })))
+        .mount(&server)
+        .await;
+    server
+}
 
 /// US5-シナリオ1: エンドポイント名の更新
 #[tokio::test]
 async fn test_update_endpoint_name() {
     let server = spawn_test_lb().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     // エンドポイント登録
     let reg_resp = client
@@ -21,7 +37,7 @@ async fn test_update_endpoint_name() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Original Name",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -74,13 +90,14 @@ async fn test_update_endpoint_name() {
 async fn test_update_health_check_interval() {
     let server = spawn_test_lb().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Interval Test",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -114,13 +131,14 @@ async fn test_update_health_check_interval() {
 async fn test_delete_endpoint() {
     let server = spawn_test_lb().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "To Be Deleted",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -160,6 +178,7 @@ async fn test_delete_endpoint() {
 async fn test_manage_endpoint_notes() {
     let server = spawn_test_lb().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     // notesなしで登録
     let reg_resp = client
@@ -167,7 +186,7 @@ async fn test_manage_endpoint_notes() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Notes Test",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -222,13 +241,14 @@ async fn test_manage_endpoint_notes() {
 async fn test_update_multiple_fields() {
     let server = spawn_test_lb().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Multi Update Test",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await

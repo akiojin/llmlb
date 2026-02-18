@@ -1,6 +1,6 @@
 //! Contract Test: POST /api/endpoints/:id/download
 //!
-//! SPEC-66555000: エンドポイントモデルダウンロードAPI契約テスト
+//! SPEC-e8e9326e: エンドポイントモデルダウンロードAPI契約テスト
 //!
 //! US8: xLLMエンドポイントでモデルダウンロードをリクエスト
 

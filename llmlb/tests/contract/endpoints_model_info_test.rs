@@ -1,6 +1,6 @@
 //! Contract Test: GET /api/endpoints/:id/models/:model/info
 //!
-//! SPEC-66555000: エンドポイントモデル情報API契約テスト
+//! SPEC-e8e9326e: エンドポイントモデル情報API契約テスト
 //!
 //! US9: xLLM/Ollamaエンドポイントからモデルメタデータを取得
 

@@ -31,7 +31,7 @@
 | `SPEC-35375000` | - | 基盤機能 |
 | `SPEC-3df1b977` | - | 🗑️ 廃止（→SPEC-48678000, moved to xLLM repo） |
 | `SPEC-3fc2c1e4` | SPEC-d7feaa2c, SPEC-efff1da7 | 統合仕様 |
-| `SPEC-443acc8c` | - | 🗑️ 廃止（→SPEC-66555000） |
+| `SPEC-443acc8c` | - | 🗑️ 廃止（→SPEC-e8e9326e） |
 | `SPEC-47649000` | - | 基盤機能 |
 | `SPEC-47c6f44c` | - | CI/CD |
 | `SPEC-48678000` | SPEC-11106000, SPEC-dcaeaec4, SPEC-6cd7f960 | モデル解決 (moved to xLLM repo) |
@@ -43,26 +43,26 @@
 | `SPEC-5cd7b614` | - | 基盤機能 |
 | `SPEC-5f3dd53a` | SPEC-2c0e5a9b, SPEC-3fc2c1e4, SPEC-d7feaa2c | Windows CUDA runtime DLL |
 | `SPEC-5fc9fe92` | SPEC-712c20cf | Playground |
-| `SPEC-63acef08` | SPEC-66555000 | 統一APIプロキシ |
-| `SPEC-66555000` | SPEC-712c20cf, SPEC-63acef08 | **新規**: エンドポイント登録 |
+| `SPEC-63acef08` | SPEC-e8e9326e | 統一APIプロキシ |
+| `SPEC-e8e9326e` | SPEC-712c20cf, SPEC-63acef08 | **新規**: エンドポイント登録 |
 | `SPEC-69549000` | SPEC-d7feaa2c | safetensors.cpp (moved to xLLM repo) |
 | `SPEC-6c2d9f1e` | SPEC-11106000, SPEC-26006000, SPEC-32637000 | モデル登録 |
-| `SPEC-6cd7f960` | SPEC-11106000, SPEC-dcaeaec4, SPEC-d4eb8796, SPEC-66555000 | モデルリスト |
-| `SPEC-712c20cf` | SPEC-66555000, SPEC-63acef08, SPEC-d4eb8796 | ダッシュボード |
+| `SPEC-6cd7f960` | SPEC-11106000, SPEC-dcaeaec4, SPEC-d4eb8796, SPEC-e8e9326e | モデルリスト |
+| `SPEC-712c20cf` | SPEC-e8e9326e, SPEC-63acef08, SPEC-d4eb8796 | ダッシュボード |
 | `SPEC-799b8e2b` | - | 基盤機能 |
 | `SPEC-7c0a37e0` | SPEC-d4eb8796 | APIキースコープ |
 | `SPEC-82491000` | SPEC-4b6e9f2a | クラウド統合 |
 | `SPEC-83825900` | SPEC-efff1da7, SPEC-d7feaa2c | PoC |
 | `SPEC-8a2d1d43` | - | 基盤機能 |
 | `SPEC-93536000` | SPEC-dcaeaec4, SPEC-05098000 | ノードベースモデル管理 (moved to xLLM repo) |
-| `SPEC-94621a1f` | - | 🗑️ 廃止（→SPEC-66555000） |
+| `SPEC-94621a1f` | - | 🗑️ 廃止（→SPEC-e8e9326e） |
 | `SPEC-98665367` | SPEC-47c6f44c, SPEC-ee2aa3ef | CI/CDパイプライン統合 |
 | `SPEC-98934000` | - | 🗑️ 廃止（NodeRegistry廃止） |
-| `SPEC-99024000` | SPEC-66555000 | Open Responses API対応 |
+| `SPEC-99024000` | SPEC-e8e9326e | Open Responses API対応 |
 | `SPEC-a61b24f2` | - | 🗑️ 廃止（統合仕様へ移行） |
 | `SPEC-a7e6d40a` | - | CLI |
 | `SPEC-ae3f974e` | SPEC-dcaeaec4 | 画像生成 |
-| `SPEC-d4eb8796` | SPEC-66555000 | 認証 |
+| `SPEC-d4eb8796` | SPEC-e8e9326e | 認証 |
 | `SPEC-d7feaa2c` | - | **基盤**: エンジン |
 | `SPEC-dc648675` | - | CI/CD |
 | `SPEC-dcaeaec4` | - | **基盤**: ストレージ |
@@ -78,7 +78,7 @@
 
 以下のSPECは依存がなく、他のSPECから依存される基盤機能です：
 
-- **SPEC-66555000**: ロードバランサー主導エンドポイント登録（最上位基盤、SPEC-94621a1fを置換）
+- **SPEC-e8e9326e**: ロードバランサー主導エンドポイント登録（最上位基盤、SPEC-94621a1fを置換）
 - **SPEC-dcaeaec4**: モデルストレージ
 - **SPEC-d7feaa2c**: エンジンローダー (moved to xLLM repo)
 - **SPEC-799b8e2b**: 共通ログシステム
@@ -95,12 +95,12 @@
 | `SPEC-35375000` | ロードバランサー負荷最適化 | ✅ | P1 | ✅ |
 | `SPEC-f8e3a1b7` | llmlb アーキテクチャ刷新 | ✅ | P1 | ✅ |
 | `SPEC-3fc2c1e4` | SPEC-3fc2c1e4: 実行エンジン（統合仕様） | ✅ | P2 | ✅ |
-| `SPEC-443acc8c` | 廃止: ヘルスチェックシステム（→SPEC-66555000） | 🗑️ | - | - |
+| `SPEC-443acc8c` | 廃止: ヘルスチェックシステム（→SPEC-e8e9326e） | 🗑️ | - | - |
 | `SPEC-589f2df1` | ロードバランシングシステム | ✅ | P1 | ✅ |
 | `SPEC-5cd7b614` | GPU必須ノード登録要件 | ✅ | P1 | ✅ |
 | `SPEC-63acef08` | 統一APIプロキシ | ✅ | P1 | ✅ |
-| `SPEC-66555000` | ロードバランサー主導エンドポイント登録システム | ✅ | P1 | ✅ |
-| `SPEC-94621a1f` | 廃止: ノード自己登録システム（→SPEC-66555000） | 🗑️ | - | - |
+| `SPEC-e8e9326e` | ロードバランサー主導エンドポイント登録システム | ✅ | P1 | ✅ |
+| `SPEC-94621a1f` | 廃止: ノード自己登録システム（→SPEC-e8e9326e） | 🗑️ | - | - |
 | `SPEC-98934000` | 廃止: ノード登録承認フロー（NodeRegistry廃止） | 🗑️ | - | - |
 | `SPEC-d7feaa2c` | SPEC-d7feaa2c: Nodeエンジンローダー抽象化とNemotron直接ロード (moved to xLLM repo) | ✅ | P1 | ✅ |
 
@@ -211,7 +211,7 @@
 | `SPEC-589f2df1` | ロードバランシングシステム | 完了 |
 | `SPEC-5cd7b614` | GPU必須ノード登録要件 | 完了 |
 | `SPEC-63acef08` | 統一APIプロキシ | 完了 |
-| `SPEC-66555000` | ロードバランサー主導エンドポイント登録システム | 完了 |
+| `SPEC-e8e9326e` | ロードバランサー主導エンドポイント登録システム | 完了 |
 | `SPEC-6c2d9f1e` | モデル登録キャッシュとマルチモーダルI/Oの完全動作 | 完了 |
 | `SPEC-6cd7f960` | 対応モデルリスト型管理 | 完了 |
 | `SPEC-69549000` | safetensors.cpp (moved to xLLM repo) - safetensors直接推論ライブラリ | 完了 |
@@ -264,8 +264,8 @@
 |---------|--------|--------|
 | `SPEC-0c4f3e5c` | LLM runtimeモデルストレージ形式サポート | SPEC-dcaeaec4 |
 | `SPEC-3df1b977` | モデルファイル破損時の自動修復機能 | SPEC-48678000 (moved to xLLM repo) |
-| `SPEC-443acc8c` | ヘルスチェックシステム | SPEC-66555000 |
+| `SPEC-443acc8c` | ヘルスチェックシステム | SPEC-e8e9326e |
 | `SPEC-8ae67d67` | ロードバランサー主導のモデル自動配布機能 | SPEC-dcaeaec4 |
-| `SPEC-94621a1f` | ノード自己登録システム | SPEC-66555000 |
-| `SPEC-98934000` | ノード登録承認フロー | SPEC-66555000 |
+| `SPEC-94621a1f` | ノード自己登録システム | SPEC-e8e9326e |
+| `SPEC-98934000` | ノード登録承認フロー | SPEC-e8e9326e |
 | `SPEC-a61b24f2` | モデル形式選択（safetensors/GGUF） | 統合仕様へ移行 |

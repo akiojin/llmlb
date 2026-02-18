@@ -1,6 +1,6 @@
 //! LM Studio Model Metadata Retrieval
 //!
-//! SPEC-66555000: Fetch model metadata from LM Studio endpoints via GET /api/v1/models/:model
+//! SPEC-e8e9326e: Fetch model metadata from LM Studio endpoints via GET /api/v1/models/:model
 
 use super::{MetadataError, ModelMetadata};
 use reqwest::Client;

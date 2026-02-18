@@ -1,4 +1,4 @@
-//! SPEC-66555000: DownloadStatus状態遷移のUnit Test
+//! SPEC-e8e9326e: DownloadStatus状態遷移のUnit Test
 //!
 //! T140: DownloadStatus遷移のunit test
 

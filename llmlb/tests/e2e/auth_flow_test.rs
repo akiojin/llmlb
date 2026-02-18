@@ -2,7 +2,7 @@
 //!
 //! T091: 完全な認証フロー（ログイン → API呼び出し → ログアウト）
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::Body,
@@ -14,6 +14,8 @@ use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, A
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support;
 
@@ -494,6 +496,16 @@ async fn test_csrf_token_rotates_on_mutation() {
 async fn test_api_key_mutation_does_not_require_csrf() {
     let (app, _db_pool) = build_app().await;
 
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let response = app
         .oneshot(
             Request::builder()
@@ -504,8 +516,7 @@ async fn test_api_key_mutation_does_not_require_csrf() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "test-endpoint",
-                        "base_url": "http://127.0.0.1:9",
-                        "endpoint_type": "unknown",
+                        "base_url": mock.uri(),
                         "inference_timeout_secs": 1,
                     }))
                     .unwrap(),

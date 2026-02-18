@@ -1,6 +1,6 @@
 //! 画像API統合テスト
 //!
-//! NOTE: SPEC-66555000（NodeRegistry廃止）に伴い、ノードルーティングテストは削除。
+//! NOTE: SPEC-e8e9326e（NodeRegistry廃止）に伴い、ノードルーティングテストは削除。
 //! EndpointRegistryベースのテストは load balancer/tests/contract/ で実装済み。
 //!
 //! 削除されたテスト:

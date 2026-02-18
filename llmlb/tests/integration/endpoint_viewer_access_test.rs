@@ -1,19 +1,35 @@
 //! Integration Test: T016d - viewerロール制限
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 //!
 //! viewerロールはGET操作のみ許可、変更操作は禁止することを検証する。
 
 use reqwest::Client;
 use serde_json::{json, Value};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::lb::spawn_test_lb_with_db;
+
+async fn start_detectable_endpoint_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model"}]
+        })))
+        .mount(&server)
+        .await;
+    server
+}
 
 /// viewerロールでエンドポイント一覧を取得可能
 #[tokio::test]
 async fn test_viewer_can_list_endpoints() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     // viewerユーザーとAPIキーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -43,7 +59,7 @@ async fn test_viewer_can_list_endpoints() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Test Endpoint",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -65,6 +81,7 @@ async fn test_viewer_can_list_endpoints() {
 async fn test_viewer_can_get_endpoint_detail() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     // viewerユーザーとAPIキーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -94,7 +111,7 @@ async fn test_viewer_can_get_endpoint_detail() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Detail Test",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -167,6 +184,7 @@ async fn test_viewer_cannot_create_endpoint() {
 async fn test_viewer_cannot_update_endpoint() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     // viewerユーザーとAPIキーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -196,7 +214,7 @@ async fn test_viewer_cannot_update_endpoint() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Update Test",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await
@@ -229,6 +247,7 @@ async fn test_viewer_cannot_update_endpoint() {
 async fn test_viewer_cannot_delete_endpoint() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
+    let mock = start_detectable_endpoint_server().await;
 
     // viewerユーザーとAPIキーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -258,7 +277,7 @@ async fn test_viewer_cannot_delete_endpoint() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Delete Test",
-            "base_url": "http://localhost:11434"
+            "base_url": mock.uri()
         }))
         .send()
         .await

@@ -1,6 +1,6 @@
 //! Ollama Endpoint Type Detection
 //!
-//! SPEC-66555000: Ollama detection via GET /api/tags
+//! SPEC-e8e9326e: Ollama detection via GET /api/tags
 //!
 //! Ollama endpoints expose a /api/tags endpoint that returns
 //! a list of available models in Ollama-specific format.

@@ -1,4 +1,4 @@
--- SPEC-66555000: Add endpoint_type metadata columns
+-- SPEC-e8e9326e: Add endpoint_type metadata columns
 -- 判定ソース/理由/時刻のメタデータを追加する
 
 ALTER TABLE endpoints ADD COLUMN endpoint_type_source TEXT NOT NULL DEFAULT 'auto';

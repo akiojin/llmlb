@@ -553,7 +553,7 @@ pub async fn jwt_or_api_key_permission_middleware(
     Ok(next.run(request).await)
 }
 
-// SPEC-66555000: APIキー or ノードトークン認証ミドルウェアは廃止されました
+// SPEC-e8e9326e: APIキー or ノードトークン認証ミドルウェアは廃止されました
 // api_key_or_node_token_auth_middleware と node_token_auth_middleware は削除されました
 // 新しい実装は POST /api/endpoints を使用してください
 

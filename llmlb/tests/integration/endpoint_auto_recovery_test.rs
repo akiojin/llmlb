@@ -1,6 +1,6 @@
 //! Integration Test: T016c - 自動復旧
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 //!
 //! エンドポイントの自動復旧機能を検証する。
 
@@ -44,10 +44,20 @@ async fn create_admin_jwt(db_pool: &sqlx::SqlitePool) -> String {
 async fn test_endpoint_recovery_offline_to_online() {
     let mock = MockServer::start().await;
 
+    // 登録時の自動検出用にモックを設定
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let (server, _db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
 
-    // エンドポイント登録（まだモックは応答しない）
+    // エンドポイント登録（自動検出でopenai_compatibleとして登録される）
     let reg_resp = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", "Bearer sk_debug")
@@ -59,10 +69,14 @@ async fn test_endpoint_recovery_offline_to_online() {
         .await
         .unwrap();
 
+    assert_eq!(reg_resp.status().as_u16(), 201);
     let reg_body: Value = reg_resp.json().await.unwrap();
     let endpoint_id = reg_body["id"].as_str().unwrap();
 
-    // 接続テスト（モックがまだ設定されていないので失敗）
+    // モックをリセット（接続テストが失敗するようにする）
+    mock.reset().await;
+
+    // 接続テスト（モックがリセットされたので失敗）
     let test_fail_resp = client
         .post(format!(
             "http://{}/api/endpoints/{}/test",
@@ -123,6 +137,16 @@ async fn test_endpoint_recovery_offline_to_online() {
 async fn test_error_count_reset_on_recovery() {
     let mock = MockServer::start().await;
 
+    // 登録時の自動検出用にモックを設定
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let (server, _db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
 
@@ -137,8 +161,12 @@ async fn test_error_count_reset_on_recovery() {
         .await
         .unwrap();
 
+    assert_eq!(reg_resp.status().as_u16(), 201);
     let reg_body: Value = reg_resp.json().await.unwrap();
     let endpoint_id = reg_body["id"].as_str().unwrap();
+
+    // モックをリセット（接続テストが失敗するようにする）
+    mock.reset().await;
 
     // 複数回の失敗でerror_countが増加
     for _ in 0..3 {
@@ -216,6 +244,16 @@ async fn test_error_count_reset_on_recovery() {
 async fn test_last_error_cleared_on_recovery() {
     let mock = MockServer::start().await;
 
+    // 登録時の自動検出用にモックを設定
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let jwt = create_admin_jwt(&db_pool).await;
@@ -231,8 +269,12 @@ async fn test_last_error_cleared_on_recovery() {
         .await
         .unwrap();
 
+    assert_eq!(reg_resp.status().as_u16(), 201);
     let reg_body: Value = reg_resp.json().await.unwrap();
     let endpoint_id = reg_body["id"].as_str().unwrap();
+
+    // モックをリセット（接続テストが失敗するようにする）
+    mock.reset().await;
 
     // 失敗してlast_errorがセットされる
     let _ = client
@@ -318,6 +360,16 @@ async fn test_last_error_cleared_on_recovery() {
 async fn test_dashboard_reflects_test_failure_immediately() {
     let mock = MockServer::start().await;
 
+    // 登録時の自動検出用にモックを設定
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let jwt = create_admin_jwt(&db_pool).await;
@@ -333,10 +385,14 @@ async fn test_dashboard_reflects_test_failure_immediately() {
         .await
         .unwrap();
 
+    assert_eq!(reg_resp.status().as_u16(), 201);
     let reg_body: Value = reg_resp.json().await.unwrap();
     let endpoint_id = reg_body["id"].as_str().unwrap();
 
-    // wiremockは未マッチのリクエストに404を返すため、接続テストは失敗する
+    // モックをリセット（接続テストが失敗するようにする）
+    mock.reset().await;
+
+    // wiremockのモックがリセットされ404を返すため、接続テストは失敗する
     let test_fail_resp = client
         .post(format!(
             "http://{}/api/endpoints/{}/test",

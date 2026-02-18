@@ -4,7 +4,7 @@ import { DashboardPage } from '../../pages/dashboard.page';
 /**
  * Dashboard Endpoints Tab Tests
  *
- * Note: The UI was renamed from "Nodes" to "Endpoints" as part of SPEC-66555000.
+ * Note: The UI was renamed from "Nodes" to "Endpoints" as part of SPEC-e8e9326e.
  * These tests have been updated to reflect the current UI structure.
  *
  * Note: Static assets are embedded in the Rust binary at compile time.

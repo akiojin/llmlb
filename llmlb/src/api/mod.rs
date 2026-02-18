@@ -320,7 +320,7 @@ pub fn create_app(state: AppState) -> Router {
             ))
     };
 
-    // エンドポイント管理API（SPEC-66555000）
+    // エンドポイント管理API（SPEC-e8e9326e）
     // READ: endpoints.read
     // WRITE: endpoints.manage (JWTはadminのみ)
     let endpoint_read_routes = Router::new()
@@ -384,7 +384,7 @@ pub fn create_app(state: AppState) -> Router {
             "/endpoints/{id}/sync",
             post(endpoints::sync_endpoint_models),
         )
-        // SPEC-66555000: ダウンロードAPI
+        // SPEC-e8e9326e: ダウンロードAPI
         .route("/endpoints/{id}/download", post(endpoints::download_model));
 
     let endpoint_manage_routes = if auth_disabled {
@@ -442,7 +442,7 @@ pub fn create_app(state: AppState) -> Router {
     ));
 
     // モデル配布レジストリ（registry.read が必要）
-    // SPEC-66555000: POST /api/nodes（ノード自己登録）は廃止されました
+    // SPEC-e8e9326e: POST /api/nodes（ノード自己登録）は廃止されました
     // 新しい実装は POST /api/endpoints を使用してください
     let model_registry_routes = Router::new()
         // モデル配布レジストリ（複数ファイル: safetensors 等）
@@ -488,7 +488,7 @@ pub fn create_app(state: AppState) -> Router {
             ))
     };
 
-    // SPEC-66555000: POST /api/health（プッシュ型ヘルスチェック）は廃止されました
+    // SPEC-e8e9326e: POST /api/health（プッシュ型ヘルスチェック）は廃止されました
     // 新しいエンドポイントはプル型ヘルスチェック（EndpointHealthChecker）を使用
 
     // APIキー認証が必要なルート（OpenAI互換の推論エンドポイント）
@@ -527,7 +527,7 @@ pub fn create_app(state: AppState) -> Router {
     ));
 
     // `/v1/models*` は外部クライアント(APIキー)からのみ参照される
-    // SPEC-66555000: ノードトークン認証は廃止されました
+    // SPEC-e8e9326e: ノードトークン認証は廃止されました
     let models_routes = Router::new()
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/{model_id}", get(openai::get_model));
@@ -549,7 +549,7 @@ pub fn create_app(state: AppState) -> Router {
     // NOTE: /api/models (GET) は Admin/Node スコープ共用。
     // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。
 
-    // SPEC-66555000: テスト用内部エンドポイント（デバッグビルドのみ）
+    // SPEC-e8e9326e: テスト用内部エンドポイント（デバッグビルドのみ）
     // NOTE: ノード登録ベースのテストは廃止。エンドポイント登録を使用
     let test_routes = Router::new();
 
@@ -632,7 +632,7 @@ fn normalize_dashboard_path(request_path: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    //! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+    //! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
     //! NodeRegistry.register()を使用していたテストは#[ignore]でマーク。
 
     use super::*;
@@ -712,9 +712,9 @@ mod tests {
     // NOTE: test_playground_static_served は廃止
     // Playground機能はダッシュボード内のエンドポイント別Playgroundに移行 (#playground/:endpointId)
 
-    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
+    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)
     #[tokio::test]
-    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
+    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)"]
     async fn test_dashboard_nodes_endpoint_returns_json() {
         let state = test_state().await;
         let mut app = create_app(state);
@@ -733,9 +733,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
+    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)
     #[tokio::test]
-    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
+    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)"]
     async fn test_dashboard_overview_endpoint_returns_all_sections() {
         let state = test_state().await;
         let mut app = create_app(state);
@@ -754,9 +754,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)
+    /// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)
     #[tokio::test]
-    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-66555000)"]
+    #[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)"]
     async fn test_dashboard_metrics_endpoint_returns_history() {
         let state = test_state().await;
         let mut app = create_app(state);

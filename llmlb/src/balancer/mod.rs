@@ -92,7 +92,9 @@ pub enum AdmissionDecision {
 mod tests {
     use super::*;
     use crate::db::test_utils::TEST_LOCK;
-    use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
+    use crate::types::endpoint::{
+        Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+    };
     use sqlx::SqlitePool;
     use std::sync::Arc;
     use std::time::Duration as StdDuration;
@@ -113,6 +115,7 @@ mod tests {
         let endpoint = Endpoint::new(
             "lease-test-endpoint".to_string(),
             "http://localhost:11434".to_string(),
+            EndpointType::OpenaiCompatible,
         );
         let endpoint_id = endpoint.id;
         registry
@@ -124,7 +127,7 @@ mod tests {
         (load_manager, endpoint_id)
     }
 
-    // NOTE: SPEC-66555000によりNodeRegistryは廃止されました。
+    // NOTE: SPEC-e8e9326eによりNodeRegistryは廃止されました。
     // SPEC-f8e3a1b7によりNode型は削除され、Endpoint型に移行しました。
     // compare_average_ms_orders_values テストは関数削除に伴い削除されました。
 
@@ -342,6 +345,7 @@ mod tests {
         let mut ready_endpoint = Endpoint::new(
             "ready-endpoint".to_string(),
             "http://localhost:11080".to_string(),
+            EndpointType::OpenaiCompatible,
         );
         ready_endpoint.status = EndpointStatus::Online;
         let ready_endpoint_id = ready_endpoint.id;
@@ -353,6 +357,7 @@ mod tests {
         let mut initializing_endpoint = Endpoint::new(
             "initializing-endpoint".to_string(),
             "http://localhost:11081".to_string(),
+            EndpointType::OpenaiCompatible,
         );
         initializing_endpoint.status = EndpointStatus::Online;
         let initializing_endpoint_id = initializing_endpoint.id;

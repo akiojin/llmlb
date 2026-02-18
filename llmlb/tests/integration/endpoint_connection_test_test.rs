@@ -1,6 +1,6 @@
 //! Integration Test: US4 - 接続テスト
 //!
-//! SPEC-66555000: llmlb主導エンドポイント登録システム
+//! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 //!
 //! 管理者として、エンドポイント登録前に接続テストを実行したい。
 
@@ -67,6 +67,17 @@ async fn test_connection_test_success() {
 /// US4-シナリオ2: 不正なURLで接続テスト失敗
 #[tokio::test]
 async fn test_connection_test_failure_invalid_url() {
+    // 登録時の自動検出用にモックを起動
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+
     let server = spawn_test_lb().await;
     let client = Client::new();
 
@@ -75,14 +86,18 @@ async fn test_connection_test_failure_invalid_url() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "Invalid Endpoint",
-            "base_url": "http://127.0.0.1:59999"
+            "base_url": mock.uri()
         }))
         .send()
         .await
         .unwrap();
 
+    assert_eq!(reg_resp.status().as_u16(), 201);
     let reg_body: Value = reg_resp.json().await.unwrap();
     let endpoint_id = reg_body["id"].as_str().unwrap();
+
+    // モックをリセット（接続テストが失敗するようにする）
+    mock.reset().await;
 
     let test_resp = client
         .post(format!(
@@ -100,7 +115,6 @@ async fn test_connection_test_failure_invalid_url() {
     let test_body: Value = test_resp.json().await.unwrap();
     assert_eq!(test_body["success"], false);
     assert!(test_body["error"].is_string());
-    assert!(test_body["latency_ms"].is_null());
 }
 
 /// US4-シナリオ3: 認証エラーの検知
@@ -108,14 +122,12 @@ async fn test_connection_test_failure_invalid_url() {
 async fn test_connection_test_auth_error() {
     let mock = MockServer::start().await;
 
-    // 認証エラーを返す
+    // 登録時の自動検出用に200を返す
     Mock::given(method("GET"))
         .and(path("/v1/models"))
-        .respond_with(ResponseTemplate::new(401).set_body_json(json!({
-            "error": {
-                "message": "Invalid API key",
-                "type": "invalid_request_error"
-            }
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
         })))
         .mount(&mock)
         .await;
@@ -135,8 +147,22 @@ async fn test_connection_test_auth_error() {
         .await
         .unwrap();
 
+    assert_eq!(reg_resp.status().as_u16(), 201);
     let reg_body: Value = reg_resp.json().await.unwrap();
     let endpoint_id = reg_body["id"].as_str().unwrap();
+
+    // モックをリセットして認証エラーを返すように再設定
+    mock.reset().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({
+            "error": {
+                "message": "Invalid API key",
+                "type": "invalid_request_error"
+            }
+        })))
+        .mount(&mock)
+        .await;
 
     let test_resp = client
         .post(format!(

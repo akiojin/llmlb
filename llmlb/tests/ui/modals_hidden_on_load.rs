@@ -4,7 +4,7 @@
 //! With React, modals are rendered conditionally by JavaScript state,
 //! so the initial HTML only contains the mount point.
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 #![allow(clippy::duplicate_mod)]
 

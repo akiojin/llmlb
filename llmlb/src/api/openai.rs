@@ -2165,7 +2165,9 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn direct_routing_body_read_failure_releases_active_request() {
-        use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let _guard = TEST_LOCK.lock().await;
@@ -2186,7 +2188,11 @@ mod tests {
             }
         });
 
-        let mut endpoint = Endpoint::new("broken-endpoint".to_string(), format!("http://{addr}"));
+        let mut endpoint = Endpoint::new(
+            "broken-endpoint".to_string(),
+            format!("http://{addr}"),
+            EndpointType::OpenaiCompatible,
+        );
         endpoint.status = EndpointStatus::Online;
         let endpoint_id = endpoint.id;
         state

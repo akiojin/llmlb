@@ -9,7 +9,7 @@ import {
   type OpenAIModelsResponse,
   type RequestResponseRecord,
 } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { copyToClipboard, cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -109,6 +109,7 @@ interface DistributionSummary {
 
 interface LoadBalancerPlaygroundProps {
   onBack: () => void
+  initialModel?: string
 }
 
 function getErrorMessage(status: number): string {
@@ -228,7 +229,7 @@ function transformMessage(msg: Message): ChatMessage {
   return { role: msg.role, content }
 }
 
-export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroundProps) {
+export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBalancerPlaygroundProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -276,6 +277,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
   const abortControllerRef = useRef<AbortController | null>(null)
   const loadTestStopRef = useRef(false)
   const loadTestAbortControllersRef = useRef<Set<AbortController>>(new Set())
+  const appliedInitialModelRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
@@ -326,9 +328,33 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
     })
   }, [modelsError])
 
+  // SPEC-8795f98f: Apply initialModel from URL parameter
+  useEffect(() => {
+    if (!initialModel) {
+      appliedInitialModelRef.current = null
+      return
+    }
+    if (!modelsData?.data) return
+
+    const exists = modelsData.data.some((m) => m.id === initialModel)
+    if (!exists) return
+    if (appliedInitialModelRef.current === initialModel) return
+
+    setSelectedModel(initialModel)
+    appliedInitialModelRef.current = initialModel
+  }, [initialModel, modelsData?.data])
+
   // Keep selected model valid when model list changes
   useEffect(() => {
     const models = Array.isArray(modelsData?.data) ? modelsData.data : []
+    const hasInitialModel = initialModel
+      ? models.some((model) => model.id === initialModel)
+      : false
+
+    if (hasInitialModel) {
+      return
+    }
+
     if (models.length === 0) {
       if (selectedModel) {
         setSelectedModel('')
@@ -340,7 +366,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
     if (!selectedModel || !hasSelectedModel) {
       setSelectedModel(models[0].id)
     }
-  }, [modelsData, selectedModel])
+  }, [modelsData, selectedModel, initialModel])
 
   const selectedModelMaxTokens = modelsData?.data?.find(m => m.id === selectedModel)?.max_tokens
   const effectiveMaxTokens = useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : maxTokens
@@ -760,9 +786,9 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
   )}'`
   }
 
-  const copyToClipboard = async (text: string) => {
+  const handleCopyCurl = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast({ title: 'Copied to clipboard' })
@@ -1417,7 +1443,7 @@ export default function LoadBalancerPlayground({ onBack }: LoadBalancerPlaygroun
               variant="outline"
               size="sm"
               className="absolute right-2 top-2"
-              onClick={() => void copyToClipboard(generateCurl())}
+              onClick={() => void handleCopyCurl(generateCurl())}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </Button>

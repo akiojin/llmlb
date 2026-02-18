@@ -6,13 +6,11 @@
   "packageManager": "pnpm@10.20.0",
   "scripts": {
     "prepare": "husky",
-    "build": "npm run build:lb && npm run build:mcp",
+    "build": "npm run build:lb",
     "build:lb": "cargo build --release -p llmlb",
     "build:lb:target": "cargo build --release -p llmlb --target",
-    "build:mcp": "pnpm --filter @llmlb/mcp-server build",
-    "test:mcp": "pnpm --filter @llmlb/mcp-server test",
     "start:lb": "./target/release/llmlb",
-    "clean": "rm -rf target mcp-server/dist",
+    "clean": "rm -rf target",
     "lint:commits": "commitlint --from origin/main --to HEAD",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\" \"!.git\" \"!.github\" \"!.worktrees\""
   },
@@ -22,14 +20,13 @@
   "devDependencies": {
     "@commitlint/cli": "^20.4.0",
     "@commitlint/config-conventional": "^20.4.0",
-    "@playwright/test": "^1.58.0",
+    "@playwright/test": "^1.58.2",
     "bats": "^1.13.0",
-    "bun": "^1.3.8",
+    "bun": "^1.3.9",
     "husky": "^9.1.0",
     "markdownlint-cli2": "^0.20.0"
   },
   "workspaces": [
-    "mcp-server",
     "llmlb/src/web/dashboard"
   ],
   "pnpm": {

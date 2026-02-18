@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# デバッグ: 環境変数で有効化（例: PUBLISH_DEBUG=1）
 [ "${PUBLISH_DEBUG:-0}" = "1" ] && set -x
 
 # publish.sh <major|minor|patch> [--tags-only|--no-push] [--remote <name>]
 # 単一入口で以下を実施:
-# 1) バージョン更新（MCP/LSP/Unity の全て）
+# 1) Cargo workspace version の更新
 # 2) タグ付けとコミット＆プッシュ
-# 期待動作（CI）:
-#  - Release csharp-lsp（各RID self-containedビルド + manifest公開）
-#  - Publish mcp-server (npm)
 
 usage() { echo "Usage: $0 <major|minor|patch> [--tags-only|--no-push] [--remote <name>]"; exit 1; }
 
@@ -17,10 +13,8 @@ LEVEL=${1-}
 [[ "$LEVEL" =~ ^(major|minor|patch)$ ]] || usage
 shift || true
 
-# push 動作: all(既定)/tags/none
 PUSH_MODE=${PUBLISH_PUSH:-all}
 
-# オプション解析
 while [ $# -gt 0 ]; do
   case "$1" in
     --tags-only)
@@ -45,83 +39,67 @@ ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 REMOTE=${REMOTE:-origin}
 cd "$ROOT_DIR"
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "[error] node not found" >&2
+CUR_VER=$(
+  awk '
+    /^\[workspace.package\]$/ { in_ws = 1; next }
+    /^\[/ && $0 != "[workspace.package]" { in_ws = 0 }
+    in_ws && /^version = / {
+      gsub(/"/, "", $3)
+      print $3
+      exit
+    }
+  ' Cargo.toml
+)
+
+if [ -z "$CUR_VER" ]; then
+  echo "[error] failed to read workspace version from Cargo.toml" >&2
   exit 2
 fi
 
-# 事前情報
-CUR_VER=$(node -p "require('./mcp-server/package.json').version")
 echo "[info] current version: $CUR_VER"
 
-# npm version を実行（以降の同期は本スクリプトで行う）
-echo "[step] bump mcp-server version ($LEVEL)"
-pushd mcp-server >/dev/null
-npm version "$LEVEL" -m "chore(release): v%s" >/dev/null
-popd >/dev/null
+IFS='.' read -r MAJOR MINOR PATCH <<<"$CUR_VER"
+case "$LEVEL" in
+  major)
+    MAJOR=$((MAJOR + 1))
+    MINOR=0
+    PATCH=0
+    ;;
+  minor)
+    MINOR=$((MINOR + 1))
+    PATCH=0
+    ;;
+  patch)
+    PATCH=$((PATCH + 1))
+    ;;
+esac
 
-NEW_VER=$(node -p "require('./mcp-server/package.json').version")
-TAG="v$NEW_VER"
-echo "[info] new version: $NEW_VER (tag: $TAG)"
+NEW_VER="${MAJOR}.${MINOR}.${PATCH}"
+TAG="v${NEW_VER}"
 
-# Unity パッケージの version を同期
-echo "[step] sync Unity UPM package version -> $NEW_VER"
-node -e '
-  const fs=require("fs");
-  const p="UnityMCPServer/Packages/unity-mcp-server/package.json";
-  if (!fs.existsSync(p)) process.exit(0);
-  const json=JSON.parse(fs.readFileSync(p,"utf8"));
-  json.version=process.argv[1];
-  fs.writeFileSync(p, JSON.stringify(json,null,2)+"\n", "utf8");
-' "$NEW_VER"
+echo "[step] update Cargo workspace version -> $NEW_VER"
+awk -v new_ver="$NEW_VER" '
+  /^\[workspace.package\]$/ { in_ws = 1; print; next }
+  /^\[/ && $0 != "[workspace.package]" { in_ws = 0 }
+  in_ws && /^version = / {
+    print "version = \"" new_ver "\""
+    next
+  }
+  { print }
+' Cargo.toml > Cargo.toml.tmp
+mv Cargo.toml.tmp Cargo.toml
 
-# LSP 側の Directory.Build.props を同期
-sync_props() {
-  local file="$1"; local ver="$2"
-  [ -f "$file" ] || return 0
-  echo "[step] sync props: $file -> $ver"
-  # 既存タグを書き換え（存在しなければ追加）
-  if grep -q "<Version>" "$file"; then
-    sed -i.bak -E "s|<Version>[^<]*</Version>|<Version>${ver}</Version>|" "$file"
-  else
-    sed -i.bak -E "s|<PropertyGroup>|<PropertyGroup>\n    <Version>${ver}</Version>|" "$file"
-  fi
-  if grep -q "<AssemblyVersion>" "$file"; then
-    sed -i.bak -E "s|<AssemblyVersion>[^<]*</AssemblyVersion>|<AssemblyVersion>${ver}.0</AssemblyVersion>|" "$file"
-  else
-    sed -i.bak -E "s|<PropertyGroup>|<PropertyGroup>\n    <AssemblyVersion>${ver}.0</AssemblyVersion>|" "$file"
-  fi
-  if grep -q "<FileVersion>" "$file"; then
-    sed -i.bak -E "s|<FileVersion>[^<]*</FileVersion>|<FileVersion>${ver}.0</FileVersion>|" "$file"
-  else
-    sed -i.bak -E "s|<PropertyGroup>|<PropertyGroup>\n    <FileVersion>${ver}.0</FileVersion>|" "$file"
-  fi
-  if grep -q "<AssemblyInformationalVersion>" "$file"; then
-    sed -i.bak -E "s|<AssemblyInformationalVersion>[^<]*</AssemblyInformationalVersion>|<AssemblyInformationalVersion>${ver}</AssemblyInformationalVersion>|" "$file"
-  else
-    sed -i.bak -E "s|<PropertyGroup>|<PropertyGroup>\n    <AssemblyInformationalVersion>${ver}</AssemblyInformationalVersion>|" "$file"
-  fi
-  rm -f "$file.bak"
-}
-
-sync_props "csharp-lsp/Directory.Build.props" "$NEW_VER"
-
-# 変更ファイルをコミット（npmが自動コミットしない場合の保険）
-git add mcp-server/package.json mcp-server/package-lock.json \
-        UnityMCPServer/Packages/unity-mcp-server/package.json \
-        csharp-lsp/Directory.Build.props 2>/dev/null || true
+git add Cargo.toml
 if ! git diff --cached --quiet; then
-  git commit -m "chore(release): $TAG — バージョン同期（MCP/LSP/Unity）"
+  git commit -m "chore(release): $TAG"
 fi
 
-# タグ作成（存在しない場合）
 if git rev-parse -q --verify "$TAG" >/dev/null; then
   echo "[info] tag exists: $TAG"
 else
   git tag -a "$TAG" -m "$TAG"
 fi
 
-# リモート接続確認
 if ! git ls-remote --exit-code "$REMOTE" >/dev/null 2>&1; then
   echo "[error] remote not accessible: $REMOTE" >&2
   exit 2
@@ -129,7 +107,6 @@ fi
 
 case "$PUSH_MODE" in
   all)
-    # プッシュ（本体＋タグ）: follow-tags で関連タグも送信、その後明示的にタグ送信
     echo "[step] push commits and tag (mode=all)"
     git push --follow-tags "$REMOTE" || echo "[warn] git push --follow-tags failed; will try explicit tag push"
     git push "$REMOTE" "$TAG" || true
@@ -147,7 +124,6 @@ case "$PUSH_MODE" in
     ;;
 esac
 
-# タグがリモートに存在するか検証し、必要に応じて再試行
 echo "[step] verify tag on remote: $TAG"
 if [ "$PUSH_MODE" = "none" ]; then
   echo "[skip] verification skipped (no push)"
@@ -156,7 +132,7 @@ elif git ls-remote --tags "$REMOTE" | awk '{print $2}' | grep -qx "refs/tags/$TA
 else
   echo "[warn] tag not found on remote; retrying explicit push"
   for i in 1 2 3; do
-    sleep $((i*2))
+    sleep $((i * 2))
     git push "$REMOTE" "$TAG" && break || true
   done
   if git ls-remote --tags "$REMOTE" | awk '{print $2}' | grep -qx "refs/tags/$TAG"; then
@@ -167,6 +143,4 @@ else
   fi
 fi
 
-echo "[done] v$NEW_VER pushed. Check GitHub Actions: Release csharp-lsp / Publish mcp-server (npm)"
-echo "- Release URL (runs): https://github.com/akiojin/unity-mcp-server/actions/workflows/release-csharp-lsp.yml"
-echo "- Publish URL (runs): https://github.com/akiojin/unity-mcp-server/actions/workflows/mcp-server-publish.yml"
+echo "[done] release tag prepared: $TAG"

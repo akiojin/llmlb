@@ -91,7 +91,41 @@ pub enum AdmissionDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::TEST_LOCK;
+    use crate::types::endpoint::{
+        Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+    };
+    use sqlx::SqlitePool;
+    use std::sync::Arc;
     use std::time::Duration as StdDuration;
+    use tokio::time::{sleep, Duration};
+
+    async fn setup_test_load_manager() -> (LoadManager, Uuid) {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        let registry = EndpointRegistry::new(pool)
+            .await
+            .expect("Failed to create endpoint registry");
+        let endpoint = Endpoint::new(
+            "lease-test-endpoint".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        let endpoint_id = endpoint.id;
+        registry
+            .add(endpoint)
+            .await
+            .expect("Failed to add test endpoint");
+
+        let load_manager = LoadManager::new(Arc::new(registry));
+        (load_manager, endpoint_id)
+    }
 
     // NOTE: SPEC-e8e9326eによりNodeRegistryは廃止されました。
     // SPEC-f8e3a1b7によりNode型は削除され、Endpoint型に移行しました。
@@ -231,6 +265,140 @@ mod tests {
             0.0
         };
         assert_eq!(avg, 150.0);
+    }
+
+    #[tokio::test]
+    async fn request_lease_complete_releases_active_counter() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        let lease = load_manager
+            .begin_request(endpoint_id)
+            .await
+            .expect("begin_request should succeed");
+
+        let active_before = load_manager
+            .snapshot(endpoint_id)
+            .await
+            .expect("snapshot should succeed")
+            .active_requests;
+        assert_eq!(active_before, 1);
+
+        lease
+            .complete(RequestOutcome::Success, StdDuration::from_millis(3))
+            .await
+            .expect("complete should succeed");
+
+        let snapshot_after = load_manager
+            .snapshot(endpoint_id)
+            .await
+            .expect("snapshot should succeed");
+        assert_eq!(snapshot_after.active_requests, 0);
+        assert_eq!(snapshot_after.successful_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn request_lease_drop_auto_releases_active_counter() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        {
+            let _lease = load_manager
+                .begin_request(endpoint_id)
+                .await
+                .expect("begin_request should succeed");
+        }
+
+        let mut final_snapshot = None;
+        for _ in 0..30 {
+            let snapshot = load_manager
+                .snapshot(endpoint_id)
+                .await
+                .expect("snapshot should succeed");
+            if snapshot.active_requests == 0 {
+                final_snapshot = Some(snapshot);
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        let snapshot = final_snapshot.expect("lease auto-complete should drain active requests");
+        assert_eq!(snapshot.active_requests, 0);
+        assert_eq!(snapshot.failed_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn select_endpoint_round_robin_ready_for_model_excludes_initializing_endpoints() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        let registry = EndpointRegistry::new(pool)
+            .await
+            .expect("Failed to create endpoint registry");
+
+        let mut ready_endpoint = Endpoint::new(
+            "ready-endpoint".to_string(),
+            "http://localhost:11080".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        ready_endpoint.status = EndpointStatus::Online;
+        let ready_endpoint_id = ready_endpoint.id;
+        registry
+            .add(ready_endpoint)
+            .await
+            .expect("Failed to add ready endpoint");
+
+        let mut initializing_endpoint = Endpoint::new(
+            "initializing-endpoint".to_string(),
+            "http://localhost:11081".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        initializing_endpoint.status = EndpointStatus::Online;
+        let initializing_endpoint_id = initializing_endpoint.id;
+        registry
+            .add(initializing_endpoint)
+            .await
+            .expect("Failed to add initializing endpoint");
+
+        let model_id = "gpt-oss:latest".to_string();
+        for endpoint_id in [ready_endpoint_id, initializing_endpoint_id] {
+            registry
+                .add_model(&EndpointModel {
+                    endpoint_id,
+                    model_id: model_id.clone(),
+                    capabilities: None,
+                    max_tokens: None,
+                    last_checked: None,
+                    supported_apis: vec![SupportedAPI::ChatCompletions],
+                })
+                .await
+                .expect("Failed to add endpoint model");
+        }
+
+        let load_manager = LoadManager::new(Arc::new(registry));
+        load_manager
+            .upsert_initial_state(ready_endpoint_id, false, Some((1, 1)))
+            .await;
+        load_manager
+            .upsert_initial_state(initializing_endpoint_id, true, Some((0, 1)))
+            .await;
+
+        for _ in 0..4 {
+            let selected = load_manager
+                .select_endpoint_round_robin_ready_for_model(&model_id)
+                .await
+                .expect("selection should succeed");
+            assert_eq!(
+                selected.id, ready_endpoint_id,
+                "initializing endpoint must not be selected"
+            );
+        }
     }
 
     // SPEC-f8e3a1b7: NodeRegistry依存のトークン・ルーティングテストは削除されました
@@ -441,6 +609,96 @@ pub struct LoadManager {
     queue_notify: Arc<Notify>,
     /// リクエストキュー待機数
     queue_waiters: Arc<AtomicUsize>,
+}
+
+/// リクエスト処理中のlease
+///
+/// `complete*` が呼ばれずに破棄された場合でも、Drop時にエラーとして
+/// activeカウンタを減算することでカウンタ残留を防ぐ。
+pub struct RequestLease {
+    load_manager: Option<LoadManager>,
+    endpoint_id: Uuid,
+    started_at: std::time::Instant,
+}
+
+impl RequestLease {
+    fn new(load_manager: LoadManager, endpoint_id: Uuid) -> Self {
+        Self {
+            load_manager: Some(load_manager),
+            endpoint_id,
+            started_at: std::time::Instant::now(),
+        }
+    }
+
+    /// 紐づくエンドポイントIDを返す。
+    pub fn endpoint_id(&self) -> Uuid {
+        self.endpoint_id
+    }
+
+    /// lease開始からの経過時間を返す。
+    pub fn elapsed(&self) -> StdDuration {
+        self.started_at.elapsed()
+    }
+
+    /// リクエストを指定結果で明示的に完了する。
+    pub async fn complete(
+        mut self,
+        outcome: RequestOutcome,
+        duration: StdDuration,
+    ) -> RouterResult<()> {
+        let Some(load_manager) = self.load_manager.take() else {
+            return Ok(());
+        };
+        load_manager
+            .finish_request(self.endpoint_id, outcome, duration)
+            .await
+    }
+
+    /// トークン使用量付きでリクエストを明示的に完了する。
+    pub async fn complete_with_tokens(
+        mut self,
+        outcome: RequestOutcome,
+        duration: StdDuration,
+        token_usage: Option<crate::token::TokenUsage>,
+    ) -> RouterResult<()> {
+        let Some(load_manager) = self.load_manager.take() else {
+            return Ok(());
+        };
+        load_manager
+            .finish_request_with_tokens(self.endpoint_id, outcome, duration, token_usage)
+            .await
+    }
+}
+
+impl Drop for RequestLease {
+    fn drop(&mut self) {
+        let Some(load_manager) = self.load_manager.take() else {
+            return;
+        };
+
+        let endpoint_id = self.endpoint_id;
+        let duration = self.started_at.elapsed();
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                if let Err(err) = load_manager
+                    .finish_request(endpoint_id, RequestOutcome::Error, duration)
+                    .await
+                {
+                    tracing::warn!(
+                        endpoint_id = %endpoint_id,
+                        error = %err,
+                        "Failed to auto-complete leaked request lease"
+                    );
+                }
+            });
+        } else {
+            tracing::warn!(
+                endpoint_id = %endpoint_id,
+                "Request lease dropped without runtime; skipping auto-complete"
+            );
+        }
+    }
 }
 
 /// ハートビートから記録するメトリクス値
@@ -803,7 +1061,7 @@ impl LoadManager {
     }
 
     /// リクエスト開始を記録
-    pub async fn begin_request(&self, node_id: Uuid) -> RouterResult<()> {
+    pub async fn begin_request(&self, node_id: Uuid) -> RouterResult<RequestLease> {
         // エンドポイントが存在することを確認
         if self.endpoint_registry.get(node_id).await.is_none() {
             return Err(LbError::NodeNotFound(node_id));
@@ -814,7 +1072,7 @@ impl LoadManager {
         entry.assigned_active = entry.assigned_active.saturating_add(1);
         entry.total_assigned = entry.total_assigned.saturating_add(1);
 
-        Ok(())
+        Ok(RequestLease::new(self.clone(), node_id))
     }
 
     /// リクエスト完了を記録
@@ -1409,6 +1667,30 @@ impl LoadManager {
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
         let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
         self.select_endpoint_round_robin_from_endpoints(endpoints)
+    }
+
+    /// 指定モデルに対応する初期化完了エンドポイントをラウンドロビンで選択（Endpoint版）
+    ///
+    /// 初期化中ノードを除外し、未準備ノードへの転送を避ける。
+    pub async fn select_endpoint_round_robin_ready_for_model(
+        &self,
+        model_id: &str,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        let ready_endpoints: Vec<_> = {
+            let state = self.state.read().await;
+            endpoints
+                .into_iter()
+                .filter(|ep| {
+                    state
+                        .get(&ep.id)
+                        .map(|load| !load.initializing)
+                        .unwrap_or(true)
+                })
+                .collect()
+        };
+
+        self.select_endpoint_round_robin_from_endpoints(ready_endpoints)
     }
 
     /// 候補エンドポイントから純粋なラウンドロビンで選択（Endpoint版）

@@ -12,9 +12,7 @@ use axum::{
     response::Response,
 };
 use futures::TryStreamExt;
-use std::{io, sync::Arc, time::Instant};
-
-use crate::balancer::WaitResult;
+use std::{io, sync::Arc};
 
 /// ラウンドロビンでエンドポイントを選択
 ///
@@ -30,6 +28,7 @@ pub(crate) async fn select_available_endpoint(state: &AppState) -> Result<Endpoi
 }
 
 /// キュー付きエンドポイント選択の結果
+#[allow(dead_code)]
 pub(crate) enum QueueSelection {
     /// エンドポイントが見つかった
     Ready {
@@ -45,47 +44,25 @@ pub(crate) enum QueueSelection {
 /// モデル対応のエンドポイントをキュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
-    queue_config: QueueConfig,
+    _queue_config: QueueConfig,
     model_id: &str,
 ) -> Result<QueueSelection, LbError> {
-    match state
+    let endpoint = state
         .load_manager
-        .select_idle_endpoint_for_model(model_id)
-        .await?
-    {
-        Some(endpoint) => Ok(QueueSelection::Ready {
-            endpoint: Box::new(endpoint),
-            queued_wait_ms: None,
-        }),
-        None => {
-            let wait_start = Instant::now();
-            match state
-                .load_manager
-                .wait_for_idle_node_with_timeout_for_model(
-                    model_id,
-                    queue_config.max_waiters,
-                    queue_config.timeout,
-                )
-                .await
-            {
-                WaitResult::CapacityExceeded => Ok(QueueSelection::CapacityExceeded),
-                WaitResult::Timeout => Ok(QueueSelection::Timeout {
-                    waited_ms: wait_start.elapsed().as_millis(),
-                }),
-                WaitResult::Ready => match state
-                    .load_manager
-                    .select_idle_endpoint_for_model(model_id)
-                    .await?
-                {
-                    Some(endpoint) => Ok(QueueSelection::Ready {
-                        endpoint: Box::new(endpoint),
-                        queued_wait_ms: Some(wait_start.elapsed().as_millis()),
-                    }),
-                    None => Err(LbError::NoNodesAvailable),
-                },
-            }
-        }
-    }
+        .select_endpoint_round_robin_ready_for_model(model_id)
+        .await?;
+
+    tracing::debug!(
+        model = %model_id,
+        endpoint_id = %endpoint.id,
+        endpoint_name = %endpoint.name,
+        "Selected ready endpoint by round-robin"
+    );
+
+    Ok(QueueSelection::Ready {
+        endpoint: Box::new(endpoint),
+        queued_wait_ms: None,
+    })
 }
 
 pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<Response, LbError> {

@@ -91,6 +91,14 @@ fn main() {
             }
             return;
         }
+        Some(Commands::Assistant(args)) => {
+            let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            if let Err(e) = runtime.block_on(llmlb::cli::assistant::execute(&args.command)) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
         Some(Commands::Serve(args)) => {
             // Fall through to GUI mode with specified port
             logging::init().expect("failed to initialize logging");
@@ -190,6 +198,13 @@ async fn main() {
         }
         Some(Commands::Status(args)) => {
             if let Err(e) = llmlb::cli::status::execute(&args).await {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some(Commands::Assistant(args)) => {
+            if let Err(e) = llmlb::cli::assistant::execute(&args.command).await {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }

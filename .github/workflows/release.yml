@@ -25,9 +25,11 @@ jobs:
     name: Create Tag and Release
     runs-on: ubuntu-latest
     # chore(release): コミット または手動実行時のみ実行
+    # Note: PRマージ時はコミットメッセージが "Merge pull request #N ...\n\nchore(release): vX.Y.Z"
+    # となるため、startsWith ではなく contains で判定する
     if: |
       github.event_name == 'workflow_dispatch' ||
-      startsWith(github.event.head_commit.message, 'chore(release):') ||
+      contains(github.event.head_commit.message, 'chore(release):') ||
       contains(github.event.head_commit.message, 'from akiojin/release/')
     outputs:
       tag_name: ${{ steps.tag.outputs.tag_name }}
@@ -98,62 +100,3 @@ jobs:
           TAG_NAME: ${{ steps.tag.outputs.tag_name }}
         run: |
           gh workflow run publish.yml --ref "$TAG_NAME" -f release_tag="$TAG_NAME"
-
-  publish-mcp-server:
-    name: Publish MCP Server to npm
-    needs: create-tag
-    if: needs.create-tag.outputs.created == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.20.0
-
-      - name: Check if version already published
-        id: check
-        working-directory: mcp-server
-        env:
-          RELEASE_VERSION: ${{ needs.create-tag.outputs.version }}
-        run: |
-          if npm view "@llmlb/mcp-server@${RELEASE_VERSION}" version 2>/dev/null; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Version ${RELEASE_VERSION} already published, skipping"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Install dependencies
-        if: steps.check.outputs.skip != 'true'
-        working-directory: mcp-server
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        if: steps.check.outputs.skip != 'true'
-        working-directory: mcp-server
-        run: pnpm build
-
-      - name: Update version
-        if: steps.check.outputs.skip != 'true'
-        working-directory: mcp-server
-        env:
-          RELEASE_VERSION: ${{ needs.create-tag.outputs.version }}
-        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
-
-      - name: Publish to npm
-        if: steps.check.outputs.skip != 'true'
-        working-directory: mcp-server
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

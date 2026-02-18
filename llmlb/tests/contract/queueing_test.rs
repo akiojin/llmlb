@@ -108,7 +108,7 @@ fn chat_payload() -> serde_json::Value {
 
 #[tokio::test]
 #[serial]
-async fn queued_request_waits_and_sets_header() {
+async fn concurrent_request_is_forwarded_without_queue_wait() {
     set_queue_env(2, 2);
 
     let stub_state = QueueStubState::new(true, "node-a");
@@ -140,50 +140,36 @@ async fn queued_request_waits_and_sets_header() {
 
     wait_for_endpoint_active(&load_manager, &endpoint_id, Duration::from_secs(1)).await;
 
-    let second = tokio::spawn({
-        let client = client.clone();
-        let addr = lb.addr();
-        async move {
-            client
-                .post(format!("http://{addr}/v1/chat/completions"))
-                .header("x-api-key", "sk_debug")
-                .json(&chat_payload())
-                .send()
-                .await
-                .expect("second request should be sent")
-        }
-    });
+    let second_started = Instant::now();
+    let second_resp = client
+        .post(format!("http://{}/v1/chat/completions", lb.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&chat_payload())
+        .send()
+        .await
+        .expect("second request should be sent");
+    let second_elapsed = second_started.elapsed();
 
-    sleep(Duration::from_millis(100)).await;
-    assert_eq!(stub_state.request_count.load(Ordering::SeqCst), 1);
+    assert_eq!(second_resp.status(), ReqStatusCode::OK);
+    assert!(
+        second_elapsed < Duration::from_secs(1),
+        "second request should not wait in queue"
+    );
+    assert!(second_resp.headers().get("x-queue-status").is_none());
+    assert!(second_resp.headers().get("x-queue-wait-ms").is_none());
+    assert_eq!(stub_state.request_count.load(Ordering::SeqCst), 2);
 
     stub_state.release_first.notify_waiters();
 
     let first_resp = first.await.expect("first join should succeed");
     assert_eq!(first_resp.status(), ReqStatusCode::OK);
 
-    let second_resp = second.await.expect("second join should succeed");
-    assert_eq!(second_resp.status(), ReqStatusCode::OK);
-    let queued_header = second_resp
-        .headers()
-        .get("x-queue-status")
-        .and_then(|v| v.to_str().ok());
-    assert_eq!(queued_header, Some("queued"));
-
-    let wait_ms = second_resp
-        .headers()
-        .get("x-queue-wait-ms")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
-    assert!(wait_ms > 0);
-
     clear_queue_env();
 }
 
 #[tokio::test]
 #[serial]
-async fn queue_full_returns_429_with_retry_after() {
+async fn queue_full_config_does_not_block_round_robin_forwarding() {
     set_queue_env(0, 2);
 
     let stub_state = QueueStubState::new(true, "node-a");
@@ -225,8 +211,8 @@ async fn queue_full_returns_429_with_retry_after() {
         .await
         .expect("second request should be sent");
 
-    assert_eq!(second_resp.status(), ReqStatusCode::TOO_MANY_REQUESTS);
-    assert!(second_resp.headers().get("retry-after").is_some());
+    assert_eq!(second_resp.status(), ReqStatusCode::OK);
+    assert!(second_resp.headers().get("retry-after").is_none());
 
     stub_state.release_first.notify_waiters();
 
@@ -237,7 +223,7 @@ async fn queue_full_returns_429_with_retry_after() {
 
 #[tokio::test]
 #[serial]
-async fn queue_timeout_returns_504() {
+async fn queue_timeout_config_does_not_trigger_when_round_robin_can_route() {
     set_queue_env(1, 0);
 
     let stub_state = QueueStubState::new(true, "node-a");
@@ -277,7 +263,7 @@ async fn queue_timeout_returns_504() {
         .await
         .expect("second request should be sent");
 
-    assert_eq!(second_resp.status(), ReqStatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(second_resp.status(), ReqStatusCode::OK);
 
     stub_state.release_first.notify_waiters();
     let _ = first.await.expect("first join should succeed");
@@ -287,7 +273,7 @@ async fn queue_timeout_returns_504() {
 
 #[tokio::test]
 #[serial]
-async fn routes_to_idle_node_when_one_busy() {
+async fn routes_to_online_node_when_one_busy() {
     set_queue_env(2, 2);
 
     let busy_state = QueueStubState::new(true, "node-a");
@@ -338,8 +324,16 @@ async fn routes_to_idle_node_when_one_busy() {
 
     assert_eq!(second_resp.status(), ReqStatusCode::OK);
     let payload: serde_json::Value = second_resp.json().await.expect("valid json response");
-    assert_eq!(payload.get("id").and_then(|v| v.as_str()), Some("node-b"));
-    assert_eq!(idle_state.request_count.load(Ordering::SeqCst), 1);
+    let responder = payload.get("id").and_then(|v| v.as_str());
+    assert!(
+        responder == Some("node-a") || responder == Some("node-b"),
+        "response should come from an online endpoint"
+    );
+    assert!(
+        busy_state.request_count.load(Ordering::SeqCst)
+            + idle_state.request_count.load(Ordering::SeqCst)
+            >= 2
+    );
 
     busy_state.release_first.notify_waiters();
     let _ = first.await.expect("first join should succeed");

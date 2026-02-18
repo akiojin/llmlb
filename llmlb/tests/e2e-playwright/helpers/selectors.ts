@@ -11,6 +11,7 @@ export const DashboardSelectors = {
     apiKeysButton: '#api-keys-button',
     refreshButton: '#refresh-button',
     connectionStatus: '#connection-status',
+    currentVersion: '#current-version',
     lastRefreshed: '#last-refreshed',
     refreshMetrics: '#refresh-metrics',
   },

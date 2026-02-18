@@ -24,13 +24,17 @@ test.describe('System Update Banner @dashboard', () => {
   test('SUB-02: ダッシュボードにシステム情報表示', async ({ page }) => {
     await ensureDashboardLogin(page)
 
-    // The dashboard header shows the title "LLM Load Balancer" and connection status.
-    // Version is only visible in the update banner when an update is available;
-    // in test/dev environments, the system is typically up_to_date so no version
-    // is rendered directly. Instead, verify the dashboard loaded and shows
-    // the connection status indicator (which proves /api/system was called).
+    const systemResp = await page.request.get(`${API_BASE}/api/system`)
+    expect(systemResp.ok()).toBeTruthy()
+    const systemJson = await systemResp.json()
+    expect(systemJson.version).toBeTruthy()
+
     const connectionStatus = page.locator('#connection-status')
+    const currentVersion = page.locator('#current-version')
+
     await expect(connectionStatus).toBeVisible({ timeout: 10000 })
     await expect(connectionStatus).toContainText('Online')
+    await expect(currentVersion).toBeVisible({ timeout: 10000 })
+    await expect(currentVersion).toContainText(`Current v${systemJson.version}`)
   })
 })

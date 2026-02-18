@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   dashboardApi,
   systemApi,
@@ -23,9 +23,12 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, RefreshCcw } from 'lucide-react'
 
+const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
+
 export default function Dashboard() {
   const { user } = useAuth()
   const { isConnected: wsConnected } = useDashboardWebSocket()
+  const queryClient = useQueryClient()
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
   const fetchStartRef = useRef<number | null>(null)
@@ -52,9 +55,8 @@ export default function Dashboard() {
 
   const {
     data: systemInfo,
-    refetch: refetchSystemInfo,
   } = useQuery<SystemInfo>({
-    queryKey: ['system-info'],
+    queryKey: SYSTEM_INFO_QUERY_KEY,
     queryFn: () => systemApi.getSystem(),
     refetchInterval: pollingInterval,
   })
@@ -142,7 +144,26 @@ export default function Dashboard() {
     const onCheck = async () => {
       setIsCheckingUpdate(true)
       try {
-        await systemApi.checkUpdate()
+        const { update } = await systemApi.checkUpdate()
+        const currentSystemInfo = queryClient.getQueryData<SystemInfo>(SYSTEM_INFO_QUERY_KEY)
+        if (currentSystemInfo) {
+          queryClient.setQueryData<SystemInfo>(
+            SYSTEM_INFO_QUERY_KEY,
+            {
+              ...currentSystemInfo,
+              update,
+            }
+          )
+        } else {
+          const freshSystemInfo = await systemApi.getSystem()
+          queryClient.setQueryData<SystemInfo>(
+            SYSTEM_INFO_QUERY_KEY,
+            {
+              ...freshSystemInfo,
+              update,
+            }
+          )
+        }
         toast({
           title: 'Checked for updates',
         })
@@ -154,7 +175,7 @@ export default function Dashboard() {
         })
       } finally {
         setIsCheckingUpdate(false)
-        await refetchSystemInfo()
+        await queryClient.invalidateQueries({ queryKey: SYSTEM_INFO_QUERY_KEY })
       }
     }
 
@@ -167,7 +188,7 @@ export default function Dashboard() {
           description:
             'llmlb will restart after in-flight requests complete.',
         })
-        await refetchSystemInfo()
+        await queryClient.invalidateQueries({ queryKey: SYSTEM_INFO_QUERY_KEY })
       } catch (e) {
         toast({
           title: 'Failed to apply update',
@@ -264,7 +285,7 @@ export default function Dashboard() {
         </div>
       </section>
     )
-  }, [systemInfo?.update, user?.role, isApplyingUpdate, isCheckingUpdate, refetchSystemInfo])
+  }, [systemInfo?.update, user?.role, isApplyingUpdate, isCheckingUpdate, queryClient])
 
   if (error) {
     return (

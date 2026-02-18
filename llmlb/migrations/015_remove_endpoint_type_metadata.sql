@@ -1,9 +1,16 @@
+-- no-transaction
+--
 -- Remove endpoint_type detection metadata columns (source/reason/detected_at)
 -- These columns were added in 011 but are no longer needed after simplifying
 -- endpoint type detection logic.
 -- Also change endpoint_type default from 'unknown' to 'openai_compatible'.
 --
 -- SQLite does not support DROP COLUMN on older versions, so we recreate the table.
+-- IMPORTANT: Keep child rows in endpoint_models / endpoint_health_checks /
+-- model_download_tasks. Temporarily disable FK enforcement during table swap
+-- to avoid ON DELETE CASCADE firing when dropping old endpoints table.
+
+PRAGMA foreign_keys=off;
 
 -- Step 1: Create new table without the 3 metadata columns
 CREATE TABLE endpoints_new (
@@ -56,3 +63,5 @@ ALTER TABLE endpoints_new RENAME TO endpoints;
 CREATE INDEX IF NOT EXISTS idx_endpoints_status ON endpoints(status);
 CREATE INDEX IF NOT EXISTS idx_endpoints_name ON endpoints(name);
 CREATE INDEX IF NOT EXISTS idx_endpoints_type ON endpoints(endpoint_type);
+
+PRAGMA foreign_keys=on;

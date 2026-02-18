@@ -309,15 +309,8 @@ impl EndpointHealthChecker {
                     warn!(
                         endpoint_id = %endpoint.id,
                         error = %e,
-                        "Endpoint type re-detection failed, deleting endpoint"
+                        "Endpoint type re-detection failed; keeping previous type"
                     );
-                    if let Err(del_err) = self.registry.remove(endpoint.id).await {
-                        warn!(
-                            endpoint_id = %endpoint.id,
-                            error = %del_err,
-                            "Failed to delete unsupported endpoint"
-                        );
-                    }
                 }
             }
         }

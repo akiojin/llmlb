@@ -365,7 +365,8 @@ fn maybe_raise_nofile_limit() {
 /// サーバー起動時に全エンドポイントのタイプを再検出する
 ///
 /// 前回起動時から変更されている可能性があるため、登録済みの全エンドポイントに対して
-/// タイプ検出を実行し、変更があれば更新、到達不能なら削除する。
+/// タイプ検出を実行し、変更があれば更新する。
+/// 検出失敗時は既存設定を保持し、ヘルスチェックでの再評価に委ねる。
 async fn redetect_all_endpoints(
     registry: &llmlb::registry::endpoints::EndpointRegistry,
     http_client: &reqwest::Client,
@@ -386,7 +387,7 @@ async fn redetect_all_endpoints(
         "Starting endpoint type re-detection on server startup"
     );
 
-    let mut removed: usize = 0;
+    let mut failed: usize = 0;
     let mut updated: usize = 0;
 
     for ep in &endpoints {
@@ -415,15 +416,14 @@ async fn redetect_all_endpoints(
                     endpoint_id = %ep.id,
                     name = %ep.name,
                     error = %err,
-                    "Removing endpoint: type detection failed on startup"
+                    "Endpoint type re-detection failed on startup; keeping existing configuration"
                 );
-                let _ = registry.remove(ep.id).await;
-                removed += 1;
+                failed += 1;
             }
         }
     }
 
-    info!(total, removed, updated, "Endpoint re-detection complete");
+    info!(total, failed, updated, "Endpoint re-detection complete");
 }
 
 async fn run_server(

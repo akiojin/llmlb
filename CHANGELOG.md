@@ -1,5 +1,15 @@
 # Unreleased
 
+# [4.5.1](https://github.com/akiojin/llmlb/compare/v4.5.0...v4.5.1) (2026-02-19)
+
+### Bug Fixes
+
+- ダッシュボードヘッダーにCurrent vを常時表示 (#416)
+
+### Refactoring
+
+- SPEC IDを命名規則準拠のUUID8形式にリネーム
+
 # [4.5.0](https://github.com/akiojin/llmlb/compare/v4.4.0...v4.5.0) (2026-02-18)
 
 ### Breaking Changes
@@ -104,7 +114,7 @@
 
 ### Tests
 
-- SPEC-62241000: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
+- SPEC-a472f11f: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
 
 ### Documentation
 

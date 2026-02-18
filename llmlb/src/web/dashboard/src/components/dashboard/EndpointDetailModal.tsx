@@ -129,7 +129,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
     enabled: !!endpoint?.id && open,
   })
 
-  // SPEC-76643000: Fetch today's request statistics
+  // SPEC-8c32349f: Fetch today's request statistics
   const { data: todayStats, isLoading: isLoadingTodayStats } = useQuery({
     queryKey: ['endpoint-today-stats', endpoint?.id],
     queryFn: () => endpointsApi.getTodayStats(endpoint!.id),
@@ -272,7 +272,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
           <Separator />
 
-          {/* SPEC-76643000: Request Statistics Cards */}
+          {/* SPEC-8c32349f: Request Statistics Cards */}
           <div className="grid grid-cols-2 gap-4">
             {/* Total Requests */}
             <div className="rounded-lg border p-3">
@@ -345,7 +345,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
           <Separator />
 
-          {/* SPEC-76643000: Daily Request Trend Chart (Phase 6) */}
+          {/* SPEC-8c32349f: Daily Request Trend Chart (Phase 6) */}
           <EndpointRequestChart endpointId={endpoint.id} />
 
           <Separator />
@@ -460,7 +460,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
           <Separator />
 
-          {/* Model Request Stats Section - SPEC-76643000 */}
+          {/* Model Request Stats Section - SPEC-8c32349f */}
           <EndpointModelStatsTable endpointId={endpoint.id} enabled={open} />
 
           <Separator />

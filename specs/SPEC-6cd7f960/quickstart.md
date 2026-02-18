@@ -203,4 +203,4 @@ asyncio.run(listen_model_updates())
 
 - Playgroundでモデルをテスト
 - 複数ノードへのモデル配布
-- クラウドプロバイダー連携（SPEC-82491000）
+- クラウドプロバイダー連携（SPEC-996e37bf）

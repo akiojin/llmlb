@@ -110,7 +110,7 @@ pub(crate) fn save_request_record(
     });
 }
 
-/// エンドポイントリクエスト統計を更新（Fire-and-forget）（SPEC-76643000）
+/// エンドポイントリクエスト統計を更新（Fire-and-forget）（SPEC-8c32349f）
 ///
 /// endpointsテーブルの累計カウンタとendpoint_daily_statsの日次集計を
 /// 非同期で更新する。リクエスト処理のレイテンシに影響を与えない。

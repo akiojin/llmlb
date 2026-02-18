@@ -31,15 +31,23 @@ interface HeaderProps {
   isConnected?: boolean
   lastRefreshed?: Date | null
   fetchTimeMs?: number | null
+  systemVersion?: string | null
 }
 
-export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }: HeaderProps) {
+export function Header({
+  user,
+  isConnected = true,
+  lastRefreshed,
+  fetchTimeMs,
+  systemVersion,
+}: HeaderProps) {
   const { logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [userModalOpen, setUserModalOpen] = useState(false)
   const [invitationModalOpen, setInvitationModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const displayVersion = systemVersion ?? '--'
 
   const handleRefresh = () => {
     setIsRefreshing(true)
@@ -59,7 +67,12 @@ export function Header({ user, isConnected = true, lastRefreshed, fetchTimeMs }:
               <h1 className="font-display text-lg font-semibold tracking-tight">
                 LLM Load Balancer
               </h1>
-              <p className="text-xs text-muted-foreground">Dashboard</p>
+              <p className="text-xs text-muted-foreground">
+                Dashboard
+                <span id="current-version" className="ml-2 font-mono text-[11px]">
+                  Current v{displayVersion}
+                </span>
+              </p>
             </div>
           </div>
 

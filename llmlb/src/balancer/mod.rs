@@ -88,6 +88,73 @@ pub enum AdmissionDecision {
 // - compare_option_f32, compare_average_ms, usage_snapshot, compare_usage_levels
 // 新しい負荷分散はレイテンシベース（EMA α=0.2）を使用
 
+/// エンドポイント×モデル単位のTPS EMA状態（SPEC-4bb5b55f）
+#[derive(Debug, Clone, Default)]
+pub struct ModelTpsState {
+    /// EMA平滑化されたTPS値（None=未計測）
+    pub tps_ema: Option<f64>,
+    /// リクエスト完了数
+    pub request_count: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 処理時間累計（ミリ秒）
+    pub total_duration_ms: u64,
+}
+
+impl ModelTpsState {
+    /// TPS計測値を更新（EMA α=0.2）
+    ///
+    /// TPS = output_tokens / (duration_ms / 1000)
+    /// EMA: new_ema = α × current_tps + (1 - α) × previous_ema
+    pub fn update_tps(&mut self, output_tokens: u64, duration_ms: u64) {
+        if duration_ms == 0 {
+            return;
+        }
+
+        let current_tps = output_tokens as f64 / (duration_ms as f64 / 1000.0);
+
+        const ALPHA: f64 = 0.2;
+        self.tps_ema = Some(match self.tps_ema {
+            Some(prev) => ALPHA * current_tps + (1.0 - ALPHA) * prev,
+            None => current_tps,
+        });
+
+        self.request_count += 1;
+        self.total_output_tokens += output_tokens;
+        self.total_duration_ms += duration_ms;
+    }
+}
+
+/// エンドポイント×モデル単位のTPS情報（API応答用）（SPEC-4bb5b55f）
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelTpsInfo {
+    /// モデルID
+    pub model_id: String,
+    /// EMA平滑化されたTPS値（None=未計測）
+    pub tps: Option<f64>,
+    /// リクエスト完了数
+    pub request_count: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 平均処理時間（ミリ秒、None=未計測）
+    pub average_duration_ms: Option<f64>,
+}
+
+/// エンドポイント単位のTPS概要（SPEC-4bb5b55f T023）
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct EndpointTpsSummary {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// TPS計測済みモデル数
+    pub model_count: usize,
+    /// 全モデルの加重平均TPS（None=全モデル未計測）
+    pub aggregate_tps: Option<f64>,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// リクエスト累計
+    pub total_requests: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +475,205 @@ mod tests {
     // - test_offline_node_retains_token_statistics
     // - test_pending_node_excluded_from_routing
     // - test_registering_node_excluded_from_routing
+
+    // SPEC-4bb5b55f T002: ModelTpsState EMA計算テスト
+
+    #[test]
+    fn test_model_tps_state_initial_none() {
+        // 初期状態ではtps_emaはNone
+        let state = ModelTpsState::default();
+        assert!(state.tps_ema.is_none());
+        assert_eq!(state.request_count, 0);
+        assert_eq!(state.total_output_tokens, 0);
+        assert_eq!(state.total_duration_ms, 0);
+    }
+
+    #[test]
+    fn test_model_tps_state_first_update() {
+        // 初回計測でNone→Some値になること
+        let mut state = ModelTpsState::default();
+        // 100 tokens in 2000ms = 50 tok/s
+        state.update_tps(100, 2000);
+        assert!(state.tps_ema.is_some());
+        let tps = state.tps_ema.unwrap();
+        assert!(
+            (tps - 50.0).abs() < 0.01,
+            "初回TPS: expected 50.0, got {tps}"
+        );
+        assert_eq!(state.request_count, 1);
+        assert_eq!(state.total_output_tokens, 100);
+        assert_eq!(state.total_duration_ms, 2000);
+    }
+
+    #[test]
+    fn test_model_tps_state_ema_smoothing() {
+        // 複数回更新でEMA平滑化されること (α=0.2)
+        let mut state = ModelTpsState::default();
+
+        // 1回目: 100 tokens / 2000ms = 50.0 tok/s → EMA = 50.0
+        state.update_tps(100, 2000);
+        assert!((state.tps_ema.unwrap() - 50.0).abs() < 0.01);
+
+        // 2回目: 200 tokens / 2000ms = 100.0 tok/s
+        // EMA = 0.2 * 100.0 + 0.8 * 50.0 = 20.0 + 40.0 = 60.0
+        state.update_tps(200, 2000);
+        assert!(
+            (state.tps_ema.unwrap() - 60.0).abs() < 0.01,
+            "2回目EMA: expected 60.0, got {}",
+            state.tps_ema.unwrap()
+        );
+
+        // 3回目: 50 tokens / 1000ms = 50.0 tok/s
+        // EMA = 0.2 * 50.0 + 0.8 * 60.0 = 10.0 + 48.0 = 58.0
+        state.update_tps(50, 1000);
+        assert!(
+            (state.tps_ema.unwrap() - 58.0).abs() < 0.01,
+            "3回目EMA: expected 58.0, got {}",
+            state.tps_ema.unwrap()
+        );
+
+        // 累計値の確認
+        assert_eq!(state.request_count, 3);
+        assert_eq!(state.total_output_tokens, 350); // 100 + 200 + 50
+        assert_eq!(state.total_duration_ms, 5000); // 2000 + 2000 + 1000
+    }
+
+    #[test]
+    fn test_model_tps_state_zero_duration_skipped() {
+        // duration_ms=0の場合はTPS更新をスキップ（ゼロ除算防止）
+        let mut state = ModelTpsState::default();
+        state.update_tps(100, 0);
+        assert!(state.tps_ema.is_none(), "duration=0ではTPS更新しない");
+    }
+
+    // T013: LoadManager::get_model_tps() / update_tps() テスト（SPEC-4bb5b55f Phase 3）
+
+    #[tokio::test]
+    async fn test_get_model_tps_empty_for_unknown_endpoint() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let unknown_id = Uuid::new_v4();
+        let result = load_manager.get_model_tps(unknown_id).await;
+        assert!(result.is_empty(), "未計測エンドポイントは空Vecを返す");
+    }
+
+    #[tokio::test]
+    async fn test_get_model_tps_returns_entries_after_update() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        // TPS更新
+        load_manager
+            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .await;
+
+        let result = load_manager.get_model_tps(endpoint_id).await;
+        assert_eq!(result.len(), 1, "1モデル分のTPS情報が返る");
+        assert_eq!(result[0].model_id, "model-a");
+        assert_eq!(result[0].request_count, 1);
+        assert_eq!(result[0].total_output_tokens, 100);
+        // TPS = 100 / (2000 / 1000) = 50.0
+        let tps = result[0].tps.expect("TPS値がSomeであること");
+        assert!((tps - 50.0).abs() < 0.01, "TPS = 50.0");
+    }
+
+    #[tokio::test]
+    async fn test_get_model_tps_multiple_models() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        load_manager
+            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .await;
+        load_manager
+            .update_tps(endpoint_id, "model-b".to_string(), 200, 1000)
+            .await;
+
+        let result = load_manager.get_model_tps(endpoint_id).await;
+        assert_eq!(result.len(), 2, "2モデル分のTPS情報が返る");
+
+        let model_ids: Vec<&str> = result.iter().map(|e| e.model_id.as_str()).collect();
+        assert!(model_ids.contains(&"model-a"));
+        assert!(model_ids.contains(&"model-b"));
+    }
+
+    #[tokio::test]
+    async fn test_update_tps_skips_zero_tokens() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        // output_tokens=0は無視
+        load_manager
+            .update_tps(endpoint_id, "model-a".to_string(), 0, 2000)
+            .await;
+
+        let result = load_manager.get_model_tps(endpoint_id).await;
+        assert!(result.is_empty(), "output_tokens=0はTPS更新しない");
+    }
+
+    #[tokio::test]
+    async fn test_get_model_tps_isolates_endpoints() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let other_endpoint_id = Uuid::new_v4();
+
+        load_manager
+            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .await;
+        load_manager
+            .update_tps(other_endpoint_id, "model-b".to_string(), 200, 1000)
+            .await;
+
+        let result = load_manager.get_model_tps(endpoint_id).await;
+        assert_eq!(result.len(), 1, "他エンドポイントのデータは含まない");
+        assert_eq!(result[0].model_id, "model-a");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_endpoint_tps_empty() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+
+        let result = load_manager.get_all_endpoint_tps().await;
+        assert!(result.is_empty(), "TPS未計測の場合は空");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_endpoint_tps_returns_per_endpoint_summary() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let other_endpoint_id = Uuid::new_v4();
+
+        // endpoint_id: 2モデル
+        load_manager
+            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .await;
+        load_manager
+            .update_tps(endpoint_id, "model-b".to_string(), 200, 1000)
+            .await;
+        // other_endpoint_id: 1モデル
+        load_manager
+            .update_tps(other_endpoint_id, "model-c".to_string(), 50, 500)
+            .await;
+
+        let result = load_manager.get_all_endpoint_tps().await;
+        assert_eq!(result.len(), 2, "2エンドポイント分のサマリ");
+
+        let ep1 = result
+            .iter()
+            .find(|s| s.endpoint_id == endpoint_id)
+            .expect("endpoint_id存在");
+        assert_eq!(ep1.model_count, 2);
+        assert_eq!(ep1.total_output_tokens, 300); // 100 + 200
+        assert!(ep1.aggregate_tps.is_some());
+
+        let ep2 = result
+            .iter()
+            .find(|s| s.endpoint_id == other_endpoint_id)
+            .expect("other存在");
+        assert_eq!(ep2.model_count, 1);
+        assert_eq!(ep2.total_output_tokens, 50);
+    }
 }
 
 /// エンドポイントの負荷状態
@@ -609,6 +875,8 @@ pub struct LoadManager {
     queue_notify: Arc<Notify>,
     /// リクエストキュー待機数
     queue_waiters: Arc<AtomicUsize>,
+    /// エンドポイント×モデル単位のTPS状態（SPEC-4bb5b55f）
+    tps_tracker: Arc<RwLock<HashMap<(Uuid, String), ModelTpsState>>>,
 }
 
 /// リクエスト処理中のlease
@@ -749,7 +1017,92 @@ impl LoadManager {
             waiters: Arc::new(AtomicUsize::new(0)),
             queue_notify: Arc::new(Notify::new()),
             queue_waiters: Arc::new(AtomicUsize::new(0)),
+            tps_tracker: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// TPS計測値を更新（SPEC-4bb5b55f）
+    pub async fn update_tps(
+        &self,
+        endpoint_id: Uuid,
+        model_id: String,
+        output_tokens: u64,
+        duration_ms: u64,
+    ) {
+        if duration_ms == 0 || output_tokens == 0 {
+            return;
+        }
+        let mut tracker = self.tps_tracker.write().await;
+        let state = tracker.entry((endpoint_id, model_id)).or_default();
+        state.update_tps(output_tokens, duration_ms);
+    }
+
+    /// エンドポイントのモデル別TPS情報を取得（SPEC-4bb5b55f）
+    pub async fn get_model_tps(&self, endpoint_id: Uuid) -> Vec<ModelTpsInfo> {
+        let tracker = self.tps_tracker.read().await;
+        tracker
+            .iter()
+            .filter(|((eid, _), _)| *eid == endpoint_id)
+            .map(|((_, model_id), state)| ModelTpsInfo {
+                model_id: model_id.clone(),
+                tps: state.tps_ema,
+                request_count: state.request_count,
+                total_output_tokens: state.total_output_tokens,
+                average_duration_ms: if state.request_count > 0 {
+                    Some(state.total_duration_ms as f64 / state.request_count as f64)
+                } else {
+                    None
+                },
+            })
+            .collect()
+    }
+
+    /// 全エンドポイントのTPS概要を返す（SPEC-4bb5b55f T023）
+    pub async fn get_all_endpoint_tps(&self) -> Vec<EndpointTpsSummary> {
+        let tracker = self.tps_tracker.read().await;
+        let mut map: HashMap<Uuid, EndpointTpsSummary> = HashMap::new();
+
+        for ((endpoint_id, _), state) in tracker.iter() {
+            let entry = map
+                .entry(*endpoint_id)
+                .or_insert_with(|| EndpointTpsSummary {
+                    endpoint_id: *endpoint_id,
+                    model_count: 0,
+                    aggregate_tps: None,
+                    total_output_tokens: 0,
+                    total_requests: 0,
+                });
+            entry.model_count += 1;
+            entry.total_output_tokens += state.total_output_tokens;
+            entry.total_requests += state.request_count;
+        }
+
+        // 加重平均TPS = 全モデルの total_output_tokens / 全モデルの total_duration_ms * 1000
+        for ((endpoint_id, _), state) in tracker.iter() {
+            if let Some(entry) = map.get_mut(endpoint_id) {
+                if entry.aggregate_tps.is_none() {
+                    // 初回計算: このエンドポイントの全体統計から算出
+                    let total_tokens: u64 = tracker
+                        .iter()
+                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .map(|(_, s)| s.total_output_tokens)
+                        .sum();
+                    let total_duration: u64 = tracker
+                        .iter()
+                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .map(|(_, s)| s.total_duration_ms)
+                        .sum();
+                    if total_duration > 0 {
+                        entry.aggregate_tps =
+                            Some(total_tokens as f64 / (total_duration as f64 / 1000.0));
+                    }
+                }
+            }
+            // state used to iterate, suppress unused warning
+            let _ = state;
+        }
+
+        map.into_values().collect()
     }
 
     /// テスト用: 指定エンドポイントがアクティブになるまで待機する

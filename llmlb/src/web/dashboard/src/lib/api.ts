@@ -273,10 +273,19 @@ export interface RequestResponsesPage {
   per_page: number
 }
 
+export interface EndpointTpsSummary {
+  endpoint_id: string
+  model_count: number
+  aggregate_tps: number | null
+  total_output_tokens: number
+  total_requests: number
+}
+
 export interface DashboardOverview {
   endpoints: DashboardEndpoint[]
   stats: DashboardStats
   history: RequestHistoryItem[]
+  endpoint_tps: EndpointTpsSummary[]
   generated_at: string
   generation_time_ms: number
 }
@@ -455,6 +464,15 @@ export interface ModelStatEntry {
   failed_requests: number
 }
 
+/** SPEC-4bb5b55f: Model-level TPS entry */
+export interface ModelTpsEntry {
+  model_id: string
+  tps: number | null
+  request_count: number
+  total_output_tokens: number
+  average_duration_ms: number | null
+}
+
 export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
@@ -563,6 +581,10 @@ export const endpointsApi = {
   /** SPEC-8c32349f: Get model-level request statistics */
   getModelStats: (id: string) =>
     fetchWithAuth<ModelStatEntry[]>(`/api/endpoints/${id}/model-stats`),
+
+  /** SPEC-4bb5b55f: Get model-level TPS statistics */
+  getModelTps: (id: string) =>
+    fetchWithAuth<ModelTpsEntry[]>(`/api/endpoints/${id}/model-tps`),
 
   /** Proxy chat completions to endpoint (JWT authenticated) */
   chatCompletions: async (

@@ -21,6 +21,7 @@ import {
 import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2, Download, Activity } from 'lucide-react'
 import { ModelDownloadDialog } from './ModelDownloadDialog'
 import { EndpointModelStatsTable } from './EndpointModelStatsTable'
+import { EndpointModelTpsTable } from './EndpointModelTpsTable'
 import { EndpointRequestChart } from './EndpointRequestChart'
 
 /**
@@ -457,6 +458,11 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               </div>
             </ScrollArea>
           </div>
+
+          <Separator />
+
+          {/* Model TPS Section - SPEC-4bb5b55f */}
+          <EndpointModelTpsTable endpointId={endpoint.id} enabled={open} />
 
           <Separator />
 

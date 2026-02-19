@@ -5,14 +5,15 @@
 //! このモジュールはEndpoint型を使用しています。
 
 use crate::common::{error::LbError, protocol::RequestResponseRecord};
+use crate::token::StreamingTokenAccumulator;
 use crate::{config::QueueConfig, types::endpoint::Endpoint, AppState};
 use axum::{
     body::Body,
     http::{HeaderName, HeaderValue, StatusCode},
     response::Response,
 };
-use futures::TryStreamExt;
-use std::{io, sync::Arc};
+use futures::{Stream, StreamExt, TryStreamExt};
+use std::{io, pin::Pin, sync::Arc, time::Instant};
 
 /// ラウンドロビンでエンドポイントを選択
 ///
@@ -98,6 +99,170 @@ pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<
     Ok(axum_response)
 }
 
+fn process_sse_lines(
+    buffer: &mut String,
+    chunk_text: &str,
+    accumulator: &mut StreamingTokenAccumulator,
+) {
+    buffer.push_str(chunk_text);
+
+    while let Some(newline_idx) = buffer.find('\n') {
+        let line = buffer[..newline_idx].trim_end_matches('\r').to_string();
+        accumulator.process_chunk(&line);
+        buffer.drain(..=newline_idx);
+    }
+}
+
+/// SSEストリームを透過しながら、完了時にTPS計測用のトークンを集計する。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn forward_streaming_response_with_tps_tracking(
+    response: reqwest::Response,
+    endpoint_id: uuid::Uuid,
+    model_id: String,
+    endpoint_type: crate::types::endpoint::EndpointType,
+    request_started_at: Instant,
+    pool: sqlx::SqlitePool,
+    load_manager: crate::balancer::LoadManager,
+    event_bus: crate::events::SharedEventBus,
+) -> Result<Response, LbError> {
+    struct TpsTrackingState {
+        upstream: Pin<Box<dyn Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send>>,
+        accumulator: StreamingTokenAccumulator,
+        sse_buffer: String,
+        endpoint_id: uuid::Uuid,
+        model_id: String,
+        endpoint_type: crate::types::endpoint::EndpointType,
+        request_started_at: Instant,
+        pool: sqlx::SqlitePool,
+        load_manager: crate::balancer::LoadManager,
+        event_bus: crate::events::SharedEventBus,
+        stats_recorded: bool,
+    }
+
+    impl TpsTrackingState {
+        fn finalize_output_tokens_and_duration(&mut self) -> (u64, u64) {
+            if !self.sse_buffer.is_empty() {
+                let pending = std::mem::take(&mut self.sse_buffer);
+                self.accumulator
+                    .process_chunk(pending.trim_end_matches('\r'));
+            }
+
+            let usage = self.accumulator.finalize();
+            let output_tokens = usage.output_tokens.unwrap_or(0) as u64;
+            let duration_ms = if output_tokens > 0 {
+                self.request_started_at.elapsed().as_millis().max(1) as u64
+            } else {
+                0
+            };
+
+            (output_tokens, duration_ms)
+        }
+
+        fn record_stats_once(&mut self, success: bool, output_tokens: u64, duration_ms: u64) {
+            if self.stats_recorded {
+                return;
+            }
+            self.stats_recorded = true;
+
+            record_endpoint_request_stats(
+                self.pool.clone(),
+                self.endpoint_id,
+                self.model_id.clone(),
+                success,
+                output_tokens,
+                duration_ms,
+                self.endpoint_type,
+                self.load_manager.clone(),
+                self.event_bus.clone(),
+            );
+        }
+    }
+
+    impl Drop for TpsTrackingState {
+        fn drop(&mut self) {
+            if self.stats_recorded {
+                return;
+            }
+
+            let (output_tokens, duration_ms) = self.finalize_output_tokens_and_duration();
+
+            if tokio::runtime::Handle::try_current().is_ok() {
+                self.record_stats_once(true, output_tokens, duration_ms);
+            } else {
+                tracing::warn!(
+                    endpoint_id = %self.endpoint_id,
+                    model_id = %self.model_id,
+                    "Streaming TPS tracker dropped without runtime; skipping stats fallback"
+                );
+            }
+        }
+    }
+
+    let status = response.status();
+    let headers = response.headers().clone();
+
+    let state = TpsTrackingState {
+        upstream: Box::pin(response.bytes_stream()),
+        accumulator: StreamingTokenAccumulator::new(&model_id),
+        sse_buffer: String::new(),
+        endpoint_id,
+        model_id,
+        endpoint_type,
+        request_started_at,
+        pool,
+        load_manager,
+        event_bus,
+        stats_recorded: false,
+    };
+
+    let tracked_stream = futures::stream::try_unfold(state, |mut state| async move {
+        match state.upstream.next().await {
+            Some(Ok(chunk)) => {
+                let chunk_text = String::from_utf8_lossy(chunk.as_ref());
+                process_sse_lines(&mut state.sse_buffer, &chunk_text, &mut state.accumulator);
+                Ok(Some((chunk, state)))
+            }
+            Some(Err(err)) => {
+                state.record_stats_once(false, 0, 0);
+                Err(io::Error::other(err))
+            }
+            None => {
+                let (output_tokens, duration_ms) = state.finalize_output_tokens_and_duration();
+                state.record_stats_once(true, output_tokens, duration_ms);
+                Ok(None)
+            }
+        }
+    });
+
+    let body = Body::from_stream(tracked_stream);
+    let mut axum_response = Response::new(body);
+    *axum_response.status_mut() = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK);
+    {
+        let response_headers = axum_response.headers_mut();
+        for (name, value) in headers.iter() {
+            if let (Ok(header_name), Ok(header_value)) = (
+                HeaderName::from_bytes(name.as_str().as_bytes()),
+                HeaderValue::from_bytes(value.as_bytes()),
+            ) {
+                response_headers.insert(header_name, header_value);
+            }
+        }
+    }
+    use axum::http::header;
+    if !axum_response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .map(|v| v.to_str().unwrap_or("").starts_with("text/event-stream"))
+        .unwrap_or(false)
+    {
+        axum_response.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+    }
+    Ok(axum_response)
+}
+
 /// リクエスト/レスポンスレコードを保存（Fire-and-forget）
 pub(crate) fn save_request_record(
     storage: Arc<crate::db::request_history::RequestHistoryStorage>,
@@ -114,11 +279,18 @@ pub(crate) fn save_request_record(
 ///
 /// endpointsテーブルの累計カウンタとendpoint_daily_statsの日次集計を
 /// 非同期で更新する。リクエスト処理のレイテンシに影響を与えない。
+/// SPEC-4bb5b55f: TPS計測対象の場合はインメモリEMAも更新する。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn record_endpoint_request_stats(
     pool: sqlx::SqlitePool,
     endpoint_id: uuid::Uuid,
     model_id: String,
     success: bool,
+    output_tokens: u64,
+    duration_ms: u64,
+    endpoint_type: crate::types::endpoint::EndpointType,
+    load_manager: crate::balancer::LoadManager,
+    event_bus: crate::events::SharedEventBus,
 ) {
     tokio::spawn(async move {
         let date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -129,16 +301,43 @@ pub(crate) fn record_endpoint_request_stats(
             tracing::error!("Failed to increment endpoint request counters: {}", e);
         }
 
+        // TPS計測対象かつ成功かつ有効トークンがある場合のみトークン・時間をDB永続化
+        let should_update_tps =
+            endpoint_type.is_tps_trackable() && success && output_tokens > 0 && duration_ms > 0;
+        let (tokens, duration) = if should_update_tps {
+            (output_tokens, duration_ms)
+        } else {
+            (0, 0)
+        };
+
         if let Err(e) = crate::db::endpoint_daily_stats::upsert_daily_stats(
             &pool,
             endpoint_id,
             &model_id,
             &date,
             success,
+            tokens,
+            duration,
         )
         .await
         {
             tracing::error!("Failed to upsert daily stats: {}", e);
+        }
+
+        // SPEC-4bb5b55f: インメモリTPS EMAを更新 & イベント発行
+        if should_update_tps {
+            load_manager
+                .update_tps(endpoint_id, model_id.clone(), output_tokens, duration_ms)
+                .await;
+
+            let tps = output_tokens as f64 / (duration_ms as f64 / 1000.0);
+            event_bus.publish(crate::events::DashboardEvent::TpsUpdated {
+                endpoint_id,
+                model_id,
+                tps,
+                output_tokens: output_tokens as u32,
+                duration_ms,
+            });
         }
     });
 }

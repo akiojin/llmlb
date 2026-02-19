@@ -7,11 +7,13 @@ export type DashboardEventType =
   | 'NodeStatusChanged'
   | 'MetricsUpdated'
   | 'NodeRemoved'
+  | 'TpsUpdated'
 
 export interface DashboardEvent {
   type: DashboardEventType
   data?: {
     runtime_id?: string
+    endpoint_id?: string
     machine_name?: string
     ip_address?: string
     status?: string
@@ -20,6 +22,10 @@ export interface DashboardEvent {
     cpu_usage?: number
     memory_usage?: number
     gpu_usage?: number
+    model_id?: string
+    tps?: number
+    output_tokens?: number
+    duration_ms?: number
   }
   message?: string
 }
@@ -78,6 +84,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             case 'MetricsUpdated':
               // Invalidate dashboard overview for metrics updates
               queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
+              break
+            case 'TpsUpdated':
+              // SPEC-4bb5b55f: Invalidate TPS data for the affected endpoint
+              if (data.data?.endpoint_id) {
+                queryClient.invalidateQueries({ queryKey: ['endpoint-model-tps', data.data.endpoint_id] })
+              }
               break
           }
         } catch (err) {

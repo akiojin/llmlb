@@ -350,6 +350,11 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/endpoints/{id}/model-stats",
             get(dashboard::get_endpoint_model_stats),
+        )
+        // SPEC-4bb5b55f: エンドポイント×モデル単位TPS
+        .route(
+            "/endpoints/{id}/model-tps",
+            get(dashboard::get_endpoint_model_tps),
         );
     let endpoint_read_routes = if auth_disabled {
         endpoint_read_routes.layer(middleware::from_fn_with_state(

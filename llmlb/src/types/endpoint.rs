@@ -165,8 +165,7 @@ impl EndpointType {
     /// トークン使用量レポートの信頼性が保証されるエンドポイントタイプのみ対象。
     /// OpenaiCompatibleは外部サービスのため、トークン計測精度が保証できない。
     pub fn is_tps_trackable(&self) -> bool {
-        // TODO: SPEC-4bb5b55f T005で正しい実装に置き換え
-        false
+        !matches!(self, Self::OpenaiCompatible)
     }
 }
 

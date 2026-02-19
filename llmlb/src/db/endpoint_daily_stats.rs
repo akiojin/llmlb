@@ -83,20 +83,22 @@ pub async fn upsert_daily_stats(
     model_id: &str,
     date: &str,
     success: bool,
-    _output_tokens: u64,
-    _duration_ms: u64,
+    output_tokens: u64,
+    duration_ms: u64,
 ) -> Result<(), sqlx::Error> {
     let success_increment: i64 = if success { 1 } else { 0 };
     let failure_increment: i64 = if success { 0 } else { 1 };
 
     sqlx::query(
         r#"
-        INSERT INTO endpoint_daily_stats (endpoint_id, model_id, date, total_requests, successful_requests, failed_requests)
-        VALUES (?, ?, ?, 1, ?, ?)
+        INSERT INTO endpoint_daily_stats (endpoint_id, model_id, date, total_requests, successful_requests, failed_requests, total_output_tokens, total_duration_ms)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?)
         ON CONFLICT(endpoint_id, model_id, date) DO UPDATE SET
             total_requests = total_requests + 1,
             successful_requests = successful_requests + excluded.successful_requests,
-            failed_requests = failed_requests + excluded.failed_requests
+            failed_requests = failed_requests + excluded.failed_requests,
+            total_output_tokens = total_output_tokens + excluded.total_output_tokens,
+            total_duration_ms = total_duration_ms + excluded.total_duration_ms
         "#,
     )
     .bind(endpoint_id.to_string())
@@ -104,6 +106,8 @@ pub async fn upsert_daily_stats(
     .bind(date)
     .bind(success_increment)
     .bind(failure_increment)
+    .bind(output_tokens as i64)
+    .bind(duration_ms as i64)
     .execute(pool)
     .await?;
 

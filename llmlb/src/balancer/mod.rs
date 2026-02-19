@@ -106,8 +106,22 @@ impl ModelTpsState {
     ///
     /// TPS = output_tokens / (duration_ms / 1000)
     /// EMA: new_ema = α × current_tps + (1 - α) × previous_ema
-    pub fn update_tps(&mut self, _output_tokens: u64, _duration_ms: u64) {
-        // TODO: SPEC-4bb5b55f T006で正しいEMA計算を実装
+    pub fn update_tps(&mut self, output_tokens: u64, duration_ms: u64) {
+        if duration_ms == 0 {
+            return;
+        }
+
+        let current_tps = output_tokens as f64 / (duration_ms as f64 / 1000.0);
+
+        const ALPHA: f64 = 0.2;
+        self.tps_ema = Some(match self.tps_ema {
+            Some(prev) => ALPHA * current_tps + (1.0 - ALPHA) * prev,
+            None => current_tps,
+        });
+
+        self.request_count += 1;
+        self.total_output_tokens += output_tokens;
+        self.total_duration_ms += duration_ms;
     }
 }
 

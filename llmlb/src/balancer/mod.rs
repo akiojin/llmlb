@@ -18,7 +18,7 @@ use serde::Serialize;
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
-        atomic::{AtomicUsize, Ordering as AtomicOrdering},
+        atomic::{AtomicU64, AtomicUsize, Ordering as AtomicOrdering},
         Arc,
     },
     time::Duration as StdDuration,
@@ -32,6 +32,8 @@ const METRICS_STALE_THRESHOLD_SECS: i64 = 120;
 const REQUEST_HISTORY_WINDOW_MINUTES: i64 = 60;
 /// ノードメトリクス履歴の最大保持件数
 const METRICS_HISTORY_CAPACITY: usize = 360;
+/// LoadManagerインスタンスIDの採番カウンタ
+static NEXT_LOAD_MANAGER_ID: AtomicU64 = AtomicU64::new(1);
 
 /// リクエスト結果
 #[derive(Debug, Clone, Copy)]
@@ -250,6 +252,18 @@ mod tests {
 
         // Debug実装の確認
         assert!(!format!("{:?}", ready).is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_manager_cache_key_is_stable_and_unique_per_instance() {
+        let _lock = TEST_LOCK.lock().await;
+
+        let (load_manager, _) = setup_test_load_manager().await;
+        let cloned = load_manager.clone();
+        assert_eq!(load_manager.cache_key(), cloned.cache_key());
+
+        let (another, _) = setup_test_load_manager().await;
+        assert_ne!(load_manager.cache_key(), another.cache_key());
     }
 
     // T004: AdmissionDecision enum テスト
@@ -859,6 +873,8 @@ pub struct SystemSummary {
 /// EndpointRegistryを使用してエンドポイント情報を管理します。
 #[derive(Clone)]
 pub struct LoadManager {
+    /// インスタンス固有ID（キャッシュキー用途）
+    instance_id: u64,
     /// エンドポイントレジストリ
     endpoint_registry: Arc<EndpointRegistry>,
     state: Arc<RwLock<HashMap<Uuid, EndpointLoadState>>>,
@@ -1008,6 +1024,7 @@ impl LoadManager {
     /// 新しいロードマネージャーを作成
     pub fn new(endpoint_registry: Arc<EndpointRegistry>) -> Self {
         Self {
+            instance_id: NEXT_LOAD_MANAGER_ID.fetch_add(1, AtomicOrdering::Relaxed),
             endpoint_registry,
             state: Arc::new(RwLock::new(HashMap::new())),
             round_robin: Arc::new(AtomicUsize::new(0)),
@@ -1019,6 +1036,11 @@ impl LoadManager {
             queue_waiters: Arc::new(AtomicUsize::new(0)),
             tps_tracker: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// インスタンス単位のキャッシュキーを返す。
+    pub fn cache_key(&self) -> u64 {
+        self.instance_id
     }
 
     /// TPS計測値を更新（SPEC-4bb5b55f）

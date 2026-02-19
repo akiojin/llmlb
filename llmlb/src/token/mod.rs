@@ -110,6 +110,26 @@ impl StreamingTokenAccumulator {
                     }
                 }
             }
+
+            // Open Responses APIのストリーミング形式（response.output_text.*）にも対応
+            if let Some(event_type) = json.get("type").and_then(|t| t.as_str()) {
+                match event_type {
+                    "response.output_text.delta" => {
+                        if let Some(delta) = json.get("delta").and_then(|d| d.as_str()) {
+                            self.accumulated_content.push_str(delta);
+                        }
+                    }
+                    "response.output_text.done" => {
+                        // deltaイベントが欠落している場合のみdone.textを利用
+                        if self.accumulated_content.is_empty() {
+                            if let Some(text) = json.get("text").and_then(|t| t.as_str()) {
+                                self.accumulated_content.push_str(text);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -160,16 +180,20 @@ impl StreamingTokenAccumulator {
 /// * `Some(TokenUsage)` - usageフィールドが存在する場合
 /// * `None` - usageフィールドが存在しない場合
 pub fn extract_usage_from_response(response_body: &Value) -> Option<TokenUsage> {
-    let usage = response_body.get("usage")?;
+    let usage = response_body
+        .get("usage")
+        .or_else(|| response_body.get("response").and_then(|r| r.get("usage")))?;
 
-    // usageオブジェクトが存在する場合は、各フィールドを抽出
+    // OpenAI互換（prompt/completion）とResponses API（input/output）の両方に対応
     let input_tokens = usage
         .get("prompt_tokens")
+        .or_else(|| usage.get("input_tokens"))
         .and_then(|v| v.as_u64())
         .map(|v| v as u32);
 
     let output_tokens = usage
         .get("completion_tokens")
+        .or_else(|| usage.get("output_tokens"))
         .and_then(|v| v.as_u64())
         .map(|v| v as u32);
 
@@ -302,6 +326,45 @@ mod tests {
         assert_eq!(usage.input_tokens, Some(10));
         assert_eq!(usage.output_tokens, None);
         assert_eq!(usage.total_tokens, None);
+    }
+
+    #[test]
+    fn test_extract_usage_from_response_with_responses_api_usage_field() {
+        let response = json!({
+            "usage": {
+                "input_tokens": 12,
+                "output_tokens": 34,
+                "total_tokens": 46
+            }
+        });
+
+        let usage = extract_usage_from_response(&response);
+        assert!(usage.is_some());
+        let usage = usage.unwrap();
+        assert_eq!(usage.input_tokens, Some(12));
+        assert_eq!(usage.output_tokens, Some(34));
+        assert_eq!(usage.total_tokens, Some(46));
+    }
+
+    #[test]
+    fn test_extract_usage_from_response_with_nested_response_usage() {
+        let response = json!({
+            "type": "response.done",
+            "response": {
+                "usage": {
+                    "input_tokens": 7,
+                    "output_tokens": 9,
+                    "total_tokens": 16
+                }
+            }
+        });
+
+        let usage = extract_usage_from_response(&response);
+        assert!(usage.is_some());
+        let usage = usage.unwrap();
+        assert_eq!(usage.input_tokens, Some(7));
+        assert_eq!(usage.output_tokens, Some(9));
+        assert_eq!(usage.total_tokens, Some(16));
     }
 
     // T-4: tiktoken推定テスト
@@ -533,5 +596,21 @@ mod tests {
         accumulator.process_chunk(chunk);
 
         assert_eq!(accumulator.accumulated_content(), "Line1\nLine2");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_collects_responses_api_output_text_delta() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        let chunk1 = r#"data: {"type":"response.output_text.delta","delta":"Hello"}"#;
+        let chunk2 = r#"data: {"type":"response.output_text.delta","delta":" world"}"#;
+        let done = "data: [DONE]";
+
+        accumulator.process_chunk(chunk1);
+        accumulator.process_chunk(chunk2);
+        accumulator.process_chunk(done);
+
+        assert_eq!(accumulator.accumulated_content(), "Hello world");
+        assert!(accumulator.is_done());
     }
 }

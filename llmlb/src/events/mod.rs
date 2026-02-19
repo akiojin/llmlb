@@ -54,6 +54,19 @@ pub enum DashboardEvent {
         /// ランタイムID
         runtime_id: Uuid,
     },
+    /// TPS更新イベント（SPEC-4bb5b55f）
+    TpsUpdated {
+        /// エンドポイントID
+        endpoint_id: Uuid,
+        /// モデルID
+        model_id: String,
+        /// TPS（tokens/sec）
+        tps: f64,
+        /// 出力トークン数
+        output_tokens: u32,
+        /// 処理時間（ミリ秒）
+        duration_ms: u64,
+    },
 }
 
 /// ダッシュボードイベントバス
@@ -153,5 +166,51 @@ mod tests {
 
         let _r2 = bus.subscribe();
         assert_eq!(bus.subscriber_count(), 2);
+    }
+
+    // T017: DashboardEvent::TpsUpdated シリアライゼーションテスト（SPEC-4bb5b55f Phase 4）
+
+    #[test]
+    fn test_tps_updated_event_serialization() {
+        let endpoint_id = Uuid::parse_str("12345678-1234-1234-1234-123456789abc").unwrap();
+        let event = DashboardEvent::TpsUpdated {
+            endpoint_id,
+            model_id: "llama3.2:3b".to_string(),
+            tps: 42.5,
+            output_tokens: 100,
+            duration_ms: 2353,
+        };
+
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "TpsUpdated");
+        let data = &json["data"];
+        assert_eq!(data["endpoint_id"], "12345678-1234-1234-1234-123456789abc");
+        assert_eq!(data["model_id"], "llama3.2:3b");
+        assert!((data["tps"].as_f64().unwrap() - 42.5).abs() < 0.01);
+        assert_eq!(data["output_tokens"], 100);
+        assert_eq!(data["duration_ms"], 2353);
+    }
+
+    #[tokio::test]
+    async fn test_tps_updated_event_broadcast() {
+        let bus = DashboardEventBus::new();
+        let mut receiver = bus.subscribe();
+
+        bus.publish(DashboardEvent::TpsUpdated {
+            endpoint_id: Uuid::new_v4(),
+            model_id: "test-model".to_string(),
+            tps: 50.0,
+            output_tokens: 200,
+            duration_ms: 4000,
+        });
+
+        let received = receiver.recv().await.unwrap();
+        match received {
+            DashboardEvent::TpsUpdated { model_id, tps, .. } => {
+                assert_eq!(model_id, "test-model");
+                assert!((tps - 50.0).abs() < 0.01);
+            }
+            _ => panic!("Expected TpsUpdated event"),
+        }
     }
 }

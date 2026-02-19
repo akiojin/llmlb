@@ -1,5 +1,15 @@
 # Unreleased
 
+# [4.6.0](https://github.com/akiojin/llmlb/compare/v4.5.1...v4.6.0) (2026-02-19)
+
+### Features
+
+- エンドポイント×モデル単位のTPS（tokens per second）可視化を実装 (#419)
+
+### Bug Fixes
+
+- 手動アップデートチェックのUX改善とapplyフォールバックの堅牢化 (#418)
+
 # [4.5.1](https://github.com/akiojin/llmlb/compare/v4.5.0...v4.5.1) (2026-02-19)
 
 ### Bug Fixes

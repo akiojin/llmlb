@@ -95,19 +95,18 @@ export default function Dashboard() {
 
   const updateBanner = useMemo(() => {
     const update = systemInfo?.update as UpdateState | undefined
-    if (!update) return null
-
+    const updateState = update?.state
     const isAdmin = user?.role === 'admin'
-    const canApply = isAdmin && (update.state === 'available' || update.state === 'failed')
-    const applying = update.state === 'draining' || update.state === 'applying'
+    const canApply = isAdmin && (updateState === 'available' || updateState === 'failed')
+    const applying = updateState === 'draining' || updateState === 'applying'
     const canCheck = isAdmin && !applying
 
     let title = 'Update'
-    let description = ''
+    let description = 'Update status unavailable'
     let link: string | null = null
     let payloadHint: string | null = null
 
-    if (update.state === 'available') {
+    if (updateState === 'available' && update) {
       title = `Update available: v${update.latest}`
       description = `Current: v${update.current}`
       link = update.release_url
@@ -120,7 +119,7 @@ export default function Dashboard() {
       } else {
         payloadHint = 'Preparing...'
       }
-    } else if (update.state === 'up_to_date') {
+    } else if (updateState === 'up_to_date' && update) {
       title = 'Up to date'
       const checkedAt = update.checked_at ?? null
       if (checkedAt) {
@@ -129,13 +128,13 @@ export default function Dashboard() {
       } else {
         description = 'Last checked: unknown'
       }
-    } else if (update.state === 'draining') {
+    } else if (updateState === 'draining' && update) {
       title = `Updating to v${update.latest}`
       description = `Waiting for in-flight requests: ${update.in_flight}`
-    } else if (update.state === 'applying') {
+    } else if (updateState === 'applying' && update) {
       title = `Applying update: v${update.latest}`
       description = 'Restarting...'
-    } else if (update.state === 'failed') {
+    } else if (updateState === 'failed' && update) {
       title = 'Update failed'
       description = update.message
       link = update.release_url || null
@@ -260,7 +259,7 @@ export default function Dashboard() {
                 )}
                 Check for updates
               </Button>
-              {(update.state === 'available' || update.state === 'failed' || applying) && (
+              {(updateState === 'available' || updateState === 'failed' || applying) && (
                 <Button
                   onClick={onApply}
                   disabled={!canApply || isApplyingUpdate || applying}

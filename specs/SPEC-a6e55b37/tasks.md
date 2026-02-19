@@ -25,3 +25,8 @@
 
 ## Polish
 - [x] T040 README 追記（自動アップデートの挙動/制約）
+
+## Regression Fixes (2026-02-19)
+- [x] T050 `specs/SPEC-a6e55b37/spec.md` に手動更新チェック導線の回帰要件（User Story 5 / FR-006 / FR-007）を追記
+- [x] T051 [P] `llmlb/tests/ui/update_banner.rs` に `Check for updates` 導線消失の回帰テストを追加（TDD）
+- [x] T052 `llmlb/src/web/dashboard/src/pages/Dashboard.tsx` で `update` 未取得時でも Update banner を表示し、ボタン導線を維持

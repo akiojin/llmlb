@@ -114,6 +114,8 @@ pub(crate) fn save_request_record(
 ///
 /// endpointsテーブルの累計カウンタとendpoint_daily_statsの日次集計を
 /// 非同期で更新する。リクエスト処理のレイテンシに影響を与えない。
+/// SPEC-4bb5b55f: TPS計測対象の場合はインメモリEMAも更新する。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn record_endpoint_request_stats(
     pool: sqlx::SqlitePool,
     endpoint_id: uuid::Uuid,
@@ -122,6 +124,7 @@ pub(crate) fn record_endpoint_request_stats(
     output_tokens: u64,
     duration_ms: u64,
     endpoint_type: crate::types::endpoint::EndpointType,
+    load_manager: crate::balancer::LoadManager,
 ) {
     tokio::spawn(async move {
         let date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -151,6 +154,13 @@ pub(crate) fn record_endpoint_request_stats(
         .await
         {
             tracing::error!("Failed to upsert daily stats: {}", e);
+        }
+
+        // SPEC-4bb5b55f: インメモリTPS EMAを更新
+        if endpoint_type.is_tps_trackable() && success && output_tokens > 0 && duration_ms > 0 {
+            load_manager
+                .update_tps(endpoint_id, model_id, output_tokens, duration_ms)
+                .await;
         }
     });
 }

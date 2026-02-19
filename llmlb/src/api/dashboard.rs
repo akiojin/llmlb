@@ -842,5 +842,42 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
     crate::api::openai::list_models(State(state)).await
 }
 
+/// エンドポイント×モデル単位のTPS情報（SPEC-4bb5b55f）
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelTpsEntry {
+    /// モデルID
+    pub model_id: String,
+    /// EMA平滑化されたTPS値（None=未計測）
+    pub tps: Option<f64>,
+    /// リクエスト完了数
+    pub request_count: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 平均処理時間（ミリ秒、None=未計測）
+    pub average_duration_ms: Option<f64>,
+}
+
+/// GET /api/endpoints/{id}/model-tps - エンドポイント×モデル単位のTPS情報
+///
+/// SPEC-4bb5b55f: エンドポイント×モデル単位TPS可視化 (Phase 3)
+pub async fn get_endpoint_model_tps(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Json<Vec<ModelTpsEntry>> {
+    let tps_list = state.load_manager.get_model_tps(id).await;
+    Json(
+        tps_list
+            .into_iter()
+            .map(|info| ModelTpsEntry {
+                model_id: info.model_id,
+                tps: info.tps,
+                request_count: info.request_count,
+                total_output_tokens: info.total_output_tokens,
+                average_duration_ms: info.average_duration_ms,
+            })
+            .collect(),
+    )
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e

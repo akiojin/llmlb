@@ -701,6 +701,9 @@ mod tests {
         // 日次平均TPSが計算可能であることを確認
         // model_a: 300 / (5000/1000) = 60 tok/s
         let tps_a = a.total_output_tokens as f64 / (a.total_duration_ms as f64 / 1000.0);
-        assert!((tps_a - 60.0).abs() < 0.01, "日次TPS計算: expected 60.0, got {tps_a}");
+        assert!(
+            (tps_a - 60.0).abs() < 0.01,
+            "日次TPS計算: expected 60.0, got {tps_a}"
+        );
     }
 }

@@ -6,7 +6,7 @@ pub mod support;
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 
-// SPEC-66555000: エンドポイント管理API契約テスト
+// SPEC-e8e9326e: エンドポイント管理API契約テスト
 #[path = "contract/endpoints_post_test.rs"]
 mod endpoints_post_test;
 
@@ -28,7 +28,7 @@ mod endpoints_test_test;
 #[path = "contract/endpoints_sync_test.rs"]
 mod endpoints_sync_test;
 
-// SPEC-66555000: エンドポイントタイプ関連の契約テスト
+// SPEC-e8e9326e: エンドポイントタイプ関連の契約テスト
 #[path = "contract/endpoints_type_filter_test.rs"]
 mod endpoints_type_filter_test;
 
@@ -81,11 +81,11 @@ mod models_source_test;
 #[path = "contract/request_history_api_test.rs"]
 mod request_history_api_test;
 
-// SPEC-24157000: Open Responses API契約テスト
+// SPEC-0f1de549: Open Responses API契約テスト
 #[path = "contract/responses_api_test.rs"]
 mod responses_api_test;
 
-// SPEC-76643000: エンドポイント日次統計API契約テスト
+// SPEC-8c32349f: エンドポイント日次統計API契約テスト
 #[path = "contract/endpoint_daily_stats_api_test.rs"]
 mod endpoint_daily_stats_api_test;
 

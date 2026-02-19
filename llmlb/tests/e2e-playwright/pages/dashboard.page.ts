@@ -13,6 +13,7 @@ export class DashboardPage {
   readonly apiKeysButton: Locator;
   readonly refreshButton: Locator;
   readonly connectionStatus: Locator;
+  readonly currentVersion: Locator;
 
   // Stats
   readonly totalEndpoints: Locator;
@@ -53,6 +54,7 @@ export class DashboardPage {
     this.apiKeysButton = page.locator(DashboardSelectors.header.apiKeysButton);
     this.refreshButton = page.locator(DashboardSelectors.header.refreshButton);
     this.connectionStatus = page.locator(DashboardSelectors.header.connectionStatus);
+    this.currentVersion = page.locator(DashboardSelectors.header.currentVersion);
 
     // Stats
     this.totalEndpoints = page.locator(DashboardSelectors.stats.totalEndpoints);
@@ -248,6 +250,10 @@ export class DashboardPage {
 
   async getConnectionStatus(): Promise<string> {
     return (await this.connectionStatus.textContent()) ?? '';
+  }
+
+  async getCurrentVersion(): Promise<string> {
+    return (await this.currentVersion.textContent()) ?? '';
   }
 
   async getTotalEndpoints(): Promise<string> {

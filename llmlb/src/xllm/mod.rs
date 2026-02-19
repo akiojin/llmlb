@@ -1,6 +1,6 @@
 //! xLLM Client Module
 //!
-//! SPEC-66555000: xLLM endpoint communication for model download and metadata
+//! SPEC-e8e9326e: xLLM endpoint communication for model download and metadata
 
 pub mod download;
 

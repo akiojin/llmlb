@@ -2,7 +2,7 @@
 //!
 //! AUTH_DISABLED=true のときに認証なしでアクセスできることを確認する
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::Body,
@@ -77,7 +77,7 @@ async fn build_app() -> Router {
     api::create_app(state)
 }
 
-/// SPEC-66555000: /api/nodes は廃止されたため、/api/endpoints を使用
+/// SPEC-e8e9326e: /api/nodes は廃止されたため、/api/endpoints を使用
 /// このテストはAUTH_DISABLEDモードの動作確認に焦点を当てる
 #[tokio::test]
 #[serial]

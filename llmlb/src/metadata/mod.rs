@@ -1,6 +1,6 @@
 //! Model Metadata Retrieval Module
 //!
-//! SPEC-66555000: Fetch model metadata (context_length, etc.) from various endpoint types
+//! SPEC-e8e9326e: Fetch model metadata (context_length, etc.) from various endpoint types
 
 pub mod lm_studio;
 pub mod ollama;
@@ -120,7 +120,6 @@ pub async fn get_model_metadata(
                 ..Default::default()
             })
         }
-        EndpointType::Unknown => Err(MetadataError::UnsupportedType("unknown".to_string())),
     }
 }
 

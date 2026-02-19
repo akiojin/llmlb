@@ -1,6 +1,6 @@
 //! xLLM Model Metadata Retrieval
 //!
-//! SPEC-66555000: Fetch model metadata from xLLM endpoints via GET /api/models/:model/info
+//! SPEC-e8e9326e: Fetch model metadata from xLLM endpoints via GET /api/models/:model/info
 
 use super::{MetadataError, ModelMetadata};
 use reqwest::Client;

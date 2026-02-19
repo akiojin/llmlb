@@ -309,15 +309,20 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         registered_map.insert(model.name.clone(), model);
     }
 
-    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    // SPEC-0f1de549: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
+    let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
     {
         let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
                 for model in models {
+                    endpoint_model_ids
+                        .entry(model.model_id.clone())
+                        .or_default()
+                        .insert(ep.id.to_string());
                     let apis = endpoint_model_apis
                         .entry(model.model_id.clone())
                         .or_default();
@@ -361,6 +366,14 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             .get(model_id)
             .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
             .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+        let endpoint_ids: Vec<String> = endpoint_model_ids
+            .get(model_id)
+            .map(|ids| {
+                let mut ids: Vec<String> = ids.iter().cloned().collect();
+                ids.sort();
+                ids
+            })
+            .unwrap_or_default();
 
         if let Some(m) = registered_map.get(model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();
@@ -383,6 +396,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "chat_template": m.chat_template,
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+                "endpoint_ids": endpoint_ids,
             });
             data.push(obj);
         } else {
@@ -396,12 +410,13 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "ready": ready,
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+                "endpoint_ids": endpoint_ids,
             });
             data.push(obj);
         }
     }
 
-    // SPEC-24157000: エンドポイント専用モデルを追加（ノードにないモデル）
+    // SPEC-0f1de549: エンドポイント専用モデルを追加（ノードにないモデル）
     for (model_id, apis) in &endpoint_model_apis {
         if seen_models.contains(model_id) {
             continue;
@@ -409,6 +424,14 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         seen_models.insert(model_id.clone());
 
         let supported_apis: Vec<String> = apis.iter().map(|a| a.as_str().to_string()).collect();
+        let endpoint_ids: Vec<String> = endpoint_model_ids
+            .get(model_id)
+            .map(|ids| {
+                let mut ids: Vec<String> = ids.iter().cloned().collect();
+                ids.sort();
+                ids
+            })
+            .unwrap_or_default();
         let obj = json!({
             "id": model_id,
             "object": "model",
@@ -419,6 +442,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "ready": true,
             "supported_apis": supported_apis,
             "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+            "endpoint_ids": endpoint_ids,
         });
         data.push(obj);
     }
@@ -426,7 +450,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     // NOTE: SPEC-6cd7f960 FR-6により、登録済みだがオンラインエンドポイントにないモデルは
     // /v1/models に含めない（利用可能なモデルのみを返す）
 
-    // クラウドプロバイダーのモデル一覧を追加（SPEC-82491000）
+    // クラウドプロバイダーのモデル一覧を追加（SPEC-996e37bf）
 
     let cloud_models = super::cloud_models::get_cached_models(&state.http_client).await;
     for cm in cloud_models {
@@ -441,6 +465,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             "ready": true,
             "supported_apis": vec!["chat_completions"],
             "max_tokens": null,
+            "endpoint_ids": Vec::<String>::new(),
         });
         data.push(obj);
     }
@@ -458,7 +483,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 
 /// GET /v1/models/:id - モデル詳細取得（Azure capabilities 形式）
 ///
-/// SPEC-24157000: Endpoints APIで登録されたモデルも検索対象に含める
+/// SPEC-0f1de549: Endpoints APIで登録されたモデルも検索対象に含める
 #[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn get_model(
     State(state): State<AppState>,
@@ -472,7 +497,7 @@ pub async fn get_model(
         registered_map.insert(model.name.clone(), model);
     }
 
-    // SPEC-24157000: エンドポイントのモデルとsupported_apisを取得
+    // SPEC-0f1de549: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     {
         let registry = &state.endpoint_registry;
@@ -2140,7 +2165,9 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn direct_routing_body_read_failure_releases_active_request() {
-        use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let _guard = TEST_LOCK.lock().await;
@@ -2161,7 +2188,11 @@ mod tests {
             }
         });
 
-        let mut endpoint = Endpoint::new("broken-endpoint".to_string(), format!("http://{addr}"));
+        let mut endpoint = Endpoint::new(
+            "broken-endpoint".to_string(),
+            format!("http://{addr}"),
+            EndpointType::OpenaiCompatible,
+        );
         endpoint.status = EndpointStatus::Online;
         let endpoint_id = endpoint.id;
         state

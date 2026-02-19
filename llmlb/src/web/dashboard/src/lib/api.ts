@@ -178,7 +178,7 @@ export interface SyncProgress {
 }
 
 /**
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Dashboard display info for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 export type EndpointType =
@@ -188,17 +188,12 @@ export type EndpointType =
   | 'lm_studio'
   | 'openai_compatible'
   | 'unknown'
-export type EndpointTypeSource = 'auto' | 'manual'
-
 export interface DashboardEndpoint {
   id: string
   name: string
   base_url: string
   status: 'pending' | 'online' | 'offline' | 'error'
   endpoint_type: EndpointType
-  endpoint_type_source: EndpointTypeSource
-  endpoint_type_reason?: string
-  endpoint_type_detected_at?: string
   health_check_interval_secs: number
   inference_timeout_secs: number
   latency_ms?: number
@@ -214,7 +209,7 @@ export interface DashboardEndpoint {
 }
 
 /**
- * SPEC-66555000: Model download task for xLLM endpoints
+ * SPEC-e8e9326e: Model download task for xLLM endpoints
  */
 export interface DownloadTask {
   task_id: string
@@ -228,7 +223,7 @@ export interface DownloadTask {
 }
 
 /**
- * SPEC-66555000: Model metadata from endpoint
+ * SPEC-e8e9326e: Model metadata from endpoint
  */
 export interface ModelMetadata {
   model: string
@@ -319,7 +314,7 @@ export interface MonthlyTokenStats extends TokenStats {
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
 
-  /** SPEC-66555000: List endpoints */
+  /** SPEC-e8e9326e: List endpoints */
   getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
   getStats: () => fetchWithAuth<DashboardStats>('/api/dashboard/stats'),
@@ -427,11 +422,11 @@ export const systemApi = {
 
 /**
  * Endpoints API
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 /**
- * SPEC-76643000: Endpoint today stats (daily summary for a single day)
+ * SPEC-8c32349f: Endpoint today stats (daily summary for a single day)
  */
 export interface EndpointTodayStats {
   date: string
@@ -441,7 +436,7 @@ export interface EndpointTodayStats {
 }
 
 /**
- * SPEC-76643000: Daily stat entry (used for trend charts)
+ * SPEC-8c32349f: Daily stat entry (used for trend charts)
  */
 export interface EndpointDailyStatEntry {
   date: string
@@ -451,7 +446,7 @@ export interface EndpointDailyStatEntry {
 }
 
 /**
- * SPEC-76643000: Model-level request statistics entry
+ * SPEC-8c32349f: Model-level request statistics entry
  */
 export interface ModelStatEntry {
   model_id: string
@@ -464,7 +459,7 @@ export const endpointsApi = {
   /** List endpoints for dashboard */
   list: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),
 
-  /** SPEC-66555000: List endpoints by type */
+  /** SPEC-e8e9326e: List endpoints by type */
   listByType: (type: EndpointType) =>
     fetchWithAuth<DashboardEndpoint[]>('/api/endpoints', {
       params: { type },
@@ -478,7 +473,6 @@ export const endpointsApi = {
     health_check_interval_secs?: number
     inference_timeout_secs?: number
     notes?: string
-    endpoint_type?: EndpointType
   }) =>
     fetchWithAuth<DashboardEndpoint>('/api/endpoints', {
       method: 'POST',
@@ -498,7 +492,6 @@ export const endpointsApi = {
       health_check_interval_secs?: number
       inference_timeout_secs?: number
       notes?: string
-      endpoint_type?: EndpointType
     }
   ) =>
     fetchWithAuth<DashboardEndpoint>(`/api/endpoints/${id}`, {
@@ -535,7 +528,7 @@ export const endpointsApi = {
       }>
     }>(`/api/endpoints/${id}/models`),
 
-  /** SPEC-66555000: Download model (xLLM only) */
+  /** SPEC-e8e9326e: Download model (xLLM only) */
   downloadModel: (
     id: string,
     data: { model: string; filename?: string }
@@ -545,29 +538,29 @@ export const endpointsApi = {
       body: JSON.stringify(data),
     }),
 
-  /** SPEC-66555000: Get download progress (xLLM only) */
+  /** SPEC-e8e9326e: Get download progress (xLLM only) */
   getDownloadProgress: (id: string) =>
     fetchWithAuth<{ tasks: DownloadTask[] }>(
       `/api/endpoints/${id}/download/progress`
     ),
 
-  /** SPEC-66555000: Get model metadata */
+  /** SPEC-e8e9326e: Get model metadata */
   getModelInfo: (id: string, model: string) =>
     fetchWithAuth<ModelMetadata>(
       `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`
     ),
 
-  /** SPEC-76643000: Get today's request statistics for an endpoint */
+  /** SPEC-8c32349f: Get today's request statistics for an endpoint */
   getTodayStats: (id: string) =>
     fetchWithAuth<EndpointTodayStats>(`/api/endpoints/${id}/today-stats`),
 
-  /** SPEC-76643000: Get daily request statistics for an endpoint */
+  /** SPEC-8c32349f: Get daily request statistics for an endpoint */
   getDailyStats: (id: string, days?: number) =>
     fetchWithAuth<EndpointDailyStatEntry[]>(`/api/endpoints/${id}/daily-stats`, {
       params: { days },
     }),
 
-  /** SPEC-76643000: Get model-level request statistics */
+  /** SPEC-8c32349f: Get model-level request statistics */
   getModelStats: (id: string) =>
     fetchWithAuth<ModelStatEntry[]>(`/api/endpoints/${id}/model-stats`),
 

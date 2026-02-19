@@ -44,17 +44,28 @@ fi
 
 # SPEC ID (SPEC-xxxxxxxx) をUUID8桁形式で生成
 generate_spec_id() {
-    for _ in 1 2 3 4 5; do
-        if uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null); then
-            local short="${uuid:0:8}"
-            short=$(echo "$short" | tr '[:upper:]' '[:lower:]')
-            echo "SPEC-$short"
-            return
-        fi
-    done
-    # UUIDの生成に失敗した場合はタイムスタンプでフォールバック
-    local ts=$(date +%s%N)
-    echo "SPEC-${ts: -8}"
+    local uuid=""
+    # macOS/Linux両対応: uuidgen を優先、/proc にフォールバック
+    if command -v uuidgen >/dev/null 2>&1; then
+        uuid=$(uuidgen)
+    elif [ -f /proc/sys/kernel/random/uuid ]; then
+        uuid=$(cat /proc/sys/kernel/random/uuid)
+    fi
+    if [ -n "$uuid" ]; then
+        local short
+        short=$(echo "$uuid" | tr '[:upper:]' '[:lower:]' | tr -d '-' | cut -c1-8)
+        echo "SPEC-$short"
+        return
+    fi
+    # UUID生成手段がない場合はランダムバイトでフォールバック
+    local hex
+    hex=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n' | cut -c1-8)
+    if [ -n "$hex" ]; then
+        echo "SPEC-$hex"
+        return
+    fi
+    echo "エラー: UUID生成手段が見つかりません (uuidgen, /proc/sys/kernel/random/uuid, /dev/urandom のいずれも利用不可)" >&2
+    exit 1
 }
 
 # リポジトリルートを検索する関数

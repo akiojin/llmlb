@@ -1,6 +1,6 @@
 //! エンドポイント日次統計データベース操作
 //!
-//! SPEC-76643000: エンドポイント単位リクエスト統計
+//! SPEC-8c32349f: エンドポイント単位リクエスト統計
 //! endpoint_daily_stats テーブルへのCRUD操作を提供する。
 //! 日付はサーバーローカル時間 (chrono::Local::now().format("%Y-%m-%d").to_string()) を使用。
 
@@ -173,6 +173,29 @@ pub async fn get_model_stats(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
+/// 全エンドポイント横断のモデル別集計データを取得
+///
+/// endpoint_daily_stats テーブルの全エンドポイントを通じた
+/// モデル別累計統計を返す。リクエスト数の降順で返す。
+pub async fn get_all_model_stats(pool: &SqlitePool) -> Result<Vec<ModelStatEntry>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, ModelStatRow>(
+        r#"
+        SELECT
+            model_id,
+            SUM(total_requests) AS total_requests,
+            SUM(successful_requests) AS successful_requests,
+            SUM(failed_requests) AS failed_requests
+        FROM endpoint_daily_stats
+        GROUP BY model_id
+        ORDER BY total_requests DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| r.into()).collect())
+}
+
 /// 当日の集計データを取得
 ///
 /// 指定エンドポイントの指定日付のデータを返す。
@@ -209,7 +232,7 @@ pub async fn get_today_stats(
     }))
 }
 
-/// 日次統計バッチタスクを開始（SPEC-76643000）
+/// 日次統計バッチタスクを開始（SPEC-8c32349f）
 ///
 /// サーバーローカル時間の0:00に前日分の統計をログ出力する。
 /// リアルタイムUPSERTで統計は更新済みのため、

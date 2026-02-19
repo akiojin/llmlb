@@ -11,7 +11,7 @@ use crate::db::endpoints as db;
 use crate::detection::detect_endpoint_type_with_client;
 use crate::registry::endpoints::EndpointRegistry;
 use crate::sync;
-use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus, EndpointType};
+use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus};
 use chrono::Utc;
 use reqwest::Client;
 
@@ -271,37 +271,45 @@ impl EndpointHealthChecker {
                 .await;
         }
 
-        // SPEC-66555000: タイプ再判別（Unknown→オンライン時に再判別）
-        if success && endpoint.endpoint_type == EndpointType::Unknown {
-            let detection = detect_endpoint_type_with_client(
+        // SPEC-e8e9326e: offline→online遷移時にタイプ再検出
+        let was_offline = matches!(
+            status_before,
+            EndpointStatus::Offline | EndpointStatus::Error
+        );
+        if success && was_offline {
+            match detect_endpoint_type_with_client(
                 &self.client,
                 &endpoint.base_url,
                 endpoint.api_key.as_deref(),
             )
-            .await;
-
-            if detection.endpoint_type != EndpointType::Unknown {
-                info!(
-                    endpoint_id = %endpoint.id,
-                    endpoint_name = %endpoint.name,
-                    detected_type = %detection.endpoint_type.as_str(),
-                    "Endpoint type re-detected on health check"
-                );
-                if let Err(e) = self
-                    .registry
-                    .update_endpoint_type(
-                        endpoint.id,
-                        detection.endpoint_type,
-                        crate::types::endpoint::EndpointTypeSource::Auto,
-                        detection.reason,
-                        Some(chrono::Utc::now()),
-                    )
-                    .await
-                {
+            .await
+            {
+                Ok(result) => {
+                    if result.endpoint_type != endpoint.endpoint_type {
+                        info!(
+                            endpoint_id = %endpoint.id,
+                            endpoint_name = %endpoint.name,
+                            detected_type = %result.endpoint_type.as_str(),
+                            "Endpoint type re-detected on health check"
+                        );
+                        if let Err(e) = self
+                            .registry
+                            .update_endpoint_type(endpoint.id, result.endpoint_type)
+                            .await
+                        {
+                            warn!(
+                                endpoint_id = %endpoint.id,
+                                error = %e,
+                                "Failed to update endpoint type"
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
                     warn!(
                         endpoint_id = %endpoint.id,
                         error = %e,
-                        "Failed to update endpoint type"
+                        "Endpoint type re-detection failed; keeping previous type"
                     );
                 }
             }
@@ -550,6 +558,7 @@ impl EndpointHealthChecker {
 mod tests {
     use super::*;
     use crate::db::test_utils::TEST_LOCK;
+    use crate::types::endpoint::EndpointType;
     use serde_json::json;
     use sqlx::SqlitePool;
     use std::sync::{
@@ -598,7 +607,11 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
         let checker = EndpointHealthChecker::new(registry);
 
-        let endpoint = Endpoint::new("Test".to_string(), "http://localhost:11434".to_string());
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
 
         // pending → offline（即時）
         let new_status = checker.determine_failure_status(&endpoint, EndpointStatus::Pending);
@@ -612,7 +625,11 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
         let checker = EndpointHealthChecker::new(registry);
 
-        let endpoint = Endpoint::new("Test".to_string(), "http://localhost:11434".to_string());
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
 
         // online + error_count=0 → error（1回目の失敗）
         let new_status = checker.determine_failure_status(&endpoint, EndpointStatus::Online);
@@ -626,7 +643,11 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
         let checker = EndpointHealthChecker::new(registry);
 
-        let mut endpoint = Endpoint::new("Test".to_string(), "http://localhost:11434".to_string());
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
         endpoint.error_count = 1; // 既に1回失敗
 
         // online + error_count=1 → offline（2回目の失敗でoffline）
@@ -653,9 +674,7 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let mut endpoint = Endpoint::new("Test".to_string(), mock.uri());
-        // Avoid type re-detection consuming the first /v1/models call.
-        endpoint.endpoint_type = EndpointType::Ollama;
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Ollama);
         registry.add(endpoint.clone()).await.unwrap();
 
         let checker = EndpointHealthChecker::new(registry.clone());
@@ -708,9 +727,7 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let mut endpoint = Endpoint::new("Test".to_string(), mock.uri());
-        // Avoid type re-detection consuming the first /v1/models call.
-        endpoint.endpoint_type = EndpointType::Ollama;
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Ollama);
         registry.add(endpoint.clone()).await.unwrap();
 
         let mut checker = EndpointHealthChecker::new(registry.clone());

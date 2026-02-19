@@ -22,6 +22,10 @@
 - [x] T030 ダッシュボードに Update banner + Restart to update
 - [x] T031 macOS/Windows トレイに Update 表示 + Restart to update
 - [x] T032 `pnpm --filter @llm/dashboard build` で `llmlb/src/web/static/` を再生成
+- [x] T041 ダッシュボードヘッダーに current version 常時表示を追加（Issue #415）
+- [x] T042 `Dashboard.tsx`→`Header.tsx` へ `/api/system.version` の受け渡しを追加
+- [x] T043 Playwright セレクタ/ページオブジェクトに `#current-version` を追加
+- [x] T044 system-update/dashboard-header E2E を current version 検証に更新
 
 ## Polish
 - [x] T040 README 追記（自動アップデートの挙動/制約）

@@ -1,5 +1,65 @@
 # Unreleased
 
+# [4.5.1](https://github.com/akiojin/llmlb/compare/v4.5.0...v4.5.1) (2026-02-19)
+
+### Bug Fixes
+
+- ダッシュボードヘッダーにCurrent vを常時表示 (#416)
+
+### Refactoring
+
+- SPEC IDを命名規則準拠のUUID8形式にリネーム
+
+# [4.5.0](https://github.com/akiojin/llmlb/compare/v4.4.0...v4.5.0) (2026-02-18)
+
+### Breaking Changes
+
+- エンドポイントタイプ自動検出を必須化し、手動タイプ指定を廃止 (#413)
+- `EndpointType::Unknown` および `EndpointTypeSource` enum を完全削除 (#413)
+- `POST /api/endpoints` の `endpoint_type` フィールドを廃止（送信しても無視） (#413)
+- 自動検出できないエンドポイントは登録拒否（502/422） (#413)
+
+### Features
+
+- エンドポイントタイプ自動検出の強制と対応5タイプへの制限 (#413)
+- サーバー起動時に全登録エンドポイントを再検出し、非対応は自動削除 (#413)
+- ヘルスチェック offline→online 遷移時にも再検出を実行 (#413)
+- LM Studio の検出を検出チェインに追加 (#413)
+- 検出不能時のエラーコードを分離: 接続不可=502、非対応タイプ=422 (#413)
+
+### Improvements
+
+- ダッシュボードのタイプ選択ドロップダウンを削除し「タイプは自動検出されます」表示に変更 (#413)
+- JWT Cookie認証、CSRF保護、リクエスト履歴フィルタの改善 (#413)
+- DBマイグレーション 015 で不要カラムを削除 (#413)
+
+# [4.4.0](https://github.com/akiojin/llmlb/compare/v4.3.0...v4.4.0) (2026-02-17)
+
+### Features
+
+- MCPサーバーをassistant CLIとplugin/skillワークフローに移行 (#410)
+
+### Bug Fixes
+
+- モデル内ルーティングを純粋ラウンドロビンに統一 (#411)
+
+### Chores
+
+- リリースコマンドにorigin/develop pull ステップを追加
+
+# [4.3.0](https://github.com/akiojin/llmlb/compare/v4.2.1...v4.3.0) (2026-02-16)
+
+### Features
+
+- Modelsタブにリクエスト数カラム追加とStatus/Readyカラム統合
+- 手動アップデートチェック機能を追加 (#406)
+
+### Bug Fixes
+
+- ダッシュボードのモデルエンドポイントスコーピングとmax token伝播を修正 (#407)
+- release.yml npm versionエラーとPRマージ時のskip問題を修正
+- HF APIタイムアウト時のインテグレーションテスト失敗を修正
+
 # [4.2.1](https://github.com/akiojin/llmlb/compare/v4.2.0...v4.2.1) (2026-02-15)
 
 ### Bug Fixes
@@ -48,13 +108,13 @@
 - Total TokensをStatisticsと整合 (#387)
 - APIキー一覧でkey prefixを完全マスク＆選択不可に (#385)
 - APIキーは作成直後のみコピー可能に (#385)
-- エンドポイントステータス色をSPEC-66555000に準拠 (#386)
+- エンドポイントステータス色をSPEC-e8e9326eに準拠 (#386)
 - OpenAI APIのエンドポイントAPIキー保持を修正
 - モデル対応エンドポイント間のトラフィック分散を修正
 
 ### Tests
 
-- SPEC-62241000: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
+- SPEC-a472f11f: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
 
 ### Documentation
 

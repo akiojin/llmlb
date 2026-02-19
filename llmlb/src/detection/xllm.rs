@@ -1,6 +1,6 @@
 //! xLLM Endpoint Type Detection
 //!
-//! SPEC-66555000: xLLM detection via GET /api/system
+//! SPEC-e8e9326e: xLLM detection via GET /api/system
 //!
 //! xLLM endpoints expose a /api/system endpoint that returns
 //! system information including `xllm_version` field.

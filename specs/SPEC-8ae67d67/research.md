@@ -8,4 +8,4 @@
 - マニフェスト: `GET /api/models/registry/:model_name/manifest.json`
 - Node が HF から直接ダウンロード
 
-詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。
+詳細は `SPEC-dcaeaec4` と `SPEC-68551ec8/contracts/api_models.md` を参照してください。

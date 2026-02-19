@@ -7,7 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { BarChart3, Loader2 } from 'lucide-react'
 
 /**
- * SPEC-76643000: Endpoint Request Chart (Phase 6)
+ * SPEC-8c32349f: Endpoint Request Chart (Phase 6)
  *
  * Recharts stacked bar chart showing daily request counts
  * (successful / failed) with 7/30/90 day period switching.

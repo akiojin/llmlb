@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
-import { formatDate, formatRelativeTime } from '@/lib/utils'
+import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +24,7 @@ import { EndpointModelStatsTable } from './EndpointModelStatsTable'
 import { EndpointRequestChart } from './EndpointRequestChart'
 
 /**
- * SPEC-66555000: Router-Driven Endpoint Registration System
+ * SPEC-e8e9326e: Router-Driven Endpoint Registration System
  * Endpoint Detail Modal
  */
 
@@ -129,7 +129,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
     enabled: !!endpoint?.id && open,
   })
 
-  // SPEC-76643000: Fetch today's request statistics
+  // SPEC-8c32349f: Fetch today's request statistics
   const { data: todayStats, isLoading: isLoadingTodayStats } = useQuery({
     queryKey: ['endpoint-today-stats', endpoint?.id],
     queryFn: () => endpointsApi.getTodayStats(endpoint!.id),
@@ -230,6 +230,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
           <DialogDescription>{endpoint.base_url}</DialogDescription>
         </DialogHeader>
 
+        <ScrollArea className="max-h-[calc(100vh-12rem)]">
         <div className="space-y-6 py-4">
           {/* Status Section */}
           <div className="flex items-center justify-between">
@@ -240,6 +241,9 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <Badge variant={getTypeBadgeVariant(endpoint.endpoint_type)}>
                 {getTypeLabel(endpoint.endpoint_type)}
               </Badge>
+              <span className="text-xs text-muted-foreground">
+                タイプは自動検出されます
+              </span>
               <span className="text-sm text-muted-foreground">
                 Models: {endpoint.model_count}
               </span>
@@ -268,7 +272,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
           <Separator />
 
-          {/* SPEC-76643000: Request Statistics Cards */}
+          {/* SPEC-8c32349f: Request Statistics Cards */}
           <div className="grid grid-cols-2 gap-4">
             {/* Total Requests */}
             <div className="rounded-lg border p-3">
@@ -341,7 +345,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
           <Separator />
 
-          {/* SPEC-76643000: Daily Request Trend Chart (Phase 6) */}
+          {/* SPEC-8c32349f: Daily Request Trend Chart (Phase 6) */}
           <EndpointRequestChart endpointId={endpoint.id} />
 
           <Separator />
@@ -357,18 +361,6 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <span className="ml-2">{formatRelativeTime(endpoint.registered_at)}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">Type Source:</span>
-              <span className="ml-2">{endpoint.endpoint_type_source}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Type Detected:</span>
-              <span className="ml-2">
-                {endpoint.endpoint_type_detected_at
-                  ? formatDate(endpoint.endpoint_type_detected_at)
-                  : '-'}
-              </span>
-            </div>
-            <div>
               <span className="text-muted-foreground">Last Seen:</span>
               <span className="ml-2">
                 {endpoint.last_seen ? formatRelativeTime(endpoint.last_seen) : '-'}
@@ -377,10 +369,6 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
             <div>
               <span className="text-muted-foreground">Error Count:</span>
               <span className="ml-2">{endpoint.error_count}</span>
-            </div>
-            <div className="col-span-2">
-              <span className="text-muted-foreground">Type Reason:</span>
-              <span className="ml-2">{endpoint.endpoint_type_reason ?? '-'}</span>
             </div>
           </div>
 
@@ -472,7 +460,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
           <Separator />
 
-          {/* Model Request Stats Section - SPEC-76643000 */}
+          {/* Model Request Stats Section - SPEC-8c32349f */}
           <EndpointModelStatsTable endpointId={endpoint.id} enabled={open} />
 
           <Separator />
@@ -532,6 +520,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
             </div>
           </div>
         </div>
+        </ScrollArea>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

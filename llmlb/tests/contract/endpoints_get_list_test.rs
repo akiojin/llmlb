@@ -1,8 +1,8 @@
 //! Contract Test: GET /api/endpoints
 //!
-//! SPEC-66555000: エンドポイント一覧取得API契約テスト
+//! SPEC-e8e9326e: エンドポイント一覧取得API契約テスト
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
 use axum::{
     body::{to_bytes, Body},
@@ -126,13 +126,28 @@ async fn test_list_endpoints_empty() {
 #[tokio::test]
 #[serial]
 async fn test_list_endpoints_multiple() {
+    // 2つのMockServerを起動（各エンドポイント用）
+    let mut mocks = Vec::new();
+    for _ in 0..2 {
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "object": "list",
+                "data": [{"id": "test-model", "object": "model"}]
+            })))
+            .mount(&mock)
+            .await;
+        mocks.push(mock);
+    }
+
     let TestApp { app, admin_key } = build_app().await;
 
     // 2つのエンドポイントを登録
-    for i in 1..=2 {
+    for (i, mock) in mocks.iter().enumerate() {
         let payload = json!({
-            "name": format!("Endpoint {}", i),
-            "base_url": format!("http://localhost:{}", 11434 + i)
+            "name": format!("Endpoint {}", i + 1),
+            "base_url": mock.uri()
         });
 
         let response = app

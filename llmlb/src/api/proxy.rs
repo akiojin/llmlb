@@ -12,9 +12,7 @@ use axum::{
     response::Response,
 };
 use futures::TryStreamExt;
-use std::{io, sync::Arc, time::Instant};
-
-use crate::balancer::WaitResult;
+use std::{io, sync::Arc};
 
 /// ラウンドロビンでエンドポイントを選択
 ///
@@ -30,6 +28,7 @@ pub(crate) async fn select_available_endpoint(state: &AppState) -> Result<Endpoi
 }
 
 /// キュー付きエンドポイント選択の結果
+#[allow(dead_code)]
 pub(crate) enum QueueSelection {
     /// エンドポイントが見つかった
     Ready {
@@ -45,90 +44,25 @@ pub(crate) enum QueueSelection {
 /// モデル対応のエンドポイントをキュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
-    queue_config: QueueConfig,
+    _queue_config: QueueConfig,
     model_id: &str,
 ) -> Result<QueueSelection, LbError> {
-    match state
+    let endpoint = state
         .load_manager
-        .select_idle_endpoint_for_model(model_id)
-        .await?
-    {
-        Some(endpoint) => {
-            tracing::debug!(
-                model = %model_id,
-                endpoint_id = %endpoint.id,
-                endpoint_name = %endpoint.name,
-                "Selected idle endpoint immediately"
-            );
-            Ok(QueueSelection::Ready {
-                endpoint: Box::new(endpoint),
-                queued_wait_ms: None,
-            })
-        }
-        None => {
-            let wait_start = Instant::now();
-            tracing::debug!(
-                model = %model_id,
-                max_waiters = queue_config.max_waiters,
-                timeout_secs = queue_config.timeout.as_secs(),
-                "No idle endpoint available; waiting in queue"
-            );
-            match state
-                .load_manager
-                .wait_for_idle_node_with_timeout_for_model(
-                    model_id,
-                    queue_config.max_waiters,
-                    queue_config.timeout,
-                )
-                .await
-            {
-                WaitResult::CapacityExceeded => {
-                    tracing::warn!(
-                        model = %model_id,
-                        max_waiters = queue_config.max_waiters,
-                        "Request queue capacity exceeded while waiting for idle endpoint"
-                    );
-                    Ok(QueueSelection::CapacityExceeded)
-                }
-                WaitResult::Timeout => {
-                    let waited_ms = wait_start.elapsed().as_millis();
-                    tracing::warn!(
-                        model = %model_id,
-                        waited_ms = waited_ms,
-                        "Timed out waiting for idle endpoint"
-                    );
-                    Ok(QueueSelection::Timeout { waited_ms })
-                }
-                WaitResult::Ready => match state
-                    .load_manager
-                    .select_idle_endpoint_for_model(model_id)
-                    .await?
-                {
-                    Some(endpoint) => {
-                        let queued_wait_ms = wait_start.elapsed().as_millis();
-                        tracing::debug!(
-                            model = %model_id,
-                            endpoint_id = %endpoint.id,
-                            endpoint_name = %endpoint.name,
-                            queued_wait_ms = queued_wait_ms,
-                            "Selected endpoint after queue wait"
-                        );
-                        Ok(QueueSelection::Ready {
-                            endpoint: Box::new(endpoint),
-                            queued_wait_ms: Some(queued_wait_ms),
-                        })
-                    }
-                    None => {
-                        tracing::warn!(
-                            model = %model_id,
-                            "Queue waiter was notified but no idle endpoint became selectable"
-                        );
-                        Err(LbError::NoNodesAvailable)
-                    }
-                },
-            }
-        }
-    }
+        .select_endpoint_round_robin_ready_for_model(model_id)
+        .await?;
+
+    tracing::debug!(
+        model = %model_id,
+        endpoint_id = %endpoint.id,
+        endpoint_name = %endpoint.name,
+        "Selected ready endpoint by round-robin"
+    );
+
+    Ok(QueueSelection::Ready {
+        endpoint: Box::new(endpoint),
+        queued_wait_ms: None,
+    })
 }
 
 pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<Response, LbError> {
@@ -176,7 +110,7 @@ pub(crate) fn save_request_record(
     });
 }
 
-/// エンドポイントリクエスト統計を更新（Fire-and-forget）（SPEC-76643000）
+/// エンドポイントリクエスト統計を更新（Fire-and-forget）（SPEC-8c32349f）
 ///
 /// endpointsテーブルの累計カウンタとendpoint_daily_statsの日次集計を
 /// 非同期で更新する。リクエスト処理のレイテンシに影響を与えない。

@@ -1,6 +1,6 @@
 //! UI Test: モデルパネルが削除されていることを確認
 //!
-//! NOTE: NodeRegistry廃止（SPEC-66555000）に伴い、
+//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、
 //! EndpointRegistryベースのAppStateを使用するように更新。
 
 #![allow(clippy::duplicate_mod)]

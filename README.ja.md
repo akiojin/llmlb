@@ -200,42 +200,39 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 - **offline**: ヘルスチェック失敗
 - **error**: 接続エラー
 
-詳細は [specs/SPEC-66555000/quickstart.md](./specs/SPEC-66555000/quickstart.md) を参照。
+詳細は [specs/SPEC-e8e9326e/quickstart.md](./specs/SPEC-e8e9326e/quickstart.md) を参照。
 
-## LLM アシスタント向け MCP サーバー
+## LLM アシスタント向け Assistant CLI
 
-LLM アシスタント（Claude Code など）は、専用の MCP サーバーを通じて LLM Load Balancer と連携できます。
+2026年2月17日以降、MCP サーバー npm パッケージ（`@llmlb/mcp-server`）は廃止されました。
+現在は `llmlb` 本体の `assistant` サブコマンドを利用します。
 
-MCP サーバーは npm/npx で配布しています。pnpm は本リポジトリの lint ツール用で、利用者側の必須要件ではありません。
-
-### インストール
+### 主なコマンド
 
 ```bash
-npm install -g @llmlb/mcp-server
-# または
-npx @llmlb/mcp-server
+# 旧 execute_curl 相当
+llmlb assistant curl --command "curl http://localhost:32768/v1/models"
+
+# OpenAPI (JSON) を表示
+llmlb assistant openapi
+
+# APIガイドを表示
+llmlb assistant guide --category overview
 ```
 
-### 設定例 (.mcp.json)
+### Claude/Codex 連携ファイル
 
-```json
-{
-  "mcpServers": {
-    "llmlb": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@llmlb/mcp-server"],
-      "env": {
-        "LLMLB_URL": "http://localhost:32768",
-        "LLMLB_API_KEY": "sk_api_scope_key",
-        "LLMLB_ADMIN_API_KEY": "sk_admin_scope_key"
-      }
-    }
-  }
-}
+- Claude Code marketplace: `.claude-plugin/marketplace.json`
+- Claude plugin: `.claude-plugin/plugins/llmlb-cli/plugin.json`
+- Claude skillミラー: `.claude/skills/llmlb-cli-usage/SKILL.md`
+- Codex skill: `.codex/skills/llmlb-cli-usage/SKILL.md`
+- Codex `.skill` 出力先: `codex-skills/dist/`
+
+```bash
+python3 .codex/skills/.system/skill-creator/scripts/package_skill.py \
+  .codex/skills/llmlb-cli-usage \
+  codex-skills/dist
 ```
-
-詳細は [mcp-server/README.md](./mcp-server/README.md) を参照してください。
 
 ## インストールと起動
 

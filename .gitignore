@@ -36,6 +36,10 @@ dist/
 build/
 out/
 *.tsbuildinfo
+!codex-skills/
+!codex-skills/dist/
+!codex-skills/dist/.gitkeep
+!codex-skills/dist/*.skill
 
 # C++ build artifacts
 *.o

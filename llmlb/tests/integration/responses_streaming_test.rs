@@ -1,6 +1,6 @@
 //! Integration Test: Open Responses API Streaming
 //!
-//! SPEC-24157000: OpenAI互換API完全準拠 - Open Responses API対応
+//! SPEC-0f1de549: OpenAI互換API完全準拠 - Open Responses API対応
 //!
 //! T061: ストリーミングテスト
 

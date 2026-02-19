@@ -30,9 +30,9 @@ use crate::{
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         proxy::{
-            forward_streaming_response, record_endpoint_request_stats, save_request_record,
-            select_available_endpoint, select_available_endpoint_with_queue_for_model,
-            QueueSelection,
+            forward_streaming_response, forward_streaming_response_with_tps_tracking,
+            record_endpoint_request_stats, save_request_record, select_available_endpoint,
+            select_available_endpoint_with_queue_for_model, QueueSelection,
         },
     },
     balancer::RequestOutcome,
@@ -1425,23 +1425,32 @@ async fn proxy_openai_post(
     // ストリームの場合はレスポンスをそのままパススルー
     if stream {
         let duration = start.elapsed();
+        let succeeded = response.status().is_success();
+        let outcome = if succeeded {
+            RequestOutcome::Success
+        } else {
+            RequestOutcome::Error
+        };
         request_lease
-            .complete(RequestOutcome::Success, duration)
+            .complete(outcome, duration)
             .await
             .map_err(AppError::from)?;
-        // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
-        update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
-        record_endpoint_request_stats(
-            state.db_pool.clone(),
-            endpoint_id,
-            model.clone(),
-            true,
-            0,
-            0,
-            endpoint_type,
-            state.load_manager.clone(),
-            state.event_bus.clone(),
-        );
+        if succeeded {
+            // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
+            update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+        } else {
+            record_endpoint_request_stats(
+                state.db_pool.clone(),
+                endpoint_id,
+                model.clone(),
+                false,
+                0,
+                0,
+                endpoint_type,
+                state.load_manager.clone(),
+                state.event_bus.clone(),
+            );
+        }
 
         save_request_record(
             state.request_history.clone(),
@@ -1457,7 +1466,13 @@ async fn proxy_openai_post(
                 request_body: request_body.clone(),
                 response_body: None, // ストリームボディは記録しない
                 duration_ms: duration.as_millis() as u64,
-                status: RecordStatus::Success,
+                status: if succeeded {
+                    RecordStatus::Success
+                } else {
+                    RecordStatus::Error {
+                        message: format!("Upstream stream returned status {}", response.status()),
+                    }
+                },
                 completed_at: Utc::now(),
                 input_tokens: None,
                 output_tokens: None,
@@ -1465,7 +1480,21 @@ async fn proxy_openai_post(
             },
         );
 
-        let mut axum_response = forward_streaming_response(response).map_err(AppError::from)?;
+        let mut axum_response = if succeeded {
+            forward_streaming_response_with_tps_tracking(
+                response,
+                endpoint_id,
+                model.clone(),
+                endpoint_type,
+                start,
+                state.db_pool.clone(),
+                state.load_manager.clone(),
+                state.event_bus.clone(),
+            )
+            .map_err(AppError::from)?
+        } else {
+            forward_streaming_response(response).map_err(AppError::from)?
+        };
         if let Some(wait_ms) = queued_wait_ms {
             add_queue_headers(&mut axum_response, wait_ms);
         }
@@ -1561,13 +1590,18 @@ async fn proxy_openai_post(
                 .as_ref()
                 .and_then(|u| u.output_tokens)
                 .unwrap_or(0) as u64;
+            let tps_duration_ms = if tps_output_tokens > 0 {
+                duration.as_millis().max(1) as u64
+            } else {
+                0
+            };
             record_endpoint_request_stats(
                 state.db_pool.clone(),
                 endpoint_id,
                 model.clone(),
                 true,
                 tps_output_tokens,
-                duration.as_millis() as u64,
+                tps_duration_ms,
                 endpoint_type,
                 state.load_manager.clone(),
                 state.event_bus.clone(),
@@ -2296,6 +2330,179 @@ mod tests {
         assert_eq!(
             snapshot.active_requests, 0,
             "active request count must be released on body read error"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn local_streaming_request_updates_model_tps_after_stream_completion() {
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        let stream_body = concat!(
+            "data: {\"id\":\"chatcmpl-123\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+            "data: {\"id\":\"chatcmpl-123\",\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let tmpl = ResponseTemplate::new(200)
+            .insert_header("content-type", "text/event-stream")
+            .set_body_raw(stream_body, "text/event-stream");
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(tmpl)
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "stream-tps-endpoint".to_string(),
+            server.uri(),
+            EndpointType::Vllm,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "stream-tps-model".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+            })
+            .await
+            .expect("add endpoint model");
+
+        let payload = json!({
+            "model": "stream-tps-model",
+            "messages": [{"role":"user","content":"hello"}],
+            "stream": true
+        });
+        let response = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "stream-tps-model".to_string(),
+            true,
+            RequestType::Chat,
+        )
+        .await
+        .expect("streaming request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("stream body should be readable");
+
+        sleep(Duration::from_millis(100)).await;
+
+        let tps = state.load_manager.get_model_tps(endpoint_id).await;
+        let entry = tps
+            .iter()
+            .find(|info| info.model_id == "stream-tps-model")
+            .expect("stream model should have TPS entry");
+        assert!(entry.tps.is_some(), "TPS should be updated");
+        assert!(
+            entry.total_output_tokens > 0,
+            "streaming output tokens should be accumulated"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn non_stream_without_usage_does_not_accumulate_tps_duration() {
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        let body_without_usage = json!({
+            "id": "chatcmpl-no-usage",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "hello"},
+                "finish_reason": "stop"
+            }]
+        });
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body_without_usage))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "no-usage-endpoint".to_string(),
+            server.uri(),
+            EndpointType::Vllm,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "no-usage-model".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+            })
+            .await
+            .expect("add endpoint model");
+
+        let payload = json!({
+            "model": "no-usage-model",
+            "messages": [{"role":"user","content":"hello"}],
+            "stream": false
+        });
+        let response = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "no-usage-model".to_string(),
+            false,
+            RequestType::Chat,
+        )
+        .await
+        .expect("request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        sleep(Duration::from_millis(100)).await;
+
+        let model_stats =
+            crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, endpoint_id)
+                .await
+                .expect("get model stats");
+        let stat = model_stats
+            .iter()
+            .find(|s| s.model_id == "no-usage-model")
+            .expect("model stats should exist");
+        assert_eq!(
+            stat.total_output_tokens, 0,
+            "usageがない場合はoutput_tokensを加算しない"
+        );
+        assert_eq!(
+            stat.total_duration_ms, 0,
+            "usageがない場合はduration_msを加算しない"
         );
     }
 

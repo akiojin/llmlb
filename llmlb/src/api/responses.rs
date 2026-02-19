@@ -23,11 +23,13 @@ use crate::{
         error::AppError,
         models::load_registered_model,
         proxy::{
-            forward_streaming_response, forward_to_endpoint, record_endpoint_request_stats,
+            forward_streaming_response, forward_streaming_response_with_tps_tracking,
+            forward_to_endpoint, record_endpoint_request_stats,
             select_available_endpoint_with_queue_for_model, QueueSelection,
         },
     },
     balancer::RequestOutcome,
+    token::extract_usage_from_response,
     AppState,
 };
 
@@ -265,24 +267,38 @@ pub async fn post_responses(
             .await
             .map_err(AppError::from)?;
 
-        record_endpoint_request_stats(
-            state.db_pool.clone(),
-            endpoint.id,
-            model.clone(),
-            succeeded,
-            0,
-            0,
-            endpoint.endpoint_type,
-            state.load_manager.clone(),
-            state.event_bus.clone(),
-        );
-
         // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
-        if response_status.is_success() {
+        if succeeded {
             update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
+        } else {
+            record_endpoint_request_stats(
+                state.db_pool.clone(),
+                endpoint.id,
+                model.clone(),
+                false,
+                0,
+                0,
+                endpoint.endpoint_type,
+                state.load_manager.clone(),
+                state.event_bus.clone(),
+            );
         }
 
-        let mut axum_response = forward_streaming_response(response).map_err(AppError::from)?;
+        let mut axum_response = if succeeded {
+            forward_streaming_response_with_tps_tracking(
+                response,
+                endpoint.id,
+                model.clone(),
+                endpoint.endpoint_type,
+                start,
+                state.db_pool.clone(),
+                state.load_manager.clone(),
+                state.event_bus.clone(),
+            )
+            .map_err(AppError::from)?
+        } else {
+            forward_streaming_response(response).map_err(AppError::from)?
+        };
         if let Some(wait_ms) = queued_wait_ms {
             add_queue_headers(&mut axum_response, wait_ms);
         }
@@ -325,13 +341,31 @@ pub async fn post_responses(
         .complete(outcome, duration)
         .await
         .map_err(AppError::from)?;
+    let (tps_output_tokens, tps_duration_ms) = if succeeded {
+        serde_json::from_slice::<Value>(&body_bytes)
+            .ok()
+            .and_then(|body| extract_usage_from_response(&body))
+            .and_then(|usage| usage.output_tokens)
+            .map(|tokens| tokens as u64)
+            .map(|tokens| {
+                let duration_ms = if tokens > 0 {
+                    duration.as_millis().max(1) as u64
+                } else {
+                    0
+                };
+                (tokens, duration_ms)
+            })
+            .unwrap_or((0, 0))
+    } else {
+        (0, 0)
+    };
     record_endpoint_request_stats(
         state.db_pool.clone(),
         endpoint.id,
         model.clone(),
         succeeded,
-        0,
-        0,
+        tps_output_tokens,
+        tps_duration_ms,
         endpoint.endpoint_type,
         state.load_manager.clone(),
         state.event_bus.clone(),
@@ -362,4 +396,196 @@ pub async fn post_responses(
     }
 
     Ok(axum_response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::post_responses;
+    use crate::{
+        balancer::LoadManager,
+        types::endpoint::{Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI},
+        AppState,
+    };
+    use axum::{body::to_bytes, extract::State, http::StatusCode, Json};
+    use serde_json::json;
+    use sqlx::SqlitePool;
+    use std::sync::Arc;
+    use tokio::time::{sleep, Duration};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn create_local_state() -> AppState {
+        let db_pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("sqlite memory connect");
+        sqlx::migrate!("./migrations")
+            .run(&db_pool)
+            .await
+            .expect("migrations");
+        let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
+            db_pool.clone(),
+        ));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
+        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
+        let load_manager = LoadManager::new(endpoint_registry_arc);
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
+        AppState {
+            load_manager,
+            request_history,
+            db_pool,
+            jwt_secret: "test-secret".into(),
+            http_client,
+            queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
+        }
+    }
+
+    async fn register_vllm_endpoint(
+        state: &AppState,
+        base_url: String,
+        model_id: &str,
+    ) -> uuid::Uuid {
+        let mut endpoint = Endpoint::new(
+            "responses-test-endpoint".to_string(),
+            base_url,
+            EndpointType::Vllm,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: model_id.to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::Responses],
+            })
+            .await
+            .expect("add endpoint model");
+        endpoint_id
+    }
+
+    #[tokio::test]
+    async fn responses_non_stream_success_updates_model_tps() {
+        let state = create_local_state().await;
+        let server = MockServer::start().await;
+        let response_body = json!({
+            "id": "resp_123",
+            "object": "response",
+            "usage": {
+                "input_tokens": 8,
+                "output_tokens": 12,
+                "total_tokens": 20
+            }
+        });
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&server)
+            .await;
+
+        let endpoint_id = register_vllm_endpoint(&state, server.uri(), "responses-tps-model").await;
+
+        let response = post_responses(
+            State(state.clone()),
+            Json(json!({
+                "model": "responses-tps-model",
+                "input": "hello"
+            })),
+        )
+        .await
+        .expect("responses request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("response body should be readable");
+
+        sleep(Duration::from_millis(100)).await;
+
+        let tps = state.load_manager.get_model_tps(endpoint_id).await;
+        let entry = tps
+            .iter()
+            .find(|info| info.model_id == "responses-tps-model")
+            .expect("responses model should have TPS entry");
+        assert!(entry.tps.is_some(), "TPS should be updated");
+        assert!(
+            entry.total_output_tokens >= 12,
+            "usage.output_tokens should be accumulated"
+        );
+    }
+
+    #[tokio::test]
+    async fn responses_stream_success_updates_model_tps_after_completion() {
+        let state = create_local_state().await;
+        let server = MockServer::start().await;
+        let stream_body = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}\n\n",
+            "data: [DONE]\n\n"
+        );
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(stream_body, "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let endpoint_id =
+            register_vllm_endpoint(&state, server.uri(), "responses-stream-model").await;
+
+        let response = post_responses(
+            State(state.clone()),
+            Json(json!({
+                "model": "responses-stream-model",
+                "input": "hello",
+                "stream": true
+            })),
+        )
+        .await
+        .expect("streaming responses request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("stream body should be readable");
+
+        sleep(Duration::from_millis(120)).await;
+
+        let tps = state.load_manager.get_model_tps(endpoint_id).await;
+        let entry = tps
+            .iter()
+            .find(|info| info.model_id == "responses-stream-model")
+            .expect("streaming model should have TPS entry");
+        assert!(
+            entry.tps.is_some(),
+            "TPS should be updated after stream completion"
+        );
+        assert!(
+            entry.total_output_tokens > 0,
+            "streaming output tokens should be accumulated"
+        );
+    }
 }

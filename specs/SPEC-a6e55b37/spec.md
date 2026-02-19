@@ -2,8 +2,8 @@
 
 **機能ID**: `SPEC-a6e55b37`  
 **作成日**: 2026-02-10  
-**最終更新日**: 2026-02-19  
-**ステータス**: ✅ 実装完了（手動検証待ち） (2026-02-10)  
+**最終更新日**: 2026-02-19
+**ステータス**: 🔄 UI改善中 (2026-02-19)  
 **入力**: ユーザー説明: "llmlbの自動アップデートに対応したい。アップデート通知→承認したら更新して再起動。リクエスト処理中はペンディングし、完了後に更新。Ollamaの方式に合わせたい。"
 
 ## ユーザーシナリオ＆テスト *(必須)*
@@ -75,6 +75,50 @@
 3. **前提** 手動チェックが `up_to_date` を返す、**実行** `Check for updates` 押下、**結果** `Restart to update` は表示されず `Up to date` の情報が更新される
 4. **前提** 既に `available`（payload ready）を表示中、**実行** 一時的なネットワーク障害下で `Check for updates` 押下、**結果** 既存の `available` 状態は維持され、`Restart to update` の導線は失われない
 
+### ユーザーストーリー6 - ドレイン中のボタンが状態を反映する (優先度: P1)
+
+運用者として、「Restart to update」を押した後にリクエストがドレイン中の場合、ボタンが「Waiting to update... (N)」に変わり押せない状態になってほしい。ボタンが変わらないと、操作が受け付けられたのか判断できないため。
+
+**独立テスト**: `updateState === 'draining'` のとき、ボタンテキストが「Waiting to update... (N)」でdisabledであること。in_flightの値がボタンに反映されること。
+
+**受け入れシナリオ**:
+
+1. **前提** 推論リクエスト3件が処理中、**実行** 「Restart to update」を押す、**結果** ボタンが「Waiting to update... (3)」に変わり、disabled＋スピナー表示
+2. **前提** draining中でin_flight=0、**実行** 画面表示、**結果** ボタンが「Waiting to update... (0)」と一瞬表示され、applyingへ遷移
+3. **前提** draining中、**実行** 「Check for updates」を確認、**結果** 「Check for updates」もdisabledである
+4. **前提** applyUpdate APIが即座適用（queued=false）、**実行** ボタン確認、**結果** 「Waiting to update...」は表示されず、直接「Applying update...」へ遷移
+
+---
+
+### ユーザーストーリー7 - applying中のボタンが適用状態を反映する (優先度: P1)
+
+運用者として、バイナリ置換/インストーラ実行中にボタンが「Applying update...」と表示され、操作不能になってほしい。再起動直前であることを明示し、誤操作を防ぎたいため。
+
+**独立テスト**: `updateState === 'applying'` のとき、ボタンテキストが「Applying update...」でdisabledであること。
+
+**受け入れシナリオ**:
+
+1. **前提** applying状態、**実行** 画面表示、**結果** ボタンが「Applying update...」＋スピナー＋disabled
+2. **前提** applying状態、**実行** 「Check for updates」を確認、**結果** disabledである
+
+---
+
+### ユーザーストーリー8 - ヘッダーにアップデート状態バッジ表示 (優先度: P2)
+
+運用者として、ヘッダーの「Current vX.Y.Z」横にアップデート状態を示すドットインジケータとバッジを表示してほしい。バナーをスクロールで見失っても、ヘッダーで状態が把握できるため。
+
+**独立テスト**: `update.state` に応じて、ヘッダーのドット色とバッジテキストが正しく変化すること。
+
+**受け入れシナリオ**:
+
+1. **前提** updateState=up_to_date、**実行** 画面表示、**結果** 緑ドット表示、バッジなし
+2. **前提** updateState=available（v2.0.0）、**実行** 画面表示、**結果** 黄色ドット＋「v2.0.0 available」バッジ
+3. **前提** updateState=draining、**実行** 画面表示、**結果** 黄色ドット＋「Updating...」バッジ
+4. **前提** updateState=applying、**実行** 画面表示、**結果** 黄色ドット＋「Updating...」バッジ
+5. **前提** updateState=failed、**実行** 画面表示、**結果** 赤ドット＋「Update failed」バッジ
+
+---
+
 ## 要件 *(必須)*
 
 ### 機能要件
@@ -89,6 +133,11 @@
 - **FR-008**: `POST /api/system/update/check` の結果は、ダッシュボード上でページ再読み込みなしに即時反映される
 - **FR-009**: `POST /api/system/update/check` が失敗しても、既に `available` で取得済みの更新候補と payload 準備状態は失われない
 - **FR-010**: ダッシュボードは `Restart to update` を「更新適用が実行可能な状態」のみで表示する（`available` / `draining` / `applying` / `failed` かつ `latest` が存在）
+- **FR-011**: `draining` 状態では適用ボタンのテキストが「Waiting to update... (N)」（Nはin_flight数）に変わり、スピナー表示かつdisabledになる
+- **FR-012**: `applying` 状態では適用ボタンのテキストが「Applying update...」に変わり、スピナー表示かつdisabledになる
+- **FR-013**: `draining` / `applying` 状態では `Check for updates` ボタンもdisabledになる
+- **FR-014**: `applyUpdate` APIレスポンスの `queued=false` の場合、draining表示を経由せず直接applying表示に遷移する
+- **FR-015**: ダッシュボードヘッダーの「Current vX.Y.Z」横にアップデート状態を示すドットインジケータ（緑=最新/黄=更新可・更新中/赤=失敗）とバッジテキストを表示する
 
 ### 非機能要件
 

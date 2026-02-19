@@ -40,3 +40,29 @@
 - [x] T054 [P] `llmlb/src/update/mod.rs` に `record_check_failure` の回帰ユニットテストを追加（`available`保持 / 非`available`失敗遷移）
 - [x] T055 [P] `llmlb/tests/ui/update_banner.rs` に Restart表示条件（`failed` かつ `latest` ありのみ）の回帰テストを追加
 - [x] T056 `llmlb/src/update/mod.rs` と `llmlb/src/web/dashboard/src/pages/Dashboard.tsx` を修正し、payload保持とRestart導線ガードを実装
+
+## UI Improvement: Update Queue Button States (2026-02-19)
+
+### Setup
+<!-- markdownlint-disable MD029 -->
+
+- [x] T060 `specs/SPEC-a6e55b37/spec.md` にUS-6/US-7/US-8、FR-011〜FR-015を追記
+
+### Tests (RED)
+
+- [x] T061 [P] `llmlb/tests/ui/update_banner.rs` にdraining時ボタン表示テスト（テキスト/disabled/スピナー/in_flight反映）
+- [x] T062 [P] `llmlb/tests/ui/update_banner.rs` にapplying時ボタン表示テスト（テキスト/disabled/スピナー）
+- [x] T063 [P] `llmlb/tests/ui/update_banner.rs` にdraining/applying時のCheck for updatesのdisabledテスト
+- [x] T064 [P] `llmlb/tests/ui/update_header.rs` にヘッダーアップデート状態バッジのテスト（各state→ドット色/バッジテキスト）
+
+### Core
+
+- [x] T070 `Dashboard.tsx` のRestart to updateボタンをdraining/applying状態に応じて動的テキスト・アイコン表示に変更
+- [x] T071 `Dashboard.tsx` のCheck for updatesボタンのdisabled条件にdraining状態を追加
+- [x] T072 `Header.tsx` にupdateState propsを追加し、ドットインジケータ+バッジを表示
+- [x] T073 `Dashboard.tsx` からHeader.tsxにupdateState情報を渡すprops拡張
+
+### Polish
+
+- [x] T080 `pnpm --filter @llm/dashboard build` でstatic再生成、コミット対象に含める
+- [x] T081 全品質チェック（`make quality-checks`）を実行・合格確認

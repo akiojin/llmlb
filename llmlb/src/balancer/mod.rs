@@ -140,6 +140,21 @@ pub struct ModelTpsInfo {
     pub average_duration_ms: Option<f64>,
 }
 
+/// エンドポイント単位のTPS概要（SPEC-4bb5b55f T023）
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct EndpointTpsSummary {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// TPS計測済みモデル数
+    pub model_count: usize,
+    /// 全モデルの加重平均TPS（None=全モデル未計測）
+    pub aggregate_tps: Option<f64>,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// リクエスト累計
+    pub total_requests: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,6 +628,52 @@ mod tests {
         assert_eq!(result.len(), 1, "他エンドポイントのデータは含まない");
         assert_eq!(result[0].model_id, "model-a");
     }
+
+    #[tokio::test]
+    async fn test_get_all_endpoint_tps_empty() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+
+        let result = load_manager.get_all_endpoint_tps().await;
+        assert!(result.is_empty(), "TPS未計測の場合は空");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_endpoint_tps_returns_per_endpoint_summary() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let other_endpoint_id = Uuid::new_v4();
+
+        // endpoint_id: 2モデル
+        load_manager
+            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .await;
+        load_manager
+            .update_tps(endpoint_id, "model-b".to_string(), 200, 1000)
+            .await;
+        // other_endpoint_id: 1モデル
+        load_manager
+            .update_tps(other_endpoint_id, "model-c".to_string(), 50, 500)
+            .await;
+
+        let result = load_manager.get_all_endpoint_tps().await;
+        assert_eq!(result.len(), 2, "2エンドポイント分のサマリ");
+
+        let ep1 = result
+            .iter()
+            .find(|s| s.endpoint_id == endpoint_id)
+            .expect("endpoint_id存在");
+        assert_eq!(ep1.model_count, 2);
+        assert_eq!(ep1.total_output_tokens, 300); // 100 + 200
+        assert!(ep1.aggregate_tps.is_some());
+
+        let ep2 = result
+            .iter()
+            .find(|s| s.endpoint_id == other_endpoint_id)
+            .expect("other存在");
+        assert_eq!(ep2.model_count, 1);
+        assert_eq!(ep2.total_output_tokens, 50);
+    }
 }
 
 /// エンドポイントの負荷状態
@@ -994,6 +1055,54 @@ impl LoadManager {
                 },
             })
             .collect()
+    }
+
+    /// 全エンドポイントのTPS概要を返す（SPEC-4bb5b55f T023）
+    pub async fn get_all_endpoint_tps(&self) -> Vec<EndpointTpsSummary> {
+        let tracker = self.tps_tracker.read().await;
+        let mut map: HashMap<Uuid, EndpointTpsSummary> = HashMap::new();
+
+        for ((endpoint_id, _), state) in tracker.iter() {
+            let entry = map
+                .entry(*endpoint_id)
+                .or_insert_with(|| EndpointTpsSummary {
+                    endpoint_id: *endpoint_id,
+                    model_count: 0,
+                    aggregate_tps: None,
+                    total_output_tokens: 0,
+                    total_requests: 0,
+                });
+            entry.model_count += 1;
+            entry.total_output_tokens += state.total_output_tokens;
+            entry.total_requests += state.request_count;
+        }
+
+        // 加重平均TPS = 全モデルの total_output_tokens / 全モデルの total_duration_ms * 1000
+        for ((endpoint_id, _), state) in tracker.iter() {
+            if let Some(entry) = map.get_mut(endpoint_id) {
+                if entry.aggregate_tps.is_none() {
+                    // 初回計算: このエンドポイントの全体統計から算出
+                    let total_tokens: u64 = tracker
+                        .iter()
+                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .map(|(_, s)| s.total_output_tokens)
+                        .sum();
+                    let total_duration: u64 = tracker
+                        .iter()
+                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .map(|(_, s)| s.total_duration_ms)
+                        .sum();
+                    if total_duration > 0 {
+                        entry.aggregate_tps =
+                            Some(total_tokens as f64 / (total_duration as f64 / 1000.0));
+                    }
+                }
+            }
+            // state used to iterate, suppress unused warning
+            let _ = state;
+        }
+
+        map.into_values().collect()
     }
 
     /// テスト用: 指定エンドポイントがアクティブになるまで待機する

@@ -273,10 +273,19 @@ export interface RequestResponsesPage {
   per_page: number
 }
 
+export interface EndpointTpsSummary {
+  endpoint_id: string
+  model_count: number
+  aggregate_tps: number | null
+  total_output_tokens: number
+  total_requests: number
+}
+
 export interface DashboardOverview {
   endpoints: DashboardEndpoint[]
   stats: DashboardStats
   history: RequestHistoryItem[]
+  endpoint_tps: EndpointTpsSummary[]
   generated_at: string
   generation_time_ms: number
 }

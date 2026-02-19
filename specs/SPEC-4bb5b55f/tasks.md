@@ -96,7 +96,7 @@
 **目的**: 品質保証、統合テスト、ドキュメント
 
 - [x] T022 [共通] `llmlb/src/api/openai.rs` の全ストリーミングハンドラー（`chat_completions`, `completions`, `embeddings`）で `record_endpoint_request_stats()` 呼び出しが拡張後のシグネチャに対応していることを確認・修正
-- [ ] T023 [共通] `GET /api/dashboard/overview` レスポンスの `DashboardOverview` にTPS概要情報を含める。エンドポイントごとの集約TPSまたはモデル別TPS上位をstats内に追加
+- [x] T023 [共通] `GET /api/dashboard/overview` レスポンスの `DashboardOverview` にTPS概要情報を含める。エンドポイントごとの集約TPSまたはモデル別TPS上位をstats内に追加
 - [x] T024 [共通] `cargo fmt --check && cargo clippy -- -D warnings && cargo test` を実行し全テストパス・lint警告ゼロを確認
 - [x] T025 [共通] `pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees"` を実行しmarkdownlint警告ゼロを確認
 - [x] T026 [共通] `make quality-checks` を実行し全品質チェックパスを確認

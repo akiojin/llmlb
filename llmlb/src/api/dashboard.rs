@@ -133,6 +133,8 @@ pub struct DashboardOverview {
     pub stats: DashboardStats,
     /// リクエスト履歴
     pub history: Vec<RequestHistoryPoint>,
+    /// エンドポイント別TPS概要（SPEC-4bb5b55f T023）
+    pub endpoint_tps: Vec<crate::balancer::EndpointTpsSummary>,
     /// レスポンス生成時刻
     pub generated_at: DateTime<Utc>,
     /// 集計に要した時間（ミリ秒）
@@ -162,12 +164,14 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
     let endpoints = collect_endpoints(&state).await;
     let stats = collect_stats(&state).await;
     let history = collect_history(&state).await;
+    let endpoint_tps = state.load_manager.get_all_endpoint_tps().await;
     let generation_time_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
     let generated_at = Utc::now();
     Json(DashboardOverview {
         endpoints,
         stats,
         history,
+        endpoint_tps,
         generated_at,
         generation_time_ms,
     })

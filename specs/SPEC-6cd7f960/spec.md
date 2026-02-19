@@ -223,6 +223,7 @@ URL登録は維持しつつ、Nodeがマニフェストに従い直接取得す�
 
 - SPEC-996e37bf（クラウドプロバイダー統合）: OpenAI/Anthropic/Googleモデル連携
 - SPEC-d7feaa2c（エンジンローダー抽象化）: 量子化選択（`modelname:量子化`形式）
+- [SPEC-82cd11b7](../SPEC-82cd11b7/spec.md): API統合リファレンス — 全APIエンドポイントのカタログ・認証モデル分類・設計規約
 
 ## 除外事項
 

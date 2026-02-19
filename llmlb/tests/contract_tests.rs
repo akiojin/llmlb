@@ -89,5 +89,9 @@ mod responses_api_test;
 #[path = "contract/endpoint_daily_stats_api_test.rs"]
 mod endpoint_daily_stats_api_test;
 
+// SPEC-82cd11b7: バージョンAPI契約テスト
+#[path = "contract/version_api_test.rs"]
+mod version_api_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

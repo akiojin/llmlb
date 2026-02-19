@@ -633,4 +633,62 @@ mod tests {
         let stats = get_today_stats(&pool, endpoint_id, date).await.unwrap();
         assert_eq!(stats.total_requests, 2);
     }
+
+    // SPEC-4bb5b55f T008: get_model_statsにTPS情報が含まれることを検証
+
+    #[tokio::test]
+    async fn test_get_model_stats_includes_tps_data() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let model_a = "llama3:8b";
+        let model_b = "gpt-4";
+
+        // model_a: 2件、tokens=300, duration=5000ms
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-20", true, 100, 2000)
+            .await
+            .unwrap();
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-20", true, 200, 3000)
+            .await
+            .unwrap();
+
+        // model_b: 1件、tokens=50, duration=1000ms
+        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-20", true, 50, 1000)
+            .await
+            .unwrap();
+
+        let stats = get_model_stats(&pool, endpoint_id).await.unwrap();
+        assert_eq!(stats.len(), 2);
+
+        // model_a: total_output_tokens=300, total_duration_ms=5000
+        let a = &stats[0];
+        assert_eq!(a.model_id, model_a);
+        assert_eq!(a.total_requests, 2);
+        assert_eq!(
+            a.total_output_tokens, 300,
+            "ModelStatEntry should include total_output_tokens"
+        );
+        assert_eq!(
+            a.total_duration_ms, 5000,
+            "ModelStatEntry should include total_duration_ms"
+        );
+
+        // model_b: total_output_tokens=50, total_duration_ms=1000
+        let b = &stats[1];
+        assert_eq!(b.model_id, model_b);
+        assert_eq!(
+            b.total_output_tokens, 50,
+            "ModelStatEntry should include total_output_tokens"
+        );
+        assert_eq!(
+            b.total_duration_ms, 1000,
+            "ModelStatEntry should include total_duration_ms"
+        );
+
+        // 日次平均TPSが計算可能であることを確認
+        // model_a: 300 / (5000/1000) = 60 tok/s
+        let tps_a = a.total_output_tokens as f64 / (a.total_duration_ms as f64 / 1000.0);
+        assert!((tps_a - 60.0).abs() < 0.01, "日次TPS計算: expected 60.0, got {tps_a}");
+    }
 }

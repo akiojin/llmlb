@@ -284,6 +284,109 @@ async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
 }
 
 #[tokio::test]
+async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavailable() {
+    let (app, db_pool, jwt) = build_app().await;
+
+    let endpoint = Endpoint::new(
+        "Stats Cache Fallback Test".to_string(),
+        "http://127.0.0.1:65534".to_string(),
+        llmlb::types::endpoint::EndpointType::OpenaiCompatible,
+    );
+    db_endpoints::create_endpoint(&db_pool, &endpoint)
+        .await
+        .expect("create endpoint");
+
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
+        .await
+        .expect("increment success request counter");
+    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
+        .await
+        .expect("increment failed request counter");
+
+    let storage = llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone());
+    let now = chrono::Utc::now();
+    let record = RequestResponseRecord {
+        id: uuid::Uuid::new_v4(),
+        timestamp: now,
+        request_type: RequestType::Chat,
+        model: "fallback-model".to_string(),
+        node_id: endpoint.id,
+        node_machine_name: "fallback-endpoint".to_string(),
+        node_ip: "127.0.0.1".parse().unwrap(),
+        client_ip: None,
+        request_body: json!({"messages":[{"role":"user","content":"hi"}]}),
+        response_body: Some(
+            json!({"choices":[{"message":{"role":"assistant","content":"hello"}}]}),
+        ),
+        duration_ms: 80,
+        status: RecordStatus::Success,
+        completed_at: now,
+        input_tokens: Some(40),
+        output_tokens: Some(60),
+        total_tokens: Some(100),
+    };
+    storage
+        .save_record(&record)
+        .await
+        .expect("save request record");
+
+    // Warm cache with persisted totals.
+    let first_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/stats")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(first_response.status(), StatusCode::OK);
+
+    let first_body = axum::body::to_bytes(first_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let first_stats: serde_json::Value = serde_json::from_slice(&first_body).unwrap();
+    assert_eq!(first_stats["total_requests"].as_u64(), Some(2));
+    assert_eq!(first_stats["successful_requests"].as_u64(), Some(1));
+    assert_eq!(first_stats["failed_requests"].as_u64(), Some(1));
+    assert_eq!(first_stats["total_input_tokens"].as_u64(), Some(40));
+    assert_eq!(first_stats["total_output_tokens"].as_u64(), Some(60));
+    assert_eq!(first_stats["total_tokens"].as_u64(), Some(100));
+
+    // Simulate DB outage and verify stats still return the last persisted values.
+    db_pool.close().await;
+
+    let second_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/stats")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(second_response.status(), StatusCode::OK);
+
+    let second_body = axum::body::to_bytes(second_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let second_stats: serde_json::Value = serde_json::from_slice(&second_body).unwrap();
+    assert_eq!(second_stats["total_requests"].as_u64(), Some(2));
+    assert_eq!(second_stats["successful_requests"].as_u64(), Some(1));
+    assert_eq!(second_stats["failed_requests"].as_u64(), Some(1));
+    assert_eq!(second_stats["total_input_tokens"].as_u64(), Some(40));
+    assert_eq!(second_stats["total_output_tokens"].as_u64(), Some(60));
+    assert_eq!(second_stats["total_tokens"].as_u64(), Some(100));
+}
+
+#[tokio::test]
 async fn test_dashboard_overview_endpoint() {
     let (app, _db_pool, jwt) = build_app().await;
 

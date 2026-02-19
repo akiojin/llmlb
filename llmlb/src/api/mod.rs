@@ -559,6 +559,8 @@ pub fn create_app(state: AppState) -> Router {
     let test_routes = Router::new();
 
     let api_routes = Router::new()
+        // 認証不要エンドポイント
+        .route("/version", get(system::get_version))
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))

@@ -125,6 +125,7 @@ pub(crate) fn record_endpoint_request_stats(
     duration_ms: u64,
     endpoint_type: crate::types::endpoint::EndpointType,
     load_manager: crate::balancer::LoadManager,
+    event_bus: crate::events::SharedEventBus,
 ) {
     tokio::spawn(async move {
         let date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -156,11 +157,20 @@ pub(crate) fn record_endpoint_request_stats(
             tracing::error!("Failed to upsert daily stats: {}", e);
         }
 
-        // SPEC-4bb5b55f: インメモリTPS EMAを更新
+        // SPEC-4bb5b55f: インメモリTPS EMAを更新 & イベント発行
         if endpoint_type.is_tps_trackable() && success && output_tokens > 0 && duration_ms > 0 {
             load_manager
-                .update_tps(endpoint_id, model_id, output_tokens, duration_ms)
+                .update_tps(endpoint_id, model_id.clone(), output_tokens, duration_ms)
                 .await;
+
+            let tps = output_tokens as f64 / (duration_ms as f64 / 1000.0);
+            event_bus.publish(crate::events::DashboardEvent::TpsUpdated {
+                endpoint_id,
+                model_id,
+                tps,
+                output_tokens: output_tokens as u32,
+                duration_ms,
+            });
         }
     });
 }

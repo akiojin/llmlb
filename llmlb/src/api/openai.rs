@@ -1388,6 +1388,7 @@ async fn proxy_openai_post(
                 0,
                 endpoint_type,
                 state.load_manager.clone(),
+                state.event_bus.clone(),
             );
 
             // Note: Model exclusion is handled by the health check system
@@ -1439,6 +1440,7 @@ async fn proxy_openai_post(
             0,
             endpoint_type,
             state.load_manager.clone(),
+            state.event_bus.clone(),
         );
 
         save_request_record(
@@ -1485,6 +1487,7 @@ async fn proxy_openai_post(
             0,
             endpoint_type,
             state.load_manager.clone(),
+            state.event_bus.clone(),
         );
 
         // Note: Model exclusion is handled by the health check system
@@ -1567,6 +1570,7 @@ async fn proxy_openai_post(
                 duration.as_millis() as u64,
                 endpoint_type,
                 state.load_manager.clone(),
+                state.event_bus.clone(),
             );
 
             // RequestResponseRecordにトークン情報を保存
@@ -1617,6 +1621,7 @@ async fn proxy_openai_post(
                 0,
                 endpoint_type,
                 state.load_manager.clone(),
+                state.event_bus.clone(),
             );
 
             // Note: Model exclusion is handled by the health check system

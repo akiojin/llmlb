@@ -243,6 +243,7 @@ pub async fn post_responses(
                     0,
                     endpoint.endpoint_type,
                     state.load_manager.clone(),
+                    state.event_bus.clone(),
                 );
                 return Err(AppError::from(e));
             }
@@ -273,6 +274,7 @@ pub async fn post_responses(
             0,
             endpoint.endpoint_type,
             state.load_manager.clone(),
+            state.event_bus.clone(),
         );
 
         // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
@@ -307,6 +309,7 @@ pub async fn post_responses(
                 0,
                 endpoint.endpoint_type,
                 state.load_manager.clone(),
+                state.event_bus.clone(),
             );
             return Err(AppError::from(LbError::Http(e.to_string())));
         }
@@ -331,6 +334,7 @@ pub async fn post_responses(
         0,
         endpoint.endpoint_type,
         state.load_manager.clone(),
+        state.event_bus.clone(),
     );
 
     // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新

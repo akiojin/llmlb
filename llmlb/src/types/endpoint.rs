@@ -159,6 +159,15 @@ impl EndpointType {
     pub fn supports_model_metadata(&self) -> bool {
         matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio)
     }
+
+    /// TPS（tokens per second）計測対象かどうか（SPEC-4bb5b55f）
+    ///
+    /// トークン使用量レポートの信頼性が保証されるエンドポイントタイプのみ対象。
+    /// OpenaiCompatibleは外部サービスのため、トークン計測精度が保証できない。
+    pub fn is_tps_trackable(&self) -> bool {
+        // TODO: SPEC-4bb5b55f T005で正しい実装に置き換え
+        false
+    }
 }
 
 /// EndpointType のパースエラー
@@ -874,6 +883,18 @@ mod tests {
         assert!(!EndpointType::Vllm.supports_model_download());
         assert!(!EndpointType::LmStudio.supports_model_download());
         assert!(!EndpointType::OpenaiCompatible.supports_model_download());
+    }
+
+    // SPEC-4bb5b55f T001: TPS計測対象判定テスト
+    #[test]
+    fn test_endpoint_type_is_tps_trackable() {
+        // xLLM, Ollama, vLLM, LmStudio はTPS計測対象
+        assert!(EndpointType::Xllm.is_tps_trackable());
+        assert!(EndpointType::Ollama.is_tps_trackable());
+        assert!(EndpointType::Vllm.is_tps_trackable());
+        assert!(EndpointType::LmStudio.is_tps_trackable());
+        // OpenaiCompatible はTPS計測対象外
+        assert!(!EndpointType::OpenaiCompatible.is_tps_trackable());
     }
 
     #[test]

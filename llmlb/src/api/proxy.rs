@@ -135,6 +135,8 @@ pub(crate) fn record_endpoint_request_stats(
             &model_id,
             &date,
             success,
+            0,
+            0,
         )
         .await
         {

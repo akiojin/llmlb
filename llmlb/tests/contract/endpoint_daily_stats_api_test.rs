@@ -81,16 +81,16 @@ async fn test_endpoint_daily_stats_with_data() {
         .to_string();
 
     // テストデータを挿入
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &day_before, true)
+    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &day_before, true, 0, 0)
         .await
         .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &day_before, true)
+    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &day_before, true, 0, 0)
         .await
         .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "gpt-4", &day_before, false)
+    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "gpt-4", &day_before, false, 0, 0)
         .await
         .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &yesterday, true)
+    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &yesterday, true, 0, 0)
         .await
         .unwrap();
 

@@ -83,6 +83,8 @@ pub async fn upsert_daily_stats(
     model_id: &str,
     date: &str,
     success: bool,
+    _output_tokens: u64,
+    _duration_ms: u64,
 ) -> Result<(), sqlx::Error> {
     let success_increment: i64 = if success { 1 } else { 0 };
     let failure_increment: i64 = if success { 0 } else { 1 };
@@ -315,7 +317,7 @@ mod tests {
         let date = "2025-01-15";
 
         // 成功リクエストを1件挿入
-        upsert_daily_stats(&pool, endpoint_id, model_id, date, true)
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, true, 0, 0)
             .await
             .unwrap();
 
@@ -328,7 +330,7 @@ mod tests {
 
         // 失敗リクエストを別のモデルで1件挿入
         let model_id_2 = "gpt-4";
-        upsert_daily_stats(&pool, endpoint_id, model_id_2, date, false)
+        upsert_daily_stats(&pool, endpoint_id, model_id_2, date, false, 0, 0)
             .await
             .unwrap();
 
@@ -349,19 +351,19 @@ mod tests {
         let date = "2025-01-15";
 
         // 同一キーで複数回upsert
-        upsert_daily_stats(&pool, endpoint_id, model_id, date, true)
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_id, date, true)
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_id, date, false)
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, false, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_id, date, true)
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_id, date, false)
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, false, 0, 0)
             .await
             .unwrap();
 
@@ -382,22 +384,22 @@ mod tests {
         let model_b = "gpt-4";
 
         // 複数日にわたるデータを挿入
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-13", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-13", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-14", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-14", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-14", false)
+        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-14", false, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-15", false)
+        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-15", false, 0, 0)
             .await
             .unwrap();
 
@@ -444,35 +446,35 @@ mod tests {
 
         // 複数モデル・複数日にわたるデータを挿入
         // model_a: 合計5件（成功4、失敗1）
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-14", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-14", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-14", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-14", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", false)
+        upsert_daily_stats(&pool, endpoint_id, model_a, "2025-01-15", false, 0, 0)
             .await
             .unwrap();
 
         // model_b: 合計3件（成功1、失敗2）
-        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-14", false)
+        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-14", false, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-15", true)
+        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-15", true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-15", false)
+        upsert_daily_stats(&pool, endpoint_id, model_b, "2025-01-15", false, 0, 0)
             .await
             .unwrap();
 
         // model_c: 合計1件（成功1）
-        upsert_daily_stats(&pool, endpoint_id, model_c, "2025-01-15", true)
+        upsert_daily_stats(&pool, endpoint_id, model_c, "2025-01-15", true, 0, 0)
             .await
             .unwrap();
 
@@ -521,13 +523,13 @@ mod tests {
         assert_eq!(stats.failed_requests, 0);
 
         // データを挿入
-        upsert_daily_stats(&pool, endpoint_id, "llama3:8b", today, true)
+        upsert_daily_stats(&pool, endpoint_id, "llama3:8b", today, true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, "llama3:8b", today, true)
+        upsert_daily_stats(&pool, endpoint_id, "llama3:8b", today, true, 0, 0)
             .await
             .unwrap();
-        upsert_daily_stats(&pool, endpoint_id, "gpt-4", today, false)
+        upsert_daily_stats(&pool, endpoint_id, "gpt-4", today, false, 0, 0)
             .await
             .unwrap();
 
@@ -547,5 +549,84 @@ mod tests {
         assert_eq!(stats.total_requests, 0);
         assert_eq!(stats.successful_requests, 0);
         assert_eq!(stats.failed_requests, 0);
+    }
+
+    // SPEC-4bb5b55f T003: upsert_daily_statsにoutput_tokens/duration_msが累積加算されるテスト
+
+    #[tokio::test]
+    async fn test_upsert_daily_stats_tps_accumulation() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let model_id = "llama3:8b";
+        let date = "2025-01-20";
+
+        // output_tokens=100, duration_ms=2000 で1件目
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, true, 100, 2000)
+            .await
+            .unwrap();
+
+        // output_tokens=200, duration_ms=3000 で2件目（累積加算される）
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, true, 200, 3000)
+            .await
+            .unwrap();
+
+        // DBから直接クエリして累積値を検証
+        let row = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT total_output_tokens, total_duration_ms FROM endpoint_daily_stats WHERE endpoint_id = ? AND model_id = ? AND date = ?"
+        )
+        .bind(endpoint_id.to_string())
+        .bind(model_id)
+        .bind(date)
+        .fetch_one(&pool)
+        .await
+        .expect("TPS columns should exist after migration 016");
+
+        // 累積加算: 100+200=300, 2000+3000=5000
+        assert_eq!(row.0, 300, "total_output_tokens should be 300");
+        assert_eq!(row.1, 5000, "total_duration_ms should be 5000");
+
+        // 既存のリクエストカウント動作に影響しないことを確認
+        let stats = get_today_stats(&pool, endpoint_id, date).await.unwrap();
+        assert_eq!(stats.total_requests, 2);
+        assert_eq!(stats.successful_requests, 2);
+        assert_eq!(stats.failed_requests, 0);
+    }
+
+    #[tokio::test]
+    async fn test_upsert_daily_stats_tps_zero_values_no_impact() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let model_id = "gpt-4";
+        let date = "2025-01-20";
+
+        // output_tokens=0, duration_ms=0 で挿入（既存の呼び出しパターン）
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, true, 0, 0)
+            .await
+            .unwrap();
+        upsert_daily_stats(&pool, endpoint_id, model_id, date, false, 0, 0)
+            .await
+            .unwrap();
+
+        // DBから直接クエリして値が0のまま
+        let row = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT total_output_tokens, total_duration_ms FROM endpoint_daily_stats WHERE endpoint_id = ? AND model_id = ? AND date = ?"
+        )
+        .bind(endpoint_id.to_string())
+        .bind(model_id)
+        .bind(date)
+        .fetch_one(&pool)
+        .await
+        .expect("TPS columns should exist after migration 016");
+
+        assert_eq!(row.0, 0, "total_output_tokens should be 0");
+        assert_eq!(row.1, 0, "total_duration_ms should be 0");
+
+        // 通常のカウントは正常
+        let stats = get_today_stats(&pool, endpoint_id, date).await.unwrap();
+        assert_eq!(stats.total_requests, 2);
     }
 }

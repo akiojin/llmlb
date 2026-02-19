@@ -88,6 +88,29 @@ pub enum AdmissionDecision {
 // - compare_option_f32, compare_average_ms, usage_snapshot, compare_usage_levels
 // 新しい負荷分散はレイテンシベース（EMA α=0.2）を使用
 
+/// エンドポイント×モデル単位のTPS EMA状態（SPEC-4bb5b55f）
+#[derive(Debug, Clone, Default)]
+pub struct ModelTpsState {
+    /// EMA平滑化されたTPS値（None=未計測）
+    pub tps_ema: Option<f64>,
+    /// リクエスト完了数
+    pub request_count: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 処理時間累計（ミリ秒）
+    pub total_duration_ms: u64,
+}
+
+impl ModelTpsState {
+    /// TPS計測値を更新（EMA α=0.2）
+    ///
+    /// TPS = output_tokens / (duration_ms / 1000)
+    /// EMA: new_ema = α × current_tps + (1 - α) × previous_ema
+    pub fn update_tps(&mut self, _output_tokens: u64, _duration_ms: u64) {
+        // TODO: SPEC-4bb5b55f T006で正しいEMA計算を実装
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +431,76 @@ mod tests {
     // - test_offline_node_retains_token_statistics
     // - test_pending_node_excluded_from_routing
     // - test_registering_node_excluded_from_routing
+
+    // SPEC-4bb5b55f T002: ModelTpsState EMA計算テスト
+
+    #[test]
+    fn test_model_tps_state_initial_none() {
+        // 初期状態ではtps_emaはNone
+        let state = ModelTpsState::default();
+        assert!(state.tps_ema.is_none());
+        assert_eq!(state.request_count, 0);
+        assert_eq!(state.total_output_tokens, 0);
+        assert_eq!(state.total_duration_ms, 0);
+    }
+
+    #[test]
+    fn test_model_tps_state_first_update() {
+        // 初回計測でNone→Some値になること
+        let mut state = ModelTpsState::default();
+        // 100 tokens in 2000ms = 50 tok/s
+        state.update_tps(100, 2000);
+        assert!(state.tps_ema.is_some());
+        let tps = state.tps_ema.unwrap();
+        assert!((tps - 50.0).abs() < 0.01, "初回TPS: expected 50.0, got {tps}");
+        assert_eq!(state.request_count, 1);
+        assert_eq!(state.total_output_tokens, 100);
+        assert_eq!(state.total_duration_ms, 2000);
+    }
+
+    #[test]
+    fn test_model_tps_state_ema_smoothing() {
+        // 複数回更新でEMA平滑化されること (α=0.2)
+        let mut state = ModelTpsState::default();
+
+        // 1回目: 100 tokens / 2000ms = 50.0 tok/s → EMA = 50.0
+        state.update_tps(100, 2000);
+        assert!((state.tps_ema.unwrap() - 50.0).abs() < 0.01);
+
+        // 2回目: 200 tokens / 2000ms = 100.0 tok/s
+        // EMA = 0.2 * 100.0 + 0.8 * 50.0 = 20.0 + 40.0 = 60.0
+        state.update_tps(200, 2000);
+        assert!(
+            (state.tps_ema.unwrap() - 60.0).abs() < 0.01,
+            "2回目EMA: expected 60.0, got {}",
+            state.tps_ema.unwrap()
+        );
+
+        // 3回目: 50 tokens / 1000ms = 50.0 tok/s
+        // EMA = 0.2 * 50.0 + 0.8 * 60.0 = 10.0 + 48.0 = 58.0
+        state.update_tps(50, 1000);
+        assert!(
+            (state.tps_ema.unwrap() - 58.0).abs() < 0.01,
+            "3回目EMA: expected 58.0, got {}",
+            state.tps_ema.unwrap()
+        );
+
+        // 累計値の確認
+        assert_eq!(state.request_count, 3);
+        assert_eq!(state.total_output_tokens, 350); // 100 + 200 + 50
+        assert_eq!(state.total_duration_ms, 5000); // 2000 + 2000 + 1000
+    }
+
+    #[test]
+    fn test_model_tps_state_zero_duration_skipped() {
+        // duration_ms=0の場合はTPS更新をスキップ（ゼロ除算防止）
+        let mut state = ModelTpsState::default();
+        state.update_tps(100, 0);
+        assert!(
+            state.tps_ema.is_none(),
+            "duration=0ではTPS更新しない"
+        );
+    }
 }
 
 /// エンドポイントの負荷状態

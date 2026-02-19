@@ -26,12 +26,22 @@ import {
   Ticket,
 } from 'lucide-react'
 
+type UpdateStateSummary =
+  | 'up_to_date'
+  | 'available'
+  | 'draining'
+  | 'applying'
+  | 'failed'
+  | undefined
+
 interface HeaderProps {
   user: { username: string; role: string } | null
   isConnected?: boolean
   lastRefreshed?: Date | null
   fetchTimeMs?: number | null
   systemVersion?: string | null
+  updateState?: UpdateStateSummary
+  updateLatest?: string | null
 }
 
 export function Header({
@@ -40,6 +50,8 @@ export function Header({
   lastRefreshed,
   fetchTimeMs,
   systemVersion,
+  updateState,
+  updateLatest,
 }: HeaderProps) {
   const { logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -67,11 +79,36 @@ export function Header({
               <h1 className="font-display text-lg font-semibold tracking-tight">
                 LLM Load Balancer
               </h1>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 Dashboard
-                <span id="current-version" className="ml-2 font-mono text-[11px]">
+                <span id="current-version" className="font-mono text-[11px]">
                   Current v{displayVersion}
                 </span>
+                {updateState && updateState !== 'up_to_date' && (
+                  <span className="inline-flex items-center gap-1">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        updateState === 'failed'
+                          ? 'bg-red-500'
+                          : 'bg-yellow-500'
+                      }`}
+                    />
+                    <span className="text-[10px]">
+                      {updateState === 'available' && updateLatest
+                        ? `v${updateLatest} available`
+                        : updateState === 'draining' || updateState === 'applying'
+                          ? 'Updating...'
+                          : updateState === 'failed'
+                            ? 'Update failed'
+                            : ''}
+                    </span>
+                  </span>
+                )}
+                {updateState === 'up_to_date' && (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                  </span>
+                )}
               </p>
             </div>
           </div>

@@ -1,5 +1,11 @@
 # Unreleased
 
+# [4.7.0](https://github.com/akiojin/llmlb/compare/v4.6.0...v4.7.0) (2026-02-19)
+
+### Features
+
+- draining/applying時のボタンUI改善とヘッダー状態バッジを実装 (#422)
+
 # [4.6.0](https://github.com/akiojin/llmlb/compare/v4.5.1...v4.6.0) (2026-02-19)
 
 ### Features

@@ -273,12 +273,16 @@ export default function Dashboard() {
                         : undefined
                   }
                 >
-                  {isApplyingUpdate ? (
+                  {isApplyingUpdate || applying ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <ArrowUpCircle className="h-4 w-4" />
                   )}
-                  Restart to update
+                  {updateState === 'draining'
+                    ? `Waiting to update... (${update.in_flight})`
+                    : updateState === 'applying'
+                      ? 'Applying update...'
+                      : 'Restart to update'}
                 </Button>
               )}
             </div>
@@ -321,6 +325,13 @@ export default function Dashboard() {
         lastRefreshed={lastRefreshed}
         fetchTimeMs={fetchTimeMs}
         systemVersion={systemInfo?.version ?? null}
+        updateState={(systemInfo?.update as UpdateState | undefined)?.state}
+        updateLatest={(() => {
+          const u = systemInfo?.update as UpdateState | undefined
+          if (!u) return null
+          if ('latest' in u) return u.latest ?? null
+          return null
+        })()}
       />
 
       {/* Main Content */}

@@ -12,3 +12,6 @@ mod hf_buttons_removed;
 
 #[path = "ui/update_banner.rs"]
 mod update_banner;
+
+#[path = "ui/update_header.rs"]
+mod update_header;

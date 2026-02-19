@@ -1,6 +1,6 @@
 //! Integration Test: /v1/models API with supported_apis field
 //!
-//! SPEC-24157000: OpenAI互換API完全準拠 - Open Responses API対応
+//! SPEC-0f1de549: OpenAI互換API完全準拠 - Open Responses API対応
 //!
 //! T062: supported_apis フィールドテスト
 

@@ -24,6 +24,13 @@ struct CheckUpdateResponse {
     update: crate::update::UpdateState,
 }
 
+/// GET /api/version
+///
+/// 認証不要。ビルド時のバージョン文字列を返す。
+pub async fn get_version() -> Response {
+    Json(json!({ "version": env!("CARGO_PKG_VERSION") })).into_response()
+}
+
 /// GET /api/system
 pub async fn get_system(State(state): State<AppState>) -> Response {
     let update = state.update_manager.state().await;

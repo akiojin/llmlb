@@ -1,4 +1,4 @@
--- SPEC-24157000: Open Responses API対応
+-- SPEC-0f1de549: Open Responses API対応
 -- エンドポイントにResponses API対応フラグを追加
 
 -- endpoints テーブルに supports_responses_api 列を追加

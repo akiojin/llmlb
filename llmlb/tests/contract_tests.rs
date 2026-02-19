@@ -81,13 +81,17 @@ mod models_source_test;
 #[path = "contract/request_history_api_test.rs"]
 mod request_history_api_test;
 
-// SPEC-24157000: Open Responses API契約テスト
+// SPEC-0f1de549: Open Responses API契約テスト
 #[path = "contract/responses_api_test.rs"]
 mod responses_api_test;
 
-// SPEC-76643000: エンドポイント日次統計API契約テスト
+// SPEC-8c32349f: エンドポイント日次統計API契約テスト
 #[path = "contract/endpoint_daily_stats_api_test.rs"]
 mod endpoint_daily_stats_api_test;
+
+// SPEC-82cd11b7: バージョンAPI契約テスト
+#[path = "contract/version_api_test.rs"]
+mod version_api_test;
 
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

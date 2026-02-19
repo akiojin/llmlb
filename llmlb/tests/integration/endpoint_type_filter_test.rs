@@ -371,7 +371,7 @@ async fn test_list_endpoints_filter_by_unknown_returns_error_or_empty() {
     );
 }
 
-/// US7: type=lm_studioでフィルタリング（SPEC-46452000）
+/// US7: type=lm_studioでフィルタリング（SPEC-af1ec86d）
 #[tokio::test]
 async fn test_list_endpoints_filter_by_lm_studio() {
     let mock = create_lm_studio_mock().await;

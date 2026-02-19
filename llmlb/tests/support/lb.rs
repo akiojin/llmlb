@@ -322,7 +322,7 @@ pub async fn register_endpoint_with_capabilities(
 }
 
 /// Responses API対応エンドポイントを登録し、指定のモデルで利用可能にする
-/// （SPEC-24157000: Open Responses API対応テスト用）
+/// （SPEC-0f1de549: Open Responses API対応テスト用）
 #[allow(dead_code)]
 pub async fn register_responses_endpoint(
     lb_addr: SocketAddr,

@@ -273,10 +273,19 @@ export interface RequestResponsesPage {
   per_page: number
 }
 
+export interface EndpointTpsSummary {
+  endpoint_id: string
+  model_count: number
+  aggregate_tps: number | null
+  total_output_tokens: number
+  total_requests: number
+}
+
 export interface DashboardOverview {
   endpoints: DashboardEndpoint[]
   stats: DashboardStats
   history: RequestHistoryItem[]
+  endpoint_tps: EndpointTpsSummary[]
   generated_at: string
   generation_time_ms: number
 }
@@ -421,7 +430,7 @@ export const systemApi = {
  * Management API for external inference services (Ollama, vLLM, xLLM, etc.)
  */
 /**
- * SPEC-76643000: Endpoint today stats (daily summary for a single day)
+ * SPEC-8c32349f: Endpoint today stats (daily summary for a single day)
  */
 export interface EndpointTodayStats {
   date: string
@@ -431,7 +440,7 @@ export interface EndpointTodayStats {
 }
 
 /**
- * SPEC-76643000: Daily stat entry (used for trend charts)
+ * SPEC-8c32349f: Daily stat entry (used for trend charts)
  */
 export interface EndpointDailyStatEntry {
   date: string
@@ -441,13 +450,22 @@ export interface EndpointDailyStatEntry {
 }
 
 /**
- * SPEC-76643000: Model-level request statistics entry
+ * SPEC-8c32349f: Model-level request statistics entry
  */
 export interface ModelStatEntry {
   model_id: string
   total_requests: number
   successful_requests: number
   failed_requests: number
+}
+
+/** SPEC-4bb5b55f: Model-level TPS entry */
+export interface ModelTpsEntry {
+  model_id: string
+  tps: number | null
+  request_count: number
+  total_output_tokens: number
+  average_duration_ms: number | null
 }
 
 export const endpointsApi = {
@@ -545,19 +563,23 @@ export const endpointsApi = {
       `/api/endpoints/${id}/models/${encodeURIComponent(model)}/info`
     ),
 
-  /** SPEC-76643000: Get today's request statistics for an endpoint */
+  /** SPEC-8c32349f: Get today's request statistics for an endpoint */
   getTodayStats: (id: string) =>
     fetchWithAuth<EndpointTodayStats>(`/api/endpoints/${id}/today-stats`),
 
-  /** SPEC-76643000: Get daily request statistics for an endpoint */
+  /** SPEC-8c32349f: Get daily request statistics for an endpoint */
   getDailyStats: (id: string, days?: number) =>
     fetchWithAuth<EndpointDailyStatEntry[]>(`/api/endpoints/${id}/daily-stats`, {
       params: { days },
     }),
 
-  /** SPEC-76643000: Get model-level request statistics */
+  /** SPEC-8c32349f: Get model-level request statistics */
   getModelStats: (id: string) =>
     fetchWithAuth<ModelStatEntry[]>(`/api/endpoints/${id}/model-stats`),
+
+  /** SPEC-4bb5b55f: Get model-level TPS statistics */
+  getModelTps: (id: string) =>
+    fetchWithAuth<ModelTpsEntry[]>(`/api/endpoints/${id}/model-tps`),
 
   /** Proxy chat completions to endpoint (JWT authenticated) */
   chatCompletions: async (

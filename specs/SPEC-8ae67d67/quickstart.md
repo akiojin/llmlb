@@ -23,4 +23,4 @@ HFから直接ダウンロードして同期します。
 - モデル一覧: `GET /v1/models`
 - マニフェスト: `GET /api/models/registry/:model_name/manifest.json`
 
-詳細は `SPEC-dcaeaec4` と `SPEC-11106000/contracts/api_models.md` を参照してください。
+詳細は `SPEC-dcaeaec4` と `SPEC-68551ec8/contracts/api_models.md` を参照してください。

@@ -347,7 +347,7 @@ pub async fn update_device_info(
     Ok(result.rows_affected() > 0)
 }
 
-/// エンドポイントのリクエストカウンタをインクリメント（SPEC-76643000）
+/// エンドポイントのリクエストカウンタをインクリメント（SPEC-8c32349f）
 pub async fn increment_request_counters(
     pool: &SqlitePool,
     id: Uuid,
@@ -635,11 +635,11 @@ struct EndpointRow {
     device_info: Option<String>,
     /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2で計算）
     inference_latency_ms: Option<f64>,
-    /// SPEC-76643000: 累計リクエスト数
+    /// SPEC-8c32349f: 累計リクエスト数
     total_requests: i64,
-    /// SPEC-76643000: 累計成功リクエスト数
+    /// SPEC-8c32349f: 累計成功リクエスト数
     successful_requests: i64,
-    /// SPEC-76643000: 累計失敗リクエスト数
+    /// SPEC-8c32349f: 累計失敗リクエスト数
     failed_requests: i64,
 }
 

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
+import { type DashboardEndpoint, type EndpointType, type EndpointTpsSummary, endpointsApi } from '@/lib/api'
 import { formatRelativeTime, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -62,6 +62,7 @@ import {
 
 interface EndpointTableProps {
   endpoints: DashboardEndpoint[]
+  endpointTps?: EndpointTpsSummary[]
   isLoading: boolean
 }
 
@@ -145,7 +146,7 @@ function getTypeBadgeVariant(
   }
 }
 
-export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
+export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTableProps) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<
@@ -423,6 +424,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     Latency
                     <SortIcon field="latency_ms" />
                   </TableHead>
+                  <TableHead className="text-right">TPS</TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('model_count')}
@@ -437,7 +439,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               <TableBody>
                 {paginatedEndpoints.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       {search || statusFilter !== 'all'
                         ? 'No endpoints match the filter criteria'
                         : 'No endpoints registered'}
@@ -499,6 +501,13 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       </TableCell>
                       <TableCell className="text-right">
                         {endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {(() => {
+                          const tps = endpointTps?.find((t) => t.endpoint_id === endpoint.id)
+                          if (!tps || tps.aggregate_tps == null) return <span className="text-muted-foreground">&mdash;</span>
+                          return `${tps.aggregate_tps.toFixed(1)} tok/s`
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">{endpoint.model_count}</TableCell>
                       <TableCell>

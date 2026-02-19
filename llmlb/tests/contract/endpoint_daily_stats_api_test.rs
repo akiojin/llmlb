@@ -1,6 +1,6 @@
 //! エンドポイント日次統計API の Contract Tests
 //!
-//! SPEC-76643000 Phase 6 T020: GET /api/endpoints/:id/daily-stats
+//! SPEC-8c32349f Phase 6 T020: GET /api/endpoints/:id/daily-stats
 //! 期間指定で日次集計データの配列を返すことを確認。
 
 use axum::{
@@ -81,18 +81,50 @@ async fn test_endpoint_daily_stats_with_data() {
         .to_string();
 
     // テストデータを挿入
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &day_before, true)
-        .await
-        .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &day_before, true)
-        .await
-        .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "gpt-4", &day_before, false)
-        .await
-        .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(&db_pool, endpoint_id, "llama3:8b", &yesterday, true)
-        .await
-        .unwrap();
+    endpoint_daily_stats::upsert_daily_stats(
+        &db_pool,
+        endpoint_id,
+        "llama3:8b",
+        &day_before,
+        true,
+        0,
+        0,
+    )
+    .await
+    .unwrap();
+    endpoint_daily_stats::upsert_daily_stats(
+        &db_pool,
+        endpoint_id,
+        "llama3:8b",
+        &day_before,
+        true,
+        0,
+        0,
+    )
+    .await
+    .unwrap();
+    endpoint_daily_stats::upsert_daily_stats(
+        &db_pool,
+        endpoint_id,
+        "gpt-4",
+        &day_before,
+        false,
+        0,
+        0,
+    )
+    .await
+    .unwrap();
+    endpoint_daily_stats::upsert_daily_stats(
+        &db_pool,
+        endpoint_id,
+        "llama3:8b",
+        &yesterday,
+        true,
+        0,
+        0,
+    )
+    .await
+    .unwrap();
 
     let response = app
         .oneshot(

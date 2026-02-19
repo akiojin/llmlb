@@ -141,9 +141,9 @@
 
 ### 前提条件（このSPECが依存するもの）
 
-- **SPEC-47649000**: モデルメタデータSQLite統合 ✅ 実装済み
+- **SPEC-f408aae2**: モデルメタデータSQLite統合 ✅ 実装済み
 - **SPEC-63acef08**: 統一APIプロキシ ✅ 実装済み
-- **SPEC-32637000**: モデルcapabilities検証 ✅ 実装済み
+- **SPEC-dcf8677f**: モデルcapabilities検証 ✅ 実装済み
 
 ### 依存元（このSPECに依存するもの）
 

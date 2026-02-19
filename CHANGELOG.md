@@ -1,5 +1,54 @@
 # Unreleased
 
+# [4.7.0](https://github.com/akiojin/llmlb/compare/v4.6.0...v4.7.0) (2026-02-19)
+
+### Features
+
+- draining/applying時のボタンUI改善とヘッダー状態バッジを実装 (#422)
+
+# [4.6.0](https://github.com/akiojin/llmlb/compare/v4.5.1...v4.6.0) (2026-02-19)
+
+### Features
+
+- エンドポイント×モデル単位のTPS（tokens per second）可視化を実装 (#419)
+
+### Bug Fixes
+
+- 手動アップデートチェックのUX改善とapplyフォールバックの堅牢化 (#418)
+
+# [4.5.1](https://github.com/akiojin/llmlb/compare/v4.5.0...v4.5.1) (2026-02-19)
+
+### Bug Fixes
+
+- ダッシュボードヘッダーにCurrent vを常時表示 (#416)
+
+### Refactoring
+
+- SPEC IDを命名規則準拠のUUID8形式にリネーム
+
+# [4.5.0](https://github.com/akiojin/llmlb/compare/v4.4.0...v4.5.0) (2026-02-18)
+
+### Breaking Changes
+
+- エンドポイントタイプ自動検出を必須化し、手動タイプ指定を廃止 (#413)
+- `EndpointType::Unknown` および `EndpointTypeSource` enum を完全削除 (#413)
+- `POST /api/endpoints` の `endpoint_type` フィールドを廃止（送信しても無視） (#413)
+- 自動検出できないエンドポイントは登録拒否（502/422） (#413)
+
+### Features
+
+- エンドポイントタイプ自動検出の強制と対応5タイプへの制限 (#413)
+- サーバー起動時に全登録エンドポイントを再検出し、非対応は自動削除 (#413)
+- ヘルスチェック offline→online 遷移時にも再検出を実行 (#413)
+- LM Studio の検出を検出チェインに追加 (#413)
+- 検出不能時のエラーコードを分離: 接続不可=502、非対応タイプ=422 (#413)
+
+### Improvements
+
+- ダッシュボードのタイプ選択ドロップダウンを削除し「タイプは自動検出されます」表示に変更 (#413)
+- JWT Cookie認証、CSRF保護、リクエスト履歴フィルタの改善 (#413)
+- DBマイグレーション 015 で不要カラムを削除 (#413)
+
 # [4.4.0](https://github.com/akiojin/llmlb/compare/v4.3.0...v4.4.0) (2026-02-17)
 
 ### Features
@@ -81,7 +130,7 @@
 
 ### Tests
 
-- SPEC-62241000: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
+- SPEC-a472f11f: 包括的E2Eテストスイート強化 (207 pass / 11 skip)
 
 ### Documentation
 

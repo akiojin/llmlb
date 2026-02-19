@@ -63,4 +63,10 @@ test.describe('Dashboard Header Controls @dashboard', () => {
     const metrics = await page.locator('#refresh-metrics').textContent();
     expect(metrics).toContain('Fetch');
   });
+
+  test('H-08: Current version is displayed', async ({ page }) => {
+    const currentVersion = page.locator('#current-version');
+    await expect(currentVersion).toBeVisible({ timeout: 10000 });
+    await expect(currentVersion).toContainText('Current v');
+  });
 });

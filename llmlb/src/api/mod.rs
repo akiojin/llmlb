@@ -21,7 +21,7 @@ pub mod model_name;
 pub mod models;
 pub mod openai;
 pub mod proxy;
-/// Open Responses API (SPEC-24157000)
+/// Open Responses API (SPEC-0f1de549)
 pub mod responses;
 /// System API (self-update)
 pub mod system;
@@ -338,7 +338,7 @@ pub fn create_app(state: AppState) -> Router {
             "/endpoints/{id}/models/{model}/info",
             get(endpoints::get_model_info),
         )
-        // SPEC-76643000: エンドポイント単位リクエスト統計
+        // SPEC-8c32349f: エンドポイント単位リクエスト統計
         .route(
             "/endpoints/{id}/today-stats",
             get(dashboard::get_endpoint_today_stats),
@@ -350,6 +350,11 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/endpoints/{id}/model-stats",
             get(dashboard::get_endpoint_model_stats),
+        )
+        // SPEC-4bb5b55f: エンドポイント×モデル単位TPS
+        .route(
+            "/endpoints/{id}/model-tps",
+            get(dashboard::get_endpoint_model_tps),
         );
     let endpoint_read_routes = if auth_disabled {
         endpoint_read_routes.layer(middleware::from_fn_with_state(
@@ -496,7 +501,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/v1/chat/completions", post(openai::chat_completions))
         .route("/v1/completions", post(openai::completions))
         .route("/v1/embeddings", post(openai::embeddings))
-        // Open Responses API（SPEC-24157000）
+        // Open Responses API（SPEC-0f1de549）
         .route("/v1/responses", post(responses::post_responses))
         // 音声API（OpenAI Audio API互換）
         .route("/v1/audio/transcriptions", post(audio::transcriptions))
@@ -554,6 +559,8 @@ pub fn create_app(state: AppState) -> Router {
     let test_routes = Router::new();
 
     let api_routes = Router::new()
+        // 認証不要エンドポイント
+        .route("/version", get(system::get_version))
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))

@@ -23,6 +23,8 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
@@ -133,11 +135,36 @@ pub struct DashboardOverview {
     pub stats: DashboardStats,
     /// リクエスト履歴
     pub history: Vec<RequestHistoryPoint>,
+    /// エンドポイント別TPS概要（SPEC-4bb5b55f T023）
+    pub endpoint_tps: Vec<crate::balancer::EndpointTpsSummary>,
     /// レスポンス生成時刻
     pub generated_at: DateTime<Utc>,
     /// 集計に要した時間（ミリ秒）
     pub generation_time_ms: u64,
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PersistedRequestTotals {
+    total_requests: u64,
+    successful_requests: u64,
+    failed_requests: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PersistedTokenTotals {
+    total_input_tokens: u64,
+    total_output_tokens: u64,
+    total_tokens: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PersistedTotalsCache {
+    request_totals: PersistedRequestTotals,
+    token_totals: PersistedTokenTotals,
+}
+
+static LAST_KNOWN_PERSISTED_TOTALS: LazyLock<RwLock<HashMap<u64, PersistedTotalsCache>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// GET /api/dashboard/endpoints
 ///
@@ -162,12 +189,14 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
     let endpoints = collect_endpoints(&state).await;
     let stats = collect_stats(&state).await;
     let history = collect_history(&state).await;
+    let endpoint_tps = state.load_manager.get_all_endpoint_tps().await;
     let generation_time_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
     let generated_at = Utc::now();
     Json(DashboardOverview {
         endpoints,
         stats,
         history,
+        endpoint_tps,
         generated_at,
         generation_time_ms,
     })
@@ -327,29 +356,6 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
     let google_key_present = std::env::var("GOOGLE_API_KEY").is_ok();
     let anthropic_key_present = std::env::var("ANTHROPIC_API_KEY").is_ok();
 
-    // Token totals must be consistent with the persisted request history.
-    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
-    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
-    let mut total_input_tokens = summary.total_input_tokens;
-    let mut total_output_tokens = summary.total_output_tokens;
-    let mut total_tokens = summary.total_tokens;
-    match state.request_history.get_token_statistics().await {
-        Ok(stats) => {
-            total_input_tokens = stats.total_input_tokens;
-            total_output_tokens = stats.total_output_tokens;
-            total_tokens = stats.total_tokens;
-        }
-        Err(e) => {
-            warn!(
-                "Failed to query token statistics from request history: {}",
-                e
-            );
-        }
-    }
-
-    let mut total_requests = summary.total_requests;
-    let mut successful_requests = summary.successful_requests;
-    let mut failed_requests = summary.failed_requests;
     let to_u64 = |value: i64| -> u64 {
         if value < 0 {
             0
@@ -357,14 +363,77 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             value as u64
         }
     };
-    match crate::db::endpoints::get_request_totals(&state.db_pool).await {
-        Ok(request_totals) => {
-            total_requests = to_u64(request_totals.total_requests);
-            successful_requests = to_u64(request_totals.successful_requests);
-            failed_requests = to_u64(request_totals.failed_requests);
-        }
+    let cache_key = load_manager.cache_key();
+
+    let request_totals_from_db =
+        match crate::db::endpoints::get_request_totals(&state.db_pool).await {
+            Ok(request_totals) => Some(PersistedRequestTotals {
+                total_requests: to_u64(request_totals.total_requests),
+                successful_requests: to_u64(request_totals.successful_requests),
+                failed_requests: to_u64(request_totals.failed_requests),
+            }),
+            Err(e) => {
+                warn!("Failed to query persisted request totals: {}", e);
+                None
+            }
+        };
+
+    // Token totals must be consistent with the persisted request history.
+    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
+    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
+    let token_totals_from_history = match state.request_history.get_token_statistics().await {
+        Ok(stats) => Some(PersistedTokenTotals {
+            total_input_tokens: stats.total_input_tokens,
+            total_output_tokens: stats.total_output_tokens,
+            total_tokens: stats.total_tokens,
+        }),
         Err(e) => {
-            warn!("Failed to query persisted request totals: {}", e);
+            warn!(
+                "Failed to query token statistics from request history: {}",
+                e
+            );
+            None
+        }
+    };
+
+    let cached_totals = LAST_KNOWN_PERSISTED_TOTALS
+        .read()
+        .ok()
+        .and_then(|guard| guard.get(&cache_key).copied());
+
+    let request_totals = if let Some(request_totals) = request_totals_from_db {
+        request_totals
+    } else if let Some(cached) = cached_totals {
+        warn!("Using last known persisted request totals after DB query failure");
+        cached.request_totals
+    } else {
+        warn!("No cached persisted request totals available; returning zero values");
+        PersistedRequestTotals::default()
+    };
+
+    let token_totals = if let Some(token_totals) = token_totals_from_history {
+        token_totals
+    } else if let Some(cached) = cached_totals {
+        warn!("Using last known persisted token totals after history query failure");
+        cached.token_totals
+    } else {
+        warn!("No cached persisted token totals available; returning zero values");
+        PersistedTokenTotals::default()
+    };
+
+    if request_totals_from_db.is_some() || token_totals_from_history.is_some() {
+        let mut updated_cache = cached_totals.unwrap_or_default();
+        if let Some(request_totals) = request_totals_from_db {
+            updated_cache.request_totals = request_totals;
+        }
+        if let Some(token_totals) = token_totals_from_history {
+            updated_cache.token_totals = token_totals;
+        }
+
+        if let Ok(mut guard) = LAST_KNOWN_PERSISTED_TOTALS.write() {
+            guard.insert(cache_key, updated_cache);
+        } else {
+            warn!("Failed to update persisted totals cache due to poisoned lock");
         }
     }
 
@@ -374,9 +443,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         pending_nodes: summary.pending_nodes,
         registering_nodes: summary.registering_nodes,
         offline_nodes: summary.offline_nodes,
-        total_requests,
-        successful_requests,
-        failed_requests,
+        total_requests: request_totals.total_requests,
+        successful_requests: request_totals.successful_requests,
+        failed_requests: request_totals.failed_requests,
         total_active_requests: summary.total_active_requests,
         queued_requests: summary.queued_requests,
         average_response_time_ms: summary.average_response_time_ms,
@@ -388,9 +457,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         openai_key_present,
         google_key_present,
         anthropic_key_present,
-        total_input_tokens,
-        total_output_tokens,
-        total_tokens,
+        total_input_tokens: token_totals.total_input_tokens,
+        total_output_tokens: token_totals.total_output_tokens,
+        total_tokens: token_totals.total_tokens,
     }
 }
 
@@ -777,7 +846,7 @@ pub async fn export_request_responses(
 
 /// GET /api/endpoints/{id}/today-stats - 当日リクエスト統計
 ///
-/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 5)
+/// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 5)
 pub async fn get_endpoint_today_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
@@ -791,7 +860,7 @@ pub async fn get_endpoint_today_stats(
 
 /// GET /api/endpoints/{id}/daily-stats - 日次リクエスト統計
 ///
-/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 6)
+/// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 6)
 pub async fn get_endpoint_daily_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
@@ -814,7 +883,7 @@ pub struct EndpointDailyStatsQuery {
 
 /// GET /api/endpoints/{id}/model-stats - モデル別リクエスト統計
 ///
-/// SPEC-76643000: エンドポイント単位リクエスト統計 (Phase 7)
+/// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 7)
 pub async fn get_endpoint_model_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
@@ -827,7 +896,7 @@ pub async fn get_endpoint_model_stats(
 
 /// GET /api/dashboard/all-model-stats - 全エンドポイント横断のモデル別統計
 ///
-/// SPEC-76643000: ダッシュボード向けモデル別集計
+/// SPEC-8c32349f: ダッシュボード向けモデル別集計
 pub async fn get_all_model_stats(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
@@ -840,6 +909,43 @@ pub async fn get_all_model_stats(
 /// GET /api/dashboard/models - ダッシュボード向けモデル一覧
 pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppError> {
     crate::api::openai::list_models(State(state)).await
+}
+
+/// エンドポイント×モデル単位のTPS情報（SPEC-4bb5b55f）
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelTpsEntry {
+    /// モデルID
+    pub model_id: String,
+    /// EMA平滑化されたTPS値（None=未計測）
+    pub tps: Option<f64>,
+    /// リクエスト完了数
+    pub request_count: u64,
+    /// 出力トークン累計
+    pub total_output_tokens: u64,
+    /// 平均処理時間（ミリ秒、None=未計測）
+    pub average_duration_ms: Option<f64>,
+}
+
+/// GET /api/endpoints/{id}/model-tps - エンドポイント×モデル単位のTPS情報
+///
+/// SPEC-4bb5b55f: エンドポイント×モデル単位TPS可視化 (Phase 3)
+pub async fn get_endpoint_model_tps(
+    Path(id): Path<Uuid>,
+    State(state): State<AppState>,
+) -> Json<Vec<ModelTpsEntry>> {
+    let tps_list = state.load_manager.get_model_tps(id).await;
+    Json(
+        tps_list
+            .into_iter()
+            .map(|info| ModelTpsEntry {
+                model_id: info.model_id,
+                tps: info.tps,
+                request_count: info.request_count,
+                total_output_tokens: info.total_output_tokens,
+                average_duration_ms: info.average_duration_ms,
+            })
+            .collect(),
+    )
 }
 
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装

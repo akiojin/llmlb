@@ -72,7 +72,7 @@ tiktoken-rs = "0.9.1"
 semver = "1.0"
 flate2 = "1.0"
 tar = "0.4"
-zip = { version = "7", default-features = false, features = ["deflate", "bzip2", "zstd"] }
+zip = { version = "8", default-features = false, features = ["deflate", "bzip2", "zstd"] }
 
 [build-dependencies]
 winresource = "0.1.27"

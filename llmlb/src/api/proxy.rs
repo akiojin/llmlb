@@ -136,6 +136,66 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         pool: sqlx::SqlitePool,
         load_manager: crate::balancer::LoadManager,
         event_bus: crate::events::SharedEventBus,
+        stats_recorded: bool,
+    }
+
+    impl TpsTrackingState {
+        fn finalize_output_tokens_and_duration(&mut self) -> (u64, u64) {
+            if !self.sse_buffer.is_empty() {
+                let pending = std::mem::take(&mut self.sse_buffer);
+                self.accumulator
+                    .process_chunk(pending.trim_end_matches('\r'));
+            }
+
+            let usage = self.accumulator.finalize();
+            let output_tokens = usage.output_tokens.unwrap_or(0) as u64;
+            let duration_ms = if output_tokens > 0 {
+                self.request_started_at.elapsed().as_millis().max(1) as u64
+            } else {
+                0
+            };
+
+            (output_tokens, duration_ms)
+        }
+
+        fn record_stats_once(&mut self, success: bool, output_tokens: u64, duration_ms: u64) {
+            if self.stats_recorded {
+                return;
+            }
+            self.stats_recorded = true;
+
+            record_endpoint_request_stats(
+                self.pool.clone(),
+                self.endpoint_id,
+                self.model_id.clone(),
+                success,
+                output_tokens,
+                duration_ms,
+                self.endpoint_type,
+                self.load_manager.clone(),
+                self.event_bus.clone(),
+            );
+        }
+    }
+
+    impl Drop for TpsTrackingState {
+        fn drop(&mut self) {
+            if self.stats_recorded {
+                return;
+            }
+
+            let (output_tokens, duration_ms) = self.finalize_output_tokens_and_duration();
+
+            if tokio::runtime::Handle::try_current().is_ok() {
+                self.record_stats_once(true, output_tokens, duration_ms);
+            } else {
+                tracing::warn!(
+                    endpoint_id = %self.endpoint_id,
+                    model_id = %self.model_id,
+                    "Streaming TPS tracker dropped without runtime; skipping stats fallback"
+                );
+            }
+        }
     }
 
     let status = response.status();
@@ -152,6 +212,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         pool,
         load_manager,
         event_bus,
+        stats_recorded: false,
     };
 
     let tracked_stream = futures::stream::try_unfold(state, |mut state| async move {
@@ -162,46 +223,12 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
                 Ok(Some((chunk, state)))
             }
             Some(Err(err)) => {
-                record_endpoint_request_stats(
-                    state.pool.clone(),
-                    state.endpoint_id,
-                    state.model_id.clone(),
-                    false,
-                    0,
-                    0,
-                    state.endpoint_type,
-                    state.load_manager.clone(),
-                    state.event_bus.clone(),
-                );
+                state.record_stats_once(false, 0, 0);
                 Err(io::Error::other(err))
             }
             None => {
-                if !state.sse_buffer.is_empty() {
-                    let pending = std::mem::take(&mut state.sse_buffer);
-                    state
-                        .accumulator
-                        .process_chunk(pending.trim_end_matches('\r'));
-                }
-
-                let usage = state.accumulator.finalize();
-                let output_tokens = usage.output_tokens.unwrap_or(0) as u64;
-                let duration_ms = if output_tokens > 0 {
-                    state.request_started_at.elapsed().as_millis().max(1) as u64
-                } else {
-                    0
-                };
-
-                record_endpoint_request_stats(
-                    state.pool.clone(),
-                    state.endpoint_id,
-                    state.model_id.clone(),
-                    true,
-                    output_tokens,
-                    duration_ms,
-                    state.endpoint_type,
-                    state.load_manager.clone(),
-                    state.event_bus.clone(),
-                );
+                let (output_tokens, duration_ms) = state.finalize_output_tokens_and_duration();
+                state.record_stats_once(true, output_tokens, duration_ms);
                 Ok(None)
             }
         }

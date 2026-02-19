@@ -2420,6 +2420,99 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn interrupted_streaming_request_still_records_success_stats() {
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        let stream_body = concat!(
+            "data: {\"id\":\"chatcmpl-123\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+            "data: {\"id\":\"chatcmpl-123\",\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(stream_body, "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "stream-interrupted-endpoint".to_string(),
+            server.uri(),
+            EndpointType::Vllm,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "stream-interrupted-model".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+            })
+            .await
+            .expect("add endpoint model");
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "stream-interrupted-model",
+                "messages": [{"role":"user","content":"hello"}],
+                "stream": true
+            }),
+            "/v1/chat/completions",
+            "stream-interrupted-model".to_string(),
+            true,
+            RequestType::Chat,
+        )
+        .await
+        .expect("streaming request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Simulate client disconnect before fully draining the upstream stream.
+        drop(response);
+
+        sleep(Duration::from_millis(120)).await;
+
+        let endpoint = crate::db::endpoints::get_endpoint(&state.db_pool, endpoint_id)
+            .await
+            .expect("get endpoint should succeed")
+            .expect("endpoint should exist");
+        assert_eq!(endpoint.total_requests, 1);
+        assert_eq!(endpoint.successful_requests, 1);
+        assert_eq!(endpoint.failed_requests, 0);
+
+        let model_stats =
+            crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, endpoint_id)
+                .await
+                .expect("get model stats");
+        let stat = model_stats
+            .iter()
+            .find(|s| s.model_id == "stream-interrupted-model")
+            .expect("model stats should exist for interrupted stream");
+        assert_eq!(stat.total_requests, 1);
+        assert_eq!(stat.successful_requests, 1);
+        assert_eq!(stat.failed_requests, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn non_stream_without_usage_does_not_accumulate_tps_duration() {
         use crate::types::endpoint::{
             Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,

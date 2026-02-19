@@ -588,4 +588,64 @@ mod tests {
             "streaming output tokens should be accumulated"
         );
     }
+
+    #[tokio::test]
+    async fn responses_interrupted_stream_still_records_success_stats() {
+        let state = create_local_state().await;
+        let server = MockServer::start().await;
+        let stream_body = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}\n\n",
+            "data: [DONE]\n\n"
+        );
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_raw(stream_body, "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let endpoint_id =
+            register_vllm_endpoint(&state, server.uri(), "responses-stream-interrupted").await;
+
+        let response = post_responses(
+            State(state.clone()),
+            Json(json!({
+                "model": "responses-stream-interrupted",
+                "input": "hello",
+                "stream": true
+            })),
+        )
+        .await
+        .expect("streaming responses request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Simulate client disconnect before consuming the full stream.
+        drop(response);
+
+        sleep(Duration::from_millis(120)).await;
+
+        let endpoint = crate::db::endpoints::get_endpoint(&state.db_pool, endpoint_id)
+            .await
+            .expect("get endpoint should succeed")
+            .expect("endpoint should exist");
+        assert_eq!(endpoint.total_requests, 1);
+        assert_eq!(endpoint.successful_requests, 1);
+        assert_eq!(endpoint.failed_requests, 0);
+
+        let model_stats =
+            crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, endpoint_id)
+                .await
+                .expect("get model stats");
+        let stat = model_stats
+            .iter()
+            .find(|s| s.model_id == "responses-stream-interrupted")
+            .expect("model stats should exist for interrupted stream");
+        assert_eq!(stat.total_requests, 1);
+        assert_eq!(stat.successful_requests, 1);
+        assert_eq!(stat.failed_requests, 0);
+    }
 }

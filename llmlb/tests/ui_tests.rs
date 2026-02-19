@@ -9,3 +9,6 @@ mod theme_effects;
 
 #[path = "ui/hf_buttons_removed.rs"]
 mod hf_buttons_removed;
+
+#[path = "ui/update_banner.rs"]
+mod update_banner;

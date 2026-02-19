@@ -22,10 +22,21 @@
 - [x] T030 ダッシュボードに Update banner + Restart to update
 - [x] T031 macOS/Windows トレイに Update 表示 + Restart to update
 - [x] T032 `pnpm --filter @llm/dashboard build` で `llmlb/src/web/static/` を再生成
-
-## Polish
-- [x] T040 README 追記（自動アップデートの挙動/制約）
 - [x] T041 ダッシュボードヘッダーに current version 常時表示を追加（Issue #415）
 - [x] T042 `Dashboard.tsx`→`Header.tsx` へ `/api/system.version` の受け渡しを追加
 - [x] T043 Playwright セレクタ/ページオブジェクトに `#current-version` を追加
 - [x] T044 system-update/dashboard-header E2E を current version 検証に更新
+
+## Polish
+- [x] T040 README 追記（自動アップデートの挙動/制約）
+
+## Regression Fixes (2026-02-19)
+- [x] T050 `specs/SPEC-a6e55b37/spec.md` に手動更新チェック導線の回帰要件（User Story 5 / FR-006 / FR-007）を追記
+- [x] T051 [P] `llmlb/tests/ui/update_banner.rs` に `Check for updates` 導線消失の回帰テストを追加（TDD）
+- [x] T052 `llmlb/src/web/dashboard/src/pages/Dashboard.tsx` で `update` 未取得時でも Update banner を表示し、ボタン導線を維持
+
+## Regression Fixes (2026-02-19 追補)
+- [x] T053 `specs/SPEC-a6e55b37/spec.md` に手動チェック失敗時の `available` 状態保持要件（FR-009）と Restart表示条件要件（FR-010）を追記
+- [x] T054 [P] `llmlb/src/update/mod.rs` に `record_check_failure` の回帰ユニットテストを追加（`available`保持 / 非`available`失敗遷移）
+- [x] T055 [P] `llmlb/tests/ui/update_banner.rs` に Restart表示条件（`failed` かつ `latest` ありのみ）の回帰テストを追加
+- [x] T056 `llmlb/src/update/mod.rs` と `llmlb/src/web/dashboard/src/pages/Dashboard.tsx` を修正し、payload保持とRestart導線ガードを実装

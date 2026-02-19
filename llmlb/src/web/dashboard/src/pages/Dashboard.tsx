@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   dashboardApi,
   systemApi,
@@ -21,15 +21,19 @@ import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, RefreshCcw } from 'lucide-react'
+
+const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
 
 export default function Dashboard() {
   const { user } = useAuth()
   const { isConnected: wsConnected } = useDashboardWebSocket()
+  const queryClient = useQueryClient()
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
   const fetchStartRef = useRef<number | null>(null)
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
 
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
@@ -51,9 +55,8 @@ export default function Dashboard() {
 
   const {
     data: systemInfo,
-    refetch: refetchSystemInfo,
   } = useQuery<SystemInfo>({
-    queryKey: ['system-info'],
+    queryKey: SYSTEM_INFO_QUERY_KEY,
     queryFn: () => systemApi.getSystem(),
     refetchInterval: pollingInterval,
   })
@@ -92,18 +95,20 @@ export default function Dashboard() {
 
   const updateBanner = useMemo(() => {
     const update = systemInfo?.update as UpdateState | undefined
-    if (!update || update.state === 'up_to_date') return null
-
+    const updateState = update?.state
     const isAdmin = user?.role === 'admin'
-    const canApply = isAdmin && (update.state === 'available' || update.state === 'failed')
-    const applying = update.state === 'draining' || update.state === 'applying'
+    const failedHasUpdateCandidate = updateState === 'failed' && Boolean(update?.latest)
+    const canApply = isAdmin && (updateState === 'available' || failedHasUpdateCandidate)
+    const applying = updateState === 'draining' || updateState === 'applying'
+    const showRestartButton = updateState === 'available' || failedHasUpdateCandidate || applying
+    const canCheck = isAdmin && !applying
 
     let title = 'Update'
-    let description = ''
+    let description = 'Update status unavailable'
     let link: string | null = null
     let payloadHint: string | null = null
 
-    if (update.state === 'available') {
+    if (updateState === 'available' && update) {
       title = `Update available: v${update.latest}`
       description = `Current: v${update.current}`
       link = update.release_url
@@ -116,16 +121,63 @@ export default function Dashboard() {
       } else {
         payloadHint = 'Preparing...'
       }
-    } else if (update.state === 'draining') {
+    } else if (updateState === 'up_to_date' && update) {
+      title = 'Up to date'
+      const checkedAt = update.checked_at ?? null
+      if (checkedAt) {
+        const asDate = new Date(checkedAt)
+        description = `Last checked: ${Number.isNaN(asDate.valueOf()) ? checkedAt : asDate.toLocaleString()}`
+      } else {
+        description = 'Last checked: unknown'
+      }
+    } else if (updateState === 'draining' && update) {
       title = `Updating to v${update.latest}`
       description = `Waiting for in-flight requests: ${update.in_flight}`
-    } else if (update.state === 'applying') {
+    } else if (updateState === 'applying' && update) {
       title = `Applying update: v${update.latest}`
       description = 'Restarting...'
-    } else if (update.state === 'failed') {
+    } else if (updateState === 'failed' && update) {
       title = 'Update failed'
       description = update.message
       link = update.release_url || null
+    }
+
+    const onCheck = async () => {
+      setIsCheckingUpdate(true)
+      try {
+        const { update } = await systemApi.checkUpdate()
+        const currentSystemInfo = queryClient.getQueryData<SystemInfo>(SYSTEM_INFO_QUERY_KEY)
+        if (currentSystemInfo) {
+          queryClient.setQueryData<SystemInfo>(
+            SYSTEM_INFO_QUERY_KEY,
+            {
+              ...currentSystemInfo,
+              update,
+            }
+          )
+        } else {
+          const freshSystemInfo = await systemApi.getSystem()
+          queryClient.setQueryData<SystemInfo>(
+            SYSTEM_INFO_QUERY_KEY,
+            {
+              ...freshSystemInfo,
+              update,
+            }
+          )
+        }
+        toast({
+          title: 'Checked for updates',
+        })
+      } catch (e) {
+        toast({
+          title: 'Update check failed',
+          description: e instanceof Error ? e.message : String(e),
+          variant: 'destructive',
+        })
+      } finally {
+        setIsCheckingUpdate(false)
+        await queryClient.invalidateQueries({ queryKey: SYSTEM_INFO_QUERY_KEY })
+      }
     }
 
     const onApply = async () => {
@@ -137,7 +189,7 @@ export default function Dashboard() {
           description:
             'llmlb will restart after in-flight requests complete.',
         })
-        await refetchSystemInfo()
+        await queryClient.invalidateQueries({ queryKey: SYSTEM_INFO_QUERY_KEY })
       } catch (e) {
         toast({
           title: 'Failed to apply update',
@@ -191,29 +243,50 @@ export default function Dashboard() {
                 </a>
               )}
               <Button
-                onClick={onApply}
-                disabled={!canApply || isApplyingUpdate || applying}
+                variant="outline"
+                onClick={onCheck}
+                disabled={!canCheck || isCheckingUpdate || isApplyingUpdate}
                 title={
                   !isAdmin
                     ? 'Admin role is required'
                     : applying
-                    ? 'Update is in progress'
-                    : undefined
+                      ? 'Update is in progress'
+                      : undefined
                 }
               >
-                {isApplyingUpdate ? (
+                {isCheckingUpdate ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <ArrowUpCircle className="h-4 w-4" />
+                  <RefreshCcw className="h-4 w-4" />
                 )}
-                Restart to update
+                Check for updates
               </Button>
+              {showRestartButton && (
+                <Button
+                  onClick={onApply}
+                  disabled={!canApply || isApplyingUpdate || applying}
+                  title={
+                    !isAdmin
+                      ? 'Admin role is required'
+                      : applying
+                        ? 'Update is in progress'
+                        : undefined
+                  }
+                >
+                  {isApplyingUpdate ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowUpCircle className="h-4 w-4" />
+                  )}
+                  Restart to update
+                </Button>
+              )}
             </div>
           </div>
         </div>
       </section>
     )
-  }, [systemInfo?.update, user?.role, isApplyingUpdate, refetchSystemInfo])
+  }, [systemInfo?.update, user?.role, isApplyingUpdate, isCheckingUpdate, queryClient])
 
   if (error) {
     return (

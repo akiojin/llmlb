@@ -31,6 +31,10 @@ pub struct ModelStatEntry {
     pub successful_requests: i64,
     /// 失敗リクエスト数
     pub failed_requests: i64,
+    /// 出力トークン累計（SPEC-4bb5b55f）
+    pub total_output_tokens: i64,
+    /// 処理時間累計（ミリ秒、SPEC-4bb5b55f）
+    pub total_duration_ms: i64,
 }
 
 // --- Internal Row Types ---
@@ -60,6 +64,8 @@ struct ModelStatRow {
     total_requests: i64,
     successful_requests: i64,
     failed_requests: i64,
+    total_output_tokens: i64,
+    total_duration_ms: i64,
 }
 
 impl From<ModelStatRow> for ModelStatEntry {
@@ -69,6 +75,8 @@ impl From<ModelStatRow> for ModelStatEntry {
             total_requests: row.total_requests,
             successful_requests: row.successful_requests,
             failed_requests: row.failed_requests,
+            total_output_tokens: row.total_output_tokens,
+            total_duration_ms: row.total_duration_ms,
         }
     }
 }
@@ -165,7 +173,9 @@ pub async fn get_model_stats(
             model_id,
             SUM(total_requests) AS total_requests,
             SUM(successful_requests) AS successful_requests,
-            SUM(failed_requests) AS failed_requests
+            SUM(failed_requests) AS failed_requests,
+            SUM(total_output_tokens) AS total_output_tokens,
+            SUM(total_duration_ms) AS total_duration_ms
         FROM endpoint_daily_stats
         WHERE endpoint_id = ?
         GROUP BY model_id
@@ -190,7 +200,9 @@ pub async fn get_all_model_stats(pool: &SqlitePool) -> Result<Vec<ModelStatEntry
             model_id,
             SUM(total_requests) AS total_requests,
             SUM(successful_requests) AS successful_requests,
-            SUM(failed_requests) AS failed_requests
+            SUM(failed_requests) AS failed_requests,
+            SUM(total_output_tokens) AS total_output_tokens,
+            SUM(total_duration_ms) AS total_duration_ms
         FROM endpoint_daily_stats
         GROUP BY model_id
         ORDER BY total_requests DESC

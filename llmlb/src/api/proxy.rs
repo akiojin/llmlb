@@ -119,6 +119,9 @@ pub(crate) fn record_endpoint_request_stats(
     endpoint_id: uuid::Uuid,
     model_id: String,
     success: bool,
+    output_tokens: u64,
+    duration_ms: u64,
+    endpoint_type: crate::types::endpoint::EndpointType,
 ) {
     tokio::spawn(async move {
         let date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -129,14 +132,21 @@ pub(crate) fn record_endpoint_request_stats(
             tracing::error!("Failed to increment endpoint request counters: {}", e);
         }
 
+        // TPS計測対象のエンドポイントのみトークン・時間をDB永続化
+        let (tokens, duration) = if endpoint_type.is_tps_trackable() {
+            (output_tokens, duration_ms)
+        } else {
+            (0, 0)
+        };
+
         if let Err(e) = crate::db::endpoint_daily_stats::upsert_daily_stats(
             &pool,
             endpoint_id,
             &model_id,
             &date,
             success,
-            0,
-            0,
+            tokens,
+            duration,
         )
         .await
         {

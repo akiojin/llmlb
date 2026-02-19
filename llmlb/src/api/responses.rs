@@ -239,6 +239,9 @@ pub async fn post_responses(
                     endpoint.id,
                     model.clone(),
                     false,
+                    0,
+                    0,
+                    endpoint.endpoint_type,
                 );
                 return Err(AppError::from(e));
             }
@@ -260,7 +263,7 @@ pub async fn post_responses(
             .await
             .map_err(AppError::from)?;
 
-        record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), succeeded);
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), succeeded, 0, 0, endpoint.endpoint_type);
 
         // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
         if response_status.is_success() {
@@ -285,7 +288,7 @@ pub async fn post_responses(
                 .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
-            record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), false);
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), false, 0, 0, endpoint.endpoint_type);
             return Err(AppError::from(LbError::Http(e.to_string())));
         }
     };
@@ -300,7 +303,7 @@ pub async fn post_responses(
         .complete(outcome, duration)
         .await
         .map_err(AppError::from)?;
-    record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), succeeded);
+    record_endpoint_request_stats(state.db_pool.clone(), endpoint.id, model.clone(), succeeded, 0, 0, endpoint.endpoint_type);
 
     // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
     if status.is_success() {

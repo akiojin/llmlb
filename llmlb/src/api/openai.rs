@@ -1351,6 +1351,7 @@ async fn proxy_openai_post(
         };
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();
+    let endpoint_type = endpoint.endpoint_type;
     // RequestResponseRecordの互換性のため、デフォルトIP使用
     // (今後、RequestResponseRecordのフィールドをリネームすべき)
     let endpoint_host: std::net::IpAddr = UNSPECIFIED_IP;
@@ -1378,7 +1379,7 @@ async fn proxy_openai_post(
                 .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
-            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false, 0, 0, endpoint_type);
 
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly
@@ -1420,7 +1421,7 @@ async fn proxy_openai_post(
             .map_err(AppError::from)?;
         // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
         update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
-        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true, 0, 0, endpoint_type);
 
         save_request_record(
             state.request_history.clone(),
@@ -1457,7 +1458,7 @@ async fn proxy_openai_post(
             .complete(RequestOutcome::Error, duration)
             .await
             .map_err(AppError::from)?;
-        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
+        record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false, 0, 0, endpoint_type);
 
         // Note: Model exclusion is handled by the health check system
         // which will mark the endpoint as offline/error if requests fail repeatedly
@@ -1525,7 +1526,9 @@ async fn proxy_openai_post(
                 .map_err(AppError::from)?;
             // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
             update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
-            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true);
+            // SPEC-4bb5b55f: TPS計測用にoutput_tokensとdurationを渡す
+            let tps_output_tokens = token_usage.as_ref().and_then(|u| u.output_tokens).unwrap_or(0) as u64;
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), true, tps_output_tokens, duration.as_millis() as u64, endpoint_type);
 
             // RequestResponseRecordにトークン情報を保存
             let (input_tokens, output_tokens, total_tokens) = token_usage
@@ -1566,7 +1569,7 @@ async fn proxy_openai_post(
                 .complete(RequestOutcome::Error, duration)
                 .await
                 .map_err(AppError::from)?;
-            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false);
+            record_endpoint_request_stats(state.db_pool.clone(), endpoint_id, model.clone(), false, 0, 0, endpoint_type);
 
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly

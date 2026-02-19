@@ -97,8 +97,10 @@ export default function Dashboard() {
     const update = systemInfo?.update as UpdateState | undefined
     const updateState = update?.state
     const isAdmin = user?.role === 'admin'
-    const canApply = isAdmin && (updateState === 'available' || updateState === 'failed')
+    const failedHasUpdateCandidate = updateState === 'failed' && Boolean(update?.latest)
+    const canApply = isAdmin && (updateState === 'available' || failedHasUpdateCandidate)
     const applying = updateState === 'draining' || updateState === 'applying'
+    const showRestartButton = updateState === 'available' || failedHasUpdateCandidate || applying
     const canCheck = isAdmin && !applying
 
     let title = 'Update'
@@ -259,7 +261,7 @@ export default function Dashboard() {
                 )}
                 Check for updates
               </Button>
-              {(updateState === 'available' || updateState === 'failed' || applying) && (
+              {showRestartButton && (
                 <Button
                   onClick={onApply}
                   disabled={!canApply || isApplyingUpdate || applying}

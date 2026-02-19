@@ -1,4 +1,4 @@
-// Regression tests for dashboard update banner behavior (FR-006/FR-007)
+// Regression tests for dashboard update banner behavior (FR-006/FR-007/FR-010)
 //
 // This verifies source-level guarantees for the update banner:
 // - The "Check for updates" CTA remains present.
@@ -34,7 +34,11 @@ fn update_banner_does_not_early_return_when_update_missing() {
 fn restart_button_visibility_depends_on_update_state() {
     let source = get_dashboard_source();
     assert!(
-        source.contains("updateState === 'available' || updateState === 'failed' || applying"),
-        "Restart button visibility should be tied to explicit update states"
+        source.contains("updateState === 'failed' && Boolean(update?.latest)"),
+        "Failed state should expose restart only when an actionable update candidate exists"
+    );
+    assert!(
+        source.contains("updateState === 'available' || failedHasUpdateCandidate || applying"),
+        "Restart button visibility should be tied to actionable update states"
     );
 }

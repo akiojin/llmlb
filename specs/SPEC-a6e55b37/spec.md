@@ -73,6 +73,7 @@
 1. **前提** ダッシュボード初期描画直後で `systemInfo.update` が未取得、**実行** 画面表示、**結果** Update banner と `Check for updates` ボタンが表示される
 2. **前提** 手動チェックが `available` を返す、**実行** `Check for updates` 押下、**結果** 再読み込みなしで `Restart to update` が表示される
 3. **前提** 手動チェックが `up_to_date` を返す、**実行** `Check for updates` 押下、**結果** `Restart to update` は表示されず `Up to date` の情報が更新される
+4. **前提** 既に `available`（payload ready）を表示中、**実行** 一時的なネットワーク障害下で `Check for updates` 押下、**結果** 既存の `available` 状態は維持され、`Restart to update` の導線は失われない
 
 ## 要件 *(必須)*
 
@@ -86,6 +87,8 @@
 - **FR-006**: システムはダッシュボードヘッダーに、現在実行中バージョン（`/api/system` の `version`）を更新有無に関係なく常時表示する
 - **FR-007**: ダッシュボードは `update` 状態が未取得でも Update banner を描画し、`Check for updates` 操作導線を維持する
 - **FR-008**: `POST /api/system/update/check` の結果は、ダッシュボード上でページ再読み込みなしに即時反映される
+- **FR-009**: `POST /api/system/update/check` が失敗しても、既に `available` で取得済みの更新候補と payload 準備状態は失われない
+- **FR-010**: ダッシュボードは `Restart to update` を「更新適用が実行可能な状態」のみで表示する（`available` / `draining` / `applying` / `failed` かつ `latest` が存在）
 
 ### 非機能要件
 

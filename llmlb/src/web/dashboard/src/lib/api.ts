@@ -417,6 +417,11 @@ export interface SystemInfo {
 
 export const systemApi = {
   getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
+  checkUpdate: () =>
+    fetchWithAuth<{ update: UpdateState }>('/api/system/update/check', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
   applyUpdate: () =>
     fetchWithAuth<{ queued: boolean }>('/api/system/update/apply', {
       method: 'POST',

@@ -490,12 +490,13 @@ impl UpdateManager {
 
     async fn record_check_failure(&self, message: String) {
         let mut st = self.inner.state.write().await;
+        // Keep an already discovered update actionable even if a subsequent
+        // manual check temporarily fails (e.g., transient GitHub outage).
+        if matches!(&*st, UpdateState::Available { .. }) {
+            return;
+        }
+
         let (latest, release_url) = match &*st {
-            UpdateState::Available {
-                latest,
-                release_url,
-                ..
-            } => (Some(latest.clone()), Some(release_url.clone())),
             UpdateState::Draining { latest, .. } => (Some(latest.clone()), None),
             UpdateState::Applying { latest, .. } => (Some(latest.clone()), None),
             UpdateState::Failed {
@@ -1327,5 +1328,79 @@ mod tests {
             parse_tag_to_version("3.1.0").unwrap(),
             Version::parse("3.1.0").unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn record_check_failure_preserves_available_payload() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        let ready_payload = PayloadState::Ready {
+            kind: PayloadKind::Portable {
+                binary_path: "/tmp/llmlb-new".to_string(),
+            },
+        };
+
+        {
+            *manager.inner.state.write().await = UpdateState::Available {
+                current: "4.5.0".to_string(),
+                latest: "4.5.1".to_string(),
+                release_url: "https://example.com/release".to_string(),
+                portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
+                installer_asset_url: None,
+                payload: ready_payload.clone(),
+                checked_at: Utc::now(),
+            };
+        }
+
+        manager
+            .record_check_failure("temporary network outage".to_string())
+            .await;
+
+        match manager.state().await {
+            UpdateState::Available {
+                latest, payload, ..
+            } => {
+                assert_eq!(latest, "4.5.1");
+                assert_eq!(payload, ready_payload);
+            }
+            other => panic!("expected available state, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn record_check_failure_transitions_non_available_to_failed() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        {
+            *manager.inner.state.write().await = UpdateState::UpToDate { checked_at: None };
+        }
+
+        manager
+            .record_check_failure("check failed".to_string())
+            .await;
+
+        match manager.state().await {
+            UpdateState::Failed {
+                latest,
+                release_url,
+                message,
+                ..
+            } => {
+                assert_eq!(latest, None);
+                assert_eq!(release_url, None);
+                assert_eq!(message, "check failed");
+            }
+            other => panic!("expected failed state, got {other:?}"),
+        }
     }
 }

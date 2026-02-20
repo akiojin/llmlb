@@ -984,5 +984,30 @@ pub async fn get_client_rankings(
     Ok(Json(result))
 }
 
+/// GET /api/dashboard/clients/timeline - ユニークIP数タイムライン
+///
+/// SPEC-62ac4b68: 使用パターンの時系列分析
+pub async fn get_client_timeline(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::UniqueIpTimelinePoint>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage.get_unique_ip_timeline(24).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
+/// GET /api/dashboard/clients/models - モデル別リクエスト分布
+///
+/// SPEC-62ac4b68: 使用パターンの時系列分析
+pub async fn get_client_models(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::ModelDistribution>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage
+        .get_model_distribution_by_clients(24)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(result))
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e

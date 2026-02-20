@@ -293,7 +293,15 @@ pub fn create_app(state: AppState) -> Router {
             get(dashboard::get_all_model_stats),
         )
         // SPEC-62ac4b68: Clients分析API
-        .route("/dashboard/clients", get(dashboard::get_client_rankings));
+        .route("/dashboard/clients", get(dashboard::get_client_rankings))
+        .route(
+            "/dashboard/clients/timeline",
+            get(dashboard::get_client_timeline),
+        )
+        .route(
+            "/dashboard/clients/models",
+            get(dashboard::get_client_models),
+        );
 
     let dashboard_api_routes = if auth_disabled {
         dashboard_api_routes

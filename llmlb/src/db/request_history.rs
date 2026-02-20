@@ -1080,6 +1080,127 @@ impl RequestHistoryStorage {
             per_page,
         })
     }
+
+    /// ユニークIP数の1時間刻みタイムラインを取得
+    ///
+    /// 指定時間数分の24ポイント（各時間帯のユニークIP数）を返す。
+    /// データがない時間帯はunique_ips=0で埋める。
+    pub async fn get_unique_ip_timeline(
+        &self,
+        hours: u32,
+    ) -> RouterResult<Vec<UniqueIpTimelinePoint>> {
+        let now = Utc::now();
+        let cutoff = now - Duration::hours(hours as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let rows: Vec<TimelineRow> = sqlx::query_as(
+            "SELECT strftime('%Y-%m-%dT%H:00:00', timestamp) as hour,
+                    COUNT(DISTINCT client_ip) as unique_ips
+             FROM request_history
+             WHERE client_ip IS NOT NULL AND timestamp >= ?
+             GROUP BY strftime('%Y-%m-%dT%H:00:00', timestamp)
+             ORDER BY hour ASC",
+        )
+        .bind(&cutoff_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        // 24時間分のポイントを生成（データがない時間帯は0埋め）
+        use std::collections::HashMap;
+        let row_map: HashMap<String, i64> =
+            rows.into_iter().map(|r| (r.hour, r.unique_ips)).collect();
+
+        let mut timeline = Vec::with_capacity(hours as usize);
+        for h in (1..=hours).rev() {
+            let point_time = now - Duration::hours(h as i64);
+            let hour_key = point_time.format("%Y-%m-%dT%H:00:00").to_string();
+            let unique_ips = row_map.get(&hour_key).copied().unwrap_or(0);
+            timeline.push(UniqueIpTimelinePoint {
+                hour: hour_key,
+                unique_ips,
+            });
+        }
+
+        Ok(timeline)
+    }
+
+    /// モデル別リクエスト分布を取得
+    ///
+    /// 指定時間数内のモデル別リクエスト数とパーセンテージを返す。
+    pub async fn get_model_distribution_by_clients(
+        &self,
+        hours: u32,
+    ) -> RouterResult<Vec<ModelDistribution>> {
+        let cutoff = Utc::now() - Duration::hours(hours as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let rows: Vec<ModelDistRow> = sqlx::query_as(
+            "SELECT model, COUNT(*) as request_count
+             FROM request_history
+             WHERE client_ip IS NOT NULL AND timestamp >= ?
+             GROUP BY model
+             ORDER BY request_count DESC",
+        )
+        .bind(&cutoff_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        let total: i64 = rows.iter().map(|r| r.request_count).sum();
+
+        let distributions = rows
+            .into_iter()
+            .map(|r| {
+                let percentage = if total > 0 {
+                    (r.request_count as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+                ModelDistribution {
+                    model: r.model,
+                    request_count: r.request_count,
+                    percentage: (percentage * 10.0).round() / 10.0, // 小数点1位
+                }
+            })
+            .collect();
+
+        Ok(distributions)
+    }
+}
+
+/// タイムラインの1ポイント
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UniqueIpTimelinePoint {
+    /// 時間帯（ISO 8601形式、時間単位に丸め）
+    pub hour: String,
+    /// ユニークIP数
+    pub unique_ips: i64,
+}
+
+/// モデル別リクエスト分布
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModelDistribution {
+    /// モデル名
+    pub model: String,
+    /// リクエスト数
+    pub request_count: i64,
+    /// パーセンテージ（小数点1位）
+    pub percentage: f64,
+}
+
+/// SQLiteから取得したタイムライン行
+#[derive(sqlx::FromRow)]
+struct TimelineRow {
+    hour: String,
+    unique_ips: i64,
+}
+
+/// SQLiteから取得したモデル分布行
+#[derive(sqlx::FromRow)]
+struct ModelDistRow {
+    model: String,
+    request_count: i64,
 }
 
 /// 定期クリーンアップタスクを開始

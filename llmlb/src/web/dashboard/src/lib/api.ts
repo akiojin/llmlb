@@ -1043,11 +1043,26 @@ export interface ClientRankingResponse {
   per_page: number
 }
 
+export interface UniqueIpTimelinePoint {
+  hour: string
+  unique_ips: number
+}
+
+export interface ModelDistribution {
+  model: string
+  request_count: number
+  percentage: number
+}
+
 export const clientsApi = {
   getClientRanking: (params?: { page?: number; per_page?: number }) =>
     fetchWithAuth<ClientRankingResponse>('/api/dashboard/clients', {
       params: params as Record<string, string | number | boolean | undefined>,
     }),
+  getTimeline: () =>
+    fetchWithAuth<UniqueIpTimelinePoint[]>('/api/dashboard/clients/timeline'),
+  getModels: () =>
+    fetchWithAuth<ModelDistribution[]>('/api/dashboard/clients/models'),
 }
 
 // Export utilities

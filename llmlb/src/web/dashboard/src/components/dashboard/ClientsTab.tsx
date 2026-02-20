@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { clientsApi, type ClientRankingResponse } from '@/lib/api'
+import {
+  clientsApi,
+  type ClientRankingResponse,
+  type UniqueIpTimelinePoint,
+  type ModelDistribution,
+} from '@/lib/api'
 import { ClientBarChart } from './ClientBarChart'
 import { ClientRankingTable } from './ClientRankingTable'
+import { UniqueIpTimeline } from './UniqueIpTimeline'
+import { ModelDistributionPie } from './ModelDistributionPie'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, Loader2 } from 'lucide-react'
+import { Users, TrendingUp, PieChart, Loader2 } from 'lucide-react'
 
 export function ClientsTab() {
   const [page, setPage] = useState(1)
@@ -13,6 +20,16 @@ export function ClientsTab() {
   const { data, isLoading } = useQuery<ClientRankingResponse>({
     queryKey: ['client-ranking', page, perPage],
     queryFn: () => clientsApi.getClientRanking({ page, per_page: perPage }),
+  })
+
+  const { data: timelineData } = useQuery<UniqueIpTimelinePoint[]>({
+    queryKey: ['client-timeline'],
+    queryFn: () => clientsApi.getTimeline(),
+  })
+
+  const { data: modelsData } = useQuery<ModelDistribution[]>({
+    queryKey: ['client-models'],
+    queryFn: () => clientsApi.getModels(),
   })
 
   if (isLoading) {
@@ -40,6 +57,32 @@ export function ClientsTab() {
           <ClientBarChart rankings={rankings} />
         </CardContent>
       </Card>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <TrendingUp className="h-4 w-4" />
+              Unique IPs (24h)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <UniqueIpTimeline data={timelineData ?? []} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <PieChart className="h-4 w-4" />
+              Model Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ModelDistributionPie data={modelsData ?? []} />
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>

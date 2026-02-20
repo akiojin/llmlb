@@ -1,5 +1,11 @@
 # Unreleased
 
+# [4.7.2](https://github.com/akiojin/llmlb/compare/v4.7.1...v4.7.2) (2026-02-20)
+
+### Bug Fixes
+
+- DBマイグレーションチェックサムをSPEC IDリネームに合わせて再整合 (#429)
+
 # [4.7.1](https://github.com/akiojin/llmlb/compare/v4.7.0...v4.7.1) (2026-02-20)
 
 ### Bug Fixes

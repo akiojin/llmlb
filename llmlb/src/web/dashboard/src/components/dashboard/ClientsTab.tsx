@@ -5,13 +5,15 @@ import {
   type ClientRankingResponse,
   type UniqueIpTimelinePoint,
   type ModelDistribution,
+  type HeatmapCell,
 } from '@/lib/api'
 import { ClientBarChart } from './ClientBarChart'
 import { ClientRankingTable } from './ClientRankingTable'
 import { UniqueIpTimeline } from './UniqueIpTimeline'
 import { ModelDistributionPie } from './ModelDistributionPie'
+import { RequestHeatmap } from './RequestHeatmap'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, TrendingUp, PieChart, Loader2 } from 'lucide-react'
+import { Users, TrendingUp, PieChart, Grid3X3, Loader2 } from 'lucide-react'
 
 export function ClientsTab() {
   const [page, setPage] = useState(1)
@@ -30,6 +32,11 @@ export function ClientsTab() {
   const { data: modelsData } = useQuery<ModelDistribution[]>({
     queryKey: ['client-models'],
     queryFn: () => clientsApi.getModels(),
+  })
+
+  const { data: heatmapData } = useQuery<HeatmapCell[]>({
+    queryKey: ['client-heatmap'],
+    queryFn: () => clientsApi.getHeatmap(),
   })
 
   if (isLoading) {
@@ -83,6 +90,18 @@ export function ClientsTab() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Grid3X3 className="h-4 w-4" />
+            Request Heatmap (Hour x Day)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RequestHeatmap data={heatmapData ?? []} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

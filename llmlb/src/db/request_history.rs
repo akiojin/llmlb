@@ -1167,6 +1167,68 @@ impl RequestHistoryStorage {
 
         Ok(distributions)
     }
+
+    /// リクエストヒートマップを取得（曜日×時間帯）
+    ///
+    /// 指定時間数内のリクエストを曜日(0-6)×時間帯(0-23)で集計。
+    /// データがないセルはcount=0で埋める。
+    pub async fn get_request_heatmap(&self, hours: u32) -> RouterResult<Vec<HeatmapCell>> {
+        let cutoff = Utc::now() - Duration::hours(hours as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let rows: Vec<HeatmapRow> = sqlx::query_as(
+            "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    COUNT(*) as count
+             FROM request_history
+             WHERE client_ip IS NOT NULL AND timestamp >= ?
+             GROUP BY strftime('%w', timestamp), strftime('%H', timestamp)",
+        )
+        .bind(&cutoff_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        // 7×24 = 168セルの完全マトリックスを生成
+        use std::collections::HashMap;
+        let row_map: HashMap<(i64, i64), i64> = rows
+            .into_iter()
+            .map(|r| ((r.day_of_week, r.hour), r.count))
+            .collect();
+
+        let mut cells = Vec::with_capacity(168);
+        for dow in 0..7 {
+            for h in 0..24 {
+                let count = row_map.get(&(dow, h)).copied().unwrap_or(0);
+                cells.push(HeatmapCell {
+                    day_of_week: dow,
+                    hour: h,
+                    count,
+                });
+            }
+        }
+
+        Ok(cells)
+    }
+}
+
+/// ヒートマップの1セル
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HeatmapCell {
+    /// 曜日 (0=日曜, 1=月曜, ..., 6=土曜)
+    pub day_of_week: i64,
+    /// 時間帯 (0-23)
+    pub hour: i64,
+    /// リクエスト数
+    pub count: i64,
+}
+
+/// SQLiteから取得したヒートマップ行
+#[derive(sqlx::FromRow)]
+struct HeatmapRow {
+    day_of_week: i64,
+    hour: i64,
+    count: i64,
 }
 
 /// タイムラインの1ポイント

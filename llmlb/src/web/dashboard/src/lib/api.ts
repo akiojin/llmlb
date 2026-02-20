@@ -1054,6 +1054,12 @@ export interface ModelDistribution {
   percentage: number
 }
 
+export interface HeatmapCell {
+  day_of_week: number
+  hour: number
+  count: number
+}
+
 export const clientsApi = {
   getClientRanking: (params?: { page?: number; per_page?: number }) =>
     fetchWithAuth<ClientRankingResponse>('/api/dashboard/clients', {
@@ -1063,6 +1069,8 @@ export const clientsApi = {
     fetchWithAuth<UniqueIpTimelinePoint[]>('/api/dashboard/clients/timeline'),
   getModels: () =>
     fetchWithAuth<ModelDistribution[]>('/api/dashboard/clients/models'),
+  getHeatmap: () =>
+    fetchWithAuth<HeatmapCell[]>('/api/dashboard/clients/heatmap'),
 }
 
 // Export utilities

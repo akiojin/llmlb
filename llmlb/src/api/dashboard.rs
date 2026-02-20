@@ -1009,5 +1009,19 @@ pub async fn get_client_models(
     Ok(Json(result))
 }
 
+/// GET /api/dashboard/clients/heatmap - リクエストヒートマップ
+///
+/// SPEC-62ac4b68: 時間帯×曜日ヒートマップ
+pub async fn get_client_heatmap(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::HeatmapCell>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage
+        .get_request_heatmap(24 * 7)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(result))
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e

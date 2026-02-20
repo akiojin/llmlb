@@ -4,6 +4,8 @@
 
 pub mod api_keys;
 pub mod audio;
+/// 監査ログAPI (SPEC-8301d106)
+pub mod audit_log;
 pub mod auth;
 pub mod cloud_models;
 pub mod dashboard;
@@ -291,6 +293,16 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/model-stats",
             get(dashboard::get_all_model_stats),
+        )
+        // 監査ログAPI (SPEC-8301d106)
+        .route("/dashboard/audit-logs", get(audit_log::list_audit_logs))
+        .route(
+            "/dashboard/audit-logs/stats",
+            get(audit_log::get_audit_log_stats),
+        )
+        .route(
+            "/dashboard/audit-logs/verify",
+            post(audit_log::verify_hash_chain),
         );
 
     let dashboard_api_routes = if auth_disabled {
@@ -593,6 +605,11 @@ pub fn create_app(state: AppState) -> Router {
         // /playground/* ルートは削除済み
         .merge(ws_routes)
         .fallback(|| async { StatusCode::NOT_FOUND })
+        // 監査ログミドルウェア (SPEC-8301d106): 全リクエストをキャプチャ（最外層）
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::audit::middleware::audit_middleware,
+        ))
         .with_state(state)
 }
 
@@ -674,6 +691,12 @@ mod tests {
             shutdown.clone(),
         )
         .expect("Failed to create update manager");
+        let audit_log_storage =
+            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
+        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
+            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            crate::audit::writer::AuditLogWriterConfig::default(),
+        );
         AppState {
             load_manager,
             request_history,
@@ -686,6 +709,9 @@ mod tests {
             inference_gate,
             shutdown,
             update_manager,
+            audit_log_writer,
+            audit_log_storage,
+            audit_archive_pool: None,
         }
     }
 

@@ -56,6 +56,9 @@ pub mod jwt_secret;
 /// 認証・認可機能
 pub mod auth;
 
+/// 監査ログシステム (SPEC-8301d106)
+pub mod audit;
+
 /// CLIインターフェース
 pub mod cli;
 
@@ -111,6 +114,15 @@ pub struct AppState {
 
     /// Self-update manager
     pub update_manager: update::UpdateManager,
+
+    /// 監査ログライター (SPEC-8301d106)
+    pub audit_log_writer: audit::writer::AuditLogWriter,
+
+    /// 監査ログストレージ (SPEC-8301d106)
+    pub audit_log_storage: std::sync::Arc<db::audit_log::AuditLogStorage>,
+
+    /// 監査ログアーカイブDBプール (SPEC-8301d106)
+    pub audit_archive_pool: Option<sqlx::SqlitePool>,
 }
 
 #[cfg(test)]

@@ -368,10 +368,14 @@ pub async fn jwt_auth_middleware(
     })?;
 
     // 検証済みのClaimsをrequestの拡張データに格納
+    let claims_for_response = claims.clone();
     request.extensions_mut().insert(claims);
 
     // 次のミドルウェア/ハンドラーに進む
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(claims_for_response);
+    Ok(response)
 }
 
 /// CookieベースのJWT認証時にCSRFトークンを要求するミドルウェア
@@ -443,9 +447,13 @@ pub async fn api_key_auth_middleware(
 ) -> Result<Response, Response> {
     let api_key = extract_api_key(&request)?;
     let auth_context = authenticate_api_key(&pool, &api_key).await?;
+    let auth_context_for_response = auth_context.clone();
     request.extensions_mut().insert(auth_context);
 
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(auth_context_for_response);
+    Ok(response)
 }
 
 /// APIキーの権限を要求するミドルウェア
@@ -518,8 +526,12 @@ pub async fn jwt_or_api_key_permission_middleware(
             }
         }
 
+        let claims_for_response = claims.clone();
         request.extensions_mut().insert(claims);
-        return Ok(next.run(request).await);
+        let mut response = next.run(request).await;
+        // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+        response.extensions_mut().insert(claims_for_response);
+        return Ok(response);
     }
 
     // JWTがない/無効ならAPIキーで認証
@@ -547,10 +559,16 @@ pub async fn jwt_or_api_key_permission_middleware(
         role: config.api_key_role,
         exp,
     };
+    let claims_for_response = claims.clone();
+    let auth_context_for_response = auth_context.clone();
     request.extensions_mut().insert(claims);
     request.extensions_mut().insert(auth_context);
 
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(claims_for_response);
+    response.extensions_mut().insert(auth_context_for_response);
+    Ok(response)
 }
 
 // SPEC-e8e9326e: APIキー or ノードトークン認証ミドルウェアは廃止されました
@@ -591,9 +609,13 @@ pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Resp
     };
 
     // リクエストの拡張データに格納
+    let claims_for_response = dummy_claims.clone();
     request.extensions_mut().insert(dummy_claims);
 
-    next.run(request).await
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(claims_for_response);
+    response
 }
 
 /// LLMLB_AUTH_DISABLED（旧: AUTH_DISABLED）用ダミーClaims注入ミドルウェア（管理者ID参照）
@@ -623,9 +645,13 @@ pub async fn inject_dummy_admin_claims_with_state(
         exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
     };
 
+    let claims_for_response = dummy_claims.clone();
     request.extensions_mut().insert(dummy_claims);
 
-    next.run(request).await
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(claims_for_response);
+    response
 }
 
 #[cfg(test)]
@@ -718,6 +744,12 @@ mod tests {
             shutdown.clone(),
         )
         .expect("Failed to create update manager");
+        let audit_log_storage =
+            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
+        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
+            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            crate::audit::writer::AuditLogWriterConfig::default(),
+        );
         let state = crate::AppState {
             load_manager,
             request_history,
@@ -730,6 +762,9 @@ mod tests {
             inference_gate,
             shutdown,
             update_manager,
+            audit_log_writer,
+            audit_log_storage,
+            audit_archive_pool: None,
         };
 
         let app = Router::new()
@@ -786,6 +821,12 @@ mod tests {
             shutdown.clone(),
         )
         .expect("Failed to create update manager");
+        let audit_log_storage =
+            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
+        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
+            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            crate::audit::writer::AuditLogWriterConfig::default(),
+        );
         let state = crate::AppState {
             load_manager,
             request_history,
@@ -798,6 +839,9 @@ mod tests {
             inference_gate,
             shutdown,
             update_manager,
+            audit_log_writer,
+            audit_log_storage,
+            audit_archive_pool: None,
         };
 
         let cfg = JwtOrApiKeyPermissionConfig {
@@ -851,6 +895,12 @@ mod tests {
             shutdown.clone(),
         )
         .expect("Failed to create update manager");
+        let audit_log_storage =
+            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
+        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
+            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            crate::audit::writer::AuditLogWriterConfig::default(),
+        );
         let state = crate::AppState {
             load_manager,
             request_history,
@@ -863,6 +913,9 @@ mod tests {
             inference_gate,
             shutdown,
             update_manager,
+            audit_log_writer,
+            audit_log_storage,
+            audit_archive_pool: None,
         };
 
         let cfg = JwtOrApiKeyPermissionConfig {

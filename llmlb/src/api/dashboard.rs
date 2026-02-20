@@ -212,15 +212,21 @@ pub async fn get_node_metrics(
 }
 
 /// GET /api/dashboard/stats/tokens - トークン統計取得
+///
+/// SPEC-8301d106: audit_log_entriesから集計（request_historyから移行済み）
 pub async fn get_token_stats(
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
     let stats = state
-        .request_history
+        .audit_log_storage
         .get_token_statistics()
         .await
         .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(crate::db::request_history::TokenStatistics {
+        total_input_tokens: stats.total_input_tokens as u64,
+        total_output_tokens: stats.total_output_tokens as u64,
+        total_tokens: stats.total_tokens as u64,
+    }))
 }
 
 /// 日次トークン統計クエリパラメータ
@@ -251,17 +257,30 @@ pub struct DailyTokenStats {
 }
 
 /// GET /api/dashboard/stats/tokens/daily - 日次トークン統計取得
+///
+/// SPEC-8301d106: audit_log_entriesから集計（request_historyから移行済み）
 pub async fn get_daily_token_stats(
     State(state): State<AppState>,
     Query(query): Query<DailyTokenStatsQuery>,
 ) -> Result<Json<Vec<DailyTokenStats>>, AppError> {
     let days = query.days.unwrap_or(30);
     let stats = state
-        .request_history
-        .get_daily_token_statistics(days)
+        .audit_log_storage
+        .get_daily_token_statistics(days as i64)
         .await
         .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(
+        stats
+            .into_iter()
+            .map(|s| DailyTokenStats {
+                date: s.date,
+                total_input_tokens: s.total_input_tokens as u64,
+                total_output_tokens: s.total_output_tokens as u64,
+                total_tokens: s.total_tokens as u64,
+                request_count: s.request_count as u64,
+            })
+            .collect(),
+    ))
 }
 
 /// 月次トークン統計クエリパラメータ
@@ -292,17 +311,30 @@ pub struct MonthlyTokenStats {
 }
 
 /// GET /api/dashboard/stats/tokens/monthly - 月次トークン統計取得
+///
+/// SPEC-8301d106: audit_log_entriesから集計（request_historyから移行済み）
 pub async fn get_monthly_token_stats(
     State(state): State<AppState>,
     Query(query): Query<MonthlyTokenStatsQuery>,
 ) -> Result<Json<Vec<MonthlyTokenStats>>, AppError> {
     let months = query.months.unwrap_or(12);
     let stats = state
-        .request_history
-        .get_monthly_token_statistics(months)
+        .audit_log_storage
+        .get_monthly_token_statistics(months as i64)
         .await
         .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(
+        stats
+            .into_iter()
+            .map(|s| MonthlyTokenStats {
+                month: s.month,
+                total_input_tokens: s.total_input_tokens as u64,
+                total_output_tokens: s.total_output_tokens as u64,
+                total_tokens: s.total_tokens as u64,
+                request_count: s.request_count as u64,
+            })
+            .collect(),
+    ))
 }
 
 /// エンドポイント一覧を収集
@@ -378,20 +410,15 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             }
         };
 
-    // Token totals must be consistent with the persisted request history.
-    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
-    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
-    let token_totals_from_history = match state.request_history.get_token_statistics().await {
+    // SPEC-8301d106: audit_log_entriesからトークン合計を取得
+    let token_totals_from_history = match state.audit_log_storage.get_token_statistics().await {
         Ok(stats) => Some(PersistedTokenTotals {
-            total_input_tokens: stats.total_input_tokens,
-            total_output_tokens: stats.total_output_tokens,
-            total_tokens: stats.total_tokens,
+            total_input_tokens: stats.total_input_tokens as u64,
+            total_output_tokens: stats.total_output_tokens as u64,
+            total_tokens: stats.total_tokens as u64,
         }),
         Err(e) => {
-            warn!(
-                "Failed to query token statistics from request history: {}",
-                e
-            );
+            warn!("Failed to query token statistics from audit log: {}", e);
             None
         }
     };

@@ -9,7 +9,7 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Row;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 struct ServerConfig {
@@ -691,6 +691,124 @@ async fn run_server(
         endpoint_registry.count().await
     );
 
+    // 監査ログシステムの初期化 (SPEC-8301d106)
+    let audit_log_storage =
+        std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()));
+    let audit_log_writer = llmlb::audit::writer::AuditLogWriter::new(
+        llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+        llmlb::audit::writer::AuditLogWriterConfig::default(),
+    );
+    info!("Audit log system initialized");
+
+    // 起動時ハッシュチェーン検証 (SPEC-8301d106)
+    {
+        let storage_ref = &*audit_log_storage;
+        match llmlb::audit::hash_chain::verify_chain(storage_ref).await {
+            Ok(result) => {
+                if result.valid {
+                    info!(
+                        batches_checked = result.batches_checked,
+                        "Audit log hash chain verification passed"
+                    );
+                } else {
+                    warn!(
+                        tampered_batch = ?result.tampered_batch,
+                        message = ?result.message,
+                        "Audit log hash chain verification FAILED - tampering detected"
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("Audit log hash chain verification error: {}", e);
+            }
+        }
+    }
+
+    // 24時間ごとの定期ハッシュチェーン検証タスク (SPEC-8301d106)
+    {
+        let periodic_storage = audit_log_storage.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+            // 最初のtickはスキップ（起動時検証は上で実施済み）
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                match llmlb::audit::hash_chain::verify_chain(&periodic_storage).await {
+                    Ok(result) => {
+                        if result.valid {
+                            info!(
+                                batches_checked = result.batches_checked,
+                                "Periodic audit log hash chain verification passed"
+                            );
+                        } else {
+                            warn!(
+                                tampered_batch = ?result.tampered_batch,
+                                message = ?result.message,
+                                "Periodic audit log hash chain verification FAILED"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Periodic audit log hash chain verification error: {}", e);
+                    }
+                }
+            }
+        });
+    }
+
+    // アーカイブDBプールの初期化 (SPEC-8301d106)
+    let archive_path = std::env::var("LLMLB_AUDIT_ARCHIVE_PATH").unwrap_or_else(|_| {
+        let db_path =
+            std::env::var("LLMLB_DB_PATH").unwrap_or_else(|_| "load_balancer.db".to_string());
+        let parent = std::path::Path::new(&db_path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."));
+        parent
+            .join("audit_archive.db")
+            .to_string_lossy()
+            .to_string()
+    });
+    let audit_archive_pool = match llmlb::db::audit_log::create_archive_pool(&archive_path).await {
+        Ok(pool) => {
+            info!(path = %archive_path, "Audit archive DB initialized");
+            Some(pool)
+        }
+        Err(e) => {
+            warn!("Failed to initialize audit archive DB: {}", e);
+            None
+        }
+    };
+
+    // 24時間ごとの定期アーカイブタスク (SPEC-8301d106)
+    if let Some(ref archive_pool) = audit_archive_pool {
+        let archive_storage = audit_log_storage.clone();
+        let archive_pool_clone = archive_pool.clone();
+        let retention_days: i64 = std::env::var("LLMLB_AUDIT_RETENTION_DAYS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(90);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+            interval.tick().await; // 最初のtickをスキップ
+            loop {
+                interval.tick().await;
+                match archive_storage
+                    .archive_old_entries(retention_days, &archive_pool_clone)
+                    .await
+                {
+                    Ok(count) => {
+                        if count > 0 {
+                            info!(count, retention_days, "Archived old audit log entries");
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Audit log archive task error: {}", e);
+                    }
+                }
+            }
+        });
+    }
+
     let state = AppState {
         load_manager,
         request_history,
@@ -703,6 +821,9 @@ async fn run_server(
         inference_gate,
         shutdown: shutdown.clone(),
         update_manager,
+        audit_log_writer,
+        audit_log_storage,
+        audit_archive_pool,
     };
 
     let app = api::create_app(state);

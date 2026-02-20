@@ -8,14 +8,14 @@ use crate::common::{
     types::ModelCapability,
 };
 use axum::{
-    extract::{Multipart, State},
+    extract::{ConnectInfo, Multipart, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
 use chrono::Utc;
 use serde_json::json;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 use tracing::info;
 use uuid::Uuid;
@@ -27,6 +27,8 @@ use crate::{
         models::load_registered_model,
         proxy::{forward_streaming_response, save_request_record},
     },
+    auth::middleware::ApiKeyAuthContext,
+    common::ip::normalize_socket_ip,
     types::endpoint::{Endpoint, EndpointCapability},
     AppState,
 };
@@ -126,9 +128,13 @@ async fn select_image_backend(state: &AppState) -> Result<ImageBackend, LbError>
 /// - style: スタイル（オプション、デフォルト: "vivid"）
 /// - response_format: 出力形式（オプション、デフォルト: "url"）
 pub async fn generations(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<ImageGenerationRequest>,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(normalize_socket_ip(&addr));
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -195,7 +201,7 @@ pub async fn generations(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip: client_ip.clone(),
         request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -210,7 +216,7 @@ pub async fn generations(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
-        api_key_id: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -232,9 +238,13 @@ pub async fn generations(
 /// - size: 出力サイズ（オプション）
 /// - response_format: 出力形式（オプション）
 pub async fn edits(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(normalize_socket_ip(&addr));
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -427,7 +437,7 @@ pub async fn edits(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip: client_ip.clone(),
         request_body: json!({"model": model, "prompt": prompt, "type": "image_edit"}),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -442,7 +452,7 @@ pub async fn edits(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
-        api_key_id: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -462,9 +472,13 @@ pub async fn edits(
 /// - size: 出力サイズ（オプション）
 /// - response_format: 出力形式（オプション）
 pub async fn variations(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(normalize_socket_ip(&addr));
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -617,7 +631,7 @@ pub async fn variations(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip: client_ip.clone(),
         request_body: json!({"model": model, "type": "image_variation"}),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -632,7 +646,7 @@ pub async fn variations(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
-        api_key_id: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);

@@ -9,7 +9,7 @@ use crate::common::{
 };
 use axum::{
     body::Body,
-    extract::{Multipart, State},
+    extract::{ConnectInfo, Multipart, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -20,7 +20,7 @@ use std::time::Instant;
 use tracing::info;
 use uuid::Uuid;
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use crate::{
     api::{
@@ -29,6 +29,8 @@ use crate::{
         models::load_registered_model,
         proxy::{forward_streaming_response, save_request_record},
     },
+    auth::middleware::ApiKeyAuthContext,
+    common::ip::normalize_socket_ip,
     types::endpoint::{Endpoint, EndpointCapability},
     AppState,
 };
@@ -141,9 +143,13 @@ async fn select_speech_backend(state: &AppState) -> Result<AudioBackend, LbError
 /// - language: 言語コード（オプション）
 /// - response_format: レスポンス形式（json, text, srt, vtt）
 pub async fn transcriptions(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(normalize_socket_ip(&addr));
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -290,7 +296,7 @@ pub async fn transcriptions(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip: client_ip.clone(),
         request_body: json!({"model": model, "type": "transcription"}),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -305,7 +311,7 @@ pub async fn transcriptions(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
-        api_key_id: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -325,9 +331,13 @@ pub async fn transcriptions(
 /// - response_format: 出力形式（オプション、デフォルト: mp3）
 /// - speed: 再生速度（オプション、デフォルト: 1.0）
 pub async fn speech(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<SpeechRequest>,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(normalize_socket_ip(&addr));
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -397,7 +407,7 @@ pub async fn speech(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip: client_ip.clone(),
         request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -412,7 +422,7 @@ pub async fn speech(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
-        api_key_id: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);

@@ -133,7 +133,7 @@ async fn test_complete_api_key_flow() {
     // ここではOpenAI互換のchat/completionsエンドポイントをテストする
     let use_key_response = app
         .clone()
-        .oneshot(
+        .oneshot(support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
@@ -149,7 +149,7 @@ async fn test_complete_api_key_flow() {
                     .unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -218,7 +218,7 @@ async fn test_complete_api_key_flow() {
 
     // Step 6: 削除後、APIキーは使用できない
     let invalid_key_response = app
-        .oneshot(
+        .oneshot(support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
@@ -234,7 +234,7 @@ async fn test_complete_api_key_flow() {
                     .unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 

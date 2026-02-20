@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::extract::ConnectInfo;
 use axum::Router;
 use llmlb::common::auth::UserRole;
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
@@ -477,6 +478,19 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
 
     let key_data: Value = create_key_response.json().await.expect("api key json");
     key_data["key"].as_str().unwrap().to_string()
+}
+
+/// oneshotテストのリクエストにConnectInfo<SocketAddr>を追加する
+///
+/// ハンドラがConnectInfo<SocketAddr>を要求する場合、oneshotでは
+/// extensionが自動設定されないため、このヘルパーで明示的に追加する。
+#[allow(dead_code)]
+pub fn with_connect_info(
+    mut req: axum::http::Request<axum::body::Body>,
+) -> axum::http::Request<axum::body::Body> {
+    req.extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))));
+    req
 }
 
 /// llmlbサーバーをテスト用に起動する（DBプールも返す）

@@ -204,7 +204,7 @@ async fn v1_inference_requires_openai_inference_permission() {
     // Wrong scope -> 403
     let response = app
         .clone()
-        .oneshot(
+        .oneshot(support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
@@ -212,14 +212,14 @@ async fn v1_inference_requires_openai_inference_permission() {
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     // Correct scope -> authenticated (503 if no nodes)
     let response = app
-        .oneshot(
+        .oneshot(support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
@@ -227,7 +227,7 @@ async fn v1_inference_requires_openai_inference_permission() {
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
     assert!(
@@ -472,7 +472,7 @@ async fn api_keys_routes_require_api_keys_manage_permission() {
         "messages": [{"role": "user", "content": "Hello"}]
     });
     let response = app
-        .oneshot(
+        .oneshot(support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
@@ -480,7 +480,7 @@ async fn api_keys_routes_require_api_keys_manage_permission() {
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);

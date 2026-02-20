@@ -180,8 +180,11 @@ pub async fn inference_gate_middleware(
         return service_unavailable_updating_response();
     }
 
-    let guard = gate.begin();
     let abort_generation = gate.abort_generation();
+    let guard = gate.begin();
+    if gate.is_force_aborted_since(abort_generation) {
+        return service_unavailable_updating_response();
+    }
     let abort_wait = gate.wait_for_force_abort_since(abort_generation);
     tokio::pin!(abort_wait);
 

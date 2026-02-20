@@ -760,6 +760,13 @@ impl UpdateManager {
             ApplyRequestMode::Force => self.require_ready_payload().await?,
             ApplyRequestMode::None => return Err(anyhow!("No apply request mode")),
         };
+        let apply_method = match &payload {
+            PayloadKind::Portable { .. } => ApplyMethod::PortableReplace,
+            PayloadKind::Installer { kind, .. } => match kind {
+                InstallerKind::MacPkg => ApplyMethod::MacPkg,
+                InstallerKind::WindowsMsi => ApplyMethod::WindowsMsi,
+            },
+        };
         let latest = {
             let st = self.inner.state.read().await;
             match &*st {
@@ -772,6 +779,11 @@ impl UpdateManager {
         self.inner.gate.start_rejecting();
 
         if mode == ApplyRequestMode::Force {
+            // Mark as in-progress before waiting so UI/API cannot trigger duplicate apply actions.
+            *self.inner.state.write().await = UpdateState::Applying {
+                latest: latest.clone(),
+                method: apply_method.clone(),
+            };
             // Force mode cancels active in-flight work instead of waiting for drain completion.
             self.inner.gate.abort_in_flight();
             if tokio::time::timeout(Duration::from_secs(3), self.inner.gate.wait_for_idle())
@@ -800,6 +812,10 @@ impl UpdateManager {
                 }
                 self.inner.gate.wait_for_idle().await;
             }
+            *self.inner.state.write().await = UpdateState::Applying {
+                latest: latest.clone(),
+                method: apply_method.clone(),
+            };
         }
 
         let current_exe =
@@ -808,10 +824,6 @@ impl UpdateManager {
 
         match payload {
             PayloadKind::Portable { binary_path } => {
-                *self.inner.state.write().await = UpdateState::Applying {
-                    latest: latest.clone(),
-                    method: ApplyMethod::PortableReplace,
-                };
                 spawn_internal_apply_update(&current_exe, &binary_path, &args_file)?;
                 self.inner.shutdown.request_shutdown();
                 Ok(())
@@ -820,14 +832,6 @@ impl UpdateManager {
                 installer_path,
                 kind,
             } => {
-                let method = match kind {
-                    InstallerKind::MacPkg => ApplyMethod::MacPkg,
-                    InstallerKind::WindowsMsi => ApplyMethod::WindowsMsi,
-                };
-                *self.inner.state.write().await = UpdateState::Applying {
-                    latest: latest.clone(),
-                    method,
-                };
                 spawn_internal_run_installer(&current_exe, &installer_path, kind, &args_file)?;
                 self.inner.shutdown.request_shutdown();
                 Ok(())

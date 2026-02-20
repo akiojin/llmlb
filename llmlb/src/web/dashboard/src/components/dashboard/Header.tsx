@@ -19,6 +19,7 @@ import {
   LogOut,
   Moon,
   Network,
+  ShieldCheck,
   Sun,
   User,
   Users,
@@ -171,6 +172,21 @@ export function Header({
               LB Playground
             </Button>
 
+            {user?.role === 'admin' && (
+              <Button
+                id="audit-log-button"
+                variant="outline"
+                size="sm"
+                className="hidden lg:inline-flex"
+                onClick={() => {
+                  window.location.hash = 'audit-log'
+                }}
+              >
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Audit Log
+              </Button>
+            )}
+
             {/* Refresh Button */}
             <Button
               id="refresh-button"
@@ -240,6 +256,14 @@ export function Header({
                     <DropdownMenuItem onClick={() => setInvitationModalOpen(true)}>
                       <Ticket className="mr-2 h-4 w-4" />
                       Invitation Codes
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        window.location.hash = 'audit-log'
+                      }}
+                    >
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      Audit Log
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>

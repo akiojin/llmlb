@@ -181,7 +181,7 @@ test.describe('Dashboard Endpoints Tab @dashboard', () => {
         body: JSON.stringify(mockEndpoints),
       });
     });
-    await page.route('**/api/dashboard/overview', async (route) => {
+    await page.route('**/api/dashboard/overview*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

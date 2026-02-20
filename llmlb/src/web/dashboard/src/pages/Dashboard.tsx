@@ -22,6 +22,7 @@ import { ModelsTable } from '@/components/dashboard/ModelsTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
+import { ClientsTab } from '@/components/dashboard/ClientsTab'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -46,6 +47,7 @@ import {
   ExternalLink,
   Loader2,
   RefreshCcw,
+  Users,
 } from 'lucide-react'
 
 const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
@@ -132,6 +134,7 @@ export default function Dashboard() {
       error: record.status.type === 'error' ? record.status.message : undefined,
       request_body: record.request_body,
       response_body: record.response_body,
+      client_ip: record.client_ip,
     }))
   }, [requestResponsesData])
 
@@ -498,7 +501,7 @@ export default function Dashboard() {
           </section>
         ) : (
           <Tabs defaultValue="endpoints" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+            <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
               <TabsTrigger value="endpoints" className="gap-2">
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">Endpoints</span>
@@ -510,6 +513,10 @@ export default function Dashboard() {
               <TabsTrigger value="history" className="gap-2">
                 <History className="h-4 w-4" />
                 <span className="hidden sm:inline">History</span>
+              </TabsTrigger>
+              <TabsTrigger value="clients" className="gap-2">
+                <Users className="h-4 w-4" />
+                <span className="hidden sm:inline">Clients</span>
               </TabsTrigger>
               <TabsTrigger value="logs" className="gap-2">
                 <FileText className="h-4 w-4" />
@@ -534,6 +541,10 @@ export default function Dashboard() {
                 history={historyItems}
                 isLoading={isLoadingHistory}
               />
+            </TabsContent>
+
+            <TabsContent value="clients" className="animate-fade-in">
+              <ClientsTab />
             </TabsContent>
 
             <TabsContent value="logs" className="animate-fade-in">

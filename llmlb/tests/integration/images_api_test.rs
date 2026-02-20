@@ -73,7 +73,7 @@ async fn test_image_api_routes_exist() {
     // /v1/images/generations (POST)
     let gen_response = app
         .clone()
-        .oneshot(
+        .oneshot(crate::support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/images/generations")
@@ -87,7 +87,7 @@ async fn test_image_api_routes_exist() {
                     .unwrap(),
                 ))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -101,14 +101,14 @@ async fn test_image_api_routes_exist() {
     // /v1/images/edits (POST) - multipartなので空ボディでもルートは存在確認
     let edits_response = app
         .clone()
-        .oneshot(
+        .oneshot(crate::support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/images/edits")
                 .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -121,14 +121,14 @@ async fn test_image_api_routes_exist() {
     // /v1/images/variations (POST) - multipartなので空ボディでもルートは存在確認
     let variations_response = app
         .clone()
-        .oneshot(
+        .oneshot(crate::support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/images/variations")
                 .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 
@@ -154,7 +154,7 @@ async fn test_image_generation_without_auth_returns_401() {
 
     let response = app
         .clone()
-        .oneshot(
+        .oneshot(crate::support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/images/generations")
@@ -162,7 +162,7 @@ async fn test_image_generation_without_auth_returns_401() {
                 // No Authorization header
                 .body(Body::from(serde_json::to_vec(&image_request).unwrap()))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 

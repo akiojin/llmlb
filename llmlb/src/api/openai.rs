@@ -12,17 +12,20 @@ use crate::common::{
 };
 use axum::body::Body;
 use axum::{
-    extract::{Path, State},
-    http::{header::CONTENT_TYPE, HeaderName, HeaderValue, StatusCode},
+    extract::{ConnectInfo, Path, State},
+    http::{header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use chrono::Utc;
 use reqwest;
 use serde_json::{json, Value};
-use std::{collections::HashMap, net::IpAddr, time::Instant};
+use std::{collections::HashMap, net::IpAddr, net::SocketAddr, time::Instant};
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+use crate::auth::middleware::ApiKeyAuthContext;
+use crate::common::ip::{normalize_ip, normalize_socket_ip};
 
 use crate::{
     api::{
@@ -208,12 +211,83 @@ fn model_unavailable_response(message: impl Into<String>, code: &str) -> Respons
     (StatusCode::SERVICE_UNAVAILABLE, Json(payload)).into_response()
 }
 
+/// クライアントIPとAPIキーIDを抽出するヘルパー
+fn extract_client_info(
+    addr: &SocketAddr,
+    headers: &HeaderMap,
+    auth_ctx: &Option<axum::Extension<ApiKeyAuthContext>>,
+) -> (Option<IpAddr>, Option<Uuid>) {
+    let client_ip =
+        Some(extract_client_ip_from_headers(headers).unwrap_or_else(|| normalize_socket_ip(addr)));
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
+    (client_ip, api_key_id)
+}
+
+fn extract_client_ip_from_headers(headers: &HeaderMap) -> Option<IpAddr> {
+    extract_x_forwarded_for(headers).or_else(|| extract_forwarded_for(headers))
+}
+
+fn extract_x_forwarded_for(headers: &HeaderMap) -> Option<IpAddr> {
+    let value = headers.get("x-forwarded-for")?.to_str().ok()?;
+    value
+        .split(',')
+        .map(str::trim)
+        .find_map(parse_client_ip_from_forwarded_value)
+}
+
+fn extract_forwarded_for(headers: &HeaderMap) -> Option<IpAddr> {
+    let value = headers.get("forwarded")?.to_str().ok()?;
+    value.split(',').find_map(|entry| {
+        entry
+            .split(';')
+            .filter_map(|pair| pair.split_once('='))
+            .find_map(|(key, value)| {
+                if key.trim().eq_ignore_ascii_case("for") {
+                    parse_client_ip_from_forwarded_value(value.trim())
+                } else {
+                    None
+                }
+            })
+    })
+}
+
+fn parse_client_ip_from_forwarded_value(value: &str) -> Option<IpAddr> {
+    let trimmed = value.trim().trim_matches('"');
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown") || trimmed.starts_with('_') {
+        return None;
+    }
+
+    let host = if let Some(stripped) = trimmed.strip_prefix('[') {
+        stripped.split(']').next().unwrap_or_default().trim()
+    } else {
+        trimmed
+    };
+
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Some(normalize_ip(ip));
+    }
+
+    if let Some((ip_candidate, _port)) = host.rsplit_once(':') {
+        if !ip_candidate.contains(':') {
+            if let Ok(ip) = ip_candidate.parse::<IpAddr>() {
+                return Some(normalize_ip(ip));
+            }
+        }
+    }
+
+    None
+}
+
 /// POST /v1/chat/completions - OpenAI互換チャットAPI
 #[allow(deprecated)] // NodeRegistry migration in progress
 pub async fn chat_completions(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
+    let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
     let model = extract_model(&payload)?;
     let parsed = if parse_cloud_model(&model).is_some() {
         ParsedModelName {
@@ -248,15 +322,21 @@ pub async fn chat_completions(
         parsed.raw,
         stream,
         RequestType::Chat,
+        client_ip,
+        api_key_id,
     )
     .await
 }
 
 /// POST /v1/completions - OpenAI互換テキスト補完API
 pub async fn completions(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
+    let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
     let model = extract_model(&payload)?;
     if parse_cloud_model(&model).is_none() {
         parse_quantized_model_name(&model).map_err(AppError::from)?;
@@ -269,15 +349,21 @@ pub async fn completions(
         model,
         stream,
         RequestType::Generate,
+        client_ip,
+        api_key_id,
     )
     .await
 }
 
 /// POST /v1/embeddings - OpenAI互換Embeddings API
 pub async fn embeddings(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, AppError> {
+    let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
     let model = extract_model_with_default(&payload, crate::config::get_default_embedding_model());
     if parse_cloud_model(&model).is_none() {
         parse_quantized_model_name(&model).map_err(AppError::from)?;
@@ -289,6 +375,8 @@ pub async fn embeddings(
         model,
         false,
         RequestType::Embeddings,
+        client_ip,
+        api_key_id,
     )
     .await
 }
@@ -1095,6 +1183,7 @@ async fn proxy_anthropic_provider(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn proxy_openai_cloud_post(
     state: &AppState,
     target_path: &str,
@@ -1102,6 +1191,8 @@ async fn proxy_openai_cloud_post(
     stream: bool,
     payload: Value,
     request_type: RequestType,
+    client_ip: Option<IpAddr>,
+    api_key_id: Option<Uuid>,
 ) -> Result<Response, AppError> {
     let (provider, model_name) = parse_cloud_model(model)
         .ok_or_else(|| validation_error("cloud model prefix is invalid"))?;
@@ -1135,7 +1226,7 @@ async fn proxy_openai_cloud_post(
                     node_id,
                     node_machine_name,
                     node_ip,
-                    client_ip: None,
+                    client_ip,
                     request_body,
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -1146,6 +1237,7 @@ async fn proxy_openai_cloud_post(
                     input_tokens: None,
                     output_tokens: None,
                     total_tokens: None,
+                    api_key_id,
                 },
             );
             return Err(e);
@@ -1180,7 +1272,7 @@ async fn proxy_openai_cloud_post(
             node_id,
             node_machine_name,
             node_ip,
-            client_ip: None,
+            client_ip,
             request_body,
             response_body,
             duration_ms: duration.as_millis() as u64,
@@ -1189,6 +1281,7 @@ async fn proxy_openai_cloud_post(
             input_tokens: None,
             output_tokens: None,
             total_tokens: None,
+            api_key_id,
         },
     );
 
@@ -1196,6 +1289,7 @@ async fn proxy_openai_cloud_post(
 }
 
 #[allow(deprecated)] // NodeRegistry migration in progress
+#[allow(clippy::too_many_arguments)]
 async fn proxy_openai_post(
     state: &AppState,
     payload: Value,
@@ -1203,11 +1297,22 @@ async fn proxy_openai_post(
     model: String,
     stream: bool,
     request_type: RequestType,
+    client_ip: Option<IpAddr>,
+    api_key_id: Option<Uuid>,
 ) -> Result<Response, AppError> {
     // Cloud-prefixed model -> forward to provider API
     if parse_cloud_model(&model).is_some() {
-        return proxy_openai_cloud_post(state, target_path, &model, stream, payload, request_type)
-            .await;
+        return proxy_openai_cloud_post(
+            state,
+            target_path,
+            &model,
+            stream,
+            payload,
+            request_type,
+            client_ip,
+            api_key_id,
+        )
+        .await;
     }
 
     // Check if any endpoint has this model
@@ -1253,7 +1358,7 @@ async fn proxy_openai_post(
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
                         node_ip: UNSPECIFIED_IP,
-                        client_ip: None,
+                        client_ip,
                         request_body,
                         response_body: None,
                         duration_ms: 0,
@@ -1264,6 +1369,7 @@ async fn proxy_openai_post(
                         input_tokens: None,
                         output_tokens: None,
                         total_tokens: None,
+                        api_key_id,
                     },
                 );
                 let retry_after = queue_config.timeout.as_secs().max(1);
@@ -1286,7 +1392,7 @@ async fn proxy_openai_post(
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
                         node_ip: UNSPECIFIED_IP,
-                        client_ip: None,
+                        client_ip,
                         request_body,
                         response_body: None,
                         duration_ms: waited_ms as u64,
@@ -1297,6 +1403,7 @@ async fn proxy_openai_post(
                         input_tokens: None,
                         output_tokens: None,
                         total_tokens: None,
+                        api_key_id,
                     },
                 );
                 return Ok(queue_error_response(
@@ -1328,7 +1435,7 @@ async fn proxy_openai_post(
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
                         node_ip: UNSPECIFIED_IP,
-                        client_ip: None,
+                        client_ip,
                         request_body,
                         response_body: None,
                         duration_ms: queued_wait_ms.unwrap_or(0) as u64,
@@ -1339,6 +1446,7 @@ async fn proxy_openai_post(
                         input_tokens: None,
                         output_tokens: None,
                         total_tokens: None,
+                        api_key_id,
                     },
                 );
                 if matches!(e, LbError::NoCapableNodes(_)) {
@@ -1406,7 +1514,7 @@ async fn proxy_openai_post(
                     node_id: endpoint_id,
                     node_machine_name: endpoint_name.clone(),
                     node_ip: endpoint_host,
-                    client_ip: None,
+                    client_ip,
                     request_body: request_body.clone(),
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -1417,6 +1525,7 @@ async fn proxy_openai_post(
                     input_tokens: None,
                     output_tokens: None,
                     total_tokens: None,
+                    api_key_id,
                 },
             );
 
@@ -1465,7 +1574,7 @@ async fn proxy_openai_post(
                 node_id: endpoint_id,
                 node_machine_name: endpoint_name.clone(),
                 node_ip: endpoint_host,
-                client_ip: None,
+                client_ip,
                 request_body: request_body.clone(),
                 response_body: None, // ストリームボディは記録しない
                 duration_ms: duration.as_millis() as u64,
@@ -1480,6 +1589,7 @@ async fn proxy_openai_post(
                 input_tokens: None,
                 output_tokens: None,
                 total_tokens: None,
+                api_key_id,
             },
         );
 
@@ -1547,7 +1657,7 @@ async fn proxy_openai_post(
                 node_id: endpoint_id,
                 node_machine_name: endpoint_name.clone(),
                 node_ip: endpoint_host,
-                client_ip: None,
+                client_ip,
                 request_body: request_body.clone(),
                 response_body: None,
                 duration_ms: duration.as_millis() as u64,
@@ -1558,6 +1668,7 @@ async fn proxy_openai_post(
                 input_tokens: None,
                 output_tokens: None,
                 total_tokens: None,
+                api_key_id,
             },
         );
 
@@ -1629,7 +1740,7 @@ async fn proxy_openai_post(
                     node_id: endpoint_id,
                     node_machine_name: endpoint_name,
                     node_ip: endpoint_host,
-                    client_ip: None,
+                    client_ip,
                     request_body,
                     response_body: Some(body.clone()),
                     duration_ms: duration.as_millis() as u64,
@@ -1638,6 +1749,7 @@ async fn proxy_openai_post(
                     input_tokens,
                     output_tokens,
                     total_tokens,
+                    api_key_id,
                 },
             );
 
@@ -1678,7 +1790,7 @@ async fn proxy_openai_post(
                     node_id: endpoint_id,
                     node_machine_name: endpoint_name,
                     node_ip: endpoint_host,
-                    client_ip: None,
+                    client_ip,
                     request_body,
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -1689,6 +1801,7 @@ async fn proxy_openai_post(
                     input_tokens: None,
                     output_tokens: None,
                     total_tokens: None,
+                    api_key_id,
                 },
             );
 
@@ -1768,7 +1881,10 @@ fn validation_error(message: impl Into<String>) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_cloud_model, proxy_openai_cloud_post, proxy_openai_post};
+    use super::{
+        extract_client_ip_from_headers, parse_client_ip_from_forwarded_value, parse_cloud_model,
+        proxy_openai_cloud_post, proxy_openai_post,
+    };
     use crate::common::protocol::{RecordStatus, RequestType};
     use crate::{
         balancer::LoadManager,
@@ -1776,10 +1892,11 @@ mod tests {
         AppState,
     };
     use axum::body::to_bytes;
-    use axum::http::StatusCode;
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use serde_json::json;
     use serial_test::serial;
     use sqlx::SqlitePool;
+    use std::net::IpAddr;
     use std::sync::Arc;
     use tempfile::tempdir;
     use tokio::time::{sleep, Duration};
@@ -1849,6 +1966,41 @@ mod tests {
         assert_eq!(parse_cloud_model("openai:"), None);
     }
 
+    #[test]
+    fn parse_client_ip_from_forwarded_value_supports_bracketed_ipv6_with_port() {
+        let parsed = parse_client_ip_from_forwarded_value("\"[2001:db8::7]:4711\"")
+            .expect("must parse bracketed ipv6");
+        assert_eq!(parsed, "2001:db8::7".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_client_ip_from_headers_prefers_first_valid_x_forwarded_for() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("unknown, 203.0.113.10, 10.0.0.1"),
+        );
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=198.51.100.20;proto=https"),
+        );
+
+        let parsed = extract_client_ip_from_headers(&headers).expect("must parse x-forwarded-for");
+        assert_eq!(parsed, "203.0.113.10".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_client_ip_from_headers_falls_back_to_forwarded() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=unknown;proto=https, for=\"[2001:db8::11]:8443\""),
+        );
+
+        let parsed = extract_client_ip_from_headers(&headers).expect("must parse forwarded");
+        assert_eq!(parsed, "2001:db8::11".parse::<IpAddr>().unwrap());
+    }
+
     #[tokio::test]
     #[serial]
     async fn openai_prefix_requires_api_key() {
@@ -1866,6 +2018,8 @@ mod tests {
             false,
             payload,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .unwrap_err();
@@ -1900,6 +2054,8 @@ mod tests {
             false,
             payload,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .unwrap_err();
@@ -1934,6 +2090,8 @@ mod tests {
             false,
             payload,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .unwrap_err();
@@ -1980,6 +2138,8 @@ mod tests {
             true,
             payload,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .expect("cloud stream response");
@@ -2020,6 +2180,8 @@ mod tests {
             false,
             payload,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .expect("google mapped response");
@@ -2065,6 +2227,8 @@ mod tests {
             false,
             payload,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .expect("anthropic mapped response");
@@ -2116,6 +2280,8 @@ mod tests {
             "openai:gpt-4o".into(),
             false,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .expect("cloud proxy succeeds");
@@ -2248,6 +2414,8 @@ mod tests {
             "gpt-oss-20b".into(),
             false,
             RequestType::Chat,
+            None,
+            None,
         )
         .await;
         // モデルが登録されておらず、どのノードも報告していない場合は404
@@ -2321,6 +2489,8 @@ mod tests {
             "broken-model".to_string(),
             false,
             RequestType::Chat,
+            None,
+            None,
         )
         .await;
 
@@ -2402,6 +2572,8 @@ mod tests {
             "stream-tps-model".to_string(),
             true,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .expect("streaming request should succeed");
@@ -2487,6 +2659,8 @@ mod tests {
             "stream-interrupted-model".to_string(),
             true,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .expect("streaming request should succeed");
@@ -2581,6 +2755,8 @@ mod tests {
             "no-usage-model".to_string(),
             false,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .expect("request should succeed");
@@ -2623,6 +2799,8 @@ mod tests {
             true,
             payload,
             RequestType::Chat,
+            None,
+            None,
         )
         .await
         .unwrap_err();

@@ -34,5 +34,9 @@ mod jwt_test;
 #[path = "unit/openai_error_format_test.rs"]
 mod openai_error_format_test;
 
+// SPEC-62ac4b68: IPアドレスロギング＆クライアント分析
+#[path = "unit/ip_normalize_test.rs"]
+mod ip_normalize_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

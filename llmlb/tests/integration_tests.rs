@@ -118,5 +118,9 @@ mod update_drain_gate_test;
 #[path = "integration/api_system_test.rs"]
 mod v0_system_test;
 
+// SPEC-62ac4b68: IPアドレスロギング＆クライアント分析
+#[path = "integration/settings_test.rs"]
+mod settings_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

@@ -98,10 +98,13 @@ impl InferenceGate {
 
     async fn wait_for_force_abort_since(&self, generation: u64) {
         loop {
+            // Register the waiter first to avoid a lost wakeup between the check
+            // and waiting on `Notify`.
+            let notified = self.inner.abort_notify.notified();
             if self.is_force_aborted_since(generation) {
                 return;
             }
-            self.inner.abort_notify.notified().await;
+            notified.await;
         }
     }
 }

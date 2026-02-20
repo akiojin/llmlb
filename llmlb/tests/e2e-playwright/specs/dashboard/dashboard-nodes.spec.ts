@@ -69,6 +69,180 @@ test.describe('Dashboard Endpoints Tab @dashboard', () => {
     expect(headerCount).toBeGreaterThanOrEqual(6);
   });
 
+  test('E-05a: TPS column toggles sort and keeps missing TPS rows last', async ({ page }) => {
+    const mockEndpoints = [
+      {
+        id: 'ep-alpha',
+        name: 'Alpha',
+        base_url: 'http://alpha.example.com',
+        status: 'online',
+        endpoint_type: 'xllm',
+        health_check_interval_secs: 30,
+        inference_timeout_secs: 60,
+        latency_ms: 20,
+        last_seen: '2026-02-20T10:00:00Z',
+        last_error: undefined,
+        error_count: 0,
+        registered_at: '2026-02-20T10:00:00Z',
+        notes: '',
+        model_count: 2,
+        total_requests: 100,
+        successful_requests: 100,
+        failed_requests: 0,
+      },
+      {
+        id: 'ep-beta',
+        name: 'Beta',
+        base_url: 'http://beta.example.com',
+        status: 'online',
+        endpoint_type: 'xllm',
+        health_check_interval_secs: 30,
+        inference_timeout_secs: 60,
+        latency_ms: 20,
+        last_seen: '2026-02-20T10:00:00Z',
+        last_error: undefined,
+        error_count: 0,
+        registered_at: '2026-02-20T10:00:00Z',
+        notes: '',
+        model_count: 2,
+        total_requests: 100,
+        successful_requests: 100,
+        failed_requests: 0,
+      },
+      {
+        id: 'ep-gamma',
+        name: 'Gamma',
+        base_url: 'http://gamma.example.com',
+        status: 'online',
+        endpoint_type: 'xllm',
+        health_check_interval_secs: 30,
+        inference_timeout_secs: 60,
+        latency_ms: 20,
+        last_seen: '2026-02-20T10:00:00Z',
+        last_error: undefined,
+        error_count: 0,
+        registered_at: '2026-02-20T10:00:00Z',
+        notes: '',
+        model_count: 2,
+        total_requests: 100,
+        successful_requests: 100,
+        failed_requests: 0,
+      },
+      {
+        id: 'ep-delta',
+        name: 'Delta',
+        base_url: 'http://delta.example.com',
+        status: 'online',
+        endpoint_type: 'xllm',
+        health_check_interval_secs: 30,
+        inference_timeout_secs: 60,
+        latency_ms: 20,
+        last_seen: '2026-02-20T10:00:00Z',
+        last_error: undefined,
+        error_count: 0,
+        registered_at: '2026-02-20T10:00:00Z',
+        notes: '',
+        model_count: 2,
+        total_requests: 100,
+        successful_requests: 100,
+        failed_requests: 0,
+      },
+    ];
+
+    const mockOverview = {
+      endpoints: [],
+      stats: {
+        total_requests: 0,
+        successful_requests: 0,
+        failed_requests: 0,
+        total_active_requests: 0,
+        queued_requests: 0,
+        average_response_time_ms: null,
+        average_gpu_usage: null,
+        average_gpu_memory_usage: null,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_tokens: 0,
+      },
+      history: [],
+      endpoint_tps: [
+        { endpoint_id: 'ep-alpha', model_count: 0, aggregate_tps: null, total_output_tokens: 0, total_requests: 0 },
+        { endpoint_id: 'ep-beta', model_count: 1, aggregate_tps: 10.0, total_output_tokens: 1000, total_requests: 10 },
+        { endpoint_id: 'ep-gamma', model_count: 1, aggregate_tps: 25.0, total_output_tokens: 2500, total_requests: 25 },
+      ],
+      generated_at: '2026-02-20T10:00:00Z',
+      generation_time_ms: 1,
+    };
+
+    await page.route('**/api/dashboard/endpoints', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockEndpoints),
+      });
+    });
+    await page.route('**/api/dashboard/overview', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockOverview),
+      });
+    });
+    await page.route('**/api/dashboard/request-responses*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          records: [],
+          total_count: 0,
+          page: 1,
+          per_page: 100,
+        }),
+      });
+    });
+    await page.route('**/api/system', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          version: '0.0.0-test',
+          pid: 1,
+          in_flight: 0,
+          update: {
+            state: 'up_to_date',
+            checked_at: null,
+          },
+        }),
+      });
+    });
+
+    await page.reload();
+    const table = page.locator('table');
+    await expect(table).toBeVisible({ timeout: 10000 });
+
+    const getEndpointNames = async () => {
+      const rows = page.locator('tbody tr');
+      const count = await rows.count();
+      const names: string[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const name = (await rows.nth(i).locator('td').nth(0).textContent())?.trim() ?? '';
+        if (name) names.push(name);
+      }
+      return names;
+    };
+
+    await expect.poll(async () => (await getEndpointNames()).length).toBe(4);
+
+    const tpsHeader = page.locator('th').filter({ hasText: /^TPS$/ }).first();
+    await expect(tpsHeader).toBeVisible({ timeout: 5000 });
+
+    await tpsHeader.click();
+    await expect.poll(async () => (await getEndpointNames()).join('|')).toBe('Gamma|Beta|Alpha|Delta');
+
+    await tpsHeader.click();
+    await expect.poll(async () => (await getEndpointNames()).join('|')).toBe('Beta|Gamma|Alpha|Delta');
+  });
+
   test('E-06: Add Endpoint button exists', async ({ page }) => {
     // Note: This test requires Rust server rebuild after frontend changes
     // The static assets are embedded at compile time via include_dir! macro

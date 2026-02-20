@@ -56,6 +56,14 @@ pub async fn create_test_lb() -> (Router, SqlitePool) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+            db_pool.clone(),
+        )),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);
@@ -118,7 +126,7 @@ pub async fn spawn_test_lb() -> TestServer {
     let state = AppState {
         load_manager,
         request_history,
-        db_pool,
+        db_pool: db_pool.clone(),
         jwt_secret,
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
@@ -127,6 +135,12 @@ pub async fn spawn_test_lb() -> TestServer {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);
@@ -169,7 +183,7 @@ pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
     let state = AppState {
         load_manager: load_manager.clone(),
         request_history,
-        db_pool,
+        db_pool: db_pool.clone(),
         jwt_secret,
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
@@ -178,6 +192,12 @@ pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);
@@ -527,6 +547,14 @@ pub async fn spawn_test_lb_with_db() -> (TestServer, SqlitePool) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+            db_pool.clone(),
+        )),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);

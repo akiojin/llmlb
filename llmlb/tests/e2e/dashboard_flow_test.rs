@@ -10,7 +10,6 @@ use axum::{
     Router,
 };
 use llmlb::common::auth::UserRole;
-use llmlb::common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
 use llmlb::{
     api, balancer::LoadManager, db::endpoints as db_endpoints,
     registry::endpoints::EndpointRegistry, types::endpoint::Endpoint, AppState,
@@ -65,6 +64,14 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+            db_pool.clone(),
+        )),
+        audit_archive_pool: None,
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -85,31 +92,33 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
 async fn test_dashboard_stats_endpoint() {
     let (app, db_pool, jwt) = build_app().await;
 
-    // Seed request_history with token usage to ensure `/api/dashboard/stats` token totals
+    // Seed audit_log_entries with token usage to ensure `/api/dashboard/stats` token totals
     // match the persisted statistics (used by the Statistics tab).
-    let storage = llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone());
+    // SPEC-8301d106: stats are now served from audit_log_entries, not request_history.
+    let audit_storage = llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone());
     let now = chrono::Utc::now();
-    let record = RequestResponseRecord {
-        id: uuid::Uuid::new_v4(),
+    let entry = llmlb::audit::types::AuditLogEntry {
+        id: None,
         timestamp: now,
-        request_type: RequestType::Chat,
-        model: "test-model".to_string(),
-        node_id: uuid::Uuid::new_v4(),
-        node_machine_name: "test-endpoint".to_string(),
-        node_ip: "127.0.0.1".parse().unwrap(),
-        client_ip: None,
-        request_body: json!({"messages":[{"role":"user","content":"hi"}]}),
-        response_body: Some(
-            json!({"choices":[{"message":{"role":"assistant","content":"hello"}}]}),
-        ),
-        duration_ms: 123,
-        status: RecordStatus::Success,
-        completed_at: now,
+        http_method: "POST".to_string(),
+        request_path: "/v1/chat/completions".to_string(),
+        status_code: 200,
+        actor_type: llmlb::audit::types::ActorType::User,
+        actor_id: Some("1".to_string()),
+        actor_username: Some("admin".to_string()),
+        api_key_owner_id: None,
+        client_ip: Some("127.0.0.1".to_string()),
+        duration_ms: Some(123),
         input_tokens: Some(150),
         output_tokens: Some(50),
         total_tokens: Some(200),
+        model_name: Some("test-model".to_string()),
+        endpoint_id: None,
+        detail: None,
+        is_migrated: false,
+        batch_id: None,
     };
-    storage.save_record(&record).await.unwrap();
+    audit_storage.insert_batch(&[entry]).await.unwrap();
 
     // GET /api/dashboard/stats
     let response = app
@@ -140,17 +149,17 @@ async fn test_dashboard_stats_endpoint() {
     assert_eq!(
         stats["total_input_tokens"].as_u64(),
         Some(150),
-        "total_input_tokens should come from request_history"
+        "total_input_tokens should come from audit_log_entries"
     );
     assert_eq!(
         stats["total_output_tokens"].as_u64(),
         Some(50),
-        "total_output_tokens should come from request_history"
+        "total_output_tokens should come from audit_log_entries"
     );
     assert_eq!(
         stats["total_tokens"].as_u64(),
         Some(200),
-        "total_tokens should come from request_history"
+        "total_tokens should come from audit_log_entries"
     );
 }
 
@@ -303,32 +312,34 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
         .await
         .expect("increment failed request counter");
 
-    let storage = llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone());
+    // SPEC-8301d106: stats are now served from audit_log_entries
+    let audit_storage = llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone());
     let now = chrono::Utc::now();
-    let record = RequestResponseRecord {
-        id: uuid::Uuid::new_v4(),
+    let entry = llmlb::audit::types::AuditLogEntry {
+        id: None,
         timestamp: now,
-        request_type: RequestType::Chat,
-        model: "fallback-model".to_string(),
-        node_id: endpoint.id,
-        node_machine_name: "fallback-endpoint".to_string(),
-        node_ip: "127.0.0.1".parse().unwrap(),
-        client_ip: None,
-        request_body: json!({"messages":[{"role":"user","content":"hi"}]}),
-        response_body: Some(
-            json!({"choices":[{"message":{"role":"assistant","content":"hello"}}]}),
-        ),
-        duration_ms: 80,
-        status: RecordStatus::Success,
-        completed_at: now,
+        http_method: "POST".to_string(),
+        request_path: "/v1/chat/completions".to_string(),
+        status_code: 200,
+        actor_type: llmlb::audit::types::ActorType::User,
+        actor_id: Some("1".to_string()),
+        actor_username: Some("admin".to_string()),
+        api_key_owner_id: None,
+        client_ip: Some("127.0.0.1".to_string()),
+        duration_ms: Some(80),
         input_tokens: Some(40),
         output_tokens: Some(60),
         total_tokens: Some(100),
+        model_name: Some("fallback-model".to_string()),
+        endpoint_id: Some(endpoint.id.to_string()),
+        detail: None,
+        is_migrated: false,
+        batch_id: None,
     };
-    storage
-        .save_record(&record)
+    audit_storage
+        .insert_batch(&[entry])
         .await
-        .expect("save request record");
+        .expect("insert audit log entry");
 
     // Warm cache with persisted totals.
     let first_response = app

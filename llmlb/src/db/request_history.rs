@@ -1081,6 +1081,41 @@ impl RequestHistoryStorage {
         })
     }
 
+    /// 過去N時間のIP別リクエスト数を取得（閾値チェック用）
+    ///
+    /// IPv6は/64プレフィックスでグルーピングして集計する。
+    pub async fn get_ip_request_counts_since(
+        &self,
+        hours: u32,
+    ) -> RouterResult<std::collections::HashMap<String, i64>> {
+        let cutoff = Utc::now() - Duration::hours(hours as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let rows: Vec<ClientIpRow> = sqlx::query_as(
+            "SELECT client_ip, COUNT(*) as request_count,
+                    MAX(timestamp) as last_seen
+             FROM request_history
+             WHERE client_ip IS NOT NULL AND timestamp >= ?
+             GROUP BY client_ip",
+        )
+        .bind(&cutoff_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for row in &rows {
+            let ip_str = match &row.client_ip {
+                Some(ip) => ip.as_str(),
+                None => continue,
+            };
+            let key = crate::common::ip::ipv6_to_prefix64(ip_str);
+            *counts.entry(key).or_insert(0) += row.request_count;
+        }
+
+        Ok(counts)
+    }
+
     /// ユニークIP数の1時間刻みタイムラインを取得
     ///
     /// 指定時間数分の24ポイント（各時間帯のユニークIP数）を返す。

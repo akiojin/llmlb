@@ -313,6 +313,11 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/clients/{ip}/api-keys",
             get(dashboard::get_client_api_keys),
+        )
+        // SPEC-62ac4b68: 設定API（閾値設定等）
+        .route(
+            "/dashboard/settings/{key}",
+            get(dashboard::get_setting).put(dashboard::update_setting),
         );
 
     let dashboard_api_routes = if auth_disabled {

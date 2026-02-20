@@ -1075,6 +1075,13 @@ export const clientsApi = {
     fetchWithAuth<ClientDetailResponse>(`/api/dashboard/clients/${encodeURIComponent(ip)}/detail`),
   getClientApiKeys: (ip: string) =>
     fetchWithAuth<ClientApiKeyUsage[]>(`/api/dashboard/clients/${encodeURIComponent(ip)}/api-keys`),
+  getAlertThreshold: () =>
+    fetchWithAuth<{ key: string; value: string }>('/api/dashboard/settings/ip_alert_threshold'),
+  updateAlertThreshold: (value: string) =>
+    fetchWithAuth<{ key: string; value: string }>('/api/dashboard/settings/ip_alert_threshold', {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
 }
 
 export interface ClientDetailResponse {

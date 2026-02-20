@@ -12,6 +12,7 @@ import { ClientRankingTable } from './ClientRankingTable'
 import { UniqueIpTimeline } from './UniqueIpTimeline'
 import { ModelDistributionPie } from './ModelDistributionPie'
 import { RequestHeatmap } from './RequestHeatmap'
+import { AlertThresholdSettings } from './AlertThresholdSettings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, TrendingUp, PieChart, Grid3X3, Loader2 } from 'lucide-react'
 
@@ -104,11 +105,12 @@ export function ClientsTab() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-4 w-4" />
             Client IP Ranking
           </CardTitle>
+          <AlertThresholdSettings />
         </CardHeader>
         <CardContent>
           <ClientRankingTable

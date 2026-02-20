@@ -977,10 +977,30 @@ pub async fn get_client_rankings(
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::ClientIpRankingResult>, AppError> {
     let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
-    let result = storage
+    let mut result = storage
         .get_client_ip_ranking(24, params.page, params.per_page)
         .await
         .map_err(AppError)?;
+
+    // SPEC-62ac4b68: 閾値ベースの異常検知
+    // 過去1時間のリクエスト数が閾値を超えるIPにis_alert=trueを設定
+    let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
+    let threshold_str = settings
+        .get_setting("ip_alert_threshold")
+        .await
+        .map_err(AppError)?
+        .unwrap_or_else(|| IP_ALERT_THRESHOLD_DEFAULT.to_string());
+    let threshold: i64 = threshold_str.parse().unwrap_or(100);
+
+    let one_hour_counts = storage
+        .get_ip_request_counts_since(1)
+        .await
+        .map_err(AppError)?;
+    for ranking in &mut result.rankings {
+        let count = one_hour_counts.get(&ranking.ip).copied().unwrap_or(0);
+        ranking.is_alert = count > threshold;
+    }
+
     Ok(Json(result))
 }
 
@@ -1045,6 +1065,50 @@ pub async fn get_client_api_keys(
     let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
     let result = storage.get_client_api_keys(&ip).await.map_err(AppError)?;
     Ok(Json(result))
+}
+
+/// 設定APIのデフォルト値
+const IP_ALERT_THRESHOLD_DEFAULT: &str = "100";
+
+/// GET /api/dashboard/settings/{key} - 設定値取得
+///
+/// SPEC-62ac4b68: 閾値ベースの異常検知
+pub async fn get_setting(
+    axum::extract::Path(key): axum::extract::Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
+    let value = settings.get_setting(&key).await.map_err(AppError)?;
+    let default = if key == "ip_alert_threshold" {
+        Some(IP_ALERT_THRESHOLD_DEFAULT.to_string())
+    } else {
+        None
+    };
+    let value = value.or(default).unwrap_or_default();
+    Ok(Json(serde_json::json!({ "key": key, "value": value })))
+}
+
+/// PUT /api/dashboard/settings/{key} のリクエストボディ
+#[derive(Debug, Deserialize)]
+pub struct SettingUpdateBody {
+    /// 設定値
+    pub value: String,
+}
+
+/// PUT /api/dashboard/settings/{key} - 設定値更新
+///
+/// SPEC-62ac4b68: 閾値ベースの異常検知
+pub async fn update_setting(
+    axum::extract::Path(key): axum::extract::Path<String>,
+    State(state): State<AppState>,
+    Json(body): Json<SettingUpdateBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
+    settings
+        .set_setting(&key, &body.value)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(serde_json::json!({ "key": key, "value": body.value })))
 }
 
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装

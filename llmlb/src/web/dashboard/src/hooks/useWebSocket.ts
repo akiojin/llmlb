@@ -35,6 +35,7 @@ interface UseWebSocketOptions {
   onConnect?: () => void
   onDisconnect?: () => void
   reconnectInterval?: number
+  enabled?: boolean
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
@@ -43,6 +44,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onConnect,
     onDisconnect,
     reconnectInterval = 3000,
+    enabled = true,
   } = options
 
   const queryClient = useQueryClient()
@@ -133,11 +135,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [])
 
   useEffect(() => {
+    if (!enabled) {
+      disconnect()
+      return
+    }
     connect()
     return () => {
       disconnect()
     }
-  }, [connect, disconnect])
+  }, [connect, disconnect, enabled])
 
   return {
     isConnected,
@@ -151,8 +157,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
  * Hook specifically for dashboard page
  * Connects to WebSocket and provides connection status
  */
-export function useDashboardWebSocket() {
+interface UseDashboardWebSocketOptions {
+  enabled?: boolean
+}
+
+export function useDashboardWebSocket(options: UseDashboardWebSocketOptions = {}) {
+  const { enabled = true } = options
   const { isConnected, lastEvent, reconnect } = useWebSocket({
+    enabled,
     onConnect: () => {
       console.log('Dashboard WebSocket connected')
     },

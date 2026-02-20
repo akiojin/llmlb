@@ -286,6 +286,33 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/model-stats",
             get(dashboard::get_all_model_stats),
+        )
+        // SPEC-62ac4b68: Clients分析API
+        .route("/dashboard/clients", get(dashboard::get_client_rankings))
+        .route(
+            "/dashboard/clients/timeline",
+            get(dashboard::get_client_timeline),
+        )
+        .route(
+            "/dashboard/clients/models",
+            get(dashboard::get_client_models),
+        )
+        .route(
+            "/dashboard/clients/heatmap",
+            get(dashboard::get_client_heatmap),
+        )
+        .route(
+            "/dashboard/clients/{ip}/detail",
+            get(dashboard::get_client_detail),
+        )
+        .route(
+            "/dashboard/clients/{ip}/api-keys",
+            get(dashboard::get_client_api_keys),
+        )
+        // SPEC-62ac4b68: 設定API（閾値設定等）
+        .route(
+            "/dashboard/settings/{key}",
+            get(dashboard::get_setting).put(dashboard::update_setting),
         );
 
     let dashboard_api_routes = if auth_disabled {

@@ -108,6 +108,7 @@ async fn test_dashboard_stats_endpoint() {
         input_tokens: Some(150),
         output_tokens: Some(50),
         total_tokens: Some(200),
+        api_key_id: None,
     };
     storage.save_record(&record).await.unwrap();
 
@@ -324,6 +325,7 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
         input_tokens: Some(40),
         output_tokens: Some(60),
         total_tokens: Some(100),
+        api_key_id: None,
     };
     storage
         .save_record(&record)

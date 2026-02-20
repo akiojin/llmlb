@@ -283,5 +283,6 @@ fn create_test_record(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id: None,
     }
 }

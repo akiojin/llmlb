@@ -43,8 +43,8 @@ test.describe('Endpoint Playground Walkthrough @playground', () => {
     await expect(row).toBeVisible({ timeout: 20000 })
 
     // Type detection should classify this as OpenAI-compatible.
-    // The table shows a shortened label ("OpenAI") for openai_compatible endpoints.
-    await expect(row.locator('td').nth(2).getByText('OpenAI', { exact: true })).toBeVisible({
+    // Accept both labels for compatibility across UI revisions.
+    await expect(row.locator('td').nth(2)).toContainText(/^OpenAI( Compatible)?$/, {
       timeout: 20000,
     })
 

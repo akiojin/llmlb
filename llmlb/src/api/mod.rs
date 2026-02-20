@@ -301,7 +301,11 @@ pub fn create_app(state: AppState) -> Router {
     let system_routes = Router::new()
         .route("/system", get(system::get_system))
         .route("/system/update/check", post(system::check_update))
-        .route("/system/update/apply", post(system::apply_update));
+        .route("/system/update/apply", post(system::apply_update))
+        .route(
+            "/system/update/apply/force",
+            post(system::apply_force_update),
+        );
     let system_routes = if auth_disabled {
         system_routes
     } else {

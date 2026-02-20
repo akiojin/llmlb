@@ -24,6 +24,19 @@ struct CheckUpdateResponse {
     update: crate::update::UpdateState,
 }
 
+#[derive(Debug, Serialize)]
+struct ApplyUpdateResponse {
+    queued: bool,
+    mode: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct ForceApplyUpdateResponse {
+    queued: bool,
+    mode: &'static str,
+    dropped_in_flight: usize,
+}
+
 /// GET /api/version
 ///
 /// 認証不要。ビルド時のバージョン文字列を返す。
@@ -84,12 +97,43 @@ pub async fn apply_update(
         }
     }
 
-    state.update_manager.request_apply();
+    let queued = state.update_manager.request_apply_normal().await;
     (
         StatusCode::ACCEPTED,
-        Json(json!({
-            "queued": true,
-        })),
+        Json(ApplyUpdateResponse {
+            queued,
+            mode: "normal",
+        }),
     )
         .into_response()
+}
+
+/// POST /api/system/update/apply/force
+///
+/// Admin only when auth is enabled.
+pub async fn apply_force_update(
+    State(state): State<AppState>,
+    claims: Option<Extension<Claims>>,
+) -> Response {
+    if !crate::config::is_auth_disabled() {
+        let Some(Extension(claims)) = claims else {
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        };
+        if claims.role != UserRole::Admin {
+            return (StatusCode::FORBIDDEN, "Admin access required").into_response();
+        }
+    }
+
+    match state.update_manager.request_apply_force().await {
+        Ok(dropped_in_flight) => (
+            StatusCode::ACCEPTED,
+            Json(ForceApplyUpdateResponse {
+                queued: false,
+                mode: "force",
+                dropped_in_flight,
+            }),
+        )
+            .into_response(),
+        Err(err) => (StatusCode::CONFLICT, err.to_string()).into_response(),
+    }
 }

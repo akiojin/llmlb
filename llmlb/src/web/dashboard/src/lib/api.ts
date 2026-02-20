@@ -418,6 +418,17 @@ export interface SystemInfo {
   update: UpdateState
 }
 
+export interface ApplyUpdateResponse {
+  queued: boolean
+  mode: 'normal'
+}
+
+export interface ForceApplyUpdateResponse {
+  queued: false
+  mode: 'force'
+  dropped_in_flight: number
+}
+
 export const systemApi = {
   getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
   checkUpdate: () =>
@@ -426,7 +437,12 @@ export const systemApi = {
       body: JSON.stringify({}),
     }),
   applyUpdate: () =>
-    fetchWithAuth<{ queued: boolean }>('/api/system/update/apply', {
+    fetchWithAuth<ApplyUpdateResponse>('/api/system/update/apply', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  applyForceUpdate: () =>
+    fetchWithAuth<ForceApplyUpdateResponse>('/api/system/update/apply/force', {
       method: 'POST',
       body: JSON.stringify({}),
     }),

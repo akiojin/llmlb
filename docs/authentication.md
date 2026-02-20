@@ -48,13 +48,26 @@ rejected by the API.
 | `openai.models.read` | Model discovery (`GET /v1/models`, `GET /v1/models/:model_id`) |
 | `endpoints.read` | Read-only endpoint APIs (`GET /api/endpoints*`) |
 | `endpoints.manage` | Endpoint mutations (`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`) |
-| `api_keys.manage` | API key management (`/api/api-keys*`) |
 | `users.manage` | User management (`/api/users*`) |
 | `invitations.manage` | Invitation management (`/api/invitations*`) |
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry access (`GET /api/models/registry/*`) and model list endpoints (`GET /api/models`, `GET /api/models/hub`) |
 | `logs.read` | Node log proxy (`GET /api/nodes/:node_id/logs`) |
 | `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
+
+### Self-service API key management
+
+Authenticated users manage their own keys via JWT-only endpoints:
+
+- `GET /api/me/api-keys`
+- `POST /api/me/api-keys`
+- `PUT /api/me/api-keys/:id`
+- `DELETE /api/me/api-keys/:id`
+
+`POST /api/me/api-keys` is server-managed and always issues keys with:
+
+- `openai.inference`
+- `openai.models.read`
 
 Note: For routes that accept either JWT or API key, llmlb prefers JWT if present. Avoid sending a
 JWT-looking token (three dot-separated segments) as an API key in `Authorization: Bearer`.
@@ -67,4 +80,3 @@ In debug builds (`#[cfg(debug_assertions)]`) the following API keys are accepted
 - `sk_debug_admin`: all permissions
 - `sk_debug_api`: `openai.inference` + `openai.models.read`
 - `sk_debug_runtime`: `registry.read`
-

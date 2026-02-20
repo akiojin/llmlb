@@ -375,6 +375,9 @@ export const dashboardApi = {
 
   getRouterLogs: (params?: { limit?: number }) =>
     fetchWithAuth<LogResponse>('/api/dashboard/logs/lb', { params }),
+
+  getAllModelStats: () =>
+    fetchWithAuth<ModelStatEntry[]>('/api/dashboard/model-stats'),
 }
 
 /**
@@ -822,28 +825,27 @@ export interface CreateApiKeyResponse {
 
 export const apiKeysApi = {
   list: () =>
-    fetchWithAuth<{ api_keys: ApiKey[] }>('/api/api-keys').then(
+    fetchWithAuth<{ api_keys: ApiKey[] }>('/api/me/api-keys').then(
       (res) => res.api_keys
     ),
 
   create: (data: {
     name: string
     expires_at?: string
-    permissions: ApiKeyPermission[]
   }) =>
-    fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
+    fetchWithAuth<CreateApiKeyResponse>('/api/me/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   update: (id: string, data: { name?: string; expires_at?: string | null }) =>
-    fetchWithAuth<ApiKey>(`/api/api-keys/${id}`, {
+    fetchWithAuth<ApiKey>(`/api/me/api-keys/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/api/api-keys/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/api/me/api-keys/${id}`, { method: 'DELETE' }),
 }
 
 // Invitations API

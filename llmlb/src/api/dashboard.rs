@@ -23,6 +23,8 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
@@ -140,6 +142,29 @@ pub struct DashboardOverview {
     /// 集計に要した時間（ミリ秒）
     pub generation_time_ms: u64,
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PersistedRequestTotals {
+    total_requests: u64,
+    successful_requests: u64,
+    failed_requests: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PersistedTokenTotals {
+    total_input_tokens: u64,
+    total_output_tokens: u64,
+    total_tokens: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PersistedTotalsCache {
+    request_totals: PersistedRequestTotals,
+    token_totals: PersistedTokenTotals,
+}
+
+static LAST_KNOWN_PERSISTED_TOTALS: LazyLock<RwLock<HashMap<u64, PersistedTotalsCache>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// GET /api/dashboard/endpoints
 ///
@@ -331,29 +356,6 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
     let google_key_present = std::env::var("GOOGLE_API_KEY").is_ok();
     let anthropic_key_present = std::env::var("ANTHROPIC_API_KEY").is_ok();
 
-    // Token totals must be consistent with the persisted request history.
-    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
-    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
-    let mut total_input_tokens = summary.total_input_tokens;
-    let mut total_output_tokens = summary.total_output_tokens;
-    let mut total_tokens = summary.total_tokens;
-    match state.request_history.get_token_statistics().await {
-        Ok(stats) => {
-            total_input_tokens = stats.total_input_tokens;
-            total_output_tokens = stats.total_output_tokens;
-            total_tokens = stats.total_tokens;
-        }
-        Err(e) => {
-            warn!(
-                "Failed to query token statistics from request history: {}",
-                e
-            );
-        }
-    }
-
-    let mut total_requests = summary.total_requests;
-    let mut successful_requests = summary.successful_requests;
-    let mut failed_requests = summary.failed_requests;
     let to_u64 = |value: i64| -> u64 {
         if value < 0 {
             0
@@ -361,14 +363,77 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             value as u64
         }
     };
-    match crate::db::endpoints::get_request_totals(&state.db_pool).await {
-        Ok(request_totals) => {
-            total_requests = to_u64(request_totals.total_requests);
-            successful_requests = to_u64(request_totals.successful_requests);
-            failed_requests = to_u64(request_totals.failed_requests);
-        }
+    let cache_key = load_manager.cache_key();
+
+    let request_totals_from_db =
+        match crate::db::endpoints::get_request_totals(&state.db_pool).await {
+            Ok(request_totals) => Some(PersistedRequestTotals {
+                total_requests: to_u64(request_totals.total_requests),
+                successful_requests: to_u64(request_totals.successful_requests),
+                failed_requests: to_u64(request_totals.failed_requests),
+            }),
+            Err(e) => {
+                warn!("Failed to query persisted request totals: {}", e);
+                None
+            }
+        };
+
+    // Token totals must be consistent with the persisted request history.
+    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
+    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
+    let token_totals_from_history = match state.request_history.get_token_statistics().await {
+        Ok(stats) => Some(PersistedTokenTotals {
+            total_input_tokens: stats.total_input_tokens,
+            total_output_tokens: stats.total_output_tokens,
+            total_tokens: stats.total_tokens,
+        }),
         Err(e) => {
-            warn!("Failed to query persisted request totals: {}", e);
+            warn!(
+                "Failed to query token statistics from request history: {}",
+                e
+            );
+            None
+        }
+    };
+
+    let cached_totals = LAST_KNOWN_PERSISTED_TOTALS
+        .read()
+        .ok()
+        .and_then(|guard| guard.get(&cache_key).copied());
+
+    let request_totals = if let Some(request_totals) = request_totals_from_db {
+        request_totals
+    } else if let Some(cached) = cached_totals {
+        warn!("Using last known persisted request totals after DB query failure");
+        cached.request_totals
+    } else {
+        warn!("No cached persisted request totals available; returning zero values");
+        PersistedRequestTotals::default()
+    };
+
+    let token_totals = if let Some(token_totals) = token_totals_from_history {
+        token_totals
+    } else if let Some(cached) = cached_totals {
+        warn!("Using last known persisted token totals after history query failure");
+        cached.token_totals
+    } else {
+        warn!("No cached persisted token totals available; returning zero values");
+        PersistedTokenTotals::default()
+    };
+
+    if request_totals_from_db.is_some() || token_totals_from_history.is_some() {
+        let mut updated_cache = cached_totals.unwrap_or_default();
+        if let Some(request_totals) = request_totals_from_db {
+            updated_cache.request_totals = request_totals;
+        }
+        if let Some(token_totals) = token_totals_from_history {
+            updated_cache.token_totals = token_totals;
+        }
+
+        if let Ok(mut guard) = LAST_KNOWN_PERSISTED_TOTALS.write() {
+            guard.insert(cache_key, updated_cache);
+        } else {
+            warn!("Failed to update persisted totals cache due to poisoned lock");
         }
     }
 
@@ -378,9 +443,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         pending_nodes: summary.pending_nodes,
         registering_nodes: summary.registering_nodes,
         offline_nodes: summary.offline_nodes,
-        total_requests,
-        successful_requests,
-        failed_requests,
+        total_requests: request_totals.total_requests,
+        successful_requests: request_totals.successful_requests,
+        failed_requests: request_totals.failed_requests,
         total_active_requests: summary.total_active_requests,
         queued_requests: summary.queued_requests,
         average_response_time_ms: summary.average_response_time_ms,
@@ -392,9 +457,9 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         openai_key_present,
         google_key_present,
         anthropic_key_present,
-        total_input_tokens,
-        total_output_tokens,
-        total_tokens,
+        total_input_tokens: token_totals.total_input_tokens,
+        total_output_tokens: token_totals.total_output_tokens,
+        total_tokens: token_totals.total_tokens,
     }
 }
 

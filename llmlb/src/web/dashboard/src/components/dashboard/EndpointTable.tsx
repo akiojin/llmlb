@@ -115,7 +115,7 @@ function getTypeLabel(type: EndpointType): string {
     case 'lm_studio':
       return 'LM Studio'
     case 'openai_compatible':
-      return 'OpenAI'
+      return 'OpenAI Compatible'
     case 'unknown':
       return 'Unknown'
     default:
@@ -383,7 +383,7 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
                 <SelectItem value="ollama">Ollama</SelectItem>
                 <SelectItem value="vllm">vLLM</SelectItem>
                 <SelectItem value="lm_studio">LM Studio</SelectItem>
-                <SelectItem value="openai_compatible">OpenAI</SelectItem>
+                <SelectItem value="openai_compatible">OpenAI Compatible</SelectItem>
                 <SelectItem value="unknown">Unknown</SelectItem>
               </SelectContent>
             </Select>

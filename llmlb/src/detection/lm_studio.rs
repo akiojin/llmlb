@@ -14,7 +14,7 @@ use tracing::debug;
 /// Detection strategy (in order):
 /// 1. Primary: GET /api/v1/models - check for LM Studio-specific fields (publisher/arch/state)
 /// 2. Fallback 1: GET /v1/models - check Server header for "lm-studio"/"lm studio"
-/// 3. Fallback 2: Same /v1/models response - check owned_by for "lm-studio"
+/// 3. Fallback 2: Same /v1/models response - check owned_by for LM Studio markers
 pub async fn detect_lm_studio(
     client: &Client,
     base_url: &str,
@@ -79,7 +79,9 @@ pub async fn detect_lm_studio(
                 if let Ok(json) = response.json::<serde_json::Value>().await {
                     if has_lm_studio_owned_by(&json) {
                         debug!("Detected LM Studio endpoint via owned_by field");
-                        return Some("LM Studio: owned_by field contains lm-studio".to_string());
+                        return Some(
+                            "LM Studio: owned_by field contains LM Studio marker".to_string(),
+                        );
                     }
                 }
             }
@@ -108,18 +110,29 @@ fn has_lm_studio_fields(json: &serde_json::Value) -> bool {
     false
 }
 
-/// Check if Server header indicates LM Studio (case-insensitive)
-fn is_lm_studio_server_header(header: &str) -> bool {
-    let lower = header.to_lowercase();
-    lower.contains("lm-studio") || lower.contains("lm studio")
+/// Normalize text for LM Studio marker matching.
+///
+/// - Lowercases
+/// - Removes spaces, hyphens, and underscores
+fn normalize_lm_studio_marker(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|c| c.to_lowercase())
+        .filter(|c| *c != ' ' && *c != '-' && *c != '_')
+        .collect()
 }
 
-/// Check if any model in data array has owned_by containing "lm-studio" (case-insensitive)
+/// Check if Server header indicates LM Studio (case-insensitive)
+fn is_lm_studio_server_header(header: &str) -> bool {
+    normalize_lm_studio_marker(header).contains("lmstudio")
+}
+
+/// Check if any model in data array has owned_by containing LM Studio markers.
 fn has_lm_studio_owned_by(json: &serde_json::Value) -> bool {
     if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
         for model in data {
             if let Some(owned_by) = model.get("owned_by").and_then(|v| v.as_str()) {
-                if owned_by.to_lowercase().contains("lm-studio") {
+                if normalize_lm_studio_marker(owned_by).contains("lmstudio") {
                     return true;
                 }
             }
@@ -197,6 +210,7 @@ mod tests {
             "lm-studio/0.3.5",
             "LM Studio",
             "lm studio",
+            "lmstudio",
         ];
         for header in positive {
             assert!(
@@ -232,6 +246,29 @@ mod tests {
     fn test_owned_by_lm_studio_case_insensitive() {
         let json: serde_json::Value =
             serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"LM-Studio"}]}"#).unwrap();
+        assert!(has_lm_studio_owned_by(&json));
+    }
+
+    #[test]
+    fn test_owned_by_lmstudio_community() {
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"lmstudio-community"}]}"#)
+                .unwrap();
+        assert!(has_lm_studio_owned_by(&json));
+    }
+
+    #[test]
+    fn test_owned_by_lmstudio_without_separator() {
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"LMSTUDIO"}]}"#).unwrap();
+        assert!(has_lm_studio_owned_by(&json));
+    }
+
+    #[test]
+    fn test_owned_by_lm_studio_with_underscore() {
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"lm_studio-community"}]}"#)
+                .unwrap();
         assert!(has_lm_studio_owned_by(&json));
     }
 

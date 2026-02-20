@@ -233,7 +233,55 @@ async fn test_endpoint_type_detection_vllm() {
     assert_eq!(body["endpoint_type"], "vllm");
 }
 
-/// US6-シナリオ6: OpenAI互換判別（フォールバック）
+/// US6-シナリオ6: LM Studio判別（/v1/models owned_byフォールバック）
+#[tokio::test]
+async fn test_endpoint_type_detection_lm_studio_owned_by_fallback() {
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
+
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    // /api/v1/models が使えない環境を想定し、/v1/models の owned_by で判定する
+    Mock::given(method("GET"))
+        .and(path("/api/v1/models"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "meta-llama-3.1-8b-instruct", "object": "model", "owned_by": "lmstudio-community"}]
+        })))
+        .mount(&mock)
+        .await;
+
+    let response = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "name": "LM Studio OwnedBy Endpoint",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("registration request failed");
+
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "lm_studio");
+}
+
+/// US6-シナリオ7: OpenAI互換判別（フォールバック）
 #[tokio::test]
 async fn test_endpoint_type_detection_openai_compatible() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
@@ -275,7 +323,7 @@ async fn test_endpoint_type_detection_openai_compatible() {
     assert_eq!(body["endpoint_type"], "openai_compatible");
 }
 
-/// US6-シナリオ7: オンライン復帰時のタイプ再判別
+/// US6-シナリオ8: オンライン復帰時のタイプ再判別
 #[tokio::test]
 async fn test_endpoint_type_redetection_on_online() {
     let (server, db_pool) = spawn_test_lb_with_db().await;

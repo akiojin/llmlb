@@ -1,8 +1,8 @@
 //! APIキー管理API
 //!
-//! Admin専用のAPIキーCRUD操作
+//! 認証済みユーザーが自分自身のAPIキーを管理するためのAPI。
 
-use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext, Claims, UserRole};
+use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext, Claims};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -20,10 +20,10 @@ pub struct CreateApiKeyRequest {
     pub name: String,
     /// 有効期限（RFC3339形式、オプション）
     pub expires_at: Option<String>,
-    /// 付与する権限（推奨: チェックボックスUIで複数選択）
+    /// 互換防止: `permissions` は受け付けない（固定付与）
     #[serde(default)]
-    pub permissions: Option<Vec<ApiKeyPermission>>,
-    /// 旧互換: `scopes` は廃止。送られてきた場合は 400 を返す。
+    pub permissions: Option<serde_json::Value>,
+    /// 旧互換: `scopes` は廃止
     #[serde(default)]
     pub scopes: Option<serde_json::Value>,
 }
@@ -101,34 +101,55 @@ pub struct ListApiKeysResponse {
     pub api_keys: Vec<ApiKeyResponse>,
 }
 
-/// Admin権限チェックヘルパー
-#[allow(clippy::result_large_err)]
-fn check_admin(claims: &Claims) -> Result<(), Response> {
-    if claims.role != UserRole::Admin {
-        return Err((StatusCode::FORBIDDEN, "Admin access required").into_response());
-    }
-    Ok(())
+/// APIキー更新リクエスト
+#[derive(Debug, Deserialize)]
+pub struct UpdateApiKeyRequest {
+    /// キーの名前
+    pub name: String,
+    /// 有効期限（RFC3339形式、オプション）
+    pub expires_at: Option<String>,
 }
 
-/// GET /api/api-keys - APIキー一覧取得
-///
-/// Admin専用。全APIキーの一覧を返す（key_hashは除外）
-///
-/// # Arguments
-/// * `Extension(claims)` - JWTクレーム（ミドルウェアで注入）
-/// * `State(app_state)` - アプリケーション状態
-///
-/// # Returns
-/// * `200 OK` - APIキー一覧
-/// * `403 Forbidden` - Admin権限なし
-/// * `500 Internal Server Error` - サーバーエラー
+fn default_user_api_key_permissions() -> Vec<ApiKeyPermission> {
+    vec![
+        ApiKeyPermission::OpenaiInference,
+        ApiKeyPermission::OpenaiModelsRead,
+    ]
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_user_id_from_claims(claims: &Claims) -> Result<Uuid, Response> {
+    claims.sub.parse::<Uuid>().map_err(|e| {
+        tracing::error!("Failed to parse user ID: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+    })
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_expires_at(
+    expires_at: Option<&String>,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, Response> {
+    match expires_at {
+        Some(expires_at_str) => Ok(Some(
+            chrono::DateTime::parse_from_rfc3339(expires_at_str)
+                .map_err(|e| {
+                    tracing::warn!("Invalid expires_at format: {}", e);
+                    (StatusCode::BAD_REQUEST, "Invalid expires_at format").into_response()
+                })?
+                .with_timezone(&chrono::Utc),
+        )),
+        None => Ok(None),
+    }
+}
+
+/// GET /api/me/api-keys - 自分のAPIキー一覧取得
 pub async fn list_api_keys(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
 ) -> Result<Json<ListApiKeysResponse>, Response> {
-    check_admin(&claims)?;
+    let user_id = parse_user_id_from_claims(&claims)?;
 
-    let api_keys = crate::db::api_keys::list(&app_state.db_pool)
+    let api_keys = crate::db::api_keys::list_by_creator(&app_state.db_pool, user_id)
         .await
         .map_err(|e| {
             tracing::error!("Failed to list API keys: {}", e);
@@ -140,67 +161,37 @@ pub async fn list_api_keys(
     }))
 }
 
-/// POST /api/api-keys - APIキー発行
-///
-/// Admin専用。新しいAPIキーを発行する。平文キーは発行時のみ返却
-///
-/// # Arguments
-/// * `Extension(claims)` - JWTクレーム（ミドルウェアで注入）
-/// * `State(app_state)` - アプリケーション状態
-/// * `Json(request)` - APIキー作成リクエスト
-///
-/// # Returns
-/// * `201 Created` - 作成されたAPIキー（平文キー含む）
-/// * `400 Bad Request` - 有効期限のフォーマットエラー
-/// * `403 Forbidden` - Admin権限なし
-/// * `500 Internal Server Error` - サーバーエラー
+/// POST /api/me/api-keys - APIキー発行
 pub async fn create_api_key(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<(StatusCode, Json<CreateApiKeyResponse>), Response> {
-    check_admin(&claims)?;
-
-    if request.scopes.is_some() {
+    if request.permissions.is_some() {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Field 'scopes' is deprecated. Use 'permissions' instead.",
+            "Field 'permissions' is managed by server and cannot be provided.",
         )
             .into_response());
     }
 
-    let permissions = request.permissions.unwrap_or_default();
-    if permissions.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Permissions are required").into_response());
+    if request.scopes.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Field 'scopes' is deprecated and not accepted.",
+        )
+            .into_response());
     }
 
-    // ユーザーIDをパース
-    let user_id = claims.sub.parse::<Uuid>().map_err(|e| {
-        tracing::error!("Failed to parse user ID: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
-    })?;
+    let user_id = parse_user_id_from_claims(&claims)?;
+    let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
-    // 有効期限をパース（指定された場合）
-    let expires_at = if let Some(ref expires_at_str) = request.expires_at {
-        Some(
-            chrono::DateTime::parse_from_rfc3339(expires_at_str)
-                .map_err(|e| {
-                    tracing::warn!("Invalid expires_at format: {}", e);
-                    (StatusCode::BAD_REQUEST, "Invalid expires_at format").into_response()
-                })?
-                .with_timezone(&chrono::Utc),
-        )
-    } else {
-        None
-    };
-
-    // APIキーを作成
     let api_key = crate::db::api_keys::create(
         &app_state.db_pool,
         &request.name,
         user_id,
         expires_at,
-        normalize_permissions(&permissions),
+        default_user_api_key_permissions(),
     )
     .await
     .map_err(|e| {
@@ -214,61 +205,28 @@ pub async fn create_api_key(
     ))
 }
 
-/// APIキー更新リクエスト
-#[derive(Debug, Deserialize)]
-pub struct UpdateApiKeyRequest {
-    /// キーの名前
-    pub name: String,
-    /// 有効期限（RFC3339形式、オプション）
-    pub expires_at: Option<String>,
-}
-
-/// PUT /api/api-keys/:id - APIキー更新
-///
-/// Admin専用。APIキーの名前と有効期限を更新する
-///
-/// # Arguments
-/// * `Extension(claims)` - JWTクレーム（ミドルウェアで注入）
-/// * `State(app_state)` - アプリケーション状態
-/// * `Path(key_id)` - APIキーID
-/// * `Json(request)` - APIキー更新リクエスト
-///
-/// # Returns
-/// * `200 OK` - 更新後のAPIキー
-/// * `400 Bad Request` - 有効期限のフォーマットエラー
-/// * `403 Forbidden` - Admin権限なし
-/// * `404 Not Found` - APIキーが見つからない
-/// * `500 Internal Server Error` - サーバーエラー
+/// PUT /api/me/api-keys/:id - 自分のAPIキー更新
 pub async fn update_api_key(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Path(key_id): Path<Uuid>,
     Json(request): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<ApiKeyResponse>, Response> {
-    check_admin(&claims)?;
+    let user_id = parse_user_id_from_claims(&claims)?;
+    let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
-    // 有効期限をパース（指定された場合）
-    let expires_at = if let Some(ref expires_at_str) = request.expires_at {
-        Some(
-            chrono::DateTime::parse_from_rfc3339(expires_at_str)
-                .map_err(|e| {
-                    tracing::warn!("Invalid expires_at format: {}", e);
-                    (StatusCode::BAD_REQUEST, "Invalid expires_at format").into_response()
-                })?
-                .with_timezone(&chrono::Utc),
-        )
-    } else {
-        None
-    };
-
-    // APIキーを更新
-    let updated =
-        crate::db::api_keys::update(&app_state.db_pool, key_id, &request.name, expires_at)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to update API key: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
-            })?;
+    let updated = crate::db::api_keys::update_by_creator(
+        &app_state.db_pool,
+        key_id,
+        user_id,
+        &request.name,
+        expires_at,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to update API key: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+    })?;
 
     match updated {
         Some(api_key) => Ok(Json(ApiKeyResponse::from(api_key))),
@@ -276,49 +234,24 @@ pub async fn update_api_key(
     }
 }
 
-fn normalize_permissions(permissions: &[ApiKeyPermission]) -> Vec<ApiKeyPermission> {
-    use std::collections::HashSet;
-
-    let mut seen = HashSet::new();
-    let mut unique = Vec::new();
-    for permission in permissions {
-        if seen.insert(*permission) {
-            unique.push(*permission);
-        }
-    }
-    unique
-}
-
-/// DELETE /api/api-keys/:id - APIキー削除
-///
-/// Admin専用。APIキーを削除する
-///
-/// # Arguments
-/// * `Extension(claims)` - JWTクレーム（ミドルウェアで注入）
-/// * `State(app_state)` - アプリケーション状態
-/// * `Path(key_id)` - APIキーID
-///
-/// # Returns
-/// * `204 No Content` - 削除成功
-/// * `403 Forbidden` - Admin権限なし
-/// * `404 Not Found` - APIキーが見つからない
-/// * `500 Internal Server Error` - サーバーエラー
+/// DELETE /api/me/api-keys/:id - 自分のAPIキー削除
 pub async fn delete_api_key(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Path(key_id): Path<Uuid>,
 ) -> Result<StatusCode, Response> {
-    check_admin(&claims)?;
+    let user_id = parse_user_id_from_claims(&claims)?;
 
-    // APIキーを削除（存在しない場合はエラー）
-    crate::db::api_keys::delete(&app_state.db_pool, key_id)
+    let deleted = crate::db::api_keys::delete_by_creator(&app_state.db_pool, key_id, user_id)
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete API key: {}", e);
-            // SQLiteの場合、削除対象が存在しない場合でもエラーにならないため、
-            // ここでは500エラーとして扱う
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
         })?;
+
+    if !deleted {
+        return Err((StatusCode::NOT_FOUND, "API key not found").into_response());
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

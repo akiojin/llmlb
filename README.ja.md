@@ -565,13 +565,22 @@ LLM Load Balancer (OpenAI-compatible)
 | `openai.models.read` | OpenAI互換モデル一覧（`GET /v1/models*`） |
 | `endpoints.read` | エンドポイントREAD（`GET /api/endpoints*`） |
 | `endpoints.manage` | エンドポイントWRITE（`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`） |
-| `api_keys.manage` | APIキー管理（`/api/api-keys*`） |
 | `users.manage` | ユーザー管理（`/api/users*`） |
 | `invitations.manage` | 招待管理（`/api/invitations*`） |
 | `models.manage` | モデル登録/削除（`POST /api/models/register`, `DELETE /api/models/*`） |
 | `registry.read` | モデルレジストリ/一覧（`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`） |
 | `logs.read` | ノードログ（`GET /api/nodes/:node_id/logs`） |
 | `metrics.read` | メトリクス（`GET /api/metrics/cloud`） |
+
+APIキー管理はJWTで本人用エンドポイントを利用します:
+- `GET /api/me/api-keys`
+- `POST /api/me/api-keys`
+- `PUT /api/me/api-keys/:id`
+- `DELETE /api/me/api-keys/:id`
+
+`POST /api/me/api-keys` で作成されるキーの権限は固定です:
+- `openai.inference`
+- `openai.models.read`
 
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。

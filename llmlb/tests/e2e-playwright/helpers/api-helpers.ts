@@ -7,10 +7,34 @@
  * - Workflow helpers (register, wait for completion)
  */
 
-import type { APIRequestContext, Page } from '@playwright/test';
+import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768';
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
+
+async function getDashboardJwt(): Promise<string> {
+  const credentials = [
+    { username: 'admin', password: 'test' },
+    { username: 'admin', password: 'password123' },
+  ];
+
+  const authContext = await playwrightRequest.newContext();
+  try {
+    for (const cred of credentials) {
+      const response = await authContext.post(`${API_BASE}/api/auth/login`, {
+        headers: { 'Content-Type': 'application/json' },
+        data: cred,
+      });
+      if (!response.ok()) continue;
+      const body = (await response.json()) as { token?: string };
+      if (body.token) return body.token;
+    }
+  } finally {
+    await authContext.dispose();
+  }
+
+  throw new Error('Failed to acquire dashboard JWT for API key management');
+}
 
 // ============================================================================
 // Model API Helpers
@@ -573,20 +597,25 @@ export interface CreatedApiKey {
 }
 
 /**
- * Create an API key with specified permissions
+ * Create an API key for the logged-in user.
+ * `_permissions` is kept only for backward compatibility with existing tests.
  */
 export async function createApiKeyWithPermissions(
   request: APIRequestContext,
   name: string,
-  permissions: string[],
+  _permissions: string[],
   expiresAt?: string
 ): Promise<CreatedApiKey> {
-  const payload: Record<string, unknown> = { name, permissions };
+  const token = await getDashboardJwt();
+  const payload: Record<string, unknown> = { name };
   if (expiresAt) {
     payload.expires_at = expiresAt;
   }
-  const response = await request.post(`${API_BASE}/api/api-keys`, {
-    headers: { ...AUTH_HEADER, 'Content-Type': 'application/json' },
+  const response = await request.post(`${API_BASE}/api/me/api-keys`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
     data: payload,
   });
   if (!response.ok()) {
@@ -602,9 +631,13 @@ export async function deleteApiKey(
   request: APIRequestContext,
   keyId: string
 ): Promise<boolean> {
-  const response = await request.delete(`${API_BASE}/api/api-keys/${encodeURIComponent(keyId)}`, {
-    headers: AUTH_HEADER,
-  });
+  const token = await getDashboardJwt();
+  const response = await request.delete(
+    `${API_BASE}/api/me/api-keys/${encodeURIComponent(keyId)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
   return response.status() === 204 || response.status() === 200;
 }
 
@@ -612,8 +645,9 @@ export async function deleteApiKey(
  * List all API keys
  */
 export async function listApiKeys(request: APIRequestContext): Promise<ApiKeyInfo[]> {
-  const response = await request.get(`${API_BASE}/api/api-keys`, {
-    headers: AUTH_HEADER,
+  const token = await getDashboardJwt();
+  const response = await request.get(`${API_BASE}/api/me/api-keys`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok()) {
     return [];

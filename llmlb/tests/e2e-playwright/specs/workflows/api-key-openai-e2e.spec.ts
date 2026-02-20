@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
-import { deleteEndpointsByName } from '../../helpers/api-helpers'
+import { deleteApiKey, deleteEndpointsByName, listApiKeys } from '../../helpers/api-helpers'
 import { DashboardPage } from '../../pages/dashboard.page'
 import {
   startMockOpenAIEndpointServer,
@@ -7,26 +7,16 @@ import {
 } from '../../helpers/mock-openai-endpoint'
 
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768'
-const DEBUG_AUTH_HEADER = { Authorization: 'Bearer sk_debug' }
-
 async function deleteApiKeysByName(
   request: APIRequestContext,
   name: string
 ): Promise<number> {
-  const listResp = await request.get(`${API_BASE}/api/api-keys`, {
-    headers: DEBUG_AUTH_HEADER,
-  })
-  if (!listResp.ok()) return 0
-
-  const data = await listResp.json()
-  const apiKeys = Array.isArray(data) ? data : data.api_keys || []
+  const apiKeys = await listApiKeys(request)
   const targets = apiKeys.filter((k: { name?: string }) => k?.name === name)
 
   for (const key of targets) {
     if (!key?.id) continue
-    await request.delete(`${API_BASE}/api/api-keys/${encodeURIComponent(key.id)}`, {
-      headers: DEBUG_AUTH_HEADER,
-    })
+    await deleteApiKey(request, key.id)
   }
 
   return targets.length
@@ -106,25 +96,6 @@ test.describe('API Key Create + OpenAI API Calls @api-keys', () => {
     await apiKeysModal.locator('#create-api-key').click()
     const createDialog = page.getByRole('dialog').filter({ hasText: 'Create API Key' })
     await expect(createDialog).toBeVisible({ timeout: 10000 })
-
-    // Default permissions: openai.inference and openai.models.read are enabled.
-    const inferenceCheckbox = createDialog.locator('#permission-openai-inference')
-    const modelsReadCheckbox = createDialog.locator('#permission-openai-models-read')
-    await expect(inferenceCheckbox).toHaveAttribute('data-state', 'checked')
-    await expect(modelsReadCheckbox).toHaveAttribute('data-state', 'checked')
-
-    // Permission row click toggles selection.
-    const endpointsReadRow = createDialog.locator('#permission-endpoints-read').locator('xpath=ancestor::div[@role="button"][1]')
-    const endpointsReadCheckbox = createDialog.locator('#permission-endpoints-read')
-    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'unchecked')
-    await endpointsReadRow.click()
-    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'checked')
-    await endpointsReadRow.click()
-    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'unchecked')
-
-    // Checkbox itself remains directly clickable.
-    await endpointsReadCheckbox.click()
-    await expect(endpointsReadCheckbox).toHaveAttribute('data-state', 'checked')
 
     await createDialog.locator('#api-key-name').fill(apiKeyName)
     await createDialog.getByRole('button', { name: 'Create', exact: true }).click()

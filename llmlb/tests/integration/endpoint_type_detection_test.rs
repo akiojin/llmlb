@@ -339,7 +339,6 @@ async fn test_endpoint_type_detection_lm_studio_api_models_shape() {
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "lm_studio");
 }
-
 /// US6-シナリオ7: OpenAI互換判別（フォールバック）
 #[tokio::test]
 async fn test_endpoint_type_detection_openai_compatible() {

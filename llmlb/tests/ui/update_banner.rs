@@ -91,3 +91,41 @@ fn check_for_updates_disabled_during_draining() {
         "Check for updates should be disabled when applying (includes draining)"
     );
 }
+
+// FR-016: 強制更新ボタンが表示されること
+#[test]
+fn force_update_button_is_present() {
+    let source = get_dashboard_source();
+    assert!(
+        source.contains("Force update now"),
+        "Dashboard should expose a dedicated force update button"
+    );
+}
+
+// FR-019: 強制更新ボタンはpayload ready時のみ有効になること
+#[test]
+fn force_update_requires_ready_payload() {
+    let source = get_dashboard_source();
+    assert!(
+        source.contains("update?.payload?.payload === 'ready'"),
+        "Force update should require payload=ready state"
+    );
+    assert!(
+        source.contains("Update payload is still preparing"),
+        "Dashboard should explain why force update is disabled when payload is not ready"
+    );
+}
+
+// FR-014: queued=false時に即時適用分岐を持つこと
+#[test]
+fn apply_update_handles_non_queued_response() {
+    let source = get_dashboard_source();
+    assert!(
+        source.contains("if (result.queued)"),
+        "Dashboard should branch on applyUpdate queued response"
+    );
+    assert!(
+        source.contains("Applying update"),
+        "Dashboard should announce immediate apply when queued=false"
+    );
+}

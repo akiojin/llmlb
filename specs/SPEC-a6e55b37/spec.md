@@ -2,8 +2,8 @@
 
 **機能ID**: `SPEC-a6e55b37`  
 **作成日**: 2026-02-10  
-**最終更新日**: 2026-02-19
-**ステータス**: 🔄 UI改善中 (2026-02-19)  
+**最終更新日**: 2026-02-20
+**ステータス**: 🔄 強制更新導線実装中 (2026-02-20)
 **入力**: ユーザー説明: "llmlbの自動アップデートに対応したい。アップデート通知→承認したら更新して再起動。リクエスト処理中はペンディングし、完了後に更新。Ollamaの方式に合わせたい。"
 
 ## ユーザーシナリオ＆テスト *(必須)*
@@ -119,6 +119,21 @@
 
 ---
 
+### ユーザーストーリー9 - 強制更新で即時再起動できる (優先度: P1)
+
+運用者として、緊急時には処理中リクエストの完走を待たずに更新を即時適用して再起動したい。セキュリティパッチや重大障害時に、待機よりも復旧速度を優先したいため。
+
+**独立テスト**: 強制更新APIが payload ready の場合に `queued=false` で受理され、`draining` を経由せず適用フェーズへ進むこと。
+
+**受け入れシナリオ**:
+
+1. **前提** updateState=available かつ payload=ready、**実行** `Force update now` を確認して実行、**結果** 進行中リクエストを打ち切って即時再起動処理に入る
+2. **前提** updateState=available かつ payload=not_ready、**実行** 強制更新ボタンを確認、**結果** disabled表示となり押下できない
+3. **前提** updateState=available かつ payload=ready、**実行** `POST /api/system/update/apply/force`、**結果** `202 Accepted` と `queued=false`、`mode=force` を返す
+4. **前提** updateStateがavailable以外またはpayload未準備、**実行** `POST /api/system/update/apply/force`、**結果** `409 Conflict` が返る
+
+---
+
 ## 要件 *(必須)*
 
 ### 機能要件
@@ -138,6 +153,10 @@
 - **FR-013**: `draining` / `applying` 状態では `Check for updates` ボタンもdisabledになる
 - **FR-014**: `applyUpdate` APIレスポンスの `queued=false` の場合、draining表示を経由せず直接applying表示に遷移する
 - **FR-015**: ダッシュボードヘッダーの「Current vX.Y.Z」横にアップデート状態を示すドットインジケータ（緑=最新/黄=更新可・更新中/赤=失敗）とバッジテキストを表示する
+- **FR-016**: システムは `POST /api/system/update/apply/force` を提供し、payload準備済みのときに強制更新を受け付ける
+- **FR-017**: 強制更新は `draining` 状態を経由せず、`applying` に直接遷移する
+- **FR-018**: ダッシュボードは通常更新ボタンと強制更新ボタンを分離し、強制更新には確認ダイアログを表示する
+- **FR-019**: 強制更新ボタンは `available` かつ `payload=ready` のときのみ有効化する
 
 ### 非機能要件
 

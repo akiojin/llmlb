@@ -163,7 +163,6 @@ fn has_lm_studio_marker(value: &str) -> bool {
 fn is_lm_studio_server_header(header: &str) -> bool {
     has_lm_studio_marker(header)
 }
-
 /// Check if any model in data array has owned_by containing LM Studio markers.
 fn has_lm_studio_owned_by(json: &serde_json::Value) -> bool {
     if let Some(data) = json.get("data").and_then(|d| d.as_array()) {

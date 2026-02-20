@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
     time::Duration,
@@ -168,7 +168,7 @@ pub struct UpdateManager {
 
 struct UpdateManagerInner {
     started: AtomicBool,
-    apply_requested: AtomicBool,
+    apply_request_mode: AtomicU8,
     apply_notify: Notify,
 
     current_version: Version,
@@ -187,6 +187,24 @@ struct UpdateManagerInner {
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     tray_proxy: RwLock<Option<crate::gui::tray::TrayEventProxy>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+enum ApplyRequestMode {
+    None = 0,
+    Normal = 1,
+    Force = 2,
+}
+
+impl ApplyRequestMode {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            x if x == Self::Normal as u8 => Self::Normal,
+            x if x == Self::Force as u8 => Self::Force,
+            _ => Self::None,
+        }
+    }
 }
 
 impl std::fmt::Debug for UpdateManager {
@@ -212,7 +230,7 @@ impl UpdateManager {
         Ok(Self {
             inner: Arc::new(UpdateManagerInner {
                 started: AtomicBool::new(false),
-                apply_requested: AtomicBool::new(false),
+                apply_request_mode: AtomicU8::new(ApplyRequestMode::None as u8),
                 apply_notify: Notify::new(),
                 current_version,
                 http_client,
@@ -267,8 +285,27 @@ impl UpdateManager {
     /// - Start rejecting new inference requests and drain in-flight requests
     /// - Spawn an internal helper to apply the update, then request shutdown
     pub fn request_apply(&self) {
-        self.inner.apply_requested.store(true, Ordering::SeqCst);
-        self.inner.apply_notify.notify_waiters();
+        self.request_apply_mode(ApplyRequestMode::Normal);
+    }
+
+    /// Request a normal update apply.
+    ///
+    /// Returns `true` when the request is expected to be queued (e.g. payload not ready,
+    /// in-flight requests exist, or apply cannot start immediately).
+    pub async fn request_apply_normal(&self) -> bool {
+        let queued = self.will_normal_apply_be_queued().await;
+        self.request_apply_mode(ApplyRequestMode::Normal);
+        queued
+    }
+
+    /// Request a force update apply.
+    ///
+    /// Force apply requires an update payload that is already prepared (`available` + `payload=ready`).
+    /// Returns the number of currently in-flight inference requests that may be dropped.
+    pub async fn request_apply_force(&self) -> Result<usize> {
+        let dropped_in_flight = self.validate_force_apply_request().await?;
+        self.request_apply_mode(ApplyRequestMode::Force);
+        Ok(dropped_in_flight)
     }
 
     /// Start background update check loop and apply loop (idempotent).
@@ -295,43 +332,50 @@ impl UpdateManager {
                         }
                     }
                     _ = mgr.inner.apply_notify.notified() => {
-                        let should_apply = mgr.inner.apply_requested.swap(false, Ordering::SeqCst);
-                        if !should_apply {
+                        let request_mode = mgr.take_apply_request_mode();
+                        if request_mode == ApplyRequestMode::None {
                             continue;
                         }
 
-                        // Refresh state before applying (e.g., first click immediately after boot, or retry after failure).
-                        if let Err(e) = mgr.check_and_maybe_download(true).await {
-                            tracing::warn!("update check failed before apply: {e}");
+                        // For normal apply, refresh state right before apply (first click after boot,
+                        // or retry after a previous failure).
+                        //
+                        // Force apply intentionally skips refresh/download because request_apply_force()
+                        // already validated `payload=ready`; re-checking here can delay or invalidate an
+                        // already accepted immediate apply request.
+                        if request_mode == ApplyRequestMode::Normal {
+                            if let Err(e) = mgr.check_and_maybe_download(true).await {
+                                tracing::warn!("update check failed before apply: {e}");
 
-                            // If GitHub is temporarily unreachable, fall back to the cached state so we can still
-                            // apply a previously discovered update.
-                            let already_available = {
-                                let st = mgr.inner.state.read().await;
-                                matches!(&*st, UpdateState::Available { .. })
-                            };
-                            if !already_available {
-                                if let Some(cache) =
-                                    load_cache(&mgr.inner.cache_path).ok().flatten()
-                                {
-                                    if let Err(err) = mgr.apply_cache(cache).await {
-                                        tracing::warn!(
-                                            "update cache apply failed before apply: {err}"
-                                        );
+                                // If GitHub is temporarily unreachable, fall back to the cached state so we can still
+                                // apply a previously discovered update.
+                                let already_available = {
+                                    let st = mgr.inner.state.read().await;
+                                    matches!(&*st, UpdateState::Available { .. })
+                                };
+                                if !already_available {
+                                    if let Some(cache) =
+                                        load_cache(&mgr.inner.cache_path).ok().flatten()
+                                    {
+                                        if let Err(err) = mgr.apply_cache(cache).await {
+                                            tracing::warn!(
+                                                "update cache apply failed before apply: {err}"
+                                            );
+                                        }
                                     }
                                 }
                             }
+
+                            let is_available = {
+                                let st = mgr.inner.state.read().await;
+                                matches!(&*st, UpdateState::Available { .. })
+                            };
+                            if !is_available {
+                                continue;
+                            }
                         }
 
-                        let is_available = {
-                            let st = mgr.inner.state.read().await;
-                            matches!(&*st, UpdateState::Available { .. })
-                        };
-                        if !is_available {
-                            continue;
-                        }
-
-                        if let Err(err) = mgr.apply_flow().await {
+                        if let Err(err) = mgr.apply_flow(request_mode).await {
                             tracing::warn!("update apply failed: {err}");
                             mgr.inner.gate.stop_rejecting();
                             let mut st = mgr.inner.state.write().await;
@@ -356,6 +400,65 @@ impl UpdateManager {
                 }
             }
         });
+    }
+
+    fn request_apply_mode(&self, mode: ApplyRequestMode) {
+        let requested = mode as u8;
+        loop {
+            let current = self.inner.apply_request_mode.load(Ordering::SeqCst);
+            if current >= requested {
+                break;
+            }
+            if self
+                .inner
+                .apply_request_mode
+                .compare_exchange(current, requested, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
+        }
+        self.inner.apply_notify.notify_waiters();
+    }
+
+    fn take_apply_request_mode(&self) -> ApplyRequestMode {
+        ApplyRequestMode::from_u8(
+            self.inner
+                .apply_request_mode
+                .swap(ApplyRequestMode::None as u8, Ordering::SeqCst),
+        )
+    }
+
+    async fn will_normal_apply_be_queued(&self) -> bool {
+        if self.inner.gate.in_flight() > 0 {
+            return true;
+        }
+
+        let st = self.inner.state.read().await;
+        match &*st {
+            UpdateState::Available {
+                payload: PayloadState::Ready { .. },
+                ..
+            } => false,
+            UpdateState::Draining { .. } | UpdateState::Applying { .. } => true,
+            _ => true,
+        }
+    }
+
+    async fn validate_force_apply_request(&self) -> Result<usize> {
+        let dropped_in_flight = self.inner.gate.in_flight();
+        let st = self.inner.state.read().await;
+        match &*st {
+            UpdateState::Available {
+                payload: PayloadState::Ready { .. },
+                ..
+            } => Ok(dropped_in_flight),
+            UpdateState::Available { .. } => Err(anyhow!("Update payload is not ready")),
+            UpdateState::Draining { .. } | UpdateState::Applying { .. } => {
+                Err(anyhow!("Update is already in progress"))
+            }
+            _ => Err(anyhow!("No update is available")),
+        }
     }
 
     async fn check_and_maybe_download(&self, force: bool) -> Result<()> {
@@ -636,8 +739,27 @@ impl UpdateManager {
         }
     }
 
-    async fn apply_flow(&self) -> Result<()> {
-        let payload = self.ensure_payload_ready().await?;
+    async fn require_ready_payload(&self) -> Result<PayloadKind> {
+        let st = self.inner.state.read().await;
+        match &*st {
+            UpdateState::Available {
+                payload: PayloadState::Ready { kind },
+                ..
+            } => Ok(kind.clone()),
+            UpdateState::Available { .. } => Err(anyhow!("Update payload is not ready")),
+            UpdateState::Draining { .. } | UpdateState::Applying { .. } => {
+                Err(anyhow!("Update is already in progress"))
+            }
+            _ => Err(anyhow!("No update is available")),
+        }
+    }
+
+    async fn apply_flow(&self, mode: ApplyRequestMode) -> Result<()> {
+        let payload = match mode {
+            ApplyRequestMode::Normal => self.ensure_payload_ready().await?,
+            ApplyRequestMode::Force => self.require_ready_payload().await?,
+            ApplyRequestMode::None => return Err(anyhow!("No apply request mode")),
+        };
         let latest = {
             let st = self.inner.state.read().await;
             match &*st {
@@ -649,20 +771,35 @@ impl UpdateManager {
         // Start draining after payload is ready to minimize downtime.
         self.inner.gate.start_rejecting();
 
-        let requested_at = Utc::now();
-        loop {
-            let in_flight = self.inner.gate.in_flight();
+        if mode == ApplyRequestMode::Force {
+            // Force mode cancels active in-flight work instead of waiting for drain completion.
+            self.inner.gate.abort_in_flight();
+            if tokio::time::timeout(Duration::from_secs(3), self.inner.gate.wait_for_idle())
+                .await
+                .is_err()
             {
-                *self.inner.state.write().await = UpdateState::Draining {
-                    latest: latest.clone(),
-                    in_flight,
-                    requested_at,
-                };
+                tracing::warn!(
+                    "force apply proceeding while in-flight requests are still unwinding"
+                );
             }
-            if in_flight == 0 {
-                break;
+        }
+
+        if mode == ApplyRequestMode::Normal {
+            let requested_at = Utc::now();
+            loop {
+                let in_flight = self.inner.gate.in_flight();
+                if in_flight == 0 {
+                    break;
+                }
+                {
+                    *self.inner.state.write().await = UpdateState::Draining {
+                        latest: latest.clone(),
+                        in_flight,
+                        requested_at,
+                    };
+                }
+                self.inner.gate.wait_for_idle().await;
             }
-            self.inner.gate.wait_for_idle().await;
         }
 
         let current_exe =
@@ -1289,6 +1426,18 @@ async fn notify_tray_up_to_date(tray: &RwLock<Option<crate::gui::tray::TrayEvent
 mod tests {
     use super::*;
 
+    fn available_state_with_payload(payload: PayloadState) -> UpdateState {
+        UpdateState::Available {
+            current: "4.5.0".to_string(),
+            latest: "4.5.1".to_string(),
+            release_url: "https://example.com/release".to_string(),
+            portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
+            installer_asset_url: None,
+            payload,
+            checked_at: Utc::now(),
+        }
+    }
+
     #[test]
     fn test_platform_asset_names() {
         let p = Platform {
@@ -1346,15 +1495,8 @@ mod tests {
         };
 
         {
-            *manager.inner.state.write().await = UpdateState::Available {
-                current: "4.5.0".to_string(),
-                latest: "4.5.1".to_string(),
-                release_url: "https://example.com/release".to_string(),
-                portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
-                installer_asset_url: None,
-                payload: ready_payload.clone(),
-                checked_at: Utc::now(),
-            };
+            *manager.inner.state.write().await =
+                available_state_with_payload(ready_payload.clone());
         }
 
         manager
@@ -1402,5 +1544,95 @@ mod tests {
             }
             other => panic!("expected failed state, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn request_apply_normal_reports_not_queued_when_ready_and_idle() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                });
+        }
+
+        let queued = manager.request_apply_normal().await;
+        assert!(!queued);
+        assert_eq!(manager.take_apply_request_mode(), ApplyRequestMode::Normal);
+    }
+
+    #[tokio::test]
+    async fn request_apply_normal_reports_queued_when_payload_not_ready() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        let queued = manager.request_apply_normal().await;
+        assert!(queued);
+        assert_eq!(manager.take_apply_request_mode(), ApplyRequestMode::Normal);
+    }
+
+    #[tokio::test]
+    async fn request_apply_force_requires_ready_payload() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        let err = manager
+            .request_apply_force()
+            .await
+            .expect_err("force apply should fail when payload is not ready");
+        assert!(err.to_string().contains("not ready"));
+    }
+
+    #[tokio::test]
+    async fn request_apply_force_promotes_pending_normal_request() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                });
+        }
+
+        manager.request_apply();
+        let dropped = manager
+            .request_apply_force()
+            .await
+            .expect("force apply request should be accepted");
+        assert_eq!(dropped, 0);
+        assert_eq!(manager.take_apply_request_mode(), ApplyRequestMode::Force);
     }
 }

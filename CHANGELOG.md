@@ -1,5 +1,23 @@
 # Unreleased
 
+# [4.7.2](https://github.com/akiojin/llmlb/compare/v4.7.1...v4.7.2) (2026-02-20)
+
+### Bug Fixes
+
+- DBマイグレーションチェックサムをSPEC IDリネームに合わせて再整合 (#429)
+
+# [4.7.1](https://github.com/akiojin/llmlb/compare/v4.7.0...v4.7.1) (2026-02-20)
+
+### Bug Fixes
+
+- オフラインエンドポイントの合計統計を安定化 (#424)
+- LM Studio owned_by バリアント検出修正 (#427)
+
+### Dependencies
+
+- zip crateを7.2.0→8.1.0に更新 (#425)
+- npm/yarn依存パッケージ9件更新 (#426)
+
 # [4.7.0](https://github.com/akiojin/llmlb/compare/v4.6.0...v4.7.0) (2026-02-19)
 
 ### Features

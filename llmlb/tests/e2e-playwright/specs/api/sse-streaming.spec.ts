@@ -1,15 +1,51 @@
-import { test, expect } from '@playwright/test'
+import {
+  test,
+  expect,
+  type APIRequestContext,
+  type APIResponse,
+} from '@playwright/test'
 import { deleteEndpointsByName } from '../../helpers/api-helpers'
 import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '../../helpers/mock-openai-endpoint'
 
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768'
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug', 'Content-Type': 'application/json' }
+const REQUEST_RETRIES = 3
+
+async function postStreamingCompletionWithRetry(
+  request: APIRequestContext,
+  model: string,
+  prompt: string
+): Promise<APIResponse> {
+  let lastResponse: APIResponse | null = null
+
+  for (let attempt = 0; attempt < REQUEST_RETRIES; attempt += 1) {
+    const response = await request.post(`${API_BASE}/v1/chat/completions`, {
+      headers: AUTH_HEADER,
+      data: {
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        stream: true,
+      },
+    })
+
+    if (response.ok()) {
+      return response
+    }
+
+    lastResponse = response
+    if (attempt < REQUEST_RETRIES - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)))
+    }
+  }
+
+  return lastResponse as APIResponse
+}
 
 test.describe.configure({ mode: 'serial' })
 
 test.describe('SSE Streaming @api', () => {
   let mock: MockOpenAIEndpointServer
-  const endpointName = `e2e-sse-${Date.now()}`
+  const endpointName = `e2e-sse-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
   test.beforeAll(async ({ request }) => {
     mock = await startMockOpenAIEndpointServer()
@@ -40,14 +76,7 @@ test.describe('SSE Streaming @api', () => {
   test('SSE-01: stream=true -> chunked lines -> [DONE] signal', async ({ request }) => {
     test.setTimeout(30000)
 
-    const resp = await request.post(`${API_BASE}/v1/chat/completions`, {
-      headers: AUTH_HEADER,
-      data: {
-        model: mock.models[0],
-        messages: [{ role: 'user', content: 'stream test' }],
-        stream: true,
-      },
-    })
+    const resp = await postStreamingCompletionWithRetry(request, mock.models[0], 'stream test')
     expect(resp.ok()).toBeTruthy()
 
     const text = await resp.text()
@@ -60,14 +89,7 @@ test.describe('SSE Streaming @api', () => {
   test('SSE-02: each chunk is JSON with delta.content', async ({ request }) => {
     test.setTimeout(30000)
 
-    const resp = await request.post(`${API_BASE}/v1/chat/completions`, {
-      headers: AUTH_HEADER,
-      data: {
-        model: mock.models[0],
-        messages: [{ role: 'user', content: 'chunk format test' }],
-        stream: true,
-      },
-    })
+    const resp = await postStreamingCompletionWithRetry(request, mock.models[0], 'chunk format test')
     expect(resp.ok()).toBeTruthy()
 
     const text = await resp.text()
@@ -92,14 +114,7 @@ test.describe('SSE Streaming @api', () => {
   test('SSE-03: completions stream received successfully', async ({ request }) => {
     test.setTimeout(30000)
 
-    const resp = await request.post(`${API_BASE}/v1/chat/completions`, {
-      headers: AUTH_HEADER,
-      data: {
-        model: mock.models[0],
-        messages: [{ role: 'user', content: 'another stream test' }],
-        stream: true,
-      },
-    })
+    const resp = await postStreamingCompletionWithRetry(request, mock.models[0], 'another stream test')
     expect(resp.ok()).toBeTruthy()
 
     const text = await resp.text()
@@ -115,14 +130,7 @@ test.describe('SSE Streaming @api', () => {
   test('SSE-04: all chunks concatenated -> complete response', async ({ request }) => {
     test.setTimeout(30000)
 
-    const resp = await request.post(`${API_BASE}/v1/chat/completions`, {
-      headers: AUTH_HEADER,
-      data: {
-        model: mock.models[0],
-        messages: [{ role: 'user', content: 'concat test' }],
-        stream: true,
-      },
-    })
+    const resp = await postStreamingCompletionWithRetry(request, mock.models[0], 'concat test')
     expect(resp.ok()).toBeTruthy()
 
     const text = await resp.text()

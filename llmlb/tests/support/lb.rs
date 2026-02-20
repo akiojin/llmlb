@@ -464,12 +464,11 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
 
     // APIキーを発行
     let create_key_response = client
-        .post(format!("http://{}/api/api-keys", lb_addr))
+        .post(format!("http://{}/api/me/api-keys", lb_addr))
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
-            "expires_at": null,
-            "permissions": ["openai.inference", "openai.models.read"]
+            "expires_at": null
         }))
         .send()
         .await

@@ -355,19 +355,40 @@ async fn v1_models_requires_openai_models_read_permission() {
 }
 
 #[tokio::test]
-async fn api_keys_routes_require_api_keys_manage_permission() {
+async fn me_api_keys_routes_require_jwt_and_owner_scope() {
     let (app, db_pool) = build_app().await;
 
-    let openai_key = create_api_key(&db_pool, vec![ApiKeyPermission::OpenaiInference]).await;
-    let manage_key = create_api_key(&db_pool, vec![ApiKeyPermission::ApiKeysManage]).await;
+    let admin_id = create_admin_user(&db_pool).await;
+    let viewer_password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer = llmlb::db::users::create(
+        &db_pool,
+        "viewer-user",
+        &viewer_password_hash,
+        UserRole::Viewer,
+    )
+    .await
+    .unwrap();
 
-    // No API key -> 401
+    let admin_jwt = llmlb::auth::jwt::create_jwt(
+        &admin_id.to_string(),
+        UserRole::Admin,
+        &support::lb::test_jwt_secret(),
+    )
+    .expect("create admin jwt");
+    let viewer_jwt = llmlb::auth::jwt::create_jwt(
+        &viewer.id.to_string(),
+        UserRole::Viewer,
+        &support::lb::test_jwt_secret(),
+    )
+    .expect("create viewer jwt");
+
+    // No JWT -> 401
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/api-keys")
+                .uri("/api/me/api-keys")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -375,68 +396,20 @@ async fn api_keys_routes_require_api_keys_manage_permission() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-    // Wrong scope -> 403
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/api-keys")
-                .header("authorization", format!("Bearer {}", openai_key))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
-    // Correct scope -> 200
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/api-keys")
-                .header("authorization", format!("Bearer {}", manage_key))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let payload = json!({
-        "name": "managed-created-key",
-        "expires_at": null,
-        "permissions": ["openai.inference"]
+    // viewer can create own key
+    let create_payload = json!({
+        "name": "viewer-key",
+        "expires_at": null
     });
-
-    // Wrong scope -> 403
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/api-keys")
-                .header("authorization", format!("Bearer {}", openai_key))
+                .uri("/api/me/api-keys")
+                .header("authorization", format!("Bearer {}", viewer_jwt))
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
-    // Correct scope -> 201
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/api-keys")
-                .header("authorization", format!("Bearer {}", manage_key))
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .body(Body::from(serde_json::to_vec(&create_payload).unwrap()))
                 .unwrap(),
         )
         .await
@@ -451,14 +424,50 @@ async fn api_keys_routes_require_api_keys_manage_permission() {
     let created_id = created["id"].as_str().unwrap();
     assert!(created_key.starts_with("sk_"));
 
-    // Delete requires api_keys.manage (and admin role)
+    // viewer list includes the key
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/me/api-keys")
+                .header("authorization", format!("Bearer {}", viewer_jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let list: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(list["api_keys"].as_array().unwrap().len(), 1);
+
+    // admin cannot delete viewer's key from self-scope endpoint
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/api/api-keys/{}", created_id))
-                .header("authorization", format!("Bearer {}", manage_key))
+                .uri(format!("/api/me/api-keys/{}", created_id))
+                .header("authorization", format!("Bearer {}", admin_jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // owner can delete
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/me/api-keys/{}", created_id))
+                .header("authorization", format!("Bearer {}", viewer_jwt))
                 .body(Body::empty())
                 .unwrap(),
         )

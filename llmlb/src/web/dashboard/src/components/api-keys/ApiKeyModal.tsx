@@ -3,13 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   apiKeysApi,
   type ApiKey,
-  type ApiKeyPermission,
   type CreateApiKeyResponse,
 } from '@/lib/api'
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -63,10 +61,6 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyExpires, setNewKeyExpires] = useState('')
-  const [newKeyPermissions, setNewKeyPermissions] = useState<ApiKeyPermission[]>([
-    'openai.inference',
-    'openai.models.read',
-  ])
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -90,11 +84,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
 
   // Create API key mutation
   const createMutation = useMutation({
-    mutationFn: (data: {
-      name: string
-      expires_at?: string
-      permissions: ApiKeyPermission[]
-    }) => apiKeysApi.create(data),
+    mutationFn: (data: { name: string; expires_at?: string }) =>
+      apiKeysApi.create(data),
     onSuccess: (data: CreateApiKeyResponse) => {
       // Update list without refetching, so the "created key" stays visible/copyable
       // until the user explicitly refreshes or closes the modal.
@@ -117,7 +108,6 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
       setCopiedId(null)
       setNewKeyName('')
       setNewKeyExpires('')
-      setNewKeyPermissions(['openai.inference', 'openai.models.read'])
       toast({ title: 'API key created' })
     },
     onError: (error) => {
@@ -170,7 +160,6 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     if (!createOpen) {
       setNewKeyName('')
       setNewKeyExpires('')
-      setNewKeyPermissions(['openai.inference', 'openai.models.read'])
     }
   }, [createOpen])
 
@@ -189,7 +178,6 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     createMutation.mutate({
       name: newKeyName,
       expires_at: newKeyExpires || undefined,
-      permissions: newKeyPermissions,
     })
   }
 
@@ -197,84 +185,6 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     if (!expiresAt) return false
     return new Date(expiresAt) < new Date()
   }
-
-  const togglePermission = (permission: ApiKeyPermission, enabled: boolean) => {
-    setNewKeyPermissions((prev) => {
-      if (enabled) {
-        return prev.includes(permission) ? prev : [...prev, permission]
-      }
-      return prev.filter((item) => item !== permission)
-    })
-  }
-
-  const isPermissionEnabled = (permission: ApiKeyPermission) =>
-    newKeyPermissions.includes(permission)
-
-  const togglePermissionByRow = (permission: ApiKeyPermission) => {
-    togglePermission(permission, !isPermissionEnabled(permission))
-  }
-
-  const permissionLabels: {
-    value: ApiKeyPermission
-    label: string
-    description: string
-  }[] = [
-    {
-      value: 'openai.inference',
-      label: 'openai.inference',
-      description: 'OpenAI-compatible inference access (/v1/chat/completions, etc.)',
-    },
-    {
-      value: 'openai.models.read',
-      label: 'openai.models.read',
-      description: 'OpenAI-compatible model listing access (/v1/models)',
-    },
-    {
-      value: 'endpoints.read',
-      label: 'endpoints.read',
-      description: 'Read endpoints via /api/endpoints (GET)',
-    },
-    {
-      value: 'endpoints.manage',
-      label: 'endpoints.manage',
-      description: 'Manage endpoints via /api/endpoints (POST/PUT/DELETE)',
-    },
-    {
-      value: 'api_keys.manage',
-      label: 'api_keys.manage',
-      description: 'Manage API keys (/api/api-keys)',
-    },
-    {
-      value: 'users.manage',
-      label: 'users.manage',
-      description: 'Manage users (/api/users)',
-    },
-    {
-      value: 'invitations.manage',
-      label: 'invitations.manage',
-      description: 'Manage invitations (/api/invitations)',
-    },
-    {
-      value: 'models.manage',
-      label: 'models.manage',
-      description: 'Manage models (/api/models/register, delete)',
-    },
-    {
-      value: 'registry.read',
-      label: 'registry.read',
-      description: 'Read model registry (/api/models/registry/*)',
-    },
-    {
-      value: 'logs.read',
-      label: 'logs.read',
-      description: 'Read logs (/api/nodes/*/logs)',
-    },
-    {
-      value: 'metrics.read',
-      label: 'metrics.read',
-      description: 'Read metrics (/api/metrics/*)',
-    },
-  ]
 
   return (
     <>
@@ -375,7 +285,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
-                      <TableHead>Permissions</TableHead>
+                      <TableHead>Access</TableHead>
                       <TableHead>Key prefix</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
@@ -388,11 +298,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         <TableCell className="font-medium">{key.name}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {key.permissions.map((permission) => (
-                              <Badge key={permission} variant="secondary">
-                                {permission}
-                              </Badge>
-                            ))}
+                            <Badge variant="secondary">openai.inference</Badge>
+                            <Badge variant="secondary">openai.models.read</Badge>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -468,47 +375,13 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-foreground">Permissions</Label>
-              <div className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3">
-                {permissionLabels.map((permission) => {
-                  const permissionSlug = permission.value.replace(/[^a-z0-9]/gi, '-')
-                  const checkboxId = `permission-${permissionSlug}`
-                  const isChecked = isPermissionEnabled(permission.value)
-                  return (
-                    <div
-                      key={permission.value}
-                      role="button"
-                      tabIndex={0}
-                      data-testid={`permission-row-${permissionSlug}`}
-                      className="flex cursor-pointer items-start gap-3 rounded-md border border-border/40 bg-background/60 px-3 py-2 text-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      onClick={() => togglePermissionByRow(permission.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          togglePermissionByRow(permission.value)
-                        }
-                      }}
-                    >
-                      <Checkbox
-                        id={checkboxId}
-                        data-testid={`permission-checkbox-${permissionSlug}`}
-                        checked={isChecked}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                        }}
-                        onCheckedChange={(checked) =>
-                          togglePermission(permission.value, checked === true)
-                        }
-                      />
-                      <div className="flex flex-col gap-1">
-                        <span className="font-mono text-xs text-foreground">{permission.label}</span>
-                        <span className="text-xs leading-4 text-muted-foreground">
-                          {permission.description}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
+              <Label className="text-foreground">Access</Label>
+              <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
+                Keys created here always include:
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <Badge variant="secondary">openai.inference</Badge>
+                  <Badge variant="secondary">openai.models.read</Badge>
+                </div>
               </div>
             </div>
           </div>
@@ -518,7 +391,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!newKeyName || newKeyPermissions.length === 0 || createMutation.isPending}
+              disabled={!newKeyName || createMutation.isPending}
             >
               {createMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

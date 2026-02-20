@@ -89,15 +89,9 @@ test.describe('API Key Lifecycle @api', () => {
     const keyName = `e2e-akl01-${Date.now()}`
     await createDialog.locator('#api-key-name').fill(keyName)
 
-    // Ensure inference + models.read are checked (defaults)
-    const inferenceCheckbox = createDialog.locator('#permission-openai-inference')
-    const modelsReadCheckbox = createDialog.locator('#permission-openai-models-read')
-    await expect(inferenceCheckbox).toHaveAttribute('data-state', 'checked')
-    await expect(modelsReadCheckbox).toHaveAttribute('data-state', 'checked')
-
     const createApiKeyResponse = page.waitForResponse(
       (response) =>
-        response.url().includes('/api/api-keys') &&
+        response.url().includes('/api/me/api-keys') &&
         response.request().method() === 'POST' &&
         response.status() >= 200 &&
         response.status() < 300
@@ -106,9 +100,12 @@ test.describe('API Key Lifecycle @api', () => {
     await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(createDialog.locator('#api-key-name')).toHaveValue('', { timeout: 20000 })
     const createResp = await createApiKeyResponse
-    const createRespBody = (await createResp.json()) as { key?: string }
+    const createRespBody = (await createResp.json()) as { id?: string; key?: string }
     const apiKey = createRespBody.key?.trim() || ''
     expect(apiKey).toMatch(/^sk_/)
+    if (createRespBody.id) {
+      createdKeyIds.push(createRespBody.id)
+    }
 
     // Close create dialog to access the created key banner
     await createDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -146,18 +143,6 @@ test.describe('API Key Lifecycle @api', () => {
     const chatJson = await chatResp.json()
     expect(chatJson?.choices?.[0]?.message?.content).toContain('MOCK_OK')
 
-    // Clean up: find and delete the key by listing
-    const keysResp = await request.get(`${API_BASE}/api/api-keys`, {
-      headers: { Authorization: 'Bearer sk_debug' },
-    })
-    if (keysResp.ok()) {
-      const keysData = await keysResp.json()
-      const keys = Array.isArray(keysData) ? keysData : keysData.api_keys || []
-      const target = keys.find((k: { name?: string }) => k?.name === keyName)
-      if (target?.id) {
-        createdKeyIds.push(target.id)
-      }
-    }
   })
 
   test('AKL-02: expired API key -> 401', async ({ request }) => {

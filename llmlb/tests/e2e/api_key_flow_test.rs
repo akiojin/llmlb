@@ -100,14 +100,13 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/api-keys")
+                .uri("/api/me/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "Test API Key",
-                        "expires_at": null,
-                        "permissions": ["openai.inference", "openai.models.read"]
+                        "expires_at": null
                     }))
                     .unwrap(),
                 ))
@@ -171,7 +170,7 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/api-keys")
+                .uri("/api/me/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -206,7 +205,7 @@ async fn test_complete_api_key_flow() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/api/api-keys/{}", api_key_id))
+                .uri(format!("/api/me/api-keys/{}", api_key_id))
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .body(Body::empty())
                 .unwrap(),
@@ -282,14 +281,13 @@ async fn test_api_key_with_expiration() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/api-keys")
+                .uri("/api/me/api-keys")
                 .header("authorization", format!("Bearer {}", jwt_token))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "Expiring API Key",
-                        "expires_at": expires_at.to_rfc3339(),
-                        "permissions": ["openai.inference", "openai.models.read"]
+                        "expires_at": expires_at.to_rfc3339()
                     }))
                     .unwrap(),
                 ))

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   dashboardApi,
+  modelsApi,
   systemApi,
   type SystemInfo,
   type UpdateState,
@@ -9,6 +10,7 @@ import {
   type DashboardEndpoint,
   type RequestHistoryItem,
   type RequestResponsesPage,
+  type RegisteredModelView,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
@@ -16,6 +18,7 @@ import { toast } from '@/hooks/use-toast'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { EndpointTable } from '@/components/dashboard/EndpointTable'
+import { ModelsTable } from '@/components/dashboard/ModelsTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
@@ -51,7 +54,8 @@ const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { isConnected: wsConnected } = useDashboardWebSocket()
+  const isViewer = user?.role === 'viewer'
+  const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: !isViewer })
   const queryClient = useQueryClient()
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
@@ -85,6 +89,7 @@ export default function Dashboard() {
     queryKey: SYSTEM_INFO_QUERY_KEY,
     queryFn: () => systemApi.getSystem(),
     refetchInterval: pollingInterval,
+    enabled: !isViewer,
   })
 
   // Fetch request history (individual request details)
@@ -93,6 +98,7 @@ export default function Dashboard() {
       queryKey: ['request-responses'],
       queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
       refetchInterval: pollingInterval,
+      enabled: !isViewer,
     })
 
   // SPEC-e8e9326e: Fetch endpoints list
@@ -100,6 +106,18 @@ export default function Dashboard() {
     queryKey: ['dashboard-endpoints'],
     queryFn: () => dashboardApi.getEndpoints(),
     refetchInterval: pollingInterval,
+    enabled: !isViewer,
+  })
+
+  const {
+    data: viewerModels,
+    isLoading: isLoadingViewerModels,
+    refetch: refetchViewerModels,
+  } = useQuery<RegisteredModelView[]>({
+    queryKey: ['viewer-models'],
+    queryFn: () => modelsApi.getRegistered(),
+    refetchInterval: pollingInterval,
+    enabled: isViewer,
   })
 
   // Map RequestResponseRecord to RequestHistoryItem
@@ -347,9 +365,9 @@ export default function Dashboard() {
                   ) : (
                     <ArrowUpCircle className="h-4 w-4" />
                   )}
-                  {updateState === 'draining'
+                  {update?.state === 'draining'
                     ? `Waiting to update... (${update.in_flight})`
-                    : updateState === 'applying'
+                    : update?.state === 'applying'
                       ? 'Applying update...'
                       : 'Restart to update'}
                 </Button>
@@ -458,64 +476,82 @@ export default function Dashboard() {
           if ('latest' in u) return u.latest ?? null
           return null
         })()}
+        minimalViewer={isViewer}
       />
 
       {/* Main Content */}
       <main className="relative mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
-        {updateBanner}
+        {!isViewer && updateBanner}
         {/* Stats Cards */}
         <section className="mb-8">
           <StatsCards stats={data?.stats} endpoints={endpointsData} isLoading={isLoading} />
         </section>
 
-        {/* Tabs */}
-        <Tabs defaultValue="endpoints" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
-            <TabsTrigger value="endpoints" className="gap-2">
-              <Globe className="h-4 w-4" />
-              <span className="hidden sm:inline">Endpoints</span>
-            </TabsTrigger>
-            <TabsTrigger value="statistics" className="gap-2">
-              <BarChart3 className="h-4 w-4" />
-              <span className="hidden sm:inline">Statistics</span>
-            </TabsTrigger>
-            <TabsTrigger value="history" className="gap-2">
-              <History className="h-4 w-4" />
-              <span className="hidden sm:inline">History</span>
-            </TabsTrigger>
-            <TabsTrigger value="clients" className="gap-2">
-              <Users className="h-4 w-4" />
-              <span className="hidden sm:inline">Clients</span>
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="gap-2">
-              <FileText className="h-4 w-4" />
-              <span className="hidden sm:inline">Logs</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="endpoints" className="animate-fade-in">
-            <EndpointTable endpoints={endpointsData || []} endpointTps={data?.endpoint_tps} isLoading={isLoadingEndpoints} />
-          </TabsContent>
-
-          <TabsContent value="statistics" className="animate-fade-in">
-            <TokenStatsSection />
-          </TabsContent>
-
-          <TabsContent value="history" className="animate-fade-in">
-            <RequestHistoryTable
-              history={historyItems}
-              isLoading={isLoadingHistory}
+        {isViewer ? (
+          <section className="mb-8">
+            <ModelsTable
+              models={viewerModels || []}
+              endpoints={endpointsData || []}
+              isLoading={isLoadingViewerModels}
+              onRefresh={() => {
+                void refetchViewerModels()
+              }}
+              viewerMode
             />
-          </TabsContent>
+          </section>
+        ) : (
+          <Tabs defaultValue="endpoints" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
+              <TabsTrigger value="endpoints" className="gap-2">
+                <Globe className="h-4 w-4" />
+                <span className="hidden sm:inline">Endpoints</span>
+              </TabsTrigger>
+              <TabsTrigger value="statistics" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                <span className="hidden sm:inline">Statistics</span>
+              </TabsTrigger>
+              <TabsTrigger value="history" className="gap-2">
+                <History className="h-4 w-4" />
+                <span className="hidden sm:inline">History</span>
+              </TabsTrigger>
+              <TabsTrigger value="clients" className="gap-2">
+                <Users className="h-4 w-4" />
+                <span className="hidden sm:inline">Clients</span>
+              </TabsTrigger>
+              <TabsTrigger value="logs" className="gap-2">
+                <FileText className="h-4 w-4" />
+                <span className="hidden sm:inline">Logs</span>
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="clients" className="animate-fade-in">
-            <ClientsTab />
-          </TabsContent>
+            <TabsContent value="endpoints" className="animate-fade-in">
+              <EndpointTable
+                endpoints={endpointsData || []}
+                endpointTps={data?.endpoint_tps}
+                isLoading={isLoadingEndpoints}
+              />
+            </TabsContent>
 
-          <TabsContent value="logs" className="animate-fade-in">
-            <LogViewer />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="statistics" className="animate-fade-in">
+              <TokenStatsSection />
+            </TabsContent>
+
+            <TabsContent value="history" className="animate-fade-in">
+              <RequestHistoryTable
+                history={historyItems}
+                isLoading={isLoadingHistory}
+              />
+            </TabsContent>
+
+            <TabsContent value="clients" className="animate-fade-in">
+              <ClientsTab />
+            </TabsContent>
+
+            <TabsContent value="logs" className="animate-fade-in">
+              <LogViewer />
+            </TabsContent>
+          </Tabs>
+        )}
       </main>
     </div>
   )

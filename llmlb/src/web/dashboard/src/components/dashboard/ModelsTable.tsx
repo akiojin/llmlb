@@ -4,10 +4,8 @@ import {
   type RegisteredModelView,
   type DashboardEndpoint,
   type LifecycleStatus,
-  type AggregatedModel,
   type ModelCapabilities,
   type ModelStatEntry,
-  aggregateModels,
   endpointsApi,
   dashboardApi,
 } from '@/lib/api'
@@ -72,10 +70,66 @@ interface ModelsTableProps {
   endpoints: DashboardEndpoint[]
   isLoading: boolean
   onRefresh?: () => void
+  viewerMode?: boolean
 }
 
 type SortField = 'id' | 'bestStatus' | 'sizeBytes' | 'ownedBy' | 'totalRequests'
 type SortDirection = 'asc' | 'desc'
+
+interface AggregatedModel {
+  id: string
+  bestStatus: LifecycleStatus
+  ready: boolean
+  capabilities: ModelCapabilities
+  sizeBytes?: number
+  ownedBy?: string
+  maxTokens?: number | null
+  source?: string
+  tags: string[]
+  description?: string
+  repo?: string
+  filename?: string
+  requiredMemoryBytes?: number
+  chatTemplate?: string
+  endpointIds: string[]
+  endpointCount: number
+}
+
+function aggregateModels(models: RegisteredModelView[]): AggregatedModel[] {
+  return models.map((model) => ({
+    id: model.name,
+    bestStatus: model.lifecycle_status,
+    ready: model.ready,
+    capabilities: model.capabilities ?? {
+      chat_completion: false,
+      completion: false,
+      embeddings: false,
+      fine_tune: false,
+      inference: false,
+      text_to_speech: false,
+      speech_to_text: false,
+      image_generation: false,
+    },
+    sizeBytes:
+      typeof model.size_gb === 'number'
+        ? Math.round(model.size_gb * 1024 * 1024 * 1024)
+        : undefined,
+    ownedBy: model.owned_by,
+    maxTokens: undefined,
+    source: model.source,
+    tags: model.tags ?? [],
+    description: model.description,
+    repo: model.repo,
+    filename: model.filename,
+    requiredMemoryBytes:
+      typeof model.required_memory_gb === 'number'
+        ? Math.round(model.required_memory_gb * 1024 * 1024 * 1024)
+        : undefined,
+    chatTemplate: model.chat_template,
+    endpointIds: [],
+    endpointCount: 0,
+  }))
+}
 
 const LIFECYCLE_PRIORITY: Record<LifecycleStatus, number> = {
   registered: 4,
@@ -191,7 +245,13 @@ function EndpointStatsRow({
   )
 }
 
-export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsTableProps) {
+export function ModelsTable({
+  models,
+  endpoints,
+  isLoading,
+  onRefresh,
+  viewerMode = false,
+}: ModelsTableProps) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<LifecycleStatus | 'all'>('all')
   const [capabilityFilters, setCapabilityFilters] = useState<Record<string, boolean>>({})
@@ -220,6 +280,7 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
   const { data: allModelStats } = useQuery({
     queryKey: ['all-model-stats'],
     queryFn: () => dashboardApi.getAllModelStats(),
+    enabled: !viewerMode,
   })
 
   const modelStatsMap = useMemo(() => {
@@ -476,6 +537,95 @@ export function ModelsTable({ models, endpoints, isLoading, onRefresh }: ModelsT
         <CardContent>
           <div className="flex items-center justify-center h-32">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (viewerMode) {
+    const viewerFiltered = aggregated.filter((m) =>
+      m.id.toLowerCase().includes(search.toLowerCase())
+    )
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Models
+              <Badge variant="secondary" className="ml-2">
+                {aggregated.length}
+              </Badge>
+            </CardTitle>
+            {onRefresh && (
+              <Button variant="outline" size="sm" onClick={onRefresh}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Refresh
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search by model ID..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Model ID</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Description</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {viewerFiltered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                      {search ? 'No models match your search' : 'No models registered'}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  viewerFiltered.map((model) => (
+                    <TableRow key={model.id}>
+                      <TableCell>
+                        <span className="font-mono text-sm truncate" title={model.id}>
+                          {model.id}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full shrink-0 ${
+                              model.ready ? 'bg-green-500' : 'bg-gray-300'
+                            }`}
+                            title={model.ready ? 'Ready' : 'Not Ready'}
+                          />
+                          <Badge variant={getLifecycleBadgeVariant(model.bestStatus)}>
+                            {getLifecycleLabel(model.bestStatus)}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        <span
+                          className="truncate inline-block max-w-[640px] align-bottom"
+                          title={model.description ?? ''}
+                        >
+                          {model.description ?? '-'}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>

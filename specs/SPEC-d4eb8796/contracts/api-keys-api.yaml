@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: llmlbAPIキー管理API
-  description: 外部アプリケーション向けAPIキーの発行・削除API（管理者専用）
+  description: 認証済みユーザー向け自己管理APIキー発行・削除API
   version: 1.0.0
 
 servers:
@@ -9,10 +9,10 @@ servers:
     description: ローカル開発環境
 
 paths:
-  /api/api-keys:
+  /api/me/api-keys:
     get:
       summary: APIキー一覧取得
-      description: 発行済みのすべてのAPIキーを取得（管理者専用）
+      description: ログインユーザーが発行したAPIキーのみを取得
       operationId: listApiKeys
       tags:
         - API Keys
@@ -37,7 +37,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
-          description: 権限不足（管理者のみアクセス可能）
+          description: 権限不足
           content:
             application/json:
               schema:
@@ -45,7 +45,7 @@ paths:
 
     post:
       summary: APIキー発行
-      description: 新しいAPIキーを発行（管理者専用）
+      description: 新しいAPIキーを発行（ログインユーザー自身のキー）
       operationId: createApiKey
       tags:
         - API Keys
@@ -98,7 +98,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /api/api-keys/{id}:
+  /api/me/api-keys/{id}:
     parameters:
       - name: id
         in: path
@@ -110,7 +110,7 @@ paths:
 
     delete:
       summary: APIキー削除
-      description: APIキーを無効化し削除（管理者専用）
+      description: APIキーを無効化し削除（所有者のみ）
       operationId: deleteApiKey
       tags:
         - API Keys

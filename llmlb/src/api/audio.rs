@@ -10,7 +10,7 @@ use crate::common::{
 use axum::{
     body::Body,
     extract::{ConnectInfo, Multipart, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -30,7 +30,7 @@ use crate::{
         proxy::{forward_streaming_response, save_request_record},
     },
     auth::middleware::ApiKeyAuthContext,
-    common::ip::normalize_socket_ip,
+    common::ip::{normalize_ip, normalize_socket_ip},
     types::endpoint::{Endpoint, EndpointCapability},
     AppState,
 };
@@ -60,6 +60,61 @@ fn error_response(error: LbError, status: StatusCode) -> Response {
 /// OpenAI互換エラーレスポンスを返す（ハンドラで使用）
 fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response, AppError> {
     Ok(error_response(LbError::Http(msg.into()), status))
+}
+
+fn extract_client_ip_from_forwarded_headers(headers: &HeaderMap) -> Option<IpAddr> {
+    extract_x_forwarded_for(headers).or_else(|| extract_forwarded_for(headers))
+}
+
+fn extract_x_forwarded_for(headers: &HeaderMap) -> Option<IpAddr> {
+    let value = headers.get("x-forwarded-for")?.to_str().ok()?;
+    value
+        .split(',')
+        .map(str::trim)
+        .find_map(parse_forwarded_ip_candidate)
+}
+
+fn extract_forwarded_for(headers: &HeaderMap) -> Option<IpAddr> {
+    let value = headers.get("forwarded")?.to_str().ok()?;
+    value.split(',').find_map(|entry| {
+        entry
+            .split(';')
+            .filter_map(|pair| pair.split_once('='))
+            .find_map(|(key, value)| {
+                if key.trim().eq_ignore_ascii_case("for") {
+                    parse_forwarded_ip_candidate(value.trim())
+                } else {
+                    None
+                }
+            })
+    })
+}
+
+fn parse_forwarded_ip_candidate(value: &str) -> Option<IpAddr> {
+    let trimmed = value.trim().trim_matches('"');
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown") || trimmed.starts_with('_') {
+        return None;
+    }
+
+    let host = if let Some(stripped) = trimmed.strip_prefix('[') {
+        stripped.split(']').next().unwrap_or_default().trim()
+    } else {
+        trimmed
+    };
+
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Some(normalize_ip(ip));
+    }
+
+    if let Some((ip_candidate, _port)) = host.rsplit_once(':') {
+        if !ip_candidate.contains(':') {
+            if let Ok(ip) = ip_candidate.parse::<IpAddr>() {
+                return Some(normalize_ip(ip));
+            }
+        }
+    }
+
+    None
 }
 
 /// 音声処理対応バックエンド
@@ -144,11 +199,15 @@ async fn select_speech_backend(state: &AppState) -> Result<AudioBackend, LbError
 /// - response_format: レスポンス形式（json, text, srt, vtt）
 pub async fn transcriptions(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let client_ip = Some(normalize_socket_ip(&addr));
+    let client_ip = Some(
+        extract_client_ip_from_forwarded_headers(&headers)
+            .unwrap_or_else(|| normalize_socket_ip(&addr)),
+    );
     let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
@@ -332,11 +391,15 @@ pub async fn transcriptions(
 /// - speed: 再生速度（オプション、デフォルト: 1.0）
 pub async fn speech(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<SpeechRequest>,
 ) -> Result<Response, AppError> {
-    let client_ip = Some(normalize_socket_ip(&addr));
+    let client_ip = Some(
+        extract_client_ip_from_forwarded_headers(&headers)
+            .unwrap_or_else(|| normalize_socket_ip(&addr)),
+    );
     let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
@@ -456,6 +519,45 @@ pub async fn speech(
 
 #[cfg(test)]
 mod tests {
+    use super::{extract_client_ip_from_forwarded_headers, parse_forwarded_ip_candidate};
+    use axum::http::{HeaderMap, HeaderValue};
+    use std::net::IpAddr;
+
+    #[test]
+    fn extract_client_ip_prefers_first_valid_x_forwarded_for() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("unknown, 203.0.113.5, 10.0.0.1"),
+        );
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=198.51.100.10;proto=https"),
+        );
+        let parsed =
+            extract_client_ip_from_forwarded_headers(&headers).expect("must parse x-forwarded-for");
+        assert_eq!(parsed, "203.0.113.5".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_client_ip_falls_back_to_forwarded_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=unknown;proto=https, for=\"[2001:db8::a]:8443\""),
+        );
+        let parsed =
+            extract_client_ip_from_forwarded_headers(&headers).expect("must parse forwarded");
+        assert_eq!(parsed, "2001:db8::a".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_supports_bracketed_ipv6() {
+        let parsed = parse_forwarded_ip_candidate("\"[2001:db8::f]:443\"")
+            .expect("must parse bracketed ipv6");
+        assert_eq!(parsed, "2001:db8::f".parse::<IpAddr>().unwrap());
+    }
+
     #[test]
     fn test_input_length_validation() {
         // 4096文字以下は許可

@@ -105,5 +105,9 @@ mod clients_timeline_test;
 #[path = "contract/clients_heatmap_test.rs"]
 mod clients_heatmap_test;
 
+// SPEC-62ac4b68: Clientsドリルダウン契約テスト
+#[path = "contract/clients_drilldown_test.rs"]
+mod clients_drilldown_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

@@ -337,35 +337,42 @@ impl UpdateManager {
                             continue;
                         }
 
-                        // Refresh state before applying (e.g., first click immediately after boot, or retry after failure).
-                        if let Err(e) = mgr.check_and_maybe_download(true).await {
-                            tracing::warn!("update check failed before apply: {e}");
+                        // For normal apply, refresh state right before apply (first click after boot,
+                        // or retry after a previous failure).
+                        //
+                        // Force apply intentionally skips refresh/download because request_apply_force()
+                        // already validated `payload=ready`; re-checking here can delay or invalidate an
+                        // already accepted immediate apply request.
+                        if request_mode == ApplyRequestMode::Normal {
+                            if let Err(e) = mgr.check_and_maybe_download(true).await {
+                                tracing::warn!("update check failed before apply: {e}");
 
-                            // If GitHub is temporarily unreachable, fall back to the cached state so we can still
-                            // apply a previously discovered update.
-                            let already_available = {
-                                let st = mgr.inner.state.read().await;
-                                matches!(&*st, UpdateState::Available { .. })
-                            };
-                            if !already_available {
-                                if let Some(cache) =
-                                    load_cache(&mgr.inner.cache_path).ok().flatten()
-                                {
-                                    if let Err(err) = mgr.apply_cache(cache).await {
-                                        tracing::warn!(
-                                            "update cache apply failed before apply: {err}"
-                                        );
+                                // If GitHub is temporarily unreachable, fall back to the cached state so we can still
+                                // apply a previously discovered update.
+                                let already_available = {
+                                    let st = mgr.inner.state.read().await;
+                                    matches!(&*st, UpdateState::Available { .. })
+                                };
+                                if !already_available {
+                                    if let Some(cache) =
+                                        load_cache(&mgr.inner.cache_path).ok().flatten()
+                                    {
+                                        if let Err(err) = mgr.apply_cache(cache).await {
+                                            tracing::warn!(
+                                                "update cache apply failed before apply: {err}"
+                                            );
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        let is_available = {
-                            let st = mgr.inner.state.read().await;
-                            matches!(&*st, UpdateState::Available { .. })
-                        };
-                        if !is_available {
-                            continue;
+                            let is_available = {
+                                let st = mgr.inner.state.read().await;
+                                matches!(&*st, UpdateState::Available { .. })
+                            };
+                            if !is_available {
+                                continue;
+                            }
                         }
 
                         if let Err(err) = mgr.apply_flow(request_mode).await {
@@ -763,6 +770,19 @@ impl UpdateManager {
 
         // Start draining after payload is ready to minimize downtime.
         self.inner.gate.start_rejecting();
+
+        if mode == ApplyRequestMode::Force {
+            // Force mode cancels active in-flight work instead of waiting for drain completion.
+            self.inner.gate.abort_in_flight();
+            if tokio::time::timeout(Duration::from_secs(3), self.inner.gate.wait_for_idle())
+                .await
+                .is_err()
+            {
+                tracing::warn!(
+                    "force apply proceeding while in-flight requests are still unwinding"
+                );
+            }
+        }
 
         if mode == ApplyRequestMode::Normal {
             let requested_at = Utc::now();

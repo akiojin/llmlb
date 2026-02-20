@@ -985,12 +985,11 @@ pub async fn get_client_rankings(
     // SPEC-62ac4b68: 閾値ベースの異常検知
     // 過去1時間のリクエスト数が閾値以上のIPにis_alert=trueを設定
     let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
-    let threshold_str = settings
+    let threshold_raw = settings
         .get_setting("ip_alert_threshold")
         .await
-        .map_err(AppError)?
-        .unwrap_or_else(|| IP_ALERT_THRESHOLD_DEFAULT.to_string());
-    let threshold: i64 = threshold_str.parse().unwrap_or(100);
+        .map_err(AppError)?;
+    let threshold = effective_ip_alert_threshold(threshold_raw.as_deref());
 
     let one_hour_counts = storage
         .get_ip_request_counts_since(1)
@@ -1068,7 +1067,40 @@ pub async fn get_client_api_keys(
 }
 
 /// 設定APIのデフォルト値
-const IP_ALERT_THRESHOLD_DEFAULT: &str = "100";
+const IP_ALERT_THRESHOLD_DEFAULT_VALUE: i64 = 100;
+const IP_ALERT_THRESHOLD_MIN: i64 = 1;
+
+fn parse_ip_alert_threshold(value: &str) -> Result<i64, LbError> {
+    let parsed = value.trim().parse::<i64>().map_err(|_| {
+        LbError::Common(CommonError::Validation(
+            "ip_alert_threshold must be an integer >= 1".to_string(),
+        ))
+    })?;
+    if parsed < IP_ALERT_THRESHOLD_MIN {
+        return Err(LbError::Common(CommonError::Validation(
+            "ip_alert_threshold must be an integer >= 1".to_string(),
+        )));
+    }
+    Ok(parsed)
+}
+
+fn effective_ip_alert_threshold(raw_value: Option<&str>) -> i64 {
+    match raw_value {
+        Some(raw) => match parse_ip_alert_threshold(raw) {
+            Ok(value) => value,
+            Err(err) => {
+                warn!(
+                    raw_value = %raw,
+                    error = %err,
+                    default = IP_ALERT_THRESHOLD_DEFAULT_VALUE,
+                    "Invalid ip_alert_threshold in settings; falling back to default"
+                );
+                IP_ALERT_THRESHOLD_DEFAULT_VALUE
+            }
+        },
+        None => IP_ALERT_THRESHOLD_DEFAULT_VALUE,
+    }
+}
 
 /// GET /api/dashboard/settings/{key} - 設定値取得
 ///
@@ -1079,12 +1111,11 @@ pub async fn get_setting(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
     let value = settings.get_setting(&key).await.map_err(AppError)?;
-    let default = if key == "ip_alert_threshold" {
-        Some(IP_ALERT_THRESHOLD_DEFAULT.to_string())
+    let value = if key == "ip_alert_threshold" {
+        effective_ip_alert_threshold(value.as_deref()).to_string()
     } else {
-        None
+        value.unwrap_or_default()
     };
-    let value = value.or(default).unwrap_or_default();
     Ok(Json(serde_json::json!({ "key": key, "value": value })))
 }
 
@@ -1103,13 +1134,40 @@ pub async fn update_setting(
     State(state): State<AppState>,
     Json(body): Json<SettingUpdateBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let value = if key == "ip_alert_threshold" {
+        parse_ip_alert_threshold(&body.value)
+            .map_err(AppError)?
+            .to_string()
+    } else {
+        body.value
+    };
+
     let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
-    settings
-        .set_setting(&key, &body.value)
-        .await
-        .map_err(AppError)?;
-    Ok(Json(serde_json::json!({ "key": key, "value": body.value })))
+    settings.set_setting(&key, &value).await.map_err(AppError)?;
+    Ok(Json(serde_json::json!({ "key": key, "value": value })))
 }
 
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e
+
+#[cfg(test)]
+mod tests {
+    use super::parse_ip_alert_threshold;
+
+    #[test]
+    fn parse_ip_alert_threshold_accepts_positive_integer() {
+        assert_eq!(parse_ip_alert_threshold("100").unwrap(), 100);
+        assert_eq!(parse_ip_alert_threshold(" 42 ").unwrap(), 42);
+    }
+
+    #[test]
+    fn parse_ip_alert_threshold_rejects_zero_or_negative() {
+        assert!(parse_ip_alert_threshold("0").is_err());
+        assert!(parse_ip_alert_threshold("-1").is_err());
+    }
+
+    #[test]
+    fn parse_ip_alert_threshold_rejects_non_numeric() {
+        assert!(parse_ip_alert_threshold("abc").is_err());
+    }
+}

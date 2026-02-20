@@ -95,19 +95,38 @@ pub async fn detect_lm_studio(
     }
 }
 
-/// Check if JSON response from /api/v1/models contains LM Studio-specific fields
+/// Check if JSON response from /api/v1/models contains LM Studio-specific fields.
+///
+/// LM Studio has returned two known shapes over versions:
+/// - Legacy-ish: `{ "data": [{ "publisher", "arch", "state", ... }] }`
+/// - Current: `{ "models": [{ "publisher", "architecture", "loaded_instances", ... }] }`
 fn has_lm_studio_fields(json: &serde_json::Value) -> bool {
-    if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
-        for model in data {
-            let has_publisher = model.get("publisher").is_some();
-            let has_arch = model.get("arch").is_some();
-            let has_state = model.get("state").is_some();
-            if has_publisher && has_arch && has_state {
+    for key in ["data", "models"] {
+        if let Some(models) = json.get(key).and_then(|d| d.as_array()) {
+            if models.iter().any(looks_like_lm_studio_model) {
                 return true;
             }
         }
     }
+
     false
+}
+
+fn looks_like_lm_studio_model(model: &serde_json::Value) -> bool {
+    let has_publisher = model.get("publisher").and_then(|v| v.as_str()).is_some();
+    let has_architecture = model.get("arch").and_then(|v| v.as_str()).is_some()
+        || model.get("architecture").and_then(|v| v.as_str()).is_some();
+    let has_state_marker = model.get("state").is_some()
+        || model
+            .get("loaded_instances")
+            .and_then(|v| v.as_array())
+            .is_some();
+    let has_lmstudio_shape = model.get("key").and_then(|v| v.as_str()).is_some()
+        || model.get("display_name").and_then(|v| v.as_str()).is_some()
+        || model.get("format").is_some()
+        || model.get("compatibility_type").is_some();
+
+    has_publisher && has_architecture && (has_state_marker || has_lmstudio_shape)
 }
 
 /// Normalize text for LM Studio marker matching.
@@ -161,6 +180,22 @@ mod tests {
             r#"{"data":[{"id":"m1","publisher":"pub","arch":"llama","state":"loaded"},{"id":"m2","publisher":"pub2","arch":"mistral","state":"not-loaded"}]}"#
         ).unwrap();
         assert!(has_lm_studio_fields(&json));
+    }
+
+    #[test]
+    fn test_lm_studio_fields_detected_models_shape_with_architecture() {
+        let json: serde_json::Value = serde_json::from_str(
+            r#"{"models":[{"type":"llm","publisher":"openai","key":"openai/gpt-oss-20b","display_name":"GPT-OSS 20B","architecture":"gpt_oss","loaded_instances":[],"max_context_length":131072,"format":"mlx"}]}"#
+        )
+        .unwrap();
+        assert!(has_lm_studio_fields(&json));
+    }
+
+    #[test]
+    fn test_lm_studio_fields_models_shape_missing_required_markers() {
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"models":[{"id":"m1","key":"foo/bar"}]}"#).unwrap();
+        assert!(!has_lm_studio_fields(&json));
     }
 
     #[test]
@@ -276,6 +311,14 @@ mod tests {
     fn test_owned_by_not_lm_studio() {
         let json: serde_json::Value =
             serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"openai"}]}"#).unwrap();
+        assert!(!has_lm_studio_owned_by(&json));
+    }
+
+    #[test]
+    fn test_owned_by_organization_owner_not_lm_studio() {
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"organization_owner"}]}"#)
+                .unwrap();
         assert!(!has_lm_studio_owned_by(&json));
     }
 

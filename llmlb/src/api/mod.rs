@@ -309,6 +309,10 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/clients/{ip}/detail",
             get(dashboard::get_client_detail),
+        )
+        .route(
+            "/dashboard/clients/{ip}/api-keys",
+            get(dashboard::get_client_api_keys),
         );
 
     let dashboard_api_routes = if auth_disabled {

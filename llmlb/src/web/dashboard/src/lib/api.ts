@@ -1073,6 +1073,8 @@ export const clientsApi = {
     fetchWithAuth<HeatmapCell[]>('/api/dashboard/clients/heatmap'),
   getClientDetail: (ip: string) =>
     fetchWithAuth<ClientDetailResponse>(`/api/dashboard/clients/${encodeURIComponent(ip)}/detail`),
+  getClientApiKeys: (ip: string) =>
+    fetchWithAuth<ClientApiKeyUsage[]>(`/api/dashboard/clients/${encodeURIComponent(ip)}/api-keys`),
 }
 
 export interface ClientDetailResponse {
@@ -1095,6 +1097,12 @@ export interface ClientRecentRequest {
 export interface HourlyPattern {
   hour: number
   count: number
+}
+
+export interface ClientApiKeyUsage {
+  api_key_id: string
+  name: string | null
+  request_count: number
 }
 
 // Export utilities

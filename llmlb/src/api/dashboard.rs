@@ -1035,5 +1035,17 @@ pub async fn get_client_detail(
     Ok(Json(result))
 }
 
+/// GET /api/dashboard/clients/{ip}/api-keys - APIキー別集計
+///
+/// SPEC-62ac4b68: APIキーとのクロス分析
+pub async fn get_client_api_keys(
+    axum::extract::Path(ip): axum::extract::Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::ClientApiKeyUsage>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage.get_client_api_keys(&ip).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e

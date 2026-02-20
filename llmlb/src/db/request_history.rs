@@ -1319,6 +1319,50 @@ impl RequestHistoryStorage {
             hourly_pattern,
         })
     }
+
+    /// 特定IPのAPIキー別リクエスト数を取得
+    pub async fn get_client_api_keys(&self, ip: &str) -> RouterResult<Vec<ClientApiKeyUsage>> {
+        let rows: Vec<ClientApiKeyRow> = sqlx::query_as(
+            "SELECT rh.api_key_id, ak.name as key_name, COUNT(*) as request_count
+             FROM request_history rh
+             LEFT JOIN api_keys ak ON rh.api_key_id = ak.id
+             WHERE rh.client_ip = ? AND rh.api_key_id IS NOT NULL
+             GROUP BY rh.api_key_id
+             ORDER BY request_count DESC",
+        )
+        .bind(ip)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| ClientApiKeyUsage {
+                api_key_id: r.api_key_id,
+                name: r.key_name,
+                request_count: r.request_count,
+            })
+            .collect())
+    }
+}
+
+/// APIキー別リクエスト数
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClientApiKeyUsage {
+    /// APIキーID
+    pub api_key_id: String,
+    /// キー名（削除済みの場合None）
+    pub name: Option<String>,
+    /// リクエスト数
+    pub request_count: i64,
+}
+
+/// SQLiteから取得したAPIキー集計行
+#[derive(sqlx::FromRow)]
+struct ClientApiKeyRow {
+    api_key_id: String,
+    key_name: Option<String>,
+    request_count: i64,
 }
 
 /// IPドリルダウン詳細

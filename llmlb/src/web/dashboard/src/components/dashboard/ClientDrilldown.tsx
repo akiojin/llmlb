@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   clientsApi,
   type ClientDetailResponse,
+  type ClientApiKeyUsage,
   type ModelDistribution,
 } from '@/lib/api'
 import { ModelDistributionPie } from './ModelDistributionPie'
@@ -16,6 +17,11 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
   const { data, isLoading } = useQuery<ClientDetailResponse>({
     queryKey: ['client-detail', ip],
     queryFn: () => clientsApi.getClientDetail(ip),
+  })
+
+  const { data: apiKeysData } = useQuery<ClientApiKeyUsage[]>({
+    queryKey: ['client-api-keys', ip],
+    queryFn: () => clientsApi.getClientApiKeys(ip),
   })
 
   if (isLoading) {
@@ -33,6 +39,8 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
       </div>
     )
   }
+
+  const apiKeys = apiKeysData ?? []
 
   return (
     <div className="space-y-4 p-4">
@@ -56,7 +64,7 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
         )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Recent requests */}
         <div className="rounded-md border">
           <div className="border-b bg-muted/50 px-3 py-2 text-xs font-medium">
@@ -131,6 +139,35 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
                   <Bar dataKey="count" fill="hsl(var(--chart-3))" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* API Keys */}
+        <div className="rounded-md border">
+          <div className="border-b bg-muted/50 px-3 py-2 text-xs font-medium">
+            API Keys
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {apiKeys.length === 0 ? (
+              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
+                No API key data
+              </div>
+            ) : (
+              <table className="w-full text-xs">
+                <tbody>
+                  {apiKeys.map((k) => (
+                    <tr key={k.api_key_id} className="border-b last:border-0">
+                      <td className="px-3 py-1.5">
+                        {k.name ?? <span className="text-muted-foreground italic">Deleted</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">
+                        {k.request_count.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>

@@ -66,3 +66,23 @@
 
 - [x] T080 `pnpm --filter @llm/dashboard build` でstatic再生成、コミット対象に含める
 - [x] T081 全品質チェック（`make quality-checks`）を実行・合格確認
+
+## Force Update Flow (2026-02-20)
+
+### Setup
+
+- [x] T090 `specs/SPEC-a6e55b37/spec.md` にUS-9とFR-016〜FR-019を追記
+- [x] T091 `specs/SPEC-a6e55b37/plan.md` に強制更新API/挙動を追記
+
+### Tests (RED)
+
+- [x] T092 `llmlb/src/update/mod.rs` に通常更新`queued`判定と強制更新ready条件のユニットテストを追加
+- [x] T093 `llmlb/tests/integration/system_update_apply_api_test.rs` を追加し、`/api/system/update/apply` と `/api/system/update/apply/force` の契約を検証
+- [x] T094 `llmlb/tests/ui/update_banner.rs` に強制更新ボタン表示・ready条件・`queued=false`分岐テストを追加
+
+### Core
+
+- [x] T095 `llmlb/src/update/mod.rs` で通常/強制更新要求モードを分離し、通常更新の`queued`判定と強制更新ready検証を実装
+- [x] T096 `llmlb/src/update/mod.rs` の適用フローを更新し、通常更新で`in_flight=0`時に`draining`をスキップ、強制更新で`draining`を経由しないように実装
+- [x] T097 `llmlb/src/api/system.rs` と `llmlb/src/api/mod.rs` に `POST /api/system/update/apply/force` を追加し、`mode`/`queued`レスポンスを返すように実装
+- [x] T098 `llmlb/src/web/dashboard/src/lib/api.ts` と `llmlb/src/web/dashboard/src/pages/Dashboard.tsx` を更新し、`Force update now` ボタンと確認ダイアログを実装

@@ -114,6 +114,10 @@ mod model_routing_balancing_test;
 #[path = "integration/update_drain_gate_test.rs"]
 mod update_drain_gate_test;
 
+// SPEC-a6e55b37: self-update apply API
+#[path = "integration/system_update_apply_api_test.rs"]
+mod system_update_apply_api_test;
+
 // SPEC-f8e3a1b7: /api/system API統合テスト
 #[path = "integration/api_system_test.rs"]
 mod v0_system_test;

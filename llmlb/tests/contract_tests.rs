@@ -113,5 +113,9 @@ mod clients_drilldown_test;
 #[path = "contract/clients_apikeys_test.rs"]
 mod clients_apikeys_test;
 
+// SPEC-62ac4b68: 異常検知（閾値設定・超過検出）契約テスト
+#[path = "contract/clients_alert_test.rs"]
+mod clients_alert_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

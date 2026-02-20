@@ -152,6 +152,30 @@ print("" if value is None else value)
 PY
         return
     fi
+    if command -v python3 >/dev/null 2>&1; then
+        JSON_INPUT="$json_input" QUERY="$query" python3 - <<'PY' 2>/dev/null
+import json
+import os
+
+data = os.environ.get("JSON_INPUT", "")
+query = os.environ.get("QUERY", "")
+try:
+    obj = json.loads(data)
+except Exception:
+    print("")
+    raise SystemExit
+
+if query.startswith(".tool_name"):
+    value = obj.get("tool_name", "")
+elif query.startswith(".tool_input.command"):
+    value = (obj.get("tool_input") or {}).get("command", "")
+else:
+    value = ""
+
+print("" if value is None else value)
+PY
+        return
+    fi
     printf '%s' ""
 }
 

@@ -4,7 +4,10 @@
 //!
 //! このモジュールはEndpoint型を使用しています。
 
-use crate::common::{error::LbError, protocol::RequestResponseRecord};
+use crate::common::{
+    error::LbError,
+    protocol::{RequestResponseRecord, TpsApiKind},
+};
 use crate::token::StreamingTokenAccumulator;
 use crate::{config::QueueConfig, types::endpoint::Endpoint, AppState};
 use axum::{
@@ -119,6 +122,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
     response: reqwest::Response,
     endpoint_id: uuid::Uuid,
     model_id: String,
+    api_kind: Option<TpsApiKind>,
     endpoint_type: crate::types::endpoint::EndpointType,
     request_started_at: Instant,
     pool: sqlx::SqlitePool,
@@ -131,6 +135,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         sse_buffer: String,
         endpoint_id: uuid::Uuid,
         model_id: String,
+        api_kind: Option<TpsApiKind>,
         endpoint_type: crate::types::endpoint::EndpointType,
         request_started_at: Instant,
         pool: sqlx::SqlitePool,
@@ -171,6 +176,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
                 success,
                 output_tokens,
                 duration_ms,
+                self.api_kind,
                 self.endpoint_type,
                 self.load_manager.clone(),
                 self.event_bus.clone(),
@@ -207,6 +213,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         sse_buffer: String::new(),
         endpoint_id,
         model_id,
+        api_kind,
         endpoint_type,
         request_started_at,
         pool,
@@ -288,6 +295,7 @@ pub(crate) fn record_endpoint_request_stats(
     success: bool,
     output_tokens: u64,
     duration_ms: u64,
+    api_kind: Option<TpsApiKind>,
     endpoint_type: crate::types::endpoint::EndpointType,
     load_manager: crate::balancer::LoadManager,
     event_bus: crate::events::SharedEventBus,
@@ -302,8 +310,11 @@ pub(crate) fn record_endpoint_request_stats(
         }
 
         // TPS計測対象かつ成功かつ有効トークンがある場合のみトークン・時間をDB永続化
-        let should_update_tps =
-            endpoint_type.is_tps_trackable() && success && output_tokens > 0 && duration_ms > 0;
+        let should_update_tps = endpoint_type.is_tps_trackable()
+            && api_kind.is_some()
+            && success
+            && output_tokens > 0
+            && duration_ms > 0;
         let (tokens, duration) = if should_update_tps {
             (output_tokens, duration_ms)
         } else {
@@ -326,8 +337,15 @@ pub(crate) fn record_endpoint_request_stats(
 
         // SPEC-4bb5b55f: インメモリTPS EMAを更新 & イベント発行
         if should_update_tps {
+            let api_kind = api_kind.expect("checked above");
             load_manager
-                .update_tps(endpoint_id, model_id.clone(), output_tokens, duration_ms)
+                .update_tps(
+                    endpoint_id,
+                    model_id.clone(),
+                    api_kind,
+                    output_tokens,
+                    duration_ms,
+                )
                 .await;
 
             let tps = output_tokens as f64 / (duration_ms as f64 / 1000.0);

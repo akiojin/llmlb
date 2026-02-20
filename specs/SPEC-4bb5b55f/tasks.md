@@ -14,14 +14,14 @@
 
 ### Phase 1 テスト (RED)
 
-- [x] T001 [P] [共通] `llmlb/src/types/endpoint.rs` に `EndpointType::is_tps_trackable()` のunit testを追加。xLLM/Ollama/vLLM/LmStudioはtrue、OpenaiCompatibleはfalseを返すことを検証
+- [x] T001 [P] [共通] `llmlb/src/types/endpoint.rs` に `EndpointType::is_tps_trackable()` のunit testを追加。xLLM/Ollama/vLLM/LmStudio/OpenaiCompatibleはtrueを返すことを検証
 - [x] T002 [P] [共通] `llmlb/src/balancer/mod.rs` に `ModelTpsState` のunit testを追加。EMA計算（α=0.2）が正しく動作すること、初期値None→初回計測でSome値になること、複数回更新で平滑化されることを検証
 - [x] T003 [P] [共通] `llmlb/src/db/endpoint_daily_stats.rs` に `upsert_daily_stats` 拡張版のunit testを追加。output_tokensとduration_msが累積加算されること、既存のリクエストカウント動作に影響しないことを検証
 
 ### Phase 1 実装 (GREEN)
 
 - [x] T004 [P] [共通] `llmlb/migrations/016_add_tps_columns.sql` を新規作成。`endpoint_daily_stats` テーブルに `total_output_tokens INTEGER NOT NULL DEFAULT 0` と `total_duration_ms INTEGER NOT NULL DEFAULT 0` カラムを追加する ALTER TABLE 文を記述
-- [x] T005 [P] [共通] `llmlb/src/types/endpoint.rs` に `EndpointType::is_tps_trackable()` メソッドを実装。`OpenaiCompatible` のみ `false` を返し、それ以外は `true` を返す
+- [x] T005 [P] [共通] `llmlb/src/types/endpoint.rs` に `EndpointType::is_tps_trackable()` メソッドを実装。全エンドポイントタイプで `true` を返す
 - [x] T006 [共通] `llmlb/src/balancer/mod.rs` に `ModelTpsState` 構造体と `TpsTracker` を追加。`ModelTpsState` は `tps_ema: Option<f64>`, `request_count: u64`, `total_output_tokens: u64`, `total_duration_ms: u64` を保持。`LoadManager` に `tps_tracker: Arc<RwLock<HashMap<(Uuid, String), ModelTpsState>>>` フィールドを追加し、`update_tps()` と `get_model_tps(endpoint_id)` メソッドを実装。EMA計算は `α=0.2`、TPS = `output_tokens / duration_seconds`
 - [x] T007 [共通] `llmlb/src/db/endpoint_daily_stats.rs` の `upsert_daily_stats()` シグネチャを拡張。引数に `output_tokens: u64` と `duration_ms: u64` を追加し、UPSERT文で `total_output_tokens = total_output_tokens + excluded.total_output_tokens`、`total_duration_ms = total_duration_ms + excluded.total_duration_ms` として累積加算する。既存の呼び出し箇所も更新（デフォルト値0で呼び出し）
 

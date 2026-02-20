@@ -5,6 +5,7 @@
 pub mod api_keys;
 pub mod audio;
 pub mod auth;
+pub mod benchmarks;
 pub mod cloud_models;
 pub mod dashboard;
 pub mod dashboard_ws;
@@ -291,6 +292,12 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/model-stats",
             get(dashboard::get_all_model_stats),
+        )
+        // Comparable TPS benchmark APIs
+        .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
+        .route(
+            "/benchmarks/tps/{run_id}",
+            get(benchmarks::get_tps_benchmark),
         );
 
     let dashboard_api_routes = if auth_disabled {

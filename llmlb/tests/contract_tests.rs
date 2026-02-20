@@ -97,5 +97,9 @@ mod version_api_test;
 #[path = "contract/clients_api_test.rs"]
 mod clients_api_test;
 
+// SPEC-62ac4b68: Clients時系列・モデル分布API契約テスト
+#[path = "contract/clients_timeline_test.rs"]
+mod clients_timeline_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

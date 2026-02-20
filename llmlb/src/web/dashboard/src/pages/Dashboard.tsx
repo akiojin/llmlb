@@ -31,7 +31,7 @@ const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
 export default function Dashboard() {
   const { user } = useAuth()
   const isViewer = user?.role === 'viewer'
-  const { isConnected: wsConnected } = useDashboardWebSocket()
+  const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: !isViewer })
   const queryClient = useQueryClient()
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
@@ -63,6 +63,7 @@ export default function Dashboard() {
     queryKey: SYSTEM_INFO_QUERY_KEY,
     queryFn: () => systemApi.getSystem(),
     refetchInterval: pollingInterval,
+    enabled: !isViewer,
   })
 
   // Fetch request history (individual request details)
@@ -71,6 +72,7 @@ export default function Dashboard() {
       queryKey: ['request-responses'],
       queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
       refetchInterval: pollingInterval,
+      enabled: !isViewer,
     })
 
   // SPEC-e8e9326e: Fetch endpoints list
@@ -78,6 +80,7 @@ export default function Dashboard() {
     queryKey: ['dashboard-endpoints'],
     queryFn: () => dashboardApi.getEndpoints(),
     refetchInterval: pollingInterval,
+    enabled: !isViewer,
   })
 
   const {

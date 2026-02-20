@@ -7,25 +7,30 @@
  * - Workflow helpers (register, wait for completion)
  */
 
-import type { APIRequestContext, Page } from '@playwright/test';
+import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768';
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 
-async function getDashboardJwt(request: APIRequestContext): Promise<string> {
+async function getDashboardJwt(): Promise<string> {
   const credentials = [
     { username: 'admin', password: 'test' },
     { username: 'admin', password: 'password123' },
   ];
 
-  for (const cred of credentials) {
-    const response = await request.post(`${API_BASE}/api/auth/login`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: cred,
-    });
-    if (!response.ok()) continue;
-    const body = (await response.json()) as { token?: string };
-    if (body.token) return body.token;
+  const authContext = await playwrightRequest.newContext();
+  try {
+    for (const cred of credentials) {
+      const response = await authContext.post(`${API_BASE}/api/auth/login`, {
+        headers: { 'Content-Type': 'application/json' },
+        data: cred,
+      });
+      if (!response.ok()) continue;
+      const body = (await response.json()) as { token?: string };
+      if (body.token) return body.token;
+    }
+  } finally {
+    await authContext.dispose();
   }
 
   throw new Error('Failed to acquire dashboard JWT for API key management');
@@ -601,7 +606,7 @@ export async function createApiKeyWithPermissions(
   _permissions: string[],
   expiresAt?: string
 ): Promise<CreatedApiKey> {
-  const token = await getDashboardJwt(request);
+  const token = await getDashboardJwt();
   const payload: Record<string, unknown> = { name };
   if (expiresAt) {
     payload.expires_at = expiresAt;
@@ -626,7 +631,7 @@ export async function deleteApiKey(
   request: APIRequestContext,
   keyId: string
 ): Promise<boolean> {
-  const token = await getDashboardJwt(request);
+  const token = await getDashboardJwt();
   const response = await request.delete(
     `${API_BASE}/api/me/api-keys/${encodeURIComponent(keyId)}`,
     {
@@ -640,7 +645,7 @@ export async function deleteApiKey(
  * List all API keys
  */
 export async function listApiKeys(request: APIRequestContext): Promise<ApiKeyInfo[]> {
-  const token = await getDashboardJwt(request);
+  const token = await getDashboardJwt();
   const response = await request.get(`${API_BASE}/api/me/api-keys`, {
     headers: { Authorization: `Bearer ${token}` },
   });

@@ -42,6 +42,12 @@ import {
 } from '@/components/ui/dialog'
 import { EndpointDetailModal } from './EndpointDetailModal'
 import {
+  buildEndpointAggregateTpsMap,
+  sortEndpoints,
+  type EndpointSortDirection as SortDirection,
+  type EndpointSortField as SortField,
+} from './endpointSorting'
+import {
   Search,
   ChevronUp,
   ChevronDown,
@@ -65,9 +71,6 @@ interface EndpointTableProps {
   endpointTps?: EndpointTpsSummary[]
   isLoading: boolean
 }
-
-type SortField = 'name' | 'status' | 'total_requests' | 'latency_ms' | 'model_count' | 'registered_at'
-type SortDirection = 'asc' | 'desc'
 
 const PAGE_SIZE = 10
 
@@ -243,34 +246,19 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
     })
   }, [endpoints, search, statusFilter, typeFilter])
 
+  const endpointTpsByEndpointId = useMemo(
+    () => buildEndpointAggregateTpsMap(endpointTps),
+    [endpointTps]
+  )
+
   const sortedEndpoints = useMemo(() => {
-    return [...filteredEndpoints].sort((a, b) => {
-      let comparison = 0
-      switch (sortField) {
-        case 'name':
-          comparison = a.name.localeCompare(b.name)
-          break
-        case 'status': {
-          const statusOrder = { online: 0, pending: 1, offline: 2, error: 3 }
-          comparison = statusOrder[a.status] - statusOrder[b.status]
-          break
-        }
-        case 'total_requests':
-          comparison = a.total_requests - b.total_requests
-          break
-        case 'latency_ms':
-          comparison = (a.latency_ms ?? Infinity) - (b.latency_ms ?? Infinity)
-          break
-        case 'model_count':
-          comparison = a.model_count - b.model_count
-          break
-        case 'registered_at':
-          comparison = new Date(a.registered_at).getTime() - new Date(b.registered_at).getTime()
-          break
-      }
-      return sortDirection === 'asc' ? comparison : -comparison
-    })
-  }, [filteredEndpoints, sortField, sortDirection])
+    return sortEndpoints(
+      filteredEndpoints,
+      sortField,
+      sortDirection,
+      endpointTpsByEndpointId
+    )
+  }, [filteredEndpoints, sortField, sortDirection, endpointTpsByEndpointId])
 
   const paginatedEndpoints = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE
@@ -424,7 +412,13 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
                     Latency
                     <SortIcon field="latency_ms" />
                   </TableHead>
-                  <TableHead className="text-right">TPS</TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-muted/50 text-right"
+                    onClick={() => handleSort('tps')}
+                  >
+                    TPS
+                    <SortIcon field="tps" />
+                  </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('model_count')}
@@ -504,9 +498,9 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {(() => {
-                          const tps = endpointTps?.find((t) => t.endpoint_id === endpoint.id)
-                          if (!tps || tps.aggregate_tps == null) return <span className="text-muted-foreground">&mdash;</span>
-                          return `${tps.aggregate_tps.toFixed(1)} tok/s`
+                          const aggregateTps = endpointTpsByEndpointId.get(endpoint.id)
+                          if (aggregateTps == null) return <span className="text-muted-foreground">&mdash;</span>
+                          return `${aggregateTps.toFixed(1)} tok/s`
                         })()}
                       </TableCell>
                       <TableCell className="text-right">{endpoint.model_count}</TableCell>

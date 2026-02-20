@@ -27,6 +27,9 @@ pub mod endpoint_daily_stats;
 /// ダウンロードタスク管理（SPEC-e8e9326e）
 pub mod download_tasks;
 
+/// 設定管理
+pub mod settings;
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use once_cell::sync::Lazy;

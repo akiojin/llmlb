@@ -96,6 +96,9 @@ pub struct RequestResponseRecord {
     /// 総トークン数
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
+    /// APIキーID（api_keysテーブル参照）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_id: Option<Uuid>,
 }
 
 /// リクエストタイプ
@@ -623,6 +626,7 @@ mod tests {
             input_tokens: Some(150),
             output_tokens: Some(50),
             total_tokens: Some(200),
+            api_key_id: None,
         };
 
         let json = serde_json::to_string(&record).unwrap();
@@ -659,6 +663,7 @@ mod tests {
             input_tokens: None,
             output_tokens: None,
             total_tokens: None,
+            api_key_id: None,
         };
 
         let json = serde_json::to_string(&record).unwrap();

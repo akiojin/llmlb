@@ -305,6 +305,7 @@ pub async fn transcriptions(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -411,6 +412,7 @@ pub async fn speech(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id: None,
     };
 
     save_request_record(state.request_history.clone(), record);

@@ -534,6 +534,7 @@ impl RequestHistoryQuery {
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
+            client_ip: None,
         })
     }
 }
@@ -584,6 +585,7 @@ impl RequestHistoryExportQuery {
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
+            client_ip: None,
         })
     }
 }

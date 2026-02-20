@@ -1146,6 +1146,7 @@ async fn proxy_openai_cloud_post(
                     input_tokens: None,
                     output_tokens: None,
                     total_tokens: None,
+                    api_key_id: None,
                 },
             );
             return Err(e);
@@ -1189,6 +1190,7 @@ async fn proxy_openai_cloud_post(
             input_tokens: None,
             output_tokens: None,
             total_tokens: None,
+            api_key_id: None,
         },
     );
 
@@ -1263,6 +1265,7 @@ async fn proxy_openai_post(
                         input_tokens: None,
                         output_tokens: None,
                         total_tokens: None,
+                        api_key_id: None,
                     },
                 );
                 let retry_after = queue_config.timeout.as_secs().max(1);
@@ -1296,6 +1299,7 @@ async fn proxy_openai_post(
                         input_tokens: None,
                         output_tokens: None,
                         total_tokens: None,
+                        api_key_id: None,
                     },
                 );
                 return Ok(queue_error_response(
@@ -1338,6 +1342,7 @@ async fn proxy_openai_post(
                         input_tokens: None,
                         output_tokens: None,
                         total_tokens: None,
+                        api_key_id: None,
                     },
                 );
                 if matches!(e, LbError::NoCapableNodes(_)) {
@@ -1415,6 +1420,7 @@ async fn proxy_openai_post(
                     input_tokens: None,
                     output_tokens: None,
                     total_tokens: None,
+                    api_key_id: None,
                 },
             );
 
@@ -1477,6 +1483,7 @@ async fn proxy_openai_post(
                 input_tokens: None,
                 output_tokens: None,
                 total_tokens: None,
+                api_key_id: None,
             },
         );
 
@@ -1553,6 +1560,7 @@ async fn proxy_openai_post(
                 input_tokens: None,
                 output_tokens: None,
                 total_tokens: None,
+                api_key_id: None,
             },
         );
 
@@ -1632,6 +1640,7 @@ async fn proxy_openai_post(
                     input_tokens,
                     output_tokens,
                     total_tokens,
+                    api_key_id: None,
                 },
             );
 
@@ -1682,6 +1691,7 @@ async fn proxy_openai_post(
                     input_tokens: None,
                     output_tokens: None,
                     total_tokens: None,
+                    api_key_id: None,
                 },
             );
 

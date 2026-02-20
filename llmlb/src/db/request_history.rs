@@ -124,21 +124,25 @@ impl RequestHistoryStorage {
         let output_tokens = record.output_tokens.map(|v| v as i64);
         let total_tokens = record.total_tokens.map(|v| v as i64);
 
+        let api_key_id = record.api_key_id.map(|id| id.to_string());
+
         let insert_sql = if ignore_conflicts {
             r#"
             INSERT OR IGNORE INTO request_history (
                 id, timestamp, request_type, model, node_id, node_machine_name,
                 node_ip, client_ip, request_body, response_body, duration_ms,
-                status, error_message, completed_at, input_tokens, output_tokens, total_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
+                api_key_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         } else {
             r#"
             INSERT INTO request_history (
                 id, timestamp, request_type, model, node_id, node_machine_name,
                 node_ip, client_ip, request_body, response_body, duration_ms,
-                status, error_message, completed_at, input_tokens, output_tokens, total_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
+                api_key_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         };
 
@@ -160,6 +164,7 @@ impl RequestHistoryStorage {
             .bind(input_tokens)
             .bind(output_tokens)
             .bind(total_tokens)
+            .bind(&api_key_id)
             .execute(&self.pool)
             .await
             .map_err(|e| LbError::Database(format!("Failed to save record: {}", e)))?;
@@ -229,6 +234,11 @@ impl RequestHistoryStorage {
         if let Some(end_time) = filter.end_time {
             conditions.push("timestamp <= ?");
             params.push(end_time.to_rfc3339());
+        }
+
+        if let Some(ref client_ip) = filter.client_ip {
+            conditions.push("client_ip = ?");
+            params.push(client_ip.clone());
         }
 
         let where_clause = if conditions.is_empty() {
@@ -305,6 +315,16 @@ impl RequestHistoryStorage {
                     .fetch_one(&self.pool)
                     .await
             }
+            5 => {
+                sqlx::query_scalar::<_, i64>(sql)
+                    .bind(&params[0])
+                    .bind(&params[1])
+                    .bind(&params[2])
+                    .bind(&params[3])
+                    .bind(&params[4])
+                    .fetch_one(&self.pool)
+                    .await
+            }
             _ => {
                 sqlx::query_scalar::<_, i64>(sql)
                     .bind(&params[0])
@@ -312,6 +332,7 @@ impl RequestHistoryStorage {
                     .bind(&params[2])
                     .bind(&params[3])
                     .bind(&params[4])
+                    .bind(&params[5])
                     .fetch_one(&self.pool)
                     .await
             }
@@ -377,6 +398,18 @@ impl RequestHistoryStorage {
                     .fetch_all(&self.pool)
                     .await
             }
+            5 => {
+                sqlx::query_as::<_, RequestHistoryRow>(sql)
+                    .bind(&params[0])
+                    .bind(&params[1])
+                    .bind(&params[2])
+                    .bind(&params[3])
+                    .bind(&params[4])
+                    .bind(limit)
+                    .bind(offset)
+                    .fetch_all(&self.pool)
+                    .await
+            }
             _ => {
                 sqlx::query_as::<_, RequestHistoryRow>(sql)
                     .bind(&params[0])
@@ -384,6 +417,7 @@ impl RequestHistoryStorage {
                     .bind(&params[2])
                     .bind(&params[3])
                     .bind(&params[4])
+                    .bind(&params[5])
                     .bind(limit)
                     .bind(offset)
                     .fetch_all(&self.pool)
@@ -669,6 +703,7 @@ struct RequestHistoryRow {
     input_tokens: Option<i64>,
     output_tokens: Option<i64>,
     total_tokens: Option<i64>,
+    api_key_id: Option<String>,
 }
 
 impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
@@ -748,6 +783,13 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             input_tokens: row.input_tokens.map(|v| v as u32),
             output_tokens: row.output_tokens.map(|v| v as u32),
             total_tokens: row.total_tokens.map(|v| v as u32),
+            api_key_id: row
+                .api_key_id
+                .map(|id| {
+                    Uuid::parse_str(&id)
+                        .map_err(|e| LbError::Database(format!("Invalid api_key_id UUID: {}", e)))
+                })
+                .transpose()?,
         })
     }
 }
@@ -765,6 +807,8 @@ pub struct RecordFilter {
     pub start_time: Option<DateTime<Utc>>,
     /// 終了時刻フィルタ
     pub end_time: Option<DateTime<Utc>>,
+    /// クライアントIPフィルタ（完全一致）
+    pub client_ip: Option<String>,
 }
 
 impl RecordFilter {
@@ -800,6 +844,13 @@ impl RecordFilter {
         if let Some(end_time) = self.end_time {
             if record.timestamp > end_time {
                 return false;
+            }
+        }
+
+        if let Some(ref client_ip) = self.client_ip {
+            match &record.client_ip {
+                Some(ip) if ip.to_string() == *client_ip => {}
+                _ => return false,
             }
         }
 
@@ -993,6 +1044,7 @@ mod tests {
             input_tokens: None,
             output_tokens: None,
             total_tokens: None,
+            api_key_id: None,
         }
     }
 

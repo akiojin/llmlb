@@ -19,10 +19,7 @@ mod settings_tests {
     #[tokio::test]
     async fn test_set_and_get_setting_roundtrip() {
         let storage = create_settings_storage().await;
-        storage
-            .set_setting("test_key", "test_value")
-            .await
-            .unwrap();
+        storage.set_setting("test_key", "test_value").await.unwrap();
         let result = storage.get_setting("test_key").await.unwrap();
         assert_eq!(result, Some("test_value".to_string()));
     }
@@ -45,10 +42,7 @@ mod settings_tests {
     #[tokio::test]
     async fn test_default_ip_alert_threshold_exists() {
         let storage = create_settings_storage().await;
-        let result = storage
-            .get_setting("ip_alert_threshold")
-            .await
-            .unwrap();
+        let result = storage.get_setting("ip_alert_threshold").await.unwrap();
         assert_eq!(result, Some("100".to_string()));
     }
 }

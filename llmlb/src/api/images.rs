@@ -210,6 +210,7 @@ pub async fn generations(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -441,6 +442,7 @@ pub async fn edits(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id: None,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -630,6 +632,7 @@ pub async fn variations(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id: None,
     };
 
     save_request_record(state.request_history.clone(), record);

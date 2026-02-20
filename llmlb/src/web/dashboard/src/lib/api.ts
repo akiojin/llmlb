@@ -1071,6 +1071,30 @@ export const clientsApi = {
     fetchWithAuth<ModelDistribution[]>('/api/dashboard/clients/models'),
   getHeatmap: () =>
     fetchWithAuth<HeatmapCell[]>('/api/dashboard/clients/heatmap'),
+  getClientDetail: (ip: string) =>
+    fetchWithAuth<ClientDetailResponse>(`/api/dashboard/clients/${encodeURIComponent(ip)}/detail`),
+}
+
+export interface ClientDetailResponse {
+  total_requests: number
+  first_seen: string | null
+  last_seen: string | null
+  recent_requests: ClientRecentRequest[]
+  model_distribution: ModelDistribution[]
+  hourly_pattern: HourlyPattern[]
+}
+
+export interface ClientRecentRequest {
+  id: string
+  timestamp: string
+  model: string
+  status: string
+  duration_ms: number | null
+}
+
+export interface HourlyPattern {
+  hour: number
+  count: number
 }
 
 // Export utilities

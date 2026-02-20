@@ -1210,6 +1210,196 @@ impl RequestHistoryStorage {
 
         Ok(cells)
     }
+
+    /// 特定IPのドリルダウン詳細を取得
+    pub async fn get_client_detail(&self, ip: &str, limit: usize) -> RouterResult<ClientDetail> {
+        // 合計リクエスト数・初回/最終アクセス
+        let summary: Option<ClientSummaryRow> = sqlx::query_as(
+            "SELECT COUNT(*) as total_requests,
+                    MIN(timestamp) as first_seen,
+                    MAX(timestamp) as last_seen
+             FROM request_history
+             WHERE client_ip = ?",
+        )
+        .bind(ip)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        let (total_requests, first_seen, last_seen) = match summary {
+            Some(s) if s.total_requests > 0 => (s.total_requests, s.first_seen, s.last_seen),
+            _ => return Ok(ClientDetail::empty()),
+        };
+
+        // 直近リクエスト
+        let recent: Vec<ClientRecentRequestRow> = sqlx::query_as(
+            "SELECT id, timestamp, model, status, duration_ms
+             FROM request_history
+             WHERE client_ip = ?
+             ORDER BY timestamp DESC
+             LIMIT ?",
+        )
+        .bind(ip)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        let recent_requests: Vec<ClientRecentRequest> = recent
+            .into_iter()
+            .map(|r| ClientRecentRequest {
+                id: r.id,
+                timestamp: r.timestamp,
+                model: r.model,
+                status: r.status,
+                duration_ms: r.duration_ms,
+            })
+            .collect();
+
+        // モデル分布
+        let model_rows: Vec<ModelDistRow> = sqlx::query_as(
+            "SELECT model, COUNT(*) as request_count
+             FROM request_history
+             WHERE client_ip = ?
+             GROUP BY model
+             ORDER BY request_count DESC",
+        )
+        .bind(ip)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        let total_for_pct: i64 = model_rows.iter().map(|r| r.request_count).sum();
+        let model_distribution: Vec<ModelDistribution> = model_rows
+            .into_iter()
+            .map(|r| {
+                let pct = if total_for_pct > 0 {
+                    (r.request_count as f64 / total_for_pct as f64) * 100.0
+                } else {
+                    0.0
+                };
+                ModelDistribution {
+                    model: r.model,
+                    request_count: r.request_count,
+                    percentage: (pct * 10.0).round() / 10.0,
+                }
+            })
+            .collect();
+
+        // 時間帯パターン（24時間）
+        let hourly_rows: Vec<HourlyPatternRow> = sqlx::query_as(
+            "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    COUNT(*) as count
+             FROM request_history
+             WHERE client_ip = ?
+             GROUP BY strftime('%H', timestamp)
+             ORDER BY hour ASC",
+        )
+        .bind(ip)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(e.to_string()))?;
+
+        use std::collections::HashMap;
+        let hourly_map: HashMap<i64, i64> =
+            hourly_rows.into_iter().map(|r| (r.hour, r.count)).collect();
+        let hourly_pattern: Vec<HourlyPattern> = (0..24)
+            .map(|h| HourlyPattern {
+                hour: h,
+                count: hourly_map.get(&h).copied().unwrap_or(0),
+            })
+            .collect();
+
+        Ok(ClientDetail {
+            total_requests,
+            first_seen,
+            last_seen,
+            recent_requests,
+            model_distribution,
+            hourly_pattern,
+        })
+    }
+}
+
+/// IPドリルダウン詳細
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClientDetail {
+    /// 合計リクエスト数
+    pub total_requests: i64,
+    /// 初回アクセス時刻
+    pub first_seen: Option<String>,
+    /// 最終アクセス時刻
+    pub last_seen: Option<String>,
+    /// 直近リクエスト
+    pub recent_requests: Vec<ClientRecentRequest>,
+    /// モデル分布
+    pub model_distribution: Vec<ModelDistribution>,
+    /// 時間帯パターン（24時間）
+    pub hourly_pattern: Vec<HourlyPattern>,
+}
+
+impl ClientDetail {
+    fn empty() -> Self {
+        Self {
+            total_requests: 0,
+            first_seen: None,
+            last_seen: None,
+            recent_requests: vec![],
+            model_distribution: vec![],
+            hourly_pattern: (0..24)
+                .map(|h| HourlyPattern { hour: h, count: 0 })
+                .collect(),
+        }
+    }
+}
+
+/// 直近リクエスト
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClientRecentRequest {
+    /// リクエストID
+    pub id: String,
+    /// タイムスタンプ
+    pub timestamp: String,
+    /// モデル名
+    pub model: String,
+    /// ステータス
+    pub status: String,
+    /// レスポンス時間(ms)
+    pub duration_ms: Option<i64>,
+}
+
+/// 時間帯パターン
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HourlyPattern {
+    /// 時間帯 (0-23)
+    pub hour: i64,
+    /// リクエスト数
+    pub count: i64,
+}
+
+/// SQLiteから取得したサマリ行
+#[derive(sqlx::FromRow)]
+struct ClientSummaryRow {
+    total_requests: i64,
+    first_seen: Option<String>,
+    last_seen: Option<String>,
+}
+
+/// SQLiteから取得した直近リクエスト行
+#[derive(sqlx::FromRow)]
+struct ClientRecentRequestRow {
+    id: String,
+    timestamp: String,
+    model: String,
+    status: String,
+    duration_ms: Option<i64>,
+}
+
+/// SQLiteから取得した時間帯パターン行
+#[derive(sqlx::FromRow)]
+struct HourlyPatternRow {
+    hour: i64,
+    count: i64,
 }
 
 /// ヒートマップの1セル

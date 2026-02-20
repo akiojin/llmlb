@@ -1023,5 +1023,17 @@ pub async fn get_client_heatmap(
     Ok(Json(result))
 }
 
+/// GET /api/dashboard/clients/:ip/detail - IPドリルダウン詳細
+///
+/// SPEC-62ac4b68: IPドリルダウン詳細ビュー
+pub async fn get_client_detail(
+    axum::extract::Path(ip): axum::extract::Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<crate::db::request_history::ClientDetail>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage.get_client_detail(&ip, 20).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e

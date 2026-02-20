@@ -129,21 +129,39 @@ fn looks_like_lm_studio_model(model: &serde_json::Value) -> bool {
     has_publisher && has_architecture && (has_state_marker || has_lmstudio_shape)
 }
 
-/// Normalize text for LM Studio marker matching.
+/// Split marker text into lowercase ASCII alphanumeric tokens.
 ///
-/// - Lowercases
-/// - Removes spaces, hyphens, and underscores
-fn normalize_lm_studio_marker(value: &str) -> String {
+/// Example:
+/// - "LM-Studio/0.3.5" -> ["lm", "studio", "0", "3", "5"]
+/// - "lmstudio-community" -> ["lmstudio", "community"]
+fn marker_tokens(value: &str) -> Vec<String> {
     value
-        .chars()
-        .flat_map(|c| c.to_lowercase())
-        .filter(|c| *c != ' ' && *c != '-' && *c != '_')
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_ascii_lowercase())
         .collect()
+}
+
+/// Match LM Studio markers on token boundaries.
+///
+/// Accepts:
+/// - "lmstudio" as a standalone token
+/// - "lm" followed by "studio" as adjacent tokens (e.g. lm-studio, lm_studio, lm studio)
+fn has_lm_studio_marker(value: &str) -> bool {
+    let tokens = marker_tokens(value);
+
+    if tokens.iter().any(|t| t == "lmstudio") {
+        return true;
+    }
+
+    tokens
+        .windows(2)
+        .any(|pair| pair[0] == "lm" && pair[1] == "studio")
 }
 
 /// Check if Server header indicates LM Studio (case-insensitive)
 fn is_lm_studio_server_header(header: &str) -> bool {
-    normalize_lm_studio_marker(header).contains("lmstudio")
+    has_lm_studio_marker(header)
 }
 
 /// Check if any model in data array has owned_by containing LM Studio markers.
@@ -151,7 +169,7 @@ fn has_lm_studio_owned_by(json: &serde_json::Value) -> bool {
     if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
         for model in data {
             if let Some(owned_by) = model.get("owned_by").and_then(|v| v.as_str()) {
-                if normalize_lm_studio_marker(owned_by).contains("lmstudio") {
+                if has_lm_studio_marker(owned_by) {
                     return true;
                 }
             }
@@ -258,7 +276,15 @@ mod tests {
 
     #[test]
     fn test_server_header_non_lm_studio() {
-        let negative = ["nginx", "Apache", "uvicorn", "gunicorn", "vLLM/0.4.0"];
+        let negative = [
+            "nginx",
+            "Apache",
+            "uvicorn",
+            "gunicorn",
+            "vLLM/0.4.0",
+            "filmstudio-team",
+            "acme-lmstudiox",
+        ];
         for header in negative {
             assert!(
                 !is_lm_studio_server_header(header),
@@ -319,6 +345,13 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"organization_owner"}]}"#)
                 .unwrap();
+        assert!(!has_lm_studio_owned_by(&json));
+    }
+
+    #[test]
+    fn test_owned_by_filmstudio_not_lm_studio() {
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"data":[{"id":"m1","owned_by":"filmstudio-team"}]}"#).unwrap();
         assert!(!has_lm_studio_owned_by(&json));
     }
 

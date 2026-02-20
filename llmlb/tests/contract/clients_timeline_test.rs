@@ -231,6 +231,53 @@ async fn test_clients_models_api_empty() {
     assert_eq!(models.len(), 0);
 }
 
+/// T028: GET /api/dashboard/clients/timeline - IPv6は/64でユニーク集計
+#[tokio::test]
+#[serial]
+async fn test_clients_timeline_api_ipv6_prefix64_grouping() {
+    let (app, db_pool, jwt) = build_app().await;
+    let now = Utc::now();
+    let node_id = Uuid::new_v4();
+    let target_hour = (now - Duration::hours(1))
+        .format("%Y-%m-%dT%H:00:00")
+        .to_string();
+
+    // 同一/64
+    for ip_str in ["2001:db8:1:0:abcd::1", "2001:db8:1:0:beef::2"] {
+        let ip: std::net::IpAddr = ip_str.parse().unwrap();
+        let record = create_test_record("model-a", node_id, now - Duration::hours(1), Some(ip));
+        insert_record(&db_pool, &record).await;
+    }
+    // 別/64
+    let ip_other: std::net::IpAddr = "2001:db8:1:1::1".parse().unwrap();
+    let record = create_test_record("model-a", node_id, now - Duration::hours(1), Some(ip_other));
+    insert_record(&db_pool, &record).await;
+
+    let response = app
+        .oneshot(
+            admin_request(&jwt)
+                .method("GET")
+                .uri("/api/dashboard/clients/timeline")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let timeline = body.as_array().unwrap();
+    let point = timeline
+        .iter()
+        .find(|p| p["hour"].as_str() == Some(target_hour.as_str()))
+        .expect("target hour should exist");
+
+    // 同一/64の2件は1クライアントとして扱われるため、ユニーク数は2
+    assert_eq!(point["unique_ips"], 2);
+}
+
 /// T028: 認証なしでは401
 #[tokio::test]
 #[serial]

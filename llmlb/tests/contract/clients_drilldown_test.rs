@@ -131,6 +131,49 @@ async fn test_clients_drilldown_api() {
     assert!(body["hourly_pattern"].is_array());
 }
 
+/// T041: GET /api/dashboard/clients/{ip}/detail - IPv6 /64指定
+#[tokio::test]
+#[serial]
+async fn test_clients_drilldown_api_ipv6_prefix64() {
+    let (app, db_pool, jwt) = build_app().await;
+    let now = Utc::now();
+    let node_id = Uuid::new_v4();
+
+    let same_prefix_ips = ["2001:db8:1:0:abcd::1", "2001:db8:1:0:beef::2"];
+    for ip_str in same_prefix_ips {
+        let ip: std::net::IpAddr = ip_str.parse().unwrap();
+        let record = create_test_record("model-a", node_id, now - Duration::minutes(1), Some(ip));
+        insert_record(&db_pool, &record).await;
+    }
+
+    let other_prefix_ip: std::net::IpAddr = "2001:db8:1:1::1".parse().unwrap();
+    let record = create_test_record(
+        "model-b",
+        node_id,
+        now - Duration::minutes(2),
+        Some(other_prefix_ip),
+    );
+    insert_record(&db_pool, &record).await;
+
+    let encoded_prefix = "2001:db8:1::/64".replace("/", "%2F");
+    let response = app
+        .oneshot(
+            admin_request(&jwt)
+                .method("GET")
+                .uri(format!("/api/dashboard/clients/{encoded_prefix}/detail"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["total_requests"], 2);
+}
+
 /// T041: GET /api/dashboard/clients/{ip}/detail - 存在しないIP
 #[tokio::test]
 #[serial]

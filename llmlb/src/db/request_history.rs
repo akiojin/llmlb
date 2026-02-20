@@ -1009,7 +1009,65 @@ struct ClientIpRow {
     last_seen: String,
 }
 
+#[derive(Debug, Clone)]
+enum ClientIpFilter {
+    Exact(String),
+    Ipv6Prefix64(String),
+}
+
+impl ClientIpFilter {
+    fn from_input(ip: &str) -> Self {
+        if let Some(raw_prefix) = ip.strip_suffix("/64") {
+            if let Ok(v6) = raw_prefix.parse::<std::net::Ipv6Addr>() {
+                return Self::Ipv6Prefix64(format!("{v6}/64"));
+            }
+        }
+
+        if let Ok(parsed_ip) = ip.parse::<IpAddr>() {
+            return Self::Exact(parsed_ip.to_string());
+        }
+
+        Self::Exact(ip.to_string())
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct ClientIpValueRow {
+    client_ip: String,
+}
+
+fn build_in_clause(column: &str, count: usize) -> String {
+    let placeholders = std::iter::repeat_n("?", count)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{column} IN ({placeholders})")
+}
+
 impl RequestHistoryStorage {
+    async fn resolve_client_ips_for_filter(&self, ip: &str) -> RouterResult<Vec<String>> {
+        let filter = ClientIpFilter::from_input(ip);
+
+        match filter {
+            ClientIpFilter::Exact(exact_ip) => Ok(vec![exact_ip]),
+            ClientIpFilter::Ipv6Prefix64(prefix64) => {
+                let rows: Vec<ClientIpValueRow> = sqlx::query_as(
+                    "SELECT DISTINCT client_ip
+                     FROM request_history
+                     WHERE client_ip IS NOT NULL",
+                )
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| LbError::Database(e.to_string()))?;
+
+                Ok(rows
+                    .into_iter()
+                    .map(|row| row.client_ip)
+                    .filter(|stored_ip| crate::common::ip::ipv6_to_prefix64(stored_ip) == prefix64)
+                    .collect())
+            }
+        }
+    }
+
     /// IPランキングを取得（リクエスト数降順、ページネーション付き）
     ///
     /// IPv6アドレスは/64プレフィックスでグルーピングして集計する。
@@ -1128,12 +1186,12 @@ impl RequestHistoryStorage {
         let cutoff = now - Duration::hours(hours as i64);
         let cutoff_str = cutoff.to_rfc3339();
 
-        let rows: Vec<TimelineRow> = sqlx::query_as(
+        let rows: Vec<TimelineClientRow> = sqlx::query_as(
             "SELECT strftime('%Y-%m-%dT%H:00:00', timestamp) as hour,
-                    COUNT(DISTINCT client_ip) as unique_ips
+                    client_ip
              FROM request_history
              WHERE client_ip IS NOT NULL AND timestamp >= ?
-             GROUP BY strftime('%Y-%m-%dT%H:00:00', timestamp)
+             GROUP BY strftime('%Y-%m-%dT%H:00:00', timestamp), client_ip
              ORDER BY hour ASC",
         )
         .bind(&cutoff_str)
@@ -1142,9 +1200,16 @@ impl RequestHistoryStorage {
         .map_err(|e| LbError::Database(e.to_string()))?;
 
         // 24時間分のポイントを生成（データがない時間帯は0埋め）
-        use std::collections::HashMap;
-        let row_map: HashMap<String, i64> =
-            rows.into_iter().map(|r| (r.hour, r.unique_ips)).collect();
+        use std::collections::{HashMap, HashSet};
+        let mut grouped: HashMap<String, HashSet<String>> = HashMap::new();
+        for row in rows {
+            let normalized_ip = crate::common::ip::ipv6_to_prefix64(&row.client_ip);
+            grouped.entry(row.hour).or_default().insert(normalized_ip);
+        }
+        let row_map: HashMap<String, i64> = grouped
+            .into_iter()
+            .map(|(hour, unique_ips)| (hour, unique_ips.len() as i64))
+            .collect();
 
         let mut timeline = Vec::with_capacity(hours as usize);
         for h in (1..=hours).rev() {
@@ -1248,18 +1313,29 @@ impl RequestHistoryStorage {
 
     /// 特定IPのドリルダウン詳細を取得
     pub async fn get_client_detail(&self, ip: &str, limit: usize) -> RouterResult<ClientDetail> {
+        let matched_ips = self.resolve_client_ips_for_filter(ip).await?;
+        if matched_ips.is_empty() {
+            return Ok(ClientDetail::empty());
+        }
+
+        let where_clause = build_in_clause("client_ip", matched_ips.len());
+
         // 合計リクエスト数・初回/最終アクセス
-        let summary: Option<ClientSummaryRow> = sqlx::query_as(
+        let summary_sql = format!(
             "SELECT COUNT(*) as total_requests,
                     MIN(timestamp) as first_seen,
                     MAX(timestamp) as last_seen
              FROM request_history
-             WHERE client_ip = ?",
-        )
-        .bind(ip)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(e.to_string()))?;
+             WHERE {where_clause}"
+        );
+        let mut summary_query = sqlx::query_as::<_, ClientSummaryRow>(&summary_sql);
+        for matched_ip in &matched_ips {
+            summary_query = summary_query.bind(matched_ip);
+        }
+        let summary: Option<ClientSummaryRow> = summary_query
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(e.to_string()))?;
 
         let (total_requests, first_seen, last_seen) = match summary {
             Some(s) if s.total_requests > 0 => (s.total_requests, s.first_seen, s.last_seen),
@@ -1267,18 +1343,22 @@ impl RequestHistoryStorage {
         };
 
         // 直近リクエスト
-        let recent: Vec<ClientRecentRequestRow> = sqlx::query_as(
+        let recent_sql = format!(
             "SELECT id, timestamp, model, status, duration_ms
              FROM request_history
-             WHERE client_ip = ?
+             WHERE {where_clause}
              ORDER BY timestamp DESC
-             LIMIT ?",
-        )
-        .bind(ip)
-        .bind(limit as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(e.to_string()))?;
+             LIMIT ?"
+        );
+        let mut recent_query = sqlx::query_as::<_, ClientRecentRequestRow>(&recent_sql);
+        for matched_ip in &matched_ips {
+            recent_query = recent_query.bind(matched_ip);
+        }
+        let recent: Vec<ClientRecentRequestRow> = recent_query
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(e.to_string()))?;
 
         let recent_requests: Vec<ClientRecentRequest> = recent
             .into_iter()
@@ -1292,17 +1372,21 @@ impl RequestHistoryStorage {
             .collect();
 
         // モデル分布
-        let model_rows: Vec<ModelDistRow> = sqlx::query_as(
+        let model_sql = format!(
             "SELECT model, COUNT(*) as request_count
              FROM request_history
-             WHERE client_ip = ?
+             WHERE {where_clause}
              GROUP BY model
-             ORDER BY request_count DESC",
-        )
-        .bind(ip)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(e.to_string()))?;
+             ORDER BY request_count DESC"
+        );
+        let mut model_query = sqlx::query_as::<_, ModelDistRow>(&model_sql);
+        for matched_ip in &matched_ips {
+            model_query = model_query.bind(matched_ip);
+        }
+        let model_rows: Vec<ModelDistRow> = model_query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(e.to_string()))?;
 
         let total_for_pct: i64 = model_rows.iter().map(|r| r.request_count).sum();
         let model_distribution: Vec<ModelDistribution> = model_rows
@@ -1322,18 +1406,22 @@ impl RequestHistoryStorage {
             .collect();
 
         // 時間帯パターン（24時間）
-        let hourly_rows: Vec<HourlyPatternRow> = sqlx::query_as(
+        let hourly_sql = format!(
             "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour,
                     COUNT(*) as count
              FROM request_history
-             WHERE client_ip = ?
+             WHERE {where_clause}
              GROUP BY strftime('%H', timestamp)
-             ORDER BY hour ASC",
-        )
-        .bind(ip)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(e.to_string()))?;
+             ORDER BY hour ASC"
+        );
+        let mut hourly_query = sqlx::query_as::<_, HourlyPatternRow>(&hourly_sql);
+        for matched_ip in &matched_ips {
+            hourly_query = hourly_query.bind(matched_ip);
+        }
+        let hourly_rows: Vec<HourlyPatternRow> = hourly_query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(e.to_string()))?;
 
         use std::collections::HashMap;
         let hourly_map: HashMap<i64, i64> =
@@ -1357,18 +1445,27 @@ impl RequestHistoryStorage {
 
     /// 特定IPのAPIキー別リクエスト数を取得
     pub async fn get_client_api_keys(&self, ip: &str) -> RouterResult<Vec<ClientApiKeyUsage>> {
-        let rows: Vec<ClientApiKeyRow> = sqlx::query_as(
+        let matched_ips = self.resolve_client_ips_for_filter(ip).await?;
+        if matched_ips.is_empty() {
+            return Ok(vec![]);
+        }
+        let where_clause = build_in_clause("rh.client_ip", matched_ips.len());
+        let sql = format!(
             "SELECT rh.api_key_id, ak.name as key_name, COUNT(*) as request_count
              FROM request_history rh
              LEFT JOIN api_keys ak ON rh.api_key_id = ak.id
-             WHERE rh.client_ip = ? AND rh.api_key_id IS NOT NULL
+             WHERE {where_clause} AND rh.api_key_id IS NOT NULL
              GROUP BY rh.api_key_id
-             ORDER BY request_count DESC",
-        )
-        .bind(ip)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(e.to_string()))?;
+             ORDER BY request_count DESC"
+        );
+        let mut query = sqlx::query_as::<_, ClientApiKeyRow>(&sql);
+        for matched_ip in &matched_ips {
+            query = query.bind(matched_ip);
+        }
+        let rows: Vec<ClientApiKeyRow> = query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(e.to_string()))?;
 
         Ok(rows
             .into_iter()
@@ -1520,11 +1617,11 @@ pub struct ModelDistribution {
     pub percentage: f64,
 }
 
-/// SQLiteから取得したタイムライン行
+/// SQLiteから取得したタイムライン生データ行
 #[derive(sqlx::FromRow)]
-struct TimelineRow {
+struct TimelineClientRow {
     hour: String,
-    unique_ips: i64,
+    client_ip: String,
 }
 
 /// SQLiteから取得したモデル分布行

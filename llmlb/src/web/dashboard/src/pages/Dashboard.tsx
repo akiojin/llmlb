@@ -91,6 +91,7 @@ export default function Dashboard() {
       error: record.status.type === 'error' ? record.status.message : undefined,
       request_body: record.request_body,
       response_body: record.response_body,
+      client_ip: record.client_ip,
     }))
   }, [requestResponsesData])
 

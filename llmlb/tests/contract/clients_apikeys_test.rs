@@ -137,6 +137,72 @@ async fn test_clients_apikeys_api() {
     assert_eq!(keys[1]["request_count"], 2);
 }
 
+/// T047: GET /api/dashboard/clients/{ip}/api-keys - IPv6 /64指定
+#[tokio::test]
+#[serial]
+async fn test_clients_apikeys_api_ipv6_prefix64() {
+    let (app, db_pool, jwt) = build_app().await;
+    let now = Utc::now();
+    let node_id = Uuid::new_v4();
+
+    let key_a = Uuid::new_v4();
+    let key_b = Uuid::new_v4();
+
+    // 同一/64: key_a 2件, key_b 1件
+    for ip_str in ["2001:db8:1:0:abcd::1", "2001:db8:1:0:beef::2"] {
+        let ip: std::net::IpAddr = ip_str.parse().unwrap();
+        let record = create_test_record_with_key(
+            "model-a",
+            node_id,
+            now - Duration::minutes(1),
+            Some(ip),
+            Some(key_a),
+        );
+        insert_record(&db_pool, &record).await;
+    }
+    let ip_same_prefix: std::net::IpAddr = "2001:db8:1:0:cafe::3".parse().unwrap();
+    let record = create_test_record_with_key(
+        "model-a",
+        node_id,
+        now - Duration::minutes(2),
+        Some(ip_same_prefix),
+        Some(key_b),
+    );
+    insert_record(&db_pool, &record).await;
+
+    // 別/64: key_a 1件（集計に含まれない）
+    let ip_other_prefix: std::net::IpAddr = "2001:db8:1:1::1".parse().unwrap();
+    let record = create_test_record_with_key(
+        "model-a",
+        node_id,
+        now - Duration::minutes(3),
+        Some(ip_other_prefix),
+        Some(key_a),
+    );
+    insert_record(&db_pool, &record).await;
+
+    let encoded_prefix = "2001:db8:1::/64".replace("/", "%2F");
+    let response = app
+        .oneshot(
+            admin_request(&jwt)
+                .method("GET")
+                .uri(format!("/api/dashboard/clients/{encoded_prefix}/api-keys"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let keys = body.as_array().unwrap();
+    assert_eq!(keys.len(), 2);
+    assert_eq!(keys[0]["request_count"], 2);
+    assert_eq!(keys[1]["request_count"], 1);
+}
+
 /// T047: GET /api/dashboard/clients/{ip}/api-keys - データなしで空配列
 #[tokio::test]
 #[serial]

@@ -170,7 +170,14 @@ async fn test_alert_threshold_detection() {
         insert_record(&db_pool, &record).await;
     }
 
-    // IP-B: 3リクエスト（閾値以下）
+    // IP-C: 5リクエスト（閾値と等しい）
+    let ip_c: std::net::IpAddr = "10.0.0.3".parse().unwrap();
+    for i in 0..5 {
+        let record = create_test_record("model-a", node_id, now - Duration::minutes(i), Some(ip_c));
+        insert_record(&db_pool, &record).await;
+    }
+
+    // IP-B: 3リクエスト（閾値未満）
     let ip_b: std::net::IpAddr = "10.0.0.2".parse().unwrap();
     for i in 0..3 {
         let record = create_test_record("model-a", node_id, now - Duration::minutes(i), Some(ip_b));
@@ -195,13 +202,17 @@ async fn test_alert_threshold_detection() {
     let body: Value = serde_json::from_slice(&body).unwrap();
 
     let rankings = body["rankings"].as_array().unwrap();
-    assert_eq!(rankings.len(), 2);
+    assert_eq!(rankings.len(), 3);
 
     // IP-A（10件）は閾値(5)超過 → is_alert = true
     assert_eq!(rankings[0]["ip"], "10.0.0.1");
     assert_eq!(rankings[0]["is_alert"], true);
 
-    // IP-B（3件）は閾値以下 → is_alert = false
-    assert_eq!(rankings[1]["ip"], "10.0.0.2");
-    assert_eq!(rankings[1]["is_alert"], false);
+    // IP-C（5件）は閾値(5)と等しい → is_alert = true
+    assert_eq!(rankings[1]["ip"], "10.0.0.3");
+    assert_eq!(rankings[1]["is_alert"], true);
+
+    // IP-B（3件）は閾値未満 → is_alert = false
+    assert_eq!(rankings[2]["ip"], "10.0.0.2");
+    assert_eq!(rankings[2]["is_alert"], false);
 }

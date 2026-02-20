@@ -983,7 +983,7 @@ pub async fn get_client_rankings(
         .map_err(AppError)?;
 
     // SPEC-62ac4b68: 閾値ベースの異常検知
-    // 過去1時間のリクエスト数が閾値を超えるIPにis_alert=trueを設定
+    // 過去1時間のリクエスト数が閾値以上のIPにis_alert=trueを設定
     let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
     let threshold_str = settings
         .get_setting("ip_alert_threshold")
@@ -998,7 +998,7 @@ pub async fn get_client_rankings(
         .map_err(AppError)?;
     for ranking in &mut result.rankings {
         let count = one_hour_counts.get(&ranking.ip).copied().unwrap_or(0);
-        ranking.is_alert = count > threshold;
+        ranking.is_alert = count >= threshold;
     }
 
     Ok(Json(result))

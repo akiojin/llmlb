@@ -25,3 +25,27 @@ pub fn normalize_ip(addr: IpAddr) -> IpAddr {
 pub fn normalize_socket_ip(addr: &SocketAddr) -> IpAddr {
     normalize_ip(addr.ip())
 }
+
+/// IPv6アドレスを/64プレフィックスの文字列に変換する
+///
+/// IPv4はそのまま返す。IPv6は上位64ビットを保持し下位64ビットをゼロにした
+/// `2001:db8:1234:5678::/64` 形式の文字列を返す。
+pub fn ipv6_to_prefix64(ip_str: &str) -> String {
+    match ip_str.parse::<IpAddr>() {
+        Ok(IpAddr::V6(v6)) => {
+            let segments = v6.segments();
+            let prefix = std::net::Ipv6Addr::new(
+                segments[0],
+                segments[1],
+                segments[2],
+                segments[3],
+                0,
+                0,
+                0,
+                0,
+            );
+            format!("{prefix}/64")
+        }
+        _ => ip_str.to_string(),
+    }
+}

@@ -1027,4 +1027,27 @@ export const chatApi = {
   },
 }
 
+// Clients API
+export interface ClientIpRanking {
+  ip: string
+  request_count: number
+  last_seen: string
+  is_alert: boolean
+  api_key_count: number
+}
+
+export interface ClientRankingResponse {
+  rankings: ClientIpRanking[]
+  total_count: number
+  page: number
+  per_page: number
+}
+
+export const clientsApi = {
+  getClientRanking: (params?: { page?: number; per_page?: number }) =>
+    fetchWithAuth<ClientRankingResponse>('/api/dashboard/clients', {
+      params: params as Record<string, string | number | boolean | undefined>,
+    }),
+}
+
 // Export utilities

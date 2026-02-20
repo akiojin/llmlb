@@ -954,5 +954,35 @@ pub async fn get_endpoint_model_tps(
     )
 }
 
+/// Clientsランキングのクエリパラメータ
+#[derive(Debug, Deserialize)]
+pub struct ClientsQuery {
+    /// ページ番号（デフォルト: 1）
+    #[serde(default = "default_page")]
+    pub page: usize,
+    /// ページサイズ（デフォルト: 20）
+    #[serde(default = "default_clients_per_page")]
+    pub per_page: usize,
+}
+
+fn default_clients_per_page() -> usize {
+    20
+}
+
+/// GET /api/dashboard/clients - IPランキング
+///
+/// SPEC-62ac4b68: Clientsタブ基本分析
+pub async fn get_client_rankings(
+    Query(params): Query<ClientsQuery>,
+    State(state): State<AppState>,
+) -> Result<Json<crate::db::request_history::ClientIpRankingResult>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage
+        .get_client_ip_ranking(24, params.page, params.per_page)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(result))
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e

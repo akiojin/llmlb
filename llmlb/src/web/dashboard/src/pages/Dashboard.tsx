@@ -19,9 +19,10 @@ import { EndpointTable } from '@/components/dashboard/EndpointTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
+import { ClientsTab } from '@/components/dashboard/ClientsTab'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, RefreshCcw } from 'lucide-react'
+import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, RefreshCcw, Users } from 'lucide-react'
 
 const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
 
@@ -344,7 +345,7 @@ export default function Dashboard() {
 
         {/* Tabs */}
         <Tabs defaultValue="endpoints" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
             <TabsTrigger value="endpoints" className="gap-2">
               <Globe className="h-4 w-4" />
               <span className="hidden sm:inline">Endpoints</span>
@@ -356,6 +357,10 @@ export default function Dashboard() {
             <TabsTrigger value="history" className="gap-2">
               <History className="h-4 w-4" />
               <span className="hidden sm:inline">History</span>
+            </TabsTrigger>
+            <TabsTrigger value="clients" className="gap-2">
+              <Users className="h-4 w-4" />
+              <span className="hidden sm:inline">Clients</span>
             </TabsTrigger>
             <TabsTrigger value="logs" className="gap-2">
               <FileText className="h-4 w-4" />
@@ -376,6 +381,10 @@ export default function Dashboard() {
               history={historyItems}
               isLoading={isLoadingHistory}
             />
+          </TabsContent>
+
+          <TabsContent value="clients" className="animate-fade-in">
+            <ClientsTab />
           </TabsContent>
 
           <TabsContent value="logs" className="animate-fade-in">

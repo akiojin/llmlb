@@ -291,7 +291,9 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/model-stats",
             get(dashboard::get_all_model_stats),
-        );
+        )
+        // SPEC-62ac4b68: Clients分析API
+        .route("/dashboard/clients", get(dashboard::get_client_rankings));
 
     let dashboard_api_routes = if auth_disabled {
         dashboard_api_routes

@@ -1123,6 +1123,7 @@ async fn proxy_anthropic_provider(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn proxy_openai_cloud_post(
     state: &AppState,
     target_path: &str,
@@ -1165,7 +1166,7 @@ async fn proxy_openai_cloud_post(
                     node_id,
                     node_machine_name,
                     node_ip,
-                    client_ip: client_ip.clone(),
+                    client_ip,
                     request_body,
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -1211,7 +1212,7 @@ async fn proxy_openai_cloud_post(
             node_id,
             node_machine_name,
             node_ip,
-            client_ip: client_ip.clone(),
+            client_ip,
             request_body,
             response_body,
             duration_ms: duration.as_millis() as u64,
@@ -1228,6 +1229,7 @@ async fn proxy_openai_cloud_post(
 }
 
 #[allow(deprecated)] // NodeRegistry migration in progress
+#[allow(clippy::too_many_arguments)]
 async fn proxy_openai_post(
     state: &AppState,
     payload: Value,
@@ -1240,8 +1242,17 @@ async fn proxy_openai_post(
 ) -> Result<Response, AppError> {
     // Cloud-prefixed model -> forward to provider API
     if parse_cloud_model(&model).is_some() {
-        return proxy_openai_cloud_post(state, target_path, &model, stream, payload, request_type, client_ip, api_key_id)
-            .await;
+        return proxy_openai_cloud_post(
+            state,
+            target_path,
+            &model,
+            stream,
+            payload,
+            request_type,
+            client_ip,
+            api_key_id,
+        )
+        .await;
     }
 
     // Check if any endpoint has this model
@@ -1286,7 +1297,7 @@ async fn proxy_openai_post(
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
                         node_ip: UNSPECIFIED_IP,
-                        client_ip: client_ip.clone(),
+                        client_ip,
                         request_body,
                         response_body: None,
                         duration_ms: 0,
@@ -1320,7 +1331,7 @@ async fn proxy_openai_post(
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
                         node_ip: UNSPECIFIED_IP,
-                        client_ip: client_ip.clone(),
+                        client_ip,
                         request_body,
                         response_body: None,
                         duration_ms: waited_ms as u64,
@@ -1363,7 +1374,7 @@ async fn proxy_openai_post(
                         node_id: Uuid::nil(),
                         node_machine_name: "N/A".to_string(),
                         node_ip: UNSPECIFIED_IP,
-                        client_ip: client_ip.clone(),
+                        client_ip,
                         request_body,
                         response_body: None,
                         duration_ms: queued_wait_ms.unwrap_or(0) as u64,
@@ -1441,7 +1452,7 @@ async fn proxy_openai_post(
                     node_id: endpoint_id,
                     node_machine_name: endpoint_name.clone(),
                     node_ip: endpoint_host,
-                    client_ip: client_ip.clone(),
+                    client_ip,
                     request_body: request_body.clone(),
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,
@@ -1500,7 +1511,7 @@ async fn proxy_openai_post(
                 node_id: endpoint_id,
                 node_machine_name: endpoint_name.clone(),
                 node_ip: endpoint_host,
-                client_ip: client_ip.clone(),
+                client_ip,
                 request_body: request_body.clone(),
                 response_body: None, // ストリームボディは記録しない
                 duration_ms: duration.as_millis() as u64,
@@ -1581,7 +1592,7 @@ async fn proxy_openai_post(
                 node_id: endpoint_id,
                 node_machine_name: endpoint_name.clone(),
                 node_ip: endpoint_host,
-                client_ip: client_ip.clone(),
+                client_ip,
                 request_body: request_body.clone(),
                 response_body: None,
                 duration_ms: duration.as_millis() as u64,
@@ -1663,7 +1674,7 @@ async fn proxy_openai_post(
                     node_id: endpoint_id,
                     node_machine_name: endpoint_name,
                     node_ip: endpoint_host,
-                    client_ip: client_ip.clone(),
+                    client_ip,
                     request_body,
                     response_body: Some(body.clone()),
                     duration_ms: duration.as_millis() as u64,
@@ -1712,7 +1723,7 @@ async fn proxy_openai_post(
                     node_id: endpoint_id,
                     node_machine_name: endpoint_name,
                     node_ip: endpoint_host,
-                    client_ip: client_ip.clone(),
+                    client_ip,
                     request_body,
                     response_body: None,
                     duration_ms: duration.as_millis() as u64,

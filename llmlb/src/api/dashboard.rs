@@ -499,6 +499,8 @@ pub struct RequestHistoryQuery {
     pub start_time: Option<DateTime<Utc>>,
     /// 終了時刻フィルタ（RFC3339）
     pub end_time: Option<DateTime<Utc>>,
+    /// クライアントIPフィルタ（完全一致）
+    pub client_ip: Option<String>,
 }
 
 fn default_page() -> usize {
@@ -534,7 +536,7 @@ impl RequestHistoryQuery {
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
-            client_ip: None,
+            client_ip: self.client_ip.clone(),
         })
     }
 }
@@ -567,6 +569,8 @@ pub struct RequestHistoryExportQuery {
     pub start_time: Option<DateTime<Utc>>,
     /// 終了時刻フィルタ（RFC3339）
     pub end_time: Option<DateTime<Utc>>,
+    /// クライアントIPフィルタ（完全一致）
+    pub client_ip: Option<String>,
 }
 
 impl RequestHistoryExportQuery {
@@ -585,7 +589,7 @@ impl RequestHistoryExportQuery {
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
-            client_ip: None,
+            client_ip: self.client_ip.clone(),
         })
     }
 }

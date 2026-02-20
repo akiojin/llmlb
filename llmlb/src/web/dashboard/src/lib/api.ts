@@ -248,6 +248,7 @@ export interface RequestHistoryItem {
   error?: string
   request_body?: unknown
   response_body?: unknown
+  client_ip?: string
 }
 
 // /api/dashboard/request-responses APIのレスポンス型
@@ -264,6 +265,7 @@ export interface RequestResponseRecord {
   duration_ms: number
   status: { type: 'success' } | { type: 'error'; message: string }
   completed_at?: string
+  client_ip?: string
 }
 
 export interface RequestResponsesPage {
@@ -354,6 +356,7 @@ export const dashboardApi = {
     offset?: number
     model?: string
     status?: string
+    client_ip?: string
   }) => fetchWithAuth<RequestResponsesPage>('/api/dashboard/request-responses', { params }),
 
   getRequestResponseDetail: (id: string) =>

@@ -94,9 +94,7 @@ async fn register_and_sync(
 }
 
 /// request_historyから最新レコードのclient_ipとapi_key_idを取得
-async fn get_latest_record(
-    db_pool: &SqlitePool,
-) -> Option<(Option<String>, Option<String>)> {
+async fn get_latest_record(db_pool: &SqlitePool) -> Option<(Option<String>, Option<String>)> {
     sqlx::query_as::<_, (Option<String>, Option<String>)>(
         "SELECT client_ip, api_key_id FROM request_history ORDER BY rowid DESC LIMIT 1",
     )
@@ -156,7 +154,10 @@ async fn test_ip_and_api_key_recorded_on_inference_request() {
 
     // 6. request_historyのclient_ipとapi_key_idを検証
     let record = get_latest_record(&db_pool).await;
-    assert!(record.is_some(), "request_historyにレコードが記録されること");
+    assert!(
+        record.is_some(),
+        "request_historyにレコードが記録されること"
+    );
 
     let (client_ip, api_key_id) = record.unwrap();
 

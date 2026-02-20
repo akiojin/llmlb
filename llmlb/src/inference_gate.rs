@@ -98,10 +98,13 @@ impl InferenceGate {
 
     async fn wait_for_force_abort_since(&self, generation: u64) {
         loop {
+            // Register the waiter first to avoid a lost wakeup between the check
+            // and waiting on `Notify`.
+            let notified = self.inner.abort_notify.notified();
             if self.is_force_aborted_since(generation) {
                 return;
             }
-            self.inner.abort_notify.notified().await;
+            notified.await;
         }
     }
 }
@@ -180,8 +183,11 @@ pub async fn inference_gate_middleware(
         return service_unavailable_updating_response();
     }
 
-    let guard = gate.begin();
     let abort_generation = gate.abort_generation();
+    let guard = gate.begin();
+    if gate.is_force_aborted_since(abort_generation) {
+        return service_unavailable_updating_response();
+    }
     let abort_wait = gate.wait_for_force_abort_since(abort_generation);
     tokio::pin!(abort_wait);
 

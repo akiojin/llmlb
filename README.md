@@ -961,7 +961,6 @@ dashboard origin.
 | `openai.models.read` | Model discovery (`GET /v1/models*`) |
 | `endpoints.read` | Read-only endpoint APIs (`GET /api/endpoints*`) |
 | `endpoints.manage` | Endpoint mutations (`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`) |
-| `api_keys.manage` | API key management (`/api/api-keys*`) |
 | `users.manage` | User management (`/api/users*`) |
 | `invitations.manage` | Invitation management (`/api/invitations*`) |
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
@@ -982,14 +981,14 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | PUT | `/api/users/:id` | Update user | JWT+Admin or API key (`users.manage`) |
 | DELETE | `/api/users/:id` | Delete user | JWT+Admin or API key (`users.manage`) |
 
-#### API Key Management Endpoints
+#### API Key Management Endpoints (Self-service)
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/api-keys` | List API keys | JWT+Admin or API key (`api_keys.manage`) |
-| POST | `/api/api-keys` | Create API key | JWT+Admin or API key (`api_keys.manage`) |
-| PUT | `/api/api-keys/:id` | Update API key | JWT+Admin or API key (`api_keys.manage`) |
-| DELETE | `/api/api-keys/:id` | Delete API key | JWT+Admin or API key (`api_keys.manage`) |
+| GET | `/api/me/api-keys` | List own API keys | JWT |
+| POST | `/api/me/api-keys` | Create own API key (server assigns fixed permissions) | JWT |
+| PUT | `/api/me/api-keys/:id` | Update own API key | JWT |
+| DELETE | `/api/me/api-keys/:id` | Delete own API key | JWT |
 
 #### Invitation Management Endpoints
 

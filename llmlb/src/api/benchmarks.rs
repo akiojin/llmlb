@@ -29,6 +29,7 @@ const DEFAULT_TEMPERATURE: f32 = 0.2;
 const MAX_TOTAL_REQUESTS: u32 = 500;
 const MAX_CONCURRENCY: u16 = 64;
 const MAX_MAX_TOKENS: u32 = 4096;
+const MAX_TPS_BENCH_RUNS: usize = 200;
 const BENCHMARK_PROMPT: &str =
     "Benchmark prompt: explain the Fibonacci sequence in one short paragraph.";
 
@@ -256,6 +257,7 @@ pub async fn start_tps_benchmark(
     {
         let mut runs = TPS_BENCH_RUNS.write().await;
         runs.insert(run_id, TpsBenchmarkRun::new(run_id, request.clone()));
+        prune_tps_benchmark_runs(&mut runs);
     }
 
     tokio::spawn(async move {
@@ -284,8 +286,8 @@ pub async fn get_tps_benchmark(
 }
 
 async fn finalize_tps_benchmark_run(state: AppState, run_id: Uuid, request: TpsBenchmarkRequest) {
-    let completed_at = Utc::now();
     let result = execute_tps_benchmark(&state, &request).await;
+    let completed_at = Utc::now();
     let mut runs = TPS_BENCH_RUNS.write().await;
     let Some(run) = runs.get_mut(&run_id) else {
         return;
@@ -302,6 +304,67 @@ async fn finalize_tps_benchmark_run(state: AppState, run_id: Uuid, request: TpsB
             run.result = None;
             run.error = Some(err.external_message().to_string());
         }
+    }
+    prune_tps_benchmark_runs(&mut runs);
+}
+
+fn prune_tps_benchmark_runs(runs: &mut HashMap<Uuid, TpsBenchmarkRun>) {
+    prune_tps_benchmark_runs_with_limit(runs, MAX_TPS_BENCH_RUNS);
+}
+
+fn prune_tps_benchmark_runs_with_limit(runs: &mut HashMap<Uuid, TpsBenchmarkRun>, max_runs: usize) {
+    if runs.len() <= max_runs {
+        return;
+    }
+
+    let mut overflow = runs.len() - max_runs;
+
+    // Prefer pruning old finished runs before touching active ones.
+    let mut completed_candidates: Vec<(Uuid, DateTime<Utc>)> = runs
+        .iter()
+        .filter_map(|(run_id, run)| {
+            if run.status == TpsBenchmarkStatus::Running {
+                None
+            } else {
+                let sort_key = run
+                    .completed_at
+                    .as_ref()
+                    .unwrap_or(&run.requested_at)
+                    .to_owned();
+                Some((*run_id, sort_key))
+            }
+        })
+        .collect();
+    completed_candidates.sort_by_key(|(_, sort_key)| sort_key.to_owned());
+
+    for (run_id, _) in completed_candidates {
+        if overflow == 0 {
+            break;
+        }
+        if runs.remove(&run_id).is_some() {
+            overflow -= 1;
+        }
+    }
+
+    if overflow == 0 {
+        return;
+    }
+
+    // Fallback: when only active runs exist, prune the oldest running runs.
+    let mut running_candidates: Vec<(Uuid, DateTime<Utc>)> = runs
+        .iter()
+        .filter_map(|(run_id, run)| {
+            if run.status == TpsBenchmarkStatus::Running {
+                Some((*run_id, run.requested_at))
+            } else {
+                None
+            }
+        })
+        .collect();
+    running_candidates.sort_by_key(|(_, requested_at)| *requested_at);
+
+    for (run_id, _) in running_candidates.into_iter().take(overflow) {
+        runs.remove(&run_id);
     }
 }
 
@@ -541,4 +604,100 @@ fn percentile(values: &[f64], percentile: f64) -> Option<f64> {
         .round()
         .clamp(0.0, (sorted.len() - 1) as f64) as usize;
     sorted.get(index).copied()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn sample_request() -> TpsBenchmarkRequest {
+        TpsBenchmarkRequest {
+            model: "test-model".to_string(),
+            api_kind: TpsApiKind::ChatCompletions,
+            total_requests: 10,
+            concurrency: 2,
+            max_tokens: 64,
+            temperature: 0.2,
+        }
+    }
+
+    fn build_run(
+        requested_at: DateTime<Utc>,
+        status: TpsBenchmarkStatus,
+        completed_at: Option<DateTime<Utc>>,
+    ) -> (Uuid, TpsBenchmarkRun) {
+        let run_id = Uuid::new_v4();
+        let mut run = TpsBenchmarkRun::new(run_id, sample_request());
+        run.requested_at = requested_at;
+        run.status = status;
+        run.completed_at = completed_at;
+        (run_id, run)
+    }
+
+    #[test]
+    fn prune_prefers_completed_runs_before_running_runs() {
+        let now = Utc::now();
+        let mut runs = HashMap::new();
+
+        let (completed_id, completed_run) = build_run(
+            now - Duration::minutes(3),
+            TpsBenchmarkStatus::Completed,
+            Some(now - Duration::minutes(2)),
+        );
+        let (running_old_id, running_old_run) = build_run(
+            now - Duration::minutes(2),
+            TpsBenchmarkStatus::Running,
+            None,
+        );
+        let (running_new_id, running_new_run) = build_run(
+            now - Duration::minutes(1),
+            TpsBenchmarkStatus::Running,
+            None,
+        );
+
+        runs.insert(completed_id, completed_run);
+        runs.insert(running_old_id, running_old_run);
+        runs.insert(running_new_id, running_new_run);
+
+        prune_tps_benchmark_runs_with_limit(&mut runs, 2);
+
+        assert_eq!(runs.len(), 2);
+        assert!(!runs.contains_key(&completed_id));
+        assert!(runs.contains_key(&running_old_id));
+        assert!(runs.contains_key(&running_new_id));
+    }
+
+    #[test]
+    fn prune_removes_oldest_running_when_all_runs_are_running() {
+        let now = Utc::now();
+        let mut runs = HashMap::new();
+
+        let (oldest_id, oldest_run) = build_run(
+            now - Duration::minutes(3),
+            TpsBenchmarkStatus::Running,
+            None,
+        );
+        let (middle_id, middle_run) = build_run(
+            now - Duration::minutes(2),
+            TpsBenchmarkStatus::Running,
+            None,
+        );
+        let (newest_id, newest_run) = build_run(
+            now - Duration::minutes(1),
+            TpsBenchmarkStatus::Running,
+            None,
+        );
+
+        runs.insert(oldest_id, oldest_run);
+        runs.insert(middle_id, middle_run);
+        runs.insert(newest_id, newest_run);
+
+        prune_tps_benchmark_runs_with_limit(&mut runs, 2);
+
+        assert_eq!(runs.len(), 2);
+        assert!(!runs.contains_key(&oldest_id));
+        assert!(runs.contains_key(&middle_id));
+        assert!(runs.contains_key(&newest_id));
+    }
 }

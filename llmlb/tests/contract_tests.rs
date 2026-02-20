@@ -109,5 +109,9 @@ mod clients_heatmap_test;
 #[path = "contract/clients_drilldown_test.rs"]
 mod clients_drilldown_test;
 
+// SPEC-62ac4b68: ClientsAPIキー集計契約テスト
+#[path = "contract/clients_apikeys_test.rs"]
+mod clients_apikeys_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

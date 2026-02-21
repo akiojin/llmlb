@@ -56,6 +56,13 @@ async fn build_app() -> Router {
     )
     .expect("Failed to create update manager");
 
+    let audit_log_writer = llmlb::audit::writer::AuditLogWriter::new(
+        llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+        llmlb::audit::writer::AuditLogWriterConfig::default(),
+    );
+    let audit_log_storage =
+        std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()));
+
     api::create_app(AppState {
         load_manager,
         request_history,
@@ -68,6 +75,9 @@ async fn build_app() -> Router {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer,
+        audit_log_storage,
+        audit_archive_pool: None,
     })
 }
 

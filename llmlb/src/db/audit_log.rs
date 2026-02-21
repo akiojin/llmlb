@@ -1,0 +1,2456 @@
+//! 監査ログストレージ (SPEC-8301d106)
+
+use crate::audit::{
+    hash_chain::{self, GENESIS_HASH},
+    types::{ActorType, AuditBatchHash, AuditLogEntry, AuditLogFilter},
+};
+use crate::common::error::{LbError, RouterResult};
+use serde::{Deserialize, Serialize};
+use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::SqlitePool;
+
+/// アーカイブDBプールを作成
+///
+/// アーカイブDBファイルが存在しない場合は自動作成し、
+/// 必要なテーブル（audit_log_entries + audit_batch_hashes）を作成する。
+pub async fn create_archive_pool(path: &str) -> RouterResult<SqlitePool> {
+    let url = format!("sqlite:{}?mode=rwc", path);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(2)
+        .connect(&url)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to create archive pool: {}", e)))?;
+
+    // WALモード設定
+    sqlx::query("PRAGMA journal_mode=WAL")
+        .execute(&pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to set WAL mode: {}", e)))?;
+
+    // アーカイブDBにテーブルを作成
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS audit_log_entries (
+            id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            http_method TEXT NOT NULL,
+            request_path TEXT NOT NULL,
+            status_code INTEGER NOT NULL,
+            actor_type TEXT NOT NULL,
+            actor_id TEXT,
+            actor_username TEXT,
+            api_key_owner_id TEXT,
+            client_ip TEXT,
+            duration_ms INTEGER,
+            input_tokens INTEGER,
+            output_tokens INTEGER,
+            total_tokens INTEGER,
+            model_name TEXT,
+            endpoint_id TEXT,
+            detail TEXT,
+            batch_id INTEGER,
+            is_migrated INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to create archive tables: {}", e)))?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS audit_batch_hashes (
+            id INTEGER PRIMARY KEY,
+            sequence_number INTEGER NOT NULL UNIQUE,
+            batch_start TEXT NOT NULL,
+            batch_end TEXT NOT NULL,
+            record_count INTEGER NOT NULL,
+            hash TEXT NOT NULL,
+            previous_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to create archive batch table: {}", e)))?;
+
+    // インデックス
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_archive_timestamp ON audit_log_entries(timestamp)")
+        .execute(&pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to create archive index: {}", e)))?;
+
+    sqlx::query(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS audit_log_fts USING fts5(
+            request_path,
+            actor_id,
+            actor_username,
+            detail,
+            content=audit_log_entries,
+            content_rowid=id
+        )",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to create archive FTS table: {}", e)))?;
+
+    sqlx::query(
+        "CREATE TRIGGER IF NOT EXISTS audit_log_fts_insert AFTER INSERT ON audit_log_entries BEGIN
+            INSERT INTO audit_log_fts(rowid, request_path, actor_id, actor_username, detail)
+            VALUES (new.id, new.request_path, new.actor_id, new.actor_username, new.detail);
+        END;",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        LbError::Database(format!(
+            "Failed to create archive FTS insert trigger: {}",
+            e
+        ))
+    })?;
+
+    sqlx::query(
+        "CREATE TRIGGER IF NOT EXISTS audit_log_fts_delete AFTER DELETE ON audit_log_entries BEGIN
+            INSERT INTO audit_log_fts(audit_log_fts, rowid, request_path, actor_id, actor_username, detail)
+            VALUES ('delete', old.id, old.request_path, old.actor_id, old.actor_username, old.detail);
+        END;",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to create archive FTS delete trigger: {}", e)))?;
+
+    Ok(pool)
+}
+
+/// 監査ログのDB CRUD操作
+#[derive(Clone)]
+pub struct AuditLogStorage {
+    pool: SqlitePool,
+}
+
+/// sqlx::FromRow用の行構造体
+#[derive(Debug, sqlx::FromRow)]
+struct AuditLogRow {
+    id: i64,
+    timestamp: String,
+    http_method: String,
+    request_path: String,
+    status_code: i64,
+    actor_type: String,
+    actor_id: Option<String>,
+    actor_username: Option<String>,
+    api_key_owner_id: Option<String>,
+    client_ip: Option<String>,
+    duration_ms: Option<i64>,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    total_tokens: Option<i64>,
+    model_name: Option<String>,
+    endpoint_id: Option<String>,
+    detail: Option<String>,
+    batch_id: Option<i64>,
+    is_migrated: i64,
+}
+
+/// トークン全体統計
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenStatistics {
+    /// 入力トークン合計
+    pub total_input_tokens: i64,
+    /// 出力トークン合計
+    pub total_output_tokens: i64,
+    /// 総トークン合計
+    pub total_tokens: i64,
+}
+
+/// モデル別トークン統計
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelTokenStatistics {
+    /// モデル名
+    pub model_name: String,
+    /// 入力トークン合計
+    pub total_input_tokens: i64,
+    /// 出力トークン合計
+    pub total_output_tokens: i64,
+    /// 総トークン合計
+    pub total_tokens: i64,
+}
+
+/// 日次トークン統計
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyTokenStatistics {
+    /// 日付（YYYY-MM-DD）
+    pub date: String,
+    /// 入力トークン合計
+    pub total_input_tokens: i64,
+    /// 出力トークン合計
+    pub total_output_tokens: i64,
+    /// 総トークン合計
+    pub total_tokens: i64,
+    /// リクエスト数
+    pub request_count: i64,
+}
+
+/// 月次トークン統計
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonthlyTokenStatistics {
+    /// 月（YYYY-MM）
+    pub month: String,
+    /// 入力トークン合計
+    pub total_input_tokens: i64,
+    /// 出力トークン合計
+    pub total_output_tokens: i64,
+    /// 総トークン合計
+    pub total_tokens: i64,
+    /// リクエスト数
+    pub request_count: i64,
+}
+
+/// sqlx::FromRow用の行構造体（トークン全体統計）
+#[derive(Debug, sqlx::FromRow)]
+struct TokenStatisticsRow {
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+}
+
+/// sqlx::FromRow用の行構造体（モデル別トークン統計）
+#[derive(Debug, sqlx::FromRow)]
+struct ModelTokenStatisticsRow {
+    model_name: String,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+}
+
+/// sqlx::FromRow用の行構造体（日次トークン統計）
+#[derive(Debug, sqlx::FromRow)]
+struct DailyTokenStatisticsRow {
+    date: String,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+    request_count: i64,
+}
+
+/// sqlx::FromRow用の行構造体（月次トークン統計）
+#[derive(Debug, sqlx::FromRow)]
+struct MonthlyTokenStatisticsRow {
+    month: String,
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_tokens: i64,
+    request_count: i64,
+}
+
+/// sqlx::FromRow用の行構造体（バッチハッシュ）
+#[derive(Debug, sqlx::FromRow)]
+struct AuditBatchHashRow {
+    id: i64,
+    sequence_number: i64,
+    batch_start: String,
+    batch_end: String,
+    record_count: i64,
+    hash: String,
+    previous_hash: String,
+}
+
+impl TryFrom<AuditBatchHashRow> for AuditBatchHash {
+    type Error = LbError;
+
+    fn try_from(row: AuditBatchHashRow) -> Result<Self, Self::Error> {
+        let batch_start = chrono::DateTime::parse_from_rfc3339(&row.batch_start)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|e| LbError::Database(format!("Failed to parse batch_start: {}", e)))?;
+        let batch_end = chrono::DateTime::parse_from_rfc3339(&row.batch_end)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|e| LbError::Database(format!("Failed to parse batch_end: {}", e)))?;
+
+        Ok(AuditBatchHash {
+            id: Some(row.id),
+            sequence_number: row.sequence_number,
+            batch_start,
+            batch_end,
+            record_count: row.record_count,
+            hash: row.hash,
+            previous_hash: row.previous_hash,
+        })
+    }
+}
+
+impl TryFrom<AuditLogRow> for AuditLogEntry {
+    type Error = LbError;
+
+    fn try_from(row: AuditLogRow) -> Result<Self, Self::Error> {
+        let timestamp = chrono::DateTime::parse_from_rfc3339(&row.timestamp)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|e| LbError::Database(format!("Failed to parse timestamp: {}", e)))?;
+
+        let status_code = u16::try_from(row.status_code)
+            .map_err(|e| LbError::Database(format!("Invalid status_code: {}", e)))?;
+
+        Ok(AuditLogEntry {
+            id: Some(row.id),
+            timestamp,
+            http_method: row.http_method,
+            request_path: row.request_path,
+            status_code,
+            actor_type: ActorType::from_str(&row.actor_type),
+            actor_id: row.actor_id,
+            actor_username: row.actor_username,
+            api_key_owner_id: row.api_key_owner_id,
+            client_ip: row.client_ip,
+            duration_ms: row.duration_ms,
+            input_tokens: row.input_tokens,
+            output_tokens: row.output_tokens,
+            total_tokens: row.total_tokens,
+            model_name: row.model_name,
+            endpoint_id: row.endpoint_id,
+            detail: row.detail,
+            batch_id: row.batch_id,
+            is_migrated: row.is_migrated != 0,
+        })
+    }
+}
+
+impl AuditLogStorage {
+    /// 新しいAuditLogStorageを作成
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    /// 監査ログを一括挿入
+    pub async fn insert_batch(&self, entries: &[AuditLogEntry]) -> RouterResult<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to begin transaction: {}", e)))?;
+
+        for entry in entries {
+            let timestamp_str = entry.timestamp.to_rfc3339();
+            let actor_type_str = entry.actor_type.as_str();
+            let status_code = entry.status_code as i64;
+            let is_migrated: i64 = if entry.is_migrated { 1 } else { 0 };
+
+            sqlx::query(
+                r#"INSERT INTO audit_log_entries (
+                    timestamp, http_method, request_path, status_code,
+                    actor_type, actor_id, actor_username, api_key_owner_id,
+                    client_ip, duration_ms, input_tokens, output_tokens,
+                    total_tokens, model_name, endpoint_id, detail,
+                    batch_id, is_migrated
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            )
+            .bind(&timestamp_str)
+            .bind(&entry.http_method)
+            .bind(&entry.request_path)
+            .bind(status_code)
+            .bind(actor_type_str)
+            .bind(&entry.actor_id)
+            .bind(&entry.actor_username)
+            .bind(&entry.api_key_owner_id)
+            .bind(&entry.client_ip)
+            .bind(entry.duration_ms)
+            .bind(entry.input_tokens)
+            .bind(entry.output_tokens)
+            .bind(entry.total_tokens)
+            .bind(&entry.model_name)
+            .bind(&entry.endpoint_id)
+            .bind(&entry.detail)
+            .bind(entry.batch_id)
+            .bind(is_migrated)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to insert audit log: {}", e)))?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// フィルタ条件に基づいて監査ログを検索
+    pub async fn query(&self, filter: &AuditLogFilter) -> RouterResult<Vec<AuditLogEntry>> {
+        let (where_clause, bind_values) = build_where_clause(filter);
+        let page = filter.page.unwrap_or(1).max(1);
+        let per_page = filter.per_page.unwrap_or(50).max(1);
+        let offset = (page - 1) * per_page;
+
+        let sql = format!(
+            "SELECT id, timestamp, http_method, request_path, status_code, \
+             actor_type, actor_id, actor_username, api_key_owner_id, client_ip, \
+             duration_ms, input_tokens, output_tokens, total_tokens, \
+             model_name, endpoint_id, detail, batch_id, is_migrated \
+             FROM audit_log_entries {} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            where_clause
+        );
+
+        let mut query = sqlx::query_as::<_, AuditLogRow>(&sql);
+        for val in &bind_values {
+            query = query.bind(val.as_str());
+        }
+        query = query.bind(per_page).bind(offset);
+
+        let rows = query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to query audit logs: {}", e)))?;
+
+        rows.into_iter()
+            .map(AuditLogEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// フィルタ条件に基づいてレコード数を取得
+    pub async fn count(&self, filter: &AuditLogFilter) -> RouterResult<i64> {
+        let (where_clause, bind_values) = build_where_clause(filter);
+        let sql = format!(
+            "SELECT COUNT(*) as cnt FROM audit_log_entries {}",
+            where_clause
+        );
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for val in &bind_values {
+            query = query.bind(val.as_str());
+        }
+
+        query
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to count audit logs: {}", e)))
+    }
+
+    /// IDで監査ログを取得
+    pub async fn get_by_id(&self, id: i64) -> RouterResult<Option<AuditLogEntry>> {
+        let row = sqlx::query_as::<_, AuditLogRow>(
+            "SELECT id, timestamp, http_method, request_path, status_code, \
+             actor_type, actor_id, actor_username, api_key_owner_id, client_ip, \
+             duration_ms, input_tokens, output_tokens, total_tokens, \
+             model_name, endpoint_id, detail, batch_id, is_migrated \
+             FROM audit_log_entries WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get audit log by id: {}", e)))?;
+
+        match row {
+            Some(r) => Ok(Some(AuditLogEntry::try_from(r)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// トークン全体統計を取得
+    pub async fn get_token_statistics(&self) -> RouterResult<TokenStatistics> {
+        let row = sqlx::query_as::<_, TokenStatisticsRow>(
+            r#"SELECT
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(
+                    COALESCE(total_tokens, COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))
+                ), 0) as total_tokens
+            FROM audit_log_entries"#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get token statistics: {}", e)))?;
+
+        Ok(TokenStatistics {
+            total_input_tokens: row.total_input_tokens,
+            total_output_tokens: row.total_output_tokens,
+            total_tokens: row.total_tokens,
+        })
+    }
+
+    /// モデル別トークン統計を取得
+    pub async fn get_token_statistics_by_model(&self) -> RouterResult<Vec<ModelTokenStatistics>> {
+        let rows = sqlx::query_as::<_, ModelTokenStatisticsRow>(
+            r#"SELECT
+                model_name,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(
+                    COALESCE(total_tokens, COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))
+                ), 0) as total_tokens
+            FROM audit_log_entries
+            WHERE model_name IS NOT NULL
+            GROUP BY model_name
+            ORDER BY total_tokens DESC"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            LbError::Database(format!("Failed to get token statistics by model: {}", e))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ModelTokenStatistics {
+                model_name: row.model_name,
+                total_input_tokens: row.total_input_tokens,
+                total_output_tokens: row.total_output_tokens,
+                total_tokens: row.total_tokens,
+            })
+            .collect())
+    }
+
+    /// 日次トークン統計を取得
+    pub async fn get_daily_token_statistics(
+        &self,
+        days: i64,
+    ) -> RouterResult<Vec<DailyTokenStatistics>> {
+        let rows = sqlx::query_as::<_, DailyTokenStatisticsRow>(
+            r#"SELECT
+                DATE(timestamp) as date,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(
+                    COALESCE(total_tokens, COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))
+                ), 0) as total_tokens,
+                COUNT(*) as request_count
+            FROM audit_log_entries
+            WHERE timestamp >= DATE('now', '-' || ? || ' days')
+            GROUP BY DATE(timestamp)
+            ORDER BY date DESC"#,
+        )
+        .bind(days)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get daily token statistics: {}", e)))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| DailyTokenStatistics {
+                date: row.date,
+                total_input_tokens: row.total_input_tokens,
+                total_output_tokens: row.total_output_tokens,
+                total_tokens: row.total_tokens,
+                request_count: row.request_count,
+            })
+            .collect())
+    }
+
+    /// 月次トークン統計を取得
+    pub async fn get_monthly_token_statistics(
+        &self,
+        months: i64,
+    ) -> RouterResult<Vec<MonthlyTokenStatistics>> {
+        let rows = sqlx::query_as::<_, MonthlyTokenStatisticsRow>(
+            r#"SELECT
+                strftime('%Y-%m', timestamp) as month,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(
+                    COALESCE(total_tokens, COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))
+                ), 0) as total_tokens,
+                COUNT(*) as request_count
+            FROM audit_log_entries
+            WHERE timestamp >= DATE('now', '-' || ? || ' months')
+            GROUP BY strftime('%Y-%m', timestamp)
+            ORDER BY month DESC"#,
+        )
+        .bind(months)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get monthly token statistics: {}", e)))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| MonthlyTokenStatistics {
+                month: row.month,
+                total_input_tokens: row.total_input_tokens,
+                total_output_tokens: row.total_output_tokens,
+                total_tokens: row.total_tokens,
+                request_count: row.request_count,
+            })
+            .collect())
+    }
+
+    /// バッチハッシュを挿入してIDを返す
+    pub async fn insert_batch_hash(&self, batch: &AuditBatchHash) -> RouterResult<i64> {
+        let batch_start_str = batch.batch_start.to_rfc3339();
+        let batch_end_str = batch.batch_end.to_rfc3339();
+
+        let result = sqlx::query(
+            r#"INSERT INTO audit_batch_hashes (
+                sequence_number, batch_start, batch_end, record_count, hash, previous_hash
+            ) VALUES (?, ?, ?, ?, ?, ?)"#,
+        )
+        .bind(batch.sequence_number)
+        .bind(&batch_start_str)
+        .bind(&batch_end_str)
+        .bind(batch.record_count)
+        .bind(&batch.hash)
+        .bind(&batch.previous_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to insert batch hash: {}", e)))?;
+
+        Ok(result.last_insert_rowid())
+    }
+
+    /// 全バッチハッシュを連番順で取得
+    pub async fn get_all_batch_hashes(&self) -> RouterResult<Vec<AuditBatchHash>> {
+        let rows = sqlx::query_as::<_, AuditBatchHashRow>(
+            "SELECT id, sequence_number, batch_start, batch_end, \
+             record_count, hash, previous_hash \
+             FROM audit_batch_hashes ORDER BY sequence_number ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get batch hashes: {}", e)))?;
+
+        rows.into_iter()
+            .map(AuditBatchHash::try_from)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// 最新バッチハッシュを取得
+    pub async fn get_latest_batch_hash(&self) -> RouterResult<Option<AuditBatchHash>> {
+        let row = sqlx::query_as::<_, AuditBatchHashRow>(
+            "SELECT id, sequence_number, batch_start, batch_end, \
+             record_count, hash, previous_hash \
+             FROM audit_batch_hashes ORDER BY sequence_number DESC LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get latest batch hash: {}", e)))?;
+
+        match row {
+            Some(r) => Ok(Some(AuditBatchHash::try_from(r)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// バッチ内エントリを取得
+    pub async fn get_entries_for_batch(&self, batch_id: i64) -> RouterResult<Vec<AuditLogEntry>> {
+        let rows = sqlx::query_as::<_, AuditLogRow>(
+            "SELECT id, timestamp, http_method, request_path, status_code, \
+             actor_type, actor_id, actor_username, api_key_owner_id, client_ip, \
+             duration_ms, input_tokens, output_tokens, total_tokens, \
+             model_name, endpoint_id, detail, batch_id, is_migrated \
+             FROM audit_log_entries WHERE batch_id = ? ORDER BY timestamp ASC",
+        )
+        .bind(batch_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get entries for batch: {}", e)))?;
+
+        rows.into_iter()
+            .map(AuditLogEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// エントリのbatch_idを更新
+    pub async fn update_entries_batch_id(
+        &self,
+        entry_ids: &[i64],
+        batch_id: i64,
+    ) -> RouterResult<()> {
+        if entry_ids.is_empty() {
+            return Ok(());
+        }
+
+        let placeholders: Vec<&str> = entry_ids.iter().map(|_| "?").collect();
+        let sql = format!(
+            "UPDATE audit_log_entries SET batch_id = ? WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+
+        let mut query = sqlx::query(&sql).bind(batch_id);
+        for id in entry_ids {
+            query = query.bind(id);
+        }
+
+        query
+            .execute(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to update batch_id: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// FTS5全文検索で監査ログを検索
+    pub async fn search_fts(
+        &self,
+        search_query: &str,
+        filter: &AuditLogFilter,
+    ) -> RouterResult<Vec<AuditLogEntry>> {
+        let sanitized = sanitize_fts_query(search_query);
+        if sanitized.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let (where_clause, bind_values) = build_where_clause(filter);
+        let page = filter.page.unwrap_or(1).max(1);
+        let per_page = filter.per_page.unwrap_or(50).max(1);
+        let offset = (page - 1) * per_page;
+
+        let extra_where = build_extra_where(&where_clause);
+
+        let sql = format!(
+            "SELECT e.id, e.timestamp, e.http_method, e.request_path, e.status_code, \
+             e.actor_type, e.actor_id, e.actor_username, e.api_key_owner_id, e.client_ip, \
+             e.duration_ms, e.input_tokens, e.output_tokens, e.total_tokens, \
+             e.model_name, e.endpoint_id, e.detail, e.batch_id, e.is_migrated \
+             FROM audit_log_fts fts \
+             JOIN audit_log_entries e ON fts.rowid = e.id \
+             WHERE fts.audit_log_fts MATCH ? {} \
+             ORDER BY e.timestamp DESC LIMIT ? OFFSET ?",
+            extra_where
+        );
+
+        let mut query = sqlx::query_as::<_, AuditLogRow>(&sql).bind(&sanitized);
+        for val in &bind_values {
+            query = query.bind(val.as_str());
+        }
+        query = query.bind(per_page).bind(offset);
+
+        let rows = query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to search audit logs: {}", e)))?;
+
+        rows.into_iter()
+            .map(AuditLogEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// FTS5検索結果のカウント
+    pub async fn count_fts(
+        &self,
+        search_query: &str,
+        filter: &AuditLogFilter,
+    ) -> RouterResult<i64> {
+        let sanitized = sanitize_fts_query(search_query);
+        if sanitized.is_empty() {
+            return Ok(0);
+        }
+
+        let (where_clause, bind_values) = build_where_clause(filter);
+        let extra_where = build_extra_where(&where_clause);
+
+        let sql = format!(
+            "SELECT COUNT(*) FROM audit_log_fts fts \
+             JOIN audit_log_entries e ON fts.rowid = e.id \
+             WHERE fts.audit_log_fts MATCH ? {}",
+            extra_where
+        );
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(&sanitized);
+        for val in &bind_values {
+            query = query.bind(val.as_str());
+        }
+
+        query
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to count FTS results: {}", e)))
+    }
+
+    /// バッチ未割当のエントリを取得（batch_id IS NULL AND is_migrated = 0）
+    pub async fn get_unbatched_entries(&self) -> RouterResult<Vec<AuditLogEntry>> {
+        let rows = sqlx::query_as::<_, AuditLogRow>(
+            "SELECT id, timestamp, http_method, request_path, status_code, \
+             actor_type, actor_id, actor_username, api_key_owner_id, client_ip, \
+             duration_ms, input_tokens, output_tokens, total_tokens, \
+             model_name, endpoint_id, detail, batch_id, is_migrated \
+             FROM audit_log_entries WHERE batch_id IS NULL AND is_migrated = 0 \
+             ORDER BY timestamp ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get unbatched entries: {}", e)))?;
+
+        rows.into_iter()
+            .map(AuditLogEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// HTTPメソッド別のエントリ数を取得
+    pub async fn count_by_method(&self) -> RouterResult<Vec<(String, i64)>> {
+        let rows: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT http_method, COUNT(*) as cnt FROM audit_log_entries GROUP BY http_method ORDER BY cnt DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to count by method: {}", e)))?;
+        Ok(rows)
+    }
+
+    /// アクター種別のエントリ数を取得
+    pub async fn count_by_actor_type(&self) -> RouterResult<Vec<(String, i64)>> {
+        let rows: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT actor_type, COUNT(*) as cnt FROM audit_log_entries GROUP BY actor_type ORDER BY cnt DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to count by actor type: {}", e)))?;
+        Ok(rows)
+    }
+
+    /// 古いエントリをアーカイブDBに移動
+    ///
+    /// `retention_days`日より古いエントリをアーカイブDBにINSERTし、
+    /// メインDBからDELETEする。関連するバッチハッシュもコピーする。
+    pub async fn archive_old_entries(
+        &self,
+        retention_days: i64,
+        archive_pool: &SqlitePool,
+    ) -> RouterResult<i64> {
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        // 部分バッチの移動でチェーンが壊れないよう、batch_end が cutoff より古いバッチのみ対象にする
+        let archivable_batches = sqlx::query_as::<_, AuditBatchHashRow>(
+            "SELECT id, sequence_number, batch_start, batch_end, \
+             record_count, hash, previous_hash \
+             FROM audit_batch_hashes WHERE batch_end < ? ORDER BY sequence_number ASC",
+        )
+        .bind(&cutoff_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to fetch archivable batches: {}", e)))?;
+
+        let mut rows = Vec::new();
+
+        // バッチ未割当（主に移行データ）も保持期限対象ならアーカイブする
+        let mut unbatched_rows = sqlx::query_as::<_, AuditLogRow>(
+            "SELECT id, timestamp, http_method, request_path, status_code, \
+             actor_type, actor_id, actor_username, api_key_owner_id, client_ip, \
+             duration_ms, input_tokens, output_tokens, total_tokens, \
+             model_name, endpoint_id, detail, batch_id, is_migrated \
+             FROM audit_log_entries \
+             WHERE timestamp < ? AND batch_id IS NULL \
+             ORDER BY timestamp ASC",
+        )
+        .bind(&cutoff_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to fetch old unbatched entries: {}", e)))?;
+        rows.append(&mut unbatched_rows);
+
+        if !archivable_batches.is_empty() {
+            let mut batch_rows = sqlx::query_as::<_, AuditLogRow>(
+                "SELECT e.id, e.timestamp, e.http_method, e.request_path, e.status_code, \
+                 e.actor_type, e.actor_id, e.actor_username, e.api_key_owner_id, e.client_ip, \
+                 e.duration_ms, e.input_tokens, e.output_tokens, e.total_tokens, \
+                 e.model_name, e.endpoint_id, e.detail, e.batch_id, e.is_migrated \
+                 FROM audit_log_entries e \
+                 JOIN audit_batch_hashes b ON e.batch_id = b.id \
+                 WHERE b.batch_end < ? \
+                 ORDER BY e.timestamp ASC",
+            )
+            .bind(&cutoff_str)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!("Failed to fetch old batched entries: {}", e))
+            })?;
+            rows.append(&mut batch_rows);
+        }
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        let count = rows.len() as i64;
+
+        // バッチハッシュをアーカイブDBにコピー
+        for bh in &archivable_batches {
+            sqlx::query(
+                "INSERT OR IGNORE INTO audit_batch_hashes \
+                 (id, sequence_number, batch_start, batch_end, record_count, hash, previous_hash) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(bh.id)
+            .bind(bh.sequence_number)
+            .bind(&bh.batch_start)
+            .bind(&bh.batch_end)
+            .bind(bh.record_count)
+            .bind(&bh.hash)
+            .bind(&bh.previous_hash)
+            .execute(archive_pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to archive batch hash: {}", e)))?;
+        }
+
+        // エントリをアーカイブDBにINSERT
+        for row in &rows {
+            sqlx::query(
+                "INSERT OR IGNORE INTO audit_log_entries \
+                 (id, timestamp, http_method, request_path, status_code, \
+                  actor_type, actor_id, actor_username, api_key_owner_id, client_ip, \
+                  duration_ms, input_tokens, output_tokens, total_tokens, \
+                  model_name, endpoint_id, detail, batch_id, is_migrated) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(row.id)
+            .bind(&row.timestamp)
+            .bind(&row.http_method)
+            .bind(&row.request_path)
+            .bind(row.status_code)
+            .bind(&row.actor_type)
+            .bind(&row.actor_id)
+            .bind(&row.actor_username)
+            .bind(&row.api_key_owner_id)
+            .bind(&row.client_ip)
+            .bind(row.duration_ms)
+            .bind(row.input_tokens)
+            .bind(row.output_tokens)
+            .bind(row.total_tokens)
+            .bind(&row.model_name)
+            .bind(&row.endpoint_id)
+            .bind(&row.detail)
+            .bind(row.batch_id)
+            .bind(row.is_migrated)
+            .execute(archive_pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to archive entry: {}", e)))?;
+        }
+
+        // メインDBから移送済みエントリを削除
+        sqlx::query("DELETE FROM audit_log_entries WHERE timestamp < ? AND batch_id IS NULL")
+            .bind(&cutoff_str)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!(
+                    "Failed to delete archived unbatched entries: {}",
+                    e
+                ))
+            })?;
+
+        // アーカイブ済みのバッチハッシュを主DBから削除
+        if !archivable_batches.is_empty() {
+            sqlx::query(
+                "DELETE FROM audit_log_entries \
+                 WHERE batch_id IN (SELECT id FROM audit_batch_hashes WHERE batch_end < ?)",
+            )
+            .bind(&cutoff_str)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!("Failed to delete archived batched entries: {}", e))
+            })?;
+
+            sqlx::query("DELETE FROM audit_batch_hashes WHERE batch_end < ?")
+                .bind(&cutoff_str)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| {
+                    LbError::Database(format!("Failed to delete archived batches: {}", e))
+                })?;
+
+            self.rebuild_main_chain_metadata().await?;
+        }
+
+        Ok(count)
+    }
+
+    async fn rebuild_main_chain_metadata(&self) -> RouterResult<()> {
+        let rows = sqlx::query_as::<_, AuditBatchHashRow>(
+            "SELECT id, sequence_number, batch_start, batch_end, \
+             record_count, hash, previous_hash \
+             FROM audit_batch_hashes ORDER BY sequence_number ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to load remaining batches: {}", e)))?;
+
+        let batches = rows
+            .into_iter()
+            .map(AuditBatchHash::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut updates = Vec::with_capacity(batches.len());
+        let mut previous_hash = GENESIS_HASH.to_string();
+        for batch in &batches {
+            let batch_id = batch.id.ok_or_else(|| {
+                LbError::Database("Batch id is missing while rebuilding chain".to_string())
+            })?;
+            let entries = self.get_entries_for_batch(batch_id).await?;
+            let sequence_number = batch.sequence_number;
+            let record_count = entries.len() as i64;
+            let hash = hash_chain::compute_batch_hash(
+                &previous_hash,
+                sequence_number,
+                &batch.batch_start,
+                &batch.batch_end,
+                record_count,
+                &entries,
+            );
+            updates.push((
+                batch_id,
+                sequence_number,
+                record_count,
+                hash.clone(),
+                previous_hash,
+            ));
+            previous_hash = hash;
+        }
+
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            LbError::Database(format!("Failed to begin rebuild transaction: {}", e))
+        })?;
+
+        for (batch_id, sequence_number, record_count, hash, previous_hash) in updates {
+            sqlx::query(
+                "UPDATE audit_batch_hashes \
+                 SET sequence_number = ?, record_count = ?, hash = ?, previous_hash = ? \
+                 WHERE id = ?",
+            )
+            .bind(sequence_number)
+            .bind(record_count)
+            .bind(&hash)
+            .bind(&previous_hash)
+            .bind(batch_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to rebuild batch chain: {}", e)))?;
+        }
+
+        tx.commit().await.map_err(|e| {
+            LbError::Database(format!("Failed to commit rebuild transaction: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    /// アーカイブDBからエントリを検索
+    pub async fn query_archive(
+        &self,
+        filter: &AuditLogFilter,
+        archive_pool: &SqlitePool,
+    ) -> RouterResult<Vec<AuditLogEntry>> {
+        let (where_clause, bind_values) = build_where_clause(filter);
+        let page = filter.page.unwrap_or(1).max(1);
+        let per_page = filter.per_page.unwrap_or(50).max(1);
+        let offset = (page - 1) * per_page;
+
+        let sql = format!(
+            "SELECT id, timestamp, http_method, request_path, status_code, \
+             actor_type, actor_id, actor_username, api_key_owner_id, client_ip, \
+             duration_ms, input_tokens, output_tokens, total_tokens, \
+             model_name, endpoint_id, detail, batch_id, is_migrated \
+             FROM audit_log_entries {} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            where_clause
+        );
+
+        let mut query = sqlx::query_as::<_, AuditLogRow>(&sql);
+        for val in &bind_values {
+            query = query.bind(val);
+        }
+        query = query.bind(per_page).bind(offset);
+
+        let rows = query
+            .fetch_all(archive_pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to query archive: {}", e)))?;
+
+        rows.into_iter()
+            .map(AuditLogEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// アーカイブDBのエントリ数を取得
+    pub async fn count_archive(
+        &self,
+        filter: &AuditLogFilter,
+        archive_pool: &SqlitePool,
+    ) -> RouterResult<i64> {
+        let (where_clause, bind_values) = build_where_clause(filter);
+
+        let sql = format!("SELECT COUNT(*) FROM audit_log_entries {}", where_clause);
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for val in &bind_values {
+            query = query.bind(val);
+        }
+
+        let count = query
+            .fetch_one(archive_pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to count archive: {}", e)))?;
+
+        Ok(count)
+    }
+
+    /// アーカイブDBをFTS5全文検索
+    pub async fn search_fts_archive(
+        &self,
+        search_query: &str,
+        filter: &AuditLogFilter,
+        archive_pool: &SqlitePool,
+    ) -> RouterResult<Vec<AuditLogEntry>> {
+        let sanitized = sanitize_fts_query(search_query);
+        if sanitized.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let (where_clause, bind_values) = build_where_clause(filter);
+        let page = filter.page.unwrap_or(1).max(1);
+        let per_page = filter.per_page.unwrap_or(50).max(1);
+        let offset = (page - 1) * per_page;
+
+        let extra_where = build_extra_where(&where_clause);
+        let sql = format!(
+            "SELECT e.id, e.timestamp, e.http_method, e.request_path, e.status_code, \
+             e.actor_type, e.actor_id, e.actor_username, e.api_key_owner_id, e.client_ip, \
+             e.duration_ms, e.input_tokens, e.output_tokens, e.total_tokens, \
+             e.model_name, e.endpoint_id, e.detail, e.batch_id, e.is_migrated \
+             FROM audit_log_fts fts \
+             JOIN audit_log_entries e ON fts.rowid = e.id \
+             WHERE fts.audit_log_fts MATCH ? {} \
+             ORDER BY e.timestamp DESC LIMIT ? OFFSET ?",
+            extra_where
+        );
+
+        let mut query = sqlx::query_as::<_, AuditLogRow>(&sql).bind(&sanitized);
+        for val in &bind_values {
+            query = query.bind(val.as_str());
+        }
+        query = query.bind(per_page).bind(offset);
+
+        let rows = query.fetch_all(archive_pool).await.map_err(|e| {
+            LbError::Database(format!("Failed to search archive audit logs: {}", e))
+        })?;
+
+        rows.into_iter()
+            .map(AuditLogEntry::try_from)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// アーカイブDBのFTS検索件数
+    pub async fn count_fts_archive(
+        &self,
+        search_query: &str,
+        filter: &AuditLogFilter,
+        archive_pool: &SqlitePool,
+    ) -> RouterResult<i64> {
+        let sanitized = sanitize_fts_query(search_query);
+        if sanitized.is_empty() {
+            return Ok(0);
+        }
+
+        let (where_clause, bind_values) = build_where_clause(filter);
+        let extra_where = build_extra_where(&where_clause);
+        let sql = format!(
+            "SELECT COUNT(*) FROM audit_log_fts fts \
+             JOIN audit_log_entries e ON fts.rowid = e.id \
+             WHERE fts.audit_log_fts MATCH ? {}",
+            extra_where
+        );
+
+        let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(&sanitized);
+        for val in &bind_values {
+            query = query.bind(val.as_str());
+        }
+
+        query
+            .fetch_one(archive_pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to count archive FTS results: {}", e)))
+    }
+}
+
+/// フィルタからWHERE句とバインド値を構築
+fn build_where_clause(filter: &AuditLogFilter) -> (String, Vec<String>) {
+    let mut conditions: Vec<String> = Vec::new();
+    let mut bind_values: Vec<String> = Vec::new();
+
+    if let Some(ref actor_type) = filter.actor_type {
+        conditions.push("actor_type = ?".to_string());
+        bind_values.push(actor_type.clone());
+    }
+
+    if let Some(ref actor_id) = filter.actor_id {
+        conditions.push("actor_id = ?".to_string());
+        bind_values.push(actor_id.clone());
+    }
+
+    if let Some(ref http_method) = filter.http_method {
+        conditions.push("http_method = ?".to_string());
+        bind_values.push(http_method.clone());
+    }
+
+    if let Some(ref request_path) = filter.request_path {
+        conditions.push("request_path = ?".to_string());
+        bind_values.push(request_path.clone());
+    }
+
+    if let Some(status_code) = filter.status_code {
+        conditions.push("status_code = ?".to_string());
+        bind_values.push(status_code.to_string());
+    }
+
+    if let Some(ref time_from) = filter.time_from {
+        conditions.push("timestamp >= ?".to_string());
+        bind_values.push(time_from.to_rfc3339());
+    }
+
+    if let Some(ref time_to) = filter.time_to {
+        conditions.push("timestamp <= ?".to_string());
+        bind_values.push(time_to.to_rfc3339());
+    }
+
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    (where_clause, bind_values)
+}
+
+/// WHERE句をFTS JOIN用のAND条件に変換
+fn build_extra_where(where_clause: &str) -> String {
+    if where_clause.is_empty() {
+        String::new()
+    } else {
+        // "WHERE x = ? AND y = ?" -> "AND x = ? AND y = ?"
+        // build_where_clauseでカラム名にテーブルプレフィックスがないので
+        // JOINクエリ用にeプレフィックスを付与
+        let conditions = &where_clause[6..]; // "WHERE "を除去
+        let prefixed = conditions
+            .replace("actor_type", "e.actor_type")
+            .replace("actor_id", "e.actor_id")
+            .replace("http_method", "e.http_method")
+            .replace("request_path", "e.request_path")
+            .replace("status_code", "e.status_code")
+            .replace("timestamp", "e.timestamp");
+        format!("AND {}", prefixed)
+    }
+}
+
+/// FTS5クエリの特殊文字をサニタイズ
+fn sanitize_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|word| {
+            let clean = word.replace('"', "");
+            if clean.is_empty() {
+                return String::new();
+            }
+            format!("\"{}\"", clean)
+        })
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audit::types::ActorType;
+    use chrono::Utc;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn create_test_pool() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create in-memory pool");
+
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        pool
+    }
+
+    fn make_entry(method: &str, path: &str, status: u16, actor: ActorType) -> AuditLogEntry {
+        AuditLogEntry {
+            id: None,
+            timestamp: Utc::now(),
+            http_method: method.to_string(),
+            request_path: path.to_string(),
+            status_code: status,
+            actor_type: actor,
+            actor_id: Some("test-actor".to_string()),
+            actor_username: Some("tester".to_string()),
+            api_key_owner_id: None,
+            client_ip: Some("127.0.0.1".to_string()),
+            duration_ms: Some(42),
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            total_tokens: Some(150),
+            model_name: Some("test-model".to_string()),
+            endpoint_id: Some("ep-1".to_string()),
+            detail: None,
+            batch_id: None,
+            is_migrated: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_insert_batch_and_query() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+        ];
+
+        storage.insert_batch(&entries).await.unwrap();
+
+        let filter = AuditLogFilter::default();
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 2);
+
+        // ORDER BY timestamp DESC なので最新が先
+        assert!(results[0].id.is_some());
+        assert!(results[1].id.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_query_with_actor_type_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+            make_entry("GET", "/v1/models", 401, ActorType::Anonymous),
+        ];
+
+        storage.insert_batch(&entries).await.unwrap();
+
+        let filter = AuditLogFilter {
+            actor_type: Some("user".to_string()),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].actor_type, ActorType::User);
+    }
+
+    #[tokio::test]
+    async fn test_query_with_pagination() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let mut entries = Vec::new();
+        for i in 0..5 {
+            let mut entry = make_entry("GET", "/v1/models", 200, ActorType::User);
+            entry.duration_ms = Some(i);
+            entries.push(entry);
+        }
+
+        storage.insert_batch(&entries).await.unwrap();
+
+        // ページ1: 2件
+        let filter = AuditLogFilter {
+            page: Some(1),
+            per_page: Some(2),
+            ..Default::default()
+        };
+        let page1 = storage.query(&filter).await.unwrap();
+        assert_eq!(page1.len(), 2);
+
+        // ページ2: 2件
+        let filter = AuditLogFilter {
+            page: Some(2),
+            per_page: Some(2),
+            ..Default::default()
+        };
+        let page2 = storage.query(&filter).await.unwrap();
+        assert_eq!(page2.len(), 2);
+
+        // ページ3: 1件
+        let filter = AuditLogFilter {
+            page: Some(3),
+            per_page: Some(2),
+            ..Default::default()
+        };
+        let page3 = storage.query(&filter).await.unwrap();
+        assert_eq!(page3.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_count() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+            make_entry("GET", "/v1/models", 401, ActorType::Anonymous),
+        ];
+
+        storage.insert_batch(&entries).await.unwrap();
+
+        let total = storage.count(&AuditLogFilter::default()).await.unwrap();
+        assert_eq!(total, 3);
+
+        let user_count = storage
+            .count(&AuditLogFilter {
+                actor_type: Some("user".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(user_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_by_id() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![make_entry(
+            "POST",
+            "/v1/chat/completions",
+            200,
+            ActorType::ApiKey,
+        )];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let all = storage.query(&AuditLogFilter::default()).await.unwrap();
+        let id = all[0].id.unwrap();
+
+        let found = storage.get_by_id(id).await.unwrap();
+        assert!(found.is_some());
+        let found = found.unwrap();
+        assert_eq!(found.http_method, "POST");
+        assert_eq!(found.request_path, "/v1/chat/completions");
+        assert_eq!(found.status_code, 200);
+        assert_eq!(found.actor_type, ActorType::ApiKey);
+
+        // 存在しないID
+        let not_found = storage.get_by_id(99999).await.unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_insert_batch_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        // 空配列の場合はエラーにならない
+        storage.insert_batch(&[]).await.unwrap();
+
+        let total = storage.count(&AuditLogFilter::default()).await.unwrap();
+        assert_eq!(total, 0);
+    }
+
+    fn make_token_entry(
+        model: &str,
+        timestamp: chrono::DateTime<chrono::Utc>,
+        input: i64,
+        output: i64,
+        total: i64,
+    ) -> AuditLogEntry {
+        AuditLogEntry {
+            id: None,
+            timestamp,
+            http_method: "POST".to_string(),
+            request_path: "/v1/chat/completions".to_string(),
+            status_code: 200,
+            actor_type: ActorType::ApiKey,
+            actor_id: Some("test-key".to_string()),
+            actor_username: None,
+            api_key_owner_id: None,
+            client_ip: Some("127.0.0.1".to_string()),
+            duration_ms: Some(100),
+            input_tokens: Some(input),
+            output_tokens: Some(output),
+            total_tokens: Some(total),
+            model_name: Some(model.to_string()),
+            endpoint_id: Some("ep-1".to_string()),
+            detail: None,
+            batch_id: None,
+            is_migrated: false,
+        }
+    }
+
+    fn make_token_entry_without_total(
+        model: &str,
+        timestamp: chrono::DateTime<chrono::Utc>,
+        input: i64,
+        output: i64,
+    ) -> AuditLogEntry {
+        let mut entry = make_token_entry(model, timestamp, input, output, 0);
+        entry.total_tokens = None;
+        entry
+    }
+
+    #[tokio::test]
+    async fn test_get_token_statistics() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry("model-b", now, 200, 100, 300),
+            make_token_entry("model-a", now, 50, 25, 75),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 350);
+        assert_eq!(stats.total_output_tokens, 175);
+        assert_eq!(stats.total_tokens, 525);
+    }
+
+    #[tokio::test]
+    async fn test_get_token_statistics_infers_total_when_total_tokens_null() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry_without_total("model-a", now, 70, 30),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 170);
+        assert_eq!(stats.total_output_tokens, 80);
+        assert_eq!(stats.total_tokens, 250);
+    }
+
+    #[tokio::test]
+    async fn test_get_token_statistics_by_model() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry("model-b", now, 200, 100, 300),
+            make_token_entry("model-a", now, 50, 25, 75),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_token_statistics_by_model().await.unwrap();
+        assert_eq!(stats.len(), 2);
+
+        // ORDER BY total_tokens DESC なので model-b が先
+        assert_eq!(stats[0].model_name, "model-b");
+        assert_eq!(stats[0].total_input_tokens, 200);
+        assert_eq!(stats[0].total_output_tokens, 100);
+        assert_eq!(stats[0].total_tokens, 300);
+
+        assert_eq!(stats[1].model_name, "model-a");
+        assert_eq!(stats[1].total_input_tokens, 150);
+        assert_eq!(stats[1].total_output_tokens, 75);
+        assert_eq!(stats[1].total_tokens, 225);
+    }
+
+    #[tokio::test]
+    async fn test_get_daily_token_statistics() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry("model-b", now, 200, 100, 300),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_daily_token_statistics(7).await.unwrap();
+        // 同日のエントリなので1日分
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 300);
+        assert_eq!(stats[0].total_output_tokens, 150);
+        assert_eq!(stats[0].total_tokens, 450);
+    }
+
+    #[tokio::test]
+    async fn test_get_daily_token_statistics_infers_total_when_total_tokens_null() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry_without_total("model-b", now, 20, 10),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_daily_token_statistics(7).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 120);
+        assert_eq!(stats[0].total_output_tokens, 60);
+        assert_eq!(stats[0].total_tokens, 180);
+        assert_eq!(stats[0].request_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_monthly_token_statistics() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry("model-b", now, 200, 100, 300),
+            make_token_entry("model-a", now, 50, 25, 75),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_monthly_token_statistics(3).await.unwrap();
+        // 同月のエントリなので1月分
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 350);
+        assert_eq!(stats[0].total_output_tokens, 175);
+        assert_eq!(stats[0].total_tokens, 525);
+    }
+
+    #[tokio::test]
+    async fn test_get_monthly_token_statistics_infers_total_when_total_tokens_null() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 40, 20, 60),
+            make_token_entry_without_total("model-b", now, 10, 5),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_monthly_token_statistics(3).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 50);
+        assert_eq!(stats[0].total_output_tokens, 25);
+        assert_eq!(stats[0].total_tokens, 75);
+        assert_eq!(stats[0].request_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_get_batch_hash() {
+        use crate::audit::types::AuditBatchHash;
+
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let batch = AuditBatchHash {
+            id: None,
+            sequence_number: 1,
+            batch_start: now,
+            batch_end: now,
+            record_count: 10,
+            hash: "abc123".to_string(),
+            previous_hash: "0".repeat(64),
+        };
+
+        let id = storage.insert_batch_hash(&batch).await.unwrap();
+        assert!(id > 0);
+
+        let all = storage.get_all_batch_hashes().await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, Some(id));
+        assert_eq!(all[0].sequence_number, 1);
+        assert_eq!(all[0].record_count, 10);
+        assert_eq!(all[0].hash, "abc123");
+        assert_eq!(all[0].previous_hash, "0".repeat(64));
+
+        // 2つ目のバッチを追加
+        let batch2 = AuditBatchHash {
+            id: None,
+            sequence_number: 2,
+            batch_start: now,
+            batch_end: now,
+            record_count: 5,
+            hash: "def456".to_string(),
+            previous_hash: "abc123".to_string(),
+        };
+        storage.insert_batch_hash(&batch2).await.unwrap();
+
+        let all = storage.get_all_batch_hashes().await.unwrap();
+        assert_eq!(all.len(), 2);
+        // ORDER BY sequence_number ASC
+        assert_eq!(all[0].sequence_number, 1);
+        assert_eq!(all[1].sequence_number, 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_latest_batch_hash() {
+        use crate::audit::types::AuditBatchHash;
+
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        // 空の場合はNone
+        let latest = storage.get_latest_batch_hash().await.unwrap();
+        assert!(latest.is_none());
+
+        let now = Utc::now();
+        let batch1 = AuditBatchHash {
+            id: None,
+            sequence_number: 1,
+            batch_start: now,
+            batch_end: now,
+            record_count: 10,
+            hash: "hash1".to_string(),
+            previous_hash: "0".repeat(64),
+        };
+        storage.insert_batch_hash(&batch1).await.unwrap();
+
+        let batch2 = AuditBatchHash {
+            id: None,
+            sequence_number: 2,
+            batch_start: now,
+            batch_end: now,
+            record_count: 5,
+            hash: "hash2".to_string(),
+            previous_hash: "hash1".to_string(),
+        };
+        storage.insert_batch_hash(&batch2).await.unwrap();
+
+        let latest = storage.get_latest_batch_hash().await.unwrap();
+        assert!(latest.is_some());
+        let latest = latest.unwrap();
+        assert_eq!(latest.sequence_number, 2);
+        assert_eq!(latest.hash, "hash2");
+    }
+
+    #[tokio::test]
+    async fn test_get_entries_for_batch() {
+        use crate::audit::types::AuditBatchHash;
+
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        // エントリを挿入
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+            make_entry("GET", "/health", 200, ActorType::Anonymous),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // バッチハッシュを挿入
+        let now = Utc::now();
+        let batch = AuditBatchHash {
+            id: None,
+            sequence_number: 1,
+            batch_start: now,
+            batch_end: now,
+            record_count: 2,
+            hash: "batchhash".to_string(),
+            previous_hash: "0".repeat(64),
+        };
+        let batch_id = storage.insert_batch_hash(&batch).await.unwrap();
+
+        // 最初の2エントリのbatch_idを更新
+        let all = storage.query(&AuditLogFilter::default()).await.unwrap();
+        let entry_ids: Vec<i64> = all.iter().take(2).filter_map(|e| e.id).collect();
+        storage
+            .update_entries_batch_id(&entry_ids, batch_id)
+            .await
+            .unwrap();
+
+        // バッチ内エントリを取得
+        let batch_entries = storage.get_entries_for_batch(batch_id).await.unwrap();
+        assert_eq!(batch_entries.len(), 2);
+        for entry in &batch_entries {
+            assert_eq!(entry.batch_id, Some(batch_id));
+        }
+
+        // 存在しないバッチID
+        let empty = storage.get_entries_for_batch(99999).await.unwrap();
+        assert!(empty.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_search_fts_by_path() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+            make_entry("GET", "/v1/embeddings", 200, ActorType::User),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // "chat"を含むパスを検索
+        let results = storage
+            .search_fts("chat", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_path, "/v1/chat/completions");
+    }
+
+    #[tokio::test]
+    async fn test_search_fts_by_actor() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let mut entry1 = make_entry("GET", "/v1/models", 200, ActorType::User);
+        entry1.actor_id = Some("alice".to_string());
+        entry1.actor_username = Some("Alice Smith".to_string());
+
+        let mut entry2 = make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey);
+        entry2.actor_id = Some("bob-key".to_string());
+        entry2.actor_username = None;
+
+        storage.insert_batch(&[entry1, entry2]).await.unwrap();
+
+        // actor_usernameで検索
+        let results = storage
+            .search_fts("Alice", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].actor_username, Some("Alice Smith".to_string()));
+
+        // actor_idで検索
+        let results = storage
+            .search_fts("bob", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].actor_id, Some("bob-key".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_search_fts_with_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/models/list", 200, ActorType::ApiKey),
+            make_entry("GET", "/v1/models/detail", 401, ActorType::Anonymous),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // "models"で検索（全3件ヒット）
+        let results = storage
+            .search_fts("models", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 3);
+
+        // "models"で検索 + actor_typeフィルタ
+        let filter = AuditLogFilter {
+            actor_type: Some("user".to_string()),
+            ..Default::default()
+        };
+        let results = storage.search_fts("models", &filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].actor_type, ActorType::User);
+    }
+
+    #[tokio::test]
+    async fn test_search_fts_no_results() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![make_entry("GET", "/v1/models", 200, ActorType::User)];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let results = storage
+            .search_fts("nonexistent", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_search_fts_basic() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let mut entry1 = make_entry("GET", "/api/users", 200, ActorType::User);
+        entry1.actor_username = Some("admin".to_string());
+        let entry2 = make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey);
+        let mut entry3 = make_entry("DELETE", "/api/endpoints", 200, ActorType::User);
+        entry3.actor_username = Some("admin".to_string());
+
+        storage
+            .insert_batch(&[entry1, entry2, entry3])
+            .await
+            .unwrap();
+
+        let filter = AuditLogFilter::default();
+
+        // "users" でマッチするのは1件
+        let results = storage.search_fts("users", &filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_path, "/api/users");
+
+        // "completions" でマッチするのは1件
+        let results = storage.search_fts("completions", &filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+
+        // "api" でマッチするのは2件（/api/users, /api/endpoints）
+        let results = storage.search_fts("api", &filter).await.unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_count_fts() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/models/list", 200, ActorType::ApiKey),
+            make_entry("GET", "/v1/chat/completions", 200, ActorType::User),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // "models" → 2件
+        let count = storage
+            .count_fts("models", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+
+        // "models" + actor_typeフィルタ → 1件
+        let filter = AuditLogFilter {
+            actor_type: Some("user".to_string()),
+            ..Default::default()
+        };
+        let count = storage.count_fts("models", &filter).await.unwrap();
+        assert_eq!(count, 1);
+
+        // 空クエリ → 0
+        let count = storage
+            .count_fts("", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_sanitize_fts_query() {
+        // 通常の単語
+        assert_eq!(sanitize_fts_query("hello"), "\"hello\"");
+
+        // 複数単語
+        assert_eq!(sanitize_fts_query("hello world"), "\"hello\" \"world\"");
+
+        // 特殊文字のエスケープ
+        assert_eq!(sanitize_fts_query("he\"llo"), "\"hello\"");
+
+        // 空文字列
+        assert_eq!(sanitize_fts_query(""), "");
+
+        // 空白のみ
+        assert_eq!(sanitize_fts_query("   "), "");
+    }
+
+    #[tokio::test]
+    async fn test_request_history_migration() {
+        // request_historyからaudit_log_entriesへのデータ移行SQLを検証
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create pool");
+
+        // 全マイグレーションを実行（request_history + audit_log_entries等を正しいスキーマで作成）
+        // 017でrequest_historyからの移行が走るが、空テーブルなので0件移行
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+
+        // request_historyにテストデータを挿入（全マイグレーション後のフルスキーマ）
+        sqlx::query(
+            r#"INSERT INTO request_history
+                (id, timestamp, request_type, model, node_id, node_machine_name, node_ip,
+                 request_body, duration_ms, status, completed_at,
+                 input_tokens, output_tokens, total_tokens)
+            VALUES
+                ('req-1', '2024-01-15T10:00:00+00:00', 'chat', 'llama-3', 'ep-1', 'machine-1', '127.0.0.1',
+                 '{}', 500, 'success', '2024-01-15T10:00:01+00:00',
+                 100, 50, 150),
+                ('req-2', '2024-01-15T11:00:00+00:00', 'chat', 'gpt-4', 'ep-2', 'machine-2', '127.0.0.1',
+                 '{}', 1000, 'success', '2024-01-15T11:00:01+00:00',
+                 200, 100, 300),
+                ('req-3', '2024-01-15T12:00:00+00:00', 'chat', 'llama-3', 'ep-1', 'machine-1', '127.0.0.1',
+                 '{}', 200, 'error', '2024-01-15T12:00:01+00:00',
+                 50, 0, 50)"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 017_audit_log.sqlのマイグレーションSQLを手動実行してデータ移行を検証
+        sqlx::query(
+            r#"INSERT INTO audit_log_entries (
+                timestamp, http_method, request_path, status_code,
+                actor_type, actor_id, duration_ms,
+                input_tokens, output_tokens, total_tokens,
+                model_name, endpoint_id, is_migrated
+            )
+            SELECT
+                rh.timestamp,
+                'POST',
+                '/v1/chat/completions',
+                CASE WHEN rh.error_message IS NULL THEN 200 ELSE 500 END,
+                'api_key',
+                'unknown',
+                rh.duration_ms,
+                rh.input_tokens,
+                rh.output_tokens,
+                rh.total_tokens,
+                rh.model,
+                rh.node_id,
+                1
+            FROM request_history rh"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let storage = AuditLogStorage::new(pool.clone());
+
+        // 移行されたエントリを確認
+        let filter = AuditLogFilter::default();
+        let entries = storage.query(&filter).await.unwrap();
+        assert_eq!(
+            entries.len(),
+            3,
+            "All 3 request_history records should be migrated"
+        );
+
+        // is_migrated=1で移行されていることを確認
+        for entry in &entries {
+            assert!(
+                entry.is_migrated,
+                "Migrated entries should have is_migrated=true"
+            );
+        }
+
+        // 移行データの内容を確認
+        let count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM audit_log_entries WHERE is_migrated = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count.0, 3);
+
+        // エラーありレコードはstatus_code=500に変換されていることを確認
+        let error_entry: (i64,) = sqlx::query_as(
+            "SELECT status_code FROM audit_log_entries WHERE model_name = 'llama-3' \
+             AND duration_ms = 200",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        // req-3は status='error' だが error_message=NULL なので 200 になる
+        assert_eq!(error_entry.0, 200);
+
+        // トークン統計が移行データから正しく集計されること
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 350);
+        assert_eq!(stats.total_output_tokens, 150);
+        assert_eq!(stats.total_tokens, 500);
+
+        // モデル別統計
+        let by_model = storage.get_token_statistics_by_model().await.unwrap();
+        assert_eq!(by_model.len(), 2); // llama-3, gpt-4
+    }
+
+    #[tokio::test]
+    async fn test_archive_old_entries() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        // アーカイブ用インメモリDBを作成
+        let archive_pool = super::create_archive_pool(":memory:").await.unwrap();
+
+        // 古いエントリ（100日前）と新しいエントリ（1日前）を挿入
+        let now = chrono::Utc::now();
+        let old_time = now - chrono::Duration::days(100);
+        let new_time = now - chrono::Duration::days(1);
+
+        let entries = vec![
+            AuditLogEntry {
+                timestamp: old_time,
+                ..make_entry("GET", "/api/old-1", 200, ActorType::User)
+            },
+            AuditLogEntry {
+                timestamp: old_time - chrono::Duration::hours(1),
+                ..make_entry("POST", "/api/old-2", 200, ActorType::User)
+            },
+            AuditLogEntry {
+                timestamp: new_time,
+                ..make_entry("GET", "/api/new-1", 200, ActorType::User)
+            },
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // メインDBに3件あることを確認
+        let main_count = storage.count(&AuditLogFilter::default()).await.unwrap();
+        assert_eq!(main_count, 3);
+
+        // アーカイブ実行（90日保持）
+        let archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(archived, 2, "2 old entries should be archived");
+
+        // メインDBに1件のみ残る
+        let main_count = storage.count(&AuditLogFilter::default()).await.unwrap();
+        assert_eq!(main_count, 1);
+
+        // アーカイブDBに2件移動
+        let archive_storage = AuditLogStorage::new(archive_pool.clone());
+        let archive_count = archive_storage
+            .count(&AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(archive_count, 2);
+
+        // アーカイブDBからクエリ可能
+        let archive_entries = storage
+            .query_archive(&AuditLogFilter::default(), &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(archive_entries.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_archive_no_old_entries() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let archive_pool = super::create_archive_pool(":memory:").await.unwrap();
+
+        // 新しいエントリのみ
+        let entries = vec![make_entry("GET", "/api/new", 200, ActorType::User)];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // アーカイブ対象なし
+        let archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(archived, 0);
+
+        // メインDBに1件残る
+        let main_count = storage.count(&AuditLogFilter::default()).await.unwrap();
+        assert_eq!(main_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_archive_with_batch_hashes() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let archive_pool = super::create_archive_pool(":memory:").await.unwrap();
+
+        let now = chrono::Utc::now();
+        let old_time = now - chrono::Duration::days(100);
+
+        // バッチハッシュを作成
+        let batch = AuditBatchHash {
+            id: None,
+            sequence_number: 1,
+            batch_start: old_time - chrono::Duration::hours(1),
+            batch_end: old_time,
+            record_count: 1,
+            hash: "abc123".to_string(),
+            previous_hash: "0".repeat(64),
+        };
+        let batch_id = storage.insert_batch_hash(&batch).await.unwrap();
+
+        // 古いエントリをバッチに関連付けて挿入
+        let mut entry = make_entry("GET", "/api/old", 200, ActorType::User);
+        entry.timestamp = old_time;
+        storage.insert_batch(&[entry]).await.unwrap();
+
+        // エントリのbatch_idを更新
+        sqlx::query("UPDATE audit_log_entries SET batch_id = ? WHERE request_path = '/api/old'")
+            .bind(batch_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // アーカイブ実行
+        let archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(archived, 1);
+
+        // アーカイブDBにバッチハッシュもコピーされている
+        let archive_batch: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM audit_batch_hashes WHERE id = ?")
+                .bind(batch_id)
+                .fetch_optional(&archive_pool)
+                .await
+                .unwrap();
+        assert!(
+            archive_batch.is_some(),
+            "Batch hash should be copied to archive"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_archive_keeps_main_hash_chain_verifiable() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+        let archive_pool = super::create_archive_pool(":memory:").await.unwrap();
+
+        let now = chrono::Utc::now();
+        let old_time = now - chrono::Duration::days(100);
+        let new_time = now - chrono::Duration::days(1);
+
+        let mut old_entry = make_entry("GET", "/api/old", 200, ActorType::User);
+        old_entry.timestamp = old_time;
+        let mut new_entry = make_entry("GET", "/api/new", 200, ActorType::User);
+        new_entry.timestamp = new_time;
+        storage
+            .insert_batch(&[old_entry.clone(), new_entry.clone()])
+            .await
+            .unwrap();
+
+        let old_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/old'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let new_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/new'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        old_entry.id = Some(old_id.0);
+        new_entry.id = Some(new_id.0);
+
+        let old_hash = crate::audit::hash_chain::compute_batch_hash(
+            crate::audit::hash_chain::GENESIS_HASH,
+            1,
+            &old_time,
+            &old_time,
+            1,
+            &[old_entry.clone()],
+        );
+        let old_batch_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 1,
+                batch_start: old_time,
+                batch_end: old_time,
+                record_count: 1,
+                hash: old_hash.clone(),
+                previous_hash: crate::audit::hash_chain::GENESIS_HASH.to_string(),
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[old_id.0], old_batch_id)
+            .await
+            .unwrap();
+
+        let new_hash = crate::audit::hash_chain::compute_batch_hash(
+            &old_hash,
+            2,
+            &new_time,
+            &new_time,
+            1,
+            &[new_entry.clone()],
+        );
+        let new_batch_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 2,
+                batch_start: new_time,
+                batch_end: new_time,
+                record_count: 1,
+                hash: new_hash,
+                previous_hash: old_hash,
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[new_id.0], new_batch_id)
+            .await
+            .unwrap();
+
+        let before = crate::audit::hash_chain::verify_chain(&storage)
+            .await
+            .unwrap();
+        assert!(before.valid);
+        assert_eq!(before.batches_checked, 2);
+
+        let archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(archived, 1);
+
+        let after = crate::audit::hash_chain::verify_chain(&storage)
+            .await
+            .unwrap();
+        assert!(
+            after.valid,
+            "main DB hash chain must stay valid after archive"
+        );
+        assert_eq!(after.batches_checked, 1);
+
+        let remaining_batches = storage.get_all_batch_hashes().await.unwrap();
+        assert_eq!(remaining_batches.len(), 1);
+        assert_eq!(remaining_batches[0].sequence_number, 2);
+        assert_eq!(
+            remaining_batches[0].previous_hash,
+            crate::audit::hash_chain::GENESIS_HASH
+        );
+    }
+
+    #[tokio::test]
+    async fn test_archive_multiple_runs_preserve_archive_hash_rows() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+        let archive_pool = super::create_archive_pool(":memory:").await.unwrap();
+
+        let now = chrono::Utc::now();
+        let old_time_1 = now - chrono::Duration::days(200);
+        let old_time_2 = now - chrono::Duration::days(120);
+        let keep_time = now - chrono::Duration::days(1);
+
+        let mut old_entry_1 = make_entry("GET", "/api/old-1", 200, ActorType::User);
+        old_entry_1.timestamp = old_time_1;
+        let mut old_entry_2 = make_entry("GET", "/api/old-2", 200, ActorType::User);
+        old_entry_2.timestamp = old_time_2;
+        let mut keep_entry = make_entry("GET", "/api/keep", 200, ActorType::User);
+        keep_entry.timestamp = keep_time;
+        storage
+            .insert_batch(&[old_entry_1, old_entry_2, keep_entry])
+            .await
+            .unwrap();
+
+        let old_1_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/old-1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let old_2_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/old-2'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let keep_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/keep'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let batch_1_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 1,
+                batch_start: old_time_1,
+                batch_end: old_time_1,
+                record_count: 1,
+                hash: "hash-1".to_string(),
+                previous_hash: crate::audit::hash_chain::GENESIS_HASH.to_string(),
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[old_1_id.0], batch_1_id)
+            .await
+            .unwrap();
+
+        let batch_2_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 2,
+                batch_start: old_time_2,
+                batch_end: old_time_2,
+                record_count: 1,
+                hash: "hash-2".to_string(),
+                previous_hash: "hash-1".to_string(),
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[old_2_id.0], batch_2_id)
+            .await
+            .unwrap();
+
+        let batch_3_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 3,
+                batch_start: keep_time,
+                batch_end: keep_time,
+                record_count: 1,
+                hash: "hash-3".to_string(),
+                previous_hash: "hash-2".to_string(),
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[keep_id.0], batch_3_id)
+            .await
+            .unwrap();
+
+        let first_archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(first_archived, 2);
+
+        let second_old_time = now - chrono::Duration::days(95);
+        let mut second_old_entry = make_entry("GET", "/api/old-3", 200, ActorType::User);
+        second_old_entry.timestamp = second_old_time;
+        storage.insert_batch(&[second_old_entry]).await.unwrap();
+
+        let old_3_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/old-3'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let latest_batch = storage.get_latest_batch_hash().await.unwrap().unwrap();
+        let batch_4_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: latest_batch.sequence_number + 1,
+                batch_start: second_old_time,
+                batch_end: second_old_time,
+                record_count: 1,
+                hash: "hash-4".to_string(),
+                previous_hash: latest_batch.hash,
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[old_3_id.0], batch_4_id)
+            .await
+            .unwrap();
+
+        let second_archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(second_archived, 1);
+
+        let missing_hash_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) \
+             FROM audit_log_entries e \
+             LEFT JOIN audit_batch_hashes b ON e.batch_id = b.id \
+             WHERE e.batch_id IS NOT NULL AND b.id IS NULL",
+        )
+        .fetch_one(&archive_pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            missing_hash_count.0, 0,
+            "every archived batched entry must have a matching archive batch hash row"
+        );
+    }
+}

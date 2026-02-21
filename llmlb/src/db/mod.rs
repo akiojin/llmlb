@@ -27,6 +27,9 @@ pub mod endpoint_daily_stats;
 /// ダウンロードタスク管理（SPEC-e8e9326e）
 pub mod download_tasks;
 
+/// 監査ログストレージ（SPEC-8301d106）
+pub mod audit_log;
+
 /// 設定管理
 pub mod settings;
 

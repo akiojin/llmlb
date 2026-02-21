@@ -446,6 +446,12 @@ mod tests {
             shutdown.clone(),
         )
         .expect("Failed to create update manager");
+        let audit_log_storage =
+            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
+        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
+            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            crate::audit::writer::AuditLogWriterConfig::default(),
+        );
         AppState {
             load_manager,
             request_history,
@@ -458,6 +464,9 @@ mod tests {
             inference_gate,
             shutdown,
             update_manager,
+            audit_log_writer,
+            audit_log_storage,
+            audit_archive_pool: None,
         }
     }
 

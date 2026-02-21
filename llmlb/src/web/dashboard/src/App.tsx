@@ -3,14 +3,19 @@ import { useAuth } from '@/hooks/useAuth'
 import Dashboard from '@/pages/Dashboard'
 import EndpointPlayground from '@/pages/EndpointPlayground'
 import LoadBalancerPlayground from '@/pages/LoadBalancerPlayground'
+import AuditLogPage from '@/pages/AuditLog'
 
 type Route =
   | { type: 'dashboard' }
   | { type: 'lb-playground'; initialModel?: string }
   | { type: 'playground'; endpointId: string }
+  | { type: 'audit-log' }
 
 function parseHash(): Route {
   const hash = window.location.hash.slice(1) // Remove #
+  if (hash === 'audit-log') {
+    return { type: 'audit-log' }
+  }
   if (hash === 'lb-playground' || hash.startsWith('lb-playground?')) {
     let initialModel: string | undefined
     const qIdx = hash.indexOf('?')
@@ -68,6 +73,8 @@ function App() {
   }
 
   switch (route.type) {
+    case 'audit-log':
+      return <AuditLogPage onBack={navigateToDashboard} />
     case 'lb-playground':
       return <LoadBalancerPlayground onBack={navigateToDashboard} initialModel={route.initialModel} />
     case 'playground':

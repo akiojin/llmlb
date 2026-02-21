@@ -598,60 +598,14 @@ mod tests {
     //! NodeRegistry.register()を使用していたテストは#[ignore]でマーク。
 
     use super::*;
-    use crate::balancer::LoadManager;
     use crate::common::auth::UserRole;
+    use crate::db::test_utils::TestAppStateBuilder;
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
-    use std::sync::Arc;
     use tower::Service;
 
     async fn test_state() -> AppState {
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test database");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
-        let jwt_secret = "test-secret".to_string();
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        let audit_log_storage =
-            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
-        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
-            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            crate::audit::writer::AuditLogWriterConfig::default(),
-        );
-        AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret,
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-            audit_log_writer,
-            audit_log_storage,
-            audit_archive_pool: None,
-        }
+        TestAppStateBuilder::new().await.build().await
     }
 
     #[tokio::test]

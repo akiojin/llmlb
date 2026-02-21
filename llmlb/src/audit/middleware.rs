@@ -170,7 +170,6 @@ mod tests {
     use crate::balancer::LoadManager;
     use crate::db::audit_log::AuditLogStorage;
     use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
-    use sqlx::sqlite::SqlitePoolOptions;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -183,15 +182,7 @@ mod tests {
     );
 
     async fn create_test_pool() -> sqlx::SqlitePool {
-        let pool = SqlitePoolOptions::new()
-            .connect("sqlite::memory:")
-            .await
-            .expect("Failed to create in-memory pool");
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-        pool
+        crate::db::test_utils::test_db_pool().await
     }
 
     async fn create_test_state(pool: sqlx::SqlitePool) -> AppState {

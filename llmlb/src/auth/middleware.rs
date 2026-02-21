@@ -612,9 +612,7 @@ fn hash_with_sha256(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::balancer::LoadManager;
     use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
-    use std::sync::Arc;
     use tower::ServiceExt;
 
     #[test]
@@ -671,52 +669,10 @@ mod tests {
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn admin_middleware_allows_bearer_api_key() {
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        let state = crate::db::test_utils::TestAppStateBuilder::new()
             .await
-            .expect("create sqlite pool");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        let audit_log_storage =
-            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
-        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
-            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            crate::audit::writer::AuditLogWriterConfig::default(),
-        );
-        let state = crate::AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret: "test-secret".to_string(),
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-            audit_log_writer,
-            audit_log_storage,
-            audit_archive_pool: None,
-        };
+            .build()
+            .await;
 
         let cfg = JwtOrApiKeyPermissionConfig {
             app_state: state,
@@ -745,52 +701,10 @@ mod tests {
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn admin_middleware_rejects_invalid_jwt_even_with_api_key() {
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        let state = crate::db::test_utils::TestAppStateBuilder::new()
             .await
-            .expect("create sqlite pool");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        let audit_log_storage =
-            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
-        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
-            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            crate::audit::writer::AuditLogWriterConfig::default(),
-        );
-        let state = crate::AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret: "test-secret".to_string(),
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-            audit_log_writer,
-            audit_log_storage,
-            audit_archive_pool: None,
-        };
+            .build()
+            .await;
 
         let cfg = JwtOrApiKeyPermissionConfig {
             app_state: state,
@@ -823,9 +737,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn debug_api_key_is_accepted_in_debug_build_without_db() {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("create sqlite pool");
+        let pool = crate::db::test_utils::test_db_pool().await;
 
         let app = axum::Router::new()
             .route(
@@ -866,9 +778,7 @@ mod tests {
     #[cfg(not(debug_assertions))]
     #[tokio::test]
     async fn debug_api_key_is_rejected_in_release_build() {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("create sqlite pool");
+        let pool = crate::db::test_utils::test_db_pool().await;
 
         let app = axum::Router::new()
             .route("/t", axum::routing::get(|| async { "ok" }))

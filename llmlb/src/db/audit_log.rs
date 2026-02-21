@@ -1249,20 +1249,9 @@ mod tests {
     use super::*;
     use crate::audit::types::ActorType;
     use chrono::Utc;
-    use sqlx::sqlite::SqlitePoolOptions;
 
     async fn create_test_pool() -> SqlitePool {
-        let pool = SqlitePoolOptions::new()
-            .connect("sqlite::memory:")
-            .await
-            .expect("Failed to create in-memory pool");
-
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-
-        pool
+        crate::db::test_utils::test_db_pool().await
     }
 
     fn make_entry(method: &str, path: &str, status: u16, actor: ActorType) -> AuditLogEntry {
@@ -1950,17 +1939,7 @@ mod tests {
     #[tokio::test]
     async fn test_request_history_migration() {
         // request_historyからaudit_log_entriesへのデータ移行SQLを検証
-        let pool = SqlitePoolOptions::new()
-            .connect("sqlite::memory:")
-            .await
-            .expect("Failed to create pool");
-
-        // 全マイグレーションを実行（request_history + audit_log_entries等を正しいスキーマで作成）
-        // 017でrequest_historyからの移行が走るが、空テーブルなので0件移行
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
+        let pool = crate::db::test_utils::test_db_pool().await;
 
         // request_historyにテストデータを挿入（全マイグレーション後のフルスキーマ）
         sqlx::query(

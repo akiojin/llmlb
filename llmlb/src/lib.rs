@@ -86,6 +86,12 @@ pub mod shutdown;
 /// Self-update manager
 pub mod update;
 
+/// サーバー初期化（DB接続、レジストリ、ヘルスチェッカー等）
+pub mod bootstrap;
+
+/// axumサーバー起動・シャットダウン
+pub mod server;
+
 /// アプリケーション状態
 #[derive(Clone)]
 pub struct AppState {

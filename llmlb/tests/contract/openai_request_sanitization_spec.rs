@@ -43,13 +43,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
     std::env::set_var("OPENAI_API_KEY", "sk-test");
     std::env::set_var("OPENAI_BASE_URL", openai_base_url);
 
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
+    let db_pool = crate::support::lb::create_test_db_pool().await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");

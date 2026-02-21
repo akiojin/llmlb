@@ -20,13 +20,7 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 async fn build_app() -> Router {
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
+    let db_pool = crate::support::lb::create_test_db_pool().await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");

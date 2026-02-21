@@ -126,6 +126,55 @@ pub fn get_auto_sync_models_interval() -> Duration {
     Duration::from_secs(secs)
 }
 
+/// サーバーのホスト・ポート設定
+#[derive(Clone)]
+pub struct ServerConfig {
+    /// バインドするホストアドレス
+    pub host: String,
+    /// バインドするポート番号
+    pub port: u16,
+}
+
+impl ServerConfig {
+    /// 環境変数からサーバー設定を読み込む
+    pub fn from_env() -> Self {
+        let host = get_env_with_fallback_or("LLMLB_HOST", "LLMLB_HOST", "0.0.0.0");
+        let port = get_env_with_fallback_parse("LLMLB_PORT", "LLMLB_PORT", 32768);
+        Self { host, port }
+    }
+
+    /// コマンドライン引数からサーバー設定を作成する
+    pub fn from_args(host: String, port: u16) -> Self {
+        Self { host, port }
+    }
+
+    /// バインドアドレス文字列を返す
+    pub fn bind_addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+impl ServerConfig {
+    /// ローカル接続用のホストアドレスを返す
+    pub fn local_host(&self) -> String {
+        match self.host.as_str() {
+            "0.0.0.0" | "::" | "[::]" => "127.0.0.1".to_string(),
+            other => other.to_string(),
+        }
+    }
+
+    /// ベースURLを返す
+    pub fn base_url(&self) -> String {
+        format!("http://{}:{}", self.local_host(), self.port)
+    }
+
+    /// ダッシュボードURLを返す
+    pub fn dashboard_url(&self) -> String {
+        format!("{}/dashboard", self.base_url())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

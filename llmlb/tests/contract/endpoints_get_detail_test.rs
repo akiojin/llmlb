@@ -33,13 +33,7 @@ async fn build_app() -> TestApp {
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
 
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
+    let db_pool = crate::support::lb::create_test_db_pool().await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");

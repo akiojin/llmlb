@@ -352,12 +352,9 @@ impl UserRow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::migrations::initialize_database;
 
     async fn setup_test_db() -> SqlitePool {
-        initialize_database("sqlite::memory:")
-            .await
-            .expect("Failed to initialize test database")
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[tokio::test]

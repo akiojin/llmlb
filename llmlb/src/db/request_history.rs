@@ -1678,14 +1678,11 @@ pub fn start_cleanup_task(storage: Arc<RequestHistoryStorage>) {
 mod tests {
     use super::*;
     use crate::common::protocol::RequestType;
-    use crate::db::migrations::initialize_database;
     use serial_test::serial;
     use tempfile::tempdir;
 
     async fn create_test_pool() -> SqlitePool {
-        initialize_database("sqlite::memory:")
-            .await
-            .expect("Failed to create test database")
+        crate::db::test_utils::test_db_pool().await
     }
 
     fn create_test_record(timestamp: DateTime<Utc>) -> RequestResponseRecord {

@@ -367,13 +367,10 @@ impl InvitationCodeRow {
 mod tests {
     use super::*;
     use crate::common::auth::UserRole;
-    use crate::db::migrations::initialize_database;
     use crate::db::users;
 
     async fn setup_test_db() -> SqlitePool {
-        initialize_database("sqlite::memory:")
-            .await
-            .expect("Failed to initialize test database")
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[tokio::test]

@@ -1249,67 +1249,21 @@ mod tests {
     };
     use crate::common::protocol::{RecordStatus, RequestType};
     use crate::{
-        balancer::LoadManager,
-        db::{request_history::RequestHistoryStorage, test_utils::TEST_LOCK},
+        db::test_utils::{TestAppStateBuilder, TEST_LOCK},
         AppState,
     };
     use axum::body::to_bytes;
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use serde_json::json;
     use serial_test::serial;
-    use sqlx::SqlitePool;
     use std::net::IpAddr;
-    use std::sync::Arc;
     use tempfile::tempdir;
     use tokio::time::{sleep, Duration};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn create_local_state() -> AppState {
-        let db_pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("sqlite memory connect");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("migrations");
-        let request_history = Arc::new(RequestHistoryStorage::new(db_pool.clone()));
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        let audit_log_storage =
-            std::sync::Arc::new(crate::db::audit_log::AuditLogStorage::new(db_pool.clone()));
-        let audit_log_writer = crate::audit::writer::AuditLogWriter::new(
-            crate::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            crate::audit::writer::AuditLogWriterConfig::default(),
-        );
-        AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret: "test-secret".into(),
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-            audit_log_writer,
-            audit_log_storage,
-            audit_archive_pool: None,
-        }
+        TestAppStateBuilder::new().await.build().await
     }
 
     async fn create_state_with_tempdir() -> (AppState, tempfile::TempDir) {

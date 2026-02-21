@@ -3,6 +3,7 @@
 //! 認証済みユーザーが自分自身のAPIキーを管理するためのAPI。
 
 use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext, Claims};
+use crate::common::error::{CommonError, LbError};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -10,6 +11,8 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+
+use super::error::AppError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -121,7 +124,7 @@ fn default_user_api_key_permissions() -> Vec<ApiKeyPermission> {
 fn parse_user_id_from_claims(claims: &Claims) -> Result<Uuid, Response> {
     claims.sub.parse::<Uuid>().map_err(|e| {
         tracing::error!("Failed to parse user ID: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Internal(format!("Failed to parse user ID: {}", e))).into_response()
     })
 }
 
@@ -134,7 +137,10 @@ fn parse_expires_at(
             chrono::DateTime::parse_from_rfc3339(expires_at_str)
                 .map_err(|e| {
                     tracing::warn!("Invalid expires_at format: {}", e);
-                    (StatusCode::BAD_REQUEST, "Invalid expires_at format").into_response()
+                    AppError(LbError::Common(CommonError::Validation(
+                        "Invalid expires_at format".to_string(),
+                    )))
+                    .into_response()
                 })?
                 .with_timezone(&chrono::Utc),
         )),
@@ -153,7 +159,7 @@ pub async fn list_api_keys(
         .await
         .map_err(|e| {
             tracing::error!("Failed to list API keys: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!("Failed to list API keys: {}", e))).into_response()
         })?;
 
     Ok(Json(ListApiKeysResponse {
@@ -168,19 +174,17 @@ pub async fn create_api_key(
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<(StatusCode, Json<CreateApiKeyResponse>), Response> {
     if request.permissions.is_some() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Field 'permissions' is managed by server and cannot be provided.",
-        )
-            .into_response());
+        return Err(AppError(LbError::Common(CommonError::Validation(
+            "Field 'permissions' is managed by server and cannot be provided.".to_string(),
+        )))
+        .into_response());
     }
 
     if request.scopes.is_some() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Field 'scopes' is deprecated and not accepted.",
-        )
-            .into_response());
+        return Err(AppError(LbError::Common(CommonError::Validation(
+            "Field 'scopes' is deprecated and not accepted.".to_string(),
+        )))
+        .into_response());
     }
 
     let user_id = parse_user_id_from_claims(&claims)?;
@@ -196,7 +200,11 @@ pub async fn create_api_key(
     .await
     .map_err(|e| {
         tracing::error!("Failed to create API key: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Database(format!(
+            "Failed to create API key: {}",
+            e
+        )))
+        .into_response()
     })?;
 
     Ok((
@@ -225,12 +233,16 @@ pub async fn update_api_key(
     .await
     .map_err(|e| {
         tracing::error!("Failed to update API key: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Database(format!(
+            "Failed to update API key: {}",
+            e
+        )))
+        .into_response()
     })?;
 
     match updated {
         Some(api_key) => Ok(Json(ApiKeyResponse::from(api_key))),
-        None => Err((StatusCode::NOT_FOUND, "API key not found").into_response()),
+        None => Err(AppError(LbError::NotFound("API key not found".to_string())).into_response()),
     }
 }
 
@@ -246,11 +258,15 @@ pub async fn delete_api_key(
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete API key: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!(
+                "Failed to delete API key: {}",
+                e
+            )))
+            .into_response()
         })?;
 
     if !deleted {
-        return Err((StatusCode::NOT_FOUND, "API key not found").into_response());
+        return Err(AppError(LbError::NotFound("API key not found".to_string())).into_response());
     }
 
     Ok(StatusCode::NO_CONTENT)

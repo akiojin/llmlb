@@ -41,7 +41,7 @@ fn error_response(error: LbError, status: StatusCode) -> Response {
         LbError::Http(msg) => (msg, "invalid_request_error"),
         LbError::ServiceUnavailable(msg) => (msg, "service_unavailable"),
         LbError::InvalidModelName(msg) => (msg, "invalid_request_error"),
-        _ => (error.to_string(), "api_error"),
+        _ => (error.external_message().to_string(), "api_error"),
     };
 
     (

@@ -106,6 +106,10 @@ pub enum LbError {
     /// Authorization error
     #[error("Authorization error: {0}")]
     Authorization(String),
+
+    /// Conflict error (e.g., duplicate resource)
+    #[error("Conflict: {0}")]
+    Conflict(String),
 }
 
 impl LbError {
@@ -136,6 +140,7 @@ impl LbError {
             Self::Jwt(_) => "Authentication error",
             Self::Authentication(_) => "Authentication failed",
             Self::Authorization(_) => "Access denied",
+            Self::Conflict(_) => "Resource conflict",
         }
     }
 
@@ -170,6 +175,7 @@ impl LbError {
             Self::Jwt(_) => "authentication_error",
             Self::Authentication(_) => "authentication_error",
             Self::Authorization(_) => "permission_error",
+            Self::Conflict(_) => "invalid_request_error",
         }
     }
 
@@ -194,6 +200,7 @@ impl LbError {
             Self::Jwt(_) => StatusCode::UNAUTHORIZED,
             Self::Authentication(_) => StatusCode::UNAUTHORIZED,
             Self::Authorization(_) => StatusCode::FORBIDDEN,
+            Self::Conflict(_) => StatusCode::CONFLICT,
         }
     }
 
@@ -383,6 +390,12 @@ mod tests {
             LbError::InvalidModelName("test".to_string()).error_type(),
             "invalid_request_error"
         );
+
+        // Conflict errors
+        assert_eq!(
+            LbError::Conflict("test".to_string()).error_type(),
+            "invalid_request_error"
+        );
     }
 
     #[test]
@@ -418,6 +431,10 @@ mod tests {
         assert_eq!(
             LbError::Internal("test".to_string()).status_code(),
             StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            LbError::Conflict("test".to_string()).status_code(),
+            StatusCode::CONFLICT
         );
     }
 

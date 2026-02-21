@@ -1,6 +1,7 @@
 //! System API (self-update status / apply).
 
 use crate::common::auth::{Claims, UserRole};
+use crate::common::error::LbError;
 use crate::AppState;
 use axum::{
     extract::State,
@@ -10,6 +11,8 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::json;
+
+use super::error::AppError;
 
 #[derive(Debug, Serialize)]
 struct SystemInfoResponse {
@@ -68,16 +71,17 @@ pub async fn check_update(
 ) -> Response {
     if !crate::config::is_auth_disabled() {
         let Some(Extension(claims)) = claims else {
-            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            return AppError(LbError::Authentication("Unauthorized".to_string())).into_response();
         };
         if claims.role != UserRole::Admin {
-            return (StatusCode::FORBIDDEN, "Admin access required").into_response();
+            return AppError(LbError::Authorization("Admin access required".to_string()))
+                .into_response();
         }
     }
 
     match state.update_manager.check_now().await {
         Ok(update) => (StatusCode::OK, Json(CheckUpdateResponse { update })).into_response(),
-        Err(err) => (StatusCode::BAD_GATEWAY, err.to_string()).into_response(),
+        Err(err) => AppError(LbError::Http(err.to_string())).into_response(),
     }
 }
 
@@ -90,10 +94,11 @@ pub async fn apply_update(
 ) -> Response {
     if !crate::config::is_auth_disabled() {
         let Some(Extension(claims)) = claims else {
-            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            return AppError(LbError::Authentication("Unauthorized".to_string())).into_response();
         };
         if claims.role != UserRole::Admin {
-            return (StatusCode::FORBIDDEN, "Admin access required").into_response();
+            return AppError(LbError::Authorization("Admin access required".to_string()))
+                .into_response();
         }
     }
 
@@ -117,10 +122,11 @@ pub async fn apply_force_update(
 ) -> Response {
     if !crate::config::is_auth_disabled() {
         let Some(Extension(claims)) = claims else {
-            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+            return AppError(LbError::Authentication("Unauthorized".to_string())).into_response();
         };
         if claims.role != UserRole::Admin {
-            return (StatusCode::FORBIDDEN, "Admin access required").into_response();
+            return AppError(LbError::Authorization("Admin access required".to_string()))
+                .into_response();
         }
     }
 
@@ -134,6 +140,6 @@ pub async fn apply_force_update(
             }),
         )
             .into_response(),
-        Err(err) => (StatusCode::CONFLICT, err.to_string()).into_response(),
+        Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
     }
 }

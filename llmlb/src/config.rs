@@ -110,20 +110,6 @@ pub fn get_default_embedding_model() -> String {
     .unwrap_or_else(|| "nomic-embed-text-v1.5".to_string())
 }
 
-/// 認証無効化モードの有効/無効を取得
-///
-/// 環境変数 `LLMLB_AUTH_DISABLED`（旧: `AUTH_DISABLED`）が `true/1/yes/on` のときに有効化する。
-pub fn is_auth_disabled() -> bool {
-    get_env_with_fallback("LLMLB_AUTH_DISABLED", "AUTH_DISABLED")
-        .map(|value| {
-            matches!(
-                value.to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false)
-}
-
 /// エンドポイントのモデル自動同期の最短間隔を取得
 ///
 /// ヘルスチェック成功時にモデル同期（`GET /v1/models` + DB反映）を実行する際、
@@ -251,34 +237,6 @@ mod tests {
         assert_eq!(result, "new-model");
         std::env::remove_var("LLMLB_DEFAULT_EMBEDDING_MODEL");
         std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_auth_disabled_new_name() {
-        std::env::set_var("LLMLB_AUTH_DISABLED", "true");
-        std::env::remove_var("AUTH_DISABLED");
-        assert!(is_auth_disabled());
-        std::env::remove_var("LLMLB_AUTH_DISABLED");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_auth_disabled_old_name() {
-        std::env::remove_var("LLMLB_AUTH_DISABLED");
-        std::env::set_var("AUTH_DISABLED", "1");
-        assert!(is_auth_disabled());
-        std::env::remove_var("AUTH_DISABLED");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_auth_disabled_new_takes_precedence() {
-        std::env::set_var("LLMLB_AUTH_DISABLED", "false");
-        std::env::set_var("AUTH_DISABLED", "true");
-        assert!(!is_auth_disabled());
-        std::env::remove_var("LLMLB_AUTH_DISABLED");
-        std::env::remove_var("AUTH_DISABLED");
     }
 
     #[test]

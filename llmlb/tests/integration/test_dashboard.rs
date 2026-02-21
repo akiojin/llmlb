@@ -3,6 +3,7 @@
 //! WebSocket接続 → リアルタイム更新 → ノード状態変化の受信
 //!
 //! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: AUTH_DISABLED廃止に伴い、JWT認証を使用するよう更新済み。
 
 use axum::Router;
 use futures::StreamExt;
@@ -11,21 +12,11 @@ use llmlb::{
     api, auth::jwt::create_jwt, balancer::LoadManager, registry::endpoints::EndpointRegistry,
     AppState,
 };
-use serial_test::serial;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-/// Guard to reset AUTH_DISABLED on drop
-struct AuthDisabledGuard;
-
-impl Drop for AuthDisabledGuard {
-    fn drop(&mut self) {
-        std::env::remove_var("AUTH_DISABLED");
-    }
-}
-
-async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
+async fn build_test_app() -> (AppState, Router) {
     let temp_dir = std::env::temp_dir().join(format!(
         "dashboard-ws-test-{}-{}",
         std::process::id(),
@@ -36,9 +27,6 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
 
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
-    // Disable authentication for integration tests (cleaned up by AuthDisabledGuard)
-    std::env::set_var("AUTH_DISABLED", "true");
-    let guard = AuthDisabledGuard;
 
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -88,7 +76,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     };
 
     let app = api::create_app(state.clone());
-    (state, app, guard)
+    (state, app)
 }
 
 fn ws_url_with_token(addr: std::net::SocketAddr, secret: &str) -> String {
@@ -97,10 +85,9 @@ fn ws_url_with_token(addr: std::net::SocketAddr, secret: &str) -> String {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_dashboard_websocket_connection() {
     // Arrange: Router server startup
-    let (state, app, _guard) = build_test_app().await;
+    let (state, app) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -135,10 +122,9 @@ async fn test_dashboard_websocket_connection() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_dashboard_receives_node_registration_event() {
     // Arrange: Router server startup
-    let (state, app, _guard) = build_test_app().await;
+    let (state, app) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -189,10 +175,9 @@ async fn test_dashboard_receives_node_registration_event() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_dashboard_receives_node_status_change() {
     // Arrange: Router server startup
-    let (state, app, _guard) = build_test_app().await;
+    let (state, app) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 

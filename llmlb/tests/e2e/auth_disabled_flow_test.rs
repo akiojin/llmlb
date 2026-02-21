@@ -1,8 +1,8 @@
-//! 認証無効化モードのE2Eテスト
+//! デバッグAPIキー認証のE2Eテスト
 //!
-//! AUTH_DISABLED=true のときに認証なしでアクセスできることを確認する
+//! デバッグビルドでsk_debug APIキーを使用してアクセスできることを確認する
 //!
-//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: AUTH_DISABLEDは廃止されました。デバッグビルドではsk_debug APIキーで認証します。
 
 use axum::{
     body::Body,
@@ -10,34 +10,10 @@ use axum::{
     Router,
 };
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
-use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
 
 use crate::support;
-
-struct EnvGuard {
-    key: &'static str,
-    value: Option<String>,
-}
-
-impl EnvGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let prev = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, value: prev }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        if let Some(value) = &self.value {
-            std::env::set_var(self.key, value);
-        } else {
-            std::env::remove_var(self.key);
-        }
-    }
-}
 
 async fn build_app() -> Router {
     let db_pool = support::lb::create_test_db_pool().await;
@@ -83,21 +59,19 @@ async fn build_app() -> Router {
     api::create_app(state)
 }
 
-/// SPEC-e8e9326e: /api/nodes は廃止されたため、/api/endpoints を使用
-/// このテストはAUTH_DISABLEDモードの動作確認に焦点を当てる
+/// デバッグビルドではsk_debug APIキーでエンドポイント一覧にアクセスできることを確認
+#[cfg(debug_assertions)]
 #[tokio::test]
-#[serial]
-async fn auth_disabled_allows_dashboard_and_endpoints() {
-    let _guard = EnvGuard::set("AUTH_DISABLED", "true");
+async fn debug_api_key_allows_endpoints_access() {
     let app = build_app().await;
 
-    // /api/endpoints エンドポイントをテスト（/api/nodesは廃止）
     let endpoints_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
                 .uri("/api/endpoints")
+                .header("x-api-key", "sk_debug")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -107,26 +81,15 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
     assert_eq!(
         endpoints_response.status(),
         StatusCode::OK,
-        "AUTH_DISABLED should allow /api/endpoints without auth"
+        "sk_debug should allow /api/endpoints in debug build"
     );
+}
 
-    let me_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/auth/me")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        me_response.status(),
-        StatusCode::OK,
-        "AUTH_DISABLED should allow /api/auth/me without auth"
-    );
+/// デバッグビルドではsk_debug APIキーでダッシュボード静的アセットにアクセスできることを確認
+/// （ダッシュボード静的ファイルは認証不要）
+#[tokio::test]
+async fn dashboard_static_is_accessible_without_auth() {
+    let app = build_app().await;
 
     let dashboard_response = app
         .oneshot(
@@ -142,6 +105,6 @@ async fn auth_disabled_allows_dashboard_and_endpoints() {
     assert_eq!(
         dashboard_response.status(),
         StatusCode::OK,
-        "AUTH_DISABLED should allow /dashboard without auth"
+        "/dashboard static asset should be accessible without auth"
     );
 }

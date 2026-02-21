@@ -10,18 +10,15 @@ use crate::common::{
     protocol::{RecordStatus, RequestResponseRecord, RequestType, TpsApiKind},
 };
 use crate::types::model::{ModelCapabilities, ModelCapability};
-use axum::body::Body;
 use axum::{
     extract::{ConnectInfo, Path, State},
-    http::{header::CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::Utc;
-use reqwest;
 use serde_json::{json, Value};
 use std::{collections::HashMap, net::IpAddr, net::SocketAddr, time::Instant};
-use tracing::{error, info, warn};
+use tracing::error;
 use uuid::Uuid;
 
 use crate::auth::middleware::ApiKeyAuthContext;
@@ -29,9 +26,14 @@ use crate::common::ip::{normalize_ip, normalize_socket_ip};
 
 use crate::{
     api::{
+        cloud_proxy::{proxy_cloud_provider, resolve_provider},
         error::AppError,
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
+        openai_util::{
+            model_unavailable_response, openai_error_response, queue_error_response,
+            sanitize_openai_payload_for_history,
+        },
         proxy::{
             forward_streaming_response, forward_streaming_response_with_tps_tracking,
             record_endpoint_request_stats, save_request_record, select_available_endpoint,
@@ -39,31 +41,9 @@ use crate::{
         },
     },
     balancer::RequestOutcome,
-    cloud_metrics,
     token::extract_usage_from_response,
     AppState,
 };
-
-fn map_reqwest_error(err: reqwest::Error) -> AppError {
-    AppError::from(LbError::Http(err.to_string()))
-}
-
-fn auth_error(msg: &str) -> AppError {
-    AppError::from(LbError::Authentication(msg.to_string()))
-}
-
-fn get_required_key(provider: &str, env_key: &str, err_msg: &str) -> Result<String, AppError> {
-    match std::env::var(env_key) {
-        Ok(v) => {
-            info!(provider = provider, key = env_key, "cloud api key present");
-            Ok(v)
-        }
-        Err(_) => {
-            warn!(provider = provider, key = env_key, "cloud api key missing");
-            Err(auth_error(err_msg))
-        }
-    }
-}
 
 /// SPEC-f8e3a1b7: 推論リクエスト成功時にエンドポイントのレイテンシを更新（Fire-and-forget）
 fn update_inference_latency(
@@ -88,64 +68,6 @@ fn update_inference_latency(
     });
 }
 
-fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
-    fn redact_data_url(value: &Value) -> Value {
-        match value {
-            Value::String(s) => {
-                if s.starts_with("data:") && s.contains(";base64,") {
-                    Value::String(format!("[redacted data-url len={}]", s.len()))
-                } else {
-                    Value::String(s.clone())
-                }
-            }
-            Value::Array(items) => Value::Array(items.iter().map(redact_data_url).collect()),
-            Value::Object(map) => {
-                let mut out = serde_json::Map::with_capacity(map.len());
-                for (k, v) in map {
-                    if k == "input_audio" {
-                        if let Some(obj) = v.as_object() {
-                            let mut cloned = obj.clone();
-                            if let Some(data) = obj.get("data").and_then(|d| d.as_str()) {
-                                cloned.insert(
-                                    "data".to_string(),
-                                    Value::String(format!("[redacted base64 len={}]", data.len())),
-                                );
-                            }
-                            out.insert(k.clone(), Value::Object(cloned));
-                            continue;
-                        }
-                    }
-
-                    if k == "image_url" {
-                        if let Some(obj) = v.as_object() {
-                            let mut cloned = obj.clone();
-                            if let Some(url) = obj.get("url").and_then(|d| d.as_str()) {
-                                if url.starts_with("data:") && url.contains(";base64,") {
-                                    cloned.insert(
-                                        "url".to_string(),
-                                        Value::String(format!(
-                                            "[redacted data-url len={}]",
-                                            url.len()
-                                        )),
-                                    );
-                                }
-                            }
-                            out.insert(k.clone(), Value::Object(cloned));
-                            continue;
-                        }
-                    }
-
-                    out.insert(k.clone(), redact_data_url(v));
-                }
-                Value::Object(out)
-            }
-            _ => value.clone(),
-        }
-    }
-
-    redact_data_url(payload)
-}
-
 fn add_queue_headers(response: &mut Response, wait_ms: u128) {
     let headers = response.headers_mut();
     headers.insert(
@@ -156,59 +78,6 @@ fn add_queue_headers(response: &mut Response, wait_ms: u128) {
     if let Ok(value) = HeaderValue::from_str(&wait_value) {
         headers.insert(HeaderName::from_static("x-queue-wait-ms"), value);
     }
-}
-
-fn queue_error_response(
-    status: StatusCode,
-    message: &str,
-    error_type: &str,
-    retry_after: Option<u64>,
-) -> Response {
-    let mut response = (
-        status,
-        Json(json!({
-            "error": {
-                "message": message,
-                "type": error_type,
-                "code": status.as_u16(),
-            }
-        })),
-    )
-        .into_response();
-
-    if let Some(value) = retry_after {
-        if let Ok(header_value) = HeaderValue::from_str(&value.to_string()) {
-            response
-                .headers_mut()
-                .insert(HeaderName::from_static("retry-after"), header_value);
-        }
-    }
-
-    response
-}
-
-fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Response {
-    let payload = json!({
-        "error": {
-            "message": message.into(),
-            "type": "invalid_request_error",
-            "code": status.as_u16(),
-        }
-    });
-
-    (status, Json(payload)).into_response()
-}
-
-fn model_unavailable_response(message: impl Into<String>, code: &str) -> Response {
-    let payload = json!({
-        "error": {
-            "message": message.into(),
-            "type": "service_unavailable",
-            "code": code,
-        }
-    });
-
-    (StatusCode::SERVICE_UNAVAILABLE, Json(payload)).into_response()
 }
 
 /// クライアントIPとAPIキーIDを抽出するヘルパー
@@ -763,430 +632,10 @@ fn cloud_virtual_node(provider: &str) -> (Uuid, String, IpAddr) {
     (endpoint_id, machine_name, UNSPECIFIED_IP)
 }
 
-struct CloudProxyResult {
-    response: Response,
-    response_body: Option<Value>,
-    status: StatusCode,
-    error_message: Option<String>,
-}
-
-fn map_openai_messages_to_google_contents(messages: &[Value]) -> Vec<Value> {
-    messages
-        .iter()
-        .filter_map(|m| {
-            let role = m.get("role")?.as_str().unwrap_or("user");
-            let text = m.get("content").and_then(|c| c.as_str()).unwrap_or("");
-            let mapped_role = match role {
-                "assistant" => "model",
-                _ => "user",
-            };
-            Some(json!({
-                "role": mapped_role,
-                "parts": [{"text": text}]
-            }))
-        })
-        .collect()
-}
-
-fn map_openai_messages_to_anthropic(messages: &[Value]) -> (Option<String>, Vec<Value>) {
-    let mut system_msgs: Vec<String> = Vec::new();
-    let mut regular: Vec<Value> = Vec::new();
-    for m in messages.iter() {
-        let role = m.get("role").and_then(|r| r.as_str()).unwrap_or("user");
-        let text = m.get("content").and_then(|c| c.as_str()).unwrap_or("");
-        match role {
-            "system" => system_msgs.push(text.to_string()),
-            "assistant" => regular.push(json!({
-                "role": "assistant",
-                "content": [{"type":"text","text": text}]
-            })),
-            _ => regular.push(json!({
-                "role": "user",
-                "content": [{"type":"text","text": text}]
-            })),
-        }
-    }
-    let system = if system_msgs.is_empty() {
-        None
-    } else {
-        Some(system_msgs.join("\n"))
-    };
-    (system, regular)
-}
-
-async fn proxy_openai_provider(
-    http_client: &reqwest::Client,
-    target_path: &str,
-    mut payload: Value,
-    stream: bool,
-    model: String,
-) -> Result<CloudProxyResult, AppError> {
-    let req_id = Uuid::new_v4();
-    let started = Instant::now();
-    let api_key = get_required_key(
-        "openai",
-        "OPENAI_API_KEY",
-        "OPENAI_API_KEY is required for openai: models",
-    )?;
-    let base = std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com".into());
-
-    // strip provider prefix before forwarding
-    payload["model"] = Value::String(model);
-
-    let url = format!("{base}{target_path}");
-    let res = http_client
-        .post(&url)
-        .bearer_auth(api_key)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(map_reqwest_error)?;
-
-    if stream {
-        info!(
-            provider = "openai",
-            model = payload.get("model").and_then(|v| v.as_str()).unwrap_or(""),
-            request_id = %req_id,
-            latency_ms = started.elapsed().as_millis(),
-            stream = true,
-            status = %res.status(),
-            "cloud proxy stream (openai)"
-        );
-        cloud_metrics::record(
-            "openai",
-            res.status().as_u16(),
-            started.elapsed().as_millis(),
-        );
-        let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-        let response = forward_streaming_response(res).map_err(AppError::from)?;
-        return Ok(CloudProxyResult {
-            response,
-            response_body: None,
-            status,
-            error_message: if status.is_success() {
-                None
-            } else {
-                Some(status.to_string())
-            },
-        });
-    }
-
-    let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let ct = res.headers().get(reqwest::header::CONTENT_TYPE).cloned();
-    let bytes = res.bytes().await.map_err(map_reqwest_error)?;
-    let parsed_body = serde_json::from_slice::<Value>(&bytes).ok();
-    let error_message = if status.is_success() {
-        None
-    } else {
-        Some(String::from_utf8_lossy(&bytes).trim().to_string())
-    };
-    let mut resp = Response::builder().status(status);
-    if let Some(ct) = ct {
-        if let Ok(hv) = HeaderValue::from_str(ct.to_str().unwrap_or("")) {
-            resp = resp.header(CONTENT_TYPE, hv);
-        }
-    }
-    let built = resp
-        .body(Body::from(bytes))
-        .expect("Response builder should not fail with valid status and bytes body");
-    info!(
-        provider = "openai",
-        model = payload.get("model").and_then(|v| v.as_str()).unwrap_or(""),
-        request_id = %req_id,
-        latency_ms = started.elapsed().as_millis(),
-        stream = false,
-        status = %status,
-        "cloud proxy complete (openai)"
-    );
-    cloud_metrics::record("openai", status.as_u16(), started.elapsed().as_millis());
-    Ok(CloudProxyResult {
-        response: built,
-        response_body: parsed_body,
-        status,
-        error_message,
-    })
-}
-
-fn map_generation_config(payload: &Value) -> Value {
-    json!({
-        "temperature": payload.get("temperature").and_then(|v| v.as_f64()),
-        "topP": payload.get("top_p").and_then(|v| v.as_f64()),
-        "maxOutputTokens": payload.get("max_tokens").and_then(|v| v.as_i64()),
-    })
-}
-
-async fn proxy_google_provider(
-    http_client: &reqwest::Client,
-    model: String,
-    payload: Value,
-    stream: bool,
-) -> Result<CloudProxyResult, AppError> {
-    let req_id = Uuid::new_v4();
-    let started = Instant::now();
-    let api_key = get_required_key(
-        "google",
-        "GOOGLE_API_KEY",
-        "GOOGLE_API_KEY is required for google: models",
-    )?;
-    let base = std::env::var("GOOGLE_API_BASE_URL")
-        .unwrap_or_else(|_| "https://generativelanguage.googleapis.com/v1beta".into());
-    let messages = payload
-        .get("messages")
-        .and_then(|m| m.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let contents = map_openai_messages_to_google_contents(&messages);
-    let mut body = json!({
-        "contents": contents,
-        "generationConfig": map_generation_config(&payload),
-    });
-    // drop nulls in generationConfig
-    if let Some(gen) = body["generationConfig"].as_object_mut() {
-        gen.retain(|_, v| !v.is_null());
-    }
-
-    let endpoint_suffix = if stream {
-        format!("models/{model}:streamGenerateContent")
-    } else {
-        format!("models/{model}:generateContent")
-    };
-    let url = format!("{base}/{endpoint_suffix}");
-
-    let req = http_client
-        .post(&url)
-        .query(&[("key", api_key)])
-        .json(&body);
-    let res = req.send().await.map_err(map_reqwest_error)?;
-
-    if stream {
-        info!(
-            provider = "google",
-            model = %model,
-            request_id = %req_id,
-            latency_ms = started.elapsed().as_millis(),
-            stream = true,
-            status = %res.status(),
-            "cloud proxy stream (google)"
-        );
-        cloud_metrics::record(
-            "google",
-            res.status().as_u16(),
-            started.elapsed().as_millis(),
-        );
-        let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-        let response = forward_streaming_response(res).map_err(AppError::from)?;
-        return Ok(CloudProxyResult {
-            response,
-            response_body: None,
-            status,
-            error_message: if status.is_success() {
-                None
-            } else {
-                Some(status.to_string())
-            },
-        });
-    }
-
-    let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let data: Value = res.json().await.map_err(map_reqwest_error)?;
-    let text = data
-        .get("candidates")
-        .and_then(|c: &Value| c.get(0))
-        .and_then(|c: &Value| c.get("content"))
-        .and_then(|c: &Value| c.get("parts"))
-        .and_then(|p: &Value| p.get(0))
-        .and_then(|p: &Value| p.get("text"))
-        .and_then(|t: &Value| t.as_str())
-        .unwrap_or("");
-
-    let resp_body = json!({
-        "id": format!("google-{}", Uuid::new_v4()),
-        "object": "chat.completion",
-        "model": format!("google:{model}"),
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": text},
-        "finish_reason": "stop"
-    }],
-    });
-
-    let built = Response::builder()
-        .status(status)
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(Body::from(resp_body.to_string()))
-        .map_err(|e| AppError::from(LbError::Http(e.to_string())))?;
-
-    info!(
-        provider = "google",
-        model = %model,
-        request_id = %req_id,
-        latency_ms = started.elapsed().as_millis(),
-        stream = false,
-        status = %status,
-        "cloud proxy complete (google)"
-    );
-
-    cloud_metrics::record("google", status.as_u16(), started.elapsed().as_millis());
-
-    let error_message = if status.is_success() {
-        None
-    } else {
-        serde_json::to_string(&data).ok()
-    };
-
-    Ok(CloudProxyResult {
-        response: built,
-        response_body: Some(resp_body),
-        status,
-        error_message,
-    })
-}
-
-async fn proxy_anthropic_provider(
-    http_client: &reqwest::Client,
-    model: String,
-    payload: Value,
-    stream: bool,
-) -> Result<CloudProxyResult, AppError> {
-    let req_id = Uuid::new_v4();
-    let started = Instant::now();
-    let api_key = get_required_key(
-        "anthropic",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_API_KEY is required for anthropic: models",
-    )?;
-    let base = std::env::var("ANTHROPIC_API_BASE_URL")
-        .unwrap_or_else(|_| "https://api.anthropic.com".into());
-    let messages = payload
-        .get("messages")
-        .and_then(|m| m.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let (system, mapped) = map_openai_messages_to_anthropic(&messages);
-    let max_tokens = payload
-        .get("max_tokens")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(1024);
-    let mut body = json!({
-        "model": model,
-        "messages": mapped,
-        "max_tokens": max_tokens,
-        "stream": stream,
-        "temperature": payload.get("temperature").and_then(|v| v.as_f64()),
-        "top_p": payload.get("top_p").and_then(|v| v.as_f64()),
-    });
-    if let Some(s) = system {
-        body["system"] = Value::String(s);
-    }
-    // prune nulls
-    if let Some(obj) = body.as_object_mut() {
-        obj.retain(|_, v| !v.is_null());
-    }
-
-    let url = format!("{base}/v1/messages");
-    let req = http_client
-        .post(&url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body);
-    let res = req.send().await.map_err(map_reqwest_error)?;
-
-    if stream {
-        info!(
-            provider = "anthropic",
-            model = %model,
-            request_id = %req_id,
-            latency_ms = started.elapsed().as_millis(),
-            stream = true,
-            status = %res.status(),
-            "cloud proxy stream (anthropic)"
-        );
-        cloud_metrics::record(
-            "anthropic",
-            res.status().as_u16(),
-            started.elapsed().as_millis(),
-        );
-        let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-        let response = forward_streaming_response(res).map_err(AppError::from)?;
-        return Ok(CloudProxyResult {
-            response,
-            response_body: None,
-            status,
-            error_message: if status.is_success() {
-                None
-            } else {
-                Some(status.to_string())
-            },
-        });
-    }
-
-    let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let data: Value = res.json().await.map_err(map_reqwest_error)?;
-    let text = data
-        .get("content")
-        .and_then(|c| c.get(0))
-        .and_then(|p: &Value| p.get("text"))
-        .and_then(|t: &Value| t.as_str())
-        .unwrap_or("");
-
-    let id = data
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("anthropic-{}", Uuid::new_v4()));
-    let model_label = data
-        .get("model")
-        .and_then(|m| m.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| model.clone());
-
-    let resp_body = json!({
-        "id": id,
-        "object": "chat.completion",
-        "model": format!("anthropic:{}", model_label),
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": text},
-        "finish_reason": "stop"
-    }],
-    });
-
-    let built = Response::builder()
-        .status(status)
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(Body::from(resp_body.to_string()))
-        .map_err(|e| AppError::from(LbError::Http(e.to_string())))?;
-
-    info!(
-        provider = "anthropic",
-        model = %model_label,
-        request_id = %req_id,
-        latency_ms = started.elapsed().as_millis(),
-        stream = false,
-        status = %status,
-        "cloud proxy complete (anthropic)"
-    );
-
-    cloud_metrics::record("anthropic", status.as_u16(), started.elapsed().as_millis());
-
-    let error_message = if status.is_success() {
-        None
-    } else {
-        serde_json::to_string(&data).ok()
-    };
-
-    Ok(CloudProxyResult {
-        response: built,
-        response_body: Some(resp_body),
-        status,
-        error_message,
-    })
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn proxy_openai_cloud_post(
     state: &AppState,
-    target_path: &str,
+    _target_path: &str,
     model: &str,
     stream: bool,
     payload: Value,
@@ -1197,93 +646,73 @@ async fn proxy_openai_cloud_post(
     let (provider, model_name) = parse_cloud_model(model)
         .ok_or_else(|| validation_error("cloud model prefix is invalid"))?;
     let (endpoint_id, endpoint_name, endpoint_ip) = cloud_virtual_node(&provider);
-    let record_id = Uuid::new_v4();
-    let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
     let started = Instant::now();
 
-    let outcome = match match provider.as_str() {
-        "openai" => {
-            proxy_openai_provider(&state.http_client, target_path, payload, stream, model_name)
-                .await
-        }
-        "google" => proxy_google_provider(&state.http_client, model_name, payload, stream).await,
-        "anthropic" => {
-            proxy_anthropic_provider(&state.http_client, model_name, payload, stream).await
-        }
-        _ => Err(validation_error("unsupported cloud provider prefix")),
-    } {
+    let cloud_provider = resolve_provider(provider.as_str())
+        .ok_or_else(|| validation_error("unsupported cloud provider prefix"))?;
+    let outcome = match proxy_cloud_provider(
+        cloud_provider.as_ref(),
+        &state.http_client,
+        &payload,
+        &model_name,
+        stream,
+    )
+    .await
+    {
         Ok(res) => res,
         Err(e) => {
             let duration = started.elapsed();
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model: model.to_string(),
+            {
+                let mut record = RequestResponseRecord::new(
                     endpoint_id,
                     endpoint_name,
                     endpoint_ip,
-                    client_ip,
+                    model.to_string(),
+                    request_type,
                     request_body,
-                    response_body: None,
-                    duration_ms: duration.as_millis() as u64,
-                    status: RecordStatus::Error {
-                        message: format!("{e:?}"),
-                    },
-                    completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
+                    StatusCode::BAD_GATEWAY,
+                    duration,
+                    client_ip,
                     api_key_id,
-                },
-            );
+                );
+                record.status = RecordStatus::Error {
+                    message: format!("{e:?}"),
+                };
+                save_request_record(state.request_history.clone(), record);
+            }
             return Err(e);
         }
     };
 
     let duration = started.elapsed();
     let status = outcome.status;
-    let status_record = if status.is_success() {
-        RecordStatus::Success
-    } else {
-        RecordStatus::Error {
-            message: outcome
-                .error_message
-                .clone()
-                .unwrap_or_else(|| status.to_string()),
-        }
-    };
-    let response_body = if status.is_success() {
-        outcome.response_body.clone()
-    } else {
-        None
-    };
-
-    save_request_record(
-        state.request_history.clone(),
-        RequestResponseRecord {
-            id: record_id,
-            timestamp,
-            request_type,
-            model: model.to_string(),
+    {
+        let mut record = RequestResponseRecord::new(
             endpoint_id,
             endpoint_name,
             endpoint_ip,
-            client_ip,
+            model.to_string(),
+            request_type,
             request_body,
-            response_body,
-            duration_ms: duration.as_millis() as u64,
-            status: status_record,
-            completed_at: Utc::now(),
-            input_tokens: None,
-            output_tokens: None,
-            total_tokens: None,
+            status,
+            duration,
+            client_ip,
             api_key_id,
-        },
-    );
+        );
+        if !status.is_success() {
+            record.status = RecordStatus::Error {
+                message: outcome
+                    .error_message
+                    .clone()
+                    .unwrap_or_else(|| status.to_string()),
+            };
+        }
+        if status.is_success() {
+            record.response_body = outcome.response_body.clone();
+        }
+        save_request_record(state.request_history.clone(), record);
+    }
 
     Ok(outcome.response)
 }
@@ -1329,8 +758,6 @@ async fn proxy_openai_post(
         }
     }
 
-    let record_id = Uuid::new_v4();
-    let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
     let tps_api_kind = TpsApiKind::from_request_type(request_type);
     let queue_config = state.queue_config;
@@ -1350,27 +777,15 @@ async fn proxy_openai_post(
                 let message = "Request queue is full".to_string();
                 save_request_record(
                     state.request_history.clone(),
-                    RequestResponseRecord {
-                        id: record_id,
-                        timestamp,
+                    RequestResponseRecord::error(
+                        model.clone(),
                         request_type,
-                        model: model.clone(),
-                        endpoint_id: Uuid::nil(),
-                        endpoint_name: "N/A".to_string(),
-                        endpoint_ip: UNSPECIFIED_IP,
-                        client_ip,
                         request_body,
-                        response_body: None,
-                        duration_ms: 0,
-                        status: RecordStatus::Error {
-                            message: message.clone(),
-                        },
-                        completed_at: Utc::now(),
-                        input_tokens: None,
-                        output_tokens: None,
-                        total_tokens: None,
+                        message.clone(),
+                        0,
+                        client_ip,
                         api_key_id,
-                    },
+                    ),
                 );
                 let retry_after = queue_config.timeout.as_secs().max(1);
                 return Ok(queue_error_response(
@@ -1384,27 +799,15 @@ async fn proxy_openai_post(
                 let message = "Queue wait timeout".to_string();
                 save_request_record(
                     state.request_history.clone(),
-                    RequestResponseRecord {
-                        id: record_id,
-                        timestamp,
+                    RequestResponseRecord::error(
+                        model.clone(),
                         request_type,
-                        model: model.clone(),
-                        endpoint_id: Uuid::nil(),
-                        endpoint_name: "N/A".to_string(),
-                        endpoint_ip: UNSPECIFIED_IP,
-                        client_ip,
                         request_body,
-                        response_body: None,
-                        duration_ms: waited_ms as u64,
-                        status: RecordStatus::Error {
-                            message: message.clone(),
-                        },
-                        completed_at: Utc::now(),
-                        input_tokens: None,
-                        output_tokens: None,
-                        total_tokens: None,
+                        message.clone(),
+                        waited_ms as u64,
+                        client_ip,
                         api_key_id,
-                    },
+                    ),
                 );
                 return Ok(queue_error_response(
                     StatusCode::GATEWAY_TIMEOUT,
@@ -1427,27 +830,15 @@ async fn proxy_openai_post(
                 );
                 save_request_record(
                     state.request_history.clone(),
-                    RequestResponseRecord {
-                        id: record_id,
-                        timestamp,
+                    RequestResponseRecord::error(
+                        model.clone(),
                         request_type,
-                        model: model.clone(),
-                        endpoint_id: Uuid::nil(),
-                        endpoint_name: "N/A".to_string(),
-                        endpoint_ip: UNSPECIFIED_IP,
-                        client_ip,
                         request_body,
-                        response_body: None,
-                        duration_ms: queued_wait_ms.unwrap_or(0) as u64,
-                        status: RecordStatus::Error {
-                            message: error_message.clone(),
-                        },
-                        completed_at: Utc::now(),
-                        input_tokens: None,
-                        output_tokens: None,
-                        total_tokens: None,
+                        error_message.clone(),
+                        queued_wait_ms.unwrap_or(0) as u64,
+                        client_ip,
                         api_key_id,
-                    },
+                    ),
                 );
                 if matches!(e, LbError::NoCapableEndpoints(_)) {
                     return Ok(model_unavailable_response(
@@ -1504,30 +895,24 @@ async fn proxy_openai_post(
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly
 
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model: model.clone(),
+            {
+                let mut record = RequestResponseRecord::new(
                     endpoint_id,
-                    endpoint_name: endpoint_name.clone(),
-                    endpoint_ip: endpoint_host,
+                    endpoint_name.clone(),
+                    endpoint_host,
+                    model.clone(),
+                    request_type,
+                    request_body.clone(),
+                    StatusCode::BAD_GATEWAY,
+                    duration,
                     client_ip,
-                    request_body: request_body.clone(),
-                    response_body: None,
-                    duration_ms: duration.as_millis() as u64,
-                    status: RecordStatus::Error {
-                        message: format!("Failed to proxy OpenAI request: {}", e),
-                    },
-                    completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
                     api_key_id,
-                },
-            );
+                );
+                record.status = RecordStatus::Error {
+                    message: format!("Failed to proxy OpenAI request: {}", e),
+                };
+                save_request_record(state.request_history.clone(), record);
+            }
 
             return Err(LbError::Http(format!("Failed to proxy OpenAI request: {}", e)).into());
         }
@@ -1564,34 +949,26 @@ async fn proxy_openai_post(
             );
         }
 
-        save_request_record(
-            state.request_history.clone(),
-            RequestResponseRecord {
-                id: record_id,
-                timestamp,
-                request_type,
-                model: model.clone(),
+        {
+            let mut record = RequestResponseRecord::new(
                 endpoint_id,
-                endpoint_name: endpoint_name.clone(),
-                endpoint_ip: endpoint_host,
+                endpoint_name.clone(),
+                endpoint_host,
+                model.clone(),
+                request_type,
+                request_body.clone(),
+                response.status(),
+                duration,
                 client_ip,
-                request_body: request_body.clone(),
-                response_body: None, // ストリームボディは記録しない
-                duration_ms: duration.as_millis() as u64,
-                status: if succeeded {
-                    RecordStatus::Success
-                } else {
-                    RecordStatus::Error {
-                        message: format!("Upstream stream returned status {}", response.status()),
-                    }
-                },
-                completed_at: Utc::now(),
-                input_tokens: None,
-                output_tokens: None,
-                total_tokens: None,
                 api_key_id,
-            },
-        );
+            );
+            if !succeeded {
+                record.status = RecordStatus::Error {
+                    message: format!("Upstream stream returned status {}", response.status()),
+                };
+            }
+            save_request_record(state.request_history.clone(), record);
+        }
 
         let mut axum_response = if succeeded {
             forward_streaming_response_with_tps_tracking(
@@ -1647,30 +1024,24 @@ async fn proxy_openai_post(
             String::from_utf8_lossy(&body_bytes).trim().to_string()
         };
 
-        save_request_record(
-            state.request_history.clone(),
-            RequestResponseRecord {
-                id: record_id,
-                timestamp,
-                request_type,
-                model: model.clone(),
+        {
+            let mut record = RequestResponseRecord::new(
                 endpoint_id,
-                endpoint_name: endpoint_name.clone(),
-                endpoint_ip: endpoint_host,
+                endpoint_name.clone(),
+                endpoint_host,
+                model.clone(),
+                request_type,
+                request_body.clone(),
+                StatusCode::BAD_GATEWAY,
+                duration,
                 client_ip,
-                request_body: request_body.clone(),
-                response_body: None,
-                duration_ms: duration.as_millis() as u64,
-                status: RecordStatus::Error {
-                    message: message.clone(),
-                },
-                completed_at: Utc::now(),
-                input_tokens: None,
-                output_tokens: None,
-                total_tokens: None,
                 api_key_id,
-            },
-        );
+            );
+            record.status = RecordStatus::Error {
+                message: message.clone(),
+            };
+            save_request_record(state.request_history.clone(), record);
+        }
 
         let payload = json!({
             "error": {
@@ -1730,28 +1101,25 @@ async fn proxy_openai_post(
                 .map(|u| (u.input_tokens, u.output_tokens, u.total_tokens))
                 .unwrap_or((None, None, None));
 
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model,
+            {
+                let mut record = RequestResponseRecord::new(
                     endpoint_id,
                     endpoint_name,
-                    endpoint_ip: endpoint_host,
-                    client_ip,
+                    endpoint_host,
+                    model,
+                    request_type,
                     request_body,
-                    response_body: Some(body.clone()),
-                    duration_ms: duration.as_millis() as u64,
-                    status: RecordStatus::Success,
-                    completed_at: Utc::now(),
-                    input_tokens,
-                    output_tokens,
-                    total_tokens,
+                    StatusCode::OK,
+                    duration,
+                    client_ip,
                     api_key_id,
-                },
-            );
+                );
+                record.response_body = Some(body.clone());
+                record.input_tokens = input_tokens;
+                record.output_tokens = output_tokens;
+                record.total_tokens = total_tokens;
+                save_request_record(state.request_history.clone(), record);
+            }
 
             let mut response = (StatusCode::OK, Json(body)).into_response();
             if let Some(wait_ms) = queued_wait_ms {
@@ -1780,30 +1148,24 @@ async fn proxy_openai_post(
             // Note: Model exclusion is handled by the health check system
             // which will mark the endpoint as offline/error if requests fail repeatedly
 
-            save_request_record(
-                state.request_history.clone(),
-                RequestResponseRecord {
-                    id: record_id,
-                    timestamp,
-                    request_type,
-                    model,
+            {
+                let mut record = RequestResponseRecord::new(
                     endpoint_id,
                     endpoint_name,
-                    endpoint_ip: endpoint_host,
-                    client_ip,
+                    endpoint_host,
+                    model,
+                    request_type,
                     request_body,
-                    response_body: None,
-                    duration_ms: duration.as_millis() as u64,
-                    status: RecordStatus::Error {
-                        message: format!("Failed to parse OpenAI response: {}", e),
-                    },
-                    completed_at: Utc::now(),
-                    input_tokens: None,
-                    output_tokens: None,
-                    total_tokens: None,
+                    StatusCode::BAD_GATEWAY,
+                    duration,
+                    client_ip,
                     api_key_id,
-                },
-            );
+                );
+                record.status = RecordStatus::Error {
+                    message: format!("Failed to parse OpenAI response: {}", e),
+                };
+                save_request_record(state.request_history.clone(), record);
+            }
 
             Err(LbError::Http(format!("Failed to parse OpenAI response: {}", e)).into())
         }

@@ -2,6 +2,7 @@
 //!
 //! OpenAI互換API用のリクエスト/レスポンス型を定義します。
 
+use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -375,9 +376,153 @@ pub enum ImageData {
     },
 }
 
+impl RequestResponseRecord {
+    /// エンドポイント特定済みのレコードを作成する。
+    ///
+    /// `status` から `RecordStatus` を自動判定する。
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        endpoint_id: Uuid,
+        endpoint_name: String,
+        endpoint_ip: IpAddr,
+        model: String,
+        request_type: RequestType,
+        request_body: serde_json::Value,
+        status: StatusCode,
+        duration: std::time::Duration,
+        client_ip: Option<IpAddr>,
+        api_key_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type,
+            model,
+            endpoint_id,
+            endpoint_name,
+            endpoint_ip,
+            client_ip,
+            request_body,
+            response_body: None,
+            duration_ms: duration.as_millis() as u64,
+            status: if status.is_success() {
+                RecordStatus::Success
+            } else {
+                RecordStatus::Error {
+                    message: format!("HTTP {}", status.as_u16()),
+                }
+            },
+            completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            api_key_id,
+        }
+    }
+
+    /// エンドポイント未特定のエラーレコードを作成する。
+    pub fn error(
+        model: String,
+        request_type: RequestType,
+        request_body: serde_json::Value,
+        message: String,
+        duration_ms: u64,
+        client_ip: Option<IpAddr>,
+        api_key_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type,
+            model,
+            endpoint_id: Uuid::nil(),
+            endpoint_name: "N/A".to_string(),
+            endpoint_ip: IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+            client_ip,
+            request_body,
+            response_body: None,
+            duration_ms,
+            status: RecordStatus::Error { message },
+            completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            api_key_id,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_record_factory_new_success() {
+        let endpoint_id = Uuid::new_v4();
+        let record = RequestResponseRecord::new(
+            endpoint_id,
+            "test-endpoint".to_string(),
+            "10.0.0.1".parse().unwrap(),
+            "gpt-4".to_string(),
+            RequestType::Chat,
+            serde_json::json!({"messages": []}),
+            StatusCode::OK,
+            std::time::Duration::from_millis(150),
+            Some("192.168.1.1".parse().unwrap()),
+            None,
+        );
+
+        assert_eq!(record.endpoint_id, endpoint_id);
+        assert_eq!(record.endpoint_name, "test-endpoint");
+        assert_eq!(record.model, "gpt-4");
+        assert_eq!(record.duration_ms, 150);
+        assert!(matches!(record.status, RecordStatus::Success));
+        assert!(record.response_body.is_none());
+        assert!(record.input_tokens.is_none());
+    }
+
+    #[test]
+    fn test_record_factory_new_error_status() {
+        let record = RequestResponseRecord::new(
+            Uuid::new_v4(),
+            "ep".to_string(),
+            "10.0.0.1".parse().unwrap(),
+            "gpt-4".to_string(),
+            RequestType::Chat,
+            serde_json::json!({}),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            std::time::Duration::from_millis(50),
+            None,
+            None,
+        );
+
+        assert!(matches!(record.status, RecordStatus::Error { message } if message == "HTTP 500"));
+    }
+
+    #[test]
+    fn test_record_factory_error() {
+        let record = RequestResponseRecord::error(
+            "llama2".to_string(),
+            RequestType::Generate,
+            serde_json::json!({"prompt": "hello"}),
+            "No endpoints available".to_string(),
+            0,
+            Some("192.168.1.1".parse().unwrap()),
+            None,
+        );
+
+        assert_eq!(record.endpoint_id, Uuid::nil());
+        assert_eq!(record.endpoint_name, "N/A");
+        assert_eq!(
+            record.endpoint_ip,
+            IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+        );
+        assert_eq!(record.model, "llama2");
+        assert_eq!(record.duration_ms, 0);
+        assert!(
+            matches!(&record.status, RecordStatus::Error { message } if message == "No endpoints available")
+        );
+    }
 
     #[test]
     fn test_chat_request_default_stream_false() {

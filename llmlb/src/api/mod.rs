@@ -9,6 +9,8 @@ pub mod audit_log;
 pub mod auth;
 pub mod benchmarks;
 pub mod cloud_models;
+/// クラウドプロバイダプロキシ（CloudProvider trait）
+pub mod cloud_proxy;
 pub mod dashboard;
 pub mod dashboard_ws;
 /// エンドポイント管理API
@@ -23,6 +25,8 @@ pub mod logs;
 pub mod model_name;
 pub mod models;
 pub mod openai;
+/// OpenAI互換APIユーティリティ
+pub mod openai_util;
 pub mod proxy;
 /// Open Responses API (SPEC-0f1de549)
 pub mod responses;
@@ -61,29 +65,18 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
 /// APIllmlbを作成
 #[allow(deprecated)] // NodeRegistry migration in progress - legacy APIs still registered
 pub fn create_app(state: AppState) -> Router {
-    let auth_disabled = crate::config::is_auth_disabled();
-
     // `/api/*`: llmlb独自API（管理/運用向け）
     // JWTが必要な認証ルート（ログイン以外）
     let auth_routes = Router::new()
         .route("/auth/me", get(auth::me))
-        .route("/auth/logout", post(auth::logout));
-
-    let auth_routes = if auth_disabled {
-        auth_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+        .route("/auth/logout", post(auth::logout))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        auth_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.jwt_secret.clone(),
-                crate::auth::middleware::jwt_auth_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
+        ));
 
     // 管理系API（運用/自動化向け）
     //
@@ -97,28 +90,19 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/users/{id}",
             put(users::update_user).delete(users::delete_user),
-        );
-    let users_routes = if auth_disabled {
-        users_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+        )
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::UsersManage,
-            jwt_required_role: Some(UserRole::Admin),
-            api_key_role: UserRole::Admin,
-        };
-        users_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                cfg,
-                crate::auth::middleware::jwt_or_api_key_permission_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::UsersManage,
+                jwt_required_role: Some(UserRole::Admin),
+                api_key_role: UserRole::Admin,
+            },
+            crate::auth::middleware::jwt_or_api_key_permission_middleware,
+        ));
 
     // ユーザー自身のAPIキー管理（JWTのみ）
     let my_api_keys_routes = Router::new()
@@ -129,116 +113,76 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/me/api-keys/{id}",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
-        );
-    let my_api_keys_routes = if auth_disabled {
-        my_api_keys_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+        )
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        my_api_keys_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.jwt_secret.clone(),
-                crate::auth::middleware::jwt_auth_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
+        ));
 
     let invitations_routes = Router::new()
         .route(
             "/invitations",
             get(invitations::list_invitations).post(invitations::create_invitation),
         )
-        .route("/invitations/{id}", delete(invitations::revoke_invitation));
-    let invitations_routes = if auth_disabled {
-        invitations_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+        .route("/invitations/{id}", delete(invitations::revoke_invitation))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::InvitationsManage,
-            jwt_required_role: Some(UserRole::Admin),
-            api_key_role: UserRole::Admin,
-        };
-        invitations_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                cfg,
-                crate::auth::middleware::jwt_or_api_key_permission_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::InvitationsManage,
+                jwt_required_role: Some(UserRole::Admin),
+                api_key_role: UserRole::Admin,
+            },
+            crate::auth::middleware::jwt_or_api_key_permission_middleware,
+        ));
 
     // エンドポイントログ取得（lb→endpoint proxy）
-    let node_logs_routes = Router::new().route("/endpoints/{id}/logs", get(logs::get_node_logs));
-    let node_logs_routes = if auth_disabled {
-        node_logs_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
-        ))
-    } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::LogsRead,
-            jwt_required_role: Some(UserRole::Admin),
-            api_key_role: UserRole::Admin,
-        };
-        node_logs_routes.layer(middleware::from_fn_with_state(
-            cfg,
+    let node_logs_routes = Router::new()
+        .route("/endpoints/{id}/logs", get(logs::get_node_logs))
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::LogsRead,
+                jwt_required_role: Some(UserRole::Admin),
+                api_key_role: UserRole::Admin,
+            },
             crate::auth::middleware::jwt_or_api_key_permission_middleware,
-        ))
-    };
+        ));
 
     // モデル管理API (Admin のみ: register/delete)
     let models_manage_routes = Router::new()
         .route("/models/register", post(models::register_model))
-        .route("/models/{*model_name}", delete(models::delete_model));
-    let models_manage_routes = if auth_disabled {
-        models_manage_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+        .route("/models/{*model_name}", delete(models::delete_model))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::ModelsManage,
-            jwt_required_role: Some(UserRole::Admin),
-            api_key_role: UserRole::Admin,
-        };
-        models_manage_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                cfg,
-                crate::auth::middleware::jwt_or_api_key_permission_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::ModelsManage,
+                jwt_required_role: Some(UserRole::Admin),
+                api_key_role: UserRole::Admin,
+            },
+            crate::auth::middleware::jwt_or_api_key_permission_middleware,
+        ));
 
     // Prometheus metrics（cloud prefix含む独自メトリクス）
-    let metrics_routes = Router::new().route("/metrics/cloud", get(cloud_metrics::export_metrics));
-    let metrics_routes = if auth_disabled {
-        metrics_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
-        ))
-    } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::MetricsRead,
-            jwt_required_role: Some(UserRole::Admin),
-            api_key_role: UserRole::Admin,
-        };
-        metrics_routes.layer(middleware::from_fn_with_state(
-            cfg,
+    let metrics_routes = Router::new()
+        .route("/metrics/cloud", get(cloud_metrics::export_metrics))
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::MetricsRead,
+                jwt_required_role: Some(UserRole::Admin),
+                api_key_role: UserRole::Admin,
+            },
             crate::auth::middleware::jwt_or_api_key_permission_middleware,
-        ))
-    };
+        ));
 
     let admin_routes = Router::new()
         .merge(users_routes)
@@ -335,14 +279,7 @@ pub fn create_app(state: AppState) -> Router {
             post(audit_log::verify_hash_chain),
         );
 
-    let dashboard_api_routes = if auth_disabled {
-        dashboard_general_routes
-            .merge(dashboard_audit_routes)
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                crate::auth::middleware::inject_dummy_admin_claims_with_state,
-            ))
-    } else {
+    let dashboard_api_routes = {
         let dashboard_general_routes =
             dashboard_general_routes.layer(middleware::from_fn_with_state(
                 state.jwt_secret.clone(),
@@ -368,18 +305,14 @@ pub fn create_app(state: AppState) -> Router {
             "/system/update/apply/force",
             post(system::apply_force_update),
         );
-    let system_routes = if auth_disabled {
-        system_routes
-    } else {
-        system_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.jwt_secret.clone(),
-                crate::auth::middleware::jwt_auth_middleware,
-            ))
-    };
+    let system_routes = system_routes
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
+        ));
 
     // エンドポイント管理API（SPEC-e8e9326e）
     // READ: endpoints.read
@@ -417,27 +350,19 @@ pub fn create_app(state: AppState) -> Router {
             "/endpoints/{id}/model-tps",
             get(dashboard::get_endpoint_model_tps),
         );
-    let endpoint_read_routes = if auth_disabled {
-        endpoint_read_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+    let endpoint_read_routes = endpoint_read_routes
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::EndpointsRead,
-            jwt_required_role: None,
-            api_key_role: UserRole::Viewer,
-        };
-        endpoint_read_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                cfg,
-                crate::auth::middleware::jwt_or_api_key_permission_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::EndpointsRead,
+                jwt_required_role: None,
+                api_key_role: UserRole::Viewer,
+            },
+            crate::auth::middleware::jwt_or_api_key_permission_middleware,
+        ));
 
     let endpoint_manage_routes = Router::new()
         .route("/endpoints", post(endpoints::create_endpoint))
@@ -452,28 +377,19 @@ pub fn create_app(state: AppState) -> Router {
         )
         // SPEC-e8e9326e: ダウンロードAPI
         .route("/endpoints/{id}/download", post(endpoints::download_model));
-
-    let endpoint_manage_routes = if auth_disabled {
-        endpoint_manage_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+    let endpoint_manage_routes = endpoint_manage_routes
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::EndpointsManage,
-            jwt_required_role: Some(UserRole::Admin),
-            api_key_role: UserRole::Admin,
-        };
-        endpoint_manage_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                cfg,
-                crate::auth::middleware::jwt_or_api_key_permission_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::EndpointsManage,
+                jwt_required_role: Some(UserRole::Admin),
+                api_key_role: UserRole::Admin,
+            },
+            crate::auth::middleware::jwt_or_api_key_permission_middleware,
+        ));
 
     let endpoint_routes = Router::new()
         .merge(endpoint_read_routes)
@@ -485,22 +401,14 @@ pub fn create_app(state: AppState) -> Router {
         "/endpoints/{id}/chat/completions",
         post(endpoints::proxy_chat_completions),
     );
-
-    let playground_proxy_routes = if auth_disabled {
-        playground_proxy_routes.layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::middleware::inject_dummy_admin_claims_with_state,
+    let playground_proxy_routes = playground_proxy_routes
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
         ))
-    } else {
-        playground_proxy_routes
-            .layer(middleware::from_fn(
-                crate::auth::middleware::csrf_protect_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.jwt_secret.clone(),
-                crate::auth::middleware::jwt_auth_middleware,
-            ))
-    };
+        .layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
+        ));
     // Treat dashboard playground proxy as inference for drain purposes.
     let playground_proxy_routes = playground_proxy_routes.layer(middleware::from_fn_with_state(
         state.inference_gate.clone(),
@@ -516,29 +424,20 @@ pub fn create_app(state: AppState) -> Router {
             "/models/registry/{model_name}/manifest.json",
             get(models::get_model_registry_manifest),
         );
-
-    let model_registry_routes = if auth_disabled {
-        model_registry_routes
-    } else {
-        model_registry_routes
-            .layer(middleware::from_fn_with_state(
-                ApiKeyPermission::RegistryRead,
-                crate::auth::middleware::require_api_key_permission_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.db_pool.clone(),
-                crate::auth::middleware::api_key_auth_middleware,
-            ))
-    };
+    let model_registry_routes = model_registry_routes
+        .layer(middleware::from_fn_with_state(
+            ApiKeyPermission::RegistryRead,
+            crate::auth::middleware::require_api_key_permission_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_auth_middleware,
+        ));
 
     // モデル一覧API (Admin OR Runtime スコープで利用可能)
     // /api/models はランタイム同期用の登録済みモデル一覧
     // /api/models/hub はダッシュボード向けの対応モデル一覧 + ステータス
-    let models_list_routes = if auth_disabled {
-        Router::new()
-            .route("/models", get(models::list_models))
-            .route("/models/hub", get(models::list_models_with_status))
-    } else {
+    let models_list_routes = {
         let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
             app_state: state.clone(),
             required_permission: ApiKeyPermission::RegistryRead,
@@ -572,20 +471,15 @@ pub fn create_app(state: AppState) -> Router {
         .route("/v1/images/edits", post(images::edits))
         .route("/v1/images/variations", post(images::variations))
         .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES));
-
-    let inference_routes = if auth_disabled {
-        inference_routes
-    } else {
-        inference_routes
-            .layer(middleware::from_fn_with_state(
-                ApiKeyPermission::OpenaiInference,
-                crate::auth::middleware::require_api_key_permission_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.db_pool.clone(),
-                crate::auth::middleware::api_key_auth_middleware,
-            ))
-    };
+    let inference_routes = inference_routes
+        .layer(middleware::from_fn_with_state(
+            ApiKeyPermission::OpenaiInference,
+            crate::auth::middleware::require_api_key_permission_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_auth_middleware,
+        ));
     // Self-update drain gate: reject new inference requests and track in-flight requests.
     let inference_routes = inference_routes.layer(middleware::from_fn_with_state(
         state.inference_gate.clone(),
@@ -597,20 +491,15 @@ pub fn create_app(state: AppState) -> Router {
     let models_routes = Router::new()
         .route("/v1/models", get(openai::list_models))
         .route("/v1/models/{model_id}", get(openai::get_model));
-
-    let models_protected_routes = if auth_disabled {
-        models_routes
-    } else {
-        models_routes
-            .layer(middleware::from_fn_with_state(
-                ApiKeyPermission::OpenaiModelsRead,
-                crate::auth::middleware::require_api_key_permission_middleware,
-            ))
-            .layer(middleware::from_fn_with_state(
-                state.db_pool.clone(),
-                crate::auth::middleware::api_key_auth_middleware,
-            ))
-    };
+    let models_protected_routes = models_routes
+        .layer(middleware::from_fn_with_state(
+            ApiKeyPermission::OpenaiModelsRead,
+            crate::auth::middleware::require_api_key_permission_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::api_key_auth_middleware,
+        ));
 
     // NOTE: /api/models (GET) は Admin/Node スコープ共用。
     // 外部クライアントは /v1/models を使用してください（Azure OpenAI 形式の capabilities 付き）。

@@ -20,9 +20,6 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 async fn build_app() -> Router {
-    // Ensure AUTH_DISABLED is not set (may be polluted by parallel tests)
-    std::env::remove_var("AUTH_DISABLED");
-
     let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("Failed to create test database");

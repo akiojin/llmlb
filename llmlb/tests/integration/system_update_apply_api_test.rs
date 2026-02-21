@@ -1,4 +1,6 @@
 //! Integration tests for self-update apply APIs.
+//!
+//! NOTE: AUTH_DISABLED廃止に伴い、JWT認証を使用するよう更新済み。
 
 use axum::{
     body::Body,
@@ -7,28 +9,21 @@ use axum::{
 };
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::Value;
-use serial_test::serial;
 use std::sync::Arc;
 use tower::ServiceExt;
 
 use crate::support;
 
-struct AuthDisabledGuard;
-
-impl AuthDisabledGuard {
-    fn set() -> Self {
-        std::env::set_var("AUTH_DISABLED", "true");
-        Self
-    }
+fn test_jwt_secret() -> String {
+    support::lb::test_jwt_secret()
 }
 
-impl Drop for AuthDisabledGuard {
-    fn drop(&mut self) {
-        std::env::remove_var("AUTH_DISABLED");
-    }
+fn admin_jwt(secret: &str) -> String {
+    llmlb::auth::jwt::create_jwt("test-admin", llmlb::common::auth::UserRole::Admin, secret)
+        .expect("create admin jwt")
 }
 
-async fn build_app() -> Router {
+async fn build_app() -> (String, Router) {
     let temp_dir = std::env::temp_dir().join(format!(
         "update-api-test-{}-{}",
         std::process::id(),
@@ -63,11 +58,13 @@ async fn build_app() -> Router {
     let audit_log_storage =
         std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()));
 
-    api::create_app(AppState {
+    let jwt_secret = test_jwt_secret();
+
+    let app = api::create_app(AppState {
         load_manager,
         request_history,
         db_pool,
-        jwt_secret: support::lb::test_jwt_secret(),
+        jwt_secret: jwt_secret.clone(),
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
         event_bus: llmlb::events::create_shared_event_bus(),
@@ -78,14 +75,15 @@ async fn build_app() -> Router {
         audit_log_writer,
         audit_log_storage,
         audit_archive_pool: None,
-    })
+    });
+
+    (jwt_secret, app)
 }
 
 #[tokio::test]
-#[serial]
 async fn normal_apply_returns_mode_and_queued_flag() {
-    let _guard = AuthDisabledGuard::set();
-    let app = build_app().await;
+    let (secret, app) = build_app().await;
+    let token = admin_jwt(&secret);
 
     let response = app
         .oneshot(
@@ -93,6 +91,7 @@ async fn normal_apply_returns_mode_and_queued_flag() {
                 .method("POST")
                 .uri("/api/system/update/apply")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
                 .body(Body::from("{}"))
                 .unwrap(),
         )
@@ -113,10 +112,9 @@ async fn normal_apply_returns_mode_and_queued_flag() {
 }
 
 #[tokio::test]
-#[serial]
 async fn force_apply_returns_conflict_when_no_update_available() {
-    let _guard = AuthDisabledGuard::set();
-    let app = build_app().await;
+    let (secret, app) = build_app().await;
+    let token = admin_jwt(&secret);
 
     let response = app
         .oneshot(
@@ -124,6 +122,7 @@ async fn force_apply_returns_conflict_when_no_update_available() {
                 .method("POST")
                 .uri("/api/system/update/apply/force")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
                 .body(Body::from("{}"))
                 .unwrap(),
         )

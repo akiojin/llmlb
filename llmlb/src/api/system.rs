@@ -64,19 +64,14 @@ pub async fn get_system(State(state): State<AppState>) -> Response {
 ///
 /// Force an update check now (ignores TTL cache).
 ///
-/// Admin only when auth is enabled.
+/// Admin only (JWT middleware applied in create_app).
 pub async fn check_update(
     State(state): State<AppState>,
-    claims: Option<Extension<Claims>>,
+    Extension(claims): Extension<Claims>,
 ) -> Response {
-    if !crate::config::is_auth_disabled() {
-        let Some(Extension(claims)) = claims else {
-            return AppError(LbError::Authentication("Unauthorized".to_string())).into_response();
-        };
-        if claims.role != UserRole::Admin {
-            return AppError(LbError::Authorization("Admin access required".to_string()))
-                .into_response();
-        }
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
     }
 
     match state.update_manager.check_now().await {
@@ -87,19 +82,14 @@ pub async fn check_update(
 
 /// POST /api/system/update/apply
 ///
-/// Admin only when auth is enabled.
+/// Admin only (JWT middleware applied in create_app).
 pub async fn apply_update(
     State(state): State<AppState>,
-    claims: Option<Extension<Claims>>,
+    Extension(claims): Extension<Claims>,
 ) -> Response {
-    if !crate::config::is_auth_disabled() {
-        let Some(Extension(claims)) = claims else {
-            return AppError(LbError::Authentication("Unauthorized".to_string())).into_response();
-        };
-        if claims.role != UserRole::Admin {
-            return AppError(LbError::Authorization("Admin access required".to_string()))
-                .into_response();
-        }
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
     }
 
     let queued = state.update_manager.request_apply_normal().await;
@@ -115,19 +105,14 @@ pub async fn apply_update(
 
 /// POST /api/system/update/apply/force
 ///
-/// Admin only when auth is enabled.
+/// Admin only (JWT middleware applied in create_app).
 pub async fn apply_force_update(
     State(state): State<AppState>,
-    claims: Option<Extension<Claims>>,
+    Extension(claims): Extension<Claims>,
 ) -> Response {
-    if !crate::config::is_auth_disabled() {
-        let Some(Extension(claims)) = claims else {
-            return AppError(LbError::Authentication("Unauthorized".to_string())).into_response();
-        };
-        if claims.role != UserRole::Admin {
-            return AppError(LbError::Authorization("Admin access required".to_string()))
-                .into_response();
-        }
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
     }
 
     match state.update_manager.request_apply_force().await {

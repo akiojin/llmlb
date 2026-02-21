@@ -454,8 +454,7 @@ impl AuditLogStorage {
                 COALESCE(SUM(
                     COALESCE(total_tokens, COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))
                 ), 0) as total_tokens
-            FROM audit_log_entries
-            WHERE total_tokens IS NOT NULL"#,
+            FROM audit_log_entries"#,
         )
         .fetch_one(&self.pool)
         .await
@@ -515,8 +514,7 @@ impl AuditLogStorage {
                 ), 0) as total_tokens,
                 COUNT(*) as request_count
             FROM audit_log_entries
-            WHERE total_tokens IS NOT NULL
-              AND timestamp >= DATE('now', '-' || ? || ' days')
+            WHERE timestamp >= DATE('now', '-' || ? || ' days')
             GROUP BY DATE(timestamp)
             ORDER BY date DESC"#,
         )
@@ -552,8 +550,7 @@ impl AuditLogStorage {
                 ), 0) as total_tokens,
                 COUNT(*) as request_count
             FROM audit_log_entries
-            WHERE total_tokens IS NOT NULL
-              AND timestamp >= DATE('now', '-' || ? || ' months')
+            WHERE timestamp >= DATE('now', '-' || ? || ' months')
             GROUP BY strftime('%Y-%m', timestamp)
             ORDER BY month DESC"#,
         )
@@ -973,12 +970,12 @@ impl AuditLogStorage {
 
         let mut updates = Vec::with_capacity(batches.len());
         let mut previous_hash = GENESIS_HASH.to_string();
-        for (index, batch) in batches.iter().enumerate() {
+        for batch in &batches {
             let batch_id = batch.id.ok_or_else(|| {
                 LbError::Database("Batch id is missing while rebuilding chain".to_string())
             })?;
             let entries = self.get_entries_for_batch(batch_id).await?;
-            let sequence_number = (index + 1) as i64;
+            let sequence_number = batch.sequence_number;
             let record_count = entries.len() as i64;
             let hash = hash_chain::compute_batch_hash(
                 &previous_hash,
@@ -1033,7 +1030,7 @@ impl AuditLogStorage {
     ) -> RouterResult<Vec<AuditLogEntry>> {
         let (where_clause, bind_values) = build_where_clause(filter);
         let page = filter.page.unwrap_or(1).max(1);
-        let per_page = filter.per_page.unwrap_or(50).min(1000);
+        let per_page = filter.per_page.unwrap_or(50).max(1);
         let offset = (page - 1) * per_page;
 
         let sql = format!(
@@ -1474,6 +1471,17 @@ mod tests {
         }
     }
 
+    fn make_token_entry_without_total(
+        model: &str,
+        timestamp: chrono::DateTime<chrono::Utc>,
+        input: i64,
+        output: i64,
+    ) -> AuditLogEntry {
+        let mut entry = make_token_entry(model, timestamp, input, output, 0);
+        entry.total_tokens = None;
+        entry
+    }
+
     #[tokio::test]
     async fn test_get_token_statistics() {
         let pool = create_test_pool().await;
@@ -1491,6 +1499,24 @@ mod tests {
         assert_eq!(stats.total_input_tokens, 350);
         assert_eq!(stats.total_output_tokens, 175);
         assert_eq!(stats.total_tokens, 525);
+    }
+
+    #[tokio::test]
+    async fn test_get_token_statistics_infers_total_when_total_tokens_null() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry_without_total("model-a", now, 70, 30),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 170);
+        assert_eq!(stats.total_output_tokens, 80);
+        assert_eq!(stats.total_tokens, 250);
     }
 
     #[tokio::test]
@@ -1542,6 +1568,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_daily_token_statistics_infers_total_when_total_tokens_null() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 100, 50, 150),
+            make_token_entry_without_total("model-b", now, 20, 10),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_daily_token_statistics(7).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 120);
+        assert_eq!(stats[0].total_output_tokens, 60);
+        assert_eq!(stats[0].total_tokens, 180);
+        assert_eq!(stats[0].request_count, 2);
+    }
+
+    #[tokio::test]
     async fn test_get_monthly_token_statistics() {
         let pool = create_test_pool().await;
         let storage = AuditLogStorage::new(pool);
@@ -1560,6 +1606,26 @@ mod tests {
         assert_eq!(stats[0].total_input_tokens, 350);
         assert_eq!(stats[0].total_output_tokens, 175);
         assert_eq!(stats[0].total_tokens, 525);
+    }
+
+    #[tokio::test]
+    async fn test_get_monthly_token_statistics_infers_total_when_total_tokens_null() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let entries = vec![
+            make_token_entry("model-a", now, 40, 20, 60),
+            make_token_entry_without_total("model-b", now, 10, 5),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let stats = storage.get_monthly_token_statistics(3).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_input_tokens, 50);
+        assert_eq!(stats[0].total_output_tokens, 25);
+        assert_eq!(stats[0].total_tokens, 75);
+        assert_eq!(stats[0].request_count, 2);
     }
 
     #[tokio::test]
@@ -2237,10 +2303,154 @@ mod tests {
 
         let remaining_batches = storage.get_all_batch_hashes().await.unwrap();
         assert_eq!(remaining_batches.len(), 1);
-        assert_eq!(remaining_batches[0].sequence_number, 1);
+        assert_eq!(remaining_batches[0].sequence_number, 2);
         assert_eq!(
             remaining_batches[0].previous_hash,
             crate::audit::hash_chain::GENESIS_HASH
+        );
+    }
+
+    #[tokio::test]
+    async fn test_archive_multiple_runs_preserve_archive_hash_rows() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+        let archive_pool = super::create_archive_pool(":memory:").await.unwrap();
+
+        let now = chrono::Utc::now();
+        let old_time_1 = now - chrono::Duration::days(200);
+        let old_time_2 = now - chrono::Duration::days(120);
+        let keep_time = now - chrono::Duration::days(1);
+
+        let mut old_entry_1 = make_entry("GET", "/api/old-1", 200, ActorType::User);
+        old_entry_1.timestamp = old_time_1;
+        let mut old_entry_2 = make_entry("GET", "/api/old-2", 200, ActorType::User);
+        old_entry_2.timestamp = old_time_2;
+        let mut keep_entry = make_entry("GET", "/api/keep", 200, ActorType::User);
+        keep_entry.timestamp = keep_time;
+        storage
+            .insert_batch(&[old_entry_1, old_entry_2, keep_entry])
+            .await
+            .unwrap();
+
+        let old_1_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/old-1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let old_2_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/old-2'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let keep_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/keep'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let batch_1_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 1,
+                batch_start: old_time_1,
+                batch_end: old_time_1,
+                record_count: 1,
+                hash: "hash-1".to_string(),
+                previous_hash: crate::audit::hash_chain::GENESIS_HASH.to_string(),
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[old_1_id.0], batch_1_id)
+            .await
+            .unwrap();
+
+        let batch_2_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 2,
+                batch_start: old_time_2,
+                batch_end: old_time_2,
+                record_count: 1,
+                hash: "hash-2".to_string(),
+                previous_hash: "hash-1".to_string(),
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[old_2_id.0], batch_2_id)
+            .await
+            .unwrap();
+
+        let batch_3_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: 3,
+                batch_start: keep_time,
+                batch_end: keep_time,
+                record_count: 1,
+                hash: "hash-3".to_string(),
+                previous_hash: "hash-2".to_string(),
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[keep_id.0], batch_3_id)
+            .await
+            .unwrap();
+
+        let first_archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(first_archived, 2);
+
+        let second_old_time = now - chrono::Duration::days(95);
+        let mut second_old_entry = make_entry("GET", "/api/old-3", 200, ActorType::User);
+        second_old_entry.timestamp = second_old_time;
+        storage.insert_batch(&[second_old_entry]).await.unwrap();
+
+        let old_3_id: (i64,) =
+            sqlx::query_as("SELECT id FROM audit_log_entries WHERE request_path = '/api/old-3'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let latest_batch = storage.get_latest_batch_hash().await.unwrap().unwrap();
+        let batch_4_id = storage
+            .insert_batch_hash(&crate::audit::types::AuditBatchHash {
+                id: None,
+                sequence_number: latest_batch.sequence_number + 1,
+                batch_start: second_old_time,
+                batch_end: second_old_time,
+                record_count: 1,
+                hash: "hash-4".to_string(),
+                previous_hash: latest_batch.hash,
+            })
+            .await
+            .unwrap();
+        storage
+            .update_entries_batch_id(&[old_3_id.0], batch_4_id)
+            .await
+            .unwrap();
+
+        let second_archived = storage
+            .archive_old_entries(90, &archive_pool)
+            .await
+            .unwrap();
+        assert_eq!(second_archived, 1);
+
+        let missing_hash_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) \
+             FROM audit_log_entries e \
+             LEFT JOIN audit_batch_hashes b ON e.batch_id = b.id \
+             WHERE e.batch_id IS NOT NULL AND b.id IS NULL",
+        )
+        .fetch_one(&archive_pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            missing_hash_count.0, 0,
+            "every archived batched entry must have a matching archive batch hash row"
         );
     }
 }

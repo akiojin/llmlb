@@ -752,4 +752,53 @@ mod tests {
         assert_eq!(response.items.len(), 1);
         assert_eq!(response.items[0].request_path, "/api/archive-search-target");
     }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_include_archive_deep_pagination() {
+        let pool = create_test_pool().await;
+        let archive_pool = crate::db::audit_log::create_archive_pool(":memory:")
+            .await
+            .unwrap();
+        let archive_storage = AuditLogStorage::new(archive_pool.clone());
+
+        let now = Utc::now();
+        let mut archive_entries = Vec::new();
+        for i in 0..1200 {
+            let mut entry = create_test_entry(
+                &format!("/api/archive-only-{}", i),
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            );
+            entry.timestamp = now - chrono::Duration::seconds(i);
+            archive_entries.push(entry);
+        }
+        archive_storage
+            .insert_batch(&archive_entries)
+            .await
+            .unwrap();
+
+        let state = create_test_state_with_archive(pool, Some(archive_pool)).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?include_archive=true&page=23&per_page=50")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 1200);
+        assert_eq!(response.items.len(), 50);
+    }
 }

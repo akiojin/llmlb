@@ -174,6 +174,14 @@ mod tests {
     use std::sync::Arc;
     use tower::ServiceExt;
 
+    type TokenUsageRow = (
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+    );
+
     async fn create_test_pool() -> sqlx::SqlitePool {
         let pool = SqlitePoolOptions::new()
             .connect("sqlite::memory:")
@@ -678,13 +686,7 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-        let row: (
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<String>,
-            Option<String>,
-        ) = sqlx::query_as(
+        let row: TokenUsageRow = sqlx::query_as(
             "SELECT input_tokens, output_tokens, total_tokens, model_name, endpoint_id \
                  FROM audit_log_entries WHERE request_path = '/v1/chat/completions'",
         )

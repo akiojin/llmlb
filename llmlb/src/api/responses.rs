@@ -6,6 +6,7 @@
 //! Responses API対応バックエンド（Ollama、vLLM、xLLM等）にパススルーする。
 
 use crate::common::error::LbError;
+use crate::common::protocol::TpsApiKind;
 use axum::{
     body::Body,
     extract::State,
@@ -144,6 +145,7 @@ pub async fn post_responses(
 ) -> Result<Response, AppError> {
     let model = extract_model(&payload)?;
     let stream = extract_stream(&payload);
+    let tps_api_kind = Some(TpsApiKind::Responses);
 
     info!(
         model = %model,
@@ -243,6 +245,7 @@ pub async fn post_responses(
                     false,
                     0,
                     0,
+                    tps_api_kind,
                     endpoint.endpoint_type,
                     state.load_manager.clone(),
                     state.event_bus.clone(),
@@ -278,6 +281,7 @@ pub async fn post_responses(
                 false,
                 0,
                 0,
+                tps_api_kind,
                 endpoint.endpoint_type,
                 state.load_manager.clone(),
                 state.event_bus.clone(),
@@ -289,6 +293,7 @@ pub async fn post_responses(
                 response,
                 endpoint.id,
                 model.clone(),
+                tps_api_kind,
                 endpoint.endpoint_type,
                 start,
                 state.db_pool.clone(),
@@ -323,6 +328,7 @@ pub async fn post_responses(
                 false,
                 0,
                 0,
+                tps_api_kind,
                 endpoint.endpoint_type,
                 state.load_manager.clone(),
                 state.event_bus.clone(),
@@ -366,6 +372,7 @@ pub async fn post_responses(
         succeeded,
         tps_output_tokens,
         tps_duration_ms,
+        tps_api_kind,
         endpoint.endpoint_type,
         state.load_manager.clone(),
         state.event_bus.clone(),

@@ -61,13 +61,13 @@ async fn rejecting_gate_returns_503_with_retry_after_for_v1_inference() {
     gate_handle.start_rejecting();
 
     let res = app
-        .oneshot(
+        .oneshot(support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
                 .body(Body::empty())
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 

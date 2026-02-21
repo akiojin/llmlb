@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::extract::ConnectInfo;
 use axum::Router;
 use llmlb::common::auth::UserRole;
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
@@ -484,12 +485,11 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
 
     // APIキーを発行
     let create_key_response = client
-        .post(format!("http://{}/api/api-keys", lb_addr))
+        .post(format!("http://{}/api/me/api-keys", lb_addr))
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
-            "expires_at": null,
-            "permissions": ["openai.inference", "openai.models.read"]
+            "expires_at": null
         }))
         .send()
         .await
@@ -497,6 +497,19 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
 
     let key_data: Value = create_key_response.json().await.expect("api key json");
     key_data["key"].as_str().unwrap().to_string()
+}
+
+/// oneshotテストのリクエストにConnectInfo<SocketAddr>を追加する
+///
+/// ハンドラがConnectInfo<SocketAddr>を要求する場合、oneshotでは
+/// extensionが自動設定されないため、このヘルパーで明示的に追加する。
+#[allow(dead_code)]
+pub fn with_connect_info(
+    mut req: axum::http::Request<axum::body::Body>,
+) -> axum::http::Request<axum::body::Body> {
+    req.extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 0))));
+    req
 }
 
 /// llmlbサーバーをテスト用に起動する（DBプールも返す）

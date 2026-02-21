@@ -162,10 +162,10 @@ impl EndpointType {
 
     /// TPS（tokens per second）計測対象かどうか（SPEC-4bb5b55f）
     ///
-    /// トークン使用量レポートの信頼性が保証されるエンドポイントタイプのみ対象。
-    /// OpenaiCompatibleは外部サービスのため、トークン計測精度が保証できない。
+    /// トークン使用量レポートの信頼性が保証されるエンドポイントタイプを判定する。
+    /// 現行仕様では OpenAI互換も計測対象に含める。
     pub fn is_tps_trackable(&self) -> bool {
-        !matches!(self, Self::OpenaiCompatible)
+        true
     }
 }
 
@@ -887,13 +887,12 @@ mod tests {
     // SPEC-4bb5b55f T001: TPS計測対象判定テスト
     #[test]
     fn test_endpoint_type_is_tps_trackable() {
-        // xLLM, Ollama, vLLM, LmStudio はTPS計測対象
+        // xLLM, Ollama, vLLM, LmStudio, OpenaiCompatible はTPS計測対象
         assert!(EndpointType::Xllm.is_tps_trackable());
         assert!(EndpointType::Ollama.is_tps_trackable());
         assert!(EndpointType::Vllm.is_tps_trackable());
         assert!(EndpointType::LmStudio.is_tps_trackable());
-        // OpenaiCompatible はTPS計測対象外
-        assert!(!EndpointType::OpenaiCompatible.is_tps_trackable());
+        assert!(EndpointType::OpenaiCompatible.is_tps_trackable());
     }
 
     #[test]

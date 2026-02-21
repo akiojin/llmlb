@@ -8,14 +8,14 @@ use crate::common::{
     types::ModelCapability,
 };
 use axum::{
-    extract::{Multipart, State},
-    http::StatusCode,
+    extract::{ConnectInfo, Multipart, State},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use chrono::Utc;
 use serde_json::json;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 use tracing::info;
 use uuid::Uuid;
@@ -27,6 +27,8 @@ use crate::{
         models::load_registered_model,
         proxy::{forward_streaming_response, save_request_record},
     },
+    auth::middleware::ApiKeyAuthContext,
+    common::ip::{normalize_ip, normalize_socket_ip},
     types::endpoint::{Endpoint, EndpointCapability},
     AppState,
 };
@@ -56,6 +58,61 @@ fn error_response(error: LbError, status: StatusCode) -> Response {
 /// OpenAI互換エラーレスポンスを返す（ハンドラで使用）
 fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response, AppError> {
     Ok(error_response(LbError::Http(msg.into()), status))
+}
+
+fn extract_client_ip_from_forwarded_headers(headers: &HeaderMap) -> Option<IpAddr> {
+    extract_x_forwarded_for(headers).or_else(|| extract_forwarded_for(headers))
+}
+
+fn extract_x_forwarded_for(headers: &HeaderMap) -> Option<IpAddr> {
+    let value = headers.get("x-forwarded-for")?.to_str().ok()?;
+    value
+        .split(',')
+        .map(str::trim)
+        .find_map(parse_forwarded_ip_candidate)
+}
+
+fn extract_forwarded_for(headers: &HeaderMap) -> Option<IpAddr> {
+    let value = headers.get("forwarded")?.to_str().ok()?;
+    value.split(',').find_map(|entry| {
+        entry
+            .split(';')
+            .filter_map(|pair| pair.split_once('='))
+            .find_map(|(key, value)| {
+                if key.trim().eq_ignore_ascii_case("for") {
+                    parse_forwarded_ip_candidate(value.trim())
+                } else {
+                    None
+                }
+            })
+    })
+}
+
+fn parse_forwarded_ip_candidate(value: &str) -> Option<IpAddr> {
+    let trimmed = value.trim().trim_matches('"');
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown") || trimmed.starts_with('_') {
+        return None;
+    }
+
+    let host = if let Some(stripped) = trimmed.strip_prefix('[') {
+        stripped.split(']').next().unwrap_or_default().trim()
+    } else {
+        trimmed
+    };
+
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Some(normalize_ip(ip));
+    }
+
+    if let Some((ip_candidate, _port)) = host.rsplit_once(':') {
+        if !ip_candidate.contains(':') {
+            if let Ok(ip) = ip_candidate.parse::<IpAddr>() {
+                return Some(normalize_ip(ip));
+            }
+        }
+    }
+
+    None
 }
 
 /// 画像生成対応バックエンド
@@ -126,9 +183,17 @@ async fn select_image_backend(state: &AppState) -> Result<ImageBackend, LbError>
 /// - style: スタイル（オプション、デフォルト: "vivid"）
 /// - response_format: 出力形式（オプション、デフォルト: "url"）
 pub async fn generations(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<ImageGenerationRequest>,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(
+        extract_client_ip_from_forwarded_headers(&headers)
+            .unwrap_or_else(|| normalize_socket_ip(&addr)),
+    );
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -195,7 +260,7 @@ pub async fn generations(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip,
         request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -210,6 +275,7 @@ pub async fn generations(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -231,9 +297,17 @@ pub async fn generations(
 /// - size: 出力サイズ（オプション）
 /// - response_format: 出力形式（オプション）
 pub async fn edits(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(
+        extract_client_ip_from_forwarded_headers(&headers)
+            .unwrap_or_else(|| normalize_socket_ip(&addr)),
+    );
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -426,7 +500,7 @@ pub async fn edits(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip,
         request_body: json!({"model": model, "prompt": prompt, "type": "image_edit"}),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -441,6 +515,7 @@ pub async fn edits(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -460,9 +535,17 @@ pub async fn edits(
 /// - size: 出力サイズ（オプション）
 /// - response_format: 出力形式（オプション）
 pub async fn variations(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     State(state): State<AppState>,
+    auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let client_ip = Some(
+        extract_client_ip_from_forwarded_headers(&headers)
+            .unwrap_or_else(|| normalize_socket_ip(&addr)),
+    );
+    let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
     let timestamp = Utc::now();
@@ -615,7 +698,7 @@ pub async fn variations(
         node_id: backend.id(),
         node_machine_name: backend.name(),
         node_ip: backend.ip(),
-        client_ip: None,
+        client_ip,
         request_body: json!({"model": model, "type": "image_variation"}),
         response_body: None,
         duration_ms: duration.as_millis() as u64,
@@ -630,6 +713,7 @@ pub async fn variations(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id,
     };
 
     save_request_record(state.request_history.clone(), record);
@@ -642,6 +726,41 @@ pub async fn variations(
 
 #[cfg(test)]
 mod tests {
+    use super::{extract_client_ip_from_forwarded_headers, parse_forwarded_ip_candidate};
+    use axum::http::{HeaderMap, HeaderValue};
+    use std::net::IpAddr;
+
+    #[test]
+    fn extract_client_ip_prefers_x_forwarded_for() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("unknown, 198.51.100.30, 10.0.0.3"),
+        );
+        let parsed =
+            extract_client_ip_from_forwarded_headers(&headers).expect("must parse x-forwarded-for");
+        assert_eq!(parsed, "198.51.100.30".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_client_ip_uses_forwarded_when_xff_missing() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=unknown;proto=https, for=\"[2001:db8::20]:9443\""),
+        );
+        let parsed =
+            extract_client_ip_from_forwarded_headers(&headers).expect("must parse forwarded");
+        assert_eq!(parsed, "2001:db8::20".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_parses_ipv4_with_port() {
+        let parsed =
+            parse_forwarded_ip_candidate("198.51.100.44:8080").expect("must parse ipv4 with port");
+        assert_eq!(parsed, "198.51.100.44".parse::<IpAddr>().unwrap());
+    }
+
     #[test]
     fn test_image_size_limit() {
         const MAX_IMAGE_SIZE: usize = 4 * 1024 * 1024; // 4MB

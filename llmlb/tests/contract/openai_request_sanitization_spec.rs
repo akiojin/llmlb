@@ -147,7 +147,7 @@ async fn request_history_redacts_inline_media_data() {
 
     let response = app
         .app
-        .oneshot(
+        .oneshot(crate::support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
@@ -155,7 +155,7 @@ async fn request_history_redacts_inline_media_data() {
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 

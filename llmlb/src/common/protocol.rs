@@ -96,6 +96,9 @@ pub struct RequestResponseRecord {
     /// 総トークン数
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
+    /// APIキーID（api_keysテーブル参照）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_id: Option<Uuid>,
 }
 
 /// リクエストタイプ
@@ -118,6 +121,48 @@ pub enum RequestType {
     ImageEdit,
     /// /v1/images/variations エンドポイント
     ImageVariation,
+}
+
+/// TPS計測対象のAPI種別。
+///
+/// 比較可能性を担保するため、TPSは API 種別ごとに分離して集計する。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum TpsApiKind {
+    /// /v1/chat/completions
+    ChatCompletions,
+    /// /v1/completions
+    Completions,
+    /// /v1/responses
+    Responses,
+}
+
+impl TpsApiKind {
+    /// RequestType から TPS API 種別を解決する。
+    ///
+    /// テキスト生成系以外（embeddings/audio/images）は TPS対象外として None を返す。
+    pub fn from_request_type(request_type: RequestType) -> Option<Self> {
+        match request_type {
+            RequestType::Chat => Some(Self::ChatCompletions),
+            RequestType::Generate => Some(Self::Completions),
+            RequestType::Embeddings
+            | RequestType::Transcription
+            | RequestType::Speech
+            | RequestType::ImageGeneration
+            | RequestType::ImageEdit
+            | RequestType::ImageVariation => None,
+        }
+    }
+}
+
+/// TPSデータの取得元。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TpsSource {
+    /// 本番リクエスト由来
+    Production,
+    /// ベンチマーク実行由来
+    Benchmark,
 }
 
 /// レコードステータス
@@ -623,6 +668,7 @@ mod tests {
             input_tokens: Some(150),
             output_tokens: Some(50),
             total_tokens: Some(200),
+            api_key_id: None,
         };
 
         let json = serde_json::to_string(&record).unwrap();
@@ -659,6 +705,7 @@ mod tests {
             input_tokens: None,
             output_tokens: None,
             total_tokens: None,
+            api_key_id: None,
         };
 
         let json = serde_json::to_string(&record).unwrap();

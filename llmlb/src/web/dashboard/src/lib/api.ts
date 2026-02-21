@@ -248,6 +248,7 @@ export interface RequestHistoryItem {
   error?: string
   request_body?: unknown
   response_body?: unknown
+  client_ip?: string
 }
 
 // /api/dashboard/request-responses APIのレスポンス型
@@ -264,6 +265,7 @@ export interface RequestResponseRecord {
   duration_ms: number
   status: { type: 'success' } | { type: 'error'; message: string }
   completed_at?: string
+  client_ip?: string
 }
 
 export interface RequestResponsesPage {
@@ -280,6 +282,9 @@ export interface EndpointTpsSummary {
   total_output_tokens: number
   total_requests: number
 }
+
+export type TpsApiKind = 'chat_completions' | 'completions' | 'responses'
+export type TpsSource = 'production' | 'benchmark'
 
 export interface DashboardOverview {
   endpoints: DashboardEndpoint[]
@@ -354,6 +359,7 @@ export const dashboardApi = {
     offset?: number
     model?: string
     status?: string
+    client_ip?: string
   }) => fetchWithAuth<RequestResponsesPage>('/api/dashboard/request-responses', { params }),
 
   getRequestResponseDetail: (id: string) =>
@@ -375,6 +381,9 @@ export const dashboardApi = {
 
   getRouterLogs: (params?: { limit?: number }) =>
     fetchWithAuth<LogResponse>('/api/dashboard/logs/lb', { params }),
+
+  getAllModelStats: () =>
+    fetchWithAuth<ModelStatEntry[]>('/api/dashboard/model-stats'),
 }
 
 /**
@@ -415,6 +424,17 @@ export interface SystemInfo {
   update: UpdateState
 }
 
+export interface ApplyUpdateResponse {
+  queued: boolean
+  mode: 'normal'
+}
+
+export interface ForceApplyUpdateResponse {
+  queued: false
+  mode: 'force'
+  dropped_in_flight: number
+}
+
 export const systemApi = {
   getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
   checkUpdate: () =>
@@ -423,7 +443,12 @@ export const systemApi = {
       body: JSON.stringify({}),
     }),
   applyUpdate: () =>
-    fetchWithAuth<{ queued: boolean }>('/api/system/update/apply', {
+    fetchWithAuth<ApplyUpdateResponse>('/api/system/update/apply', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  applyForceUpdate: () =>
+    fetchWithAuth<ForceApplyUpdateResponse>('/api/system/update/apply/force', {
       method: 'POST',
       body: JSON.stringify({}),
     }),
@@ -467,10 +492,61 @@ export interface ModelStatEntry {
 /** SPEC-4bb5b55f: Model-level TPS entry */
 export interface ModelTpsEntry {
   model_id: string
+  api_kind: TpsApiKind
+  source: TpsSource
   tps: number | null
   request_count: number
   total_output_tokens: number
   average_duration_ms: number | null
+}
+
+export interface TpsBenchmarkRequest {
+  model: string
+  api_kind?: TpsApiKind
+  total_requests?: number
+  concurrency?: number
+  max_tokens?: number
+  temperature?: number
+}
+
+export interface TpsBenchmarkEndpointSummary {
+  endpoint_id: string
+  endpoint_name: string
+  requests: number
+  successful_requests: number
+  measured_requests: number
+  success_rate: number
+  mean_tps: number | null
+  p50_tps: number | null
+  p95_tps: number | null
+}
+
+export interface TpsBenchmarkResult {
+  api_kind: TpsApiKind
+  source: TpsSource
+  total_requests: number
+  successful_requests: number
+  measured_requests: number
+  success_rate: number
+  mean_tps: number | null
+  p50_tps: number | null
+  p95_tps: number | null
+  per_endpoint: TpsBenchmarkEndpointSummary[]
+}
+
+export interface TpsBenchmarkRun {
+  run_id: string
+  status: 'running' | 'completed' | 'failed'
+  requested_at: string
+  completed_at: string | null
+  request: TpsBenchmarkRequest
+  result: TpsBenchmarkResult | null
+  error: string | null
+}
+
+export interface TpsBenchmarkAccepted {
+  run_id: string
+  status: 'running'
 }
 
 export const endpointsApi = {
@@ -656,6 +732,17 @@ export const endpointsApi = {
   },
 }
 
+export const benchmarkApi = {
+  startTpsBenchmark: (request: TpsBenchmarkRequest) =>
+    fetchWithAuth<TpsBenchmarkAccepted>('/api/benchmarks/tps', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  getTpsBenchmark: (runId: string) =>
+    fetchWithAuth<TpsBenchmarkRun>(`/api/benchmarks/tps/${runId}`),
+}
+
 // Models API
 export type LifecycleStatus = 'pending' | 'caching' | 'registered' | 'error'
 
@@ -822,28 +909,27 @@ export interface CreateApiKeyResponse {
 
 export const apiKeysApi = {
   list: () =>
-    fetchWithAuth<{ api_keys: ApiKey[] }>('/api/api-keys').then(
+    fetchWithAuth<{ api_keys: ApiKey[] }>('/api/me/api-keys').then(
       (res) => res.api_keys
     ),
 
   create: (data: {
     name: string
     expires_at?: string
-    permissions: ApiKeyPermission[]
   }) =>
-    fetchWithAuth<CreateApiKeyResponse>('/api/api-keys', {
+    fetchWithAuth<CreateApiKeyResponse>('/api/me/api-keys', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   update: (id: string, data: { name?: string; expires_at?: string | null }) =>
-    fetchWithAuth<ApiKey>(`/api/api-keys/${id}`, {
+    fetchWithAuth<ApiKey>(`/api/me/api-keys/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
   delete: (id: string) =>
-    fetchWithAuth<void>(`/api/api-keys/${id}`, { method: 'DELETE' }),
+    fetchWithAuth<void>(`/api/me/api-keys/${id}`, { method: 'DELETE' }),
 }
 
 // Invitations API
@@ -1092,6 +1178,91 @@ export const auditLogApi = {
 
   verify: (): Promise<HashChainVerifyResult> =>
     fetchWithAuth('/api/dashboard/audit-logs/verify', { method: 'POST' }),
+}
+
+// Clients API
+export interface ClientIpRanking {
+  ip: string
+  request_count: number
+  last_seen: string
+  is_alert: boolean
+  api_key_count: number
+}
+
+export interface ClientRankingResponse {
+  rankings: ClientIpRanking[]
+  total_count: number
+  page: number
+  per_page: number
+}
+
+export interface UniqueIpTimelinePoint {
+  hour: string
+  unique_ips: number
+}
+
+export interface ModelDistribution {
+  model: string
+  request_count: number
+  percentage: number
+}
+
+export interface HeatmapCell {
+  day_of_week: number
+  hour: number
+  count: number
+}
+
+export const clientsApi = {
+  getClientRanking: (params?: { page?: number; per_page?: number }) =>
+    fetchWithAuth<ClientRankingResponse>('/api/dashboard/clients', {
+      params: params as Record<string, string | number | boolean | undefined>,
+    }),
+  getTimeline: () =>
+    fetchWithAuth<UniqueIpTimelinePoint[]>('/api/dashboard/clients/timeline'),
+  getModels: () =>
+    fetchWithAuth<ModelDistribution[]>('/api/dashboard/clients/models'),
+  getHeatmap: () =>
+    fetchWithAuth<HeatmapCell[]>('/api/dashboard/clients/heatmap'),
+  getClientDetail: (ip: string) =>
+    fetchWithAuth<ClientDetailResponse>(`/api/dashboard/clients/${encodeURIComponent(ip)}/detail`),
+  getClientApiKeys: (ip: string) =>
+    fetchWithAuth<ClientApiKeyUsage[]>(`/api/dashboard/clients/${encodeURIComponent(ip)}/api-keys`),
+  getAlertThreshold: () =>
+    fetchWithAuth<{ key: string; value: string }>('/api/dashboard/settings/ip_alert_threshold'),
+  updateAlertThreshold: (value: string) =>
+    fetchWithAuth<{ key: string; value: string }>('/api/dashboard/settings/ip_alert_threshold', {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+}
+
+export interface ClientDetailResponse {
+  total_requests: number
+  first_seen: string | null
+  last_seen: string | null
+  recent_requests: ClientRecentRequest[]
+  model_distribution: ModelDistribution[]
+  hourly_pattern: HourlyPattern[]
+}
+
+export interface ClientRecentRequest {
+  id: string
+  timestamp: string
+  model: string
+  status: string
+  duration_ms: number | null
+}
+
+export interface HourlyPattern {
+  hour: number
+  count: number
+}
+
+export interface ClientApiKeyUsage {
+  api_key_id: string
+  name: string | null
+  request_count: number
 }
 
 // Export utilities

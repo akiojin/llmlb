@@ -7,6 +7,7 @@ pub mod audio;
 /// 監査ログAPI (SPEC-8301d106)
 pub mod audit_log;
 pub mod auth;
+pub mod benchmarks;
 pub mod cloud_models;
 pub mod dashboard;
 pub mod dashboard_ws;
@@ -119,34 +120,29 @@ pub fn create_app(state: AppState) -> Router {
             ))
     };
 
-    let api_keys_routes = Router::new()
+    // ユーザー自身のAPIキー管理（JWTのみ）
+    let my_api_keys_routes = Router::new()
         .route(
-            "/api-keys",
+            "/me/api-keys",
             get(api_keys::list_api_keys).post(api_keys::create_api_key),
         )
         .route(
-            "/api-keys/{id}",
+            "/me/api-keys/{id}",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         );
-    let api_keys_routes = if auth_disabled {
-        api_keys_routes.layer(middleware::from_fn_with_state(
+    let my_api_keys_routes = if auth_disabled {
+        my_api_keys_routes.layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::middleware::inject_dummy_admin_claims_with_state,
         ))
     } else {
-        let cfg = crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-            app_state: state.clone(),
-            required_permission: ApiKeyPermission::ApiKeysManage,
-            jwt_required_role: Some(UserRole::Admin),
-            api_key_role: UserRole::Admin,
-        };
-        api_keys_routes
+        my_api_keys_routes
             .layer(middleware::from_fn(
                 crate::auth::middleware::csrf_protect_middleware,
             ))
             .layer(middleware::from_fn_with_state(
-                cfg,
-                crate::auth::middleware::jwt_or_api_key_permission_middleware,
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
             ))
     };
 
@@ -246,7 +242,7 @@ pub fn create_app(state: AppState) -> Router {
 
     let admin_routes = Router::new()
         .merge(users_routes)
-        .merge(api_keys_routes)
+        .merge(my_api_keys_routes)
         .merge(invitations_routes)
         .merge(node_logs_routes)
         .merge(models_manage_routes)
@@ -303,6 +299,38 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/audit-logs/verify",
             post(audit_log::verify_hash_chain),
+        )
+        // SPEC-62ac4b68: Clients分析API
+        .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
+        .route(
+            "/benchmarks/tps/{run_id}",
+            get(benchmarks::get_tps_benchmark),
+        )
+        .route("/dashboard/clients", get(dashboard::get_client_rankings))
+        .route(
+            "/dashboard/clients/timeline",
+            get(dashboard::get_client_timeline),
+        )
+        .route(
+            "/dashboard/clients/models",
+            get(dashboard::get_client_models),
+        )
+        .route(
+            "/dashboard/clients/heatmap",
+            get(dashboard::get_client_heatmap),
+        )
+        .route(
+            "/dashboard/clients/{ip}/detail",
+            get(dashboard::get_client_detail),
+        )
+        .route(
+            "/dashboard/clients/{ip}/api-keys",
+            get(dashboard::get_client_api_keys),
+        )
+        // SPEC-62ac4b68: 設定API（閾値設定等）
+        .route(
+            "/dashboard/settings/{key}",
+            get(dashboard::get_setting).put(dashboard::update_setting),
         );
 
     let dashboard_api_routes = if auth_disabled {
@@ -318,7 +346,11 @@ pub fn create_app(state: AppState) -> Router {
     let system_routes = Router::new()
         .route("/system", get(system::get_system))
         .route("/system/update/check", post(system::check_update))
-        .route("/system/update/apply", post(system::apply_update));
+        .route("/system/update/apply", post(system::apply_update))
+        .route(
+            "/system/update/apply/force",
+            post(system::apply_force_update),
+        );
     let system_routes = if auth_disabled {
         system_routes
     } else {

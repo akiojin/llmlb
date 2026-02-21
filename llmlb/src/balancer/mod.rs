@@ -10,6 +10,7 @@
 
 use crate::common::{
     error::{LbError, RouterResult},
+    protocol::{TpsApiKind, TpsSource},
     types::HealthMetrics,
 };
 use crate::registry::endpoints::EndpointRegistry;
@@ -34,6 +35,9 @@ const REQUEST_HISTORY_WINDOW_MINUTES: i64 = 60;
 const METRICS_HISTORY_CAPACITY: usize = 360;
 /// LoadManagerインスタンスIDの採番カウンタ
 static NEXT_LOAD_MANAGER_ID: AtomicU64 = AtomicU64::new(1);
+
+type TpsTrackerKey = (Uuid, String, TpsApiKind);
+type TpsTrackerMap = HashMap<TpsTrackerKey, ModelTpsState>;
 
 /// リクエスト結果
 #[derive(Debug, Clone, Copy)]
@@ -132,6 +136,10 @@ impl ModelTpsState {
 pub struct ModelTpsInfo {
     /// モデルID
     pub model_id: String,
+    /// API種別（chat/completions/responses）
+    pub api_kind: TpsApiKind,
+    /// 計測元（production / benchmark）
+    pub source: TpsSource,
     /// EMA平滑化されたTPS値（None=未計測）
     pub tps: Option<f64>,
     /// リクエスト完了数
@@ -578,12 +586,19 @@ mod tests {
 
         // TPS更新
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
         assert_eq!(result.len(), 1, "1モデル分のTPS情報が返る");
         assert_eq!(result[0].model_id, "model-a");
+        assert_eq!(result[0].api_kind, TpsApiKind::ChatCompletions);
         assert_eq!(result[0].request_count, 1);
         assert_eq!(result[0].total_output_tokens, 100);
         // TPS = 100 / (2000 / 1000) = 50.0
@@ -597,10 +612,22 @@ mod tests {
         let (load_manager, endpoint_id) = setup_test_load_manager().await;
 
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
         load_manager
-            .update_tps(endpoint_id, "model-b".to_string(), 200, 1000)
+            .update_tps(
+                endpoint_id,
+                "model-b".to_string(),
+                TpsApiKind::Completions,
+                200,
+                1000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
@@ -612,13 +639,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_model_tps_separates_api_kind_for_same_model() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        load_manager
+            .update_tps(
+                endpoint_id,
+                "shared-model".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
+            .await;
+        load_manager
+            .update_tps(
+                endpoint_id,
+                "shared-model".to_string(),
+                TpsApiKind::Responses,
+                80,
+                2000,
+            )
+            .await;
+
+        let result = load_manager.get_model_tps(endpoint_id).await;
+        assert_eq!(result.len(), 2, "同一モデルでもAPI種別ごとに分離される");
+        assert!(result.iter().any(|entry| entry.model_id == "shared-model"
+            && entry.api_kind == TpsApiKind::ChatCompletions));
+        assert!(result.iter().any(
+            |entry| entry.model_id == "shared-model" && entry.api_kind == TpsApiKind::Responses
+        ));
+    }
+
+    #[tokio::test]
     async fn test_update_tps_skips_zero_tokens() {
         let _lock = TEST_LOCK.lock().await;
         let (load_manager, endpoint_id) = setup_test_load_manager().await;
 
         // output_tokens=0は無視
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 0, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                0,
+                2000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
@@ -632,10 +698,22 @@ mod tests {
         let other_endpoint_id = Uuid::new_v4();
 
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
         load_manager
-            .update_tps(other_endpoint_id, "model-b".to_string(), 200, 1000)
+            .update_tps(
+                other_endpoint_id,
+                "model-b".to_string(),
+                TpsApiKind::Completions,
+                200,
+                1000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
@@ -660,14 +738,32 @@ mod tests {
 
         // endpoint_id: 2モデル
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
         load_manager
-            .update_tps(endpoint_id, "model-b".to_string(), 200, 1000)
+            .update_tps(
+                endpoint_id,
+                "model-b".to_string(),
+                TpsApiKind::Completions,
+                200,
+                1000,
+            )
             .await;
         // other_endpoint_id: 1モデル
         load_manager
-            .update_tps(other_endpoint_id, "model-c".to_string(), 50, 500)
+            .update_tps(
+                other_endpoint_id,
+                "model-c".to_string(),
+                TpsApiKind::Responses,
+                50,
+                500,
+            )
             .await;
 
         let result = load_manager.get_all_endpoint_tps().await;
@@ -892,7 +988,7 @@ pub struct LoadManager {
     /// リクエストキュー待機数
     queue_waiters: Arc<AtomicUsize>,
     /// エンドポイント×モデル単位のTPS状態（SPEC-4bb5b55f）
-    tps_tracker: Arc<RwLock<HashMap<(Uuid, String), ModelTpsState>>>,
+    tps_tracker: Arc<RwLock<TpsTrackerMap>>,
 }
 
 /// リクエスト処理中のlease
@@ -1048,6 +1144,7 @@ impl LoadManager {
         &self,
         endpoint_id: Uuid,
         model_id: String,
+        api_kind: TpsApiKind,
         output_tokens: u64,
         duration_ms: u64,
     ) {
@@ -1055,7 +1152,9 @@ impl LoadManager {
             return;
         }
         let mut tracker = self.tps_tracker.write().await;
-        let state = tracker.entry((endpoint_id, model_id)).or_default();
+        let state = tracker
+            .entry((endpoint_id, model_id, api_kind))
+            .or_default();
         state.update_tps(output_tokens, duration_ms);
     }
 
@@ -1064,9 +1163,11 @@ impl LoadManager {
         let tracker = self.tps_tracker.read().await;
         tracker
             .iter()
-            .filter(|((eid, _), _)| *eid == endpoint_id)
-            .map(|((_, model_id), state)| ModelTpsInfo {
+            .filter(|((eid, _, _), _)| *eid == endpoint_id)
+            .map(|((_, model_id, api_kind), state)| ModelTpsInfo {
                 model_id: model_id.clone(),
+                api_kind: *api_kind,
+                source: TpsSource::Production,
                 tps: state.tps_ema,
                 request_count: state.request_count,
                 total_output_tokens: state.total_output_tokens,
@@ -1083,8 +1184,9 @@ impl LoadManager {
     pub async fn get_all_endpoint_tps(&self) -> Vec<EndpointTpsSummary> {
         let tracker = self.tps_tracker.read().await;
         let mut map: HashMap<Uuid, EndpointTpsSummary> = HashMap::new();
+        let mut model_sets: HashMap<Uuid, std::collections::HashSet<&str>> = HashMap::new();
 
-        for ((endpoint_id, _), state) in tracker.iter() {
+        for ((endpoint_id, model_id, _), state) in tracker.iter() {
             let entry = map
                 .entry(*endpoint_id)
                 .or_insert_with(|| EndpointTpsSummary {
@@ -1094,24 +1196,33 @@ impl LoadManager {
                     total_output_tokens: 0,
                     total_requests: 0,
                 });
-            entry.model_count += 1;
+            model_sets
+                .entry(*endpoint_id)
+                .or_default()
+                .insert(model_id.as_str());
             entry.total_output_tokens += state.total_output_tokens;
             entry.total_requests += state.request_count;
         }
 
+        for (endpoint_id, model_set) in model_sets {
+            if let Some(entry) = map.get_mut(&endpoint_id) {
+                entry.model_count = model_set.len();
+            }
+        }
+
         // 加重平均TPS = 全モデルの total_output_tokens / 全モデルの total_duration_ms * 1000
-        for ((endpoint_id, _), state) in tracker.iter() {
+        for ((endpoint_id, _, _), state) in tracker.iter() {
             if let Some(entry) = map.get_mut(endpoint_id) {
                 if entry.aggregate_tps.is_none() {
                     // 初回計算: このエンドポイントの全体統計から算出
                     let total_tokens: u64 = tracker
                         .iter()
-                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .filter(|((eid, _, _), _)| eid == endpoint_id)
                         .map(|(_, s)| s.total_output_tokens)
                         .sum();
                     let total_duration: u64 = tracker
                         .iter()
-                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .filter(|((eid, _, _), _)| eid == endpoint_id)
                         .map(|(_, s)| s.total_duration_ms)
                         .sum();
                     if total_duration > 0 {

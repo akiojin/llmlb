@@ -21,3 +21,6 @@ pub mod log;
 
 /// 認証・認可関連の型定義
 pub mod auth;
+
+/// IPアドレス正規化ユーティリティ
+pub mod ip;

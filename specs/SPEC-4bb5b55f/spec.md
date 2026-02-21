@@ -73,7 +73,7 @@ Draft
 - Ollama: 対象
 - vLLM: 対象
 - LM Studio: 対象
-- OpenAI互換: **対象外**
+- OpenAI互換: **対象**
 
 ### FR-3: インメモリTPS状態管理
 
@@ -128,4 +128,4 @@ Draft
 - TPSベースのルーティング判断（将来の拡張として検討）
 - TTFT（Time To First Token）の追跡
 - クラウドAPI（OpenAI/Anthropic/Google）のTPS追跡
-- OpenAI互換タイプエンドポイントのTPS追跡
+- OpenAI互換タイプエンドポイントを含むTPS追跡

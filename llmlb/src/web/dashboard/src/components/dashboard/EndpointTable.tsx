@@ -151,6 +151,7 @@ function getTypeBadgeVariant(
 
 export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTableProps) {
   const queryClient = useQueryClient()
+  const hasEndpointTps = (endpointTps?.length ?? 0) > 0
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'online' | 'pending' | 'offline' | 'error'
@@ -497,11 +498,16 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
                         {endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-'}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {(() => {
-                          const aggregateTps = endpointTpsByEndpointId.get(endpoint.id)
-                          if (aggregateTps == null) return <span className="text-muted-foreground">&mdash;</span>
-                          return `${aggregateTps.toFixed(1)} tok/s`
-                        })()}
+                        <span
+                          className="text-muted-foreground"
+                          title={
+                            hasEndpointTps
+                              ? 'Aggregated endpoint TPS is hidden. Use endpoint details for model/API-level production TPS.'
+                              : 'No TPS data yet.'
+                          }
+                        >
+                          &mdash;
+                        </span>
                       </TableCell>
                       <TableCell className="text-right">{endpoint.model_count}</TableCell>
                       <TableCell>

@@ -922,6 +922,10 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
 pub struct ModelTpsEntry {
     /// モデルID
     pub model_id: String,
+    /// API種別（chat/completions/responses）
+    pub api_kind: crate::common::protocol::TpsApiKind,
+    /// 計測元（production / benchmark）
+    pub source: crate::common::protocol::TpsSource,
     /// EMA平滑化されたTPS値（None=未計測）
     pub tps: Option<f64>,
     /// リクエスト完了数
@@ -945,6 +949,8 @@ pub async fn get_endpoint_model_tps(
             .into_iter()
             .map(|info| ModelTpsEntry {
                 model_id: info.model_id,
+                api_kind: info.api_kind,
+                source: info.source,
                 tps: info.tps,
                 request_count: info.request_count,
                 total_output_tokens: info.total_output_tokens,

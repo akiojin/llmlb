@@ -283,6 +283,9 @@ export interface EndpointTpsSummary {
   total_requests: number
 }
 
+export type TpsApiKind = 'chat_completions' | 'completions' | 'responses'
+export type TpsSource = 'production' | 'benchmark'
+
 export interface DashboardOverview {
   endpoints: DashboardEndpoint[]
   stats: DashboardStats
@@ -489,10 +492,61 @@ export interface ModelStatEntry {
 /** SPEC-4bb5b55f: Model-level TPS entry */
 export interface ModelTpsEntry {
   model_id: string
+  api_kind: TpsApiKind
+  source: TpsSource
   tps: number | null
   request_count: number
   total_output_tokens: number
   average_duration_ms: number | null
+}
+
+export interface TpsBenchmarkRequest {
+  model: string
+  api_kind?: TpsApiKind
+  total_requests?: number
+  concurrency?: number
+  max_tokens?: number
+  temperature?: number
+}
+
+export interface TpsBenchmarkEndpointSummary {
+  endpoint_id: string
+  endpoint_name: string
+  requests: number
+  successful_requests: number
+  measured_requests: number
+  success_rate: number
+  mean_tps: number | null
+  p50_tps: number | null
+  p95_tps: number | null
+}
+
+export interface TpsBenchmarkResult {
+  api_kind: TpsApiKind
+  source: TpsSource
+  total_requests: number
+  successful_requests: number
+  measured_requests: number
+  success_rate: number
+  mean_tps: number | null
+  p50_tps: number | null
+  p95_tps: number | null
+  per_endpoint: TpsBenchmarkEndpointSummary[]
+}
+
+export interface TpsBenchmarkRun {
+  run_id: string
+  status: 'running' | 'completed' | 'failed'
+  requested_at: string
+  completed_at: string | null
+  request: TpsBenchmarkRequest
+  result: TpsBenchmarkResult | null
+  error: string | null
+}
+
+export interface TpsBenchmarkAccepted {
+  run_id: string
+  status: 'running'
 }
 
 export const endpointsApi = {
@@ -676,6 +730,17 @@ export const endpointsApi = {
 
     return response.json()
   },
+}
+
+export const benchmarkApi = {
+  startTpsBenchmark: (request: TpsBenchmarkRequest) =>
+    fetchWithAuth<TpsBenchmarkAccepted>('/api/benchmarks/tps', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  getTpsBenchmark: (runId: string) =>
+    fetchWithAuth<TpsBenchmarkRun>(`/api/benchmarks/tps/${runId}`),
 }
 
 // Models API

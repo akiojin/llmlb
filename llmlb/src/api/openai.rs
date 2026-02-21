@@ -7,7 +7,7 @@ const UNSPECIFIED_IP: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr
 
 use crate::common::{
     error::{CommonError, LbError},
-    protocol::{RecordStatus, RequestResponseRecord, RequestType},
+    protocol::{RecordStatus, RequestResponseRecord, RequestType, TpsApiKind},
     types::{ModelCapabilities, ModelCapability},
 };
 use axum::body::Body;
@@ -1332,6 +1332,7 @@ async fn proxy_openai_post(
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
+    let tps_api_kind = TpsApiKind::from_request_type(request_type);
     let queue_config = state.queue_config;
     let mut queued_wait_ms: Option<u128> = None;
 
@@ -1494,6 +1495,7 @@ async fn proxy_openai_post(
                 false,
                 0,
                 0,
+                tps_api_kind,
                 endpoint_type,
                 state.load_manager.clone(),
                 state.event_bus.clone(),
@@ -1555,6 +1557,7 @@ async fn proxy_openai_post(
                 false,
                 0,
                 0,
+                tps_api_kind,
                 endpoint_type,
                 state.load_manager.clone(),
                 state.event_bus.clone(),
@@ -1595,6 +1598,7 @@ async fn proxy_openai_post(
                 response,
                 endpoint_id,
                 model.clone(),
+                tps_api_kind,
                 endpoint_type,
                 start,
                 state.db_pool.clone(),
@@ -1624,6 +1628,7 @@ async fn proxy_openai_post(
             false,
             0,
             0,
+            tps_api_kind,
             endpoint_type,
             state.load_manager.clone(),
             state.event_bus.clone(),
@@ -1713,6 +1718,7 @@ async fn proxy_openai_post(
                 true,
                 tps_output_tokens,
                 tps_duration_ms,
+                tps_api_kind,
                 endpoint_type,
                 state.load_manager.clone(),
                 state.event_bus.clone(),
@@ -1765,6 +1771,7 @@ async fn proxy_openai_post(
                 false,
                 0,
                 0,
+                tps_api_kind,
                 endpoint_type,
                 state.load_manager.clone(),
                 state.event_bus.clone(),

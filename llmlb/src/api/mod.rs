@@ -5,6 +5,7 @@
 pub mod api_keys;
 pub mod audio;
 pub mod auth;
+pub mod benchmarks;
 pub mod cloud_models;
 pub mod dashboard;
 pub mod dashboard_ws;
@@ -288,6 +289,11 @@ pub fn create_app(state: AppState) -> Router {
             get(dashboard::get_all_model_stats),
         )
         // SPEC-62ac4b68: Clients分析API
+        .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
+        .route(
+            "/benchmarks/tps/{run_id}",
+            get(benchmarks::get_tps_benchmark),
+        )
         .route("/dashboard/clients", get(dashboard::get_client_rankings))
         .route(
             "/dashboard/clients/timeline",

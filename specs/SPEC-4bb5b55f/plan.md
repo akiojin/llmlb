@@ -129,11 +129,11 @@ duration_ms を追加するのが最小変更かつクリティカルパス非�
 新テーブルではなくALTER TABLEを使い、既存のPK
 `(endpoint_id, model_id, date)` をそのまま活用する。
 
-### OpenAI互換タイプの除外
+### OpenAI互換タイプの扱い
 
 `EndpointType` に `is_tps_trackable()` メソッドを追加し、
 TPS計測対象かどうかを判定する。`record_endpoint_request_stats()` 内で
-チェックし、`OpenaiCompatible` の場合はTPS更新をスキップする。
+チェックし、`OpenaiCompatible` を含めてTPS更新対象とする。
 
 ## 複雑さトラッキング
 

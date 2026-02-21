@@ -4,11 +4,9 @@
 //! システム統計を返却する。
 
 use super::error::AppError;
-use crate::common::{
-    error::{CommonError, LbError},
-    types::HealthMetrics,
-};
+use crate::common::error::{CommonError, LbError};
 use crate::db::request_history::{FilterStatus, RecordFilter};
+use crate::types::HealthMetrics;
 use crate::{
     balancer::RequestHistoryPoint,
     types::endpoint::{EndpointStatus, EndpointType},
@@ -204,10 +202,10 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
 
 /// GET /api/dashboard/metrics/:runtime_id
 pub async fn get_node_metrics(
-    Path(node_id): Path<Uuid>,
+    Path(endpoint_id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<HealthMetrics>>, AppError> {
-    let history = state.load_manager.metrics_history(node_id).await?;
+    let history = state.load_manager.metrics_history(endpoint_id).await?;
     Ok(Json(history))
 }
 
@@ -537,9 +535,9 @@ pub struct RequestHistoryQuery {
     pub offset: Option<usize>,
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    #[serde(alias = "agent_id")]
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    #[serde(alias = "agent_id", alias = "node_id")]
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ（RFC3339）
@@ -579,7 +577,7 @@ impl RequestHistoryQuery {
 
         Ok(RecordFilter {
             model: self.model.clone(),
-            node_id: self.node_id,
+            endpoint_id: self.endpoint_id,
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
@@ -607,9 +605,9 @@ pub struct RequestHistoryExportQuery {
     pub format: RequestHistoryExportFormat,
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    #[serde(alias = "agent_id")]
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    #[serde(alias = "agent_id", alias = "node_id")]
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ（RFC3339）
@@ -632,7 +630,7 @@ impl RequestHistoryExportQuery {
 
         Ok(RecordFilter {
             model: self.model.clone(),
-            node_id: self.node_id,
+            endpoint_id: self.endpoint_id,
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
@@ -844,9 +842,9 @@ pub async fn export_request_responses(
                                 record.timestamp.to_rfc3339(),
                                 format!("{:?}", record.request_type),
                                 record.model,
-                                record.node_id.to_string(),
-                                record.node_machine_name,
-                                record.node_ip.to_string(),
+                                record.endpoint_id.to_string(),
+                                record.endpoint_name,
+                                record.endpoint_ip.to_string(),
                                 record
                                     .client_ip
                                     .map(|ip| ip.to_string())

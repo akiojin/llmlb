@@ -2,7 +2,7 @@
 //!
 //! LLM runtimeモデルのメタデータ管理
 
-use crate::common::types::ModelCapability;
+use crate::types::ModelCapability;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

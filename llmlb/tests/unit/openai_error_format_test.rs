@@ -9,7 +9,7 @@ use uuid::Uuid;
 /// OpenAIエラーレスポンスのJSON形式が正しいことを確認
 #[test]
 fn test_openai_error_response_json_format() {
-    let error = LbError::NoNodesAvailable;
+    let error = LbError::NoEndpointsAvailable;
     let response = error.to_openai_error();
 
     let json = serde_json::to_value(&response).expect("Failed to serialize");
@@ -63,11 +63,11 @@ fn test_error_status_codes() {
 
     // 404 Not Found
     assert_eq!(
-        LbError::NodeNotFound(Uuid::new_v4()).status_code(),
+        LbError::EndpointNotFound(Uuid::new_v4()).status_code(),
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        LbError::NoCapableNodes("model".to_string()).status_code(),
+        LbError::NoCapableEndpoints("model".to_string()).status_code(),
         StatusCode::NOT_FOUND
     );
 
@@ -89,7 +89,7 @@ fn test_error_status_codes() {
 
     // 503 Service Unavailable
     assert_eq!(
-        LbError::NoNodesAvailable.status_code(),
+        LbError::NoEndpointsAvailable.status_code(),
         StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(
@@ -97,7 +97,7 @@ fn test_error_status_codes() {
         StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(
-        LbError::NodeOffline(Uuid::new_v4()).status_code(),
+        LbError::EndpointOffline(Uuid::new_v4()).status_code(),
         StatusCode::SERVICE_UNAVAILABLE
     );
 
@@ -145,11 +145,11 @@ fn test_error_types() {
 
     // not_found_error
     assert_eq!(
-        LbError::NodeNotFound(Uuid::new_v4()).error_type(),
+        LbError::EndpointNotFound(Uuid::new_v4()).error_type(),
         "not_found_error"
     );
     assert_eq!(
-        LbError::NoCapableNodes("model".to_string()).error_type(),
+        LbError::NoCapableEndpoints("model".to_string()).error_type(),
         "not_found_error"
     );
 
@@ -173,7 +173,7 @@ fn test_error_types() {
 
     // service_unavailable
     assert_eq!(
-        LbError::NoNodesAvailable.error_type(),
+        LbError::NoEndpointsAvailable.error_type(),
         "service_unavailable"
     );
     assert_eq!(
@@ -185,7 +185,7 @@ fn test_error_types() {
         "service_unavailable"
     );
     assert_eq!(
-        LbError::NodeOffline(Uuid::new_v4()).error_type(),
+        LbError::EndpointOffline(Uuid::new_v4()).error_type(),
         "service_unavailable"
     );
 }
@@ -256,8 +256,8 @@ fn test_openai_error_response_without_code() {
 fn test_to_openai_error_values() {
     let test_cases = vec![
         (
-            LbError::NoNodesAvailable,
-            "No available runtimes",
+            LbError::NoEndpointsAvailable,
+            "No available endpoints",
             "service_unavailable",
             "503",
         ),

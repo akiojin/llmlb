@@ -970,11 +970,11 @@ impl From<LbError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match &self.0 {
-            LbError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
+            LbError::EndpointNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
             LbError::NotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
-            LbError::NoNodesAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            LbError::NoEndpointsAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             LbError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
-            LbError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            LbError::EndpointOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             LbError::InvalidModelName(_) => (StatusCode::BAD_REQUEST, self.0.to_string()),
             LbError::InsufficientStorage(_) => {
                 (StatusCode::INSUFFICIENT_STORAGE, self.0.to_string())
@@ -987,7 +987,7 @@ impl IntoResponse for AppError {
             LbError::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
             LbError::Authentication(_) => (StatusCode::UNAUTHORIZED, self.0.to_string()),
             LbError::Authorization(_) => (StatusCode::FORBIDDEN, self.0.to_string()),
-            LbError::NoCapableNodes(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
+            LbError::NoCapableEndpoints(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
             LbError::Common(err) => (StatusCode::BAD_REQUEST, err.to_string()),
         };
 
@@ -1135,7 +1135,7 @@ pub async fn register_model(
         ArtifactFormat::Safetensors => tags.push("safetensors".to_string()),
     }
     let description = req.display_name.clone().unwrap_or_else(|| repo.clone());
-    let capabilities = vec![crate::common::types::ModelCapability::TextGeneration];
+    let capabilities = vec![crate::types::ModelCapability::TextGeneration];
     let size_bytes = content_length;
     let required_memory_bytes = required_memory;
 

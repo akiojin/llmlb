@@ -1,7 +1,7 @@
 //! モデル情報の永続化 (SQLite)
 
 use crate::common::error::{LbError, RouterResult};
-use crate::common::types::ModelCapability;
+use crate::types::ModelCapability;
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 

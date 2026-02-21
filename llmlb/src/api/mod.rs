@@ -174,8 +174,8 @@ pub fn create_app(state: AppState) -> Router {
             ))
     };
 
-    // ノードログ取得（lb→node proxy）
-    let node_logs_routes = Router::new().route("/nodes/{node_id}/logs", get(logs::get_node_logs));
+    // エンドポイントログ取得（lb→endpoint proxy）
+    let node_logs_routes = Router::new().route("/endpoints/{id}/logs", get(logs::get_node_logs));
     let node_logs_routes = if auth_disabled {
         node_logs_routes.layer(middleware::from_fn_with_state(
             state.clone(),
@@ -259,7 +259,7 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route("/dashboard/overview", get(dashboard::get_overview))
         .route(
-            "/dashboard/metrics/{node_id}",
+            "/dashboard/metrics/{endpoint_id}",
             get(dashboard::get_node_metrics),
         )
         .route(

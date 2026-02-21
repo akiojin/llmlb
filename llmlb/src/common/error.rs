@@ -43,21 +43,21 @@ pub enum LbError {
     #[error(transparent)]
     Common(#[from] CommonError),
 
-    /// Runtime not found
-    #[error("Runtime not found: {0}")]
-    NodeNotFound(Uuid),
+    /// Endpoint not found
+    #[error("Endpoint not found: {0}")]
+    EndpointNotFound(Uuid),
 
     /// Resource not found
     #[error("Not found: {0}")]
     NotFound(String),
 
-    /// No available runtimes
-    #[error("No available runtimes")]
-    NoNodesAvailable,
+    /// No available endpoints
+    #[error("No available endpoints")]
+    NoEndpointsAvailable,
 
-    /// No capable runtimes for model
-    #[error("No capable runtimes for model: {0}")]
-    NoCapableNodes(String),
+    /// No capable endpoints for model
+    #[error("No capable endpoints for model: {0}")]
+    NoCapableEndpoints(String),
 
     /// Database error
     #[error("Database error: {0}")]
@@ -79,9 +79,9 @@ pub enum LbError {
     #[error("Internal error: {0}")]
     Internal(String),
 
-    /// Runtime is offline
-    #[error("Runtime {0} is offline")]
-    NodeOffline(Uuid),
+    /// Endpoint is offline
+    #[error("Endpoint {0} is offline")]
+    EndpointOffline(Uuid),
 
     /// Invalid model name
     #[error("Invalid model name: {0}")]
@@ -120,16 +120,16 @@ impl LbError {
     pub fn external_message(&self) -> &'static str {
         match self {
             Self::Common(_) => "Request error",
-            Self::NodeNotFound(_) => "Runtime not found",
+            Self::EndpointNotFound(_) => "Endpoint not found",
             Self::NotFound(_) => "Not found",
-            Self::NoNodesAvailable => "No available runtimes",
-            Self::NoCapableNodes(_) => "No capable runtimes",
+            Self::NoEndpointsAvailable => "No available endpoints",
+            Self::NoCapableEndpoints(_) => "No capable endpoints",
             Self::Database(_) => "Database error",
             Self::Http(_) => "Backend service unavailable",
             Self::Timeout(_) => "Request timeout",
             Self::ServiceUnavailable(_) => "Service temporarily unavailable",
             Self::Internal(_) => "Internal server error",
-            Self::NodeOffline(_) => "Runtime offline",
+            Self::EndpointOffline(_) => "Endpoint offline",
             Self::InvalidModelName(_) => "Invalid model name",
             Self::InsufficientStorage(_) => "Insufficient storage",
             Self::PasswordHash(_) => "Authentication error",
@@ -154,16 +154,16 @@ impl LbError {
         match self {
             Self::Common(CommonError::Validation(_)) => "invalid_request_error",
             Self::Common(_) => "invalid_request_error",
-            Self::NodeNotFound(_) => "not_found_error",
+            Self::EndpointNotFound(_) => "not_found_error",
             Self::NotFound(_) => "not_found_error",
-            Self::NoNodesAvailable => "service_unavailable",
-            Self::NoCapableNodes(_) => "not_found_error",
+            Self::NoEndpointsAvailable => "service_unavailable",
+            Self::NoCapableEndpoints(_) => "not_found_error",
             Self::Database(_) => "server_error",
             Self::Http(_) => "service_unavailable",
             Self::Timeout(_) => "server_error",
             Self::ServiceUnavailable(_) => "service_unavailable",
             Self::Internal(_) => "server_error",
-            Self::NodeOffline(_) => "service_unavailable",
+            Self::EndpointOffline(_) => "service_unavailable",
             Self::InvalidModelName(_) => "invalid_request_error",
             Self::InsufficientStorage(_) => "server_error",
             Self::PasswordHash(_) => "authentication_error",
@@ -178,16 +178,16 @@ impl LbError {
         match self {
             Self::Common(CommonError::Validation(_)) => StatusCode::BAD_REQUEST,
             Self::Common(_) => StatusCode::BAD_REQUEST,
-            Self::NodeNotFound(_) => StatusCode::NOT_FOUND,
+            Self::EndpointNotFound(_) => StatusCode::NOT_FOUND,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::NoNodesAvailable => StatusCode::SERVICE_UNAVAILABLE,
-            Self::NoCapableNodes(_) => StatusCode::NOT_FOUND,
+            Self::NoEndpointsAvailable => StatusCode::SERVICE_UNAVAILABLE,
+            Self::NoCapableEndpoints(_) => StatusCode::NOT_FOUND,
             Self::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Http(_) => StatusCode::BAD_GATEWAY,
             Self::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
             Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::NodeOffline(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::EndpointOffline(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::InvalidModelName(_) => StatusCode::BAD_REQUEST,
             Self::InsufficientStorage(_) => StatusCode::INSUFFICIENT_STORAGE,
             Self::PasswordHash(_) => StatusCode::UNAUTHORIZED,
@@ -216,7 +216,7 @@ impl LbError {
 /// ```json
 /// {
 ///   "error": {
-///     "message": "No available runtimes",
+///     "message": "No available endpoints",
 ///     "type": "service_unavailable",
 ///     "code": "503"
 ///   }
@@ -298,15 +298,15 @@ mod tests {
 
     #[test]
     fn test_lb_error_node_not_found() {
-        let node_id = Uuid::new_v4();
-        let error = LbError::NodeNotFound(node_id);
-        assert!(error.to_string().contains(&node_id.to_string()));
+        let endpoint_id = Uuid::new_v4();
+        let error = LbError::EndpointNotFound(endpoint_id);
+        assert!(error.to_string().contains(&endpoint_id.to_string()));
     }
 
     #[test]
     fn test_lb_error_no_nodes() {
-        let error = LbError::NoNodesAvailable;
-        assert_eq!(error.to_string(), "No available runtimes");
+        let error = LbError::NoEndpointsAvailable;
+        assert_eq!(error.to_string(), "No available endpoints");
     }
 
     #[test]
@@ -342,7 +342,7 @@ mod tests {
 
         // Not found errors
         assert_eq!(
-            LbError::NodeNotFound(Uuid::new_v4()).error_type(),
+            LbError::EndpointNotFound(Uuid::new_v4()).error_type(),
             "not_found_error"
         );
         assert_eq!(
@@ -350,13 +350,13 @@ mod tests {
             "not_found_error"
         );
         assert_eq!(
-            LbError::NoCapableNodes("test".to_string()).error_type(),
+            LbError::NoCapableEndpoints("test".to_string()).error_type(),
             "not_found_error"
         );
 
         // Service unavailable errors
         assert_eq!(
-            LbError::NoNodesAvailable.error_type(),
+            LbError::NoEndpointsAvailable.error_type(),
             "service_unavailable"
         );
         assert_eq!(
@@ -364,7 +364,7 @@ mod tests {
             "service_unavailable"
         );
         assert_eq!(
-            LbError::NodeOffline(Uuid::new_v4()).error_type(),
+            LbError::EndpointOffline(Uuid::new_v4()).error_type(),
             "service_unavailable"
         );
 
@@ -396,7 +396,7 @@ mod tests {
             StatusCode::FORBIDDEN
         );
         assert_eq!(
-            LbError::NodeNotFound(Uuid::new_v4()).status_code(),
+            LbError::EndpointNotFound(Uuid::new_v4()).status_code(),
             StatusCode::NOT_FOUND
         );
         assert_eq!(
@@ -404,7 +404,7 @@ mod tests {
             StatusCode::NOT_FOUND
         );
         assert_eq!(
-            LbError::NoNodesAvailable.status_code(),
+            LbError::NoEndpointsAvailable.status_code(),
             StatusCode::SERVICE_UNAVAILABLE
         );
         assert_eq!(
@@ -423,10 +423,10 @@ mod tests {
 
     #[test]
     fn test_lb_error_to_openai_error() {
-        let error = LbError::NoNodesAvailable;
+        let error = LbError::NoEndpointsAvailable;
         let response = error.to_openai_error();
 
-        assert_eq!(response.error.message, "No available runtimes");
+        assert_eq!(response.error.message, "No available endpoints");
         assert_eq!(response.error.error_type, "service_unavailable");
         assert_eq!(response.error.code, Some("503".to_string()));
     }

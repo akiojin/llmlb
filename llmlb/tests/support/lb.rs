@@ -418,7 +418,7 @@ pub async fn register_responses_endpoint(
 
 /// 指定したノードを管理者として承認する
 #[allow(dead_code)]
-pub async fn approve_node(lb_addr: SocketAddr, node_id: &str) -> reqwest::Result<Response> {
+pub async fn approve_node(lb_addr: SocketAddr, endpoint_id: &str) -> reqwest::Result<Response> {
     let client = Client::new();
     let login_response = client
         .post(format!("http://{}/api/auth/login", lb_addr))
@@ -435,7 +435,7 @@ pub async fn approve_node(lb_addr: SocketAddr, node_id: &str) -> reqwest::Result
     client
         .post(format!(
             "http://{}/api/runtimes/{}/approve",
-            lb_addr, node_id
+            lb_addr, endpoint_id
         ))
         .header("authorization", format!("Bearer {}", token))
         .send()
@@ -451,8 +451,8 @@ pub async fn approve_node_from_register_response(
     let status = register_response.status();
     let body: Value = register_response.json().await.unwrap_or_default();
 
-    if let Some(node_id) = body.get("runtime_id").and_then(|v| v.as_str()) {
-        let _ = approve_node(lb_addr, node_id).await?;
+    if let Some(runtime_id) = body.get("runtime_id").and_then(|v| v.as_str()) {
+        let _ = approve_node(lb_addr, runtime_id).await?;
     }
 
     Ok((status, body))

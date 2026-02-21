@@ -8,8 +8,8 @@ const UNSPECIFIED_IP: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr
 use crate::common::{
     error::{CommonError, LbError},
     protocol::{RecordStatus, RequestResponseRecord, RequestType, TpsApiKind},
-    types::{ModelCapabilities, ModelCapability},
 };
+use crate::types::model::{ModelCapabilities, ModelCapability};
 use axum::body::Body;
 use axum::{
     extract::{ConnectInfo, Path, State},
@@ -749,7 +749,7 @@ fn parse_cloud_model(model: &str) -> Option<(String, String)> {
 /// クラウドプロバイダ用の仮想ノード情報を生成する
 fn cloud_virtual_node(provider: &str) -> (Uuid, String, IpAddr) {
     // 仮想ノードIDはクラウドプロバイダごとに固定値
-    let node_id = match provider {
+    let endpoint_id = match provider {
         "openai" => Uuid::parse_str("00000000-0000-0000-0000-00000000c001")
             .expect("static UUID string is valid"),
         "google" => Uuid::parse_str("00000000-0000-0000-0000-00000000c002")
@@ -760,7 +760,7 @@ fn cloud_virtual_node(provider: &str) -> (Uuid, String, IpAddr) {
             .expect("static UUID string is valid"),
     };
     let machine_name = format!("cloud:{provider}");
-    (node_id, machine_name, UNSPECIFIED_IP)
+    (endpoint_id, machine_name, UNSPECIFIED_IP)
 }
 
 struct CloudProxyResult {
@@ -1196,7 +1196,7 @@ async fn proxy_openai_cloud_post(
 ) -> Result<Response, AppError> {
     let (provider, model_name) = parse_cloud_model(model)
         .ok_or_else(|| validation_error("cloud model prefix is invalid"))?;
-    let (node_id, node_machine_name, node_ip) = cloud_virtual_node(&provider);
+    let (endpoint_id, endpoint_name, endpoint_ip) = cloud_virtual_node(&provider);
     let record_id = Uuid::new_v4();
     let timestamp = Utc::now();
     let request_body = sanitize_openai_payload_for_history(&payload);
@@ -1223,9 +1223,9 @@ async fn proxy_openai_cloud_post(
                     timestamp,
                     request_type,
                     model: model.to_string(),
-                    node_id,
-                    node_machine_name,
-                    node_ip,
+                    endpoint_id,
+                    endpoint_name,
+                    endpoint_ip,
                     client_ip,
                     request_body,
                     response_body: None,
@@ -1269,9 +1269,9 @@ async fn proxy_openai_cloud_post(
             timestamp,
             request_type,
             model: model.to_string(),
-            node_id,
-            node_machine_name,
-            node_ip,
+            endpoint_id,
+            endpoint_name,
+            endpoint_ip,
             client_ip,
             request_body,
             response_body,
@@ -1355,9 +1355,9 @@ async fn proxy_openai_post(
                         timestamp,
                         request_type,
                         model: model.clone(),
-                        node_id: Uuid::nil(),
-                        node_machine_name: "N/A".to_string(),
-                        node_ip: UNSPECIFIED_IP,
+                        endpoint_id: Uuid::nil(),
+                        endpoint_name: "N/A".to_string(),
+                        endpoint_ip: UNSPECIFIED_IP,
                         client_ip,
                         request_body,
                         response_body: None,
@@ -1389,9 +1389,9 @@ async fn proxy_openai_post(
                         timestamp,
                         request_type,
                         model: model.clone(),
-                        node_id: Uuid::nil(),
-                        node_machine_name: "N/A".to_string(),
-                        node_ip: UNSPECIFIED_IP,
+                        endpoint_id: Uuid::nil(),
+                        endpoint_name: "N/A".to_string(),
+                        endpoint_ip: UNSPECIFIED_IP,
                         client_ip,
                         request_body,
                         response_body: None,
@@ -1414,7 +1414,7 @@ async fn proxy_openai_post(
                 ));
             }
             Err(e) => {
-                let error_message = if matches!(e, LbError::NoCapableNodes(_)) {
+                let error_message = if matches!(e, LbError::NoCapableEndpoints(_)) {
                     format!("No available nodes support model: {}", model)
                 } else {
                     format!("Node selection failed: {}", e)
@@ -1432,9 +1432,9 @@ async fn proxy_openai_post(
                         timestamp,
                         request_type,
                         model: model.clone(),
-                        node_id: Uuid::nil(),
-                        node_machine_name: "N/A".to_string(),
-                        node_ip: UNSPECIFIED_IP,
+                        endpoint_id: Uuid::nil(),
+                        endpoint_name: "N/A".to_string(),
+                        endpoint_ip: UNSPECIFIED_IP,
                         client_ip,
                         request_body,
                         response_body: None,
@@ -1449,7 +1449,7 @@ async fn proxy_openai_post(
                         api_key_id,
                     },
                 );
-                if matches!(e, LbError::NoCapableNodes(_)) {
+                if matches!(e, LbError::NoCapableEndpoints(_)) {
                     return Ok(model_unavailable_response(
                         error_message,
                         "no_capable_nodes",
@@ -1511,9 +1511,9 @@ async fn proxy_openai_post(
                     timestamp,
                     request_type,
                     model: model.clone(),
-                    node_id: endpoint_id,
-                    node_machine_name: endpoint_name.clone(),
-                    node_ip: endpoint_host,
+                    endpoint_id,
+                    endpoint_name: endpoint_name.clone(),
+                    endpoint_ip: endpoint_host,
                     client_ip,
                     request_body: request_body.clone(),
                     response_body: None,
@@ -1571,9 +1571,9 @@ async fn proxy_openai_post(
                 timestamp,
                 request_type,
                 model: model.clone(),
-                node_id: endpoint_id,
-                node_machine_name: endpoint_name.clone(),
-                node_ip: endpoint_host,
+                endpoint_id,
+                endpoint_name: endpoint_name.clone(),
+                endpoint_ip: endpoint_host,
                 client_ip,
                 request_body: request_body.clone(),
                 response_body: None, // ストリームボディは記録しない
@@ -1654,9 +1654,9 @@ async fn proxy_openai_post(
                 timestamp,
                 request_type,
                 model: model.clone(),
-                node_id: endpoint_id,
-                node_machine_name: endpoint_name.clone(),
-                node_ip: endpoint_host,
+                endpoint_id,
+                endpoint_name: endpoint_name.clone(),
+                endpoint_ip: endpoint_host,
                 client_ip,
                 request_body: request_body.clone(),
                 response_body: None,
@@ -1737,9 +1737,9 @@ async fn proxy_openai_post(
                     timestamp,
                     request_type,
                     model,
-                    node_id: endpoint_id,
-                    node_machine_name: endpoint_name,
-                    node_ip: endpoint_host,
+                    endpoint_id,
+                    endpoint_name,
+                    endpoint_ip: endpoint_host,
                     client_ip,
                     request_body,
                     response_body: Some(body.clone()),
@@ -1787,9 +1787,9 @@ async fn proxy_openai_post(
                     timestamp,
                     request_type,
                     model,
-                    node_id: endpoint_id,
-                    node_machine_name: endpoint_name,
-                    node_ip: endpoint_host,
+                    endpoint_id,
+                    endpoint_name,
+                    endpoint_ip: endpoint_host,
                     client_ip,
                     request_body,
                     response_body: None,
@@ -2831,7 +2831,7 @@ mod tests {
     // TextGeneration capability を持たないモデルで /v1/chat/completions を呼ぶとエラー
     #[test]
     fn test_chat_capability_validation_error_message() {
-        use crate::common::types::{ModelCapability, ModelType};
+        use crate::types::model::{ModelCapability, ModelType};
 
         // TTSモデルはTextToSpeechのみ、TextGenerationは非対応
         let tts_caps = ModelCapability::from_model_type(ModelType::TextToSpeech);

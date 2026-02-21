@@ -23,13 +23,13 @@ fn admin_api_key() -> String {
 }
 
 #[allow(dead_code)]
-pub async fn approve_node(app: &Router, node_id: &str) {
+pub async fn approve_node(app: &Router, endpoint_id: &str) {
     let response = app
         .clone()
         .oneshot(
             admin_request()
                 .method("POST")
-                .uri(format!("/api/runtimes/{}/approve", node_id))
+                .uri(format!("/api/runtimes/{}/approve", endpoint_id))
                 .body(Body::empty())
                 .unwrap(),
         )

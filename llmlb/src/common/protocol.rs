@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use uuid::Uuid;
 
-use super::types::{AudioFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
+use crate::types::media::{AudioFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
 
 /// LLM runtimeチャットリクエスト
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,12 +68,12 @@ pub struct RequestResponseRecord {
     pub request_type: RequestType,
     /// 使用されたモデル名
     pub model: String,
-    /// 処理したノードのID
-    pub node_id: Uuid,
-    /// ノードのマシン名
-    pub node_machine_name: String,
-    /// ノードのIPアドレス
-    pub node_ip: IpAddr,
+    /// 処理したエンドポイントのID
+    pub endpoint_id: Uuid,
+    /// エンドポイント名
+    pub endpoint_name: String,
+    /// エンドポイントのIPアドレス
+    pub endpoint_ip: IpAddr,
     /// リクエスト元クライアントのIPアドレス
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_ip: Option<IpAddr>,
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_speech_request_serialization() {
-        use super::super::types::AudioFormat;
+        use crate::types::media::AudioFormat;
 
         let request = SpeechRequest {
             model: "vibevoice-v1".to_string(),
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_image_generation_request_serialization() {
-        use super::super::types::{ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
+        use crate::types::media::{ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
 
         let request = ImageGenerationRequest {
             model: "stable-diffusion-xl".to_string(),
@@ -656,9 +656,9 @@ mod tests {
             timestamp: Utc::now(),
             request_type: RequestType::Chat,
             model: "gpt-3.5-turbo".to_string(),
-            node_id: Uuid::new_v4(),
-            node_machine_name: "test-node".to_string(),
-            node_ip: "127.0.0.1".parse().unwrap(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint_name: "test-node".to_string(),
+            endpoint_ip: "127.0.0.1".parse().unwrap(),
             client_ip: Some("192.168.1.1".parse().unwrap()),
             request_body: serde_json::json!({"messages": []}),
             response_body: Some(serde_json::json!({"choices": []})),
@@ -693,9 +693,9 @@ mod tests {
             timestamp: Utc::now(),
             request_type: RequestType::Chat,
             model: "gpt-3.5-turbo".to_string(),
-            node_id: Uuid::new_v4(),
-            node_machine_name: "test-node".to_string(),
-            node_ip: "127.0.0.1".parse().unwrap(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint_name: "test-node".to_string(),
+            endpoint_ip: "127.0.0.1".parse().unwrap(),
             client_ip: None,
             request_body: serde_json::json!({}),
             response_body: None,

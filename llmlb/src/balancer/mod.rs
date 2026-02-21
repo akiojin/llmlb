@@ -8,12 +8,10 @@
 //! このモジュールはEndpointRegistryを使用してエンドポイント情報を管理します。
 //! 負荷分散はレイテンシ優先（EMA α=0.2）で行われます。
 
-use crate::common::{
-    error::{LbError, RouterResult},
-    protocol::{TpsApiKind, TpsSource},
-    types::HealthMetrics,
-};
+use crate::common::error::{LbError, RouterResult};
+use crate::common::protocol::{TpsApiKind, TpsSource};
 use crate::registry::endpoints::EndpointRegistry;
+use crate::types::HealthMetrics;
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
 use serde::Serialize;
 use std::{
@@ -215,7 +213,7 @@ mod tests {
             success_count: 5,
             total_latency_ms: 500,
             last_metrics: Some(HealthMetrics {
-                node_id: Uuid::new_v4(),
+                endpoint_id: Uuid::new_v4(),
                 cpu_usage: 10.0,
                 memory_usage: 20.0,
                 gpu_usage: None,
@@ -1084,8 +1082,8 @@ impl Drop for RequestLease {
 /// ハートビートから記録するメトリクス値
 #[derive(Debug, Clone)]
 pub struct MetricsUpdate {
-    /// 対象ノードのID
-    pub node_id: Uuid,
+    /// 対象エンドポイントのID
+    pub endpoint_id: Uuid,
     /// CPU使用率（パーセンテージ）
     pub cpu_usage: f32,
     /// メモリ使用率（パーセンテージ）
@@ -1269,7 +1267,7 @@ impl LoadManager {
     /// ヘルスメトリクスを記録
     pub async fn record_metrics(&self, update: MetricsUpdate) -> RouterResult<()> {
         let MetricsUpdate {
-            node_id,
+            endpoint_id,
             cpu_usage,
             memory_usage,
             gpu_usage,
@@ -1287,15 +1285,15 @@ impl LoadManager {
         } = update;
 
         // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
         // GPU情報をEndpointRegistryに更新（initializingやready_modelsはLoadManager内部状態で管理）
         let _ = self
             .endpoint_registry
             .update_gpu_info(
-                node_id,
+                endpoint_id,
                 None,                                           // gpu_device_count
                 gpu_memory_total_mb.map(|mb| mb * 1024 * 1024), // bytes
                 gpu_memory_used_mb.map(|mb| mb * 1024 * 1024),  // bytes
@@ -1305,14 +1303,14 @@ impl LoadManager {
             .await;
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
         let was_active = entry.combined_active() > 0;
         let was_initializing = entry.initializing;
 
         let derived_average = average_response_time_ms.or_else(|| entry.average_latency_ms());
         let timestamp = Utc::now();
         let metrics = HealthMetrics {
-            node_id,
+            endpoint_id,
             cpu_usage,
             memory_usage,
             gpu_usage,
@@ -1345,15 +1343,15 @@ impl LoadManager {
         Ok(())
     }
 
-    /// ノード登録時に初期状態を同期
+    /// エンドポイント登録時に初期状態を同期
     pub async fn upsert_initial_state(
         &self,
-        node_id: Uuid,
+        endpoint_id: Uuid,
         initializing: bool,
         ready_models: Option<(u8, u8)>,
     ) {
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
         entry.initializing = initializing;
         entry.ready_models = ready_models;
         if !initializing {
@@ -1547,34 +1545,34 @@ impl LoadManager {
     }
 
     /// リクエスト開始を記録
-    pub async fn begin_request(&self, node_id: Uuid) -> RouterResult<RequestLease> {
+    pub async fn begin_request(&self, endpoint_id: Uuid) -> RouterResult<RequestLease> {
         // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
         entry.assigned_active = entry.assigned_active.saturating_add(1);
         entry.total_assigned = entry.total_assigned.saturating_add(1);
 
-        Ok(RequestLease::new(self.clone(), node_id))
+        Ok(RequestLease::new(self.clone(), endpoint_id))
     }
 
     /// リクエスト完了を記録
     pub async fn finish_request(
         &self,
-        node_id: Uuid,
+        endpoint_id: Uuid,
         outcome: RequestOutcome,
         duration: StdDuration,
     ) -> RouterResult<()> {
         // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
 
         if let RequestOutcome::Queued = outcome {
             // キューに積んだだけのものは active を増減させない
@@ -1625,18 +1623,18 @@ impl LoadManager {
     /// リクエスト完了を記録（トークン使用量含む）
     pub async fn finish_request_with_tokens(
         &self,
-        node_id: Uuid,
+        endpoint_id: Uuid,
         outcome: RequestOutcome,
         duration: StdDuration,
         token_usage: Option<crate::token::TokenUsage>,
     ) -> RouterResult<()> {
         // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
 
         if let RequestOutcome::Queued = outcome {
             // キューに積んだだけのものは active を増減させない
@@ -1720,7 +1718,7 @@ impl LoadManager {
             .endpoint_registry
             .get(endpoint_id)
             .await
-            .ok_or(LbError::NodeNotFound(endpoint_id))?;
+            .ok_or(LbError::EndpointNotFound(endpoint_id))?;
         let state = self.state.read().await;
         let load_state = state.get(&endpoint_id).cloned().unwrap_or_default();
 
@@ -1744,14 +1742,14 @@ impl LoadManager {
     }
 
     /// 指定されたエンドポイントのメトリクス履歴を取得
-    pub async fn metrics_history(&self, node_id: Uuid) -> RouterResult<Vec<HealthMetrics>> {
+    pub async fn metrics_history(&self, endpoint_id: Uuid) -> RouterResult<Vec<HealthMetrics>> {
         // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
         let state = self.state.read().await;
         let history = state
-            .get(&node_id)
+            .get(&endpoint_id)
             .map(|load_state| load_state.metrics_history.iter().cloned().collect())
             .unwrap_or_else(Vec::new);
         Ok(history)
@@ -1997,14 +1995,14 @@ impl LoadManager {
         if let Some(model_id) = model_id {
             let endpoints = self.endpoint_registry.find_by_model(model_id).await;
             if endpoints.is_empty() {
-                return Err(LbError::NoCapableNodes(model_id.to_string()));
+                return Err(LbError::NoCapableEndpoints(model_id.to_string()));
             }
             return Ok(endpoints);
         }
 
         let endpoints = self.endpoint_registry.list_online().await;
         if endpoints.is_empty() {
-            return Err(LbError::NoNodesAvailable);
+            return Err(LbError::NoEndpointsAvailable);
         }
 
         Ok(endpoints)
@@ -2031,7 +2029,7 @@ impl LoadManager {
     ) -> RouterResult<Option<crate::types::endpoint::Endpoint>> {
         let endpoints = self.endpoint_registry.list_online().await;
         if endpoints.is_empty() {
-            return Err(LbError::NoNodesAvailable);
+            return Err(LbError::NoEndpointsAvailable);
         }
 
         let state = self.state.read().await;
@@ -2185,7 +2183,7 @@ impl LoadManager {
         endpoints: Vec<crate::types::endpoint::Endpoint>,
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
         if endpoints.is_empty() {
-            return Err(LbError::NoNodesAvailable);
+            return Err(LbError::NoEndpointsAvailable);
         }
 
         let cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);

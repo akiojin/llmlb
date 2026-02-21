@@ -5,8 +5,8 @@
 use crate::common::{
     error::LbError,
     protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
-    types::ModelCapability,
 };
+use crate::types::model::ModelCapability;
 use axum::{
     body::Body,
     extract::{ConnectInfo, Multipart, State},
@@ -352,9 +352,9 @@ pub async fn transcriptions(
         timestamp,
         request_type: RequestType::Transcription,
         model: model.clone(),
-        node_id: backend.id(),
-        node_machine_name: backend.name(),
-        node_ip: backend.ip(),
+        endpoint_id: backend.id(),
+        endpoint_name: backend.name(),
+        endpoint_ip: backend.ip(),
         client_ip,
         request_body: json!({"model": model, "type": "transcription"}),
         response_body: None,
@@ -467,9 +467,9 @@ pub async fn speech(
         timestamp,
         request_type: RequestType::Speech,
         model: payload.model.clone(),
-        node_id: backend.id(),
-        node_machine_name: backend.name(),
-        node_ip: backend.ip(),
+        endpoint_id: backend.id(),
+        endpoint_name: backend.name(),
+        endpoint_ip: backend.ip(),
         client_ip,
         request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
         response_body: None,
@@ -583,7 +583,7 @@ mod tests {
     // TextToSpeech capability を持たないモデルで /v1/audio/speech を呼ぶとエラー
     #[test]
     fn test_tts_capability_validation_error_message() {
-        use crate::common::types::{ModelCapability, ModelType};
+        use crate::types::model::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、TextToSpeechは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);
@@ -599,7 +599,7 @@ mod tests {
     // SpeechToText capability を持たないモデルで /v1/audio/transcriptions を呼ぶとエラー
     #[test]
     fn test_asr_capability_validation_error_message() {
-        use crate::common::types::{ModelCapability, ModelType};
+        use crate::types::model::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、SpeechToTextは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);

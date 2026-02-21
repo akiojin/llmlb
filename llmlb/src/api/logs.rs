@@ -62,7 +62,7 @@ pub async fn get_lb_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRespon
     }))
 }
 
-/// GET /api/nodes/:node_id/logs
+/// GET /api/endpoints/:id/logs
 ///
 /// # 廃止予定
 ///
@@ -81,11 +81,11 @@ pub async fn get_node_logs(
         .endpoint_registry
         .get(endpoint_id)
         .await
-        .ok_or(LbError::NodeNotFound(endpoint_id))?;
+        .ok_or(LbError::EndpointNotFound(endpoint_id))?;
 
     // Pending/Error 状態でもログ取得は許可（Offline のみ拒否）
     if endpoint.status == EndpointStatus::Offline {
-        return Err(LbError::NodeOffline(endpoint_id).into());
+        return Err(LbError::EndpointOffline(endpoint_id).into());
     }
 
     let limit = clamp_limit(query.limit);

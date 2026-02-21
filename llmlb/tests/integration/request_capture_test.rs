@@ -241,7 +241,7 @@ async fn test_captured_record_contents() {
         .expect("record should exist");
 
     assert_eq!(record.model, "mock-model");
-    assert_eq!(record.node_id.to_string(), endpoint_id);
+    assert_eq!(record.endpoint_id.to_string(), endpoint_id);
     assert!(record.completed_at >= record.timestamp);
     assert!(record.response_body.is_some());
     assert!(record.request_body.get("messages").is_some());

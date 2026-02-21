@@ -108,8 +108,8 @@ impl RequestHistoryStorage {
         let id = record.id.to_string();
         let timestamp = record.timestamp.to_rfc3339();
         let request_type = format!("{:?}", record.request_type);
-        let node_id = record.node_id.to_string();
-        let node_ip = record.node_ip.to_string();
+        let endpoint_id_str = record.endpoint_id.to_string();
+        let endpoint_ip_str = record.endpoint_ip.to_string();
         let client_ip = record.client_ip.map(|ip| ip.to_string());
         let request_body = record.request_body.to_string();
         let response_body = record.response_body.as_ref().map(|v| v.to_string());
@@ -151,9 +151,9 @@ impl RequestHistoryStorage {
             .bind(&timestamp)
             .bind(&request_type)
             .bind(&record.model)
-            .bind(&node_id)
-            .bind(&record.node_machine_name)
-            .bind(&node_ip)
+            .bind(&endpoint_id_str)
+            .bind(&record.endpoint_name)
+            .bind(&endpoint_ip_str)
             .bind(&client_ip)
             .bind(&request_body)
             .bind(&response_body)
@@ -213,9 +213,9 @@ impl RequestHistoryStorage {
             params.push(format!("%{}%", model));
         }
 
-        if let Some(node_id) = filter.node_id {
+        if let Some(endpoint_id) = filter.endpoint_id {
             conditions.push("node_id = ?");
-            params.push(node_id.to_string());
+            params.push(endpoint_id.to_string());
         }
 
         if let Some(ref status) = filter.status {
@@ -499,9 +499,11 @@ impl RequestHistoryStorage {
             .collect())
     }
 
-    /// トークン統計を取得（ノード別）
-    pub async fn get_token_statistics_by_node(&self) -> RouterResult<Vec<NodeTokenStatistics>> {
-        let rows = sqlx::query_as::<_, NodeTokenStatisticsRow>(
+    /// トークン統計を取得（エンドポイント別）
+    pub async fn get_token_statistics_by_endpoint(
+        &self,
+    ) -> RouterResult<Vec<EndpointTokenStatistics>> {
+        let rows = sqlx::query_as::<_, EndpointTokenStatisticsRow>(
             r#"
             SELECT
                 node_id,
@@ -525,15 +527,17 @@ impl RequestHistoryStorage {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| LbError::Database(format!("Failed to get token statistics by node: {}", e)))?;
+        .map_err(|e| {
+            LbError::Database(format!("Failed to get token statistics by endpoint: {}", e))
+        })?;
 
         Ok(rows
             .into_iter()
             .filter_map(|row| {
-                let node_id = Uuid::parse_str(&row.node_id).ok()?;
-                Some(NodeTokenStatistics {
-                    node_id,
-                    node_machine_name: row.node_machine_name,
+                let endpoint_id = Uuid::parse_str(&row.node_id).ok()?;
+                Some(EndpointTokenStatistics {
+                    endpoint_id,
+                    endpoint_name: row.node_machine_name,
                     total_input_tokens: row.total_input_tokens as u64,
                     total_output_tokens: row.total_output_tokens as u64,
                     total_tokens: row.total_tokens as u64,
@@ -771,9 +775,9 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             timestamp,
             request_type,
             model: row.model,
-            node_id,
-            node_machine_name: row.node_machine_name,
-            node_ip,
+            endpoint_id: node_id,
+            endpoint_name: row.node_machine_name,
+            endpoint_ip: node_ip,
             client_ip,
             request_body,
             response_body,
@@ -799,8 +803,8 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
 pub struct RecordFilter {
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ
@@ -821,8 +825,8 @@ impl RecordFilter {
             }
         }
 
-        if let Some(node_id) = self.node_id {
-            if record.node_id != node_id {
+        if let Some(endpoint_id) = self.endpoint_id {
+            if record.endpoint_id != endpoint_id {
                 return false;
             }
         }
@@ -907,13 +911,13 @@ pub struct ModelTokenStatistics {
     pub request_count: u64,
 }
 
-/// トークン統計（ノード別）
+/// トークン統計（エンドポイント別）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct NodeTokenStatistics {
-    /// ノードID
-    pub node_id: Uuid,
-    /// ノードマシン名
-    pub node_machine_name: String,
+pub struct EndpointTokenStatistics {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// エンドポイント名
+    pub endpoint_name: String,
     /// 入力トークン合計
     pub total_input_tokens: u64,
     /// 出力トークン合計
@@ -942,9 +946,9 @@ struct ModelTokenStatisticsRow {
     request_count: i64,
 }
 
-/// SQLiteから取得したトークン統計行（ノード別）
+/// SQLiteから取得したトークン統計行（エンドポイント別）
 #[derive(sqlx::FromRow)]
-struct NodeTokenStatisticsRow {
+struct EndpointTokenStatisticsRow {
     node_id: String,
     node_machine_name: String,
     total_input_tokens: i64,
@@ -1690,9 +1694,9 @@ mod tests {
             timestamp,
             request_type: RequestType::Chat,
             model: "test-model".to_string(),
-            node_id: Uuid::new_v4(),
-            node_machine_name: "test-node".to_string(),
-            node_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint_name: "test-node".to_string(),
+            endpoint_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
             client_ip: Some("10.0.0.10".parse::<IpAddr>().unwrap()),
             request_body: serde_json::json!({"test": "request"}),
             response_body: Some(serde_json::json!({"test": "response"})),
@@ -1987,38 +1991,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_token_aggregation_by_node() {
+    async fn test_token_aggregation_by_endpoint() {
         let pool = create_test_pool().await;
         let storage = RequestHistoryStorage::new(pool);
 
-        let node_id_1 = Uuid::new_v4();
-        let node_id_2 = Uuid::new_v4();
+        let endpoint_id_1 = Uuid::new_v4();
+        let endpoint_id_2 = Uuid::new_v4();
 
-        // ノード1のレコード
+        // エンドポイント1のレコード
         let mut record_1 = create_test_record(Utc::now());
-        record_1.node_id = node_id_1;
+        record_1.endpoint_id = endpoint_id_1;
         record_1.input_tokens = Some(100);
         record_1.output_tokens = Some(50);
         record_1.total_tokens = Some(150);
         storage.save_record(&record_1).await.unwrap();
 
-        // ノード2のレコード
+        // エンドポイント2のレコード
         let mut record_2 = create_test_record(Utc::now());
         record_2.id = Uuid::new_v4();
-        record_2.node_id = node_id_2;
+        record_2.endpoint_id = endpoint_id_2;
         record_2.input_tokens = Some(200);
         record_2.output_tokens = Some(100);
         record_2.total_tokens = Some(300);
         storage.save_record(&record_2).await.unwrap();
 
-        let stats = storage.get_token_statistics_by_node().await.unwrap();
+        let stats = storage.get_token_statistics_by_endpoint().await.unwrap();
         assert_eq!(stats.len(), 2);
 
-        let node_1_stats = stats.iter().find(|s| s.node_id == node_id_1).unwrap();
-        assert_eq!(node_1_stats.total_input_tokens, 100);
+        let endpoint_1_stats = stats
+            .iter()
+            .find(|s| s.endpoint_id == endpoint_id_1)
+            .unwrap();
+        assert_eq!(endpoint_1_stats.total_input_tokens, 100);
 
-        let node_2_stats = stats.iter().find(|s| s.node_id == node_id_2).unwrap();
-        assert_eq!(node_2_stats.total_input_tokens, 200);
+        let endpoint_2_stats = stats
+            .iter()
+            .find(|s| s.endpoint_id == endpoint_id_2)
+            .unwrap();
+        assert_eq!(endpoint_2_stats.total_input_tokens, 200);
     }
 
     #[tokio::test]

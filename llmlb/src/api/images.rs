@@ -5,8 +5,8 @@
 use crate::common::{
     error::LbError,
     protocol::{ImageGenerationRequest, RecordStatus, RequestResponseRecord, RequestType},
-    types::ModelCapability,
 };
+use crate::types::model::ModelCapability;
 use axum::{
     extract::{ConnectInfo, Multipart, State},
     http::{HeaderMap, StatusCode},
@@ -257,9 +257,9 @@ pub async fn generations(
         timestamp,
         request_type: RequestType::ImageGeneration,
         model: payload.model.clone(),
-        node_id: backend.id(),
-        node_machine_name: backend.name(),
-        node_ip: backend.ip(),
+        endpoint_id: backend.id(),
+        endpoint_name: backend.name(),
+        endpoint_ip: backend.ip(),
         client_ip,
         request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
         response_body: None,
@@ -497,9 +497,9 @@ pub async fn edits(
         timestamp,
         request_type: RequestType::ImageEdit,
         model: model.clone(),
-        node_id: backend.id(),
-        node_machine_name: backend.name(),
-        node_ip: backend.ip(),
+        endpoint_id: backend.id(),
+        endpoint_name: backend.name(),
+        endpoint_ip: backend.ip(),
         client_ip,
         request_body: json!({"model": model, "prompt": prompt, "type": "image_edit"}),
         response_body: None,
@@ -695,9 +695,9 @@ pub async fn variations(
         timestamp,
         request_type: RequestType::ImageVariation,
         model: model.clone(),
-        node_id: backend.id(),
-        node_machine_name: backend.name(),
-        node_ip: backend.ip(),
+        endpoint_id: backend.id(),
+        endpoint_name: backend.name(),
+        endpoint_ip: backend.ip(),
         client_ip,
         request_body: json!({"model": model, "type": "image_variation"}),
         response_body: None,
@@ -797,7 +797,7 @@ mod tests {
     // ImageGeneration capability を持たないモデルで /v1/images/generations を呼ぶとエラー
     #[test]
     fn test_image_generation_capability_validation_error_message() {
-        use crate::common::types::{ModelCapability, ModelType};
+        use crate::types::model::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、ImageGenerationは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);

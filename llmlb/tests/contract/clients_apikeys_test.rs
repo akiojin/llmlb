@@ -46,7 +46,7 @@ async fn insert_record(db_pool: &SqlitePool, record: &RequestResponseRecord) {
 
 fn create_test_record_with_key(
     model: &str,
-    node_id: Uuid,
+    endpoint_id: Uuid,
     timestamp: chrono::DateTime<Utc>,
     client_ip: Option<std::net::IpAddr>,
     api_key_id: Option<Uuid>,
@@ -56,9 +56,9 @@ fn create_test_record_with_key(
         timestamp,
         request_type: RequestType::Chat,
         model: model.to_string(),
-        node_id,
-        node_machine_name: "test-node".to_string(),
-        node_ip: "127.0.0.1".parse().unwrap(),
+        endpoint_id,
+        endpoint_name: "test-node".to_string(),
+        endpoint_ip: "127.0.0.1".parse().unwrap(),
         client_ip,
         request_body: json!({"model": model, "messages": [{"role": "user", "content": "hello"}]}),
         response_body: Some(
@@ -80,7 +80,7 @@ fn create_test_record_with_key(
 async fn test_clients_apikeys_api() {
     let (app, db_pool, jwt) = build_app().await;
     let now = Utc::now();
-    let node_id = Uuid::new_v4();
+    let endpoint_id = Uuid::new_v4();
     let ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
 
     let key_a = Uuid::new_v4();
@@ -90,7 +90,7 @@ async fn test_clients_apikeys_api() {
     for i in 0..3 {
         let record = create_test_record_with_key(
             "model-a",
-            node_id,
+            endpoint_id,
             now - Duration::minutes(i),
             Some(ip),
             Some(key_a),
@@ -102,7 +102,7 @@ async fn test_clients_apikeys_api() {
     for i in 0..2 {
         let record = create_test_record_with_key(
             "model-b",
-            node_id,
+            endpoint_id,
             now - Duration::minutes(10 + i),
             Some(ip),
             Some(key_b),
@@ -143,7 +143,7 @@ async fn test_clients_apikeys_api() {
 async fn test_clients_apikeys_api_ipv6_prefix64() {
     let (app, db_pool, jwt) = build_app().await;
     let now = Utc::now();
-    let node_id = Uuid::new_v4();
+    let endpoint_id = Uuid::new_v4();
 
     let key_a = Uuid::new_v4();
     let key_b = Uuid::new_v4();
@@ -153,7 +153,7 @@ async fn test_clients_apikeys_api_ipv6_prefix64() {
         let ip: std::net::IpAddr = ip_str.parse().unwrap();
         let record = create_test_record_with_key(
             "model-a",
-            node_id,
+            endpoint_id,
             now - Duration::minutes(1),
             Some(ip),
             Some(key_a),
@@ -163,7 +163,7 @@ async fn test_clients_apikeys_api_ipv6_prefix64() {
     let ip_same_prefix: std::net::IpAddr = "2001:db8:1:0:cafe::3".parse().unwrap();
     let record = create_test_record_with_key(
         "model-a",
-        node_id,
+        endpoint_id,
         now - Duration::minutes(2),
         Some(ip_same_prefix),
         Some(key_b),
@@ -174,7 +174,7 @@ async fn test_clients_apikeys_api_ipv6_prefix64() {
     let ip_other_prefix: std::net::IpAddr = "2001:db8:1:1::1".parse().unwrap();
     let record = create_test_record_with_key(
         "model-a",
-        node_id,
+        endpoint_id,
         now - Duration::minutes(3),
         Some(ip_other_prefix),
         Some(key_a),

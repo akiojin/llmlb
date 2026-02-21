@@ -21,18 +21,20 @@ impl IntoResponse for AppError {
         // Use external_message() to avoid exposing internal details (IP addresses, ports, etc.)
         // Full error details are logged separately for debugging
         let (status, message) = match &self.0 {
-            LbError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
+            LbError::EndpointNotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
             LbError::NotFound(_) => (StatusCode::NOT_FOUND, self.0.external_message()),
-            LbError::NoNodesAvailable => {
+            LbError::NoEndpointsAvailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
-            LbError::NoCapableNodes(_) => {
+            LbError::NoCapableEndpoints(_) => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
             LbError::ServiceUnavailable(_) => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
             }
-            LbError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message()),
+            LbError::EndpointOffline(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, self.0.external_message())
+            }
             LbError::InvalidModelName(_) => (StatusCode::BAD_REQUEST, self.0.external_message()),
             LbError::InsufficientStorage(_) => {
                 (StatusCode::INSUFFICIENT_STORAGE, self.0.external_message())

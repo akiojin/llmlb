@@ -194,7 +194,7 @@ pub async fn post_responses(
                 ));
             }
             Err(e) => {
-                if matches!(e, LbError::NoCapableNodes(_)) {
+                if matches!(e, LbError::NoCapableEndpoints(_)) {
                     let message = format!("No available endpoints support model: {}", model);
                     return Ok(model_unavailable_response(message));
                 }

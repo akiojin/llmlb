@@ -161,11 +161,11 @@ async fn test_dashboard_receives_node_registration_event() {
     let _ = read.next().await;
 
     // Act: Register a node by publishing event directly (since we can't go through HTTP in this test)
-    let node_id = uuid::Uuid::new_v4();
+    let endpoint_id = uuid::Uuid::new_v4();
     state
         .event_bus
         .publish(llmlb::events::DashboardEvent::NodeRegistered {
-            runtime_id: node_id,
+            runtime_id: endpoint_id,
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
             status: llmlb::types::endpoint::EndpointStatus::Online,
@@ -181,7 +181,7 @@ async fn test_dashboard_receives_node_registration_event() {
     if let Message::Text(text) = msg {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
         assert_eq!(json["type"], "NodeRegistered");
-        assert_eq!(json["data"]["runtime_id"], node_id.to_string());
+        assert_eq!(json["data"]["runtime_id"], endpoint_id.to_string());
         assert_eq!(json["data"]["machine_name"], "test-node");
     } else {
         panic!("Expected text message, got {:?}", msg);
@@ -215,11 +215,11 @@ async fn test_dashboard_receives_node_status_change() {
     let _ = read.next().await;
 
     // Act: Publish a node status change event
-    let node_id = uuid::Uuid::new_v4();
+    let endpoint_id = uuid::Uuid::new_v4();
     state
         .event_bus
         .publish(llmlb::events::DashboardEvent::EndpointStatusChanged {
-            runtime_id: node_id,
+            runtime_id: endpoint_id,
             old_status: llmlb::types::endpoint::EndpointStatus::Online,
             new_status: llmlb::types::endpoint::EndpointStatus::Offline,
         });
@@ -234,7 +234,7 @@ async fn test_dashboard_receives_node_status_change() {
     if let Message::Text(text) = msg {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
         assert_eq!(json["type"], "EndpointStatusChanged");
-        assert_eq!(json["data"]["runtime_id"], node_id.to_string());
+        assert_eq!(json["data"]["runtime_id"], endpoint_id.to_string());
         assert_eq!(json["data"]["new_status"], "offline");
     } else {
         panic!("Expected text message, got {:?}", msg);

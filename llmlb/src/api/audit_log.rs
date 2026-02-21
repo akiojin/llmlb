@@ -123,19 +123,27 @@ pub async fn list_audit_logs(
 
     let page = params.page.unwrap_or(1);
     let per_page = params.per_page.unwrap_or(50);
+    let include_archive = params.include_archive.unwrap_or(false);
     let search_text = params.search.clone();
 
     let filter: AuditLogFilter = params.into();
     let storage = &state.audit_log_storage;
 
-    let (items, total) = if let Some(ref query) = search_text {
-        let items = storage.search_fts(query, &filter).await?;
-        let total = storage.count_fts(query, &filter).await?;
-        (items, total)
-    } else {
-        let items = storage.query(&filter).await?;
-        let total = storage.count(&filter).await?;
-        (items, total)
+    let (items, total) = match (include_archive, state.audit_archive_pool.as_ref()) {
+        (true, Some(archive_pool)) => {
+            query_with_archive(storage, archive_pool, &filter, search_text.as_deref()).await?
+        }
+        _ => {
+            if let Some(ref query) = search_text {
+                let items = storage.search_fts(query, &filter).await?;
+                let total = storage.count_fts(query, &filter).await?;
+                (items, total)
+            } else {
+                let items = storage.query(&filter).await?;
+                let total = storage.count(&filter).await?;
+                (items, total)
+            }
+        }
     };
 
     Ok(Json(AuditLogListResponse {
@@ -144,6 +152,58 @@ pub async fn list_audit_logs(
         page,
         per_page,
     }))
+}
+
+async fn query_with_archive(
+    storage: &crate::db::audit_log::AuditLogStorage,
+    archive_pool: &sqlx::SqlitePool,
+    filter: &AuditLogFilter,
+    search_text: Option<&str>,
+) -> Result<(Vec<AuditLogEntry>, i64), AppError> {
+    let page = filter.page.unwrap_or(1).max(1);
+    let per_page = filter.per_page.unwrap_or(50).max(1);
+    let fetch_limit = page.saturating_mul(per_page);
+
+    let mut merged_filter = filter.clone();
+    merged_filter.page = Some(1);
+    merged_filter.per_page = Some(fetch_limit);
+
+    let (main_items, main_total, archive_items, archive_total) = if let Some(query) = search_text {
+        (
+            storage.search_fts(query, &merged_filter).await?,
+            storage.count_fts(query, filter).await?,
+            storage
+                .search_fts_archive(query, &merged_filter, archive_pool)
+                .await?,
+            storage
+                .count_fts_archive(query, filter, archive_pool)
+                .await?,
+        )
+    } else {
+        (
+            storage.query(&merged_filter).await?,
+            storage.count(filter).await?,
+            storage.query_archive(&merged_filter, archive_pool).await?,
+            storage.count_archive(filter, archive_pool).await?,
+        )
+    };
+
+    let mut all_items = Vec::with_capacity(main_items.len() + archive_items.len());
+    all_items.extend(main_items);
+    all_items.extend(archive_items);
+    all_items.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| b.id.cmp(&a.id))
+            .then_with(|| b.request_path.cmp(&a.request_path))
+    });
+
+    let offset = ((page - 1) * per_page) as usize;
+    let limit = per_page as usize;
+    let paged_items = all_items.into_iter().skip(offset).take(limit).collect();
+    let total = main_total + archive_total;
+
+    Ok((paged_items, total))
 }
 
 /// GET /api/dashboard/audit-logs/stats - 監査ログ統計取得
@@ -244,7 +304,10 @@ mod tests {
         }
     }
 
-    async fn create_test_state(pool: sqlx::SqlitePool) -> AppState {
+    async fn create_test_state_with_archive(
+        pool: sqlx::SqlitePool,
+        archive_pool: Option<sqlx::SqlitePool>,
+    ) -> AppState {
         let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
             pool.clone(),
         ));
@@ -285,8 +348,12 @@ mod tests {
             update_manager,
             audit_log_writer,
             audit_log_storage,
-            audit_archive_pool: None,
+            audit_archive_pool: archive_pool,
         }
+    }
+
+    async fn create_test_state(pool: sqlx::SqlitePool) -> AppState {
+        create_test_state_with_archive(pool, None).await
     }
 
     #[tokio::test]
@@ -579,5 +646,110 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_include_archive() {
+        let pool = create_test_pool().await;
+        let main_storage = AuditLogStorage::new(pool.clone());
+        main_storage
+            .insert_batch(&[create_test_entry(
+                "/api/main-only",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let archive_pool = crate::db::audit_log::create_archive_pool(":memory:")
+            .await
+            .unwrap();
+        let archive_storage = AuditLogStorage::new(archive_pool.clone());
+        archive_storage
+            .insert_batch(&[create_test_entry(
+                "/api/archive-only",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let state = create_test_state_with_archive(pool, Some(archive_pool)).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?include_archive=true")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 2);
+        assert_eq!(response.items.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_include_archive_with_search() {
+        let pool = create_test_pool().await;
+        let main_storage = AuditLogStorage::new(pool.clone());
+        main_storage
+            .insert_batch(&[create_test_entry(
+                "/api/main-only",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let archive_pool = crate::db::audit_log::create_archive_pool(":memory:")
+            .await
+            .unwrap();
+        let archive_storage = AuditLogStorage::new(archive_pool.clone());
+        archive_storage
+            .insert_batch(&[create_test_entry(
+                "/api/archive-search-target",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let state = create_test_state_with_archive(pool, Some(archive_pool)).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?include_archive=true&search=archive-search-target")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 1);
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].request_path, "/api/archive-search-target");
     }
 }

@@ -213,20 +213,16 @@ pub async fn get_node_metrics(
 
 /// GET /api/dashboard/stats/tokens - トークン統計取得
 ///
-/// SPEC-8301d106: audit_log_entriesから集計（request_historyから移行済み）
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_token_stats(
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
     let stats = state
-        .audit_log_storage
+        .request_history
         .get_token_statistics()
         .await
         .map_err(AppError::from)?;
-    Ok(Json(crate::db::request_history::TokenStatistics {
-        total_input_tokens: stats.total_input_tokens as u64,
-        total_output_tokens: stats.total_output_tokens as u64,
-        total_tokens: stats.total_tokens as u64,
-    }))
+    Ok(Json(stats))
 }
 
 /// 日次トークン統計クエリパラメータ
@@ -258,15 +254,15 @@ pub struct DailyTokenStats {
 
 /// GET /api/dashboard/stats/tokens/daily - 日次トークン統計取得
 ///
-/// SPEC-8301d106: audit_log_entriesから集計（request_historyから移行済み）
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_daily_token_stats(
     State(state): State<AppState>,
     Query(query): Query<DailyTokenStatsQuery>,
 ) -> Result<Json<Vec<DailyTokenStats>>, AppError> {
     let days = query.days.unwrap_or(30);
     let stats = state
-        .audit_log_storage
-        .get_daily_token_statistics(days as i64)
+        .request_history
+        .get_daily_token_statistics(days)
         .await
         .map_err(AppError::from)?;
     Ok(Json(
@@ -274,10 +270,10 @@ pub async fn get_daily_token_stats(
             .into_iter()
             .map(|s| DailyTokenStats {
                 date: s.date,
-                total_input_tokens: s.total_input_tokens as u64,
-                total_output_tokens: s.total_output_tokens as u64,
-                total_tokens: s.total_tokens as u64,
-                request_count: s.request_count as u64,
+                total_input_tokens: s.total_input_tokens,
+                total_output_tokens: s.total_output_tokens,
+                total_tokens: s.total_tokens,
+                request_count: s.request_count,
             })
             .collect(),
     ))
@@ -312,15 +308,15 @@ pub struct MonthlyTokenStats {
 
 /// GET /api/dashboard/stats/tokens/monthly - 月次トークン統計取得
 ///
-/// SPEC-8301d106: audit_log_entriesから集計（request_historyから移行済み）
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_monthly_token_stats(
     State(state): State<AppState>,
     Query(query): Query<MonthlyTokenStatsQuery>,
 ) -> Result<Json<Vec<MonthlyTokenStats>>, AppError> {
     let months = query.months.unwrap_or(12);
     let stats = state
-        .audit_log_storage
-        .get_monthly_token_statistics(months as i64)
+        .request_history
+        .get_monthly_token_statistics(months)
         .await
         .map_err(AppError::from)?;
     Ok(Json(
@@ -328,10 +324,10 @@ pub async fn get_monthly_token_stats(
             .into_iter()
             .map(|s| MonthlyTokenStats {
                 month: s.month,
-                total_input_tokens: s.total_input_tokens as u64,
-                total_output_tokens: s.total_output_tokens as u64,
-                total_tokens: s.total_tokens as u64,
-                request_count: s.request_count as u64,
+                total_input_tokens: s.total_input_tokens,
+                total_output_tokens: s.total_output_tokens,
+                total_tokens: s.total_tokens,
+                request_count: s.request_count,
             })
             .collect(),
     ))
@@ -410,17 +406,41 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             }
         };
 
-    // SPEC-8301d106: audit_log_entriesからトークン合計を取得
-    let token_totals_from_history = match state.audit_log_storage.get_token_statistics().await {
+    // request_history 廃止完了まで、audit_log/request_history の双方を見て過小計上を避ける
+    let token_totals_from_audit = match state.audit_log_storage.get_token_statistics().await {
         Ok(stats) => Some(PersistedTokenTotals {
-            total_input_tokens: stats.total_input_tokens as u64,
-            total_output_tokens: stats.total_output_tokens as u64,
-            total_tokens: stats.total_tokens as u64,
+            total_input_tokens: to_u64(stats.total_input_tokens),
+            total_output_tokens: to_u64(stats.total_output_tokens),
+            total_tokens: to_u64(stats.total_tokens),
         }),
         Err(e) => {
             warn!("Failed to query token statistics from audit log: {}", e);
             None
         }
+    };
+    let token_totals_from_history = match state.request_history.get_token_statistics().await {
+        Ok(stats) => Some(PersistedTokenTotals {
+            total_input_tokens: stats.total_input_tokens,
+            total_output_tokens: stats.total_output_tokens,
+            total_tokens: stats.total_tokens,
+        }),
+        Err(e) => {
+            warn!(
+                "Failed to query token statistics from request history: {}",
+                e
+            );
+            None
+        }
+    };
+    let token_totals_from_db = match (token_totals_from_audit, token_totals_from_history) {
+        (Some(audit), Some(history)) => Some(PersistedTokenTotals {
+            total_input_tokens: audit.total_input_tokens.max(history.total_input_tokens),
+            total_output_tokens: audit.total_output_tokens.max(history.total_output_tokens),
+            total_tokens: audit.total_tokens.max(history.total_tokens),
+        }),
+        (Some(audit), None) => Some(audit),
+        (None, Some(history)) => Some(history),
+        (None, None) => None,
     };
 
     let cached_totals = LAST_KNOWN_PERSISTED_TOTALS
@@ -438,22 +458,22 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         PersistedRequestTotals::default()
     };
 
-    let token_totals = if let Some(token_totals) = token_totals_from_history {
+    let token_totals = if let Some(token_totals) = token_totals_from_db {
         token_totals
     } else if let Some(cached) = cached_totals {
-        warn!("Using last known persisted token totals after history query failure");
+        warn!("Using last known persisted token totals after token query failure");
         cached.token_totals
     } else {
         warn!("No cached persisted token totals available; returning zero values");
         PersistedTokenTotals::default()
     };
 
-    if request_totals_from_db.is_some() || token_totals_from_history.is_some() {
+    if request_totals_from_db.is_some() || token_totals_from_db.is_some() {
         let mut updated_cache = cached_totals.unwrap_or_default();
         if let Some(request_totals) = request_totals_from_db {
             updated_cache.request_totals = request_totals;
         }
-        if let Some(token_totals) = token_totals_from_history {
+        if let Some(token_totals) = token_totals_from_db {
             updated_cache.token_totals = token_totals;
         }
 

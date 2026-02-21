@@ -378,6 +378,26 @@ pub async fn jwt_auth_middleware(
     Ok(response)
 }
 
+/// JWT claims に admin ロールを要求するミドルウェア
+pub async fn require_admin_role_middleware(
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let claims = request.extensions().get::<Claims>().ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Missing authenticated user claims".to_string(),
+        )
+            .into_response()
+    })?;
+
+    if claims.role != UserRole::Admin {
+        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response());
+    }
+
+    Ok(next.run(request).await)
+}
+
 /// CookieベースのJWT認証時にCSRFトークンを要求するミドルウェア
 pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Response, Response> {
     if !method_requires_csrf(request.method()) {

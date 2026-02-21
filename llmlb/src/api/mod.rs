@@ -249,7 +249,7 @@ pub fn create_app(state: AppState) -> Router {
         .merge(metrics_routes);
 
     // ダッシュボードAPI（管理UI向け。JWTのみ）
-    let dashboard_api_routes = Router::new()
+    let dashboard_general_routes = Router::new()
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))
         .route("/dashboard/models", get(dashboard::get_models))
         .route("/dashboard/stats", get(dashboard::get_stats))
@@ -290,16 +290,6 @@ pub fn create_app(state: AppState) -> Router {
             "/dashboard/model-stats",
             get(dashboard::get_all_model_stats),
         )
-        // 監査ログAPI (SPEC-8301d106)
-        .route("/dashboard/audit-logs", get(audit_log::list_audit_logs))
-        .route(
-            "/dashboard/audit-logs/stats",
-            get(audit_log::get_audit_log_stats),
-        )
-        .route(
-            "/dashboard/audit-logs/verify",
-            post(audit_log::verify_hash_chain),
-        )
         // SPEC-62ac4b68: Clients分析API
         .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
         .route(
@@ -333,13 +323,40 @@ pub fn create_app(state: AppState) -> Router {
             get(dashboard::get_setting).put(dashboard::update_setting),
         );
 
+    // 監査ログAPI (SPEC-8301d106): adminロールのみ
+    let dashboard_audit_routes = Router::new()
+        .route("/dashboard/audit-logs", get(audit_log::list_audit_logs))
+        .route(
+            "/dashboard/audit-logs/stats",
+            get(audit_log::get_audit_log_stats),
+        )
+        .route(
+            "/dashboard/audit-logs/verify",
+            post(audit_log::verify_hash_chain),
+        );
+
     let dashboard_api_routes = if auth_disabled {
-        dashboard_api_routes
+        dashboard_general_routes
+            .merge(dashboard_audit_routes)
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::auth::middleware::inject_dummy_admin_claims_with_state,
+            ))
     } else {
-        dashboard_api_routes.layer(middleware::from_fn_with_state(
-            state.jwt_secret.clone(),
-            crate::auth::middleware::jwt_auth_middleware,
-        ))
+        let dashboard_general_routes =
+            dashboard_general_routes.layer(middleware::from_fn_with_state(
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
+            ));
+        let dashboard_audit_routes = dashboard_audit_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::require_admin_role_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.jwt_secret.clone(),
+                crate::auth::middleware::jwt_auth_middleware,
+            ));
+        dashboard_general_routes.merge(dashboard_audit_routes)
     };
 
     // システムAPI（更新状態/適用）
@@ -693,6 +710,7 @@ mod tests {
 
     use super::*;
     use crate::balancer::LoadManager;
+    use crate::common::auth::UserRole;
     use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use std::sync::Arc;
@@ -831,6 +849,52 @@ mod tests {
                     .method(axum::http::Method::GET)
                     .uri("/api/dashboard/request-history")
                     .header("x-api-key", "sk_debug")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_dashboard_audit_logs_requires_admin_role() {
+        let state = test_state().await;
+        let viewer_token =
+            crate::auth::jwt::create_jwt("viewer-user", UserRole::Viewer, &state.jwt_secret)
+                .expect("create viewer jwt");
+        let mut app = create_app(state);
+
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/api/dashboard/audit-logs")
+                    .header("authorization", format!("Bearer {}", viewer_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_dashboard_audit_logs_allows_admin_role() {
+        let state = test_state().await;
+        let admin_token =
+            crate::auth::jwt::create_jwt("admin-user", UserRole::Admin, &state.jwt_secret)
+                .expect("create admin jwt");
+        let mut app = create_app(state);
+
+        let response = app
+            .call(
+                Request::builder()
+                    .method(axum::http::Method::GET)
+                    .uri("/api/dashboard/audit-logs")
+                    .header("authorization", format!("Bearer {}", admin_token))
                     .body(Body::empty())
                     .unwrap(),
             )

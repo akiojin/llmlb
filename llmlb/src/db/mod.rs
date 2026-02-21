@@ -33,6 +33,9 @@ pub mod audit_log;
 /// 設定管理
 pub mod settings;
 
+/// Repository traitパターン（テスタビリティ向上）
+pub mod traits;
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use once_cell::sync::Lazy;

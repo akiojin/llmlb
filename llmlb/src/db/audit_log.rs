@@ -1965,7 +1965,7 @@ mod tests {
         // request_historyにテストデータを挿入（全マイグレーション後のフルスキーマ）
         sqlx::query(
             r#"INSERT INTO request_history
-                (id, timestamp, request_type, model, node_id, node_machine_name, node_ip,
+                (id, timestamp, request_type, model, endpoint_id, endpoint_name, endpoint_ip,
                  request_body, duration_ms, status, completed_at,
                  input_tokens, output_tokens, total_tokens)
             VALUES
@@ -2003,7 +2003,7 @@ mod tests {
                 rh.output_tokens,
                 rh.total_tokens,
                 rh.model,
-                rh.node_id,
+                rh.endpoint_id,
                 1
             FROM request_history rh"#,
         )

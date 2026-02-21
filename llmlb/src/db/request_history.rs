@@ -129,8 +129,8 @@ impl RequestHistoryStorage {
         let insert_sql = if ignore_conflicts {
             r#"
             INSERT OR IGNORE INTO request_history (
-                id, timestamp, request_type, model, node_id, node_machine_name,
-                node_ip, client_ip, request_body, response_body, duration_ms,
+                id, timestamp, request_type, model, endpoint_id, endpoint_name,
+                endpoint_ip, client_ip, request_body, response_body, duration_ms,
                 status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
                 api_key_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -138,8 +138,8 @@ impl RequestHistoryStorage {
         } else {
             r#"
             INSERT INTO request_history (
-                id, timestamp, request_type, model, node_id, node_machine_name,
-                node_ip, client_ip, request_body, response_body, duration_ms,
+                id, timestamp, request_type, model, endpoint_id, endpoint_name,
+                endpoint_ip, client_ip, request_body, response_body, duration_ms,
                 status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
                 api_key_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -214,7 +214,7 @@ impl RequestHistoryStorage {
         }
 
         if let Some(endpoint_id) = filter.endpoint_id {
-            conditions.push("node_id = ?");
+            conditions.push("endpoint_id = ?");
             params.push(endpoint_id.to_string());
         }
 
@@ -506,8 +506,8 @@ impl RequestHistoryStorage {
         let rows = sqlx::query_as::<_, EndpointTokenStatisticsRow>(
             r#"
             SELECT
-                node_id,
-                node_machine_name,
+                endpoint_id,
+                endpoint_name,
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
                 COALESCE(SUM(output_tokens), 0) as total_output_tokens,
                 COALESCE(
@@ -521,7 +521,7 @@ impl RequestHistoryStorage {
                 ) as total_tokens,
                 COUNT(*) as request_count
             FROM request_history
-            GROUP BY node_id
+            GROUP BY endpoint_id
             ORDER BY total_tokens DESC
             "#,
         )
@@ -534,10 +534,10 @@ impl RequestHistoryStorage {
         Ok(rows
             .into_iter()
             .filter_map(|row| {
-                let endpoint_id = Uuid::parse_str(&row.node_id).ok()?;
+                let endpoint_id = Uuid::parse_str(&row.endpoint_id).ok()?;
                 Some(EndpointTokenStatistics {
                     endpoint_id,
-                    endpoint_name: row.node_machine_name,
+                    endpoint_name: row.endpoint_name,
                     total_input_tokens: row.total_input_tokens as u64,
                     total_output_tokens: row.total_output_tokens as u64,
                     total_tokens: row.total_tokens as u64,
@@ -693,9 +693,9 @@ struct RequestHistoryRow {
     timestamp: String,
     request_type: String,
     model: String,
-    node_id: String,
-    node_machine_name: String,
-    node_ip: String,
+    endpoint_id: String,
+    endpoint_name: String,
+    endpoint_ip: String,
     client_ip: Option<String>,
     request_body: String,
     response_body: Option<String>,
@@ -733,13 +733,13 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             _ => RequestType::Chat, // フォールバック
         };
 
-        let node_id = Uuid::parse_str(&row.node_id)
-            .map_err(|e| LbError::Database(format!("Invalid node UUID: {}", e)))?;
+        let endpoint_id = Uuid::parse_str(&row.endpoint_id)
+            .map_err(|e| LbError::Database(format!("Invalid endpoint UUID: {}", e)))?;
 
-        let node_ip: IpAddr = row
-            .node_ip
+        let endpoint_ip: IpAddr = row
+            .endpoint_ip
             .parse()
-            .map_err(|e| LbError::Database(format!("Invalid node IP: {}", e)))?;
+            .map_err(|e| LbError::Database(format!("Invalid endpoint IP: {}", e)))?;
 
         let client_ip = row
             .client_ip
@@ -775,9 +775,9 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             timestamp,
             request_type,
             model: row.model,
-            endpoint_id: node_id,
-            endpoint_name: row.node_machine_name,
-            endpoint_ip: node_ip,
+            endpoint_id,
+            endpoint_name: row.endpoint_name,
+            endpoint_ip,
             client_ip,
             request_body,
             response_body,
@@ -949,8 +949,8 @@ struct ModelTokenStatisticsRow {
 /// SQLiteから取得したトークン統計行（エンドポイント別）
 #[derive(sqlx::FromRow)]
 struct EndpointTokenStatisticsRow {
-    node_id: String,
-    node_machine_name: String,
+    endpoint_id: String,
+    endpoint_name: String,
     total_input_tokens: i64,
     total_output_tokens: i64,
     total_tokens: i64,

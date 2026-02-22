@@ -1,5 +1,38 @@
 # Unreleased
 
+# [5.0.0](https://github.com/akiojin/llmlb/compare/v4.7.2...v5.0.0) (2026-02-22)
+
+### Breaking Changes
+
+- Phase 1: 型基盤リファクタリング — EndpointType/HealthStatus等を統一型に移行 (SPEC-71864d94)
+- Phase 2: エラー基盤リファクタリング — AppError統一とエラーハンドリング刷新 (SPEC-71864d94)
+- Phase 3: API層リファクタリング — ハンドラー署名とレスポンス型の統一 (SPEC-71864d94)
+- Phase 4: DB層リファクタリング — リポジトリパターン導入とトレイト統一 (SPEC-71864d94)
+
+### Features
+
+- 監査ログ機能の実装 (#438)
+- エンドポイントTPS（tokens/sec）をAPI種別ごとに分離しベンチマークAPIを追加 (#437)
+- クライアントIP記録とClients分析機能を追加 (#435)
+- 強制更新フローと即時適用レスポンスを追加 (#431)
+
+### Bug Fixes
+
+- LM Studio検出の優先度改善とmax\_tokensバックフィル (#439)
+- ダッシュボードのエンドポイントTPSソートを有効化 (#436)
+- force apply時の競合と状態遷移を修正 (#434)
+- LM Studio /api/v1/models のmodels形状に対応 (#433)
+
+### Refactoring
+
+- Phase 5/6/7: 構造リファクタリング — モジュール分割と責務整理 (SPEC-71864d94)
+- Phase 8: Dashboard リファクタリング — フロントエンド型定義の統一 (SPEC-71864d94)
+- ユーザー登録をセルフサービスAPIキー管理に統合 (#432)
+
+### Documentation
+
+- READMEからAUTH\_DISABLED廃止とnode\_id用語を更新 (SPEC-71864d94)
+
 # [4.7.2](https://github.com/akiojin/llmlb/compare/v4.7.1...v4.7.2) (2026-02-20)
 
 ### Bug Fixes

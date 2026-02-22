@@ -723,9 +723,7 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | `REQUEST_HISTORY_RETENTION_DAYS` |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | `LLM_DEFAULT_EMBEDDING_MODEL` |
-| `LLMLB_AUTH_DISABLED` | `false` | Disable auth checks (dev/test only) | `AUTH_DISABLED` |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | deprecated (use `LLMLB_DEFAULT_EMBEDDING_MODEL`) |
-| `AUTH_DISABLED` | `false` | Disable auth checks (dev/test only) | deprecated (use `LLMLB_AUTH_DISABLED`) |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | deprecated (use `LLMLB_REQUEST_HISTORY_RETENTION_DAYS`) |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | deprecated (use `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`) |
 
@@ -961,12 +959,11 @@ dashboard origin.
 | `openai.models.read` | Model discovery (`GET /v1/models*`) |
 | `endpoints.read` | Read-only endpoint APIs (`GET /api/endpoints*`) |
 | `endpoints.manage` | Endpoint mutations (`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`) |
-| `api_keys.manage` | API key management (`/api/api-keys*`) |
 | `users.manage` | User management (`/api/users*`) |
 | `invitations.manage` | Invitation management (`/api/invitations*`) |
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry and lists (`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`) |
-| `logs.read` | Node log proxy (`GET /api/nodes/:node_id/logs`) |
+| `logs.read` | Endpoint log proxy (`GET /api/endpoints/:id/logs`) |
 | `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
 
 Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
@@ -982,14 +979,14 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | PUT | `/api/users/:id` | Update user | JWT+Admin or API key (`users.manage`) |
 | DELETE | `/api/users/:id` | Delete user | JWT+Admin or API key (`users.manage`) |
 
-#### API Key Management Endpoints
+#### API Key Management Endpoints (Self-service)
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/api-keys` | List API keys | JWT+Admin or API key (`api_keys.manage`) |
-| POST | `/api/api-keys` | Create API key | JWT+Admin or API key (`api_keys.manage`) |
-| PUT | `/api/api-keys/:id` | Update API key | JWT+Admin or API key (`api_keys.manage`) |
-| DELETE | `/api/api-keys/:id` | Delete API key | JWT+Admin or API key (`api_keys.manage`) |
+| GET | `/api/me/api-keys` | List own API keys | JWT |
+| POST | `/api/me/api-keys` | Create own API key (server assigns fixed permissions) | JWT |
+| PUT | `/api/me/api-keys/:id` | Update own API key | JWT |
+| DELETE | `/api/me/api-keys/:id` | Delete own API key | JWT |
 
 #### Invitation Management Endpoints
 
@@ -1050,7 +1047,7 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | GET | `/api/dashboard/stats` | System statistics | JWT only |
 | GET | `/api/dashboard/request-history` | Request history (legacy) | JWT only |
 | GET | `/api/dashboard/overview` | Dashboard overview | JWT only |
-| GET | `/api/dashboard/metrics/:node_id` | Node metrics history | JWT only |
+| GET | `/api/dashboard/metrics/:runtime_id` | Endpoint metrics history | JWT only |
 | GET | `/api/dashboard/request-responses` | Request/response list | JWT only |
 | GET | `/api/dashboard/request-responses/:id` | Request/response details | JWT only |
 | GET | `/api/dashboard/request-responses/export` | Export request/responses | JWT only |
@@ -1063,7 +1060,7 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/nodes/:node_id/logs` | Node logs proxy | JWT+Admin or API key (`logs.read`) |
+| GET | `/api/endpoints/:id/logs` | Endpoint logs proxy | JWT+Admin or API key (`logs.read`) |
 | GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (`metrics.read`) |
 
 #### Playground Proxy

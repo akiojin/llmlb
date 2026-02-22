@@ -19,6 +19,7 @@ import {
   LogOut,
   Moon,
   Network,
+  ShieldCheck,
   Sun,
   User,
   Users,
@@ -42,6 +43,7 @@ interface HeaderProps {
   systemVersion?: string | null
   updateState?: UpdateStateSummary
   updateLatest?: string | null
+  minimalViewer?: boolean
 }
 
 export function Header({
@@ -52,6 +54,7 @@ export function Header({
   systemVersion,
   updateState,
   updateLatest,
+  minimalViewer = false,
 }: HeaderProps) {
   const { logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -81,40 +84,45 @@ export function Header({
               </h1>
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 Dashboard
-                <span id="current-version" className="font-mono text-[11px]">
-                  Current v{displayVersion}
-                </span>
-                {updateState && updateState !== 'up_to_date' && (
-                  <span className="inline-flex items-center gap-1">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        updateState === 'failed'
-                          ? 'bg-red-500'
-                          : 'bg-yellow-500'
-                      }`}
-                    />
-                    <span className="text-[10px]">
-                      {updateState === 'available' && updateLatest
-                        ? `v${updateLatest} available`
-                        : updateState === 'draining' || updateState === 'applying'
-                          ? 'Updating...'
-                          : updateState === 'failed'
-                            ? 'Update failed'
-                            : ''}
+                {!minimalViewer && (
+                  <>
+                    <span id="current-version" className="font-mono text-[11px]">
+                      Current v{displayVersion}
                     </span>
-                  </span>
-                )}
-                {updateState === 'up_to_date' && (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                  </span>
+                    {updateState && updateState !== 'up_to_date' && (
+                      <span className="inline-flex items-center gap-1">
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            updateState === 'failed'
+                              ? 'bg-red-500'
+                              : 'bg-yellow-500'
+                          }`}
+                        />
+                        <span className="text-[10px]">
+                          {updateState === 'available' && updateLatest
+                            ? `v${updateLatest} available`
+                            : updateState === 'draining' || updateState === 'applying'
+                              ? 'Updating...'
+                              : updateState === 'failed'
+                                ? 'Update failed'
+                                : ''}
+                        </span>
+                      </span>
+                    )}
+                    {updateState === 'up_to_date' && (
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      </span>
+                    )}
+                  </>
                 )}
               </p>
             </div>
           </div>
 
           {/* Status Indicators */}
-          <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
+          {!minimalViewer && (
+            <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
             {/* Connection Status */}
             <span id="connection-status" className="flex items-center gap-1.5">
               <span
@@ -142,7 +150,8 @@ export function Header({
             {(fetchTimeMs === null || fetchTimeMs === undefined) && (
               <span id="refresh-metrics">Fetch time: --ms</span>
             )}
-          </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-2">
@@ -170,6 +179,21 @@ export function Header({
               <Network className="mr-2 h-4 w-4" />
               LB Playground
             </Button>
+
+            {user?.role === 'admin' && (
+              <Button
+                id="audit-log-button"
+                variant="outline"
+                size="sm"
+                className="hidden lg:inline-flex"
+                onClick={() => {
+                  window.location.hash = 'audit-log'
+                }}
+              >
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Audit Log
+              </Button>
+            )}
 
             {/* Refresh Button */}
             <Button
@@ -240,6 +264,14 @@ export function Header({
                     <DropdownMenuItem onClick={() => setInvitationModalOpen(true)}>
                       <Ticket className="mr-2 h-4 w-4" />
                       Invitation Codes
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        window.location.hash = 'audit-log'
+                      }}
+                    >
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      Audit Log
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>

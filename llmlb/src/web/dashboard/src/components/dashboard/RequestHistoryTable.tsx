@@ -148,6 +148,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   <TableHead>Time</TableHead>
                   <TableHead>Model</TableHead>
                   <TableHead>Node</TableHead>
+                  <TableHead>Client IP</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Tokens</TableHead>
@@ -156,7 +157,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
               <TableBody id="request-history-tbody">
                 {paginatedHistory.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center">
+                    <TableCell colSpan={7} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <History className="h-8 w-8" />
                         <p>No request history</p>
@@ -178,6 +179,9 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                       </TableCell>
                       <TableCell className="text-sm">
                         {item.node_name || item.node_id?.slice(0, 8) || '—'}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {item.client_ip || '—'}
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -287,6 +291,12 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     <p className="text-sm text-muted-foreground">Node</p>
                     <p className="text-sm">
                       {selectedRequest.node_name || selectedRequest.node_id || '—'}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Client IP</p>
+                    <p className="font-mono text-sm">
+                      {selectedRequest.client_ip || '—'}
                     </p>
                   </div>
                   <div className="space-y-1">

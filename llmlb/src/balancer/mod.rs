@@ -8,13 +8,25 @@
 //! このモジュールはEndpointRegistryを使用してエンドポイント情報を管理します。
 //! 負荷分散はレイテンシ優先（EMA α=0.2）で行われます。
 
-use crate::common::{
-    error::{LbError, RouterResult},
-    types::HealthMetrics,
+pub mod lease;
+pub mod types;
+
+// Re-export all public types for backward compatibility
+pub use lease::RequestLease;
+#[allow(deprecated)]
+pub use types::NodeLoadSnapshot;
+pub use types::{
+    AdmissionDecision, EndpointLoadSnapshot, EndpointTpsSummary, MetricsUpdate, ModelTpsInfo,
+    ModelTpsState, RequestHistoryPoint, RequestOutcome, SystemSummary, WaitResult,
 };
+
+use types::{EndpointLoadState, QueueWaiterGuard, TpsTrackerMap, REQUEST_HISTORY_WINDOW_MINUTES};
+
+use crate::common::error::{LbError, RouterResult};
+use crate::common::protocol::{TpsApiKind, TpsSource};
 use crate::registry::endpoints::EndpointRegistry;
+use crate::types::HealthMetrics;
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
-use serde::Serialize;
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
@@ -26,136 +38,8 @@ use std::{
 use tokio::sync::{Notify, RwLock};
 use uuid::Uuid;
 
-/// メトリクスを新鮮とみなすための許容秒数
-const METRICS_STALE_THRESHOLD_SECS: i64 = 120;
-/// リクエスト履歴の保持分数
-const REQUEST_HISTORY_WINDOW_MINUTES: i64 = 60;
-/// ノードメトリクス履歴の最大保持件数
-const METRICS_HISTORY_CAPACITY: usize = 360;
 /// LoadManagerインスタンスIDの採番カウンタ
 static NEXT_LOAD_MANAGER_ID: AtomicU64 = AtomicU64::new(1);
-
-/// リクエスト結果
-#[derive(Debug, Clone, Copy)]
-pub enum RequestOutcome {
-    /// 正常終了
-    Success,
-    /// エラー終了
-    Error,
-    /// キュー待ち
-    Queued,
-}
-
-/// 待機結果
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WaitResult {
-    /// ノードが利用可能になった
-    Ready,
-    /// タイムアウト
-    Timeout,
-    /// 待機キュー容量超過
-    CapacityExceeded,
-}
-
-#[derive(Debug)]
-struct QueueWaiterGuard {
-    waiters: Arc<AtomicUsize>,
-}
-
-impl QueueWaiterGuard {
-    fn new(waiters: Arc<AtomicUsize>) -> Self {
-        Self { waiters }
-    }
-}
-
-impl Drop for QueueWaiterGuard {
-    fn drop(&mut self) {
-        self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
-    }
-}
-
-/// アドミッション制御の判断結果
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AdmissionDecision {
-    /// 即座に受け入れ
-    Accept,
-    /// 遅延付きで受け入れ
-    AcceptWithDelay(StdDuration),
-    /// リジェクト
-    Reject,
-}
-
-// SPEC-f8e3a1b7: Node依存のヘルパー関数は削除されました
-// - node_spec_score, compare_spec_levels, compare_spec_by_state
-// - compare_option_f32, compare_average_ms, usage_snapshot, compare_usage_levels
-// 新しい負荷分散はレイテンシベース（EMA α=0.2）を使用
-
-/// エンドポイント×モデル単位のTPS EMA状態（SPEC-4bb5b55f）
-#[derive(Debug, Clone, Default)]
-pub struct ModelTpsState {
-    /// EMA平滑化されたTPS値（None=未計測）
-    pub tps_ema: Option<f64>,
-    /// リクエスト完了数
-    pub request_count: u64,
-    /// 出力トークン累計
-    pub total_output_tokens: u64,
-    /// 処理時間累計（ミリ秒）
-    pub total_duration_ms: u64,
-}
-
-impl ModelTpsState {
-    /// TPS計測値を更新（EMA α=0.2）
-    ///
-    /// TPS = output_tokens / (duration_ms / 1000)
-    /// EMA: new_ema = α × current_tps + (1 - α) × previous_ema
-    pub fn update_tps(&mut self, output_tokens: u64, duration_ms: u64) {
-        if duration_ms == 0 {
-            return;
-        }
-
-        let current_tps = output_tokens as f64 / (duration_ms as f64 / 1000.0);
-
-        const ALPHA: f64 = 0.2;
-        self.tps_ema = Some(match self.tps_ema {
-            Some(prev) => ALPHA * current_tps + (1.0 - ALPHA) * prev,
-            None => current_tps,
-        });
-
-        self.request_count += 1;
-        self.total_output_tokens += output_tokens;
-        self.total_duration_ms += duration_ms;
-    }
-}
-
-/// エンドポイント×モデル単位のTPS情報（API応答用）（SPEC-4bb5b55f）
-#[derive(Debug, Clone, Serialize)]
-pub struct ModelTpsInfo {
-    /// モデルID
-    pub model_id: String,
-    /// EMA平滑化されたTPS値（None=未計測）
-    pub tps: Option<f64>,
-    /// リクエスト完了数
-    pub request_count: u64,
-    /// 出力トークン累計
-    pub total_output_tokens: u64,
-    /// 平均処理時間（ミリ秒、None=未計測）
-    pub average_duration_ms: Option<f64>,
-}
-
-/// エンドポイント単位のTPS概要（SPEC-4bb5b55f T023）
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct EndpointTpsSummary {
-    /// エンドポイントID
-    pub endpoint_id: Uuid,
-    /// TPS計測済みモデル数
-    pub model_count: usize,
-    /// 全モデルの加重平均TPS（None=全モデル未計測）
-    pub aggregate_tps: Option<f64>,
-    /// 出力トークン累計
-    pub total_output_tokens: u64,
-    /// リクエスト累計
-    pub total_requests: u64,
-}
 
 #[cfg(test)]
 mod tests {
@@ -207,7 +91,7 @@ mod tests {
             success_count: 5,
             total_latency_ms: 500,
             last_metrics: Some(HealthMetrics {
-                node_id: Uuid::new_v4(),
+                endpoint_id: Uuid::new_v4(),
                 cpu_usage: 10.0,
                 memory_usage: 20.0,
                 gpu_usage: None,
@@ -291,25 +175,15 @@ mod tests {
     }
 
     // SPEC-f8e3a1b7: wait_for_ready_with_timeout / admission_control テストは削除されました
-    // - wait_for_ready_with_timeout_returns_timeout_when_no_ready_nodes
-    // - wait_for_ready_with_timeout_returns_capacity_exceeded
-    // - wait_for_ready_with_timeout_returns_ready_when_node_becomes_available
-    // - admission_control_returns_accept_when_below_50_percent
-    // - admission_control_returns_accept_with_delay_when_between_50_and_80_percent
-    // - admission_control_returns_reject_when_above_80_percent
-    // - admission_control_boundary_values
 
     #[test]
     fn test_node_load_state_token_accumulation() {
-        // T-2: EndpointLoadStateトークン累積テスト
         let mut state = EndpointLoadState::default();
 
-        // 初期値は0
         assert_eq!(state.total_input_tokens, 0);
         assert_eq!(state.total_output_tokens, 0);
         assert_eq!(state.total_tokens, 0);
 
-        // トークンを累積
         state.total_input_tokens += 100;
         state.total_output_tokens += 50;
         state.total_tokens += 150;
@@ -318,7 +192,6 @@ mod tests {
         assert_eq!(state.total_output_tokens, 50);
         assert_eq!(state.total_tokens, 150);
 
-        // 追加の累積
         state.total_input_tokens += 200;
         state.total_output_tokens += 100;
         state.total_tokens += 300;
@@ -330,7 +203,6 @@ mod tests {
 
     #[test]
     fn test_node_load_state_average_tokens_per_request() {
-        // トークン/リクエスト平均計算テスト
         let state = EndpointLoadState {
             total_assigned: 10,
             total_input_tokens: 1000,
@@ -339,7 +211,6 @@ mod tests {
             ..Default::default()
         };
 
-        // 平均トークン数の計算（total_assignedが0でない場合）
         let avg = if state.total_assigned > 0 {
             state.total_tokens as f32 / state.total_assigned as f32
         } else {
@@ -482,19 +353,10 @@ mod tests {
         }
     }
 
-    // SPEC-f8e3a1b7: NodeRegistry依存のトークン・ルーティングテストは削除されました
-    // - test_finish_request_accumulates_tokens
-    // - test_finish_request_accumulates_multiple_tokens
-    // - test_finish_request_accumulates_tokens_on_error
-    // - test_offline_node_retains_token_statistics
-    // - test_pending_node_excluded_from_routing
-    // - test_registering_node_excluded_from_routing
-
     // SPEC-4bb5b55f T002: ModelTpsState EMA計算テスト
 
     #[test]
     fn test_model_tps_state_initial_none() {
-        // 初期状態ではtps_emaはNone
         let state = ModelTpsState::default();
         assert!(state.tps_ema.is_none());
         assert_eq!(state.request_count, 0);
@@ -504,9 +366,7 @@ mod tests {
 
     #[test]
     fn test_model_tps_state_first_update() {
-        // 初回計測でNone→Some値になること
         let mut state = ModelTpsState::default();
-        // 100 tokens in 2000ms = 50 tok/s
         state.update_tps(100, 2000);
         assert!(state.tps_ema.is_some());
         let tps = state.tps_ema.unwrap();
@@ -521,15 +381,11 @@ mod tests {
 
     #[test]
     fn test_model_tps_state_ema_smoothing() {
-        // 複数回更新でEMA平滑化されること (α=0.2)
         let mut state = ModelTpsState::default();
 
-        // 1回目: 100 tokens / 2000ms = 50.0 tok/s → EMA = 50.0
         state.update_tps(100, 2000);
         assert!((state.tps_ema.unwrap() - 50.0).abs() < 0.01);
 
-        // 2回目: 200 tokens / 2000ms = 100.0 tok/s
-        // EMA = 0.2 * 100.0 + 0.8 * 50.0 = 20.0 + 40.0 = 60.0
         state.update_tps(200, 2000);
         assert!(
             (state.tps_ema.unwrap() - 60.0).abs() < 0.01,
@@ -537,8 +393,6 @@ mod tests {
             state.tps_ema.unwrap()
         );
 
-        // 3回目: 50 tokens / 1000ms = 50.0 tok/s
-        // EMA = 0.2 * 50.0 + 0.8 * 60.0 = 10.0 + 48.0 = 58.0
         state.update_tps(50, 1000);
         assert!(
             (state.tps_ema.unwrap() - 58.0).abs() < 0.01,
@@ -546,21 +400,17 @@ mod tests {
             state.tps_ema.unwrap()
         );
 
-        // 累計値の確認
         assert_eq!(state.request_count, 3);
-        assert_eq!(state.total_output_tokens, 350); // 100 + 200 + 50
-        assert_eq!(state.total_duration_ms, 5000); // 2000 + 2000 + 1000
+        assert_eq!(state.total_output_tokens, 350);
+        assert_eq!(state.total_duration_ms, 5000);
     }
 
     #[test]
     fn test_model_tps_state_zero_duration_skipped() {
-        // duration_ms=0の場合はTPS更新をスキップ（ゼロ除算防止）
         let mut state = ModelTpsState::default();
         state.update_tps(100, 0);
         assert!(state.tps_ema.is_none(), "duration=0ではTPS更新しない");
     }
-
-    // T013: LoadManager::get_model_tps() / update_tps() テスト（SPEC-4bb5b55f Phase 3）
 
     #[tokio::test]
     async fn test_get_model_tps_empty_for_unknown_endpoint() {
@@ -576,17 +426,22 @@ mod tests {
         let _lock = TEST_LOCK.lock().await;
         let (load_manager, endpoint_id) = setup_test_load_manager().await;
 
-        // TPS更新
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
         assert_eq!(result.len(), 1, "1モデル分のTPS情報が返る");
         assert_eq!(result[0].model_id, "model-a");
+        assert_eq!(result[0].api_kind, TpsApiKind::ChatCompletions);
         assert_eq!(result[0].request_count, 1);
         assert_eq!(result[0].total_output_tokens, 100);
-        // TPS = 100 / (2000 / 1000) = 50.0
         let tps = result[0].tps.expect("TPS値がSomeであること");
         assert!((tps - 50.0).abs() < 0.01, "TPS = 50.0");
     }
@@ -597,10 +452,22 @@ mod tests {
         let (load_manager, endpoint_id) = setup_test_load_manager().await;
 
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
         load_manager
-            .update_tps(endpoint_id, "model-b".to_string(), 200, 1000)
+            .update_tps(
+                endpoint_id,
+                "model-b".to_string(),
+                TpsApiKind::Completions,
+                200,
+                1000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
@@ -612,13 +479,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_model_tps_separates_api_kind_for_same_model() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        load_manager
+            .update_tps(
+                endpoint_id,
+                "shared-model".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
+            .await;
+        load_manager
+            .update_tps(
+                endpoint_id,
+                "shared-model".to_string(),
+                TpsApiKind::Responses,
+                80,
+                2000,
+            )
+            .await;
+
+        let result = load_manager.get_model_tps(endpoint_id).await;
+        assert_eq!(result.len(), 2, "同一モデルでもAPI種別ごとに分離される");
+        assert!(result.iter().any(|entry| entry.model_id == "shared-model"
+            && entry.api_kind == TpsApiKind::ChatCompletions));
+        assert!(result.iter().any(
+            |entry| entry.model_id == "shared-model" && entry.api_kind == TpsApiKind::Responses
+        ));
+    }
+
+    #[tokio::test]
     async fn test_update_tps_skips_zero_tokens() {
         let _lock = TEST_LOCK.lock().await;
         let (load_manager, endpoint_id) = setup_test_load_manager().await;
 
-        // output_tokens=0は無視
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 0, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                0,
+                2000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
@@ -632,10 +537,22 @@ mod tests {
         let other_endpoint_id = Uuid::new_v4();
 
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
         load_manager
-            .update_tps(other_endpoint_id, "model-b".to_string(), 200, 1000)
+            .update_tps(
+                other_endpoint_id,
+                "model-b".to_string(),
+                TpsApiKind::Completions,
+                200,
+                1000,
+            )
             .await;
 
         let result = load_manager.get_model_tps(endpoint_id).await;
@@ -658,16 +575,32 @@ mod tests {
         let (load_manager, endpoint_id) = setup_test_load_manager().await;
         let other_endpoint_id = Uuid::new_v4();
 
-        // endpoint_id: 2モデル
         load_manager
-            .update_tps(endpoint_id, "model-a".to_string(), 100, 2000)
+            .update_tps(
+                endpoint_id,
+                "model-a".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                2000,
+            )
             .await;
         load_manager
-            .update_tps(endpoint_id, "model-b".to_string(), 200, 1000)
+            .update_tps(
+                endpoint_id,
+                "model-b".to_string(),
+                TpsApiKind::Completions,
+                200,
+                1000,
+            )
             .await;
-        // other_endpoint_id: 1モデル
         load_manager
-            .update_tps(other_endpoint_id, "model-c".to_string(), 50, 500)
+            .update_tps(
+                other_endpoint_id,
+                "model-c".to_string(),
+                TpsApiKind::Responses,
+                50,
+                500,
+            )
             .await;
 
         let result = load_manager.get_all_endpoint_tps().await;
@@ -678,7 +611,7 @@ mod tests {
             .find(|s| s.endpoint_id == endpoint_id)
             .expect("endpoint_id存在");
         assert_eq!(ep1.model_count, 2);
-        assert_eq!(ep1.total_output_tokens, 300); // 100 + 200
+        assert_eq!(ep1.total_output_tokens, 300);
         assert!(ep1.aggregate_tps.is_some());
 
         let ep2 = result
@@ -688,182 +621,6 @@ mod tests {
         assert_eq!(ep2.model_count, 1);
         assert_eq!(ep2.total_output_tokens, 50);
     }
-}
-
-/// エンドポイントの負荷状態
-#[derive(Debug, Clone, Default)]
-struct EndpointLoadState {
-    last_metrics: Option<HealthMetrics>,
-    assigned_active: u32,
-    total_assigned: u64,
-    success_count: u64,
-    error_count: u64,
-    total_latency_ms: u128,
-    metrics_history: VecDeque<HealthMetrics>,
-    initializing: bool,
-    ready_models: Option<(u8, u8)>,
-    /// 入力トークン累計
-    total_input_tokens: u64,
-    /// 出力トークン累計
-    total_output_tokens: u64,
-    /// 総トークン累計
-    total_tokens: u64,
-}
-
-// SPEC-f8e3a1b7: NodeLoadState型エイリアスは削除されました
-
-impl EndpointLoadState {
-    fn combined_active(&self) -> u32 {
-        let heartbeat_active = self
-            .last_metrics
-            .as_ref()
-            .map(|m| m.active_requests)
-            .unwrap_or(0);
-        // Avoid double counting when node heartbeat mirrors lb-assigned requests.
-        heartbeat_active.max(self.assigned_active)
-    }
-
-    fn average_latency_ms(&self) -> Option<f32> {
-        let completed = self.success_count + self.error_count;
-        if completed == 0 {
-            None
-        } else {
-            Some((self.total_latency_ms as f64 / completed as f64) as f32)
-        }
-    }
-
-    fn last_updated(&self) -> Option<DateTime<Utc>> {
-        self.last_metrics.as_ref().map(|m| m.timestamp)
-    }
-
-    fn is_stale(&self, now: DateTime<Utc>) -> bool {
-        match self.last_updated() {
-            Some(ts) => (now - ts).num_seconds() > METRICS_STALE_THRESHOLD_SECS,
-            None => true,
-        }
-    }
-
-    fn effective_average_ms(&self) -> Option<f32> {
-        self.last_metrics
-            .as_ref()
-            .and_then(|m| m.average_response_time_ms)
-            .or_else(|| self.average_latency_ms())
-    }
-
-    fn push_metrics(&mut self, metrics: HealthMetrics) {
-        self.metrics_history.push_back(metrics);
-        if self.metrics_history.len() > METRICS_HISTORY_CAPACITY {
-            self.metrics_history.pop_front();
-        }
-    }
-}
-
-/// エンドポイント/ノードのロードスナップショット
-///
-/// エンドポイントの負荷スナップショット
-///
-/// SPEC-f8e3a1b7: Node型依存を削除し、Endpoint型を直接使用
-#[derive(Debug, Clone, Serialize)]
-pub struct EndpointLoadSnapshot {
-    /// エンドポイントID（API互換性のためnode_idとしてシリアライズ）
-    #[serde(rename = "node_id")]
-    pub endpoint_id: Uuid,
-    /// エンドポイント名
-    pub machine_name: String,
-    /// エンドポイント状態
-    pub status: crate::types::endpoint::EndpointStatus,
-    /// CPU使用率
-    pub cpu_usage: Option<f32>,
-    /// メモリ使用率
-    pub memory_usage: Option<f32>,
-    /// GPU使用率
-    pub gpu_usage: Option<f32>,
-    /// GPUメモリ使用率
-    pub gpu_memory_usage: Option<f32>,
-    /// GPUメモリ総容量 (MB)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_memory_total_mb: Option<u64>,
-    /// GPU使用メモリ (MB)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_memory_used_mb: Option<u64>,
-    /// GPU温度 (℃)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_temperature: Option<f32>,
-    /// GPUモデル名
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_model_name: Option<String>,
-    /// GPU計算能力
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_compute_capability: Option<String>,
-    /// GPU能力スコア
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_capability_score: Option<u32>,
-    /// 処理中リクエスト数（load balancer観点+ノード自己申告）
-    pub active_requests: u32,
-    /// 累積リクエスト数
-    pub total_requests: u64,
-    /// 成功リクエスト数
-    pub successful_requests: u64,
-    /// 失敗リクエスト数
-    pub failed_requests: u64,
-    /// 平均レスポンスタイム (ms)
-    pub average_response_time_ms: Option<f32>,
-    /// メトリクス最終更新時刻
-    pub last_updated: Option<DateTime<Utc>>,
-    /// メトリクスが鮮度閾値を超えているか
-    pub is_stale: bool,
-    /// 入力トークン累計
-    pub total_input_tokens: u64,
-    /// 出力トークン累計
-    pub total_output_tokens: u64,
-    /// 総トークン累計
-    pub total_tokens: u64,
-}
-
-/// ノードのロードスナップショット（後方互換エイリアス）
-///
-/// NodeRegistry廃止移行のための後方互換エイリアス。
-/// 新規コードは`EndpointLoadSnapshot`を使用すること。
-#[deprecated(note = "Use EndpointLoadSnapshot instead")]
-pub type NodeLoadSnapshot = EndpointLoadSnapshot;
-
-/// システム全体の統計サマリー
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct SystemSummary {
-    /// 登録ノード総数
-    pub total_nodes: usize,
-    /// オンラインノード数
-    pub online_nodes: usize,
-    /// 承認待ちノード数
-    pub pending_nodes: usize,
-    /// 登録中ノード数（モデル同期中）
-    pub registering_nodes: usize,
-    /// オフラインノード数
-    pub offline_nodes: usize,
-    /// 累積リクエスト数
-    pub total_requests: u64,
-    /// 成功リクエスト数
-    pub successful_requests: u64,
-    /// 失敗リクエスト数
-    pub failed_requests: u64,
-    /// 平均レスポンスタイム (ms)
-    pub average_response_time_ms: Option<f32>,
-    /// 平均GPU使用率 (0-100)
-    pub average_gpu_usage: Option<f32>,
-    /// 平均GPUメモリ使用率 (0-100)
-    pub average_gpu_memory_usage: Option<f32>,
-    /// 処理中リクエスト総数
-    pub total_active_requests: u32,
-    /// 待機中リクエスト総数
-    pub queued_requests: usize,
-    /// 最新メトリクス更新時刻
-    pub last_metrics_updated_at: Option<DateTime<Utc>>,
-    /// 入力トークン累計
-    pub total_input_tokens: u64,
-    /// 出力トークン累計
-    pub total_output_tokens: u64,
-    /// 総トークン累計
-    pub total_tokens: u64,
 }
 
 /// ロードマネージャー
@@ -892,132 +649,7 @@ pub struct LoadManager {
     /// リクエストキュー待機数
     queue_waiters: Arc<AtomicUsize>,
     /// エンドポイント×モデル単位のTPS状態（SPEC-4bb5b55f）
-    tps_tracker: Arc<RwLock<HashMap<(Uuid, String), ModelTpsState>>>,
-}
-
-/// リクエスト処理中のlease
-///
-/// `complete*` が呼ばれずに破棄された場合でも、Drop時にエラーとして
-/// activeカウンタを減算することでカウンタ残留を防ぐ。
-pub struct RequestLease {
-    load_manager: Option<LoadManager>,
-    endpoint_id: Uuid,
-    started_at: std::time::Instant,
-}
-
-impl RequestLease {
-    fn new(load_manager: LoadManager, endpoint_id: Uuid) -> Self {
-        Self {
-            load_manager: Some(load_manager),
-            endpoint_id,
-            started_at: std::time::Instant::now(),
-        }
-    }
-
-    /// 紐づくエンドポイントIDを返す。
-    pub fn endpoint_id(&self) -> Uuid {
-        self.endpoint_id
-    }
-
-    /// lease開始からの経過時間を返す。
-    pub fn elapsed(&self) -> StdDuration {
-        self.started_at.elapsed()
-    }
-
-    /// リクエストを指定結果で明示的に完了する。
-    pub async fn complete(
-        mut self,
-        outcome: RequestOutcome,
-        duration: StdDuration,
-    ) -> RouterResult<()> {
-        let Some(load_manager) = self.load_manager.take() else {
-            return Ok(());
-        };
-        load_manager
-            .finish_request(self.endpoint_id, outcome, duration)
-            .await
-    }
-
-    /// トークン使用量付きでリクエストを明示的に完了する。
-    pub async fn complete_with_tokens(
-        mut self,
-        outcome: RequestOutcome,
-        duration: StdDuration,
-        token_usage: Option<crate::token::TokenUsage>,
-    ) -> RouterResult<()> {
-        let Some(load_manager) = self.load_manager.take() else {
-            return Ok(());
-        };
-        load_manager
-            .finish_request_with_tokens(self.endpoint_id, outcome, duration, token_usage)
-            .await
-    }
-}
-
-impl Drop for RequestLease {
-    fn drop(&mut self) {
-        let Some(load_manager) = self.load_manager.take() else {
-            return;
-        };
-
-        let endpoint_id = self.endpoint_id;
-        let duration = self.started_at.elapsed();
-
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                if let Err(err) = load_manager
-                    .finish_request(endpoint_id, RequestOutcome::Error, duration)
-                    .await
-                {
-                    tracing::warn!(
-                        endpoint_id = %endpoint_id,
-                        error = %err,
-                        "Failed to auto-complete leaked request lease"
-                    );
-                }
-            });
-        } else {
-            tracing::warn!(
-                endpoint_id = %endpoint_id,
-                "Request lease dropped without runtime; skipping auto-complete"
-            );
-        }
-    }
-}
-
-/// ハートビートから記録するメトリクス値
-#[derive(Debug, Clone)]
-pub struct MetricsUpdate {
-    /// 対象ノードのID
-    pub node_id: Uuid,
-    /// CPU使用率（パーセンテージ）
-    pub cpu_usage: f32,
-    /// メモリ使用率（パーセンテージ）
-    pub memory_usage: f32,
-    /// GPU使用率（パーセンテージ）
-    pub gpu_usage: Option<f32>,
-    /// GPUメモリ使用率（パーセンテージ）
-    pub gpu_memory_usage: Option<f32>,
-    /// GPUメモリ総容量 (MB)
-    pub gpu_memory_total_mb: Option<u64>,
-    /// GPU使用メモリ (MB)
-    pub gpu_memory_used_mb: Option<u64>,
-    /// GPU温度 (℃)
-    pub gpu_temperature: Option<f32>,
-    /// GPUモデル名
-    pub gpu_model_name: Option<String>,
-    /// GPU計算能力
-    pub gpu_compute_capability: Option<String>,
-    /// GPU能力スコア
-    pub gpu_capability_score: Option<u32>,
-    /// アクティブなリクエスト数
-    pub active_requests: u32,
-    /// 平均レスポンスタイム（ミリ秒）
-    pub average_response_time_ms: Option<f32>,
-    /// 初期化中フラグ
-    pub initializing: bool,
-    /// 起動済みモデル数/総数
-    pub ready_models: Option<(u8, u8)>,
+    tps_tracker: Arc<RwLock<TpsTrackerMap>>,
 }
 
 impl LoadManager {
@@ -1048,6 +680,7 @@ impl LoadManager {
         &self,
         endpoint_id: Uuid,
         model_id: String,
+        api_kind: TpsApiKind,
         output_tokens: u64,
         duration_ms: u64,
     ) {
@@ -1055,7 +688,9 @@ impl LoadManager {
             return;
         }
         let mut tracker = self.tps_tracker.write().await;
-        let state = tracker.entry((endpoint_id, model_id)).or_default();
+        let state = tracker
+            .entry((endpoint_id, model_id, api_kind))
+            .or_default();
         state.update_tps(output_tokens, duration_ms);
     }
 
@@ -1064,9 +699,11 @@ impl LoadManager {
         let tracker = self.tps_tracker.read().await;
         tracker
             .iter()
-            .filter(|((eid, _), _)| *eid == endpoint_id)
-            .map(|((_, model_id), state)| ModelTpsInfo {
+            .filter(|((eid, _, _), _)| *eid == endpoint_id)
+            .map(|((_, model_id, api_kind), state)| ModelTpsInfo {
                 model_id: model_id.clone(),
+                api_kind: *api_kind,
+                source: TpsSource::Production,
                 tps: state.tps_ema,
                 request_count: state.request_count,
                 total_output_tokens: state.total_output_tokens,
@@ -1083,8 +720,9 @@ impl LoadManager {
     pub async fn get_all_endpoint_tps(&self) -> Vec<EndpointTpsSummary> {
         let tracker = self.tps_tracker.read().await;
         let mut map: HashMap<Uuid, EndpointTpsSummary> = HashMap::new();
+        let mut model_sets: HashMap<Uuid, std::collections::HashSet<&str>> = HashMap::new();
 
-        for ((endpoint_id, _), state) in tracker.iter() {
+        for ((endpoint_id, model_id, _), state) in tracker.iter() {
             let entry = map
                 .entry(*endpoint_id)
                 .or_insert_with(|| EndpointTpsSummary {
@@ -1094,24 +732,31 @@ impl LoadManager {
                     total_output_tokens: 0,
                     total_requests: 0,
                 });
-            entry.model_count += 1;
+            model_sets
+                .entry(*endpoint_id)
+                .or_default()
+                .insert(model_id.as_str());
             entry.total_output_tokens += state.total_output_tokens;
             entry.total_requests += state.request_count;
         }
 
-        // 加重平均TPS = 全モデルの total_output_tokens / 全モデルの total_duration_ms * 1000
-        for ((endpoint_id, _), state) in tracker.iter() {
+        for (endpoint_id, model_set) in model_sets {
+            if let Some(entry) = map.get_mut(&endpoint_id) {
+                entry.model_count = model_set.len();
+            }
+        }
+
+        for ((endpoint_id, _, _), state) in tracker.iter() {
             if let Some(entry) = map.get_mut(endpoint_id) {
                 if entry.aggregate_tps.is_none() {
-                    // 初回計算: このエンドポイントの全体統計から算出
                     let total_tokens: u64 = tracker
                         .iter()
-                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .filter(|((eid, _, _), _)| eid == endpoint_id)
                         .map(|(_, s)| s.total_output_tokens)
                         .sum();
                     let total_duration: u64 = tracker
                         .iter()
-                        .filter(|((eid, _), _)| eid == endpoint_id)
+                        .filter(|((eid, _, _), _)| eid == endpoint_id)
                         .map(|(_, s)| s.total_duration_ms)
                         .sum();
                     if total_duration > 0 {
@@ -1120,7 +765,6 @@ impl LoadManager {
                     }
                 }
             }
-            // state used to iterate, suppress unused warning
             let _ = state;
         }
 
@@ -1158,7 +802,7 @@ impl LoadManager {
     /// ヘルスメトリクスを記録
     pub async fn record_metrics(&self, update: MetricsUpdate) -> RouterResult<()> {
         let MetricsUpdate {
-            node_id,
+            endpoint_id,
             cpu_usage,
             memory_usage,
             gpu_usage,
@@ -1175,33 +819,31 @@ impl LoadManager {
             ready_models,
         } = update;
 
-        // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
-        // GPU情報をEndpointRegistryに更新（initializingやready_modelsはLoadManager内部状態で管理）
         let _ = self
             .endpoint_registry
             .update_gpu_info(
-                node_id,
-                None,                                           // gpu_device_count
-                gpu_memory_total_mb.map(|mb| mb * 1024 * 1024), // bytes
-                gpu_memory_used_mb.map(|mb| mb * 1024 * 1024),  // bytes
+                endpoint_id,
+                None,
+                gpu_memory_total_mb.map(|mb| mb * 1024 * 1024),
+                gpu_memory_used_mb.map(|mb| mb * 1024 * 1024),
                 gpu_capability_score.map(|s| s as f32),
                 Some(active_requests),
             )
             .await;
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
         let was_active = entry.combined_active() > 0;
         let was_initializing = entry.initializing;
 
         let derived_average = average_response_time_ms.or_else(|| entry.average_latency_ms());
         let timestamp = Utc::now();
         let metrics = HealthMetrics {
-            node_id,
+            endpoint_id,
             cpu_usage,
             memory_usage,
             gpu_usage,
@@ -1234,15 +876,15 @@ impl LoadManager {
         Ok(())
     }
 
-    /// ノード登録時に初期状態を同期
+    /// エンドポイント登録時に初期状態を同期
     pub async fn upsert_initial_state(
         &self,
-        node_id: Uuid,
+        endpoint_id: Uuid,
         initializing: bool,
         ready_models: Option<(u8, u8)>,
     ) {
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
         entry.initializing = initializing;
         entry.ready_models = ready_models;
         if !initializing {
@@ -1282,30 +924,22 @@ impl LoadManager {
     }
 
     /// タイムアウト付きでreadyなノードが出るまで待機
-    ///
-    /// # 戻り値
-    /// - `WaitResult::Ready`: ノードが利用可能になった
-    /// - `WaitResult::Timeout`: タイムアウト
-    /// - `WaitResult::CapacityExceeded`: 待機キュー容量超過
     pub async fn wait_for_ready_with_timeout(
         &self,
         max_waiters: usize,
         timeout_duration: StdDuration,
     ) -> WaitResult {
-        // 待ち人数チェック
         let current = self.waiters.fetch_add(1, AtomicOrdering::SeqCst) + 1;
         if current > max_waiters {
             self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
             return WaitResult::CapacityExceeded;
         }
 
-        // 既にreadyなノードがあれば即座に返す
         if self.has_ready_nodes().await {
             self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
             return WaitResult::Ready;
         }
 
-        // タイムアウト付きで待機
         let result = tokio::time::timeout(timeout_duration, self.ready_notify.notified()).await;
 
         self.waiters.fetch_sub(1, AtomicOrdering::SeqCst);
@@ -1321,7 +955,6 @@ impl LoadManager {
         self.queue_waiters.load(AtomicOrdering::Relaxed)
     }
 
-    /// アイドルノードが存在するか
     async fn has_idle_nodes(&self) -> bool {
         let endpoints = self.endpoint_registry.list_online().await;
         if endpoints.is_empty() {
@@ -1331,14 +964,12 @@ impl LoadManager {
         let state = self.state.read().await;
         endpoints.iter().any(|endpoint| {
             let load = state.get(&endpoint.id);
-            // 初期化中でないかつアイドル状態
             let is_not_initializing = load.map(|l| !l.initializing).unwrap_or(true);
             let is_idle = load.map(|l| l.combined_active() == 0).unwrap_or(true);
             is_not_initializing && is_idle
         })
     }
 
-    /// 指定モデルに対応するアイドルノードが存在するか
     async fn has_idle_nodes_for_model(&self, model_id: &str) -> bool {
         let endpoints = self.endpoint_registry.find_by_model(model_id).await;
         if endpoints.is_empty() {
@@ -1348,15 +979,11 @@ impl LoadManager {
         let state = self.state.read().await;
         endpoints.iter().any(|endpoint| {
             let load = state.get(&endpoint.id);
-            // 初期化中でないかつアイドル状態
             let is_not_initializing = load.map(|l| !l.initializing).unwrap_or(true);
             let is_idle = load.map(|l| l.combined_active() == 0).unwrap_or(true);
             is_not_initializing && is_idle
         })
     }
-
-    // SPEC-f8e3a1b7: select_idle_node / select_idle_node_for_model は
-    // select_idle_endpoint / select_idle_endpoint_for_model に置き換えられました
 
     /// タイムアウト付きでアイドルノード待機
     pub async fn wait_for_idle_node_with_timeout(
@@ -1412,20 +1039,14 @@ impl LoadManager {
     }
 
     /// アドミッション制御（段階的バックプレッシャー）
-    ///
-    /// 待機キューの使用率に応じて、リクエストの受け入れ判断を行う。
-    /// - 50%未満: 即座に受け入れ
-    /// - 50-80%: 遅延付きで受け入れ（負荷に比例した遅延）
-    /// - 80%以上: リジェクト
     pub fn admission_control(&self, max_waiters: usize) -> AdmissionDecision {
         let waiters = self.waiters.load(AtomicOrdering::Relaxed);
-        let threshold_accept = max_waiters / 2; // 50%
-        let threshold_reject = max_waiters * 4 / 5; // 80%
+        let threshold_accept = max_waiters / 2;
+        let threshold_reject = max_waiters * 4 / 5;
 
         if waiters < threshold_accept {
             AdmissionDecision::Accept
         } else if waiters < threshold_reject {
-            // 50-80%: 負荷に比例した遅延（10ms〜100ms）
             let load_ratio =
                 (waiters - threshold_accept) as f64 / (threshold_reject - threshold_accept) as f64;
             let delay_ms = 10 + (load_ratio * 90.0) as u64;
@@ -1436,37 +1057,34 @@ impl LoadManager {
     }
 
     /// リクエスト開始を記録
-    pub async fn begin_request(&self, node_id: Uuid) -> RouterResult<RequestLease> {
-        // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+    pub async fn begin_request(&self, endpoint_id: Uuid) -> RouterResult<RequestLease> {
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
         entry.assigned_active = entry.assigned_active.saturating_add(1);
         entry.total_assigned = entry.total_assigned.saturating_add(1);
 
-        Ok(RequestLease::new(self.clone(), node_id))
+        Ok(RequestLease::new(self.clone(), endpoint_id))
     }
 
     /// リクエスト完了を記録
     pub async fn finish_request(
         &self,
-        node_id: Uuid,
+        endpoint_id: Uuid,
         outcome: RequestOutcome,
         duration: StdDuration,
     ) -> RouterResult<()> {
-        // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
 
         if let RequestOutcome::Queued = outcome {
-            // キューに積んだだけのものは active を増減させない
         } else {
             if entry.assigned_active > 0 {
                 entry.assigned_active -= 1;
@@ -1514,21 +1132,19 @@ impl LoadManager {
     /// リクエスト完了を記録（トークン使用量含む）
     pub async fn finish_request_with_tokens(
         &self,
-        node_id: Uuid,
+        endpoint_id: Uuid,
         outcome: RequestOutcome,
         duration: StdDuration,
         token_usage: Option<crate::token::TokenUsage>,
     ) -> RouterResult<()> {
-        // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
 
         let mut state = self.state.write().await;
-        let entry = state.entry(node_id).or_default();
+        let entry = state.entry(endpoint_id).or_default();
 
         if let RequestOutcome::Queued = outcome {
-            // キューに積んだだけのものは active を増減させない
         } else {
             if entry.assigned_active > 0 {
                 entry.assigned_active -= 1;
@@ -1544,7 +1160,6 @@ impl LoadManager {
 
             entry.total_latency_ms = entry.total_latency_ms.saturating_add(duration.as_millis());
 
-            // トークン使用量を累積
             if let Some(ref usage) = token_usage {
                 if let Some(input) = usage.input_tokens {
                     entry.total_input_tokens =
@@ -1554,7 +1169,6 @@ impl LoadManager {
                     entry.total_output_tokens =
                         entry.total_output_tokens.saturating_add(output as u64);
                 }
-                // total_tokensはinput + outputで計算するか、明示的に渡されたものを使用
                 let total = usage.total_tokens.or_else(|| {
                     match (usage.input_tokens, usage.output_tokens) {
                         (Some(i), Some(o)) => Some(i + o),
@@ -1597,19 +1211,13 @@ impl LoadManager {
         Ok(())
     }
 
-    // SPEC-f8e3a1b7: Node依存の選択関数は削除されました
-    // - collect_online_nodes → collect_online_endpoints
-    // - select_node_from_candidates → select_endpoint_round_robin_from_endpoints
-    // - select_endpoint/select_node → select_endpoint_direct
-    // - select_endpoint_for_model/select_node_for_model → select_endpoint_direct_for_model
-
     /// 指定されたエンドポイントのロードスナップショットを取得
     pub async fn snapshot(&self, endpoint_id: Uuid) -> RouterResult<EndpointLoadSnapshot> {
         let endpoint = self
             .endpoint_registry
             .get(endpoint_id)
             .await
-            .ok_or(LbError::NodeNotFound(endpoint_id))?;
+            .ok_or(LbError::EndpointNotFound(endpoint_id))?;
         let state = self.state.read().await;
         let load_state = state.get(&endpoint_id).cloned().unwrap_or_default();
 
@@ -1633,20 +1241,18 @@ impl LoadManager {
     }
 
     /// 指定されたエンドポイントのメトリクス履歴を取得
-    pub async fn metrics_history(&self, node_id: Uuid) -> RouterResult<Vec<HealthMetrics>> {
-        // エンドポイントが存在することを確認
-        if self.endpoint_registry.get(node_id).await.is_none() {
-            return Err(LbError::NodeNotFound(node_id));
+    pub async fn metrics_history(&self, endpoint_id: Uuid) -> RouterResult<Vec<HealthMetrics>> {
+        if self.endpoint_registry.get(endpoint_id).await.is_none() {
+            return Err(LbError::EndpointNotFound(endpoint_id));
         }
         let state = self.state.read().await;
         let history = state
-            .get(&node_id)
+            .get(&endpoint_id)
             .map(|load_state| load_state.metrics_history.iter().cloned().collect())
             .unwrap_or_else(Vec::new);
         Ok(history)
     }
 
-    /// システム全体の統計サマリーを取得
     /// システム全体の統計サマリーを取得（SPEC-f8e3a1b7: Endpoint版）
     pub async fn summary(&self) -> SystemSummary {
         use crate::types::endpoint::EndpointStatus;
@@ -1664,7 +1270,7 @@ impl LoadManager {
                 .iter()
                 .filter(|ep| ep.status == EndpointStatus::Pending)
                 .count(),
-            registering_nodes: 0, // EndpointStatusにはRegisteringがないため常に0
+            registering_nodes: 0,
             offline_nodes: endpoints
                 .iter()
                 .filter(|ep| {
@@ -1704,7 +1310,6 @@ impl LoadManager {
                     .failed_requests
                     .saturating_add(load_state.error_count);
 
-                // トークン統計を集計
                 summary.total_input_tokens = summary
                     .total_input_tokens
                     .saturating_add(load_state.total_input_tokens);
@@ -1741,7 +1346,6 @@ impl LoadManager {
                         }
                     }
                 } else if latest_timestamp.is_none() {
-                    // フレッシュなメトリクスがない場合でも最も新しい値を保持
                     if let Some(timestamp) = load_state.last_updated() {
                         latest_timestamp = Some(timestamp);
                     }
@@ -1794,7 +1398,6 @@ impl LoadManager {
         prune_history(&mut history, minute);
     }
 
-    /// エンドポイントのスナップショットを構築（SPEC-f8e3a1b7: Endpoint版）
     fn build_snapshot_from_endpoint(
         &self,
         endpoint: &crate::types::endpoint::Endpoint,
@@ -1870,15 +1473,6 @@ impl LoadManager {
         }
     }
 
-    // ========================================================================
-    // ラウンドロビン選択（SPEC-f8e3a1b7: Endpoint版に移行完了）
-    // ========================================================================
-    // 古いNode版関数は削除されました:
-    // - select_endpoint_round_robin → select_endpoint_round_robin_direct
-    // - select_endpoint_round_robin_for_model → select_endpoint_round_robin_direct_for_model
-    // - select_node_round_robin_from_candidates → select_endpoint_round_robin_from_endpoints
-
-    /// オンラインエンドポイントを収集（Endpoint版）
     async fn collect_online_endpoints(
         &self,
         model_id: Option<&str>,
@@ -1886,26 +1480,26 @@ impl LoadManager {
         if let Some(model_id) = model_id {
             let endpoints = self.endpoint_registry.find_by_model(model_id).await;
             if endpoints.is_empty() {
-                return Err(LbError::NoCapableNodes(model_id.to_string()));
+                return Err(LbError::NoCapableEndpoints(model_id.to_string()));
             }
             return Ok(endpoints);
         }
 
         let endpoints = self.endpoint_registry.list_online().await;
         if endpoints.is_empty() {
-            return Err(LbError::NoNodesAvailable);
+            return Err(LbError::NoEndpointsAvailable);
         }
 
         Ok(endpoints)
     }
 
-    /// エンドポイントを直接選択（ラウンドロビン - Endpoint版）
+    /// エンドポイントを直接選択（ラウンドロビン）
     pub async fn select_endpoint_direct(&self) -> RouterResult<crate::types::endpoint::Endpoint> {
         let endpoints = self.collect_online_endpoints(None).await?;
         self.select_endpoint_round_robin_from_endpoints(endpoints)
     }
 
-    /// 指定モデルに対応するエンドポイントを直接選択（ラウンドロビン - Endpoint版）
+    /// 指定モデルに対応するエンドポイントを直接選択（ラウンドロビン）
     pub async fn select_endpoint_direct_for_model(
         &self,
         model_id: &str,
@@ -1914,17 +1508,16 @@ impl LoadManager {
         self.select_endpoint_round_robin_from_endpoints(endpoints)
     }
 
-    /// アイドルエンドポイントを選択（Endpoint版）
+    /// アイドルエンドポイントを選択
     pub async fn select_idle_endpoint(
         &self,
     ) -> RouterResult<Option<crate::types::endpoint::Endpoint>> {
         let endpoints = self.endpoint_registry.list_online().await;
         if endpoints.is_empty() {
-            return Err(LbError::NoNodesAvailable);
+            return Err(LbError::NoEndpointsAvailable);
         }
 
         let state = self.state.read().await;
-        // 初期化中でないエンドポイントをフィルタリング
         let non_initializing: Vec<_> = endpoints
             .iter()
             .filter(|ep| {
@@ -1972,7 +1565,7 @@ impl LoadManager {
         Ok(ordered.first().cloned())
     }
 
-    /// モデル対応のアイドルエンドポイントを選択（Endpoint版）
+    /// モデル対応のアイドルエンドポイントを選択
     pub async fn select_idle_endpoint_for_model(
         &self,
         model_id: &str,
@@ -1980,7 +1573,6 @@ impl LoadManager {
         let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
         let state = self.state.read().await;
 
-        // 初期化中でないエンドポイントをフィルタリング
         let non_initializing: Vec<_> = endpoints
             .into_iter()
             .filter(|ep| {
@@ -2027,7 +1619,7 @@ impl LoadManager {
         Ok(ordered.first().cloned())
     }
 
-    /// 純粋なラウンドロビンでエンドポイントを選択（Endpoint版）
+    /// 純粋なラウンドロビンでエンドポイントを選択
     pub async fn select_endpoint_round_robin_direct(
         &self,
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
@@ -2035,7 +1627,7 @@ impl LoadManager {
         self.select_endpoint_round_robin_from_endpoints(endpoints)
     }
 
-    /// 指定モデルに対応するエンドポイントを純粋なラウンドロビンで選択（Endpoint版）
+    /// 指定モデルに対応するエンドポイントを純粋なラウンドロビンで選択
     pub async fn select_endpoint_round_robin_direct_for_model(
         &self,
         model_id: &str,
@@ -2044,9 +1636,7 @@ impl LoadManager {
         self.select_endpoint_round_robin_from_endpoints(endpoints)
     }
 
-    /// 指定モデルに対応する初期化完了エンドポイントをラウンドロビンで選択（Endpoint版）
-    ///
-    /// 初期化中ノードを除外し、未準備ノードへの転送を避ける。
+    /// 指定モデルに対応する初期化完了エンドポイントをラウンドロビンで選択
     pub async fn select_endpoint_round_robin_ready_for_model(
         &self,
         model_id: &str,
@@ -2068,13 +1658,12 @@ impl LoadManager {
         self.select_endpoint_round_robin_from_endpoints(ready_endpoints)
     }
 
-    /// 候補エンドポイントから純粋なラウンドロビンで選択（Endpoint版）
     fn select_endpoint_round_robin_from_endpoints(
         &self,
         endpoints: Vec<crate::types::endpoint::Endpoint>,
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
         if endpoints.is_empty() {
-            return Err(LbError::NoNodesAvailable);
+            return Err(LbError::NoEndpointsAvailable);
         }
 
         let cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
@@ -2113,11 +1702,10 @@ fn increment_history(point: &mut RequestHistoryPoint, outcome: RequestOutcome) {
     match outcome {
         RequestOutcome::Success => point.success = point.success.saturating_add(1),
         RequestOutcome::Error => point.error = point.error.saturating_add(1),
-        RequestOutcome::Queued => {} // キューは履歴ではカウントしない
+        RequestOutcome::Queued => {}
     }
 }
 
-/// ラウンドロビン優先度計算（SPEC-f8e3a1b7: Endpoint版）
 fn compute_round_robin_priority_for_endpoints(
     endpoints: &[crate::types::endpoint::Endpoint],
     start_index: usize,
@@ -2135,11 +1723,6 @@ fn compute_round_robin_priority_for_endpoints(
 
     priority
 }
-
-// SPEC-f8e3a1b7: メトリクスベース比較関数は削除されました
-// - usage_snapshot
-// - compare_usage_levels
-// 新しい負荷分散はレイテンシベース（EMA α=0.2）を使用
 
 fn build_history_window(history: &VecDeque<RequestHistoryPoint>) -> Vec<RequestHistoryPoint> {
     let now = align_to_minute(Utc::now());
@@ -2173,15 +1756,4 @@ fn fill_history(
     }
 
     result
-}
-
-/// リクエスト履歴ポイント
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
-pub struct RequestHistoryPoint {
-    /// 分単位のタイムスタンプ
-    pub minute: DateTime<Utc>,
-    /// 成功数
-    pub success: u64,
-    /// 失敗数
-    pub error: u64,
 }

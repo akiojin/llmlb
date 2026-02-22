@@ -62,7 +62,7 @@ pub async fn get_lb_logs(Query(query): Query<LogQuery>) -> Result<Json<LogRespon
     }))
 }
 
-/// GET /api/nodes/:node_id/logs
+/// GET /api/endpoints/:id/logs
 ///
 /// # 廃止予定
 ///
@@ -81,11 +81,11 @@ pub async fn get_node_logs(
         .endpoint_registry
         .get(endpoint_id)
         .await
-        .ok_or(LbError::NodeNotFound(endpoint_id))?;
+        .ok_or(LbError::EndpointNotFound(endpoint_id))?;
 
     // Pending/Error 状態でもログ取得は許可（Offline のみ拒否）
     if endpoint.status == EndpointStatus::Offline {
-        return Err(LbError::NodeOffline(endpoint_id).into());
+        return Err(LbError::EndpointOffline(endpoint_id).into());
     }
 
     let limit = clamp_limit(query.limit);
@@ -156,52 +156,14 @@ impl From<NodeLogPayload> for LogResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{balancer::LoadManager, db::test_utils::TEST_LOCK};
+    use crate::db::test_utils::{TestAppStateBuilder, TEST_LOCK};
     use axum::extract::State as AxumState;
-    use std::sync::Arc;
     use tempfile::tempdir;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn lb_state() -> AppState {
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test database");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-        let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
-            db_pool.clone(),
-        ));
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let jwt_secret = "test-secret".to_string();
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret,
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-        }
+        TestAppStateBuilder::new().await.build().await
     }
 
     #[tokio::test]

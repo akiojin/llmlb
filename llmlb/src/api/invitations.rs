@@ -3,6 +3,7 @@
 //! Admin専用の招待コードCRUD操作
 
 use crate::common::auth::{Claims, UserRole};
+use crate::common::error::LbError;
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -10,6 +11,8 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+
+use super::error::AppError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -63,7 +66,9 @@ pub struct ListInvitationsResponse {
 #[allow(clippy::result_large_err)]
 fn check_admin(claims: &Claims) -> Result<(), Response> {
     if claims.role != UserRole::Admin {
-        return Err((StatusCode::FORBIDDEN, "Admin access required").into_response());
+        return Err(
+            AppError(LbError::Authorization("Admin access required".to_string())).into_response(),
+        );
     }
     Ok(())
 }
@@ -91,7 +96,7 @@ pub async fn create_invitation(
     // ユーザーIDをパース
     let user_id = claims.sub.parse::<Uuid>().map_err(|e| {
         tracing::error!("Failed to parse user ID: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Internal(format!("Failed to parse user ID: {}", e))).into_response()
     })?;
 
     // 招待コードを発行
@@ -100,7 +105,11 @@ pub async fn create_invitation(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to create invitation code: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+                AppError(LbError::Database(format!(
+                    "Failed to create invitation code: {}",
+                    e
+                )))
+                .into_response()
             })?;
 
     Ok((
@@ -136,7 +145,11 @@ pub async fn list_invitations(
         .await
         .map_err(|e| {
             tracing::error!("Failed to list invitation codes: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!(
+                "Failed to list invitation codes: {}",
+                e
+            )))
+            .into_response()
         })?;
 
     Ok(Json(ListInvitationsResponse {
@@ -180,17 +193,20 @@ pub async fn revoke_invitation(
         .await
         .map_err(|e| {
             tracing::error!("Failed to revoke invitation code: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!(
+                "Failed to revoke invitation code: {}",
+                e
+            )))
+            .into_response()
         })?;
 
     if revoked {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err((
-            StatusCode::NOT_FOUND,
-            "Invitation not found or already used/revoked",
-        )
-            .into_response())
+        Err(AppError(LbError::NotFound(
+            "Invitation not found or already used/revoked".to_string(),
+        ))
+        .into_response())
     }
 }
 

@@ -371,9 +371,7 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（旧: `REQUEST_HISTORY_RETENTION_DAYS`） |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、旧: `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`） |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（旧: `LLM_DEFAULT_EMBEDDING_MODEL`） |
-| `LLMLB_AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、旧: `AUTH_DISABLED`） |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（非推奨） |
-| `AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、非推奨） |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（非推奨） |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、非推奨） |
 
@@ -565,13 +563,22 @@ LLM Load Balancer (OpenAI-compatible)
 | `openai.models.read` | OpenAI互換モデル一覧（`GET /v1/models*`） |
 | `endpoints.read` | エンドポイントREAD（`GET /api/endpoints*`） |
 | `endpoints.manage` | エンドポイントWRITE（`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`） |
-| `api_keys.manage` | APIキー管理（`/api/api-keys*`） |
 | `users.manage` | ユーザー管理（`/api/users*`） |
 | `invitations.manage` | 招待管理（`/api/invitations*`） |
 | `models.manage` | モデル登録/削除（`POST /api/models/register`, `DELETE /api/models/*`） |
 | `registry.read` | モデルレジストリ/一覧（`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`） |
-| `logs.read` | ノードログ（`GET /api/nodes/:node_id/logs`） |
+| `logs.read` | エンドポイントログ（`GET /api/endpoints/:id/logs`） |
 | `metrics.read` | メトリクス（`GET /api/metrics/cloud`） |
+
+APIキー管理はJWTで本人用エンドポイントを利用します:
+- `GET /api/me/api-keys`
+- `POST /api/me/api-keys`
+- `PUT /api/me/api-keys/:id`
+- `DELETE /api/me/api-keys/:id`
+
+`POST /api/me/api-keys` で作成されるキーの権限は固定です:
+- `openai.inference`
+- `openai.models.read`
 
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
@@ -627,7 +634,7 @@ LLM Load Balancer (OpenAI-compatible)
 - GET `/api/dashboard/stats`
 - GET `/api/dashboard/endpoints`
 - GET `/api/dashboard/models`
-- GET `/api/dashboard/metrics/:node_id`
+- GET `/api/dashboard/metrics/:runtime_id`
 - GET `/api/dashboard/request-history`（legacy）
 - GET `/api/dashboard/request-responses`
 - GET `/api/dashboard/request-responses/:id`
@@ -637,7 +644,7 @@ LLM Load Balancer (OpenAI-compatible)
 - GET `/api/dashboard/stats/tokens/monthly`
 - GET `/api/dashboard/logs/lb`
 - GET `/api/metrics/cloud`（JWT: admin / APIキー: `metrics.read`）
-- GET `/api/nodes/:node_id/logs`（JWT: admin / APIキー: `logs.read`）
+- GET `/api/endpoints/:id/logs`（JWT: admin / APIキー: `logs.read`）
 - POST `/api/endpoints/:id/chat/completions`（Endpoint Playground 用、JWTのみ）
 - GET `/dashboard/*`
 

@@ -93,5 +93,29 @@ mod endpoint_daily_stats_api_test;
 #[path = "contract/version_api_test.rs"]
 mod version_api_test;
 
+// SPEC-62ac4b68: Clients分析API契約テスト
+#[path = "contract/clients_api_test.rs"]
+mod clients_api_test;
+
+// SPEC-62ac4b68: Clients時系列・モデル分布API契約テスト
+#[path = "contract/clients_timeline_test.rs"]
+mod clients_timeline_test;
+
+// SPEC-62ac4b68: Clientsヒートマップ契約テスト
+#[path = "contract/clients_heatmap_test.rs"]
+mod clients_heatmap_test;
+
+// SPEC-62ac4b68: Clientsドリルダウン契約テスト
+#[path = "contract/clients_drilldown_test.rs"]
+mod clients_drilldown_test;
+
+// SPEC-62ac4b68: ClientsAPIキー集計契約テスト
+#[path = "contract/clients_apikeys_test.rs"]
+mod clients_apikeys_test;
+
+// SPEC-62ac4b68: 異常検知（閾値設定・超過検出）契約テスト
+#[path = "contract/clients_alert_test.rs"]
+mod clients_alert_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

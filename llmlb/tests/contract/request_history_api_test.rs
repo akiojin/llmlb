@@ -338,9 +338,68 @@ async fn test_export_request_responses_invalid_format() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+/// T013: client_ipフィルターの統合テスト
+/// SPEC-62ac4b68: IPフィルターで該当IPのレコードのみ返却されることを検証
+#[tokio::test]
+#[serial]
+async fn test_list_request_responses_with_client_ip_filter() {
+    let (app, db_pool, jwt) = build_app().await;
+    let now = Utc::now();
+    let endpoint_id = Uuid::new_v4();
+
+    // 異なるIPのレコードを挿入
+    let mut record_a = create_test_record("model-a", endpoint_id, now - Duration::hours(2), true);
+    record_a.client_ip = Some("192.168.1.10".parse().unwrap());
+
+    let mut record_b = create_test_record("model-b", endpoint_id, now - Duration::hours(1), true);
+    record_b.client_ip = Some("192.168.1.20".parse().unwrap());
+
+    let mut record_c =
+        create_test_record("model-c", endpoint_id, now - Duration::minutes(30), true);
+    record_c.client_ip = Some("192.168.1.10".parse().unwrap());
+
+    insert_record(&db_pool, &record_a).await;
+    insert_record(&db_pool, &record_b).await;
+    insert_record(&db_pool, &record_c).await;
+
+    // client_ip=192.168.1.10 でフィルター
+    let response = app
+        .oneshot(
+            admin_request(&jwt)
+                .method("GET")
+                .uri("/api/dashboard/request-responses?client_ip=192.168.1.10")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+
+    // 192.168.1.10のレコードのみ返却（2件）
+    assert_eq!(
+        body["total_count"], 2,
+        "client_ipフィルターで該当IPのレコードのみ返却されること"
+    );
+    let records = body["records"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+
+    // 全レコードのclient_ipが指定値であること
+    for record in records {
+        assert_eq!(
+            record["client_ip"].as_str().unwrap(),
+            "192.168.1.10",
+            "フィルター結果のclient_ipが一致すること"
+        );
+    }
+}
+
 fn create_test_record(
     model: &str,
-    node_id: Uuid,
+    endpoint_id: Uuid,
     timestamp: chrono::DateTime<Utc>,
     success: bool,
 ) -> RequestResponseRecord {
@@ -349,9 +408,9 @@ fn create_test_record(
         timestamp,
         request_type: RequestType::Chat,
         model: model.to_string(),
-        node_id,
-        node_machine_name: "test-node".to_string(),
-        node_ip: "127.0.0.1".parse().unwrap(),
+        endpoint_id,
+        endpoint_name: "test-node".to_string(),
+        endpoint_ip: "127.0.0.1".parse().unwrap(),
         client_ip: Some("10.0.0.1".parse().unwrap()),
         request_body: json!({
             "model": model,
@@ -372,5 +431,6 @@ fn create_test_record(
         input_tokens: None,
         output_tokens: None,
         total_tokens: None,
+        api_key_id: None,
     }
 }

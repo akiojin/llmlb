@@ -2,12 +2,13 @@
 //!
 //! OpenAI互換API用のリクエスト/レスポンス型を定義します。
 
+use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use uuid::Uuid;
 
-use super::types::{AudioFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
+use crate::types::media::{AudioFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
 
 /// LLM runtimeチャットリクエスト
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,12 +69,12 @@ pub struct RequestResponseRecord {
     pub request_type: RequestType,
     /// 使用されたモデル名
     pub model: String,
-    /// 処理したノードのID
-    pub node_id: Uuid,
-    /// ノードのマシン名
-    pub node_machine_name: String,
-    /// ノードのIPアドレス
-    pub node_ip: IpAddr,
+    /// 処理したエンドポイントのID
+    pub endpoint_id: Uuid,
+    /// エンドポイント名
+    pub endpoint_name: String,
+    /// エンドポイントのIPアドレス
+    pub endpoint_ip: IpAddr,
     /// リクエスト元クライアントのIPアドレス
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_ip: Option<IpAddr>,
@@ -96,6 +97,9 @@ pub struct RequestResponseRecord {
     /// 総トークン数
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
+    /// APIキーID（api_keysテーブル参照）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_id: Option<Uuid>,
 }
 
 /// リクエストタイプ
@@ -118,6 +122,48 @@ pub enum RequestType {
     ImageEdit,
     /// /v1/images/variations エンドポイント
     ImageVariation,
+}
+
+/// TPS計測対象のAPI種別。
+///
+/// 比較可能性を担保するため、TPSは API 種別ごとに分離して集計する。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum TpsApiKind {
+    /// /v1/chat/completions
+    ChatCompletions,
+    /// /v1/completions
+    Completions,
+    /// /v1/responses
+    Responses,
+}
+
+impl TpsApiKind {
+    /// RequestType から TPS API 種別を解決する。
+    ///
+    /// テキスト生成系以外（embeddings/audio/images）は TPS対象外として None を返す。
+    pub fn from_request_type(request_type: RequestType) -> Option<Self> {
+        match request_type {
+            RequestType::Chat => Some(Self::ChatCompletions),
+            RequestType::Generate => Some(Self::Completions),
+            RequestType::Embeddings
+            | RequestType::Transcription
+            | RequestType::Speech
+            | RequestType::ImageGeneration
+            | RequestType::ImageEdit
+            | RequestType::ImageVariation => None,
+        }
+    }
+}
+
+/// TPSデータの取得元。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TpsSource {
+    /// 本番リクエスト由来
+    Production,
+    /// ベンチマーク実行由来
+    Benchmark,
 }
 
 /// レコードステータス
@@ -330,9 +376,153 @@ pub enum ImageData {
     },
 }
 
+impl RequestResponseRecord {
+    /// エンドポイント特定済みのレコードを作成する。
+    ///
+    /// `status` から `RecordStatus` を自動判定する。
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        endpoint_id: Uuid,
+        endpoint_name: String,
+        endpoint_ip: IpAddr,
+        model: String,
+        request_type: RequestType,
+        request_body: serde_json::Value,
+        status: StatusCode,
+        duration: std::time::Duration,
+        client_ip: Option<IpAddr>,
+        api_key_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type,
+            model,
+            endpoint_id,
+            endpoint_name,
+            endpoint_ip,
+            client_ip,
+            request_body,
+            response_body: None,
+            duration_ms: duration.as_millis() as u64,
+            status: if status.is_success() {
+                RecordStatus::Success
+            } else {
+                RecordStatus::Error {
+                    message: format!("HTTP {}", status.as_u16()),
+                }
+            },
+            completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            api_key_id,
+        }
+    }
+
+    /// エンドポイント未特定のエラーレコードを作成する。
+    pub fn error(
+        model: String,
+        request_type: RequestType,
+        request_body: serde_json::Value,
+        message: String,
+        duration_ms: u64,
+        client_ip: Option<IpAddr>,
+        api_key_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            request_type,
+            model,
+            endpoint_id: Uuid::nil(),
+            endpoint_name: "N/A".to_string(),
+            endpoint_ip: IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+            client_ip,
+            request_body,
+            response_body: None,
+            duration_ms,
+            status: RecordStatus::Error { message },
+            completed_at: Utc::now(),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            api_key_id,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_record_factory_new_success() {
+        let endpoint_id = Uuid::new_v4();
+        let record = RequestResponseRecord::new(
+            endpoint_id,
+            "test-endpoint".to_string(),
+            "10.0.0.1".parse().unwrap(),
+            "gpt-4".to_string(),
+            RequestType::Chat,
+            serde_json::json!({"messages": []}),
+            StatusCode::OK,
+            std::time::Duration::from_millis(150),
+            Some("192.168.1.1".parse().unwrap()),
+            None,
+        );
+
+        assert_eq!(record.endpoint_id, endpoint_id);
+        assert_eq!(record.endpoint_name, "test-endpoint");
+        assert_eq!(record.model, "gpt-4");
+        assert_eq!(record.duration_ms, 150);
+        assert!(matches!(record.status, RecordStatus::Success));
+        assert!(record.response_body.is_none());
+        assert!(record.input_tokens.is_none());
+    }
+
+    #[test]
+    fn test_record_factory_new_error_status() {
+        let record = RequestResponseRecord::new(
+            Uuid::new_v4(),
+            "ep".to_string(),
+            "10.0.0.1".parse().unwrap(),
+            "gpt-4".to_string(),
+            RequestType::Chat,
+            serde_json::json!({}),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            std::time::Duration::from_millis(50),
+            None,
+            None,
+        );
+
+        assert!(matches!(record.status, RecordStatus::Error { message } if message == "HTTP 500"));
+    }
+
+    #[test]
+    fn test_record_factory_error() {
+        let record = RequestResponseRecord::error(
+            "llama2".to_string(),
+            RequestType::Generate,
+            serde_json::json!({"prompt": "hello"}),
+            "No endpoints available".to_string(),
+            0,
+            Some("192.168.1.1".parse().unwrap()),
+            None,
+        );
+
+        assert_eq!(record.endpoint_id, Uuid::nil());
+        assert_eq!(record.endpoint_name, "N/A");
+        assert_eq!(
+            record.endpoint_ip,
+            IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+        );
+        assert_eq!(record.model, "llama2");
+        assert_eq!(record.duration_ms, 0);
+        assert!(
+            matches!(&record.status, RecordStatus::Error { message } if message == "No endpoints available")
+        );
+    }
 
     #[test]
     fn test_chat_request_default_stream_false() {
@@ -430,7 +620,7 @@ mod tests {
 
     #[test]
     fn test_speech_request_serialization() {
-        use super::super::types::AudioFormat;
+        use crate::types::media::AudioFormat;
 
         let request = SpeechRequest {
             model: "vibevoice-v1".to_string(),
@@ -482,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_image_generation_request_serialization() {
-        use super::super::types::{ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
+        use crate::types::media::{ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
 
         let request = ImageGenerationRequest {
             model: "stable-diffusion-xl".to_string(),
@@ -611,9 +801,9 @@ mod tests {
             timestamp: Utc::now(),
             request_type: RequestType::Chat,
             model: "gpt-3.5-turbo".to_string(),
-            node_id: Uuid::new_v4(),
-            node_machine_name: "test-node".to_string(),
-            node_ip: "127.0.0.1".parse().unwrap(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint_name: "test-node".to_string(),
+            endpoint_ip: "127.0.0.1".parse().unwrap(),
             client_ip: Some("192.168.1.1".parse().unwrap()),
             request_body: serde_json::json!({"messages": []}),
             response_body: Some(serde_json::json!({"choices": []})),
@@ -623,6 +813,7 @@ mod tests {
             input_tokens: Some(150),
             output_tokens: Some(50),
             total_tokens: Some(200),
+            api_key_id: None,
         };
 
         let json = serde_json::to_string(&record).unwrap();
@@ -647,9 +838,9 @@ mod tests {
             timestamp: Utc::now(),
             request_type: RequestType::Chat,
             model: "gpt-3.5-turbo".to_string(),
-            node_id: Uuid::new_v4(),
-            node_machine_name: "test-node".to_string(),
-            node_ip: "127.0.0.1".parse().unwrap(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint_name: "test-node".to_string(),
+            endpoint_ip: "127.0.0.1".parse().unwrap(),
             client_ip: None,
             request_body: serde_json::json!({}),
             response_body: None,
@@ -659,6 +850,7 @@ mod tests {
             input_tokens: None,
             output_tokens: None,
             total_tokens: None,
+            api_key_id: None,
         };
 
         let json = serde_json::to_string(&record).unwrap();

@@ -104,6 +104,30 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<ApiKey>, LbError> {
     Ok(rows.into_iter().map(|r| r.into_api_key()).collect())
 }
 
+/// 指定ユーザーが発行したAPIキーを取得
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+/// * `created_by` - 発行者ユーザーID
+///
+/// # Returns
+/// * `Ok(Vec<ApiKey>)` - APIキー一覧
+/// * `Err(LbError)` - 取得失敗
+pub async fn list_by_creator(pool: &SqlitePool, created_by: Uuid) -> Result<Vec<ApiKey>, LbError> {
+    let rows = sqlx::query_as::<_, ApiKeyRow>(
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions
+         FROM api_keys
+         WHERE created_by = ?
+         ORDER BY created_at DESC",
+    )
+    .bind(created_by.to_string())
+    .fetch_all(pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to list API keys by creator: {}", e)))?;
+
+    Ok(rows.into_iter().map(|r| r.into_api_key()).collect())
+}
+
 /// APIキーを更新（名前と有効期限）
 ///
 /// # Arguments
@@ -146,6 +170,57 @@ pub async fn update(
     Ok(row.map(|r| r.into_api_key()))
 }
 
+/// APIキーを更新（名前と有効期限、発行者限定）
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+/// * `id` - APIキーID
+/// * `created_by` - 発行者ユーザーID
+/// * `name` - 新しい名前
+/// * `expires_at` - 新しい有効期限（Noneの場合は無期限）
+///
+/// # Returns
+/// * `Ok(Some(ApiKey))` - 更新後のAPIキー
+/// * `Ok(None)` - APIキーが見つからなかった
+/// * `Err(LbError)` - 更新失敗
+pub async fn update_by_creator(
+    pool: &SqlitePool,
+    id: Uuid,
+    created_by: Uuid,
+    name: &str,
+    expires_at: Option<DateTime<Utc>>,
+) -> Result<Option<ApiKey>, LbError> {
+    let result = sqlx::query(
+        "UPDATE api_keys
+         SET name = ?, expires_at = ?
+         WHERE id = ? AND created_by = ?",
+    )
+    .bind(name)
+    .bind(expires_at.map(|dt| dt.to_rfc3339()))
+    .bind(id.to_string())
+    .bind(created_by.to_string())
+    .execute(pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to update API key by creator: {}", e)))?;
+
+    if result.rows_affected() == 0 {
+        return Ok(None);
+    }
+
+    let row = sqlx::query_as::<_, ApiKeyRow>(
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions
+         FROM api_keys
+         WHERE id = ? AND created_by = ?",
+    )
+    .bind(id.to_string())
+    .bind(created_by.to_string())
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to find updated API key by creator: {}", e)))?;
+
+    Ok(row.map(|r| r.into_api_key()))
+}
+
 /// APIキーを削除
 ///
 /// # Arguments
@@ -163,6 +238,32 @@ pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<(), LbError> {
         .map_err(|e| LbError::Database(format!("Failed to delete API key: {}", e)))?;
 
     Ok(())
+}
+
+/// APIキーを削除（発行者限定）
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+/// * `id` - APIキーID
+/// * `created_by` - 発行者ユーザーID
+///
+/// # Returns
+/// * `Ok(true)` - 削除成功
+/// * `Ok(false)` - 削除対象なし
+/// * `Err(LbError)` - 削除失敗
+pub async fn delete_by_creator(
+    pool: &SqlitePool,
+    id: Uuid,
+    created_by: Uuid,
+) -> Result<bool, LbError> {
+    let result = sqlx::query("DELETE FROM api_keys WHERE id = ? AND created_by = ?")
+        .bind(id.to_string())
+        .bind(created_by.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to delete API key by creator: {}", e)))?;
+
+    Ok(result.rows_affected() > 0)
 }
 
 /// APIキーを生成（`sk_` + 32文字のランダム英数字）
@@ -271,13 +372,10 @@ fn serialize_permissions(permissions: &[ApiKeyPermission]) -> Result<String, LbE
 mod tests {
     use super::*;
     use crate::common::auth::UserRole;
-    use crate::db::migrations::initialize_database;
     use crate::db::users;
 
     async fn setup_test_db() -> SqlitePool {
-        initialize_database("sqlite::memory:")
-            .await
-            .expect("Failed to initialize test database")
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[test]

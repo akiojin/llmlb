@@ -8,7 +8,7 @@
 use crate::common::auth::UserRole;
 use axum::extract::ws::{Message, WebSocket};
 use axum::{
-    extract::{State, WebSocketUpgrade},
+    extract::{Query, State, WebSocketUpgrade},
     http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
 };
@@ -18,6 +18,13 @@ use tracing::{debug, warn};
 use crate::events::SharedEventBus;
 use crate::AppState;
 
+/// Query parameter for WebSocket token authentication
+#[derive(serde::Deserialize, Default)]
+pub struct WsAuthQuery {
+    /// JWT token passed as query parameter (e.g., `?token=xxx`)
+    pub token: Option<String>,
+}
+
 /// WebSocket upgrade handler for dashboard events
 ///
 /// Clients connect to `/ws/dashboard` to receive real-time updates about:
@@ -25,46 +32,44 @@ use crate::AppState;
 /// - Node status changes
 /// - Metrics updates
 ///
-/// Authentication is required unless LLMLB_AUTH_DISABLED (legacy: AUTH_DISABLED) is set.
+/// Authentication is always required (JWT via Authorization header, cookie, or query parameter).
 pub async fn dashboard_ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
+    Query(query): Query<WsAuthQuery>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // Check if auth is disabled
-    let auth_disabled = crate::config::is_auth_disabled();
+    let token = if let Some(auth_header) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+    {
+        auth_header
+            .strip_prefix("Bearer ")
+            .ok_or_else(|| {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    "Invalid Authorization header format".to_string(),
+                )
+            })?
+            .to_string()
+    } else if let Some(query_token) = query.token {
+        query_token
+    } else {
+        crate::auth::middleware::extract_jwt_cookie(&headers)
+            .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing JWT cookie".to_string()))?
+    };
 
-    if !auth_disabled {
-        let token = if let Some(auth_header) = headers
-            .get(header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-        {
-            auth_header
-                .strip_prefix("Bearer ")
-                .ok_or_else(|| {
-                    (
-                        StatusCode::UNAUTHORIZED,
-                        "Invalid Authorization header format".to_string(),
-                    )
-                })?
-                .to_string()
-        } else {
-            crate::auth::middleware::extract_jwt_cookie(&headers)
-                .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing JWT cookie".to_string()))?
-        };
+    let claims = crate::auth::jwt::verify_jwt(&token, &state.jwt_secret).map_err(|e| {
+        warn!("WebSocket JWT verification failed: {}", e);
+        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e))
+    })?;
 
-        let claims = crate::auth::jwt::verify_jwt(&token, &state.jwt_secret).map_err(|e| {
-            warn!("WebSocket JWT verification failed: {}", e);
-            (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e))
-        })?;
-
-        // Only admin users can access the dashboard WebSocket
-        if claims.role != UserRole::Admin {
-            return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
-        }
-
-        debug!("WebSocket authenticated for user: {}", claims.sub);
+    // Only admin users can access the dashboard WebSocket
+    if claims.role != UserRole::Admin {
+        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
     }
+
+    debug!("WebSocket authenticated for user: {}", claims.sub);
 
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, state.event_bus.clone())))
 }

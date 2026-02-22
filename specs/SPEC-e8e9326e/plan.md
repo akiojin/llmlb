@@ -188,20 +188,21 @@ llmlb/
 | タイプ | 判別方法 | 根拠 |
 |--------|----------|------|
 | xLLM | `GET /api/system` レスポンスに `xllm_version` | 本プロジェクト独自エンドポイント |
-| Ollama | `GET /api/tags` が有効、または `Ollama` ヘッダー | Ollama標準API |
+| LM Studio | `GET /api/v1/models` の `models[]/data[]` 形（publisher/architecture/max_context_length等） | LM Studio標準API |
+| Ollama | `GET /api/tags` が有効（`{"error":...}` は除外） | Ollama標準API |
 | vLLM | `GET /v1/models` + `vllm` in Server header | vLLM標準動作 |
 | OpenAI互換 | 上記いずれにも該当しない | フォールバック |
 
-**判別優先順位**: xLLM > Ollama > vLLM > OpenAI互換
+**判別優先順位**: xLLM > LM Studio > Ollama > vLLM > OpenAI互換
 
 **タイプ固有機能**:
 
-| 機能 | xLLM | Ollama | vLLM | OpenAI互換 |
-|------|------|--------|------|-----------|
-| モデルダウンロード | ✅ | ❌ | ❌ | ❌ |
-| 最大トークン数取得 | ✅ | ✅ | ❌ | ❌ |
-| モデル一覧同期 | ✅ | ✅ | ✅ | ✅ |
-| ヘルスチェック | ✅ | ✅ | ✅ | ✅ |
+| 機能 | xLLM | LM Studio | Ollama | vLLM | OpenAI互換 |
+|------|------|-----------|--------|------|-----------|
+| モデルダウンロード | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 最大トークン数取得 | ✅ | ✅ | ✅ | ❌ | ❌ |
+| モデル一覧同期 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ヘルスチェック | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 **xLLMモデルダウンロードAPI**:
 
@@ -224,7 +225,8 @@ GET /api/endpoints/:id/download/progress
 **モデルメタデータ取得**:
 
 - xLLM: `GET /api/models/:model/info` → `context_length`
-- Ollama: `POST /api/show` → `parameters.num_ctx`
+- LM Studio: `GET /api/v1/models/:model` → `max_context_length`
+- Ollama: `POST /api/show` → `model_info` / `parameters(object|string)` から `context_length` 抽出
 
 ## Phase 1: 設計＆契約
 
@@ -275,7 +277,7 @@ GET    /api/endpoints/:id/models/:model/info  # モデル情報（max_tokens等�
 - エンドポイント登録 → ヘルスチェック → オンライン遷移
 - エンドポイント停止 → オフライン検知
 - モデル同期 → モデル一覧更新
-- エンドポイント登録 → タイプ自動判別（xLLM/Ollama/vLLM/OpenAI互換）
+- エンドポイント登録 → タイプ自動判別（xLLM/LM Studio/Ollama/vLLM/OpenAI互換）
 - タイプフィルタリング → 指定タイプのみ取得
 - xLLMへモデルダウンロード → 進捗取得 → 完了確認
 - 非xLLMへモデルダウンロード → エラー（サポート外）

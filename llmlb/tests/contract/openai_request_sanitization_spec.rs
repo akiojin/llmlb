@@ -43,13 +43,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
     std::env::set_var("OPENAI_API_KEY", "sk-test");
     std::env::set_var("OPENAI_BASE_URL", openai_base_url);
 
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
+    let db_pool = crate::support::lb::create_test_db_pool().await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");
@@ -68,7 +62,7 @@ async fn build_app(openai_base_url: String) -> TestApp {
     let state = AppState {
         load_manager,
         request_history: request_history.clone(),
-        db_pool,
+        db_pool: db_pool.clone(),
         jwt_secret,
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
@@ -77,6 +71,12 @@ async fn build_app(openai_base_url: String) -> TestApp {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+        audit_archive_pool: None,
     };
 
     TestApp {
@@ -141,7 +141,7 @@ async fn request_history_redacts_inline_media_data() {
 
     let response = app
         .app
-        .oneshot(
+        .oneshot(crate::support::lb::with_connect_info(
             Request::builder()
                 .method("POST")
                 .uri("/v1/chat/completions")
@@ -149,7 +149,7 @@ async fn request_history_redacts_inline_media_data() {
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
 

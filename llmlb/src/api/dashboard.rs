@@ -4,11 +4,9 @@
 //! システム統計を返却する。
 
 use super::error::AppError;
-use crate::common::{
-    error::{CommonError, LbError},
-    types::HealthMetrics,
-};
+use crate::common::error::{CommonError, LbError};
 use crate::db::request_history::{FilterStatus, RecordFilter};
+use crate::types::HealthMetrics;
 use crate::{
     balancer::RequestHistoryPoint,
     types::endpoint::{EndpointStatus, EndpointType},
@@ -204,14 +202,16 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
 
 /// GET /api/dashboard/metrics/:runtime_id
 pub async fn get_node_metrics(
-    Path(node_id): Path<Uuid>,
+    Path(endpoint_id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<HealthMetrics>>, AppError> {
-    let history = state.load_manager.metrics_history(node_id).await?;
+    let history = state.load_manager.metrics_history(endpoint_id).await?;
     Ok(Json(history))
 }
 
 /// GET /api/dashboard/stats/tokens - トークン統計取得
+///
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_token_stats(
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
@@ -251,6 +251,8 @@ pub struct DailyTokenStats {
 }
 
 /// GET /api/dashboard/stats/tokens/daily - 日次トークン統計取得
+///
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_daily_token_stats(
     State(state): State<AppState>,
     Query(query): Query<DailyTokenStatsQuery>,
@@ -261,7 +263,18 @@ pub async fn get_daily_token_stats(
         .get_daily_token_statistics(days)
         .await
         .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(
+        stats
+            .into_iter()
+            .map(|s| DailyTokenStats {
+                date: s.date,
+                total_input_tokens: s.total_input_tokens,
+                total_output_tokens: s.total_output_tokens,
+                total_tokens: s.total_tokens,
+                request_count: s.request_count,
+            })
+            .collect(),
+    ))
 }
 
 /// 月次トークン統計クエリパラメータ
@@ -292,6 +305,8 @@ pub struct MonthlyTokenStats {
 }
 
 /// GET /api/dashboard/stats/tokens/monthly - 月次トークン統計取得
+///
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_monthly_token_stats(
     State(state): State<AppState>,
     Query(query): Query<MonthlyTokenStatsQuery>,
@@ -302,7 +317,18 @@ pub async fn get_monthly_token_stats(
         .get_monthly_token_statistics(months)
         .await
         .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(
+        stats
+            .into_iter()
+            .map(|s| MonthlyTokenStats {
+                month: s.month,
+                total_input_tokens: s.total_input_tokens,
+                total_output_tokens: s.total_output_tokens,
+                total_tokens: s.total_tokens,
+                request_count: s.request_count,
+            })
+            .collect(),
+    ))
 }
 
 /// エンドポイント一覧を収集
@@ -378,9 +404,18 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             }
         };
 
-    // Token totals must be consistent with the persisted request history.
-    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
-    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
+    // request_history 廃止完了まで、audit_log/request_history の双方を見て過小計上を避ける
+    let token_totals_from_audit = match state.audit_log_storage.get_token_statistics().await {
+        Ok(stats) => Some(PersistedTokenTotals {
+            total_input_tokens: to_u64(stats.total_input_tokens),
+            total_output_tokens: to_u64(stats.total_output_tokens),
+            total_tokens: to_u64(stats.total_tokens),
+        }),
+        Err(e) => {
+            warn!("Failed to query token statistics from audit log: {}", e);
+            None
+        }
+    };
     let token_totals_from_history = match state.request_history.get_token_statistics().await {
         Ok(stats) => Some(PersistedTokenTotals {
             total_input_tokens: stats.total_input_tokens,
@@ -394,6 +429,16 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             );
             None
         }
+    };
+    let token_totals_from_db = match (token_totals_from_audit, token_totals_from_history) {
+        (Some(audit), Some(history)) => Some(PersistedTokenTotals {
+            total_input_tokens: audit.total_input_tokens.max(history.total_input_tokens),
+            total_output_tokens: audit.total_output_tokens.max(history.total_output_tokens),
+            total_tokens: audit.total_tokens.max(history.total_tokens),
+        }),
+        (Some(audit), None) => Some(audit),
+        (None, Some(history)) => Some(history),
+        (None, None) => None,
     };
 
     let cached_totals = LAST_KNOWN_PERSISTED_TOTALS
@@ -411,22 +456,22 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         PersistedRequestTotals::default()
     };
 
-    let token_totals = if let Some(token_totals) = token_totals_from_history {
+    let token_totals = if let Some(token_totals) = token_totals_from_db {
         token_totals
     } else if let Some(cached) = cached_totals {
-        warn!("Using last known persisted token totals after history query failure");
+        warn!("Using last known persisted token totals after token query failure");
         cached.token_totals
     } else {
         warn!("No cached persisted token totals available; returning zero values");
         PersistedTokenTotals::default()
     };
 
-    if request_totals_from_db.is_some() || token_totals_from_history.is_some() {
+    if request_totals_from_db.is_some() || token_totals_from_db.is_some() {
         let mut updated_cache = cached_totals.unwrap_or_default();
         if let Some(request_totals) = request_totals_from_db {
             updated_cache.request_totals = request_totals;
         }
-        if let Some(token_totals) = token_totals_from_history {
+        if let Some(token_totals) = token_totals_from_db {
             updated_cache.token_totals = token_totals;
         }
 
@@ -490,15 +535,17 @@ pub struct RequestHistoryQuery {
     pub offset: Option<usize>,
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    #[serde(alias = "agent_id")]
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    #[serde(alias = "agent_id", alias = "node_id")]
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ（RFC3339）
     pub start_time: Option<DateTime<Utc>>,
     /// 終了時刻フィルタ（RFC3339）
     pub end_time: Option<DateTime<Utc>>,
+    /// クライアントIPフィルタ（完全一致）
+    pub client_ip: Option<String>,
 }
 
 fn default_page() -> usize {
@@ -530,10 +577,11 @@ impl RequestHistoryQuery {
 
         Ok(RecordFilter {
             model: self.model.clone(),
-            node_id: self.node_id,
+            endpoint_id: self.endpoint_id,
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
+            client_ip: self.client_ip.clone(),
         })
     }
 }
@@ -557,15 +605,17 @@ pub struct RequestHistoryExportQuery {
     pub format: RequestHistoryExportFormat,
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    #[serde(alias = "agent_id")]
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    #[serde(alias = "agent_id", alias = "node_id")]
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ（RFC3339）
     pub start_time: Option<DateTime<Utc>>,
     /// 終了時刻フィルタ（RFC3339）
     pub end_time: Option<DateTime<Utc>>,
+    /// クライアントIPフィルタ（完全一致）
+    pub client_ip: Option<String>,
 }
 
 impl RequestHistoryExportQuery {
@@ -580,10 +630,11 @@ impl RequestHistoryExportQuery {
 
         Ok(RecordFilter {
             model: self.model.clone(),
-            node_id: self.node_id,
+            endpoint_id: self.endpoint_id,
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
+            client_ip: self.client_ip.clone(),
         })
     }
 }
@@ -791,9 +842,9 @@ pub async fn export_request_responses(
                                 record.timestamp.to_rfc3339(),
                                 format!("{:?}", record.request_type),
                                 record.model,
-                                record.node_id.to_string(),
-                                record.node_machine_name,
-                                record.node_ip.to_string(),
+                                record.endpoint_id.to_string(),
+                                record.endpoint_name,
+                                record.endpoint_ip.to_string(),
                                 record
                                     .client_ip
                                     .map(|ip| ip.to_string())
@@ -916,6 +967,10 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
 pub struct ModelTpsEntry {
     /// モデルID
     pub model_id: String,
+    /// API種別（chat/completions/responses）
+    pub api_kind: crate::common::protocol::TpsApiKind,
+    /// 計測元（production / benchmark）
+    pub source: crate::common::protocol::TpsSource,
     /// EMA平滑化されたTPS値（None=未計測）
     pub tps: Option<f64>,
     /// リクエスト完了数
@@ -939,6 +994,8 @@ pub async fn get_endpoint_model_tps(
             .into_iter()
             .map(|info| ModelTpsEntry {
                 model_id: info.model_id,
+                api_kind: info.api_kind,
+                source: info.source,
                 tps: info.tps,
                 request_count: info.request_count,
                 total_output_tokens: info.total_output_tokens,
@@ -948,5 +1005,220 @@ pub async fn get_endpoint_model_tps(
     )
 }
 
+/// Clientsランキングのクエリパラメータ
+#[derive(Debug, Deserialize)]
+pub struct ClientsQuery {
+    /// ページ番号（デフォルト: 1）
+    #[serde(default = "default_page")]
+    pub page: usize,
+    /// ページサイズ（デフォルト: 20）
+    #[serde(default = "default_clients_per_page")]
+    pub per_page: usize,
+}
+
+fn default_clients_per_page() -> usize {
+    20
+}
+
+/// GET /api/dashboard/clients - IPランキング
+///
+/// SPEC-62ac4b68: Clientsタブ基本分析
+pub async fn get_client_rankings(
+    Query(params): Query<ClientsQuery>,
+    State(state): State<AppState>,
+) -> Result<Json<crate::db::request_history::ClientIpRankingResult>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let mut result = storage
+        .get_client_ip_ranking(24, params.page, params.per_page)
+        .await
+        .map_err(AppError)?;
+
+    // SPEC-62ac4b68: 閾値ベースの異常検知
+    // 過去1時間のリクエスト数が閾値以上のIPにis_alert=trueを設定
+    let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
+    let threshold_raw = settings
+        .get_setting("ip_alert_threshold")
+        .await
+        .map_err(AppError)?;
+    let threshold = effective_ip_alert_threshold(threshold_raw.as_deref());
+
+    let one_hour_counts = storage
+        .get_ip_request_counts_since(1)
+        .await
+        .map_err(AppError)?;
+    for ranking in &mut result.rankings {
+        let count = one_hour_counts.get(&ranking.ip).copied().unwrap_or(0);
+        ranking.is_alert = count >= threshold;
+    }
+
+    Ok(Json(result))
+}
+
+/// GET /api/dashboard/clients/timeline - ユニークIP数タイムライン
+///
+/// SPEC-62ac4b68: 使用パターンの時系列分析
+pub async fn get_client_timeline(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::UniqueIpTimelinePoint>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage.get_unique_ip_timeline(24).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
+/// GET /api/dashboard/clients/models - モデル別リクエスト分布
+///
+/// SPEC-62ac4b68: 使用パターンの時系列分析
+pub async fn get_client_models(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::ModelDistribution>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage
+        .get_model_distribution_by_clients(24)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(result))
+}
+
+/// GET /api/dashboard/clients/heatmap - リクエストヒートマップ
+///
+/// SPEC-62ac4b68: 時間帯×曜日ヒートマップ
+pub async fn get_client_heatmap(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::HeatmapCell>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage
+        .get_request_heatmap(24 * 7)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(result))
+}
+
+/// GET /api/dashboard/clients/:ip/detail - IPドリルダウン詳細
+///
+/// SPEC-62ac4b68: IPドリルダウン詳細ビュー
+pub async fn get_client_detail(
+    axum::extract::Path(ip): axum::extract::Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<crate::db::request_history::ClientDetail>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage.get_client_detail(&ip, 20).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
+/// GET /api/dashboard/clients/{ip}/api-keys - APIキー別集計
+///
+/// SPEC-62ac4b68: APIキーとのクロス分析
+pub async fn get_client_api_keys(
+    axum::extract::Path(ip): axum::extract::Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::db::request_history::ClientApiKeyUsage>>, AppError> {
+    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    let result = storage.get_client_api_keys(&ip).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
+/// 設定APIのデフォルト値
+const IP_ALERT_THRESHOLD_DEFAULT_VALUE: i64 = 100;
+const IP_ALERT_THRESHOLD_MIN: i64 = 1;
+
+fn parse_ip_alert_threshold(value: &str) -> Result<i64, LbError> {
+    let parsed = value.trim().parse::<i64>().map_err(|_| {
+        LbError::Common(CommonError::Validation(
+            "ip_alert_threshold must be an integer >= 1".to_string(),
+        ))
+    })?;
+    if parsed < IP_ALERT_THRESHOLD_MIN {
+        return Err(LbError::Common(CommonError::Validation(
+            "ip_alert_threshold must be an integer >= 1".to_string(),
+        )));
+    }
+    Ok(parsed)
+}
+
+fn effective_ip_alert_threshold(raw_value: Option<&str>) -> i64 {
+    match raw_value {
+        Some(raw) => match parse_ip_alert_threshold(raw) {
+            Ok(value) => value,
+            Err(err) => {
+                warn!(
+                    raw_value = %raw,
+                    error = %err,
+                    default = IP_ALERT_THRESHOLD_DEFAULT_VALUE,
+                    "Invalid ip_alert_threshold in settings; falling back to default"
+                );
+                IP_ALERT_THRESHOLD_DEFAULT_VALUE
+            }
+        },
+        None => IP_ALERT_THRESHOLD_DEFAULT_VALUE,
+    }
+}
+
+/// GET /api/dashboard/settings/{key} - 設定値取得
+///
+/// SPEC-62ac4b68: 閾値ベースの異常検知
+pub async fn get_setting(
+    axum::extract::Path(key): axum::extract::Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
+    let value = settings.get_setting(&key).await.map_err(AppError)?;
+    let value = if key == "ip_alert_threshold" {
+        effective_ip_alert_threshold(value.as_deref()).to_string()
+    } else {
+        value.unwrap_or_default()
+    };
+    Ok(Json(serde_json::json!({ "key": key, "value": value })))
+}
+
+/// PUT /api/dashboard/settings/{key} のリクエストボディ
+#[derive(Debug, Deserialize)]
+pub struct SettingUpdateBody {
+    /// 設定値
+    pub value: String,
+}
+
+/// PUT /api/dashboard/settings/{key} - 設定値更新
+///
+/// SPEC-62ac4b68: 閾値ベースの異常検知
+pub async fn update_setting(
+    axum::extract::Path(key): axum::extract::Path<String>,
+    State(state): State<AppState>,
+    Json(body): Json<SettingUpdateBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let value = if key == "ip_alert_threshold" {
+        parse_ip_alert_threshold(&body.value)
+            .map_err(AppError)?
+            .to_string()
+    } else {
+        body.value
+    };
+
+    let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
+    settings.set_setting(&key, &value).await.map_err(AppError)?;
+    Ok(Json(serde_json::json!({ "key": key, "value": value })))
+}
+
 // NOTE: テストは NodeRegistry → EndpointRegistry 移行完了後に再実装
 // 関連: SPEC-e8e9326e
+
+#[cfg(test)]
+mod tests {
+    use super::parse_ip_alert_threshold;
+
+    #[test]
+    fn parse_ip_alert_threshold_accepts_positive_integer() {
+        assert_eq!(parse_ip_alert_threshold("100").unwrap(), 100);
+        assert_eq!(parse_ip_alert_threshold(" 42 ").unwrap(), 42);
+    }
+
+    #[test]
+    fn parse_ip_alert_threshold_rejects_zero_or_negative() {
+        assert!(parse_ip_alert_threshold("0").is_err());
+        assert!(parse_ip_alert_threshold("-1").is_err());
+    }
+
+    #[test]
+    fn parse_ip_alert_threshold_rejects_non_numeric() {
+        assert!(parse_ip_alert_threshold("abc").is_err());
+    }
+}

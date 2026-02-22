@@ -110,20 +110,6 @@ pub fn get_default_embedding_model() -> String {
     .unwrap_or_else(|| "nomic-embed-text-v1.5".to_string())
 }
 
-/// 認証無効化モードの有効/無効を取得
-///
-/// 環境変数 `LLMLB_AUTH_DISABLED`（旧: `AUTH_DISABLED`）が `true/1/yes/on` のときに有効化する。
-pub fn is_auth_disabled() -> bool {
-    get_env_with_fallback("LLMLB_AUTH_DISABLED", "AUTH_DISABLED")
-        .map(|value| {
-            matches!(
-                value.to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false)
-}
-
 /// エンドポイントのモデル自動同期の最短間隔を取得
 ///
 /// ヘルスチェック成功時にモデル同期（`GET /v1/models` + DB反映）を実行する際、
@@ -138,6 +124,55 @@ pub fn get_auto_sync_models_interval() -> Duration {
         900u64,
     );
     Duration::from_secs(secs)
+}
+
+/// サーバーのホスト・ポート設定
+#[derive(Clone)]
+pub struct ServerConfig {
+    /// バインドするホストアドレス
+    pub host: String,
+    /// バインドするポート番号
+    pub port: u16,
+}
+
+impl ServerConfig {
+    /// 環境変数からサーバー設定を読み込む
+    pub fn from_env() -> Self {
+        let host = get_env_with_fallback_or("LLMLB_HOST", "LLMLB_HOST", "0.0.0.0");
+        let port = get_env_with_fallback_parse("LLMLB_PORT", "LLMLB_PORT", 32768);
+        Self { host, port }
+    }
+
+    /// コマンドライン引数からサーバー設定を作成する
+    pub fn from_args(host: String, port: u16) -> Self {
+        Self { host, port }
+    }
+
+    /// バインドアドレス文字列を返す
+    pub fn bind_addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+impl ServerConfig {
+    /// ローカル接続用のホストアドレスを返す
+    pub fn local_host(&self) -> String {
+        match self.host.as_str() {
+            "0.0.0.0" | "::" | "[::]" => "127.0.0.1".to_string(),
+            other => other.to_string(),
+        }
+    }
+
+    /// ベースURLを返す
+    pub fn base_url(&self) -> String {
+        format!("http://{}:{}", self.local_host(), self.port)
+    }
+
+    /// ダッシュボードURLを返す
+    pub fn dashboard_url(&self) -> String {
+        format!("{}/dashboard", self.base_url())
+    }
 }
 
 #[cfg(test)]
@@ -251,34 +286,6 @@ mod tests {
         assert_eq!(result, "new-model");
         std::env::remove_var("LLMLB_DEFAULT_EMBEDDING_MODEL");
         std::env::remove_var("LLM_DEFAULT_EMBEDDING_MODEL");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_auth_disabled_new_name() {
-        std::env::set_var("LLMLB_AUTH_DISABLED", "true");
-        std::env::remove_var("AUTH_DISABLED");
-        assert!(is_auth_disabled());
-        std::env::remove_var("LLMLB_AUTH_DISABLED");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_auth_disabled_old_name() {
-        std::env::remove_var("LLMLB_AUTH_DISABLED");
-        std::env::set_var("AUTH_DISABLED", "1");
-        assert!(is_auth_disabled());
-        std::env::remove_var("AUTH_DISABLED");
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_auth_disabled_new_takes_precedence() {
-        std::env::set_var("LLMLB_AUTH_DISABLED", "false");
-        std::env::set_var("AUTH_DISABLED", "true");
-        assert!(!is_auth_disabled());
-        std::env::remove_var("LLMLB_AUTH_DISABLED");
-        std::env::remove_var("AUTH_DISABLED");
     }
 
     #[test]

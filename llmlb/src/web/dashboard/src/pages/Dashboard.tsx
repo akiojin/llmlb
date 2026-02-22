@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   dashboardApi,
+  modelsApi,
   systemApi,
   type SystemInfo,
   type UpdateState,
@@ -9,6 +10,7 @@ import {
   type DashboardEndpoint,
   type RequestHistoryItem,
   type RequestResponsesPage,
+  type RegisteredModelView,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
@@ -16,23 +18,51 @@ import { toast } from '@/hooks/use-toast'
 import { Header } from '@/components/dashboard/Header'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { EndpointTable } from '@/components/dashboard/EndpointTable'
+import { ModelsTable } from '@/components/dashboard/ModelsTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
+import { ClientsTab } from '@/components/dashboard/ClientsTab'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AlertCircle, Globe, History, FileText, BarChart3, ArrowUpCircle, ExternalLink, Loader2, RefreshCcw } from 'lucide-react'
+import {
+  AlertCircle,
+  AlertTriangle,
+  Globe,
+  History,
+  FileText,
+  BarChart3,
+  ArrowUpCircle,
+  ExternalLink,
+  Loader2,
+  RefreshCcw,
+  Users,
+} from 'lucide-react'
 
 const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { isConnected: wsConnected } = useDashboardWebSocket()
+  const isViewer = user?.role === 'viewer'
+  const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: !isViewer })
   const queryClient = useQueryClient()
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
   const fetchStartRef = useRef<number | null>(null)
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false)
+  const [isApplyingForceUpdate, setIsApplyingForceUpdate] = useState(false)
+  const [isForceUpdateDialogOpen, setIsForceUpdateDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
 
   // When WebSocket is connected, reduce polling frequency
@@ -59,6 +89,7 @@ export default function Dashboard() {
     queryKey: SYSTEM_INFO_QUERY_KEY,
     queryFn: () => systemApi.getSystem(),
     refetchInterval: pollingInterval,
+    enabled: !isViewer,
   })
 
   // Fetch request history (individual request details)
@@ -67,6 +98,7 @@ export default function Dashboard() {
       queryKey: ['request-responses'],
       queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
       refetchInterval: pollingInterval,
+      enabled: !isViewer,
     })
 
   // SPEC-e8e9326e: Fetch endpoints list
@@ -74,6 +106,18 @@ export default function Dashboard() {
     queryKey: ['dashboard-endpoints'],
     queryFn: () => dashboardApi.getEndpoints(),
     refetchInterval: pollingInterval,
+    enabled: !isViewer,
+  })
+
+  const {
+    data: viewerModels,
+    isLoading: isLoadingViewerModels,
+    refetch: refetchViewerModels,
+  } = useQuery<RegisteredModelView[]>({
+    queryKey: ['viewer-models'],
+    queryFn: () => modelsApi.getRegistered(),
+    refetchInterval: pollingInterval,
+    enabled: isViewer,
   })
 
   // Map RequestResponseRecord to RequestHistoryItem
@@ -90,6 +134,7 @@ export default function Dashboard() {
       error: record.status.type === 'error' ? record.status.message : undefined,
       request_body: record.request_body,
       response_body: record.response_body,
+      client_ip: record.client_ip,
     }))
   }, [requestResponsesData])
 
@@ -97,11 +142,22 @@ export default function Dashboard() {
     const update = systemInfo?.update as UpdateState | undefined
     const updateState = update?.state
     const isAdmin = user?.role === 'admin'
+    const isPayloadReady =
+      updateState === 'available' && update?.payload?.payload === 'ready'
     const failedHasUpdateCandidate = updateState === 'failed' && Boolean(update?.latest)
     const canApply = isAdmin && (updateState === 'available' || failedHasUpdateCandidate)
     const applying = updateState === 'draining' || updateState === 'applying'
     const showRestartButton = updateState === 'available' || failedHasUpdateCandidate || applying
+    const showForceButton = updateState === 'available'
+    const canForceApply = isAdmin && isPayloadReady && !applying
     const canCheck = isAdmin && !applying
+    const forceUpdateTitle = !isAdmin
+      ? 'Admin role is required'
+      : applying
+        ? 'Update is in progress'
+        : isPayloadReady
+          ? undefined
+          : 'Update payload is still preparing'
 
     let title = 'Update'
     let description = 'Update status unavailable'
@@ -183,12 +239,19 @@ export default function Dashboard() {
     const onApply = async () => {
       setIsApplyingUpdate(true)
       try {
-        await systemApi.applyUpdate()
-        toast({
-          title: 'Update queued',
-          description:
-            'llmlb will restart after in-flight requests complete.',
-        })
+        const result = await systemApi.applyUpdate()
+        if (result.queued) {
+          toast({
+            title: 'Update queued',
+            description:
+              'llmlb will restart after in-flight requests complete.',
+          })
+        } else {
+          toast({
+            title: 'Applying update',
+            description: 'llmlb is restarting now.',
+          })
+        }
         await queryClient.invalidateQueries({ queryKey: SYSTEM_INFO_QUERY_KEY })
       } catch (e) {
         toast({
@@ -198,6 +261,30 @@ export default function Dashboard() {
         })
       } finally {
         setIsApplyingUpdate(false)
+      }
+    }
+
+    const onForceApply = async () => {
+      setIsApplyingForceUpdate(true)
+      try {
+        const result = await systemApi.applyForceUpdate()
+        toast({
+          title: 'Force update started',
+          description:
+            result.dropped_in_flight > 0
+              ? `${result.dropped_in_flight} in-flight request(s) were terminated.`
+              : 'No in-flight requests were active.',
+        })
+        setIsForceUpdateDialogOpen(false)
+        await queryClient.invalidateQueries({ queryKey: SYSTEM_INFO_QUERY_KEY })
+      } catch (e) {
+        toast({
+          title: 'Failed to force update',
+          description: e instanceof Error ? e.message : String(e),
+          variant: 'destructive',
+        })
+      } finally {
+        setIsApplyingForceUpdate(false)
       }
     }
 
@@ -245,7 +332,7 @@ export default function Dashboard() {
               <Button
                 variant="outline"
                 onClick={onCheck}
-                disabled={!canCheck || isCheckingUpdate || isApplyingUpdate}
+                disabled={!canCheck || isCheckingUpdate || isApplyingUpdate || isApplyingForceUpdate}
                 title={
                   !isAdmin
                     ? 'Admin role is required'
@@ -264,7 +351,7 @@ export default function Dashboard() {
               {showRestartButton && (
                 <Button
                   onClick={onApply}
-                  disabled={!canApply || isApplyingUpdate || applying}
+                  disabled={!canApply || isApplyingUpdate || isApplyingForceUpdate || applying}
                   title={
                     !isAdmin
                       ? 'Admin role is required'
@@ -278,19 +365,76 @@ export default function Dashboard() {
                   ) : (
                     <ArrowUpCircle className="h-4 w-4" />
                   )}
-                  {updateState === 'draining'
+                  {update?.state === 'draining'
                     ? `Waiting to update... (${update.in_flight})`
-                    : updateState === 'applying'
+                    : update?.state === 'applying'
                       ? 'Applying update...'
                       : 'Restart to update'}
                 </Button>
+              )}
+              {showForceButton && (
+                <AlertDialog
+                  open={isForceUpdateDialogOpen}
+                  onOpenChange={setIsForceUpdateDialogOpen}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      disabled={!canForceApply || isApplyingUpdate || isApplyingForceUpdate}
+                      title={forceUpdateTitle}
+                    >
+                      {isApplyingForceUpdate ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4" />
+                      )}
+                      Force update now
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Force update now?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        In-flight inference requests will be terminated immediately and llmlb will restart.
+                        Use this only for urgent maintenance.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isApplyingForceUpdate}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        disabled={isApplyingForceUpdate}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          void onForceApply()
+                        }}
+                      >
+                        {isApplyingForceUpdate ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Applying...
+                          </>
+                        ) : (
+                          'Force update'
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
           </div>
         </div>
       </section>
     )
-  }, [systemInfo?.update, user?.role, isApplyingUpdate, isCheckingUpdate, queryClient])
+  }, [
+    systemInfo?.update,
+    user?.role,
+    isApplyingUpdate,
+    isApplyingForceUpdate,
+    isForceUpdateDialogOpen,
+    isCheckingUpdate,
+    queryClient,
+  ])
 
   if (error) {
     return (
@@ -332,56 +476,82 @@ export default function Dashboard() {
           if ('latest' in u) return u.latest ?? null
           return null
         })()}
+        minimalViewer={isViewer}
       />
 
       {/* Main Content */}
       <main className="relative mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
-        {updateBanner}
+        {!isViewer && updateBanner}
         {/* Stats Cards */}
         <section className="mb-8">
           <StatsCards stats={data?.stats} endpoints={endpointsData} isLoading={isLoading} />
         </section>
 
-        {/* Tabs */}
-        <Tabs defaultValue="endpoints" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
-            <TabsTrigger value="endpoints" className="gap-2">
-              <Globe className="h-4 w-4" />
-              <span className="hidden sm:inline">Endpoints</span>
-            </TabsTrigger>
-            <TabsTrigger value="statistics" className="gap-2">
-              <BarChart3 className="h-4 w-4" />
-              <span className="hidden sm:inline">Statistics</span>
-            </TabsTrigger>
-            <TabsTrigger value="history" className="gap-2">
-              <History className="h-4 w-4" />
-              <span className="hidden sm:inline">History</span>
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="gap-2">
-              <FileText className="h-4 w-4" />
-              <span className="hidden sm:inline">Logs</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="endpoints" className="animate-fade-in">
-            <EndpointTable endpoints={endpointsData || []} endpointTps={data?.endpoint_tps} isLoading={isLoadingEndpoints} />
-          </TabsContent>
-
-          <TabsContent value="statistics" className="animate-fade-in">
-            <TokenStatsSection />
-          </TabsContent>
-
-          <TabsContent value="history" className="animate-fade-in">
-            <RequestHistoryTable
-              history={historyItems}
-              isLoading={isLoadingHistory}
+        {isViewer ? (
+          <section className="mb-8">
+            <ModelsTable
+              models={viewerModels || []}
+              endpoints={endpointsData || []}
+              isLoading={isLoadingViewerModels}
+              onRefresh={() => {
+                void refetchViewerModels()
+              }}
+              viewerMode
             />
-          </TabsContent>
+          </section>
+        ) : (
+          <Tabs defaultValue="endpoints" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
+              <TabsTrigger value="endpoints" className="gap-2">
+                <Globe className="h-4 w-4" />
+                <span className="hidden sm:inline">Endpoints</span>
+              </TabsTrigger>
+              <TabsTrigger value="statistics" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                <span className="hidden sm:inline">Statistics</span>
+              </TabsTrigger>
+              <TabsTrigger value="history" className="gap-2">
+                <History className="h-4 w-4" />
+                <span className="hidden sm:inline">History</span>
+              </TabsTrigger>
+              <TabsTrigger value="clients" className="gap-2">
+                <Users className="h-4 w-4" />
+                <span className="hidden sm:inline">Clients</span>
+              </TabsTrigger>
+              <TabsTrigger value="logs" className="gap-2">
+                <FileText className="h-4 w-4" />
+                <span className="hidden sm:inline">Logs</span>
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="logs" className="animate-fade-in">
-            <LogViewer />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="endpoints" className="animate-fade-in">
+              <EndpointTable
+                endpoints={endpointsData || []}
+                endpointTps={data?.endpoint_tps}
+                isLoading={isLoadingEndpoints}
+              />
+            </TabsContent>
+
+            <TabsContent value="statistics" className="animate-fade-in">
+              <TokenStatsSection />
+            </TabsContent>
+
+            <TabsContent value="history" className="animate-fade-in">
+              <RequestHistoryTable
+                history={historyItems}
+                isLoading={isLoadingHistory}
+              />
+            </TabsContent>
+
+            <TabsContent value="clients" className="animate-fade-in">
+              <ClientsTab />
+            </TabsContent>
+
+            <TabsContent value="logs" className="animate-fade-in">
+              <LogViewer />
+            </TabsContent>
+          </Tabs>
+        )}
       </main>
     </div>
   )

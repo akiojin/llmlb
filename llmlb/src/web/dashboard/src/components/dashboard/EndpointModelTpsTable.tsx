@@ -44,7 +44,7 @@ export function EndpointModelTpsTable({ endpointId, enabled = true }: EndpointMo
     <div className="space-y-3">
       <Label className="flex items-center gap-2">
         <Zap className="h-4 w-4" />
-        Throughput by Model (TPS)
+        Production Throughput by Model/API (TPS)
       </Label>
 
       {isLoading ? (
@@ -62,6 +62,7 @@ export function EndpointModelTpsTable({ endpointId, enabled = true }: EndpointMo
             <TableHeader>
               <TableRow>
                 <TableHead>Model</TableHead>
+                <TableHead>API</TableHead>
                 <TableHead className="text-right">TPS</TableHead>
                 <TableHead className="text-right">Requests</TableHead>
                 <TableHead className="text-right">Output Tokens</TableHead>
@@ -70,8 +71,9 @@ export function EndpointModelTpsTable({ endpointId, enabled = true }: EndpointMo
             </TableHeader>
             <TableBody>
               {modelTps.map((entry: ModelTpsEntry) => (
-                <TableRow key={entry.model_id}>
+                <TableRow key={`${entry.model_id}-${entry.api_kind}`}>
                   <TableCell className="font-mono text-xs">{entry.model_id}</TableCell>
+                  <TableCell className="text-xs">{entry.api_kind}</TableCell>
                   <TableCell className="text-right font-medium">
                     {formatTps(entry.tps)}
                   </TableCell>

@@ -3,13 +3,15 @@
 //! LbErrorからOpenAI互換エラーレスポンスへの変換をテスト
 
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use llmlb::api::error::AppError;
 use llmlb::common::error::{LbError, OpenAIErrorDetail, OpenAIErrorResponse};
 use uuid::Uuid;
 
 /// OpenAIエラーレスポンスのJSON形式が正しいことを確認
 #[test]
 fn test_openai_error_response_json_format() {
-    let error = LbError::NoNodesAvailable;
+    let error = LbError::NoEndpointsAvailable;
     let response = error.to_openai_error();
 
     let json = serde_json::to_value(&response).expect("Failed to serialize");
@@ -63,11 +65,11 @@ fn test_error_status_codes() {
 
     // 404 Not Found
     assert_eq!(
-        LbError::NodeNotFound(Uuid::new_v4()).status_code(),
+        LbError::EndpointNotFound(Uuid::new_v4()).status_code(),
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        LbError::NoCapableNodes("model".to_string()).status_code(),
+        LbError::NoCapableEndpoints("model".to_string()).status_code(),
         StatusCode::NOT_FOUND
     );
 
@@ -89,7 +91,7 @@ fn test_error_status_codes() {
 
     // 503 Service Unavailable
     assert_eq!(
-        LbError::NoNodesAvailable.status_code(),
+        LbError::NoEndpointsAvailable.status_code(),
         StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(
@@ -97,7 +99,7 @@ fn test_error_status_codes() {
         StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(
-        LbError::NodeOffline(Uuid::new_v4()).status_code(),
+        LbError::EndpointOffline(Uuid::new_v4()).status_code(),
         StatusCode::SERVICE_UNAVAILABLE
     );
 
@@ -145,11 +147,11 @@ fn test_error_types() {
 
     // not_found_error
     assert_eq!(
-        LbError::NodeNotFound(Uuid::new_v4()).error_type(),
+        LbError::EndpointNotFound(Uuid::new_v4()).error_type(),
         "not_found_error"
     );
     assert_eq!(
-        LbError::NoCapableNodes("model".to_string()).error_type(),
+        LbError::NoCapableEndpoints("model".to_string()).error_type(),
         "not_found_error"
     );
 
@@ -173,7 +175,7 @@ fn test_error_types() {
 
     // service_unavailable
     assert_eq!(
-        LbError::NoNodesAvailable.error_type(),
+        LbError::NoEndpointsAvailable.error_type(),
         "service_unavailable"
     );
     assert_eq!(
@@ -185,7 +187,7 @@ fn test_error_types() {
         "service_unavailable"
     );
     assert_eq!(
-        LbError::NodeOffline(Uuid::new_v4()).error_type(),
+        LbError::EndpointOffline(Uuid::new_v4()).error_type(),
         "service_unavailable"
     );
 }
@@ -251,13 +253,76 @@ fn test_openai_error_response_without_code() {
     assert!(!json_str.contains("\"code\""));
 }
 
+/// AppError::into_response()がIPアドレスやポート番号を漏洩しないことを確認
+///
+/// 内部IPアドレスを含むLbErrorバリアントをAppErrorに変換し、
+/// HTTPレスポンスボディに内部情報が含まれないことを検証する。
+#[tokio::test]
+async fn test_app_error_response_does_not_leak_internal_ips() {
+    // 内部IPアドレスを含むエラーケース
+    let test_cases: Vec<(LbError, StatusCode, &[&str])> = vec![
+        (
+            LbError::Http("Connection to 10.0.0.1:8080 failed".to_string()),
+            StatusCode::BAD_GATEWAY,
+            &["10.0.0.1", "8080"],
+        ),
+        (
+            LbError::Database("Connection to 192.168.1.100 refused".to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &["192.168.1.100"],
+        ),
+        (
+            LbError::Internal("Proxy to 172.16.0.50:3000 timed out".to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &["172.16.0.50", "3000"],
+        ),
+        (
+            LbError::Timeout("Request to 10.255.0.1:11434 exceeded 30s".to_string()),
+            StatusCode::GATEWAY_TIMEOUT,
+            &["10.255.0.1", "11434"],
+        ),
+        (
+            LbError::ServiceUnavailable("Backend 192.168.0.5:9090 not ready".to_string()),
+            StatusCode::SERVICE_UNAVAILABLE,
+            &["192.168.0.5", "9090"],
+        ),
+    ];
+
+    for (error, expected_status, forbidden_strings) in test_cases {
+        let error_desc = error.to_string();
+        let app_error = AppError(error);
+        let response = app_error.into_response();
+
+        // ステータスコードの検証
+        assert_eq!(
+            response.status(),
+            expected_status,
+            "Status code mismatch for error: {error_desc}"
+        );
+
+        // レスポンスボディを取得
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("Failed to read body");
+        let body_str = String::from_utf8_lossy(&body_bytes);
+
+        // 禁止文字列がボディに含まれないことを確認
+        for forbidden in forbidden_strings {
+            assert!(
+                !body_str.contains(forbidden),
+                "Response body for '{error_desc}' must not contain '{forbidden}', but got: {body_str}"
+            );
+        }
+    }
+}
+
 /// to_openai_error()が正しい値を生成することを確認
 #[test]
 fn test_to_openai_error_values() {
     let test_cases = vec![
         (
-            LbError::NoNodesAvailable,
-            "No available runtimes",
+            LbError::NoEndpointsAvailable,
+            "No available endpoints",
             "service_unavailable",
             "503",
         ),

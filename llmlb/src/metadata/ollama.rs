@@ -5,6 +5,7 @@
 use super::{MetadataError, ModelMetadata};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::Duration;
 
 /// Ollama show request
@@ -23,9 +24,15 @@ struct OllamaShowResponse {
     /// Model details
     details: Option<OllamaModelDetails>,
 
-    /// Model parameters (contains num_ctx)
-    #[serde(alias = "model_info")]
-    parameters: Option<OllamaParameters>,
+    /// Model parameters.
+    /// Newer Ollama can return this as a plain text block.
+    #[serde(default)]
+    parameters: Option<Value>,
+
+    /// Additional model info map.
+    /// Some servers expose context length here with keys like `*.context_length`.
+    #[serde(default)]
+    model_info: Option<Value>,
 }
 
 /// Ollama model details
@@ -41,12 +48,111 @@ struct OllamaModelDetails {
     quantization_level: Option<String>,
 }
 
-/// Ollama model parameters
-#[derive(Debug, Deserialize)]
-struct OllamaParameters {
-    /// Context length
-    #[serde(alias = "context_length")]
-    num_ctx: Option<u32>,
+fn parse_positive_u32(value: &Value) -> Option<u32> {
+    match value {
+        Value::Number(n) => n
+            .as_u64()
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v > 0),
+        Value::String(s) => s.trim().parse::<u32>().ok().filter(|v| *v > 0),
+        _ => None,
+    }
+}
+
+fn is_context_length_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    key == "num_ctx"
+        || key == "context_length"
+        || key == "max_context_length"
+        || key == "n_ctx"
+        || key.ends_with(".context_length")
+        || key.ends_with(".max_context_length")
+        || key.ends_with(".n_ctx")
+        || key.ends_with("_context_length")
+}
+
+fn extract_first_u32(text: &str) -> Option<u32> {
+    let mut digits = String::new();
+    let mut started = false;
+
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            digits.push(ch);
+            started = true;
+        } else if started {
+            break;
+        }
+    }
+
+    if digits.is_empty() {
+        return None;
+    }
+
+    digits.parse::<u32>().ok().filter(|v| *v > 0)
+}
+
+fn extract_context_from_parameters_text(text: &str) -> Option<u32> {
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        for prefix in ["num_ctx", "context_length", "max_context_length", "n_ctx"] {
+            if let Some(rest) = line.strip_prefix(prefix) {
+                if let Some(parsed) = extract_first_u32(rest) {
+                    return Some(parsed);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn extract_context_from_model_info(model_info: &Value) -> Option<u32> {
+    let obj = model_info.as_object()?;
+    for (key, value) in obj {
+        if is_context_length_key(key) {
+            if let Some(ctx) = parse_positive_u32(value) {
+                return Some(ctx);
+            }
+        }
+    }
+    None
+}
+
+fn extract_context_from_parameters(parameters: &Value) -> Option<u32> {
+    match parameters {
+        Value::Object(obj) => {
+            for (key, value) in obj {
+                if is_context_length_key(key) {
+                    if let Some(ctx) = parse_positive_u32(value) {
+                        return Some(ctx);
+                    }
+                }
+            }
+            None
+        }
+        Value::String(text) => extract_context_from_parameters_text(text),
+        _ => None,
+    }
+}
+
+fn extract_context_length(info: &OllamaShowResponse) -> Option<u32> {
+    if let Some(model_info) = &info.model_info {
+        if let Some(ctx) = extract_context_from_model_info(model_info) {
+            return Some(ctx);
+        }
+    }
+
+    if let Some(parameters) = &info.parameters {
+        if let Some(ctx) = extract_context_from_parameters(parameters) {
+            return Some(ctx);
+        }
+    }
+
+    None
 }
 
 /// Fetch model metadata from Ollama endpoint
@@ -95,15 +201,14 @@ pub async fn get_ollama_model_metadata(
         MetadataError::InvalidResponse(format!("Failed to parse Ollama show response: {}", e))
     })?;
 
+    // Extract context length before moving fields out of `info`.
+    let context_length = extract_context_length(&info);
+
     let mut metadata = ModelMetadata {
         model: info.model.unwrap_or_else(|| model.to_string()),
+        context_length,
         ..Default::default()
     };
-
-    // Extract context length from parameters
-    if let Some(params) = info.parameters {
-        metadata.context_length = params.num_ctx;
-    }
 
     // Extract details
     if let Some(details) = info.details {
@@ -137,13 +242,11 @@ mod tests {
         assert_eq!(response.model, Some("llama3.2:1b".to_string()));
         assert!(response.details.is_some());
         assert!(response.parameters.is_some());
+        assert_eq!(extract_context_length(&response), Some(8192));
 
         let details = response.details.unwrap();
         assert_eq!(details.family, Some("llama".to_string()));
         assert_eq!(details.parameter_size, Some("1B".to_string()));
-
-        let params = response.parameters.unwrap();
-        assert_eq!(params.num_ctx, Some(8192));
     }
 
     #[test]
@@ -181,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_ollama_show_response_with_model_info_alias() {
-        // Test with model_info alias for parameters
+        // model_info map may contain context length with normalized key.
         let json = r#"{
             "model": "phi3",
             "model_info": {
@@ -191,7 +294,44 @@ mod tests {
 
         let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.model, Some("phi3".to_string()));
-        assert!(response.parameters.is_some());
-        assert_eq!(response.parameters.unwrap().num_ctx, Some(4096));
+        assert_eq!(extract_context_length(&response), Some(4096));
+    }
+
+    #[test]
+    fn test_ollama_show_response_with_model_info_dotted_key() {
+        let json = r#"{
+            "model_info": {
+                "qwen3moe.context_length": 262144
+            }
+        }"#;
+
+        let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(extract_context_length(&response), Some(262144));
+    }
+
+    #[test]
+    fn test_ollama_show_response_with_parameters_string() {
+        let json = r#"{
+            "model": "gpt-oss:20b",
+            "parameters": "num_keep 0\nnum_ctx 131072\ntemperature 0.8"
+        }"#;
+
+        let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(extract_context_length(&response), Some(131072));
+    }
+
+    #[test]
+    fn test_extract_context_length_prefers_model_info() {
+        let json = r#"{
+            "model_info": {
+                "context_length": 262144
+            },
+            "parameters": {
+                "num_ctx": 8192
+            }
+        }"#;
+
+        let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(extract_context_length(&response), Some(262144));
     }
 }

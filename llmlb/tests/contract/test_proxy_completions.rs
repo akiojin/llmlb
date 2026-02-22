@@ -448,10 +448,10 @@ async fn wait_for_endpoint_active(
 }
 
 async fn mark_endpoint_busy(load_manager: &LoadManager, endpoint_id: &str) {
-    let node_id = Uuid::parse_str(endpoint_id).expect("endpoint id should be UUID");
+    let endpoint_uuid = Uuid::parse_str(endpoint_id).expect("endpoint id should be UUID");
     load_manager
         .record_metrics(MetricsUpdate {
-            node_id,
+            endpoint_id: endpoint_uuid,
             cpu_usage: 0.0,
             memory_usage: 0.0,
             gpu_usage: None,

@@ -2,7 +2,9 @@
 //!
 //! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
+use super::error::AppError;
 use crate::common::auth::{Claims, UserRole};
+use crate::common::error::{CommonError, LbError};
 use crate::db::{download_tasks as tasks_db, endpoints as db};
 use crate::detection::{detect_endpoint_type_with_client, DetectionError};
 use crate::sync::{self, SyncError};
@@ -413,15 +415,11 @@ pub struct ErrorResponse {
 }
 
 /// Admin権限を確認
-fn ensure_admin(claims: &Claims) -> Result<(), impl IntoResponse> {
+fn ensure_admin(claims: &Claims) -> Result<(), AppError> {
     if claims.role != UserRole::Admin {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "Admin permission required".to_string(),
-                code: "FORBIDDEN".to_string(),
-            }),
-        ));
+        return Err(AppError(LbError::Authorization(
+            "Admin permission required".to_string(),
+        )));
     }
     Ok(())
 }
@@ -538,73 +536,50 @@ pub async fn create_endpoint(
 
     // バリデーション
     if req.name.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Name is required".to_string(),
-                code: "INVALID_NAME".to_string(),
-            }),
-        )
-            .into_response();
+        return AppError(LbError::Common(CommonError::Validation(
+            "Name is required".to_string(),
+        )))
+        .into_response();
     }
 
     if req.base_url.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Base URL is required".to_string(),
-                code: "INVALID_URL".to_string(),
-            }),
-        )
-            .into_response();
+        return AppError(LbError::Common(CommonError::Validation(
+            "Base URL is required".to_string(),
+        )))
+        .into_response();
     }
 
     // URL形式チェック
     if Url::parse(&req.base_url).is_err() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Invalid URL format".to_string(),
-                code: "INVALID_URL_FORMAT".to_string(),
-            }),
-        )
-            .into_response();
+        return AppError(LbError::Common(CommonError::Validation(
+            "Invalid URL format".to_string(),
+        )))
+        .into_response();
     }
 
     // ヘルスチェック間隔のバリデーション（10-300秒）
     if req.health_check_interval_secs < 10 || req.health_check_interval_secs > 300 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Health check interval must be between 10 and 300 seconds".to_string(),
-                code: "INVALID_HEALTH_CHECK_INTERVAL".to_string(),
-            }),
-        )
-            .into_response();
+        return AppError(LbError::Common(CommonError::Validation(
+            "Health check interval must be between 10 and 300 seconds".to_string(),
+        )))
+        .into_response();
     }
 
     // 名前の重複チェック
     match db::find_by_name(&state.db_pool, &req.name).await {
         Ok(Some(_)) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: format!("Endpoint with name '{}' already exists", req.name),
-                    code: "DUPLICATE_NAME".to_string(),
-                }),
-            )
-                .into_response()
+            return AppError(LbError::Common(CommonError::Validation(format!(
+                "Endpoint with name '{}' already exists",
+                req.name
+            ))))
+            .into_response()
         }
         Err(e) => {
             tracing::error!("Failed to check name uniqueness: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to check name uniqueness".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response();
+            return AppError(LbError::Database(
+                "Failed to check name uniqueness".to_string(),
+            ))
+            .into_response();
         }
         Ok(None) => {} // OK - 名前は一意
     }
@@ -617,24 +592,15 @@ pub async fn create_endpoint(
     let detected_type = match detection_result {
         Ok(result) => result.endpoint_type,
         Err(DetectionError::Unreachable(msg)) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(ErrorResponse {
-                    error: format!("Endpoint unreachable: {}", msg),
-                    code: "ENDPOINT_UNREACHABLE".to_string(),
-                }),
-            )
+            return AppError(LbError::Http(format!("Endpoint unreachable: {}", msg)))
                 .into_response();
         }
         Err(DetectionError::UnsupportedType(msg)) => {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(ErrorResponse {
-                    error: format!("Unsupported endpoint type: {}", msg),
-                    code: "UNSUPPORTED_ENDPOINT_TYPE".to_string(),
-                }),
-            )
-                .into_response();
+            return AppError(LbError::Common(CommonError::Validation(format!(
+                "Unsupported endpoint type: {}",
+                msg
+            ))))
+            .into_response();
         }
     };
 
@@ -698,13 +664,14 @@ pub async fn create_endpoint(
                     return;
                 }
 
-                match sync::sync_models(
+                match sync::sync_models_with_type(
                     &state_clone.db_pool,
                     &state_clone.http_client,
                     endpoint_clone.id,
                     &endpoint_clone.base_url,
                     endpoint_clone.api_key.as_deref(),
                     endpoint_clone.inference_timeout_secs as u64,
+                    Some(endpoint_clone.endpoint_type),
                 )
                 .await
                 {
@@ -743,24 +710,13 @@ pub async fn create_endpoint(
         Err(e) => {
             let error_str = e.to_string();
             if error_str.contains("UNIQUE constraint failed") {
-                (
-                    StatusCode::CONFLICT,
-                    Json(ErrorResponse {
-                        error: "Endpoint with this name or URL already exists".to_string(),
-                        code: "DUPLICATE_ENDPOINT".to_string(),
-                    }),
-                )
-                    .into_response()
+                AppError(LbError::Conflict(
+                    "Endpoint with this name or URL already exists".to_string(),
+                ))
+                .into_response()
             } else {
                 tracing::error!("Failed to create endpoint: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: "Failed to create endpoint".to_string(),
-                        code: "DB_ERROR".to_string(),
-                    }),
-                )
-                    .into_response()
+                AppError(LbError::Database("Failed to create endpoint".to_string())).into_response()
             }
         }
     }
@@ -813,14 +769,7 @@ pub async fn list_endpoints(
         }
         Err(e) => {
             tracing::error!("Failed to list endpoints: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to list endpoints".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Database("Failed to list endpoints".to_string())).into_response()
         }
     }
 }
@@ -841,24 +790,10 @@ pub async fn get_endpoint(
             response.models = models;
             (StatusCode::OK, Json(response)).into_response()
         }
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "Endpoint not found".to_string(),
-                code: "NOT_FOUND".to_string(),
-            }),
-        )
-            .into_response(),
+        Ok(None) => AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Database("Failed to get endpoint".to_string())).into_response()
         }
     }
 }
@@ -878,25 +813,10 @@ pub async fn update_endpoint(
     // 既存のエンドポイントを取得
     let existing = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint for update: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
@@ -904,28 +824,20 @@ pub async fn update_endpoint(
     // 名前のバリデーション（空文字列は不許可）
     if let Some(ref name) = req.name {
         if name.trim().is_empty() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "Name cannot be empty".to_string(),
-                    code: "INVALID_NAME".to_string(),
-                }),
-            )
-                .into_response();
+            return AppError(LbError::Common(CommonError::Validation(
+                "Name cannot be empty".to_string(),
+            )))
+            .into_response();
         }
     }
 
     // URL形式チェック
     if let Some(ref url) = req.base_url {
         if Url::parse(url).is_err() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "Invalid URL format".to_string(),
-                    code: "INVALID_URL_FORMAT".to_string(),
-                }),
-            )
-                .into_response();
+            return AppError(LbError::Common(CommonError::Validation(
+                "Invalid URL format".to_string(),
+            )))
+            .into_response();
         }
     }
 
@@ -934,25 +846,18 @@ pub async fn update_endpoint(
         if new_name != &existing.name {
             match db::find_by_name(&state.db_pool, new_name).await {
                 Ok(Some(_)) => {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse {
-                            error: format!("Endpoint with name '{}' already exists", new_name),
-                            code: "DUPLICATE_NAME".to_string(),
-                        }),
-                    )
-                        .into_response()
+                    return AppError(LbError::Common(CommonError::Validation(format!(
+                        "Endpoint with name '{}' already exists",
+                        new_name
+                    ))))
+                    .into_response()
                 }
                 Err(e) => {
                     tracing::error!("Failed to check name uniqueness: {}", e);
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: "Failed to check name uniqueness".to_string(),
-                            code: "DB_ERROR".to_string(),
-                        }),
-                    )
-                        .into_response();
+                    return AppError(LbError::Database(
+                        "Failed to check name uniqueness".to_string(),
+                    ))
+                    .into_response();
                 }
                 Ok(None) => {} // OK - 名前は一意
             }
@@ -996,59 +901,32 @@ pub async fn update_endpoint(
                 updated.endpoint_type = result.endpoint_type;
             }
             Err(DetectionError::Unreachable(msg)) => {
-                return (
-                    StatusCode::BAD_GATEWAY,
-                    Json(ErrorResponse {
-                        error: format!("Endpoint unreachable: {}", msg),
-                        code: "ENDPOINT_UNREACHABLE".to_string(),
-                    }),
-                )
+                return AppError(LbError::Http(format!("Endpoint unreachable: {}", msg)))
                     .into_response();
             }
             Err(DetectionError::UnsupportedType(msg)) => {
-                return (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    Json(ErrorResponse {
-                        error: format!("Unsupported endpoint type: {}", msg),
-                        code: "UNSUPPORTED_ENDPOINT_TYPE".to_string(),
-                    }),
-                )
-                    .into_response();
+                return AppError(LbError::Common(CommonError::Validation(format!(
+                    "Unsupported endpoint type: {}",
+                    msg
+                ))))
+                .into_response();
             }
         }
     }
 
     match db::update_endpoint(&state.db_pool, &updated).await {
         Ok(true) => (StatusCode::OK, Json(EndpointResponse::from(updated))).into_response(),
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "Endpoint not found".to_string(),
-                code: "NOT_FOUND".to_string(),
-            }),
-        )
-            .into_response(),
+        Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             let error_str = e.to_string();
             if error_str.contains("UNIQUE constraint failed") {
-                (
-                    StatusCode::CONFLICT,
-                    Json(ErrorResponse {
-                        error: "Endpoint with this name or URL already exists".to_string(),
-                        code: "DUPLICATE_ENDPOINT".to_string(),
-                    }),
-                )
-                    .into_response()
+                AppError(LbError::Conflict(
+                    "Endpoint with this name or URL already exists".to_string(),
+                ))
+                .into_response()
             } else {
                 tracing::error!("Failed to update endpoint: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: "Failed to update endpoint".to_string(),
-                        code: "DB_ERROR".to_string(),
-                    }),
-                )
-                    .into_response()
+                AppError(LbError::Database("Failed to update endpoint".to_string())).into_response()
             }
         }
     }
@@ -1068,24 +946,10 @@ pub async fn delete_endpoint(
     // EndpointRegistry::remove を使用してDBとキャッシュ両方から削除
     match state.endpoint_registry.remove(id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "Endpoint not found".to_string(),
-                code: "NOT_FOUND".to_string(),
-            }),
-        )
-            .into_response(),
+        Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to delete endpoint: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to delete endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Database("Failed to delete endpoint".to_string())).into_response()
         }
     }
 }
@@ -1104,25 +968,10 @@ pub async fn test_endpoint(
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint for test: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
@@ -1145,36 +994,22 @@ pub async fn sync_endpoint_models(
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint for sync: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
 
-    let result = sync::sync_models(
+    let result = sync::sync_models_with_type(
         &state.db_pool,
         &state.http_client,
         id,
         &endpoint.base_url,
         endpoint.api_key.as_deref(),
         endpoint.inference_timeout_secs as u64,
+        Some(endpoint.endpoint_type),
     )
     .await;
 
@@ -1201,37 +1036,22 @@ pub async fn sync_endpoint_models(
                 .into_response()
         }
         Err(err) => {
-            let (status, error, code) = match err {
-                SyncError::ConnectionError(msg) => (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("Failed to connect: {}", msg),
-                    "CONNECTION_ERROR",
-                ),
-                SyncError::HttpError(status, _) => (
-                    StatusCode::BAD_GATEWAY,
-                    format!("Endpoint returned HTTP {}", status),
-                    "ENDPOINT_ERROR",
-                ),
-                SyncError::ParseError(msg) => (
-                    StatusCode::BAD_GATEWAY,
-                    format!("Failed to parse response: {}", msg),
-                    "PARSE_ERROR",
-                ),
-                SyncError::DbError(msg) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to update models: {}", msg),
-                    "DB_ERROR",
-                ),
+            let lb_error = match err {
+                SyncError::ConnectionError(msg) => {
+                    LbError::ServiceUnavailable(format!("Failed to connect: {}", msg))
+                }
+                SyncError::HttpError(status, _) => {
+                    LbError::Http(format!("Endpoint returned HTTP {}", status))
+                }
+                SyncError::ParseError(msg) => {
+                    LbError::Http(format!("Failed to parse response: {}", msg))
+                }
+                SyncError::DbError(msg) => {
+                    LbError::Database(format!("Failed to update models: {}", msg))
+                }
             };
 
-            (
-                status,
-                Json(ErrorResponse {
-                    error,
-                    code: code.to_string(),
-                }),
-            )
-                .into_response()
+            AppError(lb_error).into_response()
         }
     }
 }
@@ -1243,25 +1063,10 @@ pub async fn list_endpoint_models(
 ) -> impl IntoResponse {
     // エンドポイント存在確認
     match db::get_endpoint(&state.db_pool, id).await {
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
         Ok(Some(_)) => {}
@@ -1281,14 +1086,7 @@ pub async fn list_endpoint_models(
             .into_response(),
         Err(e) => {
             tracing::error!("Failed to list endpoint models: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to list models".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Database("Failed to list models".to_string())).into_response()
         }
     }
 }
@@ -1305,39 +1103,21 @@ pub async fn proxy_chat_completions(
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint for proxy: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
 
     // エンドポイントがオンラインか確認
     if endpoint.status != EndpointStatus::Online {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                error: format!("Endpoint is not online (status: {:?})", endpoint.status),
-                code: "ENDPOINT_UNAVAILABLE".to_string(),
-            }),
-        )
-            .into_response();
+        return AppError(LbError::ServiceUnavailable(format!(
+            "Endpoint is not online (status: {:?})",
+            endpoint.status
+        )))
+        .into_response();
     }
 
     // リクエストを転送
@@ -1395,13 +1175,7 @@ pub async fn proxy_chat_completions(
                     .body(axum::body::Body::from(bytes))
                     .unwrap()
                     .into_response(),
-                Err(e) => (
-                    StatusCode::BAD_GATEWAY,
-                    Json(ErrorResponse {
-                        error: format!("Failed to read response: {}", e),
-                        code: "PROXY_ERROR".to_string(),
-                    }),
-                )
+                Err(e) => AppError(LbError::Http(format!("Failed to read response: {}", e)))
                     .into_response(),
             }
         }
@@ -1414,14 +1188,7 @@ pub async fn proxy_chat_completions(
                 format!("Proxy error: {}", e)
             };
 
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(ErrorResponse {
-                    error: error_msg,
-                    code: "PROXY_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Http(error_msg)).into_response()
         }
     }
 }
@@ -1443,39 +1210,20 @@ pub async fn download_model(
     // エンドポイント取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
 
     // SPEC-e8e9326e: xLLMタイプのみダウンロード許可
     if !endpoint.endpoint_type.supports_model_download() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Model download is only supported for xLLM endpoints".to_string(),
-                code: "DOWNLOAD_NOT_SUPPORTED".to_string(),
-            }),
-        )
-            .into_response();
+        return AppError(LbError::Common(CommonError::Validation(
+            "Model download is only supported for xLLM endpoints".to_string(),
+        )))
+        .into_response();
     }
 
     // ダウンロードタスク作成
@@ -1484,14 +1232,10 @@ pub async fn download_model(
         Ok(()) => (StatusCode::ACCEPTED, Json(DownloadTaskResponse::from(task))).into_response(),
         Err(e) => {
             tracing::error!("Failed to create download task: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to create download task".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Database(
+                "Failed to create download task".to_string(),
+            ))
+            .into_response()
         }
     }
 }
@@ -1503,25 +1247,10 @@ pub async fn download_progress(
 ) -> impl IntoResponse {
     // エンドポイント存在確認
     match db::get_endpoint(&state.db_pool, id).await {
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
         Ok(Some(_)) => {}
@@ -1539,14 +1268,10 @@ pub async fn download_progress(
             .into_response(),
         Err(e) => {
             tracing::error!("Failed to list download tasks: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to list download tasks".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Database(
+                "Failed to list download tasks".to_string(),
+            ))
+            .into_response()
         }
     }
 }
@@ -1570,40 +1295,20 @@ pub async fn get_model_info(
     // エンドポイント取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "Endpoint not found".to_string(),
-                    code: "NOT_FOUND".to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get endpoint".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
 
     // SPEC-e8e9326e: メタデータ取得はxLLM/Ollamaのみサポート
     if !endpoint.endpoint_type.supports_model_metadata() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Model metadata retrieval is not supported for this endpoint type"
-                    .to_string(),
-                code: "METADATA_NOT_SUPPORTED".to_string(),
-            }),
-        )
-            .into_response();
+        return AppError(LbError::Common(CommonError::Validation(
+            "Model metadata retrieval is not supported for this endpoint type".to_string(),
+        )))
+        .into_response();
     }
 
     // モデル一覧からモデルを検索
@@ -1621,26 +1326,16 @@ pub async fn get_model_info(
                 )
                     .into_response()
             } else {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: format!("Model '{}' not found on this endpoint", model),
-                        code: "MODEL_NOT_FOUND".to_string(),
-                    }),
-                )
-                    .into_response()
+                AppError(LbError::NotFound(format!(
+                    "Model '{}' not found on this endpoint",
+                    model
+                )))
+                .into_response()
             }
         }
         Err(e) => {
             tracing::error!("Failed to list endpoint models: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Failed to get model info".to_string(),
-                    code: "DB_ERROR".to_string(),
-                }),
-            )
-                .into_response()
+            AppError(LbError::Database("Failed to get model info".to_string())).into_response()
         }
     }
 }

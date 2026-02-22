@@ -142,19 +142,22 @@ export default function Dashboard() {
     const update = systemInfo?.update as UpdateState | undefined
     const updateState = update?.state
     const isAdmin = user?.role === 'admin'
+    const hasAvailableUpdate = updateState === 'available'
     const isPayloadReady =
-      updateState === 'available' && update?.payload?.payload === 'ready'
+      hasAvailableUpdate && update?.payload?.payload === 'ready'
     const failedHasUpdateCandidate = updateState === 'failed' && Boolean(update?.latest)
     const canApply = isAdmin && (updateState === 'available' || failedHasUpdateCandidate)
     const applying = updateState === 'draining' || updateState === 'applying'
     const showRestartButton = updateState === 'available' || failedHasUpdateCandidate || applying
-    const showForceButton = updateState === 'available'
+    const showForceButton = true
     const canForceApply = isAdmin && isPayloadReady && !applying
     const canCheck = isAdmin && !applying
     const forceUpdateTitle = !isAdmin
       ? 'Admin role is required'
       : applying
         ? 'Update is in progress'
+        : !hasAvailableUpdate
+          ? 'No update is available'
         : isPayloadReady
           ? undefined
           : 'Update payload is still preparing'

@@ -72,6 +72,7 @@ interface PlaygroundBaseProps {
 
   resetChat: () => void
   sidebarWidth?: string
+  sidebarId?: string
 }
 
 export function PlaygroundBase({
@@ -138,10 +139,11 @@ export function PlaygroundBase({
 
   resetChat,
   sidebarWidth = 'w-72',
+  sidebarId,
 }: PlaygroundBaseProps) {
   return (
     <div className="flex h-screen bg-background">
-      <div className={`${sidebarWidth} border-r flex flex-col`}>
+      <div id={sidebarId} className={`${sidebarWidth} border-r flex flex-col`}>
         <div className="p-4 border-b">{sidebarHeader}</div>
 
         {sidebarInfo}

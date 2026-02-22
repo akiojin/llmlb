@@ -11,7 +11,7 @@ use crate::db::endpoints as db;
 use crate::detection::detect_endpoint_type_with_client;
 use crate::registry::endpoints::EndpointRegistry;
 use crate::sync;
-use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus};
+use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus, EndpointType};
 use chrono::Utc;
 use reqwest::Client;
 
@@ -272,6 +272,7 @@ impl EndpointHealthChecker {
         }
 
         // SPEC-e8e9326e: offline→online遷移時にタイプ再検出
+        let mut endpoint_type_for_auto_sync = endpoint.endpoint_type;
         let was_offline = matches!(
             status_before,
             EndpointStatus::Offline | EndpointStatus::Error
@@ -285,6 +286,7 @@ impl EndpointHealthChecker {
             .await
             {
                 Ok(result) => {
+                    endpoint_type_for_auto_sync = result.endpoint_type;
                     if result.endpoint_type != endpoint.endpoint_type {
                         info!(
                             endpoint_id = %endpoint.id,
@@ -316,7 +318,8 @@ impl EndpointHealthChecker {
         }
 
         if success {
-            self.maybe_auto_sync_models(endpoint, new_status).await;
+            self.maybe_auto_sync_models(endpoint, new_status, endpoint_type_for_auto_sync)
+                .await;
         }
 
         // ヘルスチェック履歴を記録
@@ -361,7 +364,12 @@ impl EndpointHealthChecker {
         }
     }
 
-    async fn maybe_auto_sync_models(&self, endpoint: &Endpoint, new_status: EndpointStatus) {
+    async fn maybe_auto_sync_models(
+        &self,
+        endpoint: &Endpoint,
+        new_status: EndpointStatus,
+        endpoint_type: EndpointType,
+    ) {
         if new_status != EndpointStatus::Online {
             return;
         }
@@ -390,13 +398,14 @@ impl EndpointHealthChecker {
         let last_auto_sync_models = self.last_auto_sync_models.clone();
 
         tokio::spawn(async move {
-            match sync::sync_models(
+            match sync::sync_models_with_type(
                 &pool,
                 &client,
                 endpoint_id,
                 &base_url,
                 api_key.as_deref(),
                 timeout_secs,
+                Some(endpoint_type),
             )
             .await
             {
@@ -685,6 +694,83 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
+    }
+
+    #[tokio::test]
+    async fn test_auto_model_sync_uses_redetected_endpoint_type_for_metadata() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "models": [
+                    {
+                        "type": "llm",
+                        "publisher": "lmstudio-community",
+                        "key": "lmstudio-model",
+                        "display_name": "LM Studio Model",
+                        "architecture": "llama",
+                        "loaded_instances": [],
+                        "max_context_length": 32768,
+                        "format": "gguf"
+                    }
+                ]
+            })))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "object": "list",
+                "data": [{"id": "lmstudio-model", "object": "model"}]
+            })))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models/lmstudio-model"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "lmstudio-model",
+                "max_context_length": 32768
+            })))
+            .mount(&mock)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            mock.uri(),
+            EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = EndpointStatus::Offline;
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let models = registry.list_models(endpoint.id).await.unwrap();
+            if let Some(model) = models.iter().find(|m| m.model_id == "lmstudio-model") {
+                if model.max_tokens == Some(32768) {
+                    break;
+                }
+            }
+
+            if Instant::now() > deadline {
+                panic!("Timed out waiting for auto model sync metadata update");
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.endpoint_type, EndpointType::LmStudio);
     }
 
     #[tokio::test]

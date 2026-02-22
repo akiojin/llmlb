@@ -2,7 +2,7 @@
 //!
 //! SPEC-e8e9326e: Automatic endpoint type detection
 //!
-//! Detection priority: xLLM > Ollama > LM Studio > vLLM > OpenAI-compatible
+//! Detection priority: xLLM > LM Studio > Ollama > vLLM > OpenAI-compatible
 
 mod lm_studio;
 mod ollama;
@@ -57,8 +57,8 @@ pub struct DetectionResult {
 ///
 /// Tries detection in priority order:
 /// 1. xLLM (GET /api/system - xllm_version field)
-/// 2. Ollama (GET /api/tags)
-/// 3. LM Studio (GET /api/v1/models, Server header, owned_by)
+/// 2. LM Studio (GET /api/v1/models, Server header, owned_by)
+/// 3. Ollama (GET /api/tags)
 /// 4. vLLM (Server header check)
 /// 5. OpenAI-compatible (GET /v1/models)
 ///
@@ -106,20 +106,20 @@ pub async fn detect_endpoint_type_with_client(
         }
     }
 
-    // Priority 2: Ollama detection
-    if let Some(reason) = detect_ollama(client, base_url).await {
-        debug!(endpoint_type = "ollama", "Detected Ollama endpoint");
-        return Ok(DetectionResult {
-            endpoint_type: EndpointType::Ollama,
-            reason,
-        });
-    }
-
-    // Priority 3: LM Studio detection
+    // Priority 2: LM Studio detection
     if let Some(reason) = detect_lm_studio(client, base_url, api_key).await {
         debug!(endpoint_type = "lm_studio", "Detected LM Studio endpoint");
         return Ok(DetectionResult {
             endpoint_type: EndpointType::LmStudio,
+            reason,
+        });
+    }
+
+    // Priority 3: Ollama detection
+    if let Some(reason) = detect_ollama(client, base_url).await {
+        debug!(endpoint_type = "ollama", "Detected Ollama endpoint");
+        return Ok(DetectionResult {
+            endpoint_type: EndpointType::Ollama,
             reason,
         });
     }

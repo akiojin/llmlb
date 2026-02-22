@@ -738,6 +738,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
     <PlaygroundBase
       onBack={onBack}
       sidebarWidth="w-72"
+      sidebarId="lb-playground-sidebar"
       sidebarHeader={
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">

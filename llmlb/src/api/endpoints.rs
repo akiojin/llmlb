@@ -664,13 +664,14 @@ pub async fn create_endpoint(
                     return;
                 }
 
-                match sync::sync_models(
+                match sync::sync_models_with_type(
                     &state_clone.db_pool,
                     &state_clone.http_client,
                     endpoint_clone.id,
                     &endpoint_clone.base_url,
                     endpoint_clone.api_key.as_deref(),
                     endpoint_clone.inference_timeout_secs as u64,
+                    Some(endpoint_clone.endpoint_type),
                 )
                 .await
                 {
@@ -1001,13 +1002,14 @@ pub async fn sync_endpoint_models(
         }
     };
 
-    let result = sync::sync_models(
+    let result = sync::sync_models_with_type(
         &state.db_pool,
         &state.http_client,
         id,
         &endpoint.base_url,
         endpoint.api_key.as_deref(),
         endpoint.inference_timeout_secs as u64,
+        Some(endpoint.endpoint_type),
     )
     .await;
 

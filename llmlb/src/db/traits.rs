@@ -885,8 +885,8 @@ mod tests {
 
         async fn update_endpoint(&self, endpoint: &Endpoint) -> Result<bool, sqlx::Error> {
             let mut eps = self.endpoints.lock().unwrap();
-            if eps.contains_key(&endpoint.id) {
-                eps.insert(endpoint.id, endpoint.clone());
+            if let std::collections::hash_map::Entry::Occupied(mut entry) = eps.entry(endpoint.id) {
+                entry.insert(endpoint.clone());
                 Ok(true)
             } else {
                 Ok(false)

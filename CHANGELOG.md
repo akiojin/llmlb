@@ -1,5 +1,11 @@
 # Unreleased
 
+# [5.0.1](https://github.com/akiojin/llmlb/compare/v5.0.0...v5.0.1) (2026-02-22)
+
+### Bug Fixes
+
+- 強制更新ボタンを常に表示し、無効理由を明示するよう改善 (#441)
+
 # [5.0.0](https://github.com/akiojin/llmlb/compare/v4.7.2...v5.0.0) (2026-02-22)
 
 ### Breaking Changes

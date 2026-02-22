@@ -129,8 +129,9 @@
 
 1. **前提** updateState=available かつ payload=ready、**実行** `Force update now` を確認して実行、**結果** 進行中リクエストを打ち切って即時再起動処理に入る
 2. **前提** updateState=available かつ payload=not_ready、**実行** 強制更新ボタンを確認、**結果** disabled表示となり押下できない
-3. **前提** updateState=available かつ payload=ready、**実行** `POST /api/system/update/apply/force`、**結果** `202 Accepted` と `queued=false`、`mode=force` を返す
-4. **前提** updateStateがavailable以外またはpayload未準備、**実行** `POST /api/system/update/apply/force`、**結果** `409 Conflict` が返る
+3. **前提** updateStateがavailable以外、**実行** 強制更新ボタンを確認、**結果** ボタン自体は表示されるが disabled かつ「No update is available」説明を表示する
+4. **前提** updateState=available かつ payload=ready、**実行** `POST /api/system/update/apply/force`、**結果** `202 Accepted` と `queued=false`、`mode=force` を返す
+5. **前提** updateStateがavailable以外またはpayload未準備、**実行** `POST /api/system/update/apply/force`、**結果** `409 Conflict` が返る
 
 ---
 
@@ -155,7 +156,7 @@
 - **FR-015**: ダッシュボードヘッダーの「Current vX.Y.Z」横にアップデート状態を示すドットインジケータ（緑=最新/黄=更新可・更新中/赤=失敗）とバッジテキストを表示する
 - **FR-016**: システムは `POST /api/system/update/apply/force` を提供し、payload準備済みのときに強制更新を受け付ける
 - **FR-017**: 強制更新は `draining` 状態を経由せず、`applying` に直接遷移する
-- **FR-018**: ダッシュボードは通常更新ボタンと強制更新ボタンを分離し、強制更新には確認ダイアログを表示する
+- **FR-018**: ダッシュボードは通常更新ボタンと強制更新ボタンを分離し、強制更新ボタンは更新候補の有無に関係なく表示する。強制更新には確認ダイアログを表示する
 - **FR-019**: 強制更新ボタンは `available` かつ `payload=ready` のときのみ有効化する
 
 ### 非機能要件

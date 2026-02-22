@@ -86,3 +86,21 @@
 - [x] T096 `llmlb/src/update/mod.rs` の適用フローを更新し、通常更新で`in_flight=0`時に`draining`をスキップ、強制更新で`draining`を経由しないように実装
 - [x] T097 `llmlb/src/api/system.rs` と `llmlb/src/api/mod.rs` に `POST /api/system/update/apply/force` を追加し、`mode`/`queued`レスポンスを返すように実装
 - [x] T098 `llmlb/src/web/dashboard/src/lib/api.ts` と `llmlb/src/web/dashboard/src/pages/Dashboard.tsx` を更新し、`Force update now` ボタンと確認ダイアログを実装
+
+## Regression Fixes (2026-02-22)
+
+### Setup
+
+- [x] T099 `specs/SPEC-a6e55b37/spec.md` のFR-018/US-9を更新し、`Force update now` を更新候補の有無に関係なく常時表示（条件未達時disabled）に明文化
+
+### Tests (RED)
+
+- [x] T100 `llmlb/tests/ui/update_banner.rs` に「更新未検知でも強制更新ボタンは表示される」回帰テストを追加
+
+### Core
+
+- [x] T101 `llmlb/src/web/dashboard/src/pages/Dashboard.tsx` を修正し、強制更新ボタンを常時表示 + `No update is available` 理由表示を追加
+
+### Polish
+
+- [x] T102 `pnpm --filter @llm/dashboard build` を実行して `llmlb/src/web/static/` を再生成し、埋め込み配信アセットへ反映

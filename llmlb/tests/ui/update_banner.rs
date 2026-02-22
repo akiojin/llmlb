@@ -116,6 +116,20 @@ fn force_update_requires_ready_payload() {
     );
 }
 
+// FR-018: 強制更新ボタンは常時表示し、条件未達時は説明付きで無効化する
+#[test]
+fn force_update_button_is_visible_even_without_available_update() {
+    let source = get_dashboard_source();
+    assert!(
+        source.contains("const showForceButton = true"),
+        "Force update button should remain visible even when no update is currently available"
+    );
+    assert!(
+        source.contains("No update is available"),
+        "Dashboard should explain why force update is disabled when no update is available"
+    );
+}
+
 // FR-014: queued=false時に即時適用分岐を持つこと
 #[test]
 fn apply_update_handles_non_queued_response() {

@@ -339,6 +339,68 @@ async fn test_endpoint_type_detection_lm_studio_api_models_shape() {
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["endpoint_type"], "lm_studio");
 }
+
+/// US6-シナリオ6c: /api/tags が 200 + error payload でも LM Studio を優先判定
+#[tokio::test]
+async fn test_endpoint_type_detection_lm_studio_when_api_tags_returns_error_payload() {
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
+
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/system"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock)
+        .await;
+    // LM Studio 実環境で見られる 200 + {"error": "..."} を再現
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "error": "Unexpected endpoint or method. (GET /api/tags)"
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{
+                "type": "llm",
+                "publisher": "openai",
+                "key": "openai/gpt-oss-20b",
+                "display_name": "GPT-OSS 20B",
+                "architecture": "gpt_oss",
+                "loaded_instances": [{"id":"openai/gpt-oss-20b","config":{"context_length":131072}}],
+                "max_context_length": 131072,
+                "format": "mlx"
+            }]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id":"openai/gpt-oss-20b","object":"model","owned_by":"organization_owner"}]
+        })))
+        .mount(&mock)
+        .await;
+
+    let response = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", format!("Bearer {}", admin_key))
+        .json(&json!({
+            "name": "LM Studio Tags Error Payload Endpoint",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .expect("registration request failed");
+
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "lm_studio");
+}
+
 /// US6-シナリオ7: OpenAI互換判別（フォールバック）
 #[tokio::test]
 async fn test_endpoint_type_detection_openai_compatible() {

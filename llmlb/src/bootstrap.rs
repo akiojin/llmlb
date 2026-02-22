@@ -5,7 +5,7 @@
 
 use crate::config::{get_env_with_fallback_or, get_env_with_fallback_parse};
 use crate::lock::ServerLock;
-use crate::{auth, balancer, health, AppState};
+use crate::{auth, balancer, health, sync, AppState};
 use sqlx::sqlite::SqliteConnectOptions;
 use std::str::FromStr;
 use tracing::{info, warn};
@@ -101,6 +101,7 @@ async fn initialize_inner(
 
     // サーバー起動時のエンドポイントタイプ再検出
     redetect_all_endpoints(&endpoint_registry, &http_client).await;
+    spawn_startup_model_backfill(endpoint_registry.clone(), http_client.clone());
 
     let health_check_interval_secs: u64 =
         get_env_with_fallback_parse("LLMLB_HEALTH_CHECK_INTERVAL", "HEALTH_CHECK_INTERVAL", 30);
@@ -457,6 +458,78 @@ async fn redetect_all_endpoints(
     }
 
     info!(total, failed, updated, "Endpoint re-detection complete");
+}
+
+fn spawn_startup_model_backfill(
+    registry: crate::registry::endpoints::EndpointRegistry,
+    http_client: reqwest::Client,
+) {
+    tokio::spawn(async move {
+        let endpoints = registry.list_online().await;
+        if endpoints.is_empty() {
+            info!("No online endpoints found; skipping startup model backfill");
+            return;
+        }
+
+        info!(
+            total = endpoints.len(),
+            "Starting startup model backfill for online endpoints"
+        );
+
+        let mut succeeded = 0usize;
+        let mut failed = 0usize;
+
+        for ep in endpoints {
+            match sync::sync_models_with_type(
+                registry.pool(),
+                &http_client,
+                ep.id,
+                &ep.base_url,
+                ep.api_key.as_deref(),
+                ep.inference_timeout_secs as u64,
+                Some(ep.endpoint_type),
+            )
+            .await
+            {
+                Ok(result) => match registry.refresh_model_mappings(ep.id).await {
+                    Ok(()) => {
+                        succeeded += 1;
+                        info!(
+                            endpoint_id = %ep.id,
+                            endpoint_name = %ep.name,
+                            added = result.added,
+                            removed = result.removed,
+                            updated = result.updated,
+                            "Startup model backfill completed"
+                        );
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        warn!(
+                            endpoint_id = %ep.id,
+                            endpoint_name = %ep.name,
+                            error = %e,
+                            "Startup model backfill failed: refresh model mappings error"
+                        );
+                    }
+                },
+                Err(e) => {
+                    failed += 1;
+                    warn!(
+                        endpoint_id = %ep.id,
+                        endpoint_name = %ep.name,
+                        error = %e,
+                        "Startup model backfill failed"
+                    );
+                }
+            }
+        }
+
+        info!(
+            total = succeeded + failed,
+            succeeded, failed, "Startup model backfill complete"
+        );
+    });
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@
 
 use reqwest::Client;
 use serde::Deserialize;
+use serde_json::Value;
 use tracing::debug;
 
 /// Ollama tags response structure
@@ -14,6 +15,9 @@ use tracing::debug;
 struct OllamaTagsResponse {
     /// List of available models
     models: Option<Vec<OllamaModel>>,
+    /// Non-Ollama servers may return `{ "error": ... }` with HTTP 200.
+    #[serde(default)]
+    error: Option<Value>,
 }
 
 /// Ollama model info (minimal)
@@ -38,6 +42,13 @@ pub async fn detect_ollama(client: &Client, base_url: &str) -> Option<String> {
         Ok(response) if response.status().is_success() => {
             match response.json::<OllamaTagsResponse>().await {
                 Ok(tags) => {
+                    // Some OpenAI-compatible/LM Studio servers return 200 with an error payload.
+                    // In that case, this endpoint is not Ollama.
+                    if tags.error.is_some() {
+                        debug!("Ollama detection: /api/tags returned error payload");
+                        return None;
+                    }
+
                     // Ollama returns { "models": [...] }
                     if tags.models.is_some() {
                         debug!(
@@ -95,5 +106,13 @@ mod tests {
         let json = r#"{}"#;
         let response: OllamaTagsResponse = serde_json::from_str(json).unwrap();
         assert!(response.models.is_none());
+    }
+
+    #[test]
+    fn test_ollama_tags_response_with_error_payload() {
+        let json = r#"{"error":"Unexpected endpoint or method. (GET /api/tags)"}"#;
+        let response: OllamaTagsResponse = serde_json::from_str(json).unwrap();
+        assert!(response.models.is_none());
+        assert!(response.error.is_some());
     }
 }

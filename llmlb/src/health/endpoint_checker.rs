@@ -382,6 +382,7 @@ impl EndpointHealthChecker {
         let endpoint_name = endpoint.name.clone();
         let base_url = endpoint.base_url.clone();
         let api_key = endpoint.api_key.clone();
+        let endpoint_type = endpoint.endpoint_type;
         let timeout_secs = endpoint.inference_timeout_secs as u64;
 
         let pool = self.registry.pool().clone();
@@ -390,13 +391,14 @@ impl EndpointHealthChecker {
         let last_auto_sync_models = self.last_auto_sync_models.clone();
 
         tokio::spawn(async move {
-            match sync::sync_models(
+            match sync::sync_models_with_type(
                 &pool,
                 &client,
                 endpoint_id,
                 &base_url,
                 api_key.as_deref(),
                 timeout_secs,
+                Some(endpoint_type),
             )
             .await
             {

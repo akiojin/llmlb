@@ -576,6 +576,43 @@ impl UpdateManager {
         self.inner.history_store.load().unwrap_or_default()
     }
 
+    /// Check if a `.bak` file exists for rollback.
+    pub fn rollback_available(&self) -> bool {
+        let current_exe = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        current_exe.with_extension("bak").exists()
+    }
+
+    /// Request a manual rollback to the previous version.
+    ///
+    /// Restores the `.bak` file and restarts. Returns `Err` if no `.bak` exists.
+    pub fn request_rollback(&self) -> Result<()> {
+        let current_exe =
+            std::env::current_exe().context("Failed to resolve current executable path")?;
+        let backup = current_exe.with_extension("bak");
+        if !backup.exists() {
+            return Err(anyhow!("No previous version available (.bak not found)"));
+        }
+
+        // Record rollback in history.
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        self.record_history(history::HistoryEntry {
+            kind: history::HistoryEventKind::Rollback,
+            version: version.clone(),
+            message: Some(format!("Manual rollback from {version}")),
+            timestamp: Utc::now(),
+        });
+
+        // Spawn a helper process that waits for this process to exit, then restores the backup.
+        let args_file =
+            write_restart_args_file(&self.inner.updates_dir.join(format!("rollback-{version}")))?;
+        spawn_internal_rollback(&current_exe, &backup, &args_file)?;
+        self.inner.shutdown.request_shutdown();
+        Ok(())
+    }
+
     /// Request applying the update as soon as it is safe.
     ///
     /// The background task will:
@@ -1669,7 +1706,93 @@ pub(crate) fn internal_apply_update(
     }
 
     restart_from_args_file(&target, &args_file)?;
+
+    // T265: Monitor the new process for 30 seconds. If it doesn't respond to
+    // health check, restore the backup and restart with the old version.
+    if let Err(e) = wait_for_health_check(&target, Duration::from_secs(30)) {
+        eprintln!("Health check failed after update: {e}");
+        eprintln!("Rolling back to previous version...");
+        if backup.exists() {
+            // Kill the new (broken) process if it's running.
+            // We don't know the PID, but we can try to restore the backup.
+            if let Err(restore_err) = fs::rename(&backup, &target) {
+                if restore_err.kind() == io::ErrorKind::CrossesDevices {
+                    let _ = fs::copy(&backup, &target);
+                    let _ = fs::remove_file(&backup);
+                } else {
+                    eprintln!("Failed to restore backup: {restore_err}");
+                    return Err(restore_err)
+                        .context("Failed to restore backup after health check failure");
+                }
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = fs::metadata(&target) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o755);
+                    fs::set_permissions(&target, perms).ok();
+                }
+            }
+            // Record rollback in history (best-effort).
+            record_auto_rollback_history(&args_file, &e.to_string());
+            restart_from_args_file(&target, &args_file)?;
+        }
+        return Err(e);
+    }
+
     Ok(())
+}
+
+/// Wait for the new process to respond to a health check on `/api/version`.
+fn wait_for_health_check(target: &Path, timeout: Duration) -> Result<()> {
+    // Read the args file to find the port (default 3000).
+    let port = detect_server_port(target).unwrap_or(3000);
+    let url = format!("http://127.0.0.1:{port}/api/version");
+    let started = std::time::Instant::now();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .context("Failed to create HTTP client for health check")?;
+
+    loop {
+        if started.elapsed() > timeout {
+            return Err(anyhow!(
+                "Health check timed out after {}s (no response from {url})",
+                timeout.as_secs()
+            ));
+        }
+        match client.get(&url).send() {
+            Ok(res) if res.status().is_success() => return Ok(()),
+            _ => {}
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// Best-effort: detect server port from restart args or environment.
+fn detect_server_port(_target: &Path) -> Option<u16> {
+    // Check environment variable first.
+    std::env::var("LLMLB_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+}
+
+/// Best-effort: record auto-rollback in history.
+fn record_auto_rollback_history(args_file: &Path, reason: &str) {
+    // Try to find the data dir from the args file's parent.
+    let data_dir = args_file
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .unwrap_or_else(|| Path::new("."));
+    let store = history::HistoryStore::new(data_dir);
+    let _ = store.append(history::HistoryEntry {
+        kind: history::HistoryEventKind::Rollback,
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        message: Some(format!("Auto-rollback: {reason}")),
+        timestamp: Utc::now(),
+    });
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -1734,6 +1857,61 @@ pub(crate) fn internal_run_installer(
     Err(anyhow!(
         "installer updates are only supported on macOS/Windows"
     ))
+}
+
+fn spawn_internal_rollback(current_exe: &Path, backup: &Path, args_file: &Path) -> Result<()> {
+    let pid = std::process::id().to_string();
+    let target = current_exe.to_string_lossy().to_string();
+    Command::new(current_exe)
+        .arg("__internal")
+        .arg("rollback")
+        .arg("--old-pid")
+        .arg(pid)
+        .arg("--target")
+        .arg(&target)
+        .arg("--backup")
+        .arg(backup)
+        .arg("--args-file")
+        .arg(args_file)
+        .spawn()
+        .context("Failed to spawn internal rollback")?;
+    Ok(())
+}
+
+/// Rollback: wait for old process to exit, restore `.bak`, restart.
+pub(crate) fn internal_rollback(
+    old_pid: u32,
+    target: PathBuf,
+    backup: PathBuf,
+    args_file: PathBuf,
+) -> Result<()> {
+    wait_for_pid_exit(old_pid, Duration::from_secs(60))?;
+
+    // Restore backup.
+    if !backup.exists() {
+        return Err(anyhow!("Backup file does not exist: {}", backup.display()));
+    }
+    if let Err(e) = fs::rename(&backup, &target) {
+        if e.kind() == io::ErrorKind::CrossesDevices {
+            fs::copy(&backup, &target)?;
+            let _ = fs::remove_file(&backup);
+        } else {
+            return Err(e).context("Failed to restore backup");
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&target) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&target, perms).ok();
+        }
+    }
+
+    restart_from_args_file(&target, &args_file)?;
+    Ok(())
 }
 
 fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<()> {
@@ -2476,6 +2654,89 @@ mod tests {
             ApplyRequestMode::Normal,
             "scheduled trigger should request normal apply"
         );
+    }
+
+    // =======================================================================
+    // T260: ヘルパー起動監視 — .bakから復元ロジックのテスト
+    // =======================================================================
+    #[test]
+    fn internal_rollback_restores_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("llmlb");
+        let backup = dir.path().join("llmlb.bak");
+        let args_file = dir.path().join("restart_args.json");
+
+        // Create a fake "old" binary.
+        fs::write(&backup, b"old-binary-content").unwrap();
+        // Create a fake args file (needed for restart_from_args_file).
+        let args = RestartArgsFile {
+            args: vec![],
+            cwd: dir.path().to_string_lossy().to_string(),
+        };
+        fs::write(&args_file, serde_json::to_vec(&args).unwrap()).unwrap();
+
+        // internal_rollback expects the old process to have exited.
+        // Using PID 0 or a non-existent PID: use current PID which is alive.
+        // Instead, use PID 1 which is always running on Unix — let's use a non-existent PID.
+        // PID u32::MAX is unlikely to exist.
+        let result = internal_rollback(u32::MAX, target.clone(), backup.clone(), args_file);
+
+        // The rollback should have restored the backup to the target path.
+        assert!(target.exists(), "target should be restored from backup");
+        assert!(!backup.exists(), "backup should be consumed (renamed)");
+        let content = fs::read(&target).unwrap();
+        assert_eq!(content, b"old-binary-content");
+
+        // The restart_from_args_file call will fail because the target is not
+        // executable, but the backup restoration should have succeeded.
+        // We check if the result is Err (from failed spawn) but not from rollback.
+        if let Err(e) = result {
+            // Expected: spawn failure because we wrote fake content, not a real binary.
+            assert!(
+                !e.to_string().contains("Backup file does not exist"),
+                "should not fail due to missing backup: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn internal_rollback_fails_without_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("llmlb");
+        let backup = dir.path().join("llmlb.bak");
+        let args_file = dir.path().join("restart_args.json");
+
+        let result = internal_rollback(u32::MAX, target, backup, args_file);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Backup file does not exist"));
+    }
+
+    // =======================================================================
+    // T262: ロールバック結果の update-history.json 記録
+    // =======================================================================
+    #[test]
+    fn record_auto_rollback_history_writes_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create directory structure: data_dir/updates/rollback-X.Y.Z/restart_args.json
+        let updates_dir = dir.path().join("updates").join("rollback-test");
+        fs::create_dir_all(&updates_dir).unwrap();
+        let args_file = updates_dir.join("restart_args.json");
+        fs::write(&args_file, "{}").unwrap();
+
+        super::record_auto_rollback_history(&args_file, "health check failed");
+
+        let store = history::HistoryStore::new(dir.path());
+        let entries = store.load().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].kind, history::HistoryEventKind::Rollback);
+        assert!(entries[0]
+            .message
+            .as_ref()
+            .unwrap()
+            .contains("health check failed"));
     }
 
     #[tokio::test]

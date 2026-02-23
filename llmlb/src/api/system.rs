@@ -22,6 +22,7 @@ struct SystemInfoResponse {
     in_flight: usize,
     update: crate::update::UpdateState,
     schedule: Option<crate::update::schedule::UpdateSchedule>,
+    rollback_available: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,12 +55,14 @@ pub async fn get_system(State(state): State<AppState>) -> Response {
     let update = state.update_manager.state().await;
     let in_flight = state.inference_gate.in_flight();
     let schedule = state.update_manager.get_schedule().ok().flatten();
+    let rollback_available = state.update_manager.rollback_available();
     Json(SystemInfoResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         pid: std::process::id(),
         in_flight,
         update,
         schedule,
+        rollback_available,
     })
     .into_response()
 }
@@ -277,5 +280,23 @@ pub async fn cancel_schedule(
             Json(json!({ "error": { "message": err.to_string() } })),
         )
             .into_response(),
+    }
+}
+
+/// POST /api/system/update/rollback
+///
+/// Admin only. Restores the previous version from `.bak` if available.
+pub async fn rollback(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Response {
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
+    }
+
+    match state.update_manager.request_rollback() {
+        Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "rolling_back": true }))).into_response(),
+        Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
     }
 }

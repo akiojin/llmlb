@@ -224,6 +224,41 @@ async fn schedule_cancel_returns_not_found_when_empty() {
     );
 }
 
+/// T261: POST /api/system/update/rollback returns 409 when no .bak exists.
+#[tokio::test]
+async fn rollback_returns_conflict_when_no_bak() {
+    let (secret, app) = build_app().await;
+    let token = admin_jwt(&secret);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/system/update/rollback")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::CONFLICT,
+        "rollback should return 409 when no .bak exists"
+    );
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_text = String::from_utf8(body.to_vec()).unwrap();
+    assert!(
+        body_text.contains("No previous version available"),
+        "unexpected error body: {body_text}"
+    );
+}
+
 /// T213: POST /api/system/update/check returns 429 on rapid consecutive calls.
 #[tokio::test]
 async fn check_update_rate_limits_within_60_seconds() {

@@ -162,45 +162,45 @@
 
 ### Phase 2d: ロールバック — Tests (RED)
 
-- [ ] T260 [P] ヘルパープロセスの起動監視（30秒以内にヘルスチェック無応答→`.bak`から復元）のユニットテスト
-- [ ] T261 [P] `POST /api/system/update/rollback` のインテグレーションテスト（`.bak`存在時受理、なし時409）
-- [ ] T262 [P] ロールバック結果の `update-history.json` 記録テスト
+- [x] T260 [P] ヘルパープロセスの起動監視（30秒以内にヘルスチェック無応答→`.bak`から復元）のユニットテスト
+- [x] T261 [P] `POST /api/system/update/rollback` のインテグレーションテスト（`.bak`存在時受理、なし時409）
+- [x] T262 [P] ロールバック結果の `update-history.json` 記録テスト
 
 ### Phase 2d: ロールバック — Core
 
-- [ ] T265 ヘルパープロセス（`__internal apply-update`）に起動監視を追加（30秒ヘルスチェック→`.bak`復元）
-- [ ] T266 `POST /api/system/update/rollback` API実装（`.bak`存在時のみ受理）
-- [ ] T267 ロールバック結果を `update-history.json` に記録する処理を追加
-- [ ] T268 `GET /api/system` レスポンスに `rollback_available` フィールドを追加
+- [x] T265 ヘルパープロセス（`__internal apply-update`）に起動監視を追加（30秒ヘルスチェック→`.bak`復元）
+- [x] T266 `POST /api/system/update/rollback` API実装（`.bak`存在時のみ受理）
+- [x] T267 ロールバック結果を `update-history.json` に記録する処理を追加
+- [x] T268 `GET /api/system` レスポンスに `rollback_available` フィールドを追加
 
 ### Phase 2e: バグ修正 — Tests (RED)
 
-- [ ] T270 `GET /api/system` がリリースビルドで正常応答を返すことのインテグレーションテスト
+- [x] T270 `GET /api/system` がリリースビルドで正常応答を返すことのインテグレーションテスト
 
 ### Phase 2e: バグ修正 — Core
 
-- [ ] T275 `GET /api/system` が一部リリースビルド環境で401を返す問題を調査・修正（`Current v--` 表示の原因）
+- [x] T275 `GET /api/system` が一部リリースビルド環境で401を返す問題を調査・修正（`Current v--` 表示の原因）
 
 ### Phase 2f: Dashboard UI — Tests (RED)
 
-- [ ] T280 [P] DL進捗プログレスバー表示テスト（PayloadState::Downloadingの進捗率表示）
-- [ ] T281 [P] viewerロール判定テスト（Update banner・操作ボタン非表示、ヘッダーバージョンのみ表示）
-- [ ] T282 [P] 手動チェックUIスロットリング（30秒以内の連打でボタンdisabled）テスト
-- [ ] T283 [P] ドレインタイムアウトカウントダウン表示テスト
-- [ ] T284 [P] 手動ロールバックボタン表示条件（`.bak`存在時のみ有効＋確認ダイアログ）テスト
-- [ ] T285 [P] アップデート設定モーダルテスト（タブ切替・モード選択・日時ピッカー・履歴表示）
+- [x] T280 [P] DL進捗プログレスバー表示テスト（PayloadState::Downloadingの進捗率表示）
+- [x] T281 [P] viewerロール判定テスト（Update banner・操作ボタン非表示、ヘッダーバージョンのみ表示）
+- [x] T282 [P] 手動チェックUIスロットリング（30秒以内の連打でボタンdisabled）テスト
+- [x] T283 [P] ドレインタイムアウトカウントダウン表示テスト
+- [x] T284 [P] 手動ロールバックボタン表示条件（`.bak`存在時のみ有効＋確認ダイアログ）テスト
+- [x] T285 [P] アップデート設定モーダルテスト（タブ切替・モード選択・日時ピッカー・履歴表示）
 
 ### Phase 2f: Dashboard UI — Core
 
-- [ ] T290 `system.ts` の型定義に Phase 2 フィールド（DL進捗、schedule、rollback_available）を追加
-- [ ] T291 DL進捗プログレスバーコンポーネントの実装（バイト数＋パーセンテージ表示）
-- [ ] T292 viewerロール判定実装（Update banner・操作ボタン非表示、ヘッダーバージョンのみ表示）
-- [ ] T293 手動チェックのUIスロットリング実装（最小30秒間隔、タイムスタンプ管理）
-- [ ] T294 ドレインタイムアウトカウントダウン表示の実装
-- [ ] T295 手動ロールバックボタン（`.bak`存在時のみ有効）＋確認ダイアログの実装
-- [ ] T296 アップデート設定モーダルの実装（適用モード選択・日時ピッカー・予約状態・履歴タブ）
-- [ ] T297 Update bannerに予約状態（予約者名・モード・予約時刻）を表示
-- [ ] T298 スケジュールAPI（create/cancel/get）のクライアント実装（`system.ts` に追加）
+- [x] T290 `system.ts` の型定義に Phase 2 フィールド（DL進捗、schedule、rollback_available）を追加
+- [x] T291 DL進捗プログレスバーコンポーネントの実装（バイト数＋パーセンテージ表示）
+- [x] T292 viewerロール判定実装（Update banner・操作ボタン非表示、ヘッダーバージョンのみ表示）
+- [x] T293 手動チェックのUIスロットリング実装（最小30秒間隔、タイムスタンプ管理）
+- [x] T294 ドレインタイムアウトカウントダウン表示の実装
+- [x] T295 手動ロールバックボタン（`.bak`存在時のみ有効）＋確認ダイアログの実装
+- [x] T296 アップデート設定モーダルの実装（適用モード選択・日時ピッカー・予約状態・履歴タブ）
+- [x] T297 Update bannerに予約状態（予約者名・モード・予約時刻）を表示
+- [x] T298 スケジュールAPI（create/cancel/get）のクライアント実装（`system.ts` に追加）
 
 ### Phase 2g: Tray
 

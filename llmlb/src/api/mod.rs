@@ -311,7 +311,8 @@ pub fn create_app(state: AppState) -> Router {
             post(system::create_schedule)
                 .get(system::get_schedule)
                 .delete(system::cancel_schedule),
-        );
+        )
+        .route("/system/update/rollback", post(system::rollback));
     let system_mutation_routes = system_mutation_routes
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,

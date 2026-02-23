@@ -28,6 +28,9 @@ use tokio::sync::{Notify, RwLock};
 /// Minimum interval between manual update checks (seconds).
 const MANUAL_CHECK_COOLDOWN_SECS: u64 = 60;
 
+/// Default drain timeout for normal update apply (seconds).
+const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 300;
+
 const DEFAULT_OWNER: &str = "akiojin";
 const DEFAULT_REPO: &str = "llmlb";
 const DEFAULT_TTL: Duration = Duration::from_secs(60 * 60 * 24);
@@ -77,6 +80,8 @@ pub enum UpdateState {
         in_flight: usize,
         /// When apply was requested.
         requested_at: DateTime<Utc>,
+        /// When the drain will time out and be cancelled.
+        timeout_at: DateTime<Utc>,
     },
     /// Update is being applied by an internal helper process.
     Applying {
@@ -972,6 +977,11 @@ impl UpdateManager {
 
         if mode == ApplyRequestMode::Normal {
             let requested_at = Utc::now();
+            let drain_timeout = Duration::from_secs(DEFAULT_DRAIN_TIMEOUT_SECS);
+            let timeout_at =
+                requested_at + chrono::Duration::seconds(DEFAULT_DRAIN_TIMEOUT_SECS as i64);
+            let deadline = tokio::time::Instant::now() + drain_timeout;
+
             loop {
                 let in_flight = self.inner.gate.in_flight();
                 if in_flight == 0 {
@@ -982,9 +992,31 @@ impl UpdateManager {
                         latest: latest.clone(),
                         in_flight,
                         requested_at,
+                        timeout_at,
                     };
                 }
-                self.inner.gate.wait_for_idle().await;
+                if tokio::time::timeout_at(deadline, self.inner.gate.wait_for_idle())
+                    .await
+                    .is_err()
+                {
+                    // Drain timed out — cancel and restore normal operation.
+                    tracing::warn!(
+                        "drain timed out after {}s with {} in-flight requests",
+                        DEFAULT_DRAIN_TIMEOUT_SECS,
+                        self.inner.gate.in_flight()
+                    );
+                    self.inner.gate.stop_rejecting();
+                    *self.inner.state.write().await = UpdateState::Failed {
+                        latest: Some(latest.clone()),
+                        release_url: None,
+                        message: format!("Drain timed out after {}s", DEFAULT_DRAIN_TIMEOUT_SECS),
+                        failed_at: Utc::now(),
+                    };
+                    return Err(anyhow!(
+                        "Drain timed out after {}s",
+                        DEFAULT_DRAIN_TIMEOUT_SECS
+                    ));
+                }
             }
             *self.inner.state.write().await = UpdateState::Applying {
                 latest: latest.clone(),
@@ -1993,6 +2025,147 @@ mod tests {
         assert!(
             !manager.is_manual_check_rate_limited(),
             "should allow check after 60s cooldown"
+        );
+    }
+
+    // =======================================================================
+    // T250: ドレインタイムアウト — タイムアウト超過でキャンセル＋ゲート再開＋failed遷移
+    // =======================================================================
+    #[tokio::test]
+    async fn drain_timeout_cancels_and_transitions_to_failed() {
+        use tokio::time;
+
+        time::pause();
+
+        let gate = InferenceGate::default();
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            gate.clone(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // Set up available state with ready payload.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                });
+        }
+
+        // Simulate an in-flight request that never completes.
+        let _guard = gate.begin_for_test();
+
+        // Start apply_flow in a task — it will try to drain.
+        let mgr = manager.clone();
+        let apply_task =
+            tokio::spawn(async move { mgr.apply_flow(ApplyRequestMode::Normal).await });
+
+        // Let the drain start.
+        time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        // Verify we're in Draining state.
+        let state = manager.state().await;
+        assert!(
+            matches!(state, UpdateState::Draining { .. }),
+            "expected draining, got {state:?}"
+        );
+
+        // Advance time past the drain timeout (300s).
+        time::advance(Duration::from_secs(301)).await;
+        tokio::task::yield_now().await;
+
+        // apply_flow should return an error.
+        let result = apply_task.await.expect("task should complete");
+        assert!(result.is_err(), "apply_flow should fail on drain timeout");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("timed out"),
+            "error should mention timeout: {err_msg}"
+        );
+
+        // State should be Failed.
+        let state = manager.state().await;
+        match &state {
+            UpdateState::Failed { message, .. } => {
+                assert!(
+                    message.contains("timed out"),
+                    "failed message should mention timeout: {message}"
+                );
+            }
+            other => panic!("expected failed state, got {other:?}"),
+        }
+
+        // Gate should no longer be rejecting.
+        assert!(
+            !gate.is_rejecting(),
+            "gate should stop rejecting after drain timeout"
+        );
+    }
+
+    // T250 supplemental: drain that completes before timeout succeeds.
+    #[tokio::test]
+    async fn drain_completes_before_timeout() {
+        use tokio::time;
+
+        time::pause();
+
+        let gate = InferenceGate::default();
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            gate.clone(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // Set up available state with ready payload.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                });
+        }
+
+        // Simulate an in-flight request.
+        let guard = gate.begin_for_test();
+
+        let mgr = manager.clone();
+        let apply_task =
+            tokio::spawn(async move { mgr.apply_flow(ApplyRequestMode::Normal).await });
+
+        // Let drain start.
+        time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        // Complete the request before timeout.
+        drop(guard);
+        time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        // apply_flow will fail because it tries to spawn a real binary,
+        // but it should NOT fail due to timeout.
+        let result = apply_task.await.expect("task should complete");
+        // The error (if any) should be about spawning, not timeout.
+        if let Err(e) = &result {
+            assert!(
+                !e.to_string().contains("timed out"),
+                "should not time out: {e}"
+            );
+        }
+
+        // State should NOT be Failed due to timeout.
+        let state = manager.state().await;
+        assert!(
+            !matches!(
+                &state,
+                UpdateState::Failed { message, .. } if message.contains("timed out")
+            ),
+            "should not be in timeout-failed state: {state:?}"
         );
     }
 }

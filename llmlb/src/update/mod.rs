@@ -480,6 +480,9 @@ impl UpdateManager {
                 existing.target_version
             ));
         }
+        if sched.mode == schedule::ScheduleMode::Scheduled && sched.scheduled_at.is_none() {
+            return Err(anyhow!("scheduled_at is required when mode is scheduled"));
+        }
         self.inner.schedule_store.save(&sched)?;
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         self.notify_tray_schedule(Some(sched.clone()));
@@ -547,12 +550,18 @@ impl UpdateManager {
                     _ => continue,
                 };
 
-                // Only trigger if an update is available.
-                let is_available = {
+                // Only trigger when the scheduled target version is still the latest available update.
+                let latest_available = {
                     let st = mgr.inner.state.read().await;
-                    matches!(&*st, UpdateState::Available { .. })
+                    match &*st {
+                        UpdateState::Available { latest, .. } => Some(latest.clone()),
+                        _ => None,
+                    }
                 };
-                if !is_available {
+                let Some(latest_available) = latest_available else {
+                    continue;
+                };
+                if latest_available != sched.target_version {
                     continue;
                 }
 
@@ -567,8 +576,8 @@ impl UpdateManager {
                         if let Some(at) = sched.scheduled_at {
                             Utc::now() >= at
                         } else {
-                            // No scheduled_at — treat as immediate.
-                            true
+                            // Defensive: malformed persisted schedules must never trigger immediately.
+                            false
                         }
                     }
                 };
@@ -2681,6 +2690,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn scheduled_mode_requires_scheduled_at() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+
+        let err = manager
+            .create_schedule(sched)
+            .expect_err("scheduled mode without scheduled_at must be rejected");
+        assert!(
+            err.to_string()
+                .contains("scheduled_at is required when mode is scheduled"),
+            "unexpected error: {err}"
+        );
+    }
+
     // =======================================================================
     // T233: 時刻指定適用トリガー — 指定時刻到達でドレイン開始
     // =======================================================================
@@ -2722,6 +2754,78 @@ mod tests {
             mode,
             ApplyRequestMode::Normal,
             "scheduled trigger should request normal apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            let mut state = available_state_with_payload(PayloadState::NotReady);
+            if let UpdateState::Available { latest, .. } = &mut state {
+                *latest = "4.5.2".to_string();
+            }
+            *manager.inner.state.write().await = state;
+        }
+
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: Some(Utc::now() - chrono::Duration::seconds(1)),
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "schedule should remain when target version no longer matches latest"
+        );
+        assert_eq!(
+            manager.take_apply_request_mode(),
+            ApplyRequestMode::None,
+            "target version mismatch must not trigger apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_scheduled_without_time_does_not_trigger() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Simulate malformed persisted data from an older version.
+        let malformed = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager.inner.schedule_store.save(&malformed).unwrap();
+
+        manager.start_schedule_loop();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "malformed scheduled entry should not be consumed automatically"
+        );
+        assert_eq!(
+            manager.take_apply_request_mode(),
+            ApplyRequestMode::None,
+            "malformed scheduled entry must never trigger apply"
         );
     }
 

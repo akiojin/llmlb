@@ -204,10 +204,10 @@
 
 ### Phase 2g: Tray
 
-- [ ] T300 macOS/Windowsトレイに予約状態通知を追加（「明日AM3:00に更新予定」等）
+- [x] T300 macOS/Windowsトレイに予約状態通知を追加（「明日AM3:00に更新予定」等）
 
 ### Phase 2: Polish
 
-- [ ] T310 `pnpm --filter @llm/dashboard build` でstatic再生成、コミット対象に含める
-- [ ] T311 全品質チェック（`make quality-checks`）を実行・合格確認
-- [ ] T312 README追記（Phase 2機能: スケジュール・ロールバック・進捗表示）
+- [x] T310 `pnpm --filter @llm/dashboard build` でstatic再生成、コミット対象に含める
+- [x] T311 全品質チェック（`make quality-checks`）を実行・合格確認
+- [x] T312 README追記（Phase 2機能: スケジュール・ロールバック・進捗表示）

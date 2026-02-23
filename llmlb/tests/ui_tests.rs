@@ -15,3 +15,6 @@ mod update_banner;
 
 #[path = "ui/update_header.rs"]
 mod update_header;
+
+#[path = "ui/update_phase2.rs"]
+mod update_phase2;

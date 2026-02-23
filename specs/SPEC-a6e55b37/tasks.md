@@ -104,3 +104,110 @@
 ### Polish
 
 - [x] T102 `pnpm --filter @llm/dashboard build` を実行して `llmlb/src/web/static/` を再生成し、埋め込み配信アセットへ反映
+
+## Phase 2: 応答性・スケジュール・ロールバック (2026-02-23)
+
+### Setup
+
+- [x] T200 `specs/SPEC-a6e55b37/spec.md` に Phase 2 要件（US-10〜US-19, FR-020〜FR-042, NFR-004〜NFR-007）を追記
+- [x] T201 `specs/SPEC-a6e55b37/plan.md` に Phase 2 実装計画を追記
+- [x] T202 `specs/SPEC-a6e55b37/tasks.md` に Phase 2 タスクを追加
+
+### Phase 2a: 応答性改善 — Tests (RED)
+<!-- markdownlint-disable MD024 -->
+
+- [x] T210 [P] `check_only` のユニットテスト（GitHub APIチェックのみ同期、5秒以内にレスポンス）
+- [x] T211 [P] `download_background` のユニットテスト（バックグラウンドDL開始、PayloadState進捗更新）
+- [x] T212 [P] レートリミット判定のユニットテスト（60秒以内連打→拒否、60秒経過→許可）
+- [x] T213 `POST /api/system/update/check` のインテグレーションテスト（チェックのみ同期応答、DLバックグラウンド開始、429レートリミット）
+
+### Phase 2a: 応答性改善 — Core
+
+- [x] T220 `check_and_maybe_download` を `check_only`（同期、5秒以内）と `download_background`（非同期）に分離
+- [x] T221 `PayloadState::Downloading` に `downloaded_bytes` / `total_bytes` フィールドを追加
+- [x] T222 `download_to_path` にストリーミングDL＋進捗コールバックを実装
+- [x] T223 `POST /api/system/update/check` をチェックのみに変更（DLはバックグラウンド自動開始）
+- [x] T224 サーバー側レートリミット実装（手動チェック最小60秒間隔、超過時429）
+
+### Phase 2b: スケジューリング — Tests (RED)
+
+- [x] T230 [P] `UpdateSchedule` 構造体と `update-schedule.json` のシリアライズ/デシリアライズのユニットテスト
+- [x] T231 [P] `update-history.json` の書き込み（追加・上限100件維持）のユニットテスト
+- [x] T232 [P] アイドル時適用トリガー（in_flight=0で即座に適用開始）のユニットテスト
+- [x] T233 [P] 時刻指定適用トリガー（指定時刻到達でドレイン開始）のユニットテスト
+- [x] T234 `POST /api/system/update/schedule` のインテグレーションテスト（予約作成、コンフリクト409、キャンセル）
+- [x] T235 `GET /api/system/update/schedule` と `DELETE /api/system/update/schedule` のインテグレーションテスト
+
+### Phase 2b: スケジューリング — Core
+
+- [x] T240 `UpdateSchedule` 構造体と `update-schedule.json` の読み書きを実装
+- [x] T241 `UpdateHistory` 構造体と `update-history.json` の読み書きを実装（直近100件、追記）
+- [x] T242 `POST /api/system/update/schedule` API実装（mode/datetime指定、コンフリクト検知409）
+- [x] T243 `GET /api/system/update/schedule` API実装（現在の予約状態取得）
+- [x] T244 `DELETE /api/system/update/schedule` API実装（予約キャンセル、予約なし時404）
+- [x] T245 アイドル時適用ロジック実装（`InferenceGate::wait_for_idle` 監視、in_flight=0でトリガー）
+- [x] T246 時刻指定適用ロジック実装（`tokio::time::sleep_until` で指定時刻にドレイン→適用）
+- [x] T247 `GET /api/system` レスポンスに `schedule` フィールドを追加
+- [x] T248 予約の再起動後復元ロジック実装（起動時に `update-schedule.json` を読み込み再開）
+
+### Phase 2c: ドレインタイムアウト — Tests (RED)
+
+- [x] T250 [P] ドレインタイムアウト（300秒超過でキャンセル＋ゲート再開＋failed遷移）のユニットテスト
+- [x] T251 ドレインタイムアウトのインテグレーションテスト（タイムアウト超過で503ゲート解除確認）
+
+### Phase 2c: ドレインタイムアウト — Core
+
+- [x] T255 `UpdateState::Draining` に `timeout_at` を追加し、ドレインにタイムアウト（デフォルト300秒）を実装
+- [x] T256 タイムアウト超過時のドレインキャンセル＋ゲート再開＋`failed`遷移を実装
+
+### Phase 2d: ロールバック — Tests (RED)
+
+- [x] T260 [P] ヘルパープロセスの起動監視（30秒以内にヘルスチェック無応答→`.bak`から復元）のユニットテスト
+- [x] T261 [P] `POST /api/system/update/rollback` のインテグレーションテスト（`.bak`存在時受理、なし時409）
+- [x] T262 [P] ロールバック結果の `update-history.json` 記録テスト
+
+### Phase 2d: ロールバック — Core
+
+- [x] T265 ヘルパープロセス（`__internal apply-update`）に起動監視を追加（30秒ヘルスチェック→`.bak`復元）
+- [x] T266 `POST /api/system/update/rollback` API実装（`.bak`存在時のみ受理）
+- [x] T267 ロールバック結果を `update-history.json` に記録する処理を追加
+- [x] T268 `GET /api/system` レスポンスに `rollback_available` フィールドを追加
+
+### Phase 2e: バグ修正 — Tests (RED)
+
+- [x] T270 `GET /api/system` がリリースビルドで正常応答を返すことのインテグレーションテスト
+
+### Phase 2e: バグ修正 — Core
+
+- [x] T275 `GET /api/system` が一部リリースビルド環境で401を返す問題を調査・修正（`Current v--` 表示の原因）
+
+### Phase 2f: Dashboard UI — Tests (RED)
+
+- [x] T280 [P] DL進捗プログレスバー表示テスト（PayloadState::Downloadingの進捗率表示）
+- [x] T281 [P] viewerロール判定テスト（Update banner・操作ボタン非表示、ヘッダーバージョンのみ表示）
+- [x] T282 [P] 手動チェックUIスロットリング（30秒以内の連打でボタンdisabled）テスト
+- [x] T283 [P] ドレインタイムアウトカウントダウン表示テスト
+- [x] T284 [P] 手動ロールバックボタン表示条件（`.bak`存在時のみ有効＋確認ダイアログ）テスト
+- [x] T285 [P] アップデート設定モーダルテスト（タブ切替・モード選択・日時ピッカー・履歴表示）
+
+### Phase 2f: Dashboard UI — Core
+
+- [x] T290 `system.ts` の型定義に Phase 2 フィールド（DL進捗、schedule、rollback_available）を追加
+- [x] T291 DL進捗プログレスバーコンポーネントの実装（バイト数＋パーセンテージ表示）
+- [x] T292 viewerロール判定実装（Update banner・操作ボタン非表示、ヘッダーバージョンのみ表示）
+- [x] T293 手動チェックのUIスロットリング実装（最小30秒間隔、タイムスタンプ管理）
+- [x] T294 ドレインタイムアウトカウントダウン表示の実装
+- [x] T295 手動ロールバックボタン（`.bak`存在時のみ有効）＋確認ダイアログの実装
+- [x] T296 アップデート設定モーダルの実装（適用モード選択・日時ピッカー・予約状態・履歴タブ）
+- [x] T297 Update bannerに予約状態（予約者名・モード・予約時刻）を表示
+- [x] T298 スケジュールAPI（create/cancel/get）のクライアント実装（`system.ts` に追加）
+
+### Phase 2g: Tray
+
+- [x] T300 macOS/Windowsトレイに予約状態通知を追加（「明日AM3:00に更新予定」等）
+
+### Phase 2: Polish
+
+- [x] T310 `pnpm --filter @llm/dashboard build` でstatic再生成、コミット対象に含める
+- [x] T311 全品質チェック（`make quality-checks`）を実行・合格確認
+- [x] T312 README追記（Phase 2機能: スケジュール・ロールバック・進捗表示）

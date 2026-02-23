@@ -89,7 +89,7 @@ available for compatibility.
 - **Request History Tracking**: Complete request/response logging with 7-day retention
 - **WebUI Management**: Manage endpoints, monitoring, and control through browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
-- **Self Update (User-Approved)**: Detect new GitHub Releases, notify via dashboard/tray, drain in-flight inference, then restart into the new version
+- **Self Update (User-Approved)**: Detect new GitHub Releases, notify via dashboard/tray, drain in-flight inference, then restart into the new version — with update scheduling, automatic rollback, and download progress tracking
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
 - **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the model name to proxy to the corresponding cloud provider while keeping the same OpenAI-compatible endpoint.
 
@@ -179,13 +179,34 @@ available, it notifies via the dashboard and (Windows/macOS) the tray menu.
 
 When you approve the update ("Restart to update"), llmlb rejects new inference requests (`/v1/*`)
 with 503 + `Retry-After`, waits for in-flight inference requests (including streaming) to finish,
-then applies the update and restarts.
+then applies the update and restarts. A drain timeout of 300 seconds prevents indefinite waiting.
+
+**Update scheduling:**
+
+- **Immediate**: Apply now (default) — drains in-flight requests, then restarts
+- **On idle**: Waits until no inference requests are in-flight, then applies automatically
+- **Scheduled**: Specify a date/time; llmlb starts the drain at the scheduled time
+
+Configure via dashboard settings modal or the scheduling API
+(`POST/GET/DELETE /api/system/update/schedule`).
+
+**Rollback:**
+
+- **Automatic**: After applying an update, llmlb monitors the new process for 30 seconds;
+  if the health check fails, it automatically restores from the `.bak` backup
+- **Manual**: Use the dashboard "Rollback" button or `POST /api/system/update/rollback`
+  when a `.bak` backup exists
+
+**Download progress:** The dashboard shows a real-time progress bar with bytes downloaded
+and percentage during update asset downloads.
 
 Auto-apply method depends on the platform/install:
 
 - Portable install: replace the executable in-place when writable
 - macOS `.pkg` / Windows `.msi`: run the installer (may require elevation)
 - Linux non-writable installs: auto-apply is not supported; reinstall manually from GitHub Releases
+
+For full details, see [specs/SPEC-a6e55b37/spec.md](./specs/SPEC-a6e55b37/spec.md).
 
 ### CLI Reference
 

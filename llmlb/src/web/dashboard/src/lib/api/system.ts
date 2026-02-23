@@ -4,7 +4,12 @@ import { fetchWithAuth } from './client'
 
 export type UpdatePayloadState =
   | { payload: 'not_ready' }
-  | { payload: 'downloading'; started_at: string }
+  | {
+      payload: 'downloading'
+      started_at: string
+      downloaded_bytes?: number | null
+      total_bytes?: number | null
+    }
   | { payload: 'ready'; kind: unknown }
   | { payload: 'error'; message: string }
 
@@ -20,7 +25,13 @@ export type UpdateState =
       payload: UpdatePayloadState
       checked_at: string
     }
-  | { state: 'draining'; latest: string; in_flight: number; requested_at: string }
+  | {
+      state: 'draining'
+      latest: string
+      in_flight: number
+      requested_at: string
+      timeout_at: string
+    }
   | { state: 'applying'; latest: string; method: string }
   | {
       state: 'failed'
@@ -30,11 +41,21 @@ export type UpdateState =
       failed_at: string
     }
 
+export interface ScheduleInfo {
+  mode: 'immediate' | 'idle' | 'scheduled'
+  scheduled_at?: string | null
+  scheduled_by: string
+  target_version: string
+  created_at: string
+}
+
 export interface SystemInfo {
   version: string
   pid: number
   in_flight: number
   update: UpdateState
+  schedule?: ScheduleInfo | null
+  rollback_available?: boolean
 }
 
 export interface ApplyUpdateResponse {
@@ -46,6 +67,15 @@ export interface ForceApplyUpdateResponse {
   queued: false
   mode: 'force'
   dropped_in_flight: number
+}
+
+export interface CreateScheduleRequest {
+  mode: 'idle' | 'scheduled'
+  scheduled_at?: string
+}
+
+export interface RollbackResponse {
+  rolling_back: true
 }
 
 export const systemApi = {
@@ -62,6 +92,24 @@ export const systemApi = {
     }),
   applyForceUpdate: () =>
     fetchWithAuth<ForceApplyUpdateResponse>('/api/system/update/apply/force', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  createSchedule: (req: CreateScheduleRequest) =>
+    fetchWithAuth<{ schedule: ScheduleInfo }>('/api/system/update/schedule', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  cancelSchedule: () =>
+    fetchWithAuth<{ cancelled: true }>('/api/system/update/schedule', {
+      method: 'DELETE',
+    }),
+  getSchedule: () =>
+    fetchWithAuth<{ schedule: ScheduleInfo | null }>(
+      '/api/system/update/schedule'
+    ),
+  rollback: () =>
+    fetchWithAuth<RollbackResponse>('/api/system/update/rollback', {
       method: 'POST',
       body: JSON.stringify({}),
     }),

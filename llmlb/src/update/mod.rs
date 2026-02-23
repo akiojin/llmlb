@@ -35,6 +35,8 @@ const MANUAL_CHECK_COOLDOWN_SECS: u64 = 60;
 
 /// Default drain timeout for normal update apply (seconds).
 const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 300;
+/// Default HTTP listen port for `llmlb serve`.
+const DEFAULT_LISTEN_PORT: u16 = 32768;
 
 const DEFAULT_OWNER: &str = "akiojin";
 const DEFAULT_REPO: &str = "llmlb";
@@ -311,7 +313,22 @@ impl UpdateManager {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     /// Attach a tray event proxy to publish update state (best-effort).
     pub async fn set_tray_proxy(&self, proxy: crate::gui::tray::TrayEventProxy) {
-        *self.inner.tray_proxy.write().await = Some(proxy);
+        *self.inner.tray_proxy.write().await = Some(proxy.clone());
+        let schedule = self.inner.schedule_store.load().ok().flatten();
+        proxy.notify_schedule(schedule.map(|s| schedule_to_tray_info(&s)));
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    fn notify_tray_schedule(&self, schedule: Option<schedule::UpdateSchedule>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let mgr = self.clone();
+        handle.spawn(async move {
+            if let Some(proxy) = mgr.inner.tray_proxy.read().await.clone() {
+                proxy.notify_schedule(schedule.map(|s| schedule_to_tray_info(&s)));
+            }
+        });
     }
 
     /// Return the current update state snapshot.
@@ -464,6 +481,8 @@ impl UpdateManager {
             ));
         }
         self.inner.schedule_store.save(&sched)?;
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        self.notify_tray_schedule(Some(sched.clone()));
         // If immediate, trigger apply right away.
         if sched.mode == schedule::ScheduleMode::Immediate {
             self.request_apply();
@@ -476,6 +495,8 @@ impl UpdateManager {
         if !self.inner.schedule_store.remove()? {
             return Err(anyhow!("No schedule exists"));
         }
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        self.notify_tray_schedule(None);
         Ok(())
     }
 
@@ -492,6 +513,8 @@ impl UpdateManager {
                     sched.mode,
                     sched.target_version
                 );
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                self.notify_tray_schedule(Some(sched.clone()));
                 if sched.mode == schedule::ScheduleMode::Immediate {
                     self.request_apply();
                 }
@@ -558,6 +581,8 @@ impl UpdateManager {
                     );
                     // Remove the schedule before triggering to prevent re-trigger.
                     let _ = mgr.inner.schedule_store.remove();
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
+                    mgr.notify_tray_schedule(None);
                     mgr.request_apply();
                 }
             }
@@ -1709,7 +1734,7 @@ pub(crate) fn internal_apply_update(
 
     // T265: Monitor the new process for 30 seconds. If it doesn't respond to
     // health check, restore the backup and restart with the old version.
-    if let Err(e) = wait_for_health_check(&target, Duration::from_secs(30)) {
+    if let Err(e) = wait_for_health_check(&args_file, Duration::from_secs(30)) {
         eprintln!("Health check failed after update: {e}");
         eprintln!("Rolling back to previous version...");
         if backup.exists() {
@@ -1745,9 +1770,8 @@ pub(crate) fn internal_apply_update(
 }
 
 /// Wait for the new process to respond to a health check on `/api/version`.
-fn wait_for_health_check(target: &Path, timeout: Duration) -> Result<()> {
-    // Read the args file to find the port (default 3000).
-    let port = detect_server_port(target).unwrap_or(3000);
+fn wait_for_health_check(args_file: &Path, timeout: Duration) -> Result<()> {
+    let port = detect_server_port(args_file);
     let url = format!("http://127.0.0.1:{port}/api/version");
     let started = std::time::Instant::now();
     let client = reqwest::blocking::Client::builder()
@@ -1771,11 +1795,41 @@ fn wait_for_health_check(target: &Path, timeout: Duration) -> Result<()> {
 }
 
 /// Best-effort: detect server port from restart args or environment.
-fn detect_server_port(_target: &Path) -> Option<u16> {
-    // Check environment variable first.
-    std::env::var("LLMLB_PORT")
-        .ok()
-        .and_then(|s| s.parse().ok())
+fn detect_server_port(args_file: &Path) -> u16 {
+    detect_server_port_from_args_file(args_file)
+        .or_else(|| {
+            // Fall back to env var if restart args do not include explicit port.
+            std::env::var("LLMLB_PORT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or(DEFAULT_LISTEN_PORT)
+}
+
+fn detect_server_port_from_args_file(args_file: &Path) -> Option<u16> {
+    let content = fs::read_to_string(args_file).ok()?;
+    let parsed: RestartArgsFile = serde_json::from_str(&content).ok()?;
+    parse_port_from_args(&parsed.args)
+}
+
+fn parse_port_from_args(args: &[String]) -> Option<u16> {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if let Some(value) = arg.strip_prefix("--port=") {
+            if let Ok(port) = value.parse::<u16>() {
+                return Some(port);
+            }
+        }
+        if arg == "--port" || arg == "-p" {
+            if let Some(value) = iter.next() {
+                if let Ok(port) = value.parse::<u16>() {
+                    return Some(port);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Best-effort: record auto-rollback in history.
@@ -1926,6 +1980,21 @@ fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<()> {
     }
     cmd.spawn().context("Failed to spawn restarted process")?;
     Ok(())
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn schedule_to_tray_info(schedule: &schedule::UpdateSchedule) -> crate::gui::tray::ScheduleInfo {
+    let mode = match schedule.mode {
+        schedule::ScheduleMode::Immediate => "Immediate",
+        schedule::ScheduleMode::Idle => "Idle",
+        schedule::ScheduleMode::Scheduled => "Scheduled",
+    }
+    .to_string();
+
+    crate::gui::tray::ScheduleInfo {
+        mode,
+        scheduled_at: schedule.scheduled_at.as_ref().cloned(),
+    }
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -2737,6 +2806,31 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains("health check failed"));
+    }
+
+    #[test]
+    fn detect_server_port_reads_restart_args_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let args_file = dir.path().join("restart_args.json");
+        let args = RestartArgsFile {
+            args: vec![
+                "serve".to_string(),
+                "--host".to_string(),
+                "127.0.0.1".to_string(),
+                "--port".to_string(),
+                "40123".to_string(),
+            ],
+            cwd: dir.path().to_string_lossy().to_string(),
+        };
+        fs::write(&args_file, serde_json::to_vec(&args).unwrap()).unwrap();
+
+        assert_eq!(detect_server_port(&args_file), 40123);
+    }
+
+    #[test]
+    fn parse_port_from_args_supports_equals_style() {
+        let args = vec!["serve".to_string(), "--port=40124".to_string()];
+        assert_eq!(parse_port_from_args(&args), Some(40124));
     }
 
     #[tokio::test]

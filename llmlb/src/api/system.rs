@@ -9,7 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Local, LocalResult, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -179,6 +179,33 @@ struct ScheduleResponse {
     schedule: crate::update::schedule::UpdateSchedule,
 }
 
+fn parse_scheduled_at(value: &str) -> Option<DateTime<Utc>> {
+    // Accept RFC3339 values with timezone (e.g. "...Z", "...+09:00").
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Some(dt.with_timezone(&Utc));
+    }
+
+    // Also accept `datetime-local` values from the dashboard (no timezone).
+    // They are interpreted in the server's local timezone.
+    for format in [
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%.f",
+    ] {
+        let Ok(naive) = NaiveDateTime::parse_from_str(value, format) else {
+            continue;
+        };
+        let local = match Local.from_local_datetime(&naive) {
+            LocalResult::Single(dt) => dt,
+            LocalResult::Ambiguous(dt, _) => dt,
+            LocalResult::None => return None,
+        };
+        return Some(local.with_timezone(&Utc));
+    }
+
+    None
+}
+
 /// POST /api/system/update/schedule
 ///
 /// Admin only.
@@ -202,9 +229,9 @@ pub async fn create_schedule(
     };
 
     let scheduled_at = if let Some(at) = body.scheduled_at {
-        match at.parse::<chrono::DateTime<Utc>>() {
-            Ok(dt) => Some(dt),
-            Err(_) => {
+        match parse_scheduled_at(&at) {
+            Some(dt) => Some(dt),
+            None => {
                 return AppError(LbError::Http("Invalid scheduled_at datetime".to_string()))
                     .into_response();
             }
@@ -298,5 +325,41 @@ pub async fn rollback(
     match state.update_manager.request_rollback() {
         Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "rolling_back": true }))).into_response(),
         Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_scheduled_at;
+    use chrono::{Local, LocalResult, NaiveDateTime, TimeZone, Utc};
+
+    #[test]
+    fn parse_scheduled_at_accepts_rfc3339() {
+        let parsed = parse_scheduled_at("2026-02-23T12:34:56Z").expect("must parse RFC3339");
+        let expected = Utc
+            .with_ymd_and_hms(2026, 2, 23, 12, 34, 56)
+            .single()
+            .expect("valid datetime");
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn parse_scheduled_at_accepts_datetime_local_without_timezone() {
+        let input = "2026-02-23T12:34";
+        let parsed = parse_scheduled_at(input).expect("must parse datetime-local");
+
+        let naive =
+            NaiveDateTime::parse_from_str(input, "%Y-%m-%dT%H:%M").expect("valid naive datetime");
+        let expected = match Local.from_local_datetime(&naive) {
+            LocalResult::Single(dt) => dt.with_timezone(&Utc),
+            LocalResult::Ambiguous(dt, _) => dt.with_timezone(&Utc),
+            LocalResult::None => panic!("datetime must be representable in local timezone"),
+        };
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn parse_scheduled_at_rejects_invalid_input() {
+        assert!(parse_scheduled_at("not-a-date").is_none());
     }
 }

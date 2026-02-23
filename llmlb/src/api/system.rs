@@ -62,7 +62,8 @@ pub async fn get_system(State(state): State<AppState>) -> Response {
 
 /// POST /api/system/update/check
 ///
-/// Force an update check now (ignores TTL cache).
+/// Check for updates (GitHub API only, no download).
+/// Rate-limited to once per 60 seconds.
 ///
 /// Admin only (JWT middleware applied in create_app).
 pub async fn check_update(
@@ -74,9 +75,38 @@ pub async fn check_update(
             .into_response();
     }
 
-    match state.update_manager.check_now().await {
-        Ok(update) => (StatusCode::OK, Json(CheckUpdateResponse { update })).into_response(),
-        Err(err) => AppError(LbError::Http(err.to_string())).into_response(),
+    // Rate limit: reject if checked within the last 60 seconds.
+    if state.update_manager.is_manual_check_rate_limited() {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "error": {
+                    "message": "Rate limited: please wait before checking again",
+                    "type": "rate_limit",
+                    "code": 429
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    state.update_manager.record_manual_check();
+
+    match state.update_manager.check_only(true).await {
+        Ok(update) => {
+            // If an update is available, start background download.
+            if matches!(&update, crate::update::UpdateState::Available { .. }) {
+                state.update_manager.download_background();
+            }
+            (StatusCode::OK, Json(CheckUpdateResponse { update })).into_response()
+        }
+        Err(err) => {
+            state
+                .update_manager
+                .record_check_failure(err.to_string())
+                .await;
+            AppError(LbError::Http(err.to_string())).into_response()
+        }
     }
 }
 

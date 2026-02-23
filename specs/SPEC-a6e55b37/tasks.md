@@ -116,18 +116,18 @@
 ### Phase 2a: 応答性改善 — Tests (RED)
 <!-- markdownlint-disable MD024 -->
 
-- [ ] T210 [P] `check_only` のユニットテスト（GitHub APIチェックのみ同期、5秒以内にレスポンス）
-- [ ] T211 [P] `download_background` のユニットテスト（バックグラウンドDL開始、PayloadState進捗更新）
-- [ ] T212 [P] レートリミット判定のユニットテスト（60秒以内連打→拒否、60秒経過→許可）
-- [ ] T213 `POST /api/system/update/check` のインテグレーションテスト（チェックのみ同期応答、DLバックグラウンド開始、429レートリミット）
+- [x] T210 [P] `check_only` のユニットテスト（GitHub APIチェックのみ同期、5秒以内にレスポンス）
+- [x] T211 [P] `download_background` のユニットテスト（バックグラウンドDL開始、PayloadState進捗更新）
+- [x] T212 [P] レートリミット判定のユニットテスト（60秒以内連打→拒否、60秒経過→許可）
+- [x] T213 `POST /api/system/update/check` のインテグレーションテスト（チェックのみ同期応答、DLバックグラウンド開始、429レートリミット）
 
 ### Phase 2a: 応答性改善 — Core
 
-- [ ] T220 `check_and_maybe_download` を `check_only`（同期、5秒以内）と `download_background`（非同期）に分離
-- [ ] T221 `PayloadState::Downloading` に `downloaded_bytes` / `total_bytes` フィールドを追加
-- [ ] T222 `download_to_path` にストリーミングDL＋進捗コールバックを実装
-- [ ] T223 `POST /api/system/update/check` をチェックのみに変更（DLはバックグラウンド自動開始）
-- [ ] T224 サーバー側レートリミット実装（手動チェック最小60秒間隔、超過時429）
+- [x] T220 `check_and_maybe_download` を `check_only`（同期、5秒以内）と `download_background`（非同期）に分離
+- [x] T221 `PayloadState::Downloading` に `downloaded_bytes` / `total_bytes` フィールドを追加
+- [x] T222 `download_to_path` にストリーミングDL＋進捗コールバックを実装
+- [x] T223 `POST /api/system/update/check` をチェックのみに変更（DLはバックグラウンド自動開始）
+- [x] T224 サーバー側レートリミット実装（手動チェック最小60秒間隔、超過時429）
 
 ### Phase 2b: スケジューリング — Tests (RED)
 

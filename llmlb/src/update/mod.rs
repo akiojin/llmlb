@@ -5,6 +5,11 @@
 //! - Background download of the preferred payload for the current platform
 //! - User-approved apply flow: drain inference requests, then restart into the new version
 //! - Internal helper modes (`__internal`) to safely replace binaries / run installers
+//! - Update scheduling (immediate / idle / time-based)
+//! - Update history recording
+
+pub mod history;
+pub mod schedule;
 
 use crate::{inference_gate::InferenceGate, shutdown::ShutdownController};
 use anyhow::{anyhow, Context, Result};
@@ -206,6 +211,11 @@ struct UpdateManagerInner {
     /// Rate-limit: last time a manual check was performed.
     last_manual_check: Mutex<Option<tokio::time::Instant>>,
 
+    /// Schedule persistence.
+    schedule_store: schedule::ScheduleStore,
+    /// History persistence.
+    history_store: history::HistoryStore,
+
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     tray_proxy: RwLock<Option<crate::gui::tray::TrayEventProxy>>,
 }
@@ -268,6 +278,10 @@ impl UpdateManager {
             .context("Failed to parse CARGO_PKG_VERSION as semver")?;
 
         let (cache_path, updates_dir) = default_paths()?;
+        let data_dir = cache_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
 
         Ok(Self {
             inner: Arc::new(UpdateManagerInner {
@@ -286,6 +300,8 @@ impl UpdateManager {
                 updates_dir,
                 state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
                 last_manual_check: Mutex::new(None),
+                schedule_store: schedule::ScheduleStore::new(&data_dir),
+                history_store: history::HistoryStore::new(&data_dir),
                 #[cfg(any(target_os = "windows", target_os = "macos"))]
                 tray_proxy: RwLock::new(None),
             }),
@@ -428,6 +444,138 @@ impl UpdateManager {
         self.inner.gate.in_flight()
     }
 
+    // ---- Schedule API ----
+
+    /// Get the current update schedule (if any).
+    pub fn get_schedule(&self) -> Result<Option<schedule::UpdateSchedule>> {
+        self.inner.schedule_store.load()
+    }
+
+    /// Create a new schedule. Returns `Err` if a schedule already exists.
+    pub fn create_schedule(
+        &self,
+        sched: schedule::UpdateSchedule,
+    ) -> Result<schedule::UpdateSchedule> {
+        if let Some(existing) = self.inner.schedule_store.load()? {
+            return Err(anyhow!(
+                "A schedule already exists (mode={:?}, target={})",
+                existing.mode,
+                existing.target_version
+            ));
+        }
+        self.inner.schedule_store.save(&sched)?;
+        // If immediate, trigger apply right away.
+        if sched.mode == schedule::ScheduleMode::Immediate {
+            self.request_apply();
+        }
+        Ok(sched)
+    }
+
+    /// Cancel the current schedule. Returns `Err` if no schedule exists.
+    pub fn cancel_schedule(&self) -> Result<()> {
+        if !self.inner.schedule_store.remove()? {
+            return Err(anyhow!("No schedule exists"));
+        }
+        Ok(())
+    }
+
+    /// Restore a persisted schedule on startup.
+    ///
+    /// If a schedule exists (e.g. after restart), it is re-activated:
+    /// - `Immediate`: triggers apply right away.
+    /// - `Idle` / `Scheduled`: the schedule loop will pick it up.
+    fn restore_schedule(&self) {
+        match self.inner.schedule_store.load() {
+            Ok(Some(sched)) => {
+                tracing::info!(
+                    "restored update schedule: mode={:?}, target={}",
+                    sched.mode,
+                    sched.target_version
+                );
+                if sched.mode == schedule::ScheduleMode::Immediate {
+                    self.request_apply();
+                }
+                // Idle and Scheduled modes are handled by start_schedule_loop.
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!("failed to restore update schedule: {e}");
+            }
+        }
+    }
+
+    /// Start the background schedule monitoring loop.
+    ///
+    /// This loop polls the schedule store every 5 seconds and triggers apply
+    /// when schedule conditions are met:
+    /// - `Idle`: triggers when `in_flight == 0` and an update is available.
+    /// - `Scheduled`: triggers when the current time >= `scheduled_at`.
+    fn start_schedule_loop(&self) {
+        let mgr = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+            loop {
+                interval.tick().await;
+
+                let sched = match mgr.inner.schedule_store.load() {
+                    Ok(Some(s)) => s,
+                    _ => continue,
+                };
+
+                // Only trigger if an update is available.
+                let is_available = {
+                    let st = mgr.inner.state.read().await;
+                    matches!(&*st, UpdateState::Available { .. })
+                };
+                if !is_available {
+                    continue;
+                }
+
+                let should_trigger = match sched.mode {
+                    schedule::ScheduleMode::Immediate => {
+                        // Immediate schedules are handled at creation and restore;
+                        // if still present, trigger now.
+                        true
+                    }
+                    schedule::ScheduleMode::Idle => mgr.inner.gate.in_flight() == 0,
+                    schedule::ScheduleMode::Scheduled => {
+                        if let Some(at) = sched.scheduled_at {
+                            Utc::now() >= at
+                        } else {
+                            // No scheduled_at — treat as immediate.
+                            true
+                        }
+                    }
+                };
+
+                if should_trigger {
+                    tracing::info!(
+                        "schedule triggered: mode={:?}, target={}",
+                        sched.mode,
+                        sched.target_version
+                    );
+                    // Remove the schedule before triggering to prevent re-trigger.
+                    let _ = mgr.inner.schedule_store.remove();
+                    mgr.request_apply();
+                }
+            }
+        });
+    }
+
+    /// Append a history entry.
+    pub fn record_history(&self, entry: history::HistoryEntry) {
+        if let Err(e) = self.inner.history_store.append(entry) {
+            tracing::warn!("Failed to record update history: {e}");
+        }
+    }
+
+    /// Load update history.
+    pub fn get_history(&self) -> Vec<history::HistoryEntry> {
+        self.inner.history_store.load().unwrap_or_default()
+    }
+
     /// Request applying the update as soon as it is safe.
     ///
     /// The background task will:
@@ -459,11 +607,18 @@ impl UpdateManager {
         Ok(dropped_in_flight)
     }
 
-    /// Start background update check loop and apply loop (idempotent).
+    /// Start background update check loop, apply loop, and schedule loop (idempotent).
     pub fn start_background_tasks(&self) {
         if self.inner.started.swap(true, Ordering::SeqCst) {
             return;
         }
+
+        // Restore any persisted schedule on startup.
+        self.restore_schedule();
+
+        // Start schedule monitoring loop.
+        self.start_schedule_loop();
+
         let mgr = self.clone();
         tokio::spawn(async move {
             if let Err(e) = mgr.check_and_maybe_download(false).await {
@@ -2166,6 +2321,199 @@ mod tests {
                 UpdateState::Failed { message, .. } if message.contains("timed out")
             ),
             "should not be in timeout-failed state: {state:?}"
+        );
+    }
+
+    /// Helper to create an UpdateManager with an isolated temp data dir for testing.
+    ///
+    /// Uses a unique env var approach with per-test isolation.
+    fn test_manager_with_gate(gate: InferenceGate) -> (UpdateManager, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        // Ensure directory exists.
+        std::fs::create_dir_all(tmp.path()).expect("create data dir");
+        // Use unsafe set_var inside serial test — each test gets its own temp dir.
+        unsafe {
+            std::env::set_var("LLMLB_DATA_DIR", tmp.path());
+        }
+        let manager =
+            UpdateManager::new(reqwest::Client::new(), gate, ShutdownController::default())
+                .expect("create update manager");
+        (manager, tmp)
+    }
+
+    // =======================================================================
+    // T232: アイドル時適用トリガー — in_flight=0でスケジュール起動
+    // =======================================================================
+    #[tokio::test]
+    async fn idle_schedule_triggers_when_in_flight_zero() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate.clone());
+
+        // Set up available state.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Create idle schedule.
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Idle,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        // No in-flight requests → in_flight == 0.
+        assert_eq!(gate.in_flight(), 0);
+
+        // Start schedule loop.
+        manager.start_schedule_loop();
+
+        // Give the loop time to detect idle and trigger.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Schedule should have been removed (triggered).
+        assert!(
+            manager.get_schedule().unwrap().is_none(),
+            "schedule should be consumed after idle trigger"
+        );
+
+        // Apply request should have been triggered.
+        let mode = manager.take_apply_request_mode();
+        assert_eq!(
+            mode,
+            ApplyRequestMode::Normal,
+            "idle schedule should trigger normal apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_schedule_does_not_trigger_while_busy() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate.clone());
+
+        // Set up available state.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Simulate in-flight request.
+        let _guard = gate.begin_for_test();
+
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Idle,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Schedule should still exist (not triggered).
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "schedule should remain while requests are in-flight"
+        );
+
+        // No apply request should be pending.
+        let mode = manager.take_apply_request_mode();
+        assert_eq!(
+            mode,
+            ApplyRequestMode::None,
+            "should not trigger while busy"
+        );
+    }
+
+    // =======================================================================
+    // T233: 時刻指定適用トリガー — 指定時刻到達でドレイン開始
+    // =======================================================================
+    #[tokio::test]
+    async fn scheduled_time_triggers_when_past_due() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Schedule for 1 second ago (already past due).
+        let scheduled_at = Utc::now() - chrono::Duration::seconds(1);
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: Some(scheduled_at),
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+
+        // Give the loop time to detect and trigger.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_none(),
+            "schedule should be consumed after scheduled_at"
+        );
+
+        let mode = manager.take_apply_request_mode();
+        assert_eq!(
+            mode,
+            ApplyRequestMode::Normal,
+            "scheduled trigger should request normal apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_time_does_not_trigger_before_time() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Schedule for 60 seconds from now (far future, won't trigger in test).
+        let scheduled_at = Utc::now() + chrono::Duration::seconds(60);
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: Some(scheduled_at),
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+
+        // Wait a bit — should NOT trigger (still 60s away).
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "schedule should not trigger before scheduled_at"
+        );
+        assert_eq!(
+            manager.take_apply_request_mode(),
+            ApplyRequestMode::None,
+            "should not trigger before time"
         );
     }
 }

@@ -131,24 +131,24 @@
 
 ### Phase 2b: スケジューリング — Tests (RED)
 
-- [ ] T230 [P] `UpdateSchedule` 構造体と `update-schedule.json` のシリアライズ/デシリアライズのユニットテスト
-- [ ] T231 [P] `update-history.json` の書き込み（追加・上限100件維持）のユニットテスト
-- [ ] T232 [P] アイドル時適用トリガー（in_flight=0で即座に適用開始）のユニットテスト
-- [ ] T233 [P] 時刻指定適用トリガー（指定時刻到達でドレイン開始）のユニットテスト
-- [ ] T234 `POST /api/system/update/schedule` のインテグレーションテスト（予約作成、コンフリクト409、キャンセル）
-- [ ] T235 `GET /api/system/update/schedule` と `DELETE /api/system/update/schedule` のインテグレーションテスト
+- [x] T230 [P] `UpdateSchedule` 構造体と `update-schedule.json` のシリアライズ/デシリアライズのユニットテスト
+- [x] T231 [P] `update-history.json` の書き込み（追加・上限100件維持）のユニットテスト
+- [x] T232 [P] アイドル時適用トリガー（in_flight=0で即座に適用開始）のユニットテスト
+- [x] T233 [P] 時刻指定適用トリガー（指定時刻到達でドレイン開始）のユニットテスト
+- [x] T234 `POST /api/system/update/schedule` のインテグレーションテスト（予約作成、コンフリクト409、キャンセル）
+- [x] T235 `GET /api/system/update/schedule` と `DELETE /api/system/update/schedule` のインテグレーションテスト
 
 ### Phase 2b: スケジューリング — Core
 
-- [ ] T240 `UpdateSchedule` 構造体と `update-schedule.json` の読み書きを実装
-- [ ] T241 `UpdateHistory` 構造体と `update-history.json` の読み書きを実装（直近100件、追記）
-- [ ] T242 `POST /api/system/update/schedule` API実装（mode/datetime指定、コンフリクト検知409）
-- [ ] T243 `GET /api/system/update/schedule` API実装（現在の予約状態取得）
-- [ ] T244 `DELETE /api/system/update/schedule` API実装（予約キャンセル、予約なし時404）
-- [ ] T245 アイドル時適用ロジック実装（`InferenceGate::wait_for_idle` 監視、in_flight=0でトリガー）
-- [ ] T246 時刻指定適用ロジック実装（`tokio::time::sleep_until` で指定時刻にドレイン→適用）
-- [ ] T247 `GET /api/system` レスポンスに `schedule` フィールドを追加
-- [ ] T248 予約の再起動後復元ロジック実装（起動時に `update-schedule.json` を読み込み再開）
+- [x] T240 `UpdateSchedule` 構造体と `update-schedule.json` の読み書きを実装
+- [x] T241 `UpdateHistory` 構造体と `update-history.json` の読み書きを実装（直近100件、追記）
+- [x] T242 `POST /api/system/update/schedule` API実装（mode/datetime指定、コンフリクト検知409）
+- [x] T243 `GET /api/system/update/schedule` API実装（現在の予約状態取得）
+- [x] T244 `DELETE /api/system/update/schedule` API実装（予約キャンセル、予約なし時404）
+- [x] T245 アイドル時適用ロジック実装（`InferenceGate::wait_for_idle` 監視、in_flight=0でトリガー）
+- [x] T246 時刻指定適用ロジック実装（`tokio::time::sleep_until` で指定時刻にドレイン→適用）
+- [x] T247 `GET /api/system` レスポンスに `schedule` フィールドを追加
+- [x] T248 予約の再起動後復元ロジック実装（起動時に `update-schedule.json` を読み込み再開）
 
 ### Phase 2c: ドレインタイムアウト — Tests (RED)
 

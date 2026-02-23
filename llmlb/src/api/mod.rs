@@ -297,15 +297,22 @@ pub fn create_app(state: AppState) -> Router {
     };
 
     // システムAPI（更新状態/適用）
-    let system_routes = Router::new()
-        .route("/system", get(system::get_system))
+    // GET /api/system は認証不要（FR-006: バージョン情報を常時表示するため）
+    // POST /api/system/update/* は JWT + CSRF で保護
+    let system_mutation_routes = Router::new()
         .route("/system/update/check", post(system::check_update))
         .route("/system/update/apply", post(system::apply_update))
         .route(
             "/system/update/apply/force",
             post(system::apply_force_update),
+        )
+        .route(
+            "/system/update/schedule",
+            post(system::create_schedule)
+                .get(system::get_schedule)
+                .delete(system::cancel_schedule),
         );
-    let system_routes = system_routes
+    let system_mutation_routes = system_mutation_routes
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
@@ -511,11 +518,13 @@ pub fn create_app(state: AppState) -> Router {
     let api_routes = Router::new()
         // 認証不要エンドポイント
         .route("/version", get(system::get_version))
+        // GET /api/system: 認証不要（FR-006: バージョン・更新状態を常時取得可能にする）
+        .route("/system", get(system::get_system))
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
         .merge(auth_routes)
-        .merge(system_routes)
+        .merge(system_mutation_routes)
         .merge(dashboard_api_routes)
         .merge(admin_routes)
         .merge(endpoint_routes)

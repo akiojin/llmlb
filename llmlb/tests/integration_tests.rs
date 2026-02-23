@@ -122,6 +122,10 @@ mod system_update_apply_api_test;
 #[path = "integration/api_system_test.rs"]
 mod v0_system_test;
 
+// SPEC-a6e55b37: GET /api/system 認証不要テスト (FR-006)
+#[path = "integration/system_info_public_test.rs"]
+mod system_info_public_test;
+
 // SPEC-62ac4b68: IPアドレスロギング＆クライアント分析
 #[path = "integration/settings_test.rs"]
 mod settings_test;

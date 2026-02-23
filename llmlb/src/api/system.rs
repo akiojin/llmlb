@@ -1,4 +1,4 @@
-//! System API (self-update status / apply).
+//! System API (self-update status / apply / schedule).
 
 use crate::common::auth::{Claims, UserRole};
 use crate::common::error::LbError;
@@ -9,7 +9,8 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use serde::Serialize;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::error::AppError;
@@ -20,6 +21,7 @@ struct SystemInfoResponse {
     pid: u32,
     in_flight: usize,
     update: crate::update::UpdateState,
+    schedule: Option<crate::update::schedule::UpdateSchedule>,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,11 +53,13 @@ pub async fn get_version() -> Response {
 pub async fn get_system(State(state): State<AppState>) -> Response {
     let update = state.update_manager.state().await;
     let in_flight = state.inference_gate.in_flight();
+    let schedule = state.update_manager.get_schedule().ok().flatten();
     Json(SystemInfoResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         pid: std::process::id(),
         in_flight,
         update,
+        schedule,
     })
     .into_response()
 }
@@ -156,5 +160,122 @@ pub async fn apply_force_update(
         )
             .into_response(),
         Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
+    }
+}
+
+/// Request body for `POST /api/system/update/schedule`.
+#[derive(Debug, Deserialize)]
+pub struct CreateScheduleRequest {
+    mode: String,
+    #[serde(default)]
+    scheduled_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ScheduleResponse {
+    schedule: crate::update::schedule::UpdateSchedule,
+}
+
+/// POST /api/system/update/schedule
+///
+/// Admin only.
+pub async fn create_schedule(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<CreateScheduleRequest>,
+) -> Response {
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
+    }
+
+    let mode = match body.mode.as_str() {
+        "immediate" => crate::update::schedule::ScheduleMode::Immediate,
+        "idle" => crate::update::schedule::ScheduleMode::Idle,
+        "scheduled" => crate::update::schedule::ScheduleMode::Scheduled,
+        _ => {
+            return AppError(LbError::Http(format!("Invalid mode: {}", body.mode))).into_response();
+        }
+    };
+
+    let scheduled_at = if let Some(at) = body.scheduled_at {
+        match at.parse::<chrono::DateTime<Utc>>() {
+            Ok(dt) => Some(dt),
+            Err(_) => {
+                return AppError(LbError::Http("Invalid scheduled_at datetime".to_string()))
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+
+    // Determine the target version from current update state.
+    let target_version = match state.update_manager.state().await {
+        crate::update::UpdateState::Available { latest, .. } => latest,
+        _ => {
+            return AppError(LbError::Conflict(
+                "No update is available to schedule".to_string(),
+            ))
+            .into_response();
+        }
+    };
+
+    let schedule = crate::update::schedule::UpdateSchedule {
+        mode,
+        scheduled_at,
+        scheduled_by: claims.sub,
+        target_version,
+        created_at: Utc::now(),
+    };
+
+    match state.update_manager.create_schedule(schedule) {
+        Ok(sched) => (
+            StatusCode::CREATED,
+            Json(ScheduleResponse { schedule: sched }),
+        )
+            .into_response(),
+        Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
+    }
+}
+
+/// GET /api/system/update/schedule
+///
+/// Admin only.
+pub async fn get_schedule(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Response {
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
+    }
+
+    match state.update_manager.get_schedule() {
+        Ok(Some(schedule)) => Json(json!({ "schedule": schedule })).into_response(),
+        Ok(None) => Json(json!({ "schedule": null })).into_response(),
+        Err(err) => AppError(LbError::Http(err.to_string())).into_response(),
+    }
+}
+
+/// DELETE /api/system/update/schedule
+///
+/// Admin only.
+pub async fn cancel_schedule(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Response {
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
+    }
+
+    match state.update_manager.cancel_schedule() {
+        Ok(()) => Json(json!({ "cancelled": true })).into_response(),
+        Err(err) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": { "message": err.to_string() } })),
+        )
+            .into_response(),
     }
 }

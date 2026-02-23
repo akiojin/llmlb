@@ -1,5 +1,11 @@
 # Unreleased
 
+# [5.0.2](https://github.com/akiojin/llmlb/compare/v5.0.1...v5.0.2) (2026-02-24)
+
+### Bug Fixes
+
+- スケジュール日時解析とヘルスチェック/トレイ通知を修正 (#443)
+
 # [5.0.1](https://github.com/akiojin/llmlb/compare/v5.0.0...v5.0.1) (2026-02-22)
 
 ### Bug Fixes

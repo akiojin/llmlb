@@ -23,6 +23,8 @@ pub enum InternalCommand {
     ApplyUpdate(ApplyUpdateArgs),
     /// Run an installer (pkg/msi) and restart.
     RunInstaller(RunInstallerArgs),
+    /// Rollback to the previous version from `.bak`.
+    Rollback(RollbackArgs),
 }
 
 /// Arguments for `__internal apply-update`.
@@ -73,6 +75,23 @@ pub enum InstallerKindArg {
     WindowsMsi,
 }
 
+/// Arguments for `__internal rollback`.
+#[derive(Args, Debug)]
+pub struct RollbackArgs {
+    /// PID of the process that is being rolled back
+    #[arg(long)]
+    pub old_pid: u32,
+    /// Current executable path (to be restored)
+    #[arg(long)]
+    pub target: std::path::PathBuf,
+    /// Backup executable path (.bak)
+    #[arg(long)]
+    pub backup: std::path::PathBuf,
+    /// Restart args file written by the main process
+    #[arg(long)]
+    pub args_file: std::path::PathBuf,
+}
+
 impl From<InstallerKindArg> for crate::update::InstallerKind {
     fn from(value: InstallerKindArg) -> Self {
         match value {
@@ -98,5 +117,8 @@ pub fn execute(command: InternalCommand) -> Result<()> {
             args.installer_kind.into(),
             args.args_file,
         ),
+        InternalCommand::Rollback(args) => {
+            crate::update::internal_rollback(args.old_pid, args.target, args.backup, args.args_file)
+        }
     }
 }

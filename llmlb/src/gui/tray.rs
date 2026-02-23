@@ -4,6 +4,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 
 #[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
@@ -91,6 +92,22 @@ impl TrayEventProxy {
     pub fn notify_update_up_to_date(&self) {
         let _ = self.proxy.send_event(RuntimeEvent::UpdateUpToDate);
     }
+
+    /// Notify the tray about the current update schedule.
+    ///
+    /// Pass `None` to clear the schedule display.
+    pub fn notify_schedule(&self, info: Option<ScheduleInfo>) {
+        let _ = self.proxy.send_event(RuntimeEvent::Schedule { info });
+    }
+}
+
+/// Schedule information for tray display.
+#[derive(Debug, Clone)]
+pub struct ScheduleInfo {
+    /// Display mode label: "Immediate", "Idle", or "Scheduled".
+    pub mode: String,
+    /// Scheduled time (only for `Scheduled` mode).
+    pub scheduled_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +119,7 @@ enum RuntimeEvent {
     UpdateReady,
     UpdateFailed { message: String },
     UpdateUpToDate,
+    Schedule { info: Option<ScheduleInfo> },
 }
 
 static UPDATE_APPLY_HANDLER: OnceLock<Box<dyn Fn() + Send + Sync + 'static>> = OnceLock::new();
@@ -167,6 +185,7 @@ where
                 controller.on_update_failed(message)
             }
             Event::UserEvent(RuntimeEvent::UpdateUpToDate) => controller.on_update_up_to_date(),
+            Event::UserEvent(RuntimeEvent::Schedule { info }) => controller.on_schedule(info),
             _ => (),
         })
         .context("system tray loop exited unexpectedly")?;
@@ -316,12 +335,34 @@ impl TrayController {
         self.menu.restart_to_update.set_enabled(false);
         self.menu.open_releases.set_enabled(false);
     }
+
+    fn on_schedule(&mut self, info: Option<ScheduleInfo>) {
+        match info {
+            Some(schedule) => {
+                let text = match schedule.scheduled_at {
+                    Some(at) => format!(
+                        "Update scheduled: {} ({})",
+                        schedule.mode,
+                        at.format("%Y-%m-%d %H:%M")
+                    ),
+                    None => format!("Update scheduled: {}", schedule.mode),
+                };
+                self.menu.schedule_status.set_text(&text);
+                self.menu.schedule_status.set_enabled(true);
+            }
+            None => {
+                self.menu.schedule_status.set_text("");
+                self.menu.schedule_status.set_enabled(false);
+            }
+        }
+    }
 }
 
 struct TrayMenu {
     menu: Menu,
     open_dashboard: MenuItem,
     update_status: MenuItem,
+    schedule_status: MenuItem,
     restart_to_update: MenuItem,
     open_releases: MenuItem,
     quit: MenuItem,
@@ -332,6 +373,8 @@ impl TrayMenu {
         let menu = Menu::new();
         let open_dashboard = MenuItem::new("Open Dashboard", true, None);
         let update_status = MenuItem::new("Up to date", false, None);
+        // Hidden by default; shown only when a schedule exists.
+        let schedule_status = MenuItem::new("", false, None);
         let restart_to_update = MenuItem::new("Restart to update", false, None);
         let open_releases = MenuItem::new("Open Releases", false, None);
         let quit = MenuItem::new("Quit LLM Load Balancer", true, None);
@@ -342,6 +385,8 @@ impl TrayMenu {
             .context("failed to append separator")?;
         menu.append(&update_status)
             .context("failed to append update status menu")?;
+        menu.append(&schedule_status)
+            .context("failed to append schedule status menu")?;
         menu.append(&restart_to_update)
             .context("failed to append restart-to-update menu")?;
         menu.append(&open_releases)
@@ -354,6 +399,7 @@ impl TrayMenu {
             menu,
             open_dashboard,
             update_status,
+            schedule_status,
             restart_to_update,
             open_releases,
             quit,

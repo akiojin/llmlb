@@ -75,6 +75,15 @@ impl InferenceGate {
         self.inner.abort_notify.notify_waiters();
     }
 
+    /// Simulate beginning an in-flight request (for testing only).
+    ///
+    /// Returns a guard that decrements the counter on drop.
+    #[cfg(test)]
+    pub fn begin_for_test(&self) -> InFlightTestGuard {
+        self.inner.in_flight.fetch_add(1, Ordering::SeqCst);
+        InFlightTestGuard { gate: self.clone() }
+    }
+
     fn begin(&self) -> InFlightGuard {
         self.inner.in_flight.fetch_add(1, Ordering::SeqCst);
         InFlightGuard { gate: self.clone() }
@@ -106,6 +115,20 @@ impl InferenceGate {
             }
             notified.await;
         }
+    }
+}
+
+/// Test-only guard that decrements the in-flight counter on drop.
+#[cfg(test)]
+#[derive(Debug)]
+pub struct InFlightTestGuard {
+    gate: InferenceGate,
+}
+
+#[cfg(test)]
+impl Drop for InFlightTestGuard {
+    fn drop(&mut self) {
+        self.gate.finish();
     }
 }
 

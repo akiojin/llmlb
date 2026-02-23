@@ -10,7 +10,7 @@ use axum::{
 use llmlb::{api, balancer::LoadManager, registry::endpoints::EndpointRegistry, AppState};
 use serde_json::Value;
 use std::sync::Arc;
-use tower::ServiceExt;
+use tower::{Service, ServiceExt};
 
 use crate::support;
 
@@ -139,4 +139,58 @@ async fn force_apply_returns_conflict_when_no_update_available() {
         body_text.contains("No update is available"),
         "unexpected error body: {body_text}"
     );
+}
+
+/// T213: POST /api/system/update/check returns 429 on rapid consecutive calls.
+#[tokio::test]
+async fn check_update_rate_limits_within_60_seconds() {
+    let (secret, app) = build_app().await;
+    let token = admin_jwt(&secret);
+    let mut svc = app.into_service();
+
+    // First call: may succeed or fail (no real GitHub), but should NOT be 429.
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/system/update/check")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from("{}"))
+        .unwrap();
+    let first_response = ServiceExt::<Request<Body>>::ready(&mut svc)
+        .await
+        .unwrap()
+        .call(req)
+        .await
+        .unwrap();
+    assert_ne!(
+        first_response.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "first check should not be rate-limited"
+    );
+
+    // Second call immediately: should be rate-limited (429).
+    let req2 = Request::builder()
+        .method("POST")
+        .uri("/api/system/update/check")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from("{}"))
+        .unwrap();
+    let second_response = ServiceExt::<Request<Body>>::ready(&mut svc)
+        .await
+        .unwrap()
+        .call(req2)
+        .await
+        .unwrap();
+    assert_eq!(
+        second_response.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "second check within 60s should be rate-limited"
+    );
+
+    let body = axum::body::to_bytes(second_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"]["code"], 429);
 }

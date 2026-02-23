@@ -10,6 +10,7 @@ use crate::{inference_gate::InferenceGate, shutdown::ShutdownController};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
+use futures::StreamExt;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -18,11 +19,14 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
 use tokio::sync::{Notify, RwLock};
+
+/// Minimum interval between manual update checks (seconds).
+const MANUAL_CHECK_COOLDOWN_SECS: u64 = 60;
 
 const DEFAULT_OWNER: &str = "akiojin";
 const DEFAULT_REPO: &str = "llmlb";
@@ -104,6 +108,12 @@ pub enum PayloadState {
     Downloading {
         /// When the download/extraction started.
         started_at: DateTime<Utc>,
+        /// Bytes downloaded so far (if known).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        downloaded_bytes: Option<u64>,
+        /// Total bytes expected (from Content-Length, if known).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_bytes: Option<u64>,
     },
     /// Payload is ready to apply.
     Ready {
@@ -180,10 +190,16 @@ struct UpdateManagerInner {
     repo: String,
     ttl: Duration,
 
+    /// Override for GitHub API base URL (for testing).
+    github_api_base_url: Option<String>,
+
     cache_path: PathBuf,
     updates_dir: PathBuf,
 
     state: RwLock<UpdateState>,
+
+    /// Rate-limit: last time a manual check was performed.
+    last_manual_check: Mutex<Option<tokio::time::Instant>>,
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     tray_proxy: RwLock<Option<crate::gui::tray::TrayEventProxy>>,
@@ -222,6 +238,27 @@ impl UpdateManager {
         gate: InferenceGate,
         shutdown: ShutdownController,
     ) -> Result<Self> {
+        Self::new_with_config(
+            http_client,
+            gate,
+            shutdown,
+            DEFAULT_OWNER.to_string(),
+            DEFAULT_REPO.to_string(),
+            None,
+        )
+    }
+
+    /// Create a new update manager with custom owner/repo and optional API base URL.
+    ///
+    /// `github_api_base_url` overrides the GitHub API base URL (useful for tests with wiremock).
+    pub fn new_with_config(
+        http_client: reqwest::Client,
+        gate: InferenceGate,
+        shutdown: ShutdownController,
+        owner: String,
+        repo: String,
+        github_api_base_url: Option<String>,
+    ) -> Result<Self> {
         let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
             .context("Failed to parse CARGO_PKG_VERSION as semver")?;
 
@@ -236,12 +273,14 @@ impl UpdateManager {
                 http_client,
                 gate,
                 shutdown,
-                owner: DEFAULT_OWNER.to_string(),
-                repo: DEFAULT_REPO.to_string(),
+                owner,
+                repo,
                 ttl: DEFAULT_TTL,
+                github_api_base_url,
                 cache_path,
                 updates_dir,
                 state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
+                last_manual_check: Mutex::new(None),
                 #[cfg(any(target_os = "windows", target_os = "macos"))]
                 tray_proxy: RwLock::new(None),
             }),
@@ -262,6 +301,7 @@ impl UpdateManager {
     /// Force an update check now (ignores TTL cache).
     ///
     /// Intended for the dashboard "Check for updates" button.
+    /// **Deprecated**: Use [`check_only`] + [`download_background`] instead.
     pub async fn check_now(&self) -> Result<UpdateState> {
         match self.check_and_maybe_download(true).await {
             Ok(()) => Ok(self.state().await),
@@ -270,6 +310,112 @@ impl UpdateManager {
                 Err(err)
             }
         }
+    }
+
+    /// Check GitHub for a newer release (synchronous, no download).
+    ///
+    /// This only queries the GitHub Releases API (timeout 5 s) and updates the
+    /// internal state.  It intentionally does **not** start downloading the
+    /// payload so the caller can return a fast response.
+    pub async fn check_only(&self, force: bool) -> Result<UpdateState> {
+        if !force {
+            if let Some(cache) = load_cache(&self.inner.cache_path).ok().flatten() {
+                let age = Utc::now().signed_duration_since(cache.last_checked_at);
+                if age.to_std().unwrap_or(Duration::MAX) < self.inner.ttl {
+                    self.apply_cache(cache).await?;
+                    return Ok(self.state().await);
+                }
+            }
+        }
+
+        let timeout = Duration::from_secs(5);
+        let release = fetch_latest_release(
+            &self.inner.http_client,
+            &self.inner.owner,
+            &self.inner.repo,
+            timeout,
+            self.inner.github_api_base_url.as_deref(),
+        )
+        .await?;
+        let latest = parse_tag_to_version(&release.tag_name)?;
+        if latest <= self.inner.current_version {
+            *self.inner.state.write().await = UpdateState::UpToDate {
+                checked_at: Some(Utc::now()),
+            };
+            save_cache(
+                &self.inner.cache_path,
+                UpdateCacheFile {
+                    last_checked_at: Utc::now(),
+                    latest_version: Some(latest.to_string()),
+                    release_url: Some(release.html_url.clone()),
+                    portable_asset_url: None,
+                    installer_asset_url: None,
+                },
+            )?;
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            notify_tray_up_to_date(&self.inner.tray_proxy).await;
+            return Ok(self.state().await);
+        }
+
+        let platform = Platform::detect()?;
+        let (portable_asset, installer_asset) = select_assets(&release, &platform);
+
+        let cache = UpdateCacheFile {
+            last_checked_at: Utc::now(),
+            latest_version: Some(latest.to_string()),
+            release_url: Some(release.html_url.clone()),
+            portable_asset_url: portable_asset
+                .as_ref()
+                .map(|a| a.browser_download_url.clone()),
+            installer_asset_url: installer_asset
+                .as_ref()
+                .map(|a| a.browser_download_url.clone()),
+        };
+        save_cache(&self.inner.cache_path, cache.clone())?;
+
+        let mut st = self.inner.state.write().await;
+        *st = UpdateState::Available {
+            current: self.inner.current_version.to_string(),
+            latest: latest.to_string(),
+            release_url: release.html_url,
+            portable_asset_url: cache.portable_asset_url.clone(),
+            installer_asset_url: cache.installer_asset_url.clone(),
+            payload: PayloadState::NotReady,
+            checked_at: cache.last_checked_at,
+        };
+
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        notify_tray_available(&self.inner.tray_proxy, latest.to_string()).await;
+
+        Ok(st.clone())
+    }
+
+    /// Spawn a background task that downloads the update payload (if available).
+    ///
+    /// Returns immediately.  The download progress is reflected in
+    /// `PayloadState::Downloading { downloaded_bytes, total_bytes }`.
+    pub fn download_background(&self) {
+        let mgr = self.clone();
+        tokio::spawn(async move {
+            if let Err(e) = mgr.ensure_payload_ready().await {
+                tracing::warn!("background payload download failed: {e}");
+            }
+        });
+    }
+
+    /// Return `true` if a manual check was performed less than 60 s ago.
+    pub fn is_manual_check_rate_limited(&self) -> bool {
+        let guard = self.inner.last_manual_check.lock().unwrap();
+        match *guard {
+            Some(instant) => instant.elapsed() < Duration::from_secs(MANUAL_CHECK_COOLDOWN_SECS),
+            None => false,
+        }
+    }
+
+    /// Record that a manual check was just performed (for rate limiting).
+    pub fn record_manual_check(&self) {
+        let mut guard = self.inner.last_manual_check.lock().unwrap();
+        *guard = Some(tokio::time::Instant::now());
     }
 
     /// Return the current in-flight inference request count.
@@ -501,6 +647,7 @@ impl UpdateManager {
             &self.inner.owner,
             &self.inner.repo,
             timeout,
+            self.inner.github_api_base_url.as_deref(),
         )
         .await?;
         let latest = parse_tag_to_version(&release.tag_name)?;
@@ -591,7 +738,11 @@ impl UpdateManager {
         Ok(())
     }
 
-    async fn record_check_failure(&self, message: String) {
+    /// Record an update check failure.
+    ///
+    /// Preserves an already-discovered `Available` state even if a subsequent
+    /// manual check temporarily fails.
+    pub async fn record_check_failure(&self, message: String) {
         let mut st = self.inner.state.write().await;
         // Keep an already discovered update actionable even if a subsequent
         // manual check temporarily fails (e.g., transient GitHub outage).
@@ -653,6 +804,8 @@ impl UpdateManager {
             if let UpdateState::Available { payload, .. } = &mut *st {
                 *payload = PayloadState::Downloading {
                     started_at: Utc::now(),
+                    downloaded_bytes: None,
+                    total_bytes: None,
                 };
             }
         }
@@ -688,12 +841,33 @@ impl UpdateManager {
         let update_dir = self.inner.updates_dir.join(&latest);
         fs::create_dir_all(&update_dir).ok();
 
+        let state_ref = self.inner.clone();
+        let progress_cb: ProgressCallback = Box::new(move |downloaded, total| {
+            if let Ok(mut st) = state_ref.state.try_write() {
+                if let UpdateState::Available { payload, .. } = &mut *st {
+                    if matches!(payload, PayloadState::Downloading { .. }) {
+                        *payload = PayloadState::Downloading {
+                            started_at: Utc::now(),
+                            downloaded_bytes: Some(downloaded),
+                            total_bytes: total,
+                        };
+                    }
+                }
+            }
+        });
+
         let kind = match plan {
             ApplyPlan::Portable { url } => {
                 let asset_name =
                     asset_name_from_url(&url).unwrap_or_else(|| "llmlb-update".to_string());
                 let archive_path = update_dir.join(&asset_name);
-                download_to_path(&self.inner.http_client, &url, &archive_path).await?;
+                download_to_path(
+                    &self.inner.http_client,
+                    &url,
+                    &archive_path,
+                    Some(progress_cb),
+                )
+                .await?;
                 let extract_dir = update_dir.join("extract");
                 if extract_dir.exists() {
                     fs::remove_dir_all(&extract_dir).ok();
@@ -711,7 +885,7 @@ impl UpdateManager {
                 let asset_name =
                     asset_name_from_url(&url).unwrap_or_else(|| "llmlb-installer".to_string());
                 let installer_path = update_dir.join(&asset_name);
-                download_to_path(&self.inner.http_client, &url, &installer_path).await?;
+                download_to_path(&self.inner.http_client, &url, &installer_path, None).await?;
                 PayloadKind::Installer {
                     installer_path: installer_path.to_string_lossy().to_string(),
                     kind,
@@ -898,8 +1072,10 @@ async fn fetch_latest_release(
     owner: &str,
     repo: &str,
     timeout: Duration,
+    api_base_url: Option<&str>,
 ) -> Result<GitHubRelease> {
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
+    let base = api_base_url.unwrap_or("https://api.github.com");
+    let url = format!("{base}/repos/{owner}/{repo}/releases/latest");
     let user_agent = format!("llmlb/{}", env!("CARGO_PKG_VERSION"));
     let res = client
         .get(url)
@@ -1067,21 +1243,40 @@ fn asset_name_from_url(url: &str) -> Option<String> {
     url.split('/').next_back().map(|s| s.to_string())
 }
 
-async fn download_to_path(client: &reqwest::Client, url: &str, path: &Path) -> Result<()> {
+/// Progress callback for streaming downloads: `(downloaded_bytes, total_bytes)`.
+type ProgressCallback = Box<dyn Fn(u64, Option<u64>) + Send + Sync>;
+
+async fn download_to_path(
+    client: &reqwest::Client,
+    url: &str,
+    path: &Path,
+    on_progress: Option<ProgressCallback>,
+) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).ok();
     }
     let res = client
         .get(url)
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(300))
         .send()
         .await?;
     if !res.status().is_success() {
         return Err(anyhow!("download failed with status {}", res.status()));
     }
-    let bytes = res.bytes().await?;
+    let total_bytes = res.content_length();
     let tmp = path.with_extension("tmp");
-    fs::write(&tmp, &bytes)?;
+    let mut file = fs::File::create(&tmp)?;
+    let mut downloaded: u64 = 0;
+    let mut stream = res.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("Error reading download stream")?;
+        io::Write::write_all(&mut file, &chunk)?;
+        downloaded += chunk.len() as u64;
+        if let Some(ref cb) = on_progress {
+            cb(downloaded, total_bytes);
+        }
+    }
+    drop(file);
     fs::rename(tmp, path)?;
     Ok(())
 }
@@ -1638,5 +1833,166 @@ mod tests {
             .expect("force apply request should be accepted");
         assert_eq!(dropped, 0);
         assert_eq!(manager.take_apply_request_mode(), ApplyRequestMode::Force);
+    }
+
+    // =======================================================================
+    // T210: check_only — GitHub APIチェックのみ同期、DLは行わない
+    // =======================================================================
+    #[tokio::test]
+    async fn check_only_does_not_download_payload() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/repos/test-owner/test-repo/releases/latest"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "tag_name": "v99.0.0",
+                "html_url": "https://github.com/test-owner/test-repo/releases/tag/v99.0.0",
+                "assets": [{
+                    "name": format!("llmlb-{}.tar.gz", Platform::detect().unwrap().artifact().unwrap_or("linux-x86_64")),
+                    "browser_download_url": format!("{}/download/portable.tar.gz", mock_server.uri()),
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let manager = UpdateManager::new_with_config(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+            "test-owner".to_string(),
+            "test-repo".to_string(),
+            Some(mock_server.uri()),
+        )
+        .expect("create update manager");
+
+        let state = manager.check_only(true).await.expect("check_only");
+
+        // Should discover the update.
+        match &state {
+            UpdateState::Available {
+                latest, payload, ..
+            } => {
+                assert_eq!(latest, "99.0.0");
+                // check_only must NOT start downloading.
+                assert_eq!(*payload, PayloadState::NotReady);
+            }
+            other => panic!("expected available, got {other:?}"),
+        }
+    }
+
+    // =======================================================================
+    // T211: download_background — バックグラウンドDL開始、進捗更新
+    // =======================================================================
+    #[tokio::test]
+    async fn download_background_transitions_to_downloading() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Serve a tiny payload so download completes.
+        Mock::given(method("GET"))
+            .and(path("/download/portable.tar.gz"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(vec![0u8; 100])
+                    .insert_header("content-length", "100"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // Pre-seed available state with a portable asset URL pointing to mock.
+        {
+            let mut st = manager.inner.state.write().await;
+            *st = UpdateState::Available {
+                current: "4.5.0".to_string(),
+                latest: "4.5.1".to_string(),
+                release_url: "https://example.com/release".to_string(),
+                portable_asset_url: Some(format!("{}/download/portable.tar.gz", mock_server.uri())),
+                installer_asset_url: None,
+                payload: PayloadState::NotReady,
+                checked_at: Utc::now(),
+            };
+        }
+
+        // Start background download.
+        manager.download_background();
+
+        // Give some time for async task to start and update state.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let state = manager.state().await;
+        match &state {
+            UpdateState::Available { payload, .. } => {
+                // Should be Downloading or Ready (if completed quickly).
+                assert!(
+                    matches!(
+                        payload,
+                        PayloadState::Downloading { .. } | PayloadState::Ready { .. }
+                    ),
+                    "expected Downloading or Ready, got {payload:?}"
+                );
+            }
+            other => panic!("expected available, got {other:?}"),
+        }
+    }
+
+    // =======================================================================
+    // T212: レートリミット判定
+    // =======================================================================
+    #[tokio::test]
+    async fn rate_limit_rejects_within_60_seconds() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // First call should succeed (not rate-limited).
+        assert!(
+            !manager.is_manual_check_rate_limited(),
+            "first call should not be rate-limited"
+        );
+        manager.record_manual_check();
+
+        // Immediate second call should be rate-limited.
+        assert!(
+            manager.is_manual_check_rate_limited(),
+            "second call within 60s should be rate-limited"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limit_allows_after_cooldown() {
+        use tokio::time;
+
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        manager.record_manual_check();
+        assert!(manager.is_manual_check_rate_limited());
+
+        // Advance time past 60 seconds.
+        time::pause();
+        time::advance(Duration::from_secs(61)).await;
+
+        assert!(
+            !manager.is_manual_check_rate_limited(),
+            "should allow check after 60s cooldown"
+        );
     }
 }

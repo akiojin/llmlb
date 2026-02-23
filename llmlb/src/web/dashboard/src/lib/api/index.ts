@@ -67,8 +67,11 @@ export type {
   UpdatePayloadState,
   UpdateState,
   SystemInfo,
+  ScheduleInfo,
   ApplyUpdateResponse,
   ForceApplyUpdateResponse,
+  CreateScheduleRequest,
+  RollbackResponse,
 } from './system'
 
 export { apiKeysApi } from './api-keys'

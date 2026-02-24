@@ -94,14 +94,39 @@ pub async fn upsert_daily_stats(
     output_tokens: u64,
     duration_ms: u64,
 ) -> Result<(), sqlx::Error> {
+    upsert_daily_stats_with_api_kind(
+        pool,
+        endpoint_id,
+        model_id,
+        date,
+        "chat_completions",
+        success,
+        output_tokens,
+        duration_ms,
+    )
+    .await
+}
+
+/// api_kind指定付きの日次統計UPSERT
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_daily_stats_with_api_kind(
+    pool: &SqlitePool,
+    endpoint_id: Uuid,
+    model_id: &str,
+    date: &str,
+    api_kind: &str,
+    success: bool,
+    output_tokens: u64,
+    duration_ms: u64,
+) -> Result<(), sqlx::Error> {
     let success_increment: i64 = if success { 1 } else { 0 };
     let failure_increment: i64 = if success { 0 } else { 1 };
 
     sqlx::query(
         r#"
-        INSERT INTO endpoint_daily_stats (endpoint_id, model_id, date, total_requests, successful_requests, failed_requests, total_output_tokens, total_duration_ms)
-        VALUES (?, ?, ?, 1, ?, ?, ?, ?)
-        ON CONFLICT(endpoint_id, model_id, date) DO UPDATE SET
+        INSERT INTO endpoint_daily_stats (endpoint_id, model_id, date, api_kind, total_requests, successful_requests, failed_requests, total_output_tokens, total_duration_ms)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+        ON CONFLICT(endpoint_id, model_id, date, api_kind) DO UPDATE SET
             total_requests = total_requests + 1,
             successful_requests = successful_requests + excluded.successful_requests,
             failed_requests = failed_requests + excluded.failed_requests,
@@ -112,6 +137,7 @@ pub async fn upsert_daily_stats(
     .bind(endpoint_id.to_string())
     .bind(model_id)
     .bind(date)
+    .bind(api_kind)
     .bind(success_increment)
     .bind(failure_increment)
     .bind(output_tokens as i64)
@@ -260,9 +286,10 @@ pub async fn get_today_stats_all(
         SELECT
             endpoint_id,
             model_id,
+            api_kind,
             total_output_tokens,
             total_duration_ms,
-            total_requests
+            successful_requests
         FROM endpoint_daily_stats
         WHERE date = ?
           AND total_output_tokens > 0
@@ -283,21 +310,24 @@ pub struct TpsSeedEntry {
     pub endpoint_id: Uuid,
     /// モデルID
     pub model_id: String,
+    /// API種別（chat_completions/completions/responses）
+    pub api_kind: String,
     /// 出力トークン累計
     pub total_output_tokens: i64,
     /// 処理時間累計（ミリ秒）
     pub total_duration_ms: i64,
-    /// リクエスト数
-    pub total_requests: i64,
+    /// TPS対象リクエスト数（成功リクエストのみ）
+    pub successful_requests: i64,
 }
 
 #[derive(sqlx::FromRow)]
 struct TpsSeedRow {
     endpoint_id: String,
     model_id: String,
+    api_kind: String,
     total_output_tokens: i64,
     total_duration_ms: i64,
-    total_requests: i64,
+    successful_requests: i64,
 }
 
 impl From<TpsSeedRow> for TpsSeedEntry {
@@ -305,9 +335,10 @@ impl From<TpsSeedRow> for TpsSeedEntry {
         TpsSeedEntry {
             endpoint_id: Uuid::parse_str(&row.endpoint_id).unwrap_or_default(),
             model_id: row.model_id,
+            api_kind: row.api_kind,
             total_output_tokens: row.total_output_tokens,
             total_duration_ms: row.total_duration_ms,
-            total_requests: row.total_requests,
+            successful_requests: row.successful_requests,
         }
     }
 }
@@ -784,8 +815,9 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].endpoint_id, endpoint_id);
         assert_eq!(entries[0].model_id, "test-model");
+        assert_eq!(entries[0].api_kind, "chat_completions");
         assert_eq!(entries[0].total_output_tokens, 100);
         assert_eq!(entries[0].total_duration_ms, 2000);
-        assert_eq!(entries[0].total_requests, 1);
+        assert_eq!(entries[0].successful_requests, 1);
     }
 }

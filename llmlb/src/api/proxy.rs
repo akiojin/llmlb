@@ -323,11 +323,17 @@ pub(crate) fn record_endpoint_request_stats(
             (0, 0)
         };
 
-        if let Err(e) = crate::db::endpoint_daily_stats::upsert_daily_stats(
+        let api_kind_str = api_kind
+            .and_then(|k| serde_json::to_value(k).ok())
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| "chat_completions".to_string());
+
+        if let Err(e) = crate::db::endpoint_daily_stats::upsert_daily_stats_with_api_kind(
             &pool,
             endpoint_id,
             &model_id,
             &date,
+            &api_kind_str,
             success,
             tokens,
             duration,

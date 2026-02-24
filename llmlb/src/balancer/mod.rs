@@ -667,25 +667,28 @@ mod tests {
             crate::db::endpoint_daily_stats::TpsSeedEntry {
                 endpoint_id,
                 model_id: "test-model".to_string(),
+                api_kind: "chat_completions".to_string(),
                 total_output_tokens: 100,
                 total_duration_ms: 2000,
-                total_requests: 5,
+                successful_requests: 5,
             },
             // duration_ms=0 のエントリはスキップされること
             crate::db::endpoint_daily_stats::TpsSeedEntry {
                 endpoint_id,
                 model_id: "skip-model".to_string(),
+                api_kind: "chat_completions".to_string(),
                 total_output_tokens: 100,
                 total_duration_ms: 0,
-                total_requests: 1,
+                successful_requests: 1,
             },
             // tokens=0 のエントリもスキップされること
             crate::db::endpoint_daily_stats::TpsSeedEntry {
                 endpoint_id,
                 model_id: "skip-model2".to_string(),
+                api_kind: "chat_completions".to_string(),
                 total_output_tokens: 0,
                 total_duration_ms: 1000,
-                total_requests: 1,
+                successful_requests: 1,
             },
         ];
 
@@ -1489,14 +1492,15 @@ impl LoadManager {
                 continue;
             }
             let tps = entry.total_output_tokens as f64 / (entry.total_duration_ms as f64 / 1000.0);
-            let key = (
-                entry.endpoint_id,
-                entry.model_id,
-                TpsApiKind::ChatCompletions,
-            );
+            let api_kind = match entry.api_kind.as_str() {
+                "completions" => TpsApiKind::Completions,
+                "responses" => TpsApiKind::Responses,
+                _ => TpsApiKind::ChatCompletions,
+            };
+            let key = (entry.endpoint_id, entry.model_id, api_kind);
             let state = tracker.entry(key).or_default();
             state.tps_ema = Some(tps);
-            state.request_count = entry.total_requests as u64;
+            state.request_count = entry.successful_requests as u64;
             state.total_output_tokens = entry.total_output_tokens as u64;
             state.total_duration_ms = entry.total_duration_ms as u64;
         }

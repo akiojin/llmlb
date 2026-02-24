@@ -78,7 +78,17 @@ export interface RollbackResponse {
   rolling_back: true
 }
 
+export interface VersionResponse {
+  version: string
+}
+
 export const systemApi = {
+  /** GET /api/version (認証不要) */
+  getVersion: async (): Promise<VersionResponse> => {
+    const res = await fetch('/api/version')
+    if (!res.ok) throw new Error(`Failed to fetch version: ${res.status}`)
+    return res.json()
+  },
   getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
   checkUpdate: () =>
     fetchWithAuth<{ update: UpdateState }>('/api/system/update/check', {

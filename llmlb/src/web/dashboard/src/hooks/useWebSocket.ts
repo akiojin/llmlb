@@ -8,6 +8,7 @@ export type DashboardEventType =
   | 'MetricsUpdated'
   | 'NodeRemoved'
   | 'TpsUpdated'
+  | 'UpdateStateChanged'
 
 export interface DashboardEvent {
   type: DashboardEventType
@@ -92,6 +93,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               if (data.data?.endpoint_id) {
                 queryClient.invalidateQueries({ queryKey: ['endpoint-model-tps', data.data.endpoint_id] })
               }
+              break
+            case 'UpdateStateChanged':
+              // Invalidate system-info so other clients see update state changes
+              queryClient.invalidateQueries({ queryKey: ['system-info'] })
               break
           }
         } catch (err) {

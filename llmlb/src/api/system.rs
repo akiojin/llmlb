@@ -105,6 +105,9 @@ pub async fn check_update(
             if matches!(&update, crate::update::UpdateState::Available { .. }) {
                 state.update_manager.download_background();
             }
+            state
+                .event_bus
+                .publish(crate::events::DashboardEvent::UpdateStateChanged);
             (StatusCode::OK, Json(CheckUpdateResponse { update })).into_response()
         }
         Err(err) => {
@@ -112,6 +115,9 @@ pub async fn check_update(
                 .update_manager
                 .record_check_failure(err.to_string())
                 .await;
+            state
+                .event_bus
+                .publish(crate::events::DashboardEvent::UpdateStateChanged);
             AppError(LbError::Http(err.to_string())).into_response()
         }
     }
@@ -260,11 +266,16 @@ pub async fn create_schedule(
     };
 
     match state.update_manager.create_schedule(schedule) {
-        Ok(sched) => (
-            StatusCode::CREATED,
-            Json(ScheduleResponse { schedule: sched }),
-        )
-            .into_response(),
+        Ok(sched) => {
+            state
+                .event_bus
+                .publish(crate::events::DashboardEvent::UpdateStateChanged);
+            (
+                StatusCode::CREATED,
+                Json(ScheduleResponse { schedule: sched }),
+            )
+                .into_response()
+        }
         Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
     }
 }
@@ -301,7 +312,12 @@ pub async fn cancel_schedule(
     }
 
     match state.update_manager.cancel_schedule() {
-        Ok(()) => Json(json!({ "cancelled": true })).into_response(),
+        Ok(()) => {
+            state
+                .event_bus
+                .publish(crate::events::DashboardEvent::UpdateStateChanged);
+            Json(json!({ "cancelled": true })).into_response()
+        }
         Err(err) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": { "message": err.to_string() } })),
@@ -323,7 +339,12 @@ pub async fn rollback(
     }
 
     match state.update_manager.request_rollback() {
-        Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "rolling_back": true }))).into_response(),
+        Ok(()) => {
+            state
+                .event_bus
+                .publish(crate::events::DashboardEvent::UpdateStateChanged);
+            (StatusCode::ACCEPTED, Json(json!({ "rolling_back": true }))).into_response()
+        }
         Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
     }
 }

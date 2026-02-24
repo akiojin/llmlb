@@ -108,7 +108,11 @@ export function copyToClipboard(text: string): Promise<void> {
     return fallbackCopyToClipboard(text)
   }
 
-  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+  if (
+    typeof navigator === 'undefined' ||
+    !navigator.clipboard?.writeText ||
+    (typeof window !== 'undefined' && !window.isSecureContext)
+  ) {
     return fallbackCopy()
   }
 

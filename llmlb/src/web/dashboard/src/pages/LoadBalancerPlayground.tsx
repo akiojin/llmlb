@@ -42,6 +42,8 @@ import {
   Square,
   Loader2,
   Code,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 
 const DEFAULT_LOAD_TEST_SETTINGS = {
@@ -183,6 +185,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
     },
   })
 
+  const [showApiKey, setShowApiKey] = useState(false)
   const hasApiKey = apiKey.trim().length > 0
 
   const {
@@ -784,13 +787,21 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
             <div className="mt-2 flex gap-2">
               <Input
                 id="lb-api-key"
-                type="password"
+                type={showApiKey ? 'text' : 'password'}
                 placeholder="sk-..."
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 className="h-8"
                 autoComplete="off"
               />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowApiKey(!showApiKey)}
+                disabled={!hasApiKey}
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
               <Button size="sm" variant="outline" onClick={clearApiKey} disabled={!hasApiKey}>
                 Clear
               </Button>

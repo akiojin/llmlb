@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [5.0.4](https://github.com/akiojin/llmlb/compare/v5.0.3...v5.0.4) (2026-02-24)
+
+### Bug Fixes
+
+- CHANGELOG見出しレベルをh2に統一しRelease Notes抽出を修正
+- アップデートUIの4バグ修正とリアルタイム通知追加 (#454)
+
 ## [5.0.3](https://github.com/akiojin/llmlb/compare/v5.0.2...v5.0.3) (2026-02-24)
 
 ### Bug Fixes

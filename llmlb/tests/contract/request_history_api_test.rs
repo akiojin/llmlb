@@ -22,9 +22,10 @@ async fn build_app() -> (Router, SqlitePool, String) {
 
     // /api/dashboard/* は JWT のみのため、テスト用JWTを発行して返す。
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let admin_user = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
-        .await
-        .expect("create admin user");
+    let admin_user =
+        llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
+            .await
+            .expect("create admin user");
     let jwt = llmlb::auth::jwt::create_jwt(
         &admin_user.id.to_string(),
         UserRole::Admin,

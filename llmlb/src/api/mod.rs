@@ -70,6 +70,7 @@ pub fn create_app(state: AppState) -> Router {
     let auth_routes = Router::new()
         .route("/auth/me", get(auth::me))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/change-password", put(auth::change_password))
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))

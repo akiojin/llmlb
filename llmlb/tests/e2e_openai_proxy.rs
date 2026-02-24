@@ -185,6 +185,7 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
         "admin",
         &password_hash,
         llmlb::common::auth::UserRole::Admin,
+        false,
     )
     .await
     .expect("create admin user");

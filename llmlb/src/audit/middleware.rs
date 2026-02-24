@@ -538,6 +538,7 @@ mod tests {
             "audit-test-user",
             "hash",
             crate::common::auth::UserRole::Admin,
+            false,
         )
         .await
         .expect("create user");

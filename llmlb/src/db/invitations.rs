@@ -385,7 +385,7 @@ mod tests {
         let pool = setup_test_db().await;
 
         // テスト用ユーザーを作成
-        let user = users::create(&pool, "admin", "hash", UserRole::Admin)
+        let user = users::create(&pool, "admin", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
@@ -408,14 +408,14 @@ mod tests {
     async fn test_mark_as_used() {
         let pool = setup_test_db().await;
 
-        let admin = users::create(&pool, "admin", "hash", UserRole::Admin)
+        let admin = users::create(&pool, "admin", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
         let invitation = create(&pool, admin.id, None).await.unwrap();
 
         // 新しいユーザーを作成して招待コードを使用
-        let new_user = users::create(&pool, "newuser", "hash", UserRole::Viewer)
+        let new_user = users::create(&pool, "newuser", "hash", UserRole::Viewer, false)
             .await
             .unwrap();
 
@@ -437,16 +437,16 @@ mod tests {
     async fn test_cannot_use_twice() {
         let pool = setup_test_db().await;
 
-        let admin = users::create(&pool, "admin", "hash", UserRole::Admin)
+        let admin = users::create(&pool, "admin", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
         let invitation = create(&pool, admin.id, None).await.unwrap();
 
-        let user1 = users::create(&pool, "user1", "hash", UserRole::Viewer)
+        let user1 = users::create(&pool, "user1", "hash", UserRole::Viewer, false)
             .await
             .unwrap();
-        let user2 = users::create(&pool, "user2", "hash", UserRole::Viewer)
+        let user2 = users::create(&pool, "user2", "hash", UserRole::Viewer, false)
             .await
             .unwrap();
 
@@ -462,7 +462,7 @@ mod tests {
     async fn test_revoke_invitation() {
         let pool = setup_test_db().await;
 
-        let admin = users::create(&pool, "admin", "hash", UserRole::Admin)
+        let admin = users::create(&pool, "admin", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
@@ -480,7 +480,7 @@ mod tests {
         assert_eq!(found.status, InvitationStatus::Revoked);
 
         // 無効化済みは使用不可
-        let user = users::create(&pool, "user", "hash", UserRole::Viewer)
+        let user = users::create(&pool, "user", "hash", UserRole::Viewer, false)
             .await
             .unwrap();
         let result = mark_as_used(&pool, invitation.id, user.id).await;
@@ -509,7 +509,7 @@ mod tests {
     async fn test_list_invitations() {
         let pool = setup_test_db().await;
 
-        let admin = users::create(&pool, "admin", "hash", UserRole::Admin)
+        let admin = users::create(&pool, "admin", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 

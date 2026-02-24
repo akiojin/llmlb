@@ -30,7 +30,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
     // テスト用の管理者ユーザーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
         .ok();
 

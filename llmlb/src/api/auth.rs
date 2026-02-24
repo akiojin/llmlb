@@ -44,6 +44,8 @@ pub struct UserInfo {
     pub username: String,
     /// ロール
     pub role: String,
+    /// 初回パスワード変更が必要か
+    pub must_change_password: bool,
 }
 
 /// 認証情報レスポンス
@@ -55,6 +57,15 @@ pub struct MeResponse {
     pub username: String,
     /// ロール
     pub role: String,
+    /// 初回パスワード変更が必要か
+    pub must_change_password: bool,
+}
+
+/// パスワード変更リクエスト
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    /// 新しいパスワード
+    pub new_password: String,
 }
 
 /// POST /api/auth/login - ログイン
@@ -111,6 +122,7 @@ pub async fn login(
                     id: dev_user_id,
                     username: "admin".to_string(),
                     role: "admin".to_string(),
+                    must_change_password: false,
                 },
             }),
         ));
@@ -183,8 +195,9 @@ pub async fn login(
             expires_in,
             user: UserInfo {
                 id: user.id.to_string(),
-                username: user.username,
+                username: user.username.clone(),
                 role: format!("{:?}", user.role).to_lowercase(),
+                must_change_password: user.must_change_password,
             },
         }),
     ))
@@ -258,6 +271,7 @@ pub async fn me(
             user_id: user_id.to_string(),
             username: "admin".to_string(),
             role: "admin".to_string(),
+            must_change_password: false,
         }));
     }
 
@@ -274,6 +288,7 @@ pub async fn me(
         user_id: user.id.to_string(),
         username: user.username,
         role: format!("{:?}", user.role).to_lowercase(),
+        must_change_password: user.must_change_password,
     }))
 }
 
@@ -377,6 +392,7 @@ pub async fn register(
         &request.username,
         &password_hash,
         UserRole::Viewer,
+        false,
     )
     .await
     .map_err(|e| {
@@ -411,6 +427,84 @@ pub async fn register(
     ))
 }
 
+/// PUT /api/auth/change-password - パスワード変更
+///
+/// 認証済みユーザーが自身のパスワードを変更する。
+/// `must_change_password`フラグもクリアされる。
+///
+/// # Arguments
+/// * `Extension(claims)` - JWTクレーム（ミドルウェアで注入）
+/// * `State(app_state)` - アプリケーション状態
+/// * `Json(request)` - パスワード変更リクエスト
+///
+/// # Returns
+/// * `200 OK` - パスワード変更成功
+/// * `400 Bad Request` - バリデーションエラー
+/// * `401 Unauthorized` - 未認証
+/// * `500 Internal Server Error` - サーバーエラー
+pub async fn change_password(
+    Extension(claims): Extension<Claims>,
+    State(app_state): State<AppState>,
+    Json(request): Json<ChangePasswordRequest>,
+) -> Result<impl IntoResponse, Response> {
+    let user_id: uuid::Uuid = claims.sub.parse().map_err(|_| {
+        AppError(LbError::Authentication("Invalid user ID".to_string())).into_response()
+    })?;
+
+    // パスワード長バリデーション（6文字以上）
+    if request.new_password.len() < 6 {
+        return Err(AppError(LbError::Common(CommonError::Validation(
+            "Password must be at least 6 characters".to_string(),
+        )))
+        .into_response());
+    }
+
+    // 新パスワードをハッシュ化
+    let password_hash =
+        crate::auth::password::hash_password(&request.new_password).map_err(|e| {
+            tracing::error!("Failed to hash password: {}", e);
+            AppError(LbError::PasswordHash(format!(
+                "Failed to hash password: {}",
+                e
+            )))
+            .into_response()
+        })?;
+
+    // パスワードを更新
+    crate::db::users::update(
+        &app_state.db_pool,
+        user_id,
+        None,
+        Some(&password_hash),
+        None,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to update password: {}", e);
+        AppError(LbError::Database(format!(
+            "Failed to update password: {}",
+            e
+        )))
+        .into_response()
+    })?;
+
+    // must_change_passwordフラグをクリア
+    crate::db::users::clear_must_change_password(&app_state.db_pool, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to clear must_change_password: {}", e);
+            AppError(LbError::Database(format!(
+                "Failed to clear must_change_password: {}",
+                e
+            )))
+            .into_response()
+        })?;
+
+    tracing::info!("Password changed for user: {}", user_id);
+
+    Ok(StatusCode::OK)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,6 +533,7 @@ mod tests {
                 id: "user-id".to_string(),
                 username: "admin".to_string(),
                 role: "admin".to_string(),
+                must_change_password: false,
             },
         };
         let json = serde_json::to_string(&response).unwrap();
@@ -453,6 +548,7 @@ mod tests {
             user_id: "user-123".to_string(),
             username: "testuser".to_string(),
             role: "user".to_string(),
+            must_change_password: false,
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("user-123"));
@@ -466,6 +562,7 @@ mod tests {
             id: "id-456".to_string(),
             username: "bob".to_string(),
             role: "admin".to_string(),
+            must_change_password: false,
         };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("id-456"));

@@ -29,6 +29,8 @@ pub struct User {
     pub created_at: DateTime<Utc>,
     /// 最終ログイン日時
     pub last_login: Option<DateTime<Utc>>,
+    /// 初回パスワード変更が必要かどうか
+    pub must_change_password: bool,
 }
 
 /// APIキー

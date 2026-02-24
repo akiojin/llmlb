@@ -38,6 +38,7 @@ async fn test_viewer_can_list_endpoints() {
         "viewer",
         &password_hash,
         llmlb::common::auth::UserRole::Viewer,
+        false,
     )
     .await
     .expect("create viewer user");
@@ -90,6 +91,7 @@ async fn test_viewer_can_get_endpoint_detail() {
         "viewer",
         &password_hash,
         llmlb::common::auth::UserRole::Viewer,
+        false,
     )
     .await
     .expect("create viewer user");
@@ -148,6 +150,7 @@ async fn test_viewer_cannot_create_endpoint() {
         "viewer",
         &password_hash,
         llmlb::common::auth::UserRole::Viewer,
+        false,
     )
     .await
     .expect("create viewer user");
@@ -193,6 +196,7 @@ async fn test_viewer_cannot_update_endpoint() {
         "viewer",
         &password_hash,
         llmlb::common::auth::UserRole::Viewer,
+        false,
     )
     .await
     .expect("create viewer user");
@@ -256,6 +260,7 @@ async fn test_viewer_cannot_delete_endpoint() {
         "viewer",
         &password_hash,
         llmlb::common::auth::UserRole::Viewer,
+        false,
     )
     .await
     .expect("create viewer user");

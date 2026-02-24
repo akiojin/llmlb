@@ -19,8 +19,13 @@ fn test_jwt_secret() -> String {
 }
 
 fn admin_jwt(secret: &str) -> String {
-    llmlb::auth::jwt::create_jwt("test-admin", llmlb::common::auth::UserRole::Admin, secret)
-        .expect("create admin jwt")
+    llmlb::auth::jwt::create_jwt(
+        "test-admin",
+        llmlb::common::auth::UserRole::Admin,
+        secret,
+        false,
+    )
+    .expect("create admin jwt")
 }
 
 async fn build_app() -> (String, Router) {

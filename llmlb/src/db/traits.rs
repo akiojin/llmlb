@@ -116,6 +116,7 @@ pub trait UserRepository: Send + Sync {
         username: &str,
         password_hash: &str,
         role: UserRole,
+        must_change_password: bool,
     ) -> Result<User, LbError>;
     /// ユーザー名でユーザーを検索
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, LbError>;
@@ -460,8 +461,9 @@ impl UserRepository for SqlitePool {
         username: &str,
         password_hash: &str,
         role: UserRole,
+        must_change_password: bool,
     ) -> Result<User, LbError> {
-        super::users::create(self, username, password_hash, role).await
+        super::users::create(self, username, password_hash, role, must_change_password).await
     }
 
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, LbError> {
@@ -772,6 +774,7 @@ mod tests {
             username: &str,
             password_hash: &str,
             role: UserRole,
+            must_change_password: bool,
         ) -> Result<User, LbError> {
             let user = User {
                 id: Uuid::new_v4(),
@@ -780,6 +783,7 @@ mod tests {
                 role,
                 created_at: Utc::now(),
                 last_login: None,
+                must_change_password,
             };
             self.users.lock().unwrap().insert(user.id, user.clone());
             Ok(user)
@@ -1027,10 +1031,10 @@ mod tests {
     // -----------------------------------------------------------------------
 
     async fn create_and_list_users(repo: &dyn UserRepository) -> Vec<User> {
-        repo.create_user("alice", "hash1", UserRole::Admin)
+        repo.create_user("alice", "hash1", UserRole::Admin, false)
             .await
             .unwrap();
-        repo.create_user("bob", "hash2", UserRole::Viewer)
+        repo.create_user("bob", "hash2", UserRole::Viewer, false)
             .await
             .unwrap();
         repo.list_users().await.unwrap()
@@ -1110,7 +1114,7 @@ mod tests {
     async fn test_trait_object_dynamic_dispatch() {
         let repo: Box<dyn UserRepository> = Box::new(MockUserRepository::new());
         let user = repo
-            .create_user("test", "hash", UserRole::Viewer)
+            .create_user("test", "hash", UserRole::Viewer, false)
             .await
             .unwrap();
         assert_eq!(user.username, "test");

@@ -9,14 +9,19 @@ export interface User {
   created_at: string
 }
 
+export interface CreateUserResponse {
+  user: User
+  generated_password: string
+}
+
 export const usersApi = {
   list: async (): Promise<User[]> => {
     const res = await fetchWithAuth<{ users: User[] }>('/api/users')
     return res.users
   },
 
-  create: (data: { username: string; password: string; role: string }) =>
-    fetchWithAuth<User>('/api/users', {
+  create: (data: { username: string; role: string }) =>
+    fetchWithAuth<CreateUserResponse>('/api/users', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

@@ -35,7 +35,7 @@ function parseHash(): Route {
 }
 
 function App() {
-  const { isLoading, isLoggedIn } = useAuth()
+  const { isLoading, isLoggedIn, user } = useAuth()
   const [route, setRoute] = useState<Route>(parseHash)
 
   const navigateToDashboard = useCallback(() => {
@@ -52,11 +52,18 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (isLoading) return
     // Redirect to login if not authenticated
-    if (!isLoading && !isLoggedIn) {
+    if (!isLoggedIn) {
       window.location.href = '/dashboard/login.html'
+      return
     }
-  }, [isLoading, isLoggedIn])
+    // Redirect to change-password if password change is required
+    if (user?.must_change_password) {
+      window.location.href = '/dashboard/change-password.html'
+      return
+    }
+  }, [isLoading, isLoggedIn, user])
 
   if (isLoading) {
     return (

@@ -538,6 +538,7 @@ mod tests {
             "audit-test-user",
             "hash",
             crate::common::auth::UserRole::Admin,
+            false,
         )
         .await
         .expect("create user");
@@ -550,6 +551,7 @@ mod tests {
             &user.id.to_string(),
             crate::common::auth::UserRole::Admin,
             &jwt_secret,
+            false,
         )
         .expect("create jwt");
 

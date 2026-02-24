@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback, createContext, useContext, type React
 import { authApi } from '@/lib/api'
 
 interface User {
-  id: number
+  id: string
   username: string
   role: string
+  must_change_password: boolean
 }
 
 interface AuthContextType {
@@ -24,8 +25,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = useCallback(async () => {
     try {
-      const userData = await authApi.me()
-      setUser(userData)
+      const data = await authApi.me()
+      setUser({
+        id: data.user_id,
+        username: data.username,
+        role: data.role,
+        must_change_password: data.must_change_password,
+      })
     } catch {
       setUser(null)
     } finally {

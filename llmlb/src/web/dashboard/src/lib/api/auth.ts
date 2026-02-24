@@ -36,7 +36,14 @@ export const authApi = {
   },
 
   me: () =>
-    fetchWithAuth<{ id: number; username: string; role: string }>('/api/auth/me'),
+    fetchWithAuth<{ user_id: string; username: string; role: string; must_change_password: boolean }>('/api/auth/me'),
+
+  changePassword: async (newPassword: string) => {
+    await fetchWithAuth('/api/auth/change-password', {
+      method: 'PUT',
+      body: JSON.stringify({ new_password: newPassword }),
+    })
+  },
 
   register: async (data: RegisterRequest): Promise<RegisterResponse> => {
     const response = await fetch(`${API_BASE}/api/auth/register`, {

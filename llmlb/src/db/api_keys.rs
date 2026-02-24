@@ -409,7 +409,7 @@ mod tests {
         let pool = setup_test_db().await;
 
         // テスト用ユーザーを作成
-        let user = users::create(&pool, "testuser", "hash", UserRole::Admin)
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
@@ -447,7 +447,7 @@ mod tests {
     async fn test_list_api_keys() {
         let pool = setup_test_db().await;
 
-        let user = users::create(&pool, "testuser", "hash", UserRole::Admin)
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
@@ -478,7 +478,7 @@ mod tests {
     async fn test_delete_api_key() {
         let pool = setup_test_db().await;
 
-        let user = users::create(&pool, "testuser", "hash", UserRole::Admin)
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 

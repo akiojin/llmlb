@@ -74,10 +74,15 @@ async fn build_app() -> TestApp {
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let admin_user =
-        llmlb::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
-            .await
-            .expect("create admin user");
+    let admin_user = llmlb::db::users::create(
+        &state.db_pool,
+        "admin",
+        &password_hash,
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .expect("create admin user");
     let admin_key = llmlb::db::api_keys::create(
         &state.db_pool,
         "admin-key",

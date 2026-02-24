@@ -40,7 +40,7 @@ pub async fn create_admin_from_env(pool: &sqlx::SqlitePool) -> Result<Option<Str
     let password_hash = hash_password(&password)?;
 
     // 管理者を作成
-    match db::users::create(pool, &username, &password_hash, UserRole::Admin).await {
+    match db::users::create(pool, &username, &password_hash, UserRole::Admin, false).await {
         Ok(user) => {
             tracing::info!("Created admin user from env: username={}", username);
             Ok(Some(user.username))
@@ -95,7 +95,7 @@ pub async fn create_admin_interactive(pool: &sqlx::SqlitePool) -> Result<String,
     let password_hash = hash_password(password)?;
 
     // 管理者を作成
-    match db::users::create(pool, username, &password_hash, UserRole::Admin).await {
+    match db::users::create(pool, username, &password_hash, UserRole::Admin, false).await {
         Ok(user) => {
             println!("✓ Admin user '{}' created successfully", user.username);
             tracing::info!(
@@ -153,6 +153,7 @@ async fn ensure_dev_admin_exists(pool: &sqlx::SqlitePool) -> Result<(), LbError>
             username,
             &password_hash,
             UserRole::Admin,
+            false,
         )
         .await
         {
@@ -340,7 +341,7 @@ mod tests {
 
         // ダミーユーザーを作成（初回起動でない状態）
         let hash = hash_password("dummy").unwrap();
-        db::users::create(&pool, "existing", &hash, UserRole::Admin)
+        db::users::create(&pool, "existing", &hash, UserRole::Admin, false)
             .await
             .unwrap();
 

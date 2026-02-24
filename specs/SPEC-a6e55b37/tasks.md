@@ -211,3 +211,18 @@
 - [x] T310 `pnpm --filter @llm/dashboard build` でstatic再生成、コミット対象に含める
 - [x] T311 全品質チェック（`make quality-checks`）を実行・合格確認
 - [x] T312 README追記（Phase 2機能: スケジュール・ロールバック・進捗表示）
+
+## Bugfix: check_only キャッシュフォールバック (2026-02-24)
+
+### Tests (RED)
+
+- [x] T320 `check_only` のGitHub API失敗時キャッシュフォールバックのユニットテスト追加（ケース1: キャッシュなし→エラー、ケース2: キャッシュあり→Available返却）
+
+### Core (GREEN)
+
+- [x] T325 `check_only` で `fetch_latest_release` 失敗時にキャッシュフォールバックを実装（FR-009/US-10シナリオ4の仕様未実装を修正）
+
+### Review Feedback
+
+- [x] T330 `check_only` で既にAvailable状態（payload: Ready含む）の場合、`apply_cache` を呼ばず既存状態を保持するように修正（FR-009/US-5シナリオ4準拠）
+- [x] T331 テストケース3追加: Available（payload=Ready）状態がGitHub API失敗時に保持されることを検証

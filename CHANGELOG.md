@@ -1,5 +1,16 @@
 # Unreleased
 
+# [5.0.3](https://github.com/akiojin/llmlb/compare/v5.0.2...v5.0.3) (2026-02-24)
+
+### Bug Fixes
+
+- ダッシュボードメトリクスの永続化と復元 (#452)
+- ユーザー登録バグ修正・パスワード自動生成・初回パスワード変更強制 (#451)
+- ユーザー作成時のロール値不一致を修正 (#450)
+- テスト用UpdateManagerで環境変数依存を排除しレースコンディションを修正 (#449)
+- adminユーザーでModelsタブが表示されない問題を修正 (#448)
+- GitHub API失敗時にキャッシュフォールバックを実装 (#445)
+
 # [5.0.2](https://github.com/akiojin/llmlb/compare/v5.0.1...v5.0.2) (2026-02-24)
 
 ### Bug Fixes

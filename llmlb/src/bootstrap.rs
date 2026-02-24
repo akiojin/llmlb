@@ -323,7 +323,11 @@ async fn initialize_inner(
         jwt_secret,
         http_client,
         queue_config: crate::config::QueueConfig::from_env(),
-        event_bus: crate::events::create_shared_event_bus(),
+        event_bus: {
+            let bus = crate::events::create_shared_event_bus();
+            update_manager.set_event_bus(bus.clone());
+            bus
+        },
         endpoint_registry,
         inference_gate,
         shutdown: shutdown.clone(),

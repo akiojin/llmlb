@@ -24,7 +24,7 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::Duration,
 };
@@ -213,6 +213,9 @@ struct UpdateManagerInner {
     /// Rate-limit: last time a manual check was performed.
     last_manual_check: Mutex<Option<tokio::time::Instant>>,
 
+    /// ダッシュボードイベントバス（状態遷移時にUpdateStateChangedを発行）
+    event_bus: OnceLock<crate::events::SharedEventBus>,
+
     /// Schedule persistence.
     schedule_store: schedule::ScheduleStore,
     /// History persistence.
@@ -302,6 +305,7 @@ impl UpdateManager {
                 updates_dir,
                 state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
                 last_manual_check: Mutex::new(None),
+                event_bus: OnceLock::new(),
                 schedule_store: schedule::ScheduleStore::new(&data_dir),
                 history_store: history::HistoryStore::new(&data_dir),
                 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -344,6 +348,7 @@ impl UpdateManager {
                 updates_dir,
                 state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
                 last_manual_check: Mutex::new(None),
+                event_bus: OnceLock::new(),
                 schedule_store: schedule::ScheduleStore::new(data_dir),
                 history_store: history::HistoryStore::new(data_dir),
                 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -371,6 +376,20 @@ impl UpdateManager {
                 proxy.notify_schedule(schedule.map(|s| schedule_to_tray_info(&s)));
             }
         });
+    }
+
+    /// ダッシュボードイベントバスを設定する。
+    ///
+    /// 設定後、状態遷移時に `UpdateStateChanged` イベントが自動発行される。
+    pub fn set_event_bus(&self, bus: crate::events::SharedEventBus) {
+        let _ = self.inner.event_bus.set(bus);
+    }
+
+    /// 状態遷移をダッシュボードに通知する。
+    fn notify_state_changed(&self) {
+        if let Some(bus) = self.inner.event_bus.get() {
+            bus.publish(crate::events::DashboardEvent::UpdateStateChanged);
+        }
     }
 
     /// Return the current update state snapshot.
@@ -1249,6 +1268,7 @@ impl UpdateManager {
                 latest: latest.clone(),
                 method: apply_method.clone(),
             };
+            self.notify_state_changed();
             // Force mode cancels active in-flight work instead of waiting for drain completion.
             self.inner.gate.abort_in_flight();
             if tokio::time::timeout(Duration::from_secs(3), self.inner.gate.wait_for_idle())
@@ -1280,6 +1300,7 @@ impl UpdateManager {
                         requested_at,
                         timeout_at,
                     };
+                    self.notify_state_changed();
                 }
                 if tokio::time::timeout_at(deadline, self.inner.gate.wait_for_idle())
                     .await
@@ -1298,6 +1319,7 @@ impl UpdateManager {
                         message: format!("Drain timed out after {}s", DEFAULT_DRAIN_TIMEOUT_SECS),
                         failed_at: Utc::now(),
                     };
+                    self.notify_state_changed();
                     return Err(anyhow!(
                         "Drain timed out after {}s",
                         DEFAULT_DRAIN_TIMEOUT_SECS
@@ -1308,6 +1330,7 @@ impl UpdateManager {
                 latest: latest.clone(),
                 method: apply_method.clone(),
             };
+            self.notify_state_changed();
         }
 
         let current_exe =

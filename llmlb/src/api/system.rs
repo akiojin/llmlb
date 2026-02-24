@@ -136,9 +136,6 @@ pub async fn apply_update(
     }
 
     let queued = state.update_manager.request_apply_normal().await;
-    state
-        .event_bus
-        .publish(crate::events::DashboardEvent::UpdateStateChanged);
     (
         StatusCode::ACCEPTED,
         Json(ApplyUpdateResponse {
@@ -162,20 +159,15 @@ pub async fn apply_force_update(
     }
 
     match state.update_manager.request_apply_force().await {
-        Ok(dropped_in_flight) => {
-            state
-                .event_bus
-                .publish(crate::events::DashboardEvent::UpdateStateChanged);
-            (
-                StatusCode::ACCEPTED,
-                Json(ForceApplyUpdateResponse {
-                    queued: false,
-                    mode: "force",
-                    dropped_in_flight,
-                }),
-            )
-                .into_response()
-        }
+        Ok(dropped_in_flight) => (
+            StatusCode::ACCEPTED,
+            Json(ForceApplyUpdateResponse {
+                queued: false,
+                mode: "force",
+                dropped_in_flight,
+            }),
+        )
+            .into_response(),
         Err(err) => AppError(LbError::Conflict(err.to_string())).into_response(),
     }
 }

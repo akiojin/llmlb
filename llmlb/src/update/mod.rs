@@ -310,6 +310,48 @@ impl UpdateManager {
         })
     }
 
+    /// Create an `UpdateManager` with an explicit data directory (test-only).
+    ///
+    /// This avoids reading `LLMLB_DATA_DIR` from the environment, eliminating
+    /// race conditions when tests run in parallel.
+    #[cfg(test)]
+    fn new_with_data_dir(
+        http_client: reqwest::Client,
+        gate: InferenceGate,
+        shutdown: ShutdownController,
+        data_dir: &Path,
+    ) -> Result<Self> {
+        let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
+            .context("Failed to parse CARGO_PKG_VERSION as semver")?;
+
+        let cache_path = data_dir.join("update-check.json");
+        let updates_dir = data_dir.join("updates");
+
+        Ok(Self {
+            inner: Arc::new(UpdateManagerInner {
+                started: AtomicBool::new(false),
+                apply_request_mode: AtomicU8::new(ApplyRequestMode::None as u8),
+                apply_notify: Notify::new(),
+                current_version,
+                http_client,
+                gate,
+                shutdown,
+                owner: DEFAULT_OWNER.to_string(),
+                repo: DEFAULT_REPO.to_string(),
+                ttl: DEFAULT_TTL,
+                github_api_base_url: None,
+                cache_path,
+                updates_dir,
+                state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
+                last_manual_check: Mutex::new(None),
+                schedule_store: schedule::ScheduleStore::new(data_dir),
+                history_store: history::HistoryStore::new(data_dir),
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                tray_proxy: RwLock::new(None),
+            }),
+        })
+    }
+
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     /// Attach a tray event proxy to publish update state (best-effort).
     pub async fn set_tray_proxy(&self, proxy: crate::gui::tray::TrayEventProxy) {
@@ -2603,15 +2645,14 @@ mod tests {
     /// Uses a unique env var approach with per-test isolation.
     fn test_manager_with_gate(gate: InferenceGate) -> (UpdateManager, tempfile::TempDir) {
         let tmp = tempfile::tempdir().expect("create temp dir");
-        // Ensure directory exists.
         std::fs::create_dir_all(tmp.path()).expect("create data dir");
-        // Use unsafe set_var inside serial test — each test gets its own temp dir.
-        unsafe {
-            std::env::set_var("LLMLB_DATA_DIR", tmp.path());
-        }
-        let manager =
-            UpdateManager::new(reqwest::Client::new(), gate, ShutdownController::default())
-                .expect("create update manager");
+        let manager = UpdateManager::new_with_data_dir(
+            reqwest::Client::new(),
+            gate,
+            ShutdownController::default(),
+            tmp.path(),
+        )
+        .expect("create update manager");
         (manager, tmp)
     }
 

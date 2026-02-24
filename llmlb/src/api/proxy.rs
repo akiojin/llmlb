@@ -125,7 +125,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
     api_kind: Option<TpsApiKind>,
     endpoint_type: crate::types::endpoint::EndpointType,
     request_started_at: Instant,
-    pool: sqlx::SqlitePool,
+    endpoint_registry: crate::registry::endpoints::EndpointRegistry,
     load_manager: crate::balancer::LoadManager,
     event_bus: crate::events::SharedEventBus,
 ) -> Result<Response, LbError> {
@@ -138,7 +138,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         api_kind: Option<TpsApiKind>,
         endpoint_type: crate::types::endpoint::EndpointType,
         request_started_at: Instant,
-        pool: sqlx::SqlitePool,
+        endpoint_registry: crate::registry::endpoints::EndpointRegistry,
         load_manager: crate::balancer::LoadManager,
         event_bus: crate::events::SharedEventBus,
         stats_recorded: bool,
@@ -170,7 +170,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
             self.stats_recorded = true;
 
             record_endpoint_request_stats(
-                self.pool.clone(),
+                self.endpoint_registry.clone(),
                 self.endpoint_id,
                 self.model_id.clone(),
                 success,
@@ -216,7 +216,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         api_kind,
         endpoint_type,
         request_started_at,
-        pool,
+        endpoint_registry,
         load_manager,
         event_bus,
         stats_recorded: false,
@@ -289,7 +289,7 @@ pub(crate) fn save_request_record(
 /// SPEC-4bb5b55f: TPS計測対象の場合はインメモリEMAも更新する。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn record_endpoint_request_stats(
-    pool: sqlx::SqlitePool,
+    endpoint_registry: crate::registry::endpoints::EndpointRegistry,
     endpoint_id: uuid::Uuid,
     model_id: String,
     success: bool,
@@ -302,9 +302,11 @@ pub(crate) fn record_endpoint_request_stats(
 ) {
     tokio::spawn(async move {
         let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let pool = endpoint_registry.pool().clone();
 
-        if let Err(e) =
-            crate::db::endpoints::increment_request_counters(&pool, endpoint_id, success).await
+        if let Err(e) = endpoint_registry
+            .increment_request_counters(endpoint_id, success)
+            .await
         {
             tracing::error!("Failed to increment endpoint request counters: {}", e);
         }

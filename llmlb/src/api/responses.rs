@@ -239,7 +239,7 @@ pub async fn post_responses(
                     .await
                     .map_err(AppError::from)?;
                 record_endpoint_request_stats(
-                    state.db_pool.clone(),
+                    state.endpoint_registry.clone(),
                     endpoint.id,
                     model.clone(),
                     false,
@@ -275,7 +275,7 @@ pub async fn post_responses(
             update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
         } else {
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint.id,
                 model.clone(),
                 false,
@@ -296,7 +296,7 @@ pub async fn post_responses(
                 tps_api_kind,
                 endpoint.endpoint_type,
                 start,
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 state.load_manager.clone(),
                 state.event_bus.clone(),
             )
@@ -322,7 +322,7 @@ pub async fn post_responses(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint.id,
                 model.clone(),
                 false,
@@ -366,7 +366,7 @@ pub async fn post_responses(
         (0, 0)
     };
     record_endpoint_request_stats(
-        state.db_pool.clone(),
+        state.endpoint_registry.clone(),
         endpoint.id,
         model.clone(),
         succeeded,

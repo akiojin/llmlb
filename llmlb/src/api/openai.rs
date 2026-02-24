@@ -880,7 +880,7 @@ async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -936,7 +936,7 @@ async fn proxy_openai_post(
             update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
         } else {
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -978,7 +978,7 @@ async fn proxy_openai_post(
                 tps_api_kind,
                 endpoint_type,
                 start,
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 state.load_manager.clone(),
                 state.event_bus.clone(),
             )
@@ -999,7 +999,7 @@ async fn proxy_openai_post(
             .await
             .map_err(AppError::from)?;
         record_endpoint_request_stats(
-            state.db_pool.clone(),
+            state.endpoint_registry.clone(),
             endpoint_id,
             model.clone(),
             false,
@@ -1083,7 +1083,7 @@ async fn proxy_openai_post(
                 0
             };
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 true,
@@ -1133,7 +1133,7 @@ async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,

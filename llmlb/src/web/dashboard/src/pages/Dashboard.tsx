@@ -136,15 +136,15 @@ export default function Dashboard() {
     enabled: !isViewer,
   })
 
-  // Bug 3: viewerロールでもバージョン情報を取得（/api/version は認証不要）
+  // Bug 3: /api/version は認証不要・軽量なので全ロールで常時取得し、
+  // systemInfo 未取得時のフォールバックにする
   const { data: versionData } = useQuery<VersionResponse>({
     queryKey: ['version'],
     queryFn: () => systemApi.getVersion(),
     refetchInterval: pollingInterval,
-    enabled: isViewer,
   })
 
-  // admin: systemInfo.version, viewer: versionData.version
+  // admin: systemInfo.version 優先, フォールバック: versionData.version
   const systemVersion = systemInfo?.version ?? versionData?.version ?? null
 
   // Drain timeout countdown timer

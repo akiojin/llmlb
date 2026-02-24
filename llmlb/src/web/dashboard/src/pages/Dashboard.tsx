@@ -12,6 +12,7 @@ import {
   type RequestHistoryItem,
   type RequestResponsesPage,
   type RegisteredModelView,
+  type VersionResponse,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
@@ -135,6 +136,17 @@ export default function Dashboard() {
     enabled: !isViewer,
   })
 
+  // Bug 3: viewerロールでもバージョン情報を取得（/api/version は認証不要）
+  const { data: versionData } = useQuery<VersionResponse>({
+    queryKey: ['version'],
+    queryFn: () => systemApi.getVersion(),
+    refetchInterval: pollingInterval,
+    enabled: isViewer,
+  })
+
+  // admin: systemInfo.version, viewer: versionData.version
+  const systemVersion = systemInfo?.version ?? versionData?.version ?? null
+
   // Drain timeout countdown timer
   useEffect(() => {
     const update = systemInfo?.update
@@ -204,7 +216,7 @@ export default function Dashboard() {
     const canApply = isAdmin && (updateState === 'available' || failedHasUpdateCandidate)
     const applying = updateState === 'draining' || updateState === 'applying'
     const showRestartButton = updateState === 'available' || failedHasUpdateCandidate || applying
-    const showForceButton = true
+    const showForceButton = hasAvailableUpdate
     const canForceApply = isAdmin && isPayloadReady && !applying
     const cooldownRemaining = Math.max(0, CHECK_COOLDOWN_MS - (Date.now() - lastCheckTimestamp))
     const isCooldown = cooldownRemaining > 0
@@ -690,7 +702,7 @@ export default function Dashboard() {
               )}
 
               {/* Rollback button */}
-              {isAdmin && (
+              {isAdmin && rollbackAvailable && (
                 <AlertDialog
                   open={isRollbackDialogOpen}
                   onOpenChange={setIsRollbackDialogOpen}
@@ -798,7 +810,7 @@ export default function Dashboard() {
         isConnected={!error}
         lastRefreshed={lastRefreshed}
         fetchTimeMs={fetchTimeMs}
-        systemVersion={systemInfo?.version ?? null}
+        systemVersion={systemVersion}
         updateState={(systemInfo?.update as UpdateState | undefined)?.state}
         updateLatest={(() => {
           const u = systemInfo?.update as UpdateState | undefined

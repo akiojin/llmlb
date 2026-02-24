@@ -84,11 +84,11 @@ export function Header({
               </h1>
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 Dashboard
+                <span id="current-version" className="font-mono text-[11px]">
+                  Current v{displayVersion}
+                </span>
                 {!minimalViewer && (
                   <>
-                    <span id="current-version" className="font-mono text-[11px]">
-                      Current v{displayVersion}
-                    </span>
                     {updateState && updateState !== 'up_to_date' && (
                       <span className="inline-flex items-center gap-1">
                         <span

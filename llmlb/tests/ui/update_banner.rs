@@ -116,17 +116,23 @@ fn force_update_requires_ready_payload() {
     );
 }
 
-// FR-018: 強制更新ボタンは常時表示し、条件未達時は説明付きで無効化する
+// FR-018: 強制更新ボタンはアップデートが利用可能な場合のみ表示する
 #[test]
-fn force_update_button_is_visible_even_without_available_update() {
+fn force_update_button_shown_only_when_update_available() {
     let source = get_dashboard_source();
     assert!(
-        source.contains("const showForceButton = true"),
-        "Force update button should remain visible even when no update is currently available"
+        source.contains("const showForceButton = hasAvailableUpdate"),
+        "Force update button should only be visible when an update is available"
     );
+}
+
+// FR-031: ロールバックボタンは.bakが存在する場合のみ表示する
+#[test]
+fn rollback_button_shown_only_when_available() {
+    let source = get_dashboard_source();
     assert!(
-        source.contains("No update is available"),
-        "Dashboard should explain why force update is disabled when no update is available"
+        source.contains("isAdmin && rollbackAvailable && ("),
+        "Rollback button should only be visible when rollback is available"
     );
 }
 

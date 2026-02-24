@@ -129,7 +129,7 @@
 
 1. **前提** updateState=available かつ payload=ready、**実行** `Force update now` を確認して実行、**結果** 進行中リクエストを打ち切って即時再起動処理に入る
 2. **前提** updateState=available かつ payload=not_ready、**実行** 強制更新ボタンを確認、**結果** disabled表示となり押下できない
-3. **前提** updateStateがavailable以外、**実行** 強制更新ボタンを確認、**結果** ボタン自体は表示されるが disabled かつ「No update is available」説明を表示する
+3. **前提** updateStateがavailable以外、**実行** ダッシュボードを確認、**結果** 強制更新ボタンは非表示
 4. **前提** updateState=available かつ payload=ready、**実行** `POST /api/system/update/apply/force`、**結果** `202 Accepted` と `queued=false`、`mode=force` を返す
 5. **前提** updateStateがavailable以外またはpayload未準備、**実行** `POST /api/system/update/apply/force`、**結果** `409 Conflict` が返る
 
@@ -217,7 +217,7 @@
 **受け入れシナリオ**:
 
 1. **前提** アップデート直後で`.bak`あり、**実行** 「Rollback to previous version」を押す、**結果** 確認ダイアログ後、前バージョンに戻して再起動する
-2. **前提** `.bak`が存在しない、**実行** ロールバックボタンを確認、**結果** disabledで「No previous version available」と表示
+2. **前提** `.bak`が存在しない、**実行** ダッシュボードを確認、**結果** ロールバックボタンは非表示
 
 ---
 
@@ -295,7 +295,7 @@ viewerロールのユーザーとして、現在のバージョン番号は確�
 - **FR-015**: ダッシュボードヘッダーの「Current vX.Y.Z」横にアップデート状態を示すドットインジケータ（緑=最新/黄=更新可・更新中/赤=失敗）とバッジテキストを表示する
 - **FR-016**: システムは `POST /api/system/update/apply/force` を提供し、payload準備済みのときに強制更新を受け付ける
 - **FR-017**: 強制更新は `draining` 状態を経由せず、`applying` に直接遷移する
-- **FR-018**: ダッシュボードは通常更新ボタンと強制更新ボタンを分離し、強制更新ボタンは更新候補の有無に関係なく表示する。強制更新には確認ダイアログを表示する
+- **FR-018**: ダッシュボードは通常更新ボタンと強制更新ボタンを分離し、強制更新ボタンはアップデートが利用可能な場合のみ表示する。強制更新には確認ダイアログを表示する
 - **FR-019**: 強制更新ボタンは `available` かつ `payload=ready` のときのみ有効化する
 
 ### 機能要件 (Phase 2: 応答性・スケジュール・ロールバック)
@@ -311,7 +311,7 @@ viewerロールのユーザーとして、現在のバージョン番号は確�
 - **FR-028**: アップデート履歴（日時・from/toバージョン・モード・予約者・結果・失敗理由）をJSONファイルに保存する（直近100件）
 - **FR-029**: ヘルパープロセスは新バージョンの起動を監視し、30秒以内にヘルスチェック（`GET /api/version`）に応答しなければ`.bak`から自動復元する
 - **FR-030**: 自動ロールバック実行時はアップデート履歴に`failed (auto-rollback)`として記録する
-- **FR-031**: ダッシュボードに「Rollback to previous version」ボタンを提供し、`.bak`が存在する場合のみ有効化する
+- **FR-031**: ダッシュボードに「Rollback to previous version」ボタンを提供し、`.bak`が存在する場合のみ表示・有効化する
 - **FR-032**: ロールバック実行には確認ダイアログを表示する
 - **FR-033**: ドレインにタイムアウト（デフォルト300秒）を設け、超過時は適用をキャンセルしゲートを再開する
 - **FR-034**: ドレインタイムアウトの残り時間をダッシュボードに表示する

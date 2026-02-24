@@ -398,6 +398,33 @@ pub async fn require_admin_role_middleware(
     Ok(next.run(request).await)
 }
 
+/// パスワード変更済みを要求するミドルウェア
+///
+/// JWTクレームの`must_change_password`が`true`の場合、403を返す。
+/// `/auth/me`, `/auth/logout`, `/auth/change-password`は除外済み（ルート構成で分離）。
+pub async fn require_password_changed_middleware(
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let claims = request.extensions().get::<Claims>().ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Missing authenticated user claims".to_string(),
+        )
+            .into_response()
+    })?;
+
+    if claims.must_change_password {
+        return Err((
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"error": "password_change_required"})),
+        )
+            .into_response());
+    }
+
+    Ok(next.run(request).await)
+}
+
 /// CookieベースのJWT認証時にCSRFトークンを要求するミドルウェア
 pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Response, Response> {
     if !method_requires_csrf(request.method()) {
@@ -578,6 +605,7 @@ pub async fn jwt_or_api_key_permission_middleware(
         sub: auth_context.created_by.to_string(),
         role: config.api_key_role,
         exp,
+        must_change_password: false,
     };
     let claims_for_response = claims.clone();
     let auth_context_for_response = auth_context.clone();

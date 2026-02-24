@@ -70,6 +70,7 @@ pub fn create_app(state: AppState) -> Router {
     let auth_routes = Router::new()
         .route("/auth/me", get(auth::me))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/change-password", put(auth::change_password))
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
@@ -114,6 +115,9 @@ pub fn create_app(state: AppState) -> Router {
             "/me/api-keys/{id}",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         )
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
@@ -280,12 +284,18 @@ pub fn create_app(state: AppState) -> Router {
         );
 
     let dashboard_api_routes = {
-        let dashboard_general_routes =
-            dashboard_general_routes.layer(middleware::from_fn_with_state(
+        let dashboard_general_routes = dashboard_general_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::require_password_changed_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
                 state.jwt_secret.clone(),
                 crate::auth::middleware::jwt_auth_middleware,
             ));
         let dashboard_audit_routes = dashboard_audit_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::require_password_changed_middleware,
+            ))
             .layer(middleware::from_fn(
                 crate::auth::middleware::require_admin_role_middleware,
             ))
@@ -314,6 +324,9 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route("/system/update/rollback", post(system::rollback));
     let system_mutation_routes = system_mutation_routes
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
@@ -410,6 +423,9 @@ pub fn create_app(state: AppState) -> Router {
         post(endpoints::proxy_chat_completions),
     );
     let playground_proxy_routes = playground_proxy_routes
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
@@ -715,7 +731,7 @@ mod tests {
     async fn test_dashboard_audit_logs_requires_admin_role() {
         let state = test_state().await;
         let viewer_token =
-            crate::auth::jwt::create_jwt("viewer-user", UserRole::Viewer, &state.jwt_secret)
+            crate::auth::jwt::create_jwt("viewer-user", UserRole::Viewer, &state.jwt_secret, false)
                 .expect("create viewer jwt");
         let mut app = create_app(state);
 
@@ -738,7 +754,7 @@ mod tests {
     async fn test_dashboard_audit_logs_allows_admin_role() {
         let state = test_state().await;
         let admin_token =
-            crate::auth::jwt::create_jwt("admin-user", UserRole::Admin, &state.jwt_secret)
+            crate::auth::jwt::create_jwt("admin-user", UserRole::Admin, &state.jwt_secret, false)
                 .expect("create admin jwt");
         let mut app = create_app(state);
 

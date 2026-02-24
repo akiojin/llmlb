@@ -14,7 +14,8 @@ use wiremock::{
 
 async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin).await;
+    let created =
+        llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false).await;
     let admin_id = match created {
         Ok(user) => user.id,
         Err(_) => {

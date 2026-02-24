@@ -21,10 +21,17 @@ use uuid::Uuid;
 pub struct CreateUserRequest {
     /// ユーザー名
     pub username: String,
-    /// パスワード
-    pub password: String,
     /// ロール
     pub role: UserRole,
+}
+
+/// ユーザー作成レスポンス（生成パスワード付き）
+#[derive(Debug, Serialize)]
+pub struct CreateUserResponse {
+    /// ユーザー情報
+    pub user: UserResponse,
+    /// 自動生成されたパスワード（管理者に一度だけ表示）
+    pub generated_password: String,
 }
 
 /// ユーザー更新リクエスト
@@ -131,7 +138,7 @@ pub async fn create_user(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Json(request): Json<CreateUserRequest>,
-) -> Result<(StatusCode, Json<UserResponse>), Response> {
+) -> Result<(StatusCode, Json<CreateUserResponse>), Response> {
     check_admin(&claims)?;
 
     // ユーザー名の重複チェック
@@ -152,8 +159,11 @@ pub async fn create_user(
         );
     }
 
+    // パスワードを自動生成
+    let generated_password = crate::auth::generate_random_token(16);
+
     // パスワードをハッシュ化
-    let password_hash = crate::auth::password::hash_password(&request.password).map_err(|e| {
+    let password_hash = crate::auth::password::hash_password(&generated_password).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
         AppError(LbError::PasswordHash(format!(
             "Failed to hash password: {}",
@@ -162,12 +172,13 @@ pub async fn create_user(
         .into_response()
     })?;
 
-    // ユーザーを作成
+    // ユーザーを作成（初回パスワード変更必須）
     let user = crate::db::users::create(
         &app_state.db_pool,
         &request.username,
         &password_hash,
         request.role,
+        true,
     )
     .await
     .map_err(|e| {
@@ -175,7 +186,13 @@ pub async fn create_user(
         AppError(LbError::Database(format!("Failed to create user: {}", e))).into_response()
     })?;
 
-    Ok((StatusCode::CREATED, Json(UserResponse::from(user))))
+    Ok((
+        StatusCode::CREATED,
+        Json(CreateUserResponse {
+            user: UserResponse::from(user),
+            generated_password,
+        }),
+    ))
 }
 
 /// PUT /api/users/:id - ユーザー更新

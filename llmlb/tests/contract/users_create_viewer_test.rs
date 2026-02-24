@@ -16,7 +16,7 @@ async fn build_app() -> (axum::Router, sqlx::SqlitePool) {
 
     // テスト用の管理者ユーザーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
         .ok();
 
@@ -67,7 +67,6 @@ async fn test_create_user_with_viewer_role() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "username": "testviewer",
-                        "password": "securepass123",
                         "role": "viewer"
                     }))
                     .unwrap(),
@@ -86,13 +85,17 @@ async fn test_create_user_with_viewer_role() {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let user: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(user["username"].as_str().unwrap(), "testviewer");
+    assert_eq!(resp["user"]["username"].as_str().unwrap(), "testviewer");
     assert_eq!(
-        user["role"].as_str().unwrap(),
+        resp["user"]["role"].as_str().unwrap(),
         "viewer",
         "Created user should have 'viewer' role"
+    );
+    assert!(
+        resp["generated_password"].as_str().is_some(),
+        "Response should include generated_password"
     );
 }
 
@@ -113,7 +116,6 @@ async fn test_create_user_with_invalid_user_role_rejected() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "username": "testuser",
-                        "password": "securepass123",
                         "role": "user"
                     }))
                     .unwrap(),
@@ -147,7 +149,6 @@ async fn test_create_user_with_admin_role() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "username": "testadmin",
-                        "password": "securepass123",
                         "role": "admin"
                     }))
                     .unwrap(),
@@ -166,7 +167,7 @@ async fn test_create_user_with_admin_role() {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let user: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(user["role"].as_str().unwrap(), "admin");
+    assert_eq!(resp["user"]["role"].as_str().unwrap(), "admin");
 }

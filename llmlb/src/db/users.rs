@@ -22,8 +22,17 @@ pub async fn create(
     username: &str,
     password_hash: &str,
     role: UserRole,
+    must_change_password: bool,
 ) -> Result<User, LbError> {
-    create_with_id(pool, Uuid::new_v4(), username, password_hash, role).await
+    create_with_id(
+        pool,
+        Uuid::new_v4(),
+        username,
+        password_hash,
+        role,
+        must_change_password,
+    )
+    .await
 }
 
 /// ユーザーを特定のIDで作成（テスト用）
@@ -44,6 +53,7 @@ pub async fn create_with_id(
     username: &str,
     password_hash: &str,
     role: UserRole,
+    must_change_password: bool,
 ) -> Result<User, LbError> {
     let created_at = Utc::now();
 
@@ -53,14 +63,15 @@ pub async fn create_with_id(
     };
 
     sqlx::query(
-        "INSERT INTO users (id, username, password_hash, role, created_at, last_login)
-         VALUES (?, ?, ?, ?, ?, NULL)",
+        "INSERT INTO users (id, username, password_hash, role, created_at, last_login, must_change_password)
+         VALUES (?, ?, ?, ?, ?, NULL, ?)",
     )
     .bind(id.to_string())
     .bind(username)
     .bind(password_hash)
     .bind(role_str)
     .bind(created_at.to_rfc3339())
+    .bind(must_change_password as i32)
     .execute(pool)
     .await
     .map_err(|e| {
@@ -78,6 +89,7 @@ pub async fn create_with_id(
         role,
         created_at,
         last_login: None,
+        must_change_password,
     })
 }
 
@@ -93,7 +105,7 @@ pub async fn create_with_id(
 /// * `Err(LbError)` - 検索失敗
 pub async fn find_by_username(pool: &SqlitePool, username: &str) -> Result<Option<User>, LbError> {
     let row = sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, role, created_at, last_login FROM users WHERE username = ?"
+        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password FROM users WHERE username = ?"
     )
     .bind(username)
     .fetch_optional(pool)
@@ -113,7 +125,7 @@ pub async fn find_by_username(pool: &SqlitePool, username: &str) -> Result<Optio
 /// * `Err(LbError)` - 取得失敗
 pub async fn list(pool: &SqlitePool) -> Result<Vec<User>, LbError> {
     let rows = sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, role, created_at, last_login FROM users ORDER BY created_at DESC"
+        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password FROM users ORDER BY created_at DESC"
     )
     .fetch_all(pool)
     .await
@@ -195,6 +207,7 @@ pub async fn update(
         role: new_role,
         created_at: current.created_at,
         last_login: current.last_login,
+        must_change_password: current.must_change_password,
     })
 }
 
@@ -251,7 +264,7 @@ pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<(), LbError> {
 /// * `Err(LbError)` - 検索失敗
 pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<User>, LbError> {
     let row = sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, role, created_at, last_login FROM users WHERE id = ?",
+        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password FROM users WHERE id = ?",
     )
     .bind(id.to_string())
     .fetch_optional(pool)
@@ -310,6 +323,16 @@ pub async fn is_last_admin(pool: &SqlitePool, user_id: Uuid) -> Result<bool, LbE
     Ok(admin_count == 1)
 }
 
+/// must_change_password フラグをクリア
+pub async fn clear_must_change_password(pool: &SqlitePool, id: Uuid) -> Result<(), LbError> {
+    sqlx::query("UPDATE users SET must_change_password = 0 WHERE id = ?")
+        .bind(id.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to clear must_change_password: {}", e)))?;
+    Ok(())
+}
+
 // SQLiteからの行取得用の内部型
 #[derive(sqlx::FromRow)]
 struct UserRow {
@@ -319,6 +342,7 @@ struct UserRow {
     role: String,
     created_at: String,
     last_login: Option<String>,
+    must_change_password: i32,
 }
 
 impl UserRow {
@@ -345,6 +369,7 @@ impl UserRow {
             role,
             created_at,
             last_login,
+            must_change_password: self.must_change_password != 0,
         }
     }
 }
@@ -361,7 +386,7 @@ mod tests {
     async fn test_create_and_find_user() {
         let pool = setup_test_db().await;
 
-        let user = create(&pool, "testuser", "hash123", UserRole::Admin)
+        let user = create(&pool, "testuser", "hash123", UserRole::Admin, false)
             .await
             .expect("Failed to create user");
 
@@ -381,7 +406,7 @@ mod tests {
 
         assert!(is_first_boot(&pool).await.unwrap());
 
-        create(&pool, "firstuser", "hash", UserRole::Admin)
+        create(&pool, "firstuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
@@ -392,13 +417,13 @@ mod tests {
     async fn test_is_last_admin() {
         let pool = setup_test_db().await;
 
-        let admin = create(&pool, "admin", "hash", UserRole::Admin)
+        let admin = create(&pool, "admin", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
         assert!(is_last_admin(&pool, admin.id).await.unwrap());
 
-        let _admin2 = create(&pool, "admin2", "hash", UserRole::Admin)
+        let _admin2 = create(&pool, "admin2", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 

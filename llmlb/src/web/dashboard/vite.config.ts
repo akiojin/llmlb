@@ -18,6 +18,7 @@ export default defineConfig({
         main: path.resolve(__dirname, 'index.html'),
         login: path.resolve(__dirname, 'login.html'),
         register: path.resolve(__dirname, 'register.html'),
+        'change-password': path.resolve(__dirname, 'change-password.html'),
       },
       output: {
         // Ensure consistent file names for Rust include_dir!

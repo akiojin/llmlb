@@ -463,7 +463,7 @@ pub async fn approve_node_from_register_response(
 pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> String {
     // 管理者ユーザーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin)
+    llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
         .ok();
 

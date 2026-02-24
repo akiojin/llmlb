@@ -69,7 +69,8 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
 async fn create_admin_user(db_pool: &sqlx::SqlitePool) -> uuid::Uuid {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let created = llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin).await;
+    let created =
+        llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false).await;
     if let Ok(user) = created {
         return user.id;
     }
@@ -256,6 +257,7 @@ async fn dashboard_overview_requires_jwt() {
         &admin_id.to_string(),
         UserRole::Admin,
         &support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create jwt");
 
@@ -373,6 +375,7 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
         "viewer-user",
         &viewer_password_hash,
         UserRole::Viewer,
+        false,
     )
     .await
     .unwrap();
@@ -381,12 +384,14 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
         &admin_id.to_string(),
         UserRole::Admin,
         &support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create admin jwt");
     let viewer_jwt = llmlb::auth::jwt::create_jwt(
         &viewer.id.to_string(),
         UserRole::Viewer,
         &support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create viewer jwt");
 

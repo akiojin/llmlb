@@ -1,37 +1,83 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { authApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/hooks/use-toast'
-import { Cpu, Lock, User } from 'lucide-react'
+import { Cpu, Lock } from 'lucide-react'
 
-export default function LoginPage() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+export default function ChangePasswordPage() {
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+
+  useEffect(() => {
+    // Check if user is authenticated
+    authApi.me()
+      .then(() => setIsCheckingAuth(false))
+      .catch(() => {
+        window.location.href = '/dashboard/login.html'
+      })
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (newPassword.length < 6) {
+      toast({
+        variant: 'destructive',
+        title: 'Validation error',
+        description: 'Password must be at least 6 characters',
+      })
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        variant: 'destructive',
+        title: 'Validation error',
+        description: 'Passwords do not match',
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      const result = await authApi.login(username, password)
-      if (result?.user?.must_change_password) {
-        window.location.href = '/dashboard/change-password.html'
-      } else {
-        window.location.href = '/dashboard/'
-      }
+      await authApi.changePassword(newPassword)
+      toast({
+        title: 'Password changed',
+        description: 'Please sign in with your new password',
+      })
+      // Redirect to login after short delay so toast is visible
+      setTimeout(() => {
+        window.location.href = '/dashboard/login.html'
+      }, 1500)
     } catch {
       toast({
         variant: 'destructive',
-        title: 'Login failed',
-        description: 'Invalid username or password',
+        title: 'Failed to change password',
+        description: 'Please try again',
       })
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (isCheckingAuth) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="h-12 w-12 rounded-full border-4 border-primary/20" />
+            <div className="absolute inset-0 h-12 w-12 animate-spin rounded-full border-4 border-transparent border-t-primary" />
+          </div>
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -61,47 +107,47 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Login Card */}
+          {/* Change Password Card */}
           <Card className="glass border-border/50">
             <CardHeader className="space-y-1">
-              <CardTitle className="text-2xl font-semibold">Sign in</CardTitle>
+              <CardTitle className="text-2xl font-semibold">Change Password</CardTitle>
               <CardDescription>
-                Enter your credentials to access the dashboard
+                You must change your password before continuing.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="new-password">New Password</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      id="username"
-                      type="text"
-                      placeholder="Enter your username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
+                      id="new-password"
+                      type="password"
+                      placeholder="Enter new password (min. 6 characters)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
                       className="pl-10"
                       required
-                      autoComplete="username"
+                      autoComplete="new-password"
                       autoFocus
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="confirm-password">Confirm Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      id="password"
+                      id="confirm-password"
                       type="password"
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
                       className="pl-10"
                       required
-                      autoComplete="current-password"
+                      autoComplete="new-password"
                     />
                   </div>
                 </div>
@@ -110,28 +156,18 @@ export default function LoginPage() {
                   type="submit"
                   variant="glow"
                   className="w-full"
-                  disabled={isLoading}
+                  disabled={isLoading || !newPassword || !confirmPassword}
                 >
                   {isLoading ? (
                     <div className="flex items-center gap-2">
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      Signing in...
+                      Changing password...
                     </div>
                   ) : (
-                    'Sign in'
+                    'Change Password'
                   )}
                 </Button>
               </form>
-
-              <div className="mt-4 text-center text-sm text-muted-foreground">
-                Have an invitation code?{' '}
-                <a
-                  href="/dashboard/register.html"
-                  className="text-primary hover:underline"
-                >
-                  Register
-                </a>
-              </div>
             </CardContent>
           </Card>
 

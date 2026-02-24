@@ -88,7 +88,7 @@ export type {
 } from './invitations'
 
 export { usersApi } from './users'
-export type { User } from './users'
+export type { User, CreateUserResponse } from './users'
 
 export { auditLogApi } from './audit-log'
 export type {

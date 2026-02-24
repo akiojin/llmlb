@@ -66,7 +66,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   // Form state
   const [formUsername, setFormUsername] = useState('')
   const [formPassword, setFormPassword] = useState('')
-  const [formRole, setFormRole] = useState<'admin' | 'user'>('user')
+  const [formRole, setFormRole] = useState<'admin' | 'viewer'>('viewer')
 
   // Fetch users
   const { data: users, isLoading, refetch } = useQuery({
@@ -139,7 +139,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   const resetForm = () => {
     setFormUsername('')
     setFormPassword('')
-    setFormRole('user')
+    setFormRole('viewer')
   }
 
   // Populate form when editing
@@ -147,7 +147,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     if (editUser) {
       setFormUsername(editUser.username)
       setFormPassword('')
-      setFormRole(editUser.role as 'admin' | 'user')
+      setFormRole(editUser.role as 'admin' | 'viewer')
     } else {
       resetForm()
     }
@@ -182,7 +182,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     return (
       <Badge variant="secondary" className="gap-1">
         <UserIcon className="h-3 w-3" />
-        User
+        Viewer
       </Badge>
     )
   }
@@ -303,12 +303,12 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="create-role">Role</Label>
-              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'user')}>
+              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
@@ -361,12 +361,12 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role</Label>
-              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'user')}>
+              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>

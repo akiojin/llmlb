@@ -54,6 +54,10 @@ pub enum DashboardEvent {
         /// ランタイムID
         runtime_id: Uuid,
     },
+    /// アップデート状態変更イベント
+    ///
+    /// アップデートチェック・適用・ロールバック・スケジュール操作後に発行
+    UpdateStateChanged,
     /// TPS更新イベント（SPEC-4bb5b55f）
     TpsUpdated {
         /// エンドポイントID
@@ -189,6 +193,28 @@ mod tests {
         assert!((data["tps"].as_f64().unwrap() - 42.5).abs() < 0.01);
         assert_eq!(data["output_tokens"], 100);
         assert_eq!(data["duration_ms"], 2353);
+    }
+
+    #[test]
+    fn test_update_state_changed_event_serialization() {
+        let event = DashboardEvent::UpdateStateChanged;
+
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "UpdateStateChanged");
+    }
+
+    #[tokio::test]
+    async fn test_update_state_changed_event_broadcast() {
+        let bus = DashboardEventBus::new();
+        let mut receiver = bus.subscribe();
+
+        bus.publish(DashboardEvent::UpdateStateChanged);
+
+        let received = receiver.recv().await.unwrap();
+        match received {
+            DashboardEvent::UpdateStateChanged => {}
+            _ => panic!("Expected UpdateStateChanged event"),
+        }
     }
 
     #[tokio::test]

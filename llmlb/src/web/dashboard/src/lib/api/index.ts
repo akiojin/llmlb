@@ -72,6 +72,7 @@ export type {
   ForceApplyUpdateResponse,
   CreateScheduleRequest,
   RollbackResponse,
+  VersionResponse,
 } from './system'
 
 export { apiKeysApi } from './api-keys'

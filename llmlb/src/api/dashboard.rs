@@ -482,6 +482,23 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         }
     }
 
+    // Bug 2: インメモリ average_response_time_ms が None の場合、
+    // オンラインエンドポイントの latency_ms（DB永続化済み）から加重平均を計算
+    let average_response_time_ms = summary.average_response_time_ms.or_else(|| {
+        let online_endpoints: Vec<_> = endpoints
+            .iter()
+            .filter(|e| e.status == EndpointStatus::Online && e.latency_ms.is_some())
+            .collect();
+        if online_endpoints.is_empty() {
+            return None;
+        }
+        let total: f64 = online_endpoints
+            .iter()
+            .map(|e| e.latency_ms.unwrap() as f64)
+            .sum();
+        Some((total / online_endpoints.len() as f64) as f32)
+    });
+
     DashboardStats {
         total_nodes: summary.total_nodes,
         online_nodes: summary.online_nodes,
@@ -493,7 +510,7 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         failed_requests: request_totals.failed_requests,
         total_active_requests: summary.total_active_requests,
         queued_requests: summary.queued_requests,
-        average_response_time_ms: summary.average_response_time_ms,
+        average_response_time_ms,
         average_gpu_usage: summary.average_gpu_usage,
         average_gpu_memory_usage: summary.average_gpu_memory_usage,
         last_metrics_updated_at: summary.last_metrics_updated_at,
@@ -1204,6 +1221,81 @@ pub async fn update_setting(
 #[cfg(test)]
 mod tests {
     use super::parse_ip_alert_threshold;
+    use crate::types::endpoint::{Endpoint, EndpointStatus, EndpointType};
+
+    /// フォールバック計算: avg_response_time_ms が None の場合に
+    /// オンラインエンドポイントの latency_ms から平均値を計算するロジック
+    fn fallback_avg_response_time(summary_avg: Option<f32>, endpoints: &[Endpoint]) -> Option<f32> {
+        summary_avg.or_else(|| {
+            let online_endpoints: Vec<_> = endpoints
+                .iter()
+                .filter(|e| e.status == EndpointStatus::Online && e.latency_ms.is_some())
+                .collect();
+            if online_endpoints.is_empty() {
+                return None;
+            }
+            let total: f64 = online_endpoints
+                .iter()
+                .map(|e| e.latency_ms.unwrap() as f64)
+                .sum();
+            Some((total / online_endpoints.len() as f64) as f32)
+        })
+    }
+
+    /// T010 [US3]: collect_stats のフォールバック計算テスト
+    /// インメモリavg_response_time_msがNoneの場合、オンラインエンドポイントの
+    /// latency_msから平均値を計算する
+    #[test]
+    fn test_avg_response_time_fallback_from_latency() {
+        // (1) summary の average_response_time_ms が None
+        // (2) オンラインエンドポイント2つ (latency_ms=100, 200)
+        let mut ep1 = Endpoint::new(
+            "EP1".to_string(),
+            "http://localhost:8001".to_string(),
+            EndpointType::Xllm,
+        );
+        ep1.status = EndpointStatus::Online;
+        ep1.latency_ms = Some(100);
+
+        let mut ep2 = Endpoint::new(
+            "EP2".to_string(),
+            "http://localhost:8002".to_string(),
+            EndpointType::Xllm,
+        );
+        ep2.status = EndpointStatus::Online;
+        ep2.latency_ms = Some(200);
+
+        let endpoints = vec![ep1, ep2];
+
+        // (3) 結果は 150.0（平均値）
+        let result = fallback_avg_response_time(None, &endpoints);
+        assert_eq!(result, Some(150.0));
+    }
+
+    /// T010 追加シナリオ: 全エンドポイントがオフラインの場合は None のまま
+    #[test]
+    fn test_avg_response_time_fallback_all_offline() {
+        let mut ep1 = Endpoint::new(
+            "EP1".to_string(),
+            "http://localhost:8001".to_string(),
+            EndpointType::Xllm,
+        );
+        ep1.status = EndpointStatus::Offline;
+        ep1.latency_ms = Some(100);
+
+        let endpoints = vec![ep1];
+
+        let result = fallback_avg_response_time(None, &endpoints);
+        assert_eq!(result, None);
+    }
+
+    /// T010 追加シナリオ: summary に値がある場合はフォールバックしない
+    #[test]
+    fn test_avg_response_time_no_fallback_when_present() {
+        let endpoints = vec![];
+        let result = fallback_avg_response_time(Some(42.0), &endpoints);
+        assert_eq!(result, Some(42.0));
+    }
 
     #[test]
     fn parse_ip_alert_threshold_accepts_positive_integer() {

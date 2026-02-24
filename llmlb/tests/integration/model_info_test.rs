@@ -58,10 +58,15 @@ async fn build_app() -> (Router, String, sqlx::SqlitePool) {
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let admin_user =
-        llmlb::db::users::create(&state.db_pool, "admin", &password_hash, UserRole::Admin)
-            .await
-            .expect("create admin user");
+    let admin_user = llmlb::db::users::create(
+        &state.db_pool,
+        "admin",
+        &password_hash,
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .expect("create admin user");
     let admin_key = llmlb::db::api_keys::create(
         &state.db_pool,
         "admin-key",
@@ -182,6 +187,7 @@ async fn test_v1_models_returns_fixed_list() {
         "test-admin",
         &password_hash,
         llmlb::common::auth::UserRole::Admin,
+        false,
     )
     .await
     .expect("Failed to create test user");

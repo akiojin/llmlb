@@ -126,8 +126,8 @@ function aggregateModels(models: RegisteredModelView[]): AggregatedModel[] {
         ? Math.round(model.required_memory_gb * 1024 * 1024 * 1024)
         : undefined,
     chatTemplate: model.chat_template,
-    endpointIds: [],
-    endpointCount: 0,
+    endpointIds: model.endpoint_ids ?? [],
+    endpointCount: (model.endpoint_ids ?? []).length,
   }))
 }
 

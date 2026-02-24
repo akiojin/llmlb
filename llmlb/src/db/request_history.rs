@@ -197,6 +197,33 @@ impl RequestHistoryStorage {
         Ok(())
     }
 
+    /// 直近N分のリクエスト履歴を分単位で集計して返す（起動時seeding用）
+    pub async fn get_recent_history_by_minute(
+        &self,
+        minutes: i64,
+    ) -> RouterResult<Vec<MinuteHistoryPoint>> {
+        let cutoff = (Utc::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
+
+        let rows = sqlx::query_as::<_, MinuteHistoryRow>(
+            r#"
+            SELECT
+                strftime('%Y-%m-%dT%H:%M:00Z', completed_at) AS minute,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+                SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS error_count
+            FROM request_history
+            WHERE completed_at >= ?
+            GROUP BY strftime('%Y-%m-%dT%H:%M:00Z', completed_at)
+            ORDER BY minute ASC
+            "#,
+        )
+        .bind(&cutoff)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get recent history by minute: {}", e)))?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
     /// レコードをフィルタリング＆ページネーション
     pub async fn filter_and_paginate(
         &self,
@@ -795,6 +822,34 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
                 })
                 .transpose()?,
         })
+    }
+}
+
+/// 分単位の履歴集計ポイント（起動時seeding用）
+#[derive(Debug, Clone)]
+pub struct MinuteHistoryPoint {
+    /// 分（UTC ISO8601形式）
+    pub minute: String,
+    /// 成功リクエスト数
+    pub success_count: i64,
+    /// 失敗リクエスト数
+    pub error_count: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct MinuteHistoryRow {
+    minute: String,
+    success_count: i64,
+    error_count: i64,
+}
+
+impl From<MinuteHistoryRow> for MinuteHistoryPoint {
+    fn from(row: MinuteHistoryRow) -> Self {
+        MinuteHistoryPoint {
+            minute: row.minute,
+            success_count: row.success_count,
+            error_count: row.error_count,
+        }
     }
 }
 
@@ -2064,5 +2119,43 @@ mod tests {
         assert_eq!(stats[0].total_output_tokens, 50);
         assert_eq!(stats[0].total_tokens, 150);
         assert_eq!(stats[0].request_count, 1);
+    }
+
+    /// T012 [US5]: get_recent_history_by_minute が分単位でリクエスト履歴を
+    /// 正しく集計できることを検証
+    #[tokio::test]
+    async fn test_get_recent_history_by_minute() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let now = Utc::now();
+
+        // 成功レコードを3件保存
+        for i in 0..3 {
+            let mut record = create_test_record(now - Duration::seconds(i * 10));
+            record.status = RecordStatus::Success;
+            record.completed_at = now - Duration::seconds(i * 10);
+            storage.save_record(&record).await.unwrap();
+        }
+
+        // 失敗レコードを1件保存（同じ分内）
+        let mut fail_record = create_test_record(now - Duration::seconds(5));
+        fail_record.status = RecordStatus::Error {
+            message: "test error".to_string(),
+        };
+        fail_record.completed_at = now - Duration::seconds(5);
+        storage.save_record(&fail_record).await.unwrap();
+
+        // 直近10分の集計を取得
+        let history = storage.get_recent_history_by_minute(10).await.unwrap();
+
+        // 少なくとも1つの分単位エントリが返ること
+        assert!(!history.is_empty(), "should have at least one minute entry");
+
+        // 全エントリの合計を検証
+        let total_success: i64 = history.iter().map(|h| h.success_count).sum();
+        let total_error: i64 = history.iter().map(|h| h.error_count).sum();
+        assert_eq!(total_success, 3, "should have 3 success records");
+        assert_eq!(total_error, 1, "should have 1 error record");
     }
 }

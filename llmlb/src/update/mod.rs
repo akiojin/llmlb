@@ -310,6 +310,48 @@ impl UpdateManager {
         })
     }
 
+    /// Create an `UpdateManager` with an explicit data directory (test-only).
+    ///
+    /// This avoids reading `LLMLB_DATA_DIR` from the environment, eliminating
+    /// race conditions when tests run in parallel.
+    #[cfg(test)]
+    fn new_with_data_dir(
+        http_client: reqwest::Client,
+        gate: InferenceGate,
+        shutdown: ShutdownController,
+        data_dir: &Path,
+    ) -> Result<Self> {
+        let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
+            .context("Failed to parse CARGO_PKG_VERSION as semver")?;
+
+        let cache_path = data_dir.join("update-check.json");
+        let updates_dir = data_dir.join("updates");
+
+        Ok(Self {
+            inner: Arc::new(UpdateManagerInner {
+                started: AtomicBool::new(false),
+                apply_request_mode: AtomicU8::new(ApplyRequestMode::None as u8),
+                apply_notify: Notify::new(),
+                current_version,
+                http_client,
+                gate,
+                shutdown,
+                owner: DEFAULT_OWNER.to_string(),
+                repo: DEFAULT_REPO.to_string(),
+                ttl: DEFAULT_TTL,
+                github_api_base_url: None,
+                cache_path,
+                updates_dir,
+                state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
+                last_manual_check: Mutex::new(None),
+                schedule_store: schedule::ScheduleStore::new(data_dir),
+                history_store: history::HistoryStore::new(data_dir),
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                tray_proxy: RwLock::new(None),
+            }),
+        })
+    }
+
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     /// Attach a tray event proxy to publish update state (best-effort).
     pub async fn set_tray_proxy(&self, proxy: crate::gui::tray::TrayEventProxy) {
@@ -367,14 +409,32 @@ impl UpdateManager {
         }
 
         let timeout = Duration::from_secs(5);
-        let release = fetch_latest_release(
+        let release = match fetch_latest_release(
             &self.inner.http_client,
             &self.inner.owner,
             &self.inner.repo,
             timeout,
             self.inner.github_api_base_url.as_deref(),
         )
-        .await?;
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                // GitHub API failure (429 rate limit, timeout, etc.):
+                // preserve existing Available state (especially payload: Ready)
+                // or fall back to cached data.
+                tracing::warn!("GitHub API failed, falling back to cache: {e}");
+                let current = self.state().await;
+                if matches!(&current, UpdateState::Available { .. }) {
+                    return Ok(current);
+                }
+                if let Some(cache) = load_cache(&self.inner.cache_path).ok().flatten() {
+                    self.apply_cache(cache).await?;
+                    return Ok(self.state().await);
+                }
+                return Err(e);
+            }
+        };
         let latest = parse_tag_to_version(&release.tag_name)?;
         if latest <= self.inner.current_version {
             *self.inner.state.write().await = UpdateState::UpToDate {
@@ -2585,15 +2645,14 @@ mod tests {
     /// Uses a unique env var approach with per-test isolation.
     fn test_manager_with_gate(gate: InferenceGate) -> (UpdateManager, tempfile::TempDir) {
         let tmp = tempfile::tempdir().expect("create temp dir");
-        // Ensure directory exists.
         std::fs::create_dir_all(tmp.path()).expect("create data dir");
-        // Use unsafe set_var inside serial test — each test gets its own temp dir.
-        unsafe {
-            std::env::set_var("LLMLB_DATA_DIR", tmp.path());
-        }
-        let manager =
-            UpdateManager::new(reqwest::Client::new(), gate, ShutdownController::default())
-                .expect("create update manager");
+        let manager = UpdateManager::new_with_data_dir(
+            reqwest::Client::new(),
+            gate,
+            ShutdownController::default(),
+            tmp.path(),
+        )
+        .expect("create update manager");
         (manager, tmp)
     }
 
@@ -2974,5 +3033,111 @@ mod tests {
             ApplyRequestMode::None,
             "should not trigger before time"
         );
+    }
+
+    // =======================================================================
+    // check_only: GitHub API失敗時にキャッシュフォールバック
+    // (SPEC-a6e55b37 ユーザーストーリー10シナリオ4)
+    // =======================================================================
+    #[tokio::test]
+    async fn check_only_github_error_cache_fallback() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // GitHub API が 429 を返すようモック
+        Mock::given(method("GET"))
+            .and(path("/repos/test-owner/test-repo/releases/latest"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        // 単一テスト内で env var を設定してテスト間の競合を回避
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        unsafe {
+            std::env::set_var("LLMLB_DATA_DIR", tmp.path());
+        }
+        let manager = UpdateManager::new_with_config(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+            "test-owner".to_string(),
+            "test-repo".to_string(),
+            Some(mock_server.uri()),
+        )
+        .expect("create update manager");
+
+        // --- ケース1: キャッシュなし → エラーが返る ---
+        assert!(
+            !manager.inner.cache_path.exists(),
+            "cache should not exist in fresh temp dir"
+        );
+        let result = manager.check_only(true).await;
+        assert!(
+            result.is_err(),
+            "check_only should fail when no cache and GitHub returns 429"
+        );
+
+        // --- ケース2: キャッシュあり → フォールバックで成功 ---
+        save_cache(
+            &manager.inner.cache_path,
+            UpdateCacheFile {
+                last_checked_at: Utc::now(),
+                latest_version: Some("99.0.0".to_string()),
+                release_url: Some(
+                    "https://github.com/test-owner/test-repo/releases/tag/v99.0.0".to_string(),
+                ),
+                portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
+                installer_asset_url: None,
+            },
+        )
+        .expect("save cache");
+
+        // force=true でもキャッシュフォールバックすべき
+        let state = manager
+            .check_only(true)
+            .await
+            .expect("check_only should succeed via cache fallback");
+
+        match &state {
+            UpdateState::Available { latest, .. } => {
+                assert_eq!(latest, "99.0.0");
+            }
+            other => panic!("expected Available from cache fallback, got {other:?}"),
+        }
+
+        // --- ケース3: 既にAvailable(payload=Ready)なら状態を保持 ---
+        {
+            let mut st = manager.inner.state.write().await;
+            *st = UpdateState::Available {
+                current: "5.0.0".to_string(),
+                latest: "99.0.0".to_string(),
+                release_url: "https://example.com/release".to_string(),
+                portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
+                installer_asset_url: None,
+                payload: PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                },
+                checked_at: Utc::now(),
+            };
+        }
+
+        let state = manager
+            .check_only(true)
+            .await
+            .expect("check_only should preserve existing Available state");
+
+        match &state {
+            UpdateState::Available { payload, .. } => {
+                assert!(
+                    matches!(payload, PayloadState::Ready { .. }),
+                    "payload should remain Ready, got {payload:?}"
+                );
+            }
+            other => panic!("expected Available with Ready payload, got {other:?}"),
+        }
     }
 }

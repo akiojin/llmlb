@@ -43,6 +43,7 @@ export interface OpenAIModel {
   description?: string
   chat_template?: string
   max_tokens?: number | null
+  endpoint_ids?: string[]
 }
 
 // /api/models/discover-gguf response types
@@ -88,6 +89,7 @@ export interface RegisteredModelView {
   tags: string[]
   capabilities?: ModelCapabilities
   chat_template?: string
+  endpoint_ids: string[]
 }
 
 // OpenAIModel を RegisteredModelView に変換
@@ -113,6 +115,7 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
     capabilities: model.capabilities,
     tags: model.tags ?? [],
     chat_template: model.chat_template,
+    endpoint_ids: model.endpoint_ids ?? [],
   }
 }
 

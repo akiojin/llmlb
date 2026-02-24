@@ -122,6 +122,41 @@ async fn initialize_inner(
     if let Err(err) = request_history.import_legacy_json_if_present().await {
         tracing::warn!("Failed to import legacy request history: {}", err);
     }
+    // 起動時にDBからリクエスト履歴をseed（直近60分）
+    match request_history.get_recent_history_by_minute(60).await {
+        Ok(points) => {
+            if !points.is_empty() {
+                info!(
+                    count = points.len(),
+                    "Seeding request history from database"
+                );
+                load_manager.seed_history_from_db(points).await;
+            }
+        }
+        Err(e) => {
+            warn!("Failed to seed request history from database: {}", e);
+        }
+    }
+
+    // 起動時にDBからTPS状態をseed（当日分）
+    {
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        match crate::db::endpoint_daily_stats::get_today_stats_all(&db_pool, &today).await {
+            Ok(entries) => {
+                if !entries.is_empty() {
+                    info!(
+                        count = entries.len(),
+                        "Seeding TPS tracker from daily stats"
+                    );
+                    load_manager.seed_tps_from_db(entries).await;
+                }
+            }
+            Err(e) => {
+                warn!("Failed to seed TPS tracker from daily stats: {}", e);
+            }
+        }
+    }
+
     crate::db::request_history::start_cleanup_task(request_history.clone());
     crate::db::endpoint_daily_stats::start_daily_stats_task(db_pool.clone());
 

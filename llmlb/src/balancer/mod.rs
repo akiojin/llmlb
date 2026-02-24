@@ -621,6 +621,92 @@ mod tests {
         assert_eq!(ep2.model_count, 1);
         assert_eq!(ep2.total_output_tokens, 50);
     }
+
+    /// T013 [US5]: seed_history_from_db が MinuteHistoryPoint を VecDeque に
+    /// 正しく投入できることを検証
+    #[tokio::test]
+    async fn test_seed_history_from_db() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+
+        let now = Utc::now();
+        let minute1 = super::align_to_minute(now - chrono::Duration::minutes(5));
+        let minute2 = super::align_to_minute(now - chrono::Duration::minutes(3));
+
+        let points = vec![
+            crate::db::request_history::MinuteHistoryPoint {
+                minute: minute1.to_rfc3339(),
+                success_count: 10,
+                error_count: 2,
+            },
+            crate::db::request_history::MinuteHistoryPoint {
+                minute: minute2.to_rfc3339(),
+                success_count: 5,
+                error_count: 1,
+            },
+        ];
+
+        load_manager.seed_history_from_db(points).await;
+
+        let history = load_manager.request_history().await;
+        // VecDeque には seed したデータが含まれる
+        let total_success: u64 = history.iter().map(|h| h.success).sum();
+        let total_error: u64 = history.iter().map(|h| h.error).sum();
+        assert_eq!(total_success, 15, "seeded success count");
+        assert_eq!(total_error, 3, "seeded error count");
+    }
+
+    /// T018 [US4]: seed_tps_from_db が TpsSeedEntry から TpsTrackerMap に
+    /// 正しく TPS EMA を計算して投入できることを検証
+    #[tokio::test]
+    async fn test_seed_tps_from_db() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        let entries = vec![
+            crate::db::endpoint_daily_stats::TpsSeedEntry {
+                endpoint_id,
+                model_id: "test-model".to_string(),
+                api_kind: "chat_completions".to_string(),
+                total_output_tokens: 100,
+                total_duration_ms: 2000,
+                successful_requests: 5,
+            },
+            // duration_ms=0 のエントリはスキップされること
+            crate::db::endpoint_daily_stats::TpsSeedEntry {
+                endpoint_id,
+                model_id: "skip-model".to_string(),
+                api_kind: "chat_completions".to_string(),
+                total_output_tokens: 100,
+                total_duration_ms: 0,
+                successful_requests: 1,
+            },
+            // tokens=0 のエントリもスキップされること
+            crate::db::endpoint_daily_stats::TpsSeedEntry {
+                endpoint_id,
+                model_id: "skip-model2".to_string(),
+                api_kind: "chat_completions".to_string(),
+                total_output_tokens: 0,
+                total_duration_ms: 1000,
+                successful_requests: 1,
+            },
+        ];
+
+        load_manager.seed_tps_from_db(entries).await;
+
+        let tps_data = load_manager.get_all_endpoint_tps().await;
+        // test-model のみ seed されている
+        assert!(!tps_data.is_empty(), "should have TPS data");
+        let ep_tps = tps_data
+            .iter()
+            .find(|t| t.endpoint_id == endpoint_id)
+            .expect("should have endpoint TPS");
+        // TPS = 100 / (2000/1000) = 50.0
+        assert_eq!(ep_tps.model_count, 1, "only valid entry should be seeded");
+        assert!(ep_tps.aggregate_tps.is_some(), "should have aggregate TPS");
+        let tps = ep_tps.aggregate_tps.unwrap();
+        assert!((tps - 50.0).abs() < 0.1, "TPS should be ~50.0, got {tps}");
+    }
 }
 
 /// ロードマネージャー
@@ -1372,6 +1458,52 @@ impl LoadManager {
         summary.last_metrics_updated_at = latest_timestamp;
 
         summary
+    }
+
+    /// 起動時にDBからリクエスト履歴をseedする
+    pub async fn seed_history_from_db(
+        &self,
+        points: Vec<crate::db::request_history::MinuteHistoryPoint>,
+    ) {
+        let mut history = self.history.write().await;
+        for point in points {
+            if let Ok(minute) = chrono::DateTime::parse_from_rfc3339(&point.minute) {
+                let minute = minute.with_timezone(&Utc);
+                history.push_back(RequestHistoryPoint {
+                    minute,
+                    success: point.success_count as u64,
+                    error: point.error_count as u64,
+                });
+            }
+        }
+        // 古いエントリをプルーニング
+        let now = align_to_minute(Utc::now());
+        prune_history(&mut history, now);
+    }
+
+    /// 起動時にDBからTPS状態をseedする
+    pub async fn seed_tps_from_db(
+        &self,
+        entries: Vec<crate::db::endpoint_daily_stats::TpsSeedEntry>,
+    ) {
+        let mut tracker = self.tps_tracker.write().await;
+        for entry in entries {
+            if entry.total_duration_ms <= 0 || entry.total_output_tokens <= 0 {
+                continue;
+            }
+            let tps = entry.total_output_tokens as f64 / (entry.total_duration_ms as f64 / 1000.0);
+            let api_kind = match entry.api_kind.as_str() {
+                "completions" => TpsApiKind::Completions,
+                "responses" => TpsApiKind::Responses,
+                _ => TpsApiKind::ChatCompletions,
+            };
+            let key = (entry.endpoint_id, entry.model_id, api_kind);
+            let state = tracker.entry(key).or_default();
+            state.tps_ema = Some(tps);
+            state.request_count = entry.successful_requests as u64;
+            state.total_output_tokens = entry.total_output_tokens as u64;
+            state.total_duration_ms = entry.total_duration_ms as u64;
+        }
     }
 
     /// リクエスト履歴を取得

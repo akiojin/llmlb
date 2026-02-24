@@ -5,7 +5,7 @@ import { fetchWithAuth } from './client'
 export interface User {
   id: string
   username: string
-  role: 'admin' | 'user'
+  role: 'admin' | 'viewer'
   created_at: string
 }
 

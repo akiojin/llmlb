@@ -65,6 +65,7 @@ import {
   Calendar,
   Clock,
   Zap,
+  Package,
 } from 'lucide-react'
 
 const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
@@ -172,7 +173,6 @@ export default function Dashboard() {
     queryKey: ['viewer-models'],
     queryFn: () => modelsApi.getRegistered(),
     refetchInterval: pollingInterval,
-    enabled: isViewer,
   })
 
   // Map RequestResponseRecord to RequestHistoryItem
@@ -831,10 +831,14 @@ export default function Dashboard() {
           </section>
         ) : (
           <Tabs defaultValue="endpoints" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
+            <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
               <TabsTrigger value="endpoints" className="gap-2">
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">Endpoints</span>
+              </TabsTrigger>
+              <TabsTrigger value="models" className="gap-2">
+                <Package className="h-4 w-4" />
+                <span className="hidden sm:inline">Models</span>
               </TabsTrigger>
               <TabsTrigger value="statistics" className="gap-2">
                 <BarChart3 className="h-4 w-4" />
@@ -859,6 +863,15 @@ export default function Dashboard() {
                 endpoints={endpointsData || []}
                 endpointTps={data?.endpoint_tps}
                 isLoading={isLoadingEndpoints}
+              />
+            </TabsContent>
+
+            <TabsContent value="models" className="animate-fade-in">
+              <ModelsTable
+                models={viewerModels || []}
+                endpoints={endpointsData || []}
+                isLoading={isLoadingViewerModels}
+                onRefresh={() => { void refetchViewerModels() }}
               />
             </TabsContent>
 

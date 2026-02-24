@@ -100,10 +100,8 @@ test.describe('API Key Create + OpenAI API Calls @api-keys', () => {
     await createDialog.locator('#api-key-name').fill(apiKeyName)
     await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
 
-    // Wait for onSuccess (name is cleared only on success).
-    await expect(createDialog.locator('#api-key-name')).toHaveValue('', { timeout: 20000 })
-
-    // Create dialog auto-closes on success
+    // Wait for onSuccess (dialog auto-closes on success).
+    await expect(createDialog).toBeHidden({ timeout: 20000 })
     const createdAlert = apiKeysModal.getByText('API Key Created Successfully').locator('..')
     await expect(createdAlert).toBeVisible({ timeout: 10000 })
 

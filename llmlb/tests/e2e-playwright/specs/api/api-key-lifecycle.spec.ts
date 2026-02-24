@@ -98,7 +98,8 @@ test.describe('API Key Lifecycle @api', () => {
     )
 
     await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
-    await expect(createDialog.locator('#api-key-name')).toHaveValue('', { timeout: 20000 })
+    // Wait for onSuccess (dialog auto-closes on success).
+    await expect(createDialog).toBeHidden({ timeout: 20000 })
     const createResp = await createApiKeyResponse
     const createRespBody = (await createResp.json()) as { id?: string; key?: string }
     const apiKey = createRespBody.key?.trim() || ''

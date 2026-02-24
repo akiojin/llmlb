@@ -379,8 +379,13 @@ impl UpdateManager {
             Ok(r) => r,
             Err(e) => {
                 // GitHub API failure (429 rate limit, timeout, etc.):
-                // fall back to cached data if available.
+                // preserve existing Available state (especially payload: Ready)
+                // or fall back to cached data.
                 tracing::warn!("GitHub API failed, falling back to cache: {e}");
+                let current = self.state().await;
+                if matches!(&current, UpdateState::Available { .. }) {
+                    return Ok(current);
+                }
                 if let Some(cache) = load_cache(&self.inner.cache_path).ok().flatten() {
                     self.apply_cache(cache).await?;
                     return Ok(self.state().await);
@@ -3059,6 +3064,39 @@ mod tests {
                 assert_eq!(latest, "99.0.0");
             }
             other => panic!("expected Available from cache fallback, got {other:?}"),
+        }
+
+        // --- ケース3: 既にAvailable(payload=Ready)なら状態を保持 ---
+        {
+            let mut st = manager.inner.state.write().await;
+            *st = UpdateState::Available {
+                current: "5.0.0".to_string(),
+                latest: "99.0.0".to_string(),
+                release_url: "https://example.com/release".to_string(),
+                portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
+                installer_asset_url: None,
+                payload: PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                },
+                checked_at: Utc::now(),
+            };
+        }
+
+        let state = manager
+            .check_only(true)
+            .await
+            .expect("check_only should preserve existing Available state");
+
+        match &state {
+            UpdateState::Available { payload, .. } => {
+                assert!(
+                    matches!(payload, PayloadState::Ready { .. }),
+                    "payload should remain Ready, got {payload:?}"
+                );
+            }
+            other => panic!("expected Available with Ready payload, got {other:?}"),
         }
     }
 }

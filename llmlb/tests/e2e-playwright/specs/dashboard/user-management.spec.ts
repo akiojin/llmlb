@@ -51,7 +51,8 @@ test.describe('User Management @dashboard', () => {
 
   test('UM-03: delete user -> login fails', async ({ page, request }) => {
     const username = `e2e-del-${Date.now()}`
-    const user = await createUser(request, username, 'testpass123', 'viewer')
+    const user = await createUser(request, username, '', 'viewer')
+    const generatedPassword = user.generated_password || 'unknown'
 
     // Delete user via API
     await deleteUser(request, user.id)
@@ -62,7 +63,7 @@ test.describe('User Management @dashboard', () => {
 
     // Fill login form
     await page.fill('#username', username)
-    await page.fill('#password', 'testpass123')
+    await page.fill('#password', generatedPassword)
     await page.click('button[type="submit"]')
 
     // Should show error (toast or inline message)
@@ -78,7 +79,7 @@ test.describe('User Management @dashboard', () => {
     // Attempt to create user with same username
     const resp = await request.post(`${API_BASE}/api/users`, {
       headers: { Authorization: 'Bearer sk_debug', 'Content-Type': 'application/json' },
-      data: { username, password: 'testpass456', role: 'user' },
+      data: { username, role: 'viewer' },
     })
     expect(resp.ok()).toBeFalsy()
   })

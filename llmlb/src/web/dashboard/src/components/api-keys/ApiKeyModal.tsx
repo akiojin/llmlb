@@ -108,6 +108,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
       setCopiedId(null)
       setNewKeyName('')
       setNewKeyExpires('')
+      setCreateOpen(false)
       toast({ title: 'API key created' })
     },
     onError: (error) => {

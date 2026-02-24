@@ -33,6 +33,7 @@ async fn create_admin_jwt(db_pool: &SqlitePool) -> String {
         &admin_id.to_string(),
         UserRole::Admin,
         &crate::support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create admin jwt")
 }

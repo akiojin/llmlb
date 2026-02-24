@@ -161,4 +161,7 @@ pub struct Claims {
     pub role: UserRole,
     /// 有効期限（Unix timestamp、JWT exp claim）
     pub exp: usize,
+    /// パスワード変更が必要か
+    #[serde(default)]
+    pub must_change_password: bool,
 }

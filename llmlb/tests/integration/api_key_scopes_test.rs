@@ -257,6 +257,7 @@ async fn dashboard_overview_requires_jwt() {
         &admin_id.to_string(),
         UserRole::Admin,
         &support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create jwt");
 
@@ -383,12 +384,14 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
         &admin_id.to_string(),
         UserRole::Admin,
         &support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create admin jwt");
     let viewer_jwt = llmlb::auth::jwt::create_jwt(
         &viewer.id.to_string(),
         UserRole::Viewer,
         &support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create viewer jwt");
 

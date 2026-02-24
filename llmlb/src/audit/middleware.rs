@@ -551,6 +551,7 @@ mod tests {
             &user.id.to_string(),
             crate::common::auth::UserRole::Admin,
             &jwt_secret,
+            false,
         )
         .expect("create jwt");
 

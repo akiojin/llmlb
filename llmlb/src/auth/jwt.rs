@@ -18,7 +18,12 @@ const JWT_EXPIRATION_HOURS: i64 = 24;
 /// # Returns
 /// * `Ok(String)` - JWTトークン（3つのドット区切り部分）
 /// * `Err(LbError)` - 生成失敗
-pub fn create_jwt(user_id: &str, role: UserRole, secret: &str) -> Result<String, LbError> {
+pub fn create_jwt(
+    user_id: &str,
+    role: UserRole,
+    secret: &str,
+    must_change_password: bool,
+) -> Result<String, LbError> {
     let expiration = Utc::now()
         .checked_add_signed(chrono::Duration::hours(JWT_EXPIRATION_HOURS))
         .ok_or_else(|| LbError::Jwt("Failed to calculate expiration time".to_string()))?
@@ -28,6 +33,7 @@ pub fn create_jwt(user_id: &str, role: UserRole, secret: &str) -> Result<String,
         sub: user_id.to_string(),
         role,
         exp: expiration,
+        must_change_password,
     };
 
     encode(

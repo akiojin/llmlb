@@ -30,6 +30,7 @@ async fn build_app() -> (Router, SqlitePool, String) {
         &admin_user.id.to_string(),
         UserRole::Admin,
         &crate::support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create admin jwt");
 

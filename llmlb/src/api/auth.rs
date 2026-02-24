@@ -96,6 +96,7 @@ pub async fn login(
             &dev_user_id,
             crate::common::auth::UserRole::Admin,
             &app_state.jwt_secret,
+            false,
         )
         .map_err(|e| {
             tracing::error!("Failed to create JWT: {}", e);
@@ -171,12 +172,16 @@ pub async fn login(
 
     // JWTを生成（有効期限24時間）
     let expires_in = 86400; // 24時間（秒）
-    let token =
-        crate::auth::jwt::create_jwt(&user.id.to_string(), user.role, &app_state.jwt_secret)
-            .map_err(|e| {
-                tracing::error!("Failed to create JWT: {}", e);
-                AppError(LbError::Jwt(format!("Failed to create JWT: {}", e))).into_response()
-            })?;
+    let token = crate::auth::jwt::create_jwt(
+        &user.id.to_string(),
+        user.role,
+        &app_state.jwt_secret,
+        user.must_change_password,
+    )
+    .map_err(|e| {
+        tracing::error!("Failed to create JWT: {}", e);
+        AppError(LbError::Jwt(format!("Failed to create JWT: {}", e))).into_response()
+    })?;
 
     let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
     let csrf_cookie = crate::auth::build_csrf_cookie(

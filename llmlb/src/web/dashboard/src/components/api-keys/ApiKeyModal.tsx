@@ -3,14 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   apiKeysApi,
   type ApiKey,
+  type ApiKeyPermission,
   type CreateApiKeyResponse,
 } from '@/lib/api'
+import { useAuth } from '@/hooks/useAuth'
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
@@ -55,12 +58,36 @@ interface ApiKeyModalProps {
   onOpenChange: (open: boolean) => void
 }
 
+const VIEWER_FIXED_PERMISSIONS: ApiKeyPermission[] = [
+  'openai.inference',
+  'openai.models.read',
+]
+
+const ADMIN_PERMISSION_OPTIONS: ApiKeyPermission[] = [
+  'openai.inference',
+  'openai.models.read',
+  'endpoints.read',
+  'endpoints.manage',
+  'api_keys.manage',
+  'users.manage',
+  'invitations.manage',
+  'models.manage',
+  'registry.read',
+  'logs.read',
+  'metrics.read',
+]
+
 export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyExpires, setNewKeyExpires] = useState('')
+  const [selectedPermissions, setSelectedPermissions] = useState<ApiKeyPermission[]>(
+    VIEWER_FIXED_PERMISSIONS
+  )
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -84,7 +111,11 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
 
   // Create API key mutation
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; expires_at?: string }) =>
+    mutationFn: (data: {
+      name: string
+      expires_at?: string
+      permissions?: ApiKeyPermission[]
+    }) =>
       apiKeysApi.create(data),
     onSuccess: (data: CreateApiKeyResponse) => {
       // Update list without refetching, so the "created key" stays visible/copyable
@@ -160,8 +191,14 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     if (!createOpen) {
       setNewKeyName('')
       setNewKeyExpires('')
+      setSelectedPermissions(VIEWER_FIXED_PERMISSIONS)
     }
   }, [createOpen])
+
+  useEffect(() => {
+    if (isAdmin) return
+    setSelectedPermissions(VIEWER_FIXED_PERMISSIONS)
+  }, [isAdmin])
 
   const handleCopy = async (text: string, id: string) => {
     try {
@@ -175,9 +212,29 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   }
 
   const handleCreate = () => {
-    createMutation.mutate({
+    const payload: {
+      name: string
+      expires_at?: string
+      permissions?: ApiKeyPermission[]
+    } = {
       name: newKeyName,
       expires_at: newKeyExpires || undefined,
+    }
+
+    if (isAdmin) {
+      payload.permissions = selectedPermissions
+    }
+
+    createMutation.mutate(payload)
+  }
+
+  const handleTogglePermission = (permission: ApiKeyPermission, checked: boolean) => {
+    setSelectedPermissions((prev) => {
+      if (checked) {
+        if (prev.includes(permission)) return prev
+        return [...prev, permission]
+      }
+      return prev.filter((p) => p !== permission)
     })
   }
 
@@ -298,8 +355,11 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         <TableCell className="font-medium">{key.name}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            <Badge variant="secondary">openai.inference</Badge>
-                            <Badge variant="secondary">openai.models.read</Badge>
+                            {key.permissions.map((permission) => (
+                              <Badge key={`${key.id}-${permission}`} variant="secondary">
+                                {permission}
+                              </Badge>
+                            ))}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -377,11 +437,40 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             <div className="space-y-2">
               <Label className="text-foreground">Access</Label>
               <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
-                Keys created here always include:
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <Badge variant="secondary">openai.inference</Badge>
-                  <Badge variant="secondary">openai.models.read</Badge>
-                </div>
+                {isAdmin ? (
+                  <div className="space-y-3">
+                    <p>Select one or more permissions for this key:</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {ADMIN_PERMISSION_OPTIONS.map((permission) => {
+                        const checked = selectedPermissions.includes(permission)
+                        return (
+                          <label
+                            key={permission}
+                            className="flex items-center gap-2 rounded border border-border/50 bg-background/50 px-2 py-1.5"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(value) =>
+                                handleTogglePermission(permission, value === true)
+                              }
+                            />
+                            <span className="font-mono text-xs text-foreground">
+                              {permission}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    Viewer keys always include:
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <Badge variant="secondary">openai.inference</Badge>
+                      <Badge variant="secondary">openai.models.read</Badge>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -391,7 +480,11 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!newKeyName || createMutation.isPending}
+              disabled={
+                !newKeyName ||
+                createMutation.isPending ||
+                (isAdmin && selectedPermissions.length === 0)
+              }
             >
               {createMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

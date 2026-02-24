@@ -45,6 +45,7 @@ export const apiKeysApi = {
   create: (data: {
     name: string
     expires_at?: string
+    permissions?: ApiKeyPermission[]
   }) =>
     fetchWithAuth<CreateApiKeyResponse>('/api/me/api-keys', {
       method: 'POST',

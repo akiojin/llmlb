@@ -35,6 +35,9 @@ const MANUAL_CHECK_COOLDOWN_SECS: u64 = 60;
 
 /// Default drain timeout for normal update apply (seconds).
 const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 300;
+/// Timeout for Windows installer permission wait (seconds).
+#[cfg(target_os = "windows")]
+const DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS: u64 = 600;
 /// Default HTTP listen port for `llmlb serve`.
 const DEFAULT_LISTEN_PORT: u16 = 32768;
 
@@ -96,6 +99,15 @@ pub enum UpdateState {
         latest: String,
         /// Apply method chosen for this platform/install.
         method: ApplyMethod,
+        /// Current apply phase for operator visibility.
+        phase: ApplyPhase,
+        /// Human-readable phase description.
+        phase_message: String,
+        /// When apply entered `state=applying`.
+        started_at: DateTime<Utc>,
+        /// Optional timeout deadline for the current phase.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_at: Option<DateTime<Utc>>,
     },
     /// Update check/download/apply failed (best-effort; the server should keep running).
     Failed {
@@ -177,6 +189,34 @@ pub enum ApplyMethod {
     MacPkg,
     /// Run a Windows `.msi` installer.
     WindowsMsi,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+/// Detailed phase of the applying state.
+pub enum ApplyPhase {
+    /// Apply flow has started and is preparing to execute.
+    Starting,
+    /// Waiting for the previous process handoff.
+    WaitingOldProcessExit,
+    /// Waiting for user/admin permission dialog approval.
+    WaitingPermission,
+    /// Installer is running.
+    RunningInstaller,
+    /// Restart is being initiated.
+    Restarting,
+}
+
+impl ApplyPhase {
+    fn message(&self) -> &'static str {
+        match self {
+            Self::Starting => "Preparing update apply",
+            Self::WaitingOldProcessExit => "Waiting for current process handoff",
+            Self::WaitingPermission => "Waiting for Windows permission dialog approval",
+            Self::RunningInstaller => "Installer is running",
+            Self::Restarting => "Restarting service",
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1238,6 +1278,75 @@ impl UpdateManager {
         }
     }
 
+    async fn set_applying_state(
+        &self,
+        latest: &str,
+        method: ApplyMethod,
+        phase: ApplyPhase,
+        started_at: DateTime<Utc>,
+        timeout_at: Option<DateTime<Utc>>,
+    ) {
+        *self.inner.state.write().await = UpdateState::Applying {
+            latest: latest.to_string(),
+            method,
+            phase: phase.clone(),
+            phase_message: phase.message().to_string(),
+            started_at,
+            timeout_at,
+        };
+        self.notify_state_changed();
+    }
+
+    #[allow(dead_code)]
+    fn spawn_apply_timeout_watchdog(
+        &self,
+        latest: String,
+        method: ApplyMethod,
+        phase: ApplyPhase,
+        timeout: Duration,
+        timeout_message: String,
+    ) {
+        let mgr = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
+
+            let should_fail = {
+                let st = mgr.inner.state.read().await;
+                matches!(
+                    &*st,
+                    UpdateState::Applying {
+                        latest: applying_latest,
+                        method: applying_method,
+                        phase: applying_phase,
+                        ..
+                    } if applying_latest == &latest
+                        && applying_method == &method
+                        && applying_phase == &phase
+                )
+            };
+
+            if !should_fail {
+                return;
+            }
+
+            mgr.inner.gate.stop_rejecting();
+            *mgr.inner.state.write().await = UpdateState::Failed {
+                latest: Some(latest.clone()),
+                release_url: None,
+                message: timeout_message.clone(),
+                failed_at: Utc::now(),
+            };
+            mgr.notify_state_changed();
+            tracing::warn!(
+                latest = %latest,
+                method = ?method,
+                phase = ?phase,
+                timeout_secs = timeout.as_secs(),
+                "update apply phase timed out"
+            );
+        });
+    }
+
     async fn apply_flow(&self, mode: ApplyRequestMode) -> Result<()> {
         let payload = match mode {
             ApplyRequestMode::Normal => self.ensure_payload_ready().await?,
@@ -1261,14 +1370,18 @@ impl UpdateManager {
 
         // Start draining after payload is ready to minimize downtime.
         self.inner.gate.start_rejecting();
+        let applying_started_at = Utc::now();
 
         if mode == ApplyRequestMode::Force {
             // Mark as in-progress before waiting so UI/API cannot trigger duplicate apply actions.
-            *self.inner.state.write().await = UpdateState::Applying {
-                latest: latest.clone(),
-                method: apply_method.clone(),
-            };
-            self.notify_state_changed();
+            self.set_applying_state(
+                &latest,
+                apply_method.clone(),
+                ApplyPhase::Starting,
+                applying_started_at,
+                None,
+            )
+            .await;
             // Force mode cancels active in-flight work instead of waiting for drain completion.
             self.inner.gate.abort_in_flight();
             if tokio::time::timeout(Duration::from_secs(3), self.inner.gate.wait_for_idle())
@@ -1326,11 +1439,14 @@ impl UpdateManager {
                     ));
                 }
             }
-            *self.inner.state.write().await = UpdateState::Applying {
-                latest: latest.clone(),
-                method: apply_method.clone(),
-            };
-            self.notify_state_changed();
+            self.set_applying_state(
+                &latest,
+                apply_method.clone(),
+                ApplyPhase::Starting,
+                applying_started_at,
+                None,
+            )
+            .await;
         }
 
         let current_exe =
@@ -1339,6 +1455,14 @@ impl UpdateManager {
 
         match payload {
             PayloadKind::Portable { binary_path } => {
+                self.set_applying_state(
+                    &latest,
+                    apply_method.clone(),
+                    ApplyPhase::Restarting,
+                    applying_started_at,
+                    None,
+                )
+                .await;
                 spawn_internal_apply_update(&current_exe, &binary_path, &args_file)?;
                 self.inner.shutdown.request_shutdown();
                 Ok(())
@@ -1347,6 +1471,54 @@ impl UpdateManager {
                 installer_path,
                 kind,
             } => {
+                #[cfg(target_os = "windows")]
+                {
+                    if kind == InstallerKind::WindowsMsi {
+                        let timeout = Duration::from_secs(DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS);
+                        let timeout_at = Utc::now()
+                            + chrono::Duration::seconds(
+                                DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS as i64,
+                            );
+                        self.set_applying_state(
+                            &latest,
+                            apply_method.clone(),
+                            ApplyPhase::WaitingPermission,
+                            applying_started_at,
+                            Some(timeout_at),
+                        )
+                        .await;
+                        self.spawn_apply_timeout_watchdog(
+                            latest.clone(),
+                            apply_method.clone(),
+                            ApplyPhase::WaitingPermission,
+                            timeout,
+                            format!(
+                                "Windows installer permission wait timed out after {}s",
+                                DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS
+                            ),
+                        );
+                    } else {
+                        self.set_applying_state(
+                            &latest,
+                            apply_method.clone(),
+                            ApplyPhase::RunningInstaller,
+                            applying_started_at,
+                            None,
+                        )
+                        .await;
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    self.set_applying_state(
+                        &latest,
+                        apply_method.clone(),
+                        ApplyPhase::RunningInstaller,
+                        applying_started_at,
+                        None,
+                    )
+                    .await;
+                }
                 spawn_internal_run_installer(&current_exe, &installer_path, kind, &args_file)?;
                 self.inner.shutdown.request_shutdown();
                 Ok(())
@@ -1787,6 +1959,29 @@ fn wait_for_pid_exit(pid: u32, timeout: Duration) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn wait_for_child_with_timeout(
+    child: &mut std::process::Child,
+    timeout: Duration,
+    timeout_error: String,
+) -> Result<std::process::ExitStatus> {
+    let started = std::time::Instant::now();
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .context("Failed to query installer process")?
+        {
+            return Ok(status);
+        }
+        if started.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(anyhow!(timeout_error));
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
 pub(crate) fn internal_apply_update(
     old_pid: u32,
     target: PathBuf,
@@ -1971,12 +2166,20 @@ pub(crate) fn internal_run_installer(
                     "Start-Process msiexec.exe -Verb RunAs -Wait -ArgumentList @('/i', '{}', '/passive')",
                     msi.replace('\'', "''")
                 );
-                let status = Command::new("powershell")
+                let mut child = Command::new("powershell")
                     .arg("-NoProfile")
                     .arg("-Command")
                     .arg(args)
-                    .status()
+                    .spawn()
                     .context("Failed to run msiexec")?;
+                let status = wait_for_child_with_timeout(
+                    &mut child,
+                    Duration::from_secs(DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS),
+                    format!(
+                        "Windows installer permission wait timed out after {}s",
+                        DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS
+                    ),
+                )?;
                 if !status.success() {
                     return Err(anyhow!("msiexec exited with {}", status));
                 }
@@ -2359,6 +2562,78 @@ mod tests {
             .expect("force apply request should be accepted");
         assert_eq!(dropped, 0);
         assert_eq!(manager.take_apply_request_mode(), ApplyRequestMode::Force);
+    }
+
+    #[test]
+    fn applying_state_serializes_phase_metadata() {
+        let state = UpdateState::Applying {
+            latest: "4.5.1".to_string(),
+            method: ApplyMethod::WindowsMsi,
+            phase: ApplyPhase::WaitingPermission,
+            phase_message: "Waiting for Windows permission dialog approval".to_string(),
+            started_at: Utc::now(),
+            timeout_at: Some(Utc::now() + chrono::Duration::seconds(600)),
+        };
+
+        let json = serde_json::to_value(state).expect("serialize applying state");
+        assert_eq!(json["state"], "applying");
+        assert_eq!(json["phase"], "waiting_permission");
+        assert!(json.get("phase_message").is_some());
+        assert!(json.get("started_at").is_some());
+        assert!(json.get("timeout_at").is_some());
+    }
+
+    #[tokio::test]
+    async fn apply_timeout_watchdog_transitions_to_failed() {
+        use tokio::time;
+
+        time::pause();
+
+        let gate = InferenceGate::default();
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            gate.clone(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        manager
+            .set_applying_state(
+                "4.5.1",
+                ApplyMethod::WindowsMsi,
+                ApplyPhase::WaitingPermission,
+                Utc::now(),
+                Some(Utc::now() + chrono::Duration::seconds(600)),
+            )
+            .await;
+        gate.start_rejecting();
+
+        manager.spawn_apply_timeout_watchdog(
+            "4.5.1".to_string(),
+            ApplyMethod::WindowsMsi,
+            ApplyPhase::WaitingPermission,
+            Duration::from_secs(10),
+            "Windows installer permission wait timed out after 600s".to_string(),
+        );
+
+        tokio::task::yield_now().await;
+        time::advance(Duration::from_secs(11)).await;
+        tokio::task::yield_now().await;
+
+        let state = manager.state().await;
+        match state {
+            UpdateState::Failed { message, .. } => {
+                assert!(
+                    message.contains("permission wait timed out"),
+                    "unexpected failure message: {message}"
+                );
+            }
+            other => panic!("expected failed state after watchdog timeout, got {other:?}"),
+        }
+        assert!(
+            !gate.is_rejecting(),
+            "gate should stop rejecting after apply timeout watchdog"
+        );
     }
 
     // =======================================================================

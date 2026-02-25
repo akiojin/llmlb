@@ -61,6 +61,19 @@ fn drain_timeout_countdown_displayed() {
     );
 }
 
+#[test]
+fn applying_phase_message_and_timeout_are_displayed() {
+    let source = get_dashboard_source();
+    assert!(
+        source.contains("phase_message"),
+        "Dashboard should display applying phase_message when provided"
+    );
+    assert!(
+        source.contains("Apply timeout in"),
+        "Dashboard should show applying timeout countdown text"
+    );
+}
+
 // T284: FR-031/FR-032 — rollback button with confirmation
 #[test]
 fn rollback_button_present_with_confirmation() {
@@ -132,6 +145,19 @@ fn system_ts_has_drain_timeout_at() {
     assert!(
         source.contains("timeout_at"),
         "system.ts should define timeout_at for draining state"
+    );
+}
+
+#[test]
+fn system_ts_has_applying_phase_fields() {
+    let source = get_system_ts_source();
+    assert!(
+        source.contains("waiting_permission"),
+        "system.ts should include applying phase values"
+    );
+    assert!(
+        source.contains("phase_message"),
+        "system.ts should define phase_message for applying state"
     );
 }
 

@@ -1,10 +1,10 @@
-//! serve サブコマンド
+//! serve subcommand
 //!
-//! ロードバランサーサーバーを起動します。
+//! Launches the load balancer server.
 
 use clap::Args;
 
-/// serve サブコマンドの引数
+/// Arguments for the serve subcommand
 #[derive(Args, Debug, Clone)]
 pub struct ServeArgs {
     /// Listen port

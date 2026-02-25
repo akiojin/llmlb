@@ -596,9 +596,10 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - `PUT /api/me/api-keys/:id`
 - `DELETE /api/me/api-keys/:id`
 
-`POST /api/me/api-keys` で作成されるキーの権限は固定です:
-- `openai.inference`
-- `openai.models.read`
+`POST /api/me/api-keys` の permissions 指定ルール:
+- `admin`: `permissions` 配列を必須で指定（1件以上）
+- `viewer`: `permissions` は指定不可（サーバーが `openai.inference` と
+  `openai.models.read` を固定付与）
 
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。

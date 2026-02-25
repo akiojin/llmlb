@@ -2,7 +2,7 @@
 //!
 //! 認証済みユーザーが自分自身のAPIキーを管理するためのAPI。
 
-use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext, Claims};
+use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext, Claims, UserRole};
 use crate::common::error::{CommonError, LbError};
 use crate::AppState;
 use axum::{
@@ -23,9 +23,9 @@ pub struct CreateApiKeyRequest {
     pub name: String,
     /// 有効期限（RFC3339形式、オプション）
     pub expires_at: Option<String>,
-    /// 互換防止: `permissions` は受け付けない（固定付与）
+    /// 付与する権限（adminのみ指定可）
     #[serde(default)]
-    pub permissions: Option<serde_json::Value>,
+    pub permissions: Option<Vec<ApiKeyPermission>>,
     /// 旧互換: `scopes` は廃止
     #[serde(default)]
     pub scopes: Option<serde_json::Value>,
@@ -113,11 +113,48 @@ pub struct UpdateApiKeyRequest {
     pub expires_at: Option<String>,
 }
 
-fn default_user_api_key_permissions() -> Vec<ApiKeyPermission> {
+fn default_viewer_api_key_permissions() -> Vec<ApiKeyPermission> {
     vec![
         ApiKeyPermission::OpenaiInference,
         ApiKeyPermission::OpenaiModelsRead,
     ]
+}
+
+#[allow(clippy::result_large_err)]
+fn resolve_permissions_for_role(
+    role: UserRole,
+    requested_permissions: Option<Vec<ApiKeyPermission>>,
+) -> Result<Vec<ApiKeyPermission>, Response> {
+    match role {
+        UserRole::Admin => {
+            let permissions = requested_permissions.ok_or_else(|| {
+                AppError(LbError::Common(CommonError::Validation(
+                    "Field 'permissions' is required for admin users.".to_string(),
+                )))
+                .into_response()
+            })?;
+
+            if permissions.is_empty() {
+                return Err(AppError(LbError::Common(CommonError::Validation(
+                    "Field 'permissions' must contain at least one permission.".to_string(),
+                )))
+                .into_response());
+            }
+
+            Ok(permissions)
+        }
+        UserRole::Viewer => {
+            if requested_permissions.is_some() {
+                return Err(AppError(LbError::Common(CommonError::Validation(
+                    "Viewer users cannot provide 'permissions'; viewer keys always use fixed OpenAI permissions."
+                        .to_string(),
+                )))
+                .into_response());
+            }
+
+            Ok(default_viewer_api_key_permissions())
+        }
+    }
 }
 
 #[allow(clippy::result_large_err)]
@@ -173,13 +210,6 @@ pub async fn create_api_key(
     State(app_state): State<AppState>,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> Result<(StatusCode, Json<CreateApiKeyResponse>), Response> {
-    if request.permissions.is_some() {
-        return Err(AppError(LbError::Common(CommonError::Validation(
-            "Field 'permissions' is managed by server and cannot be provided.".to_string(),
-        )))
-        .into_response());
-    }
-
     if request.scopes.is_some() {
         return Err(AppError(LbError::Common(CommonError::Validation(
             "Field 'scopes' is deprecated and not accepted.".to_string(),
@@ -187,6 +217,7 @@ pub async fn create_api_key(
         .into_response());
     }
 
+    let permissions = resolve_permissions_for_role(claims.role, request.permissions)?;
     let user_id = parse_user_id_from_claims(&claims)?;
     let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
@@ -195,7 +226,7 @@ pub async fn create_api_key(
         &request.name,
         user_id,
         expires_at,
-        default_user_api_key_permissions(),
+        permissions,
     )
     .await
     .map_err(|e| {

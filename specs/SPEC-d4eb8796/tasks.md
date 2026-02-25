@@ -52,11 +52,11 @@ PUT /api/users/:id の契約テスト（スキーマ検証、REDを確認）
 - [x] **T010** [P] `llmlb/tests/contract/users_api_test.rs` に
 DELETE /api/users/:id の契約テスト（スキーマ検証、REDを確認）
 - [x] **T011** [P] `llmlb/tests/contract/api_keys_api_test.rs` に
-GET /api/api-keys の契約テスト（スキーマ検証、REDを確認）
+GET /api/me/api-keys の契約テスト（スキーマ検証、REDを確認）
 - [x] **T012** [P] `llmlb/tests/contract/api_keys_api_test.rs` に
-POST /api/api-keys の契約テスト（スキーマ検証、REDを確認）
+POST /api/me/api-keys の契約テスト（スキーマ検証、REDを確認）
 - [x] **T013** [P] `llmlb/tests/contract/api_keys_api_test.rs` に
-DELETE /api/api-keys/:id の契約テスト（スキーマ検証、REDを確認）
+DELETE /api/me/api-keys/:id の契約テスト（スキーマ検証、REDを確認）
 
 ### Integration Tests (並列実行可能)
 
@@ -192,11 +192,11 @@ PUT /api/users/:id エンドポイントを実装（Admin専用） → T009 GREE
 DELETE /api/users/:id エンドポイントを実装（Admin専用、最後の管理者チェック）
 → T010 GREEN
 - [x] **T064** `llmlb/src/api/api_keys.rs` に
-GET /api/api-keys エンドポイントを実装（Admin専用） → T011 GREEN
+GET /api/me/api-keys エンドポイントを実装（JWT認証、本人キーのみ） → T011 GREEN
 - [x] **T065** `llmlb/src/api/api_keys.rs` に
-POST /api/api-keys エンドポイントを実装（Admin専用、平文キー返却） → T012 GREEN
+POST /api/me/api-keys エンドポイントを実装（ロール別 permissions ルール、平文キー返却） → T012 GREEN
 - [x] **T066** `llmlb/src/api/api_keys.rs` に
-DELETE /api/api-keys/:id エンドポイントを実装（Admin専用） → T013 GREEN
+DELETE /api/me/api-keys/:id エンドポイントを実装（JWT認証、本人キーのみ） → T013 GREEN
 - [x] **T067** `llmlb/src/api/nodes.rs` を修正して
 POST /api/nodes レスポンスに runtime_token フィールドを追加 → T024 GREEN
 
@@ -213,7 +213,7 @@ POST /api/nodes レスポンスに runtime_token フィールドを追加 → T0
 
 - [x] **T071** `llmlb/src/api/mod.rs` に
 JWT認証ミドルウェアを管理APIに適用
-（/api/nodes, /api/models, /api/dashboard, /api/users, /api/api-keys）
+（/api/nodes, /api/models, /api/dashboard, /api/users, /api/me/api-keys）
 → T015, T016, T017 GREEN
 - [x] **T072** `llmlb/src/api/mod.rs` に
 APIキー認証ミドルウェアをOpenAI互換APIに適用
@@ -238,11 +238,11 @@ APIキー認証ミドルウェアをOpenAI互換APIに適用
 - [x] **T079** [P] `llmlb/src/web/static/api-keys.html` に
 APIキー管理画面を作成（タブ追加）
 - [x] **T080** [P] `llmlb/src/web/static/api-keys.js` に
-APIキー一覧表示を実装（GET /api/api-keys）
+APIキー一覧表示を実装（GET /api/me/api-keys）
 - [x] **T081** `llmlb/src/web/static/api-keys.js` に
-APIキー発行機能を実装（POST /api/api-keys、平文キーのモーダル表示）
+APIキー発行機能を実装（POST /api/me/api-keys、平文キーのモーダル表示）
 - [x] **T082** `llmlb/src/web/static/api-keys.js` に
-APIキー削除機能を実装（DELETE /api/api-keys/:id）
+APIキー削除機能を実装（DELETE /api/me/api-keys/:id）
 - [x] **T083** [P] `llmlb/src/web/static/users.html` に
 ユーザー管理画面を作成（タブ追加、Admin専用）
 - [x] **T084** [P] `llmlb/src/web/static/users.js` に
@@ -304,6 +304,22 @@ APIキー削除機能を実装（DELETE /api/api-keys/:id）
 ダッシュボードJWTのみ・内部APIトークン廃止・/v1はAPIキー必須を追記
 - [x] **T101** [P] `specs/SPEC-d4eb8796/plan.md` に
 ダッシュボード認可方針と制約を追記
+
+## Phase 3.10: APIキー権限仕様更新（2026-02-24）
+
+- [x] **T103** [P] `specs/SPEC-d4eb8796/spec.md` に
+`POST /api/me/api-keys` のロール別ルールを追記
+（admin: permissions必須、viewer: permissions指定不可＋固定2権限）
+- [x] **T104** [P] `specs/SPEC-d4eb8796/plan.md` に
+API契約/制約/クイックスタートをロール別 permissions 仕様へ更新
+- [x] **T105** [P] `specs/SPEC-d4eb8796/contracts/api-keys-api.yaml` を更新
+（request body `permissions` 定義、ロール別バリデーションルール、レスポンスのpermissions明示）
+- [x] **T106** `llmlb/tests/integration/api_key_scopes_test.rs` に
+ロール別 permissions バリデーション統合テストを追加（TDD: RED→GREEN）
+- [x] **T107** `llmlb/tests/e2e/api_key_flow_test.rs` と `llmlb/tests/support/lb.rs` を更新
+admin作成ペイロードに `permissions` を追加
+- [x] **T108** `llmlb/src/web/dashboard/src/components/api-keys/ApiKeyModal.tsx` を更新
+adminは権限選択UI、viewerは固定2権限表示
 
 ## 依存関係
 

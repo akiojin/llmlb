@@ -990,6 +990,10 @@ dashboard origin.
 Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
 
 Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
+`POST /api/me/api-keys` permission rules by role:
+- `admin`: must provide a non-empty `permissions` array.
+- `viewer`: must not provide `permissions`; server assigns fixed OpenAI permissions
+  (`openai.inference`, `openai.models.read`).
 
 #### User Management Endpoints
 
@@ -1005,7 +1009,7 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/api/me/api-keys` | List own API keys | JWT |
-| POST | `/api/me/api-keys` | Create own API key (server assigns fixed permissions) | JWT |
+| POST | `/api/me/api-keys` | Create own API key (admin: explicit permissions, viewer: fixed OpenAI permissions) | JWT |
 | PUT | `/api/me/api-keys/:id` | Update own API key | JWT |
 | DELETE | `/api/me/api-keys/:id` | Delete own API key | JWT |
 

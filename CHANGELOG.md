@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [5.1.0](https://github.com/akiojin/llmlb/compare/v5.0.4...v5.1.0) (2026-02-25)
+
+### Features
+
+- /releaseスキルにClosing Issue収集ステップを追加
+
+### Bug Fixes
+
+- APIキーのロールベース権限動作を復元 (#457)
+- APIキーコピーボタンの非セキュアコンテキスト対応とUI改善 (#456)
+
 ## [5.0.4](https://github.com/akiojin/llmlb/compare/v5.0.3...v5.0.4) (2026-02-24)
 
 ### Bug Fixes

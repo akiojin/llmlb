@@ -236,12 +236,12 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           <div className="text-xs text-muted-foreground">
             <span className="font-medium">URL:</span>{' '}
             <span className="truncate block" title={endpoint?.base_url}>
-              {hasBaseUrl ? endpoint?.base_url : '未設定'}
+              {hasBaseUrl ? endpoint?.base_url : 'Not set'}
             </span>
           </div>
           {!hasBaseUrl && (
             <div className="text-xs text-destructive">
-              base_url が未設定です。エンドポイント設定を確認してください。
+              Base URL is not configured. Please check the endpoint settings.
             </div>
           )}
           <div className="text-xs text-muted-foreground">

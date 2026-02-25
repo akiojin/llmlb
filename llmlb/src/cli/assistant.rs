@@ -1,6 +1,6 @@
-//! assistant サブコマンド
+//! assistant subcommand
 //!
-//! 旧 MCP サーバーで提供していた補助機能を CLI として提供する。
+//! Provides helper functionality previously available in the legacy MCP server as a CLI.
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
@@ -62,7 +62,7 @@ static FORBIDDEN_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     ]
 });
 
-/// assistant サブコマンドの引数
+/// Arguments for the assistant subcommand
 #[derive(Args, Debug, Clone)]
 pub struct AssistantArgs {
     /// Assistant helper subcommand
@@ -70,7 +70,7 @@ pub struct AssistantArgs {
     pub command: AssistantCommand,
 }
 
-/// assistant サブコマンド一覧
+/// Assistant subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum AssistantCommand {
     /// Execute curl command with safety checks and optional auth injection
@@ -81,7 +81,7 @@ pub enum AssistantCommand {
     Guide(GuideArgs),
 }
 
-/// `assistant curl` の引数
+/// Arguments for `assistant curl`
 #[derive(Args, Debug, Clone)]
 pub struct CurlArgs {
     /// curl command to execute
@@ -101,7 +101,7 @@ pub struct CurlArgs {
     pub json: bool,
 }
 
-/// `assistant openapi` の引数
+/// Arguments for `assistant openapi`
 #[derive(Args, Debug, Clone)]
 pub struct OpenApiArgs {
     /// Path to OpenAPI file (YAML/JSON)
@@ -109,7 +109,7 @@ pub struct OpenApiArgs {
     pub path: Option<PathBuf>,
 }
 
-/// `assistant guide` の引数
+/// Arguments for `assistant guide`
 #[derive(Args, Debug, Clone)]
 pub struct GuideArgs {
     /// Guide category
@@ -117,7 +117,7 @@ pub struct GuideArgs {
     pub category: GuideCategory,
 }
 
-/// ガイドカテゴリ
+/// Guide categories
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 pub enum GuideCategory {
     /// API overview and auth notes
@@ -188,7 +188,7 @@ struct CurlResult {
     executed_command: String,
 }
 
-/// assistant コマンドを実行
+/// Execute an assistant command
 pub async fn execute(command: &AssistantCommand) -> Result<()> {
     let config = AssistantConfig::from_env()?;
     match command {

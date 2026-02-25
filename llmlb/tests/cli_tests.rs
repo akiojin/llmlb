@@ -7,6 +7,26 @@
 use clap::Parser;
 use llmlb::cli::Cli;
 
+fn contains_japanese(text: &str) -> bool {
+    text.chars().any(|ch| {
+        ('\u{3040}'..='\u{30FF}').contains(&ch) // Hiragana + Katakana
+            || ('\u{3400}'..='\u{4DBF}').contains(&ch) // CJK Extension A
+            || ('\u{4E00}'..='\u{9FFF}').contains(&ch) // CJK Unified Ideographs
+            || ('\u{2E80}'..='\u{2FDF}').contains(&ch) // CJK radicals + punctuation
+            || ('\u{FF66}'..='\u{FF9F}').contains(&ch) // Halfwidth Katakana
+    })
+}
+
+fn assert_display_help_has_no_japanese(args: &[&str], name: &str) {
+    let err = Cli::try_parse_from(args).unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    let message = err.to_string();
+    assert!(
+        !contains_japanese(&message),
+        "{name} help text should not include Japanese"
+    );
+}
+
 /// T006: Test --version output contains version number
 #[test]
 fn test_version_available() {
@@ -52,6 +72,36 @@ fn test_short_help_flag() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+}
+
+#[test]
+fn test_help_text_has_no_japanese() {
+    let cases = [
+        (["llmlb", "--help"].as_slice(), "root --help"),
+        (["llmlb", "serve", "--help"].as_slice(), "serve --help"),
+        (["llmlb", "status", "--help"].as_slice(), "status --help"),
+        (["llmlb", "stop", "--help"].as_slice(), "stop --help"),
+        (
+            ["llmlb", "assistant", "--help"].as_slice(),
+            "assistant --help",
+        ),
+        (
+            ["llmlb", "assistant", "curl", "--help"].as_slice(),
+            "assistant curl --help",
+        ),
+        (
+            ["llmlb", "assistant", "openapi", "--help"].as_slice(),
+            "assistant openapi --help",
+        ),
+        (
+            ["llmlb", "assistant", "guide", "--help"].as_slice(),
+            "assistant guide --help",
+        ),
+    ];
+
+    for (args, name) in cases {
+        assert_display_help_has_no_japanese(args, name);
+    }
 }
 
 /// Test serve subcommand parses

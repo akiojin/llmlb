@@ -1948,6 +1948,20 @@ fn escape_applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+#[cfg(any(test, target_os = "windows"))]
+fn escape_powershell_single_quoted_string(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn build_windows_msi_uac_script(msi_path: &str, marker_path: &str) -> String {
+    format!(
+        "$p = Start-Process msiexec.exe -Verb RunAs -PassThru -ArgumentList @('/i', '{}', '/passive'); Set-Content -Path '{}' -Value 'approved' -NoNewline; Wait-Process -Id $p.Id; exit $p.ExitCode",
+        escape_powershell_single_quoted_string(msi_path),
+        escape_powershell_single_quoted_string(marker_path),
+    )
+}
+
 fn wait_for_pid_exit(pid: u32, timeout: Duration) -> Result<()> {
     let started = std::time::Instant::now();
     while crate::lock::is_process_running(pid) {
@@ -1960,18 +1974,24 @@ fn wait_for_pid_exit(pid: u32, timeout: Duration) -> Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn wait_for_child_with_timeout(
+fn wait_for_permission_marker(
     child: &mut std::process::Child,
+    marker_path: &Path,
     timeout: Duration,
     timeout_error: String,
-) -> Result<std::process::ExitStatus> {
+) -> Result<()> {
     let started = std::time::Instant::now();
     loop {
+        if marker_path.exists() {
+            return Ok(());
+        }
         if let Some(status) = child
             .try_wait()
             .context("Failed to query installer process")?
         {
-            return Ok(status);
+            return Err(anyhow!(
+                "installer process exited before permission approval was confirmed: {status}"
+            ));
         }
         if started.elapsed() > timeout {
             let _ = child.kill();
@@ -2162,24 +2182,36 @@ pub(crate) fn internal_run_installer(
             {
                 // Trigger UAC for msiexec via PowerShell.
                 let msi = installer.to_string_lossy().to_string();
-                let args = format!(
-                    "Start-Process msiexec.exe -Verb RunAs -Wait -ArgumentList @('/i', '{}', '/passive')",
-                    msi.replace('\'', "''")
-                );
+                let marker_path = std::env::temp_dir().join(format!(
+                    "llmlb-msi-permission-{}-{}.marker",
+                    std::process::id(),
+                    Utc::now().timestamp_millis()
+                ));
+                let _ = fs::remove_file(&marker_path);
+                let marker = marker_path.to_string_lossy().to_string();
+                let args = build_windows_msi_uac_script(&msi, &marker);
                 let mut child = Command::new("powershell")
                     .arg("-NoProfile")
                     .arg("-Command")
                     .arg(args)
                     .spawn()
                     .context("Failed to run msiexec")?;
-                let status = wait_for_child_with_timeout(
+                let wait_result = wait_for_permission_marker(
                     &mut child,
+                    &marker_path,
                     Duration::from_secs(DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS),
                     format!(
                         "Windows installer permission wait timed out after {}s",
                         DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS
                     ),
-                )?;
+                )
+                .and_then(|_| {
+                    child
+                        .wait()
+                        .context("Failed to wait for installer completion")
+                });
+                let _ = fs::remove_file(&marker_path);
+                let status = wait_result?;
                 if !status.success() {
                     return Err(anyhow!("msiexec exited with {}", status));
                 }
@@ -2581,6 +2613,44 @@ mod tests {
         assert!(json.get("phase_message").is_some());
         assert!(json.get("started_at").is_some());
         assert!(json.get("timeout_at").is_some());
+    }
+
+    #[test]
+    fn windows_msi_uac_script_marks_permission_before_waiting_for_installer() {
+        let script = build_windows_msi_uac_script(
+            r"C:\Program Files\llmlb\llmlb.msi",
+            r"C:\Temp\llmlb-marker.txt",
+        );
+        assert!(
+            script.contains("-PassThru"),
+            "script should return after UAC consent and expose process handle"
+        );
+        assert!(
+            script.contains("Set-Content -Path"),
+            "script should mark permission approval before waiting for installer"
+        );
+        assert!(
+            script.contains("Wait-Process -Id $p.Id"),
+            "script should wait for installer completion after permission marker"
+        );
+        assert!(
+            !script.contains("-Verb RunAs -Wait"),
+            "script must not use Start-Process -Wait because that mixes consent and install runtime"
+        );
+    }
+
+    #[test]
+    fn windows_msi_uac_script_escapes_single_quotes() {
+        let script =
+            build_windows_msi_uac_script(r"C:\path\it's\setup.msi", r"C:\path\marker's\state.txt");
+        assert!(
+            script.contains("it''s\\setup.msi"),
+            "msi path should escape single quotes for PowerShell single-quoted string"
+        );
+        assert!(
+            script.contains("marker''s\\state.txt"),
+            "marker path should escape single quotes for PowerShell single-quoted string"
+        );
     }
 
     #[tokio::test]

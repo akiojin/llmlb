@@ -664,7 +664,7 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
                 The base URL of the OpenAI-compatible API endpoint
               </p>
               <p className="text-xs text-muted-foreground">
-                タイプは自動検出されます
+                Type is auto-detected
               </p>
             </div>
             <div className="grid gap-2">

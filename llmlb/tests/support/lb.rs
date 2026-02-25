@@ -489,7 +489,8 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
-            "expires_at": null
+            "expires_at": null,
+            "permissions": ["openai.inference", "openai.models.read"]
         }))
         .send()
         .await

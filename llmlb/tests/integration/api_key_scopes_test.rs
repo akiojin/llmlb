@@ -507,3 +507,143 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn me_api_keys_create_enforces_role_based_permissions_payload() {
+    let (app, db_pool) = build_app().await;
+
+    let admin_id = create_admin_user(&db_pool).await;
+    let viewer_password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer = llmlb::db::users::create(
+        &db_pool,
+        "viewer-permissions-user",
+        &viewer_password_hash,
+        UserRole::Viewer,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let admin_jwt = llmlb::auth::jwt::create_jwt(
+        &admin_id.to_string(),
+        UserRole::Admin,
+        &support::lb::test_jwt_secret(),
+        false,
+    )
+    .expect("create admin jwt");
+    let viewer_jwt = llmlb::auth::jwt::create_jwt(
+        &viewer.id.to_string(),
+        UserRole::Viewer,
+        &support::lb::test_jwt_secret(),
+        false,
+    )
+    .expect("create viewer jwt");
+
+    // admin: permissions is required
+    let admin_missing_permissions = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("authorization", format!("Bearer {}", admin_jwt))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "admin-key-missing-permissions",
+                        "expires_at": null
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(admin_missing_permissions.status(), StatusCode::BAD_REQUEST);
+
+    // admin: explicit non-empty permissions is accepted
+    let admin_permissions = vec!["openai.inference", "openai.models.read", "endpoints.read"];
+    let admin_create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("authorization", format!("Bearer {}", admin_jwt))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "admin-key-with-permissions",
+                        "expires_at": null,
+                        "permissions": admin_permissions
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(admin_create.status(), StatusCode::CREATED);
+
+    let body = axum::body::to_bytes(admin_create.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        created["permissions"],
+        json!(["openai.inference", "openai.models.read", "endpoints.read"])
+    );
+
+    // viewer: permissions must not be provided
+    let viewer_with_permissions = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("authorization", format!("Bearer {}", viewer_jwt))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "viewer-key-with-permissions",
+                        "expires_at": null,
+                        "permissions": ["openai.inference"]
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(viewer_with_permissions.status(), StatusCode::BAD_REQUEST);
+
+    // viewer: no permissions payload creates fixed OpenAI key
+    let viewer_create = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("authorization", format!("Bearer {}", viewer_jwt))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "viewer-key-fixed-permissions",
+                        "expires_at": null
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(viewer_create.status(), StatusCode::CREATED);
+
+    let body = axum::body::to_bytes(viewer_create.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        created["permissions"],
+        json!(["openai.inference", "openai.models.read"])
+    );
+}

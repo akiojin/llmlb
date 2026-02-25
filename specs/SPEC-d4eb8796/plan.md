@@ -69,6 +69,9 @@
 - 認証無効化モード対応（環境変数で切り替え）
 - JSONファイルからSQLiteへの自動マイグレーション（データ損失なし）
 - /v1/* は外部APIキー必須（ダッシュボードは /v1 を直接呼ばない）
+- APIキー作成（`POST /api/me/api-keys`）はロール別ルールを厳密適用
+  - admin: `permissions` 必須（1件以上）
+  - viewer: `permissions` 指定不可（固定2権限付与）
 
 **スケール/スコープ**:
 - 想定ユーザー数: 1〜10人（小規模チーム運用）
@@ -275,9 +278,10 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - `DELETE /api/users/:id` - ユーザー削除（Admin専用）
 
 **APIキー管理API** (`api-keys-api.yaml`):
-- `GET /api/api-keys` - APIキー一覧（Admin専用）
-- `POST /api/api-keys` - APIキー発行（Admin専用）
-- `DELETE /api/api-keys/:id` - APIキー削除（Admin専用）
+- `GET /api/me/api-keys` - 自分のAPIキー一覧（JWT）
+- `POST /api/me/api-keys` - 自分のAPIキー発行（JWT、ロール別 permissions ルール）
+- `PUT /api/me/api-keys/:id` - 自分のAPIキー更新（JWT）
+- `DELETE /api/me/api-keys/:id` - 自分のAPIキー削除（JWT）
 
 **ノード登録API** (既存、変更):
 - `POST /api/nodes` - レスポンスに `runtime_token` フィールド追加
@@ -304,6 +308,7 @@ frontendは静的ファイル（バニラJS）のため分離不要
 - 発行されたキーで認証成功
 - 無効なキーで認証失敗
 - APIキー削除後の認証失敗
+- admin/viewer の `permissions` バリデーション（admin必須、viewer指定不可）
 
 **ユーザーストーリー3** → `integration/middleware_test.rs`:
 - 未認証での管理API拒否
@@ -347,7 +352,8 @@ cargo run --bin router
 1. ダッシュボードの「APIキー」タブを開く
 2. 「新規発行」ボタンをクリック
 3. キー名を入力（例: "my-chatbot"）
-4. 発行されたキー（`sk_xxxxx`）をコピー（一度しか表示されない）
+4. admin は permissions を1件以上選択、viewer は固定2権限で作成
+5. 発行されたキー（`sk_xxxxx`）をコピー（一度しか表示されない）
 
 ## 外部アプリケーションからのアクセス
 

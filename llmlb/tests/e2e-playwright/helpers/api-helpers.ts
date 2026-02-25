@@ -603,18 +603,20 @@ export interface CreatedApiKey {
 
 /**
  * Create an API key for the logged-in user.
- * `_permissions` is kept only for backward compatibility with existing tests.
  */
 export async function createApiKeyWithPermissions(
   request: APIRequestContext,
   name: string,
-  _permissions: string[],
+  permissions: string[],
   expiresAt?: string
 ): Promise<CreatedApiKey> {
   const token = await getDashboardJwt();
   const payload: Record<string, unknown> = { name };
   if (expiresAt) {
     payload.expires_at = expiresAt;
+  }
+  if (permissions.length > 0) {
+    payload.permissions = permissions;
   }
   const response = await request.post(`${API_BASE}/api/me/api-keys`, {
     headers: {

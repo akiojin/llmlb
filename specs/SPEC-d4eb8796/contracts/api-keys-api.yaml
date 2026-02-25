@@ -45,7 +45,9 @@ paths:
 
     post:
       summary: APIキー発行
-      description: 新しいAPIキーを発行（ログインユーザー自身のキー）
+      description: >-
+        新しいAPIキーを発行（ログインユーザー自身のキー）。
+        adminはpermissions配列を必須指定、viewerはpermissions指定不可で固定権限が付与される。
       operationId: createApiKey
       tags:
         - API Keys
@@ -72,6 +74,17 @@ paths:
                   nullable: true
                   description: 有効期限（省略時は無期限）
                   example: '2026-11-17T00:00:00Z'
+                permissions:
+                  type: array
+                  description: >-
+                    付与する権限。adminは必須（1件以上）。viewerは指定不可で、
+                    サーバーが `openai.inference` と `openai.models.read` を固定付与する。
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/ApiKeyPermission'
+                  example:
+                    - openai.inference
+                    - openai.models.read
       responses:
         '201':
           description: APIキー発行成功
@@ -161,6 +174,7 @@ components:
         - name
         - created_by
         - created_at
+        - permissions
       properties:
         id:
           type: string
@@ -183,6 +197,10 @@ components:
           format: date-time
           nullable: true
           example: '2026-11-17T00:00:00Z'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKeyPermission'
       description: APIキー情報（キー本体はハッシュ化済みのため含まれない）
 
     ApiKeyWithPlaintext:
@@ -192,6 +210,7 @@ components:
         - key
         - name
         - created_at
+        - permissions
       properties:
         id:
           type: string
@@ -213,7 +232,26 @@ components:
           format: date-time
           nullable: true
           example: '2026-11-17T00:00:00Z'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKeyPermission'
       description: APIキー発行レスポンス（平文キーを含む、一度しか表示されない）
+
+    ApiKeyPermission:
+      type: string
+      enum:
+        - openai.inference
+        - openai.models.read
+        - endpoints.read
+        - endpoints.manage
+        - api_keys.manage
+        - users.manage
+        - invitations.manage
+        - models.manage
+        - registry.read
+        - logs.read
+        - metrics.read
 
     Error:
       type: object

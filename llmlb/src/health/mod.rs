@@ -4,8 +4,8 @@
 //!
 //! # SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 //!
-//! PULL型ヘルスチェックを提供する。llmlbが各エンドポイントの
-//! `GET /api/health` を定期的にポーリングして状態を確認する。
+//! PULL型ヘルスチェックを提供する。llmlbは各エンドポイントの健康状態を確認する
+//! （xLLMのみ `/api/health` を優先利用し、非xLLMは `/v1/models` を用いてヘルスチェックする）。
 
 pub mod endpoint_checker;
 

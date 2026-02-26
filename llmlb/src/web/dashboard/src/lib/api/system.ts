@@ -32,7 +32,20 @@ export type UpdateState =
       requested_at: string
       timeout_at: string
     }
-  | { state: 'applying'; latest: string; method: string }
+  | {
+      state: 'applying'
+      latest: string
+      method: string
+      phase?:
+        | 'starting'
+        | 'waiting_old_process_exit'
+        | 'waiting_permission'
+        | 'running_installer'
+        | 'restarting'
+      phase_message?: string
+      started_at?: string
+      timeout_at?: string
+    }
   | {
       state: 'failed'
       latest?: string | null

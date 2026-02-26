@@ -1,12 +1,12 @@
-//! stop サブコマンド
+//! stop subcommand
 //!
-//! 起動中のサーバーを停止します。
+//! Stops a running server.
 
 use crate::lock::{is_process_running, lock_path, read_lock_info, stop_process};
 use clap::Args;
 use std::time::Duration;
 
-/// stop サブコマンドの引数
+/// Arguments for the stop subcommand
 #[derive(Args, Debug, Clone)]
 pub struct StopArgs {
     /// Port of the server to stop
@@ -18,7 +18,7 @@ pub struct StopArgs {
     pub timeout: u64,
 }
 
-/// stop コマンドを実行
+/// Execute the stop command
 pub async fn execute(args: &StopArgs) -> Result<(), anyhow::Error> {
     let port = args.port;
 

@@ -108,6 +108,7 @@ export default function Dashboard() {
   const [scheduledAt, setScheduledAt] = useState('')
   const [isScheduling, setIsScheduling] = useState(false)
   const [drainCountdown, setDrainCountdown] = useState<string | null>(null)
+  const [applyTimeoutCountdown, setApplyTimeoutCountdown] = useState<string | null>(null)
 
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
@@ -155,6 +156,19 @@ export default function Dashboard() {
       return
     }
     const tick = () => setDrainCountdown(formatCountdown(update.timeout_at))
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [systemInfo?.update])
+
+  useEffect(() => {
+    const update = systemInfo?.update
+    if (update?.state !== 'applying' || !update.timeout_at) {
+      setApplyTimeoutCountdown(null)
+      return
+    }
+    const timeoutAt = update.timeout_at
+    const tick = () => setApplyTimeoutCountdown(formatCountdown(timeoutAt))
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
@@ -277,7 +291,7 @@ export default function Dashboard() {
       description = `Waiting for in-flight requests: ${update.in_flight}`
     } else if (updateState === 'applying' && update) {
       title = `Applying update: v${update.latest}`
-      description = 'Restarting...'
+      description = update.phase_message ?? 'Restarting...'
     } else if (updateState === 'failed' && update) {
       title = 'Update failed'
       description = update.message
@@ -473,6 +487,11 @@ export default function Dashboard() {
                 {updateState === 'draining' && drainCountdown != null && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Drain timeout in {drainCountdown}
+                  </p>
+                )}
+                {updateState === 'applying' && applyTimeoutCountdown != null && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Apply timeout in {applyTimeoutCountdown}
                   </p>
                 )}
                 {scheduleInfo && (
@@ -775,6 +794,7 @@ export default function Dashboard() {
     scheduledAt,
     isScheduling,
     drainCountdown,
+    applyTimeoutCountdown,
     queryClient,
   ])
 
@@ -873,7 +893,6 @@ export default function Dashboard() {
             <TabsContent value="endpoints" className="animate-fade-in">
               <EndpointTable
                 endpoints={endpointsData || []}
-                endpointTps={data?.endpoint_tps}
                 isLoading={isLoadingEndpoints}
               />
             </TabsContent>

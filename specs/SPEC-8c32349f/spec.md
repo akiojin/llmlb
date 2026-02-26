@@ -220,3 +220,15 @@
 ## 関連仕様
 
 - [SPEC-82cd11b7](../SPEC-82cd11b7/spec.md): API統合リファレンス — 全APIエンドポイントのカタログ・認証モデル分類・設計規約
+
+## Addendum 2026-02-26: Dashboard Request Total Consistency
+
+- FR-A1: `/api/dashboard/model-stats` MUST aggregate only rows that belong to currently existing endpoints.
+- FR-A2: If an endpoint has been deleted, historical `endpoint_daily_stats` rows for that endpoint MUST NOT be included in dashboard model-level totals.
+- FR-A3: The sum of `total_requests` from `/api/dashboard/model-stats` MUST be consistent with `/api/dashboard/stats.total_requests` under the same endpoint set.
+- FR-A4: Endpoint status (online/pending/offline/error) does not affect inclusion in model stats while the endpoint exists.
+
+### Acceptance Addendum
+
+- AC-A1: After deleting an endpoint, `/api/dashboard/model-stats` excludes that endpoint's model rows.
+- AC-A2: After deleting an endpoint, `/api/dashboard/stats.total_requests` equals the sum of `/api/dashboard/model-stats[].total_requests`.

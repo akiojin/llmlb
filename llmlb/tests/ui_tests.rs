@@ -18,3 +18,6 @@ mod update_header;
 
 #[path = "ui/update_phase2.rs"]
 mod update_phase2;
+
+#[path = "ui/tps_tab_placement.rs"]
+mod tps_tab_placement;

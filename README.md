@@ -180,6 +180,9 @@ available, it notifies via the dashboard and (Windows/macOS) the tray menu.
 When you approve the update ("Restart to update"), llmlb rejects new inference requests (`/v1/*`)
 with 503 + `Retry-After`, waits for in-flight inference requests (including streaming) to finish,
 then applies the update and restarts. A drain timeout of 300 seconds prevents indefinite waiting.
+For Windows `.msi` updates, elevation/UAC approval may be required. During apply, the dashboard
+shows an applying-phase message and timeout countdown; if permission wait exceeds 10 minutes,
+the state transitions to `failed`.
 
 **Update scheduling:**
 

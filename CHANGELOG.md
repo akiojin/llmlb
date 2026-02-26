@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [5.1.1](https://github.com/akiojin/llmlb/compare/v5.1.0...v5.1.1) (2026-02-26)
+
+### Bug Fixes
+
+- TPS表示をModelsタブに移動 (#464)
+- Total RequestsをModelsタブの統計と整合 (#463)
+- アップデート適用フェーズの表示とUACタイムアウト処理を追加 (#462)
+- /api/healthをxLLMエンドポイントに限定 (#461)
+
 ## [5.1.0](https://github.com/akiojin/llmlb/compare/v5.0.4...v5.1.0) (2026-02-25)
 
 ### Features

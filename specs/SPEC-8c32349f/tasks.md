@@ -332,3 +332,9 @@ T001 → T002 → T003 → T004/T005(並列) → T006 → T007 → T008
 → T025 → T026 → T027 → T028
 → T029/T030/T031(並列) → T032 → T033
 ```
+
+## Addendum Tasks 2026-02-26
+
+- [x] T034 [US-Consistency] Update `get_all_model_stats` to join `endpoints` and exclude deleted endpoint stats.
+- [x] T035 [US-Consistency] Add DB unit test to verify deleted endpoint rows are excluded from aggregated model stats.
+- [x] T036 [US-Consistency] Add contract test: `/api/dashboard/stats.total_requests` matches sum of `/api/dashboard/model-stats` after endpoint deletion.

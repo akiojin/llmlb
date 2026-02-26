@@ -324,6 +324,34 @@ export function ModelsTable({
     return map
   }, [allModelStats])
 
+  const aggregatedWithStatsFallback = useMemo(() => {
+    if (!allModelStats) return aggregated
+
+    const existingIds = new Set(aggregated.map((m) => m.id))
+    const statsOnlyModels: AggregatedModel[] = allModelStats
+      .filter((stat) => !existingIds.has(stat.model_id))
+      .map((stat) => ({
+        id: stat.model_id,
+        bestStatus: 'registered',
+        ready: false,
+        capabilities: {
+          chat_completion: false,
+          completion: false,
+          embeddings: false,
+          fine_tune: false,
+          inference: false,
+          text_to_speech: false,
+          speech_to_text: false,
+          image_generation: false,
+        },
+        tags: [],
+        endpointIds: [],
+        endpointCount: 0,
+      }))
+
+    return [...aggregated, ...statsOnlyModels]
+  }, [aggregated, allModelStats])
+
   const columns: ColumnDef[] = useMemo(
     () => [
       {
@@ -490,7 +518,7 @@ export function ModelsTable({
   )
 
   const filtered = useMemo(() => {
-    return aggregated.filter((m) => {
+    return aggregatedWithStatsFallback.filter((m) => {
       if (search && !m.id.toLowerCase().includes(search.toLowerCase())) return false
       if (statusFilter !== 'all' && m.bestStatus !== statusFilter) return false
       if (activeCapFilters.length > 0) {
@@ -500,7 +528,7 @@ export function ModelsTable({
       }
       return true
     })
-  }, [aggregated, search, statusFilter, activeCapFilters])
+  }, [aggregatedWithStatsFallback, search, statusFilter, activeCapFilters])
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -575,7 +603,7 @@ export function ModelsTable({
   }
 
   if (viewerMode) {
-    const viewerFiltered = aggregated.filter((m) =>
+    const viewerFiltered = aggregatedWithStatsFallback.filter((m) =>
       m.id.toLowerCase().includes(search.toLowerCase())
     )
     return (
@@ -586,7 +614,7 @@ export function ModelsTable({
               <Package className="h-5 w-5" />
               Models
               <Badge variant="secondary" className="ml-2">
-                {aggregated.length}
+                {aggregatedWithStatsFallback.length}
               </Badge>
             </CardTitle>
             {onRefresh && (
@@ -671,7 +699,7 @@ export function ModelsTable({
             <Package className="h-5 w-5" />
             Models
             <Badge variant="secondary" className="ml-2">
-              {aggregated.length}
+              {aggregatedWithStatsFallback.length}
             </Badge>
           </CardTitle>
           {onRefresh && (

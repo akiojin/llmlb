@@ -223,14 +223,16 @@ pub async fn get_all_model_stats(pool: &SqlitePool) -> Result<Vec<ModelStatEntry
     let rows = sqlx::query_as::<_, ModelStatRow>(
         r#"
         SELECT
-            model_id,
-            SUM(total_requests) AS total_requests,
-            SUM(successful_requests) AS successful_requests,
-            SUM(failed_requests) AS failed_requests,
-            SUM(total_output_tokens) AS total_output_tokens,
-            SUM(total_duration_ms) AS total_duration_ms
-        FROM endpoint_daily_stats
-        GROUP BY model_id
+            s.model_id,
+            SUM(s.total_requests) AS total_requests,
+            SUM(s.successful_requests) AS successful_requests,
+            SUM(s.failed_requests) AS failed_requests,
+            SUM(s.total_output_tokens) AS total_output_tokens,
+            SUM(s.total_duration_ms) AS total_duration_ms
+        FROM endpoint_daily_stats s
+        INNER JOIN endpoints e
+            ON e.id = s.endpoint_id
+        GROUP BY s.model_id
         ORDER BY total_requests DESC
         "#,
     )
@@ -607,6 +609,77 @@ mod tests {
         let other_id = Uuid::new_v4();
         let empty = get_model_stats(&pool, other_id).await.unwrap();
         assert!(empty.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_all_model_stats_excludes_deleted_endpoints() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let mut endpoint_active = crate::types::endpoint::Endpoint::new(
+            "active-endpoint".to_string(),
+            "http://127.0.0.1:18001".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        );
+        endpoint_active.status = crate::types::endpoint::EndpointStatus::Online;
+        crate::db::endpoints::create_endpoint(&pool, &endpoint_active)
+            .await
+            .unwrap();
+
+        let mut endpoint_deleted = crate::types::endpoint::Endpoint::new(
+            "deleted-endpoint".to_string(),
+            "http://127.0.0.1:18002".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        );
+        endpoint_deleted.status = crate::types::endpoint::EndpointStatus::Offline;
+        crate::db::endpoints::create_endpoint(&pool, &endpoint_deleted)
+            .await
+            .unwrap();
+
+        upsert_daily_stats(
+            &pool,
+            endpoint_active.id,
+            "model-a",
+            "2026-02-26",
+            true,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+        upsert_daily_stats(
+            &pool,
+            endpoint_deleted.id,
+            "model-a",
+            "2026-02-26",
+            true,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+        upsert_daily_stats(
+            &pool,
+            endpoint_deleted.id,
+            "model-b",
+            "2026-02-26",
+            false,
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+
+        crate::db::endpoints::delete_endpoint(&pool, endpoint_deleted.id)
+            .await
+            .unwrap();
+
+        let stats = get_all_model_stats(&pool).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].model_id, "model-a");
+        assert_eq!(stats[0].total_requests, 1);
+        assert_eq!(stats[0].successful_requests, 1);
+        assert_eq!(stats[0].failed_requests, 0);
     }
 
     #[tokio::test]

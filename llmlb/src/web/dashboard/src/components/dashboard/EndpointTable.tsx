@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { type DashboardEndpoint, type EndpointType, type EndpointTpsSummary, endpointsApi } from '@/lib/api'
+import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
 import { formatRelativeTime, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,7 +42,6 @@ import {
 } from '@/components/ui/dialog'
 import { EndpointDetailModal } from './EndpointDetailModal'
 import {
-  buildEndpointAggregateTpsMap,
   sortEndpoints,
   type EndpointSortDirection as SortDirection,
   type EndpointSortField as SortField,
@@ -68,7 +67,6 @@ import {
 
 interface EndpointTableProps {
   endpoints: DashboardEndpoint[]
-  endpointTps?: EndpointTpsSummary[]
   isLoading: boolean
 }
 
@@ -149,9 +147,8 @@ function getTypeBadgeVariant(
   }
 }
 
-export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTableProps) {
+export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
   const queryClient = useQueryClient()
-  const hasEndpointTps = (endpointTps?.length ?? 0) > 0
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'online' | 'pending' | 'offline' | 'error'
@@ -247,19 +244,13 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
     })
   }, [endpoints, search, statusFilter, typeFilter])
 
-  const endpointTpsByEndpointId = useMemo(
-    () => buildEndpointAggregateTpsMap(endpointTps),
-    [endpointTps]
-  )
-
   const sortedEndpoints = useMemo(() => {
     return sortEndpoints(
       filteredEndpoints,
       sortField,
-      sortDirection,
-      endpointTpsByEndpointId
+      sortDirection
     )
-  }, [filteredEndpoints, sortField, sortDirection, endpointTpsByEndpointId])
+  }, [filteredEndpoints, sortField, sortDirection])
 
   const paginatedEndpoints = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE
@@ -415,13 +406,6 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
-                    onClick={() => handleSort('tps')}
-                  >
-                    TPS
-                    <SortIcon field="tps" />
-                  </TableHead>
-                  <TableHead
-                    className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('model_count')}
                   >
                     Models
@@ -434,7 +418,7 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
               <TableBody>
                 {paginatedEndpoints.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       {search || statusFilter !== 'all'
                         ? 'No endpoints match the filter criteria'
                         : 'No endpoints registered'}
@@ -496,18 +480,6 @@ export function EndpointTable({ endpoints, endpointTps, isLoading }: EndpointTab
                       </TableCell>
                       <TableCell className="text-right">
                         {endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        <span
-                          className="text-muted-foreground"
-                          title={
-                            hasEndpointTps
-                              ? 'Aggregated endpoint TPS is hidden. Use endpoint details for model/API-level production TPS.'
-                              : 'No TPS data yet.'
-                          }
-                        >
-                          &mdash;
-                        </span>
                       </TableCell>
                       <TableCell className="text-right">{endpoint.model_count}</TableCell>
                       <TableCell>

@@ -8,17 +8,11 @@ export interface EndpointSortRow {
   registered_at: string
 }
 
-export interface EndpointTpsSortEntry {
-  endpoint_id: string
-  aggregate_tps: number | null
-}
-
 export type EndpointSortField =
   | 'name'
   | 'status'
   | 'total_requests'
   | 'latency_ms'
-  | 'tps'
   | 'model_count'
   | 'registered_at'
 
@@ -31,39 +25,11 @@ const STATUS_ORDER: Record<EndpointSortRow['status'], number> = {
   error: 3,
 }
 
-export function buildEndpointAggregateTpsMap(
-  endpointTps?: EndpointTpsSortEntry[]
-): Map<string, number | null> {
-  const endpointTpsById = new Map<string, number | null>()
-  if (!endpointTps) return endpointTpsById
-
-  for (const tps of endpointTps) {
-    endpointTpsById.set(tps.endpoint_id, tps.aggregate_tps)
-  }
-  return endpointTpsById
-}
-
-function compareNullableNumbersWithNullLast(
-  aValue: number | null | undefined,
-  bValue: number | null | undefined,
-  sortDirection: EndpointSortDirection
-): number {
-  const aIsMissing = aValue == null
-  const bIsMissing = bValue == null
-
-  if (aIsMissing && bIsMissing) return 0
-  if (aIsMissing) return 1
-  if (bIsMissing) return -1
-
-  return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
-}
-
 function compareEndpoints(
   a: EndpointSortRow,
   b: EndpointSortRow,
   sortField: EndpointSortField,
-  sortDirection: EndpointSortDirection,
-  endpointTpsByEndpointId: Map<string, number | null>
+  sortDirection: EndpointSortDirection
 ): number {
   let comparison = 0
 
@@ -80,12 +46,6 @@ function compareEndpoints(
     case 'latency_ms':
       comparison = (a.latency_ms ?? Infinity) - (b.latency_ms ?? Infinity)
       break
-    case 'tps':
-      return compareNullableNumbersWithNullLast(
-        endpointTpsByEndpointId.get(a.id),
-        endpointTpsByEndpointId.get(b.id),
-        sortDirection
-      )
     case 'model_count':
       comparison = a.model_count - b.model_count
       break
@@ -101,10 +61,7 @@ function compareEndpoints(
 export function sortEndpoints<T extends EndpointSortRow>(
   endpoints: T[],
   sortField: EndpointSortField,
-  sortDirection: EndpointSortDirection,
-  endpointTpsByEndpointId: Map<string, number | null>
+  sortDirection: EndpointSortDirection
 ): T[] {
-  return [...endpoints].sort((a, b) =>
-    compareEndpoints(a, b, sortField, sortDirection, endpointTpsByEndpointId)
-  )
+  return [...endpoints].sort((a, b) => compareEndpoints(a, b, sortField, sortDirection))
 }

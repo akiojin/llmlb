@@ -893,7 +893,6 @@ export default function Dashboard() {
             <TabsContent value="endpoints" className="animate-fade-in">
               <EndpointTable
                 endpoints={endpointsData || []}
-                endpointTps={data?.endpoint_tps}
                 isLoading={isLoadingEndpoints}
               />
             </TabsContent>

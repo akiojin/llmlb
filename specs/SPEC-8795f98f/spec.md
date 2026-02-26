@@ -250,3 +250,15 @@ Requests by Model等）が画面外にはみ出して見切れており、
   テーブルに反映される（再レンダリング200ms以内）
 - **SC-005**: ModelsタブからPlaygroundへの遷移が1クリックで完了し、
   モデルが自動選択された状態で表示される
+
+## Addendum 2026-02-26: Models Tab Source Completeness
+
+- FR-B1: `/api/dashboard/models` MUST include models served by endpoints in any status (online, pending, offline, error).
+- FR-B2: `ready` in `/api/dashboard/models` MUST reflect online availability (true only when at least one online endpoint serves the model).
+- FR-B3: Models tab UI MUST still render models that are present in `/api/dashboard/model-stats` even if they are absent from `/api/dashboard/models` payload.
+- FR-B4: Stats-only fallback rows in the Models tab MUST be non-interruptive (safe defaults, expandable without runtime errors).
+
+### Acceptance Addendum
+
+- AC-B1: A model mapped only to a pending endpoint appears in `/api/dashboard/models` with `ready=false`.
+- AC-B2: Models tab displays request counts for model IDs that exist only in `/api/dashboard/model-stats`.

@@ -16,12 +16,13 @@ use axum::{
     body::Body,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::Response,
+    response::{IntoResponse, Response},
     Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde_json::json;
+use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
@@ -976,7 +977,169 @@ pub async fn get_all_model_stats(
 
 /// GET /api/dashboard/models - ダッシュボード向けモデル一覧
 pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppError> {
-    crate::api::openai::list_models(State(state)).await
+    use crate::api::models::{list_registered_models, LifecycleStatus};
+    use crate::types::endpoint::SupportedAPI;
+
+    let mut registered_map: HashMap<String, crate::registry::models::ModelInfo> = HashMap::new();
+    for model in list_registered_models(&state.db_pool).await? {
+        registered_map.insert(model.name.clone(), model);
+    }
+
+    let endpoints = crate::db::endpoints::list_endpoints(&state.db_pool)
+        .await
+        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+
+    let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
+    let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
+    let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut ready_models: HashSet<String> = HashSet::new();
+
+    for endpoint in endpoints {
+        let endpoint_models =
+            crate::db::endpoints::list_endpoint_models(&state.db_pool, endpoint.id)
+                .await
+                .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+
+        for model in endpoint_models {
+            endpoint_model_ids
+                .entry(model.model_id.clone())
+                .or_default()
+                .insert(endpoint.id.to_string());
+
+            let apis = endpoint_model_apis
+                .entry(model.model_id.clone())
+                .or_default();
+            for api in model.supported_apis {
+                apis.insert(api);
+            }
+            apis.insert(SupportedAPI::Responses);
+
+            let entry = endpoint_model_max_tokens
+                .entry(model.model_id.clone())
+                .or_insert(None);
+            if let Some(mt) = model.max_tokens {
+                *entry = Some(entry.map_or(mt, |existing| existing.max(mt)));
+            }
+
+            if endpoint.status == EndpointStatus::Online {
+                ready_models.insert(model.model_id);
+            }
+        }
+    }
+
+    let mut available_models: Vec<String> = endpoint_model_apis.keys().cloned().collect();
+    available_models.sort();
+
+    let mut seen_models: HashSet<String> = HashSet::new();
+    let mut data: Vec<serde_json::Value> = Vec::new();
+
+    for model_id in &available_models {
+        seen_models.insert(model_id.clone());
+        let ready = ready_models.contains(model_id);
+
+        let supported_apis: Vec<String> = endpoint_model_apis
+            .get(model_id)
+            .map(|apis| apis.iter().map(|a| a.as_str().to_string()).collect())
+            .unwrap_or_else(|| vec!["chat_completions".to_string()]);
+        let endpoint_ids: Vec<String> = endpoint_model_ids
+            .get(model_id)
+            .map(|ids| {
+                let mut ids: Vec<String> = ids.iter().cloned().collect();
+                ids.sort();
+                ids
+            })
+            .unwrap_or_default();
+
+        if let Some(m) = registered_map.get(model_id) {
+            let caps: crate::types::model::ModelCapabilities = m.get_capabilities().into();
+            data.push(json!({
+                "id": m.name,
+                "object": "model",
+                "created": 0,
+                "owned_by": "load balancer",
+                "capabilities": caps,
+                "lifecycle_status": LifecycleStatus::Registered,
+                "download_progress": null,
+                "ready": ready,
+                "repo": m.repo,
+                "filename": m.filename,
+                "size_bytes": m.size,
+                "required_memory_bytes": m.required_memory,
+                "source": m.source,
+                "tags": m.tags,
+                "description": m.description,
+                "chat_template": m.chat_template,
+                "supported_apis": supported_apis,
+                "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+                "endpoint_ids": endpoint_ids,
+            }));
+        } else {
+            data.push(json!({
+                "id": model_id,
+                "object": "model",
+                "created": 0,
+                "owned_by": "load balancer",
+                "lifecycle_status": LifecycleStatus::Registered,
+                "download_progress": null,
+                "ready": ready,
+                "supported_apis": supported_apis,
+                "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+                "endpoint_ids": endpoint_ids,
+            }));
+        }
+    }
+
+    for (model_id, apis) in &endpoint_model_apis {
+        if seen_models.contains(model_id) {
+            continue;
+        }
+        seen_models.insert(model_id.clone());
+
+        let supported_apis: Vec<String> = apis.iter().map(|a| a.as_str().to_string()).collect();
+        let endpoint_ids: Vec<String> = endpoint_model_ids
+            .get(model_id)
+            .map(|ids| {
+                let mut ids: Vec<String> = ids.iter().cloned().collect();
+                ids.sort();
+                ids
+            })
+            .unwrap_or_default();
+        data.push(json!({
+            "id": model_id,
+            "object": "model",
+            "created": 0,
+            "owned_by": "endpoint",
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": ready_models.contains(model_id),
+            "supported_apis": supported_apis,
+            "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
+            "endpoint_ids": endpoint_ids,
+        }));
+    }
+
+    let cloud_models = crate::api::cloud_models::get_cached_models(&state.http_client).await;
+    for cm in cloud_models {
+        data.push(json!({
+            "id": cm.id,
+            "object": cm.object,
+            "created": cm.created,
+            "owned_by": cm.owned_by,
+            "lifecycle_status": LifecycleStatus::Registered,
+            "download_progress": null,
+            "ready": true,
+            "supported_apis": vec!["chat_completions"],
+            "max_tokens": null,
+            "endpoint_ids": Vec::<String>::new(),
+        }));
+    }
+
+    let body = json!({
+        "object": "list",
+        "data": data,
+    });
+
+    Ok((StatusCode::OK, Json(body)).into_response())
 }
 
 /// エンドポイント×モデル単位のTPS情報（SPEC-4bb5b55f）

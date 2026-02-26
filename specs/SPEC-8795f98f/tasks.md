@@ -265,3 +265,9 @@ Phase 2 (T003) [P] ───┘                           └──→ Phase 6 (
 - T007-T010 は T004 のコンポーネントに依存（それぞれ独立して実装可能）
 - T013 は T012 の Route 型拡張に依存
 - T014 は T012 の hash パラメータ対応に依存
+
+## Addendum Tasks 2026-02-26
+
+- [x] T018 [US-Models-Completeness] Replace `/api/dashboard/models` proxy with dashboard-scoped model listing that includes non-online endpoints.
+- [x] T019 [US-Models-Completeness] Add contract test to verify pending/offline endpoint models are returned by `/api/dashboard/models`.
+- [x] T020 [US-Models-Completeness] Update `ModelsTable` to union model IDs from `/api/dashboard/model-stats` as fallback rows.

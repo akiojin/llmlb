@@ -6,6 +6,7 @@ import {
   type LifecycleStatus,
   type ModelCapabilities,
   type ModelStatEntry,
+  type ModelTpsEntry,
   endpointsApi,
   dashboardApi,
 } from '@/lib/api'
@@ -199,6 +200,24 @@ function CapabilityBadges({ capabilities }: { capabilities: ModelCapabilities })
   )
 }
 
+function formatApiKindLabel(apiKind: ModelTpsEntry['api_kind']): string {
+  switch (apiKind) {
+    case 'chat_completions':
+      return 'chat'
+    case 'completions':
+      return 'completion'
+    case 'responses':
+      return 'responses'
+    default:
+      return apiKind
+  }
+}
+
+function formatTps(tps: number | null): string {
+  if (tps == null) return '-'
+  return `${tps.toFixed(1)} tok/s`
+}
+
 function EndpointStatsRow({
   endpoint,
   modelId,
@@ -210,8 +229,21 @@ function EndpointStatsRow({
     queryKey: ['endpoint-model-stats', endpoint.id],
     queryFn: () => endpointsApi.getModelStats(endpoint.id),
   })
+  const { data: tpsEntries } = useQuery({
+    queryKey: ['endpoint-model-tps', endpoint.id],
+    queryFn: () => endpointsApi.getModelTps(endpoint.id),
+  })
 
   const modelStat = stats?.find((s) => s.model_id === modelId)
+  const modelTps = (tpsEntries ?? [])
+    .filter((entry) => entry.model_id === modelId && entry.source === 'production')
+    .sort((a, b) => a.api_kind.localeCompare(b.api_kind))
+  const modelTpsSummary =
+    modelTps.length > 0
+      ? modelTps
+          .map((entry) => `${formatApiKindLabel(entry.api_kind)} ${formatTps(entry.tps)}`)
+          .join(' | ')
+      : '-'
 
   return (
     <div className="flex items-center justify-between py-1.5 px-3 text-sm">
@@ -225,15 +257,14 @@ function EndpointStatsRow({
         <span className="truncate font-medium">{endpoint.name}</span>
       </div>
       <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
-        {modelStat ? (
-          <>
-            <span>Total: {modelStat.total_requests.toLocaleString()}</span>
-            <span className="text-green-600">OK: {modelStat.successful_requests.toLocaleString()}</span>
-            <span className="text-red-600">Fail: {modelStat.failed_requests.toLocaleString()}</span>
-          </>
-        ) : (
-          <span>-</span>
-        )}
+        <span>Total: {modelStat ? modelStat.total_requests.toLocaleString() : '-'}</span>
+        <span className="text-green-600">
+          OK: {modelStat ? modelStat.successful_requests.toLocaleString() : '-'}
+        </span>
+        <span className="text-red-600">
+          Fail: {modelStat ? modelStat.failed_requests.toLocaleString() : '-'}
+        </span>
+        <span>TPS: {modelTpsSummary}</span>
         <a
           href={`#playground/${endpoint.id}`}
           className="text-primary hover:underline"

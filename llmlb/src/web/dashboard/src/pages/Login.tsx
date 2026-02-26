@@ -17,8 +17,12 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      await authApi.login(username, password)
-      window.location.href = '/dashboard/'
+      const result = await authApi.login(username, password)
+      if (result?.user?.must_change_password) {
+        window.location.href = '/dashboard/change-password.html'
+      } else {
+        window.location.href = '/dashboard/'
+      }
     } catch {
       toast({
         variant: 'destructive',

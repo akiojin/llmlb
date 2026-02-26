@@ -117,5 +117,9 @@ mod clients_apikeys_test;
 #[path = "contract/clients_alert_test.rs"]
 mod clients_alert_test;
 
+// Issue #446: ユーザー作成API viewerロール契約テスト
+#[path = "contract/users_create_viewer_test.rs"]
+mod users_create_viewer_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

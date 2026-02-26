@@ -3,13 +3,16 @@
 //! ログイン、ログアウト、認証情報確認
 
 use crate::common::auth::{Claims, UserRole};
-use crate::{config, AppState};
+use crate::common::error::{CommonError, LbError};
+use crate::AppState;
 use axum::{
     extract::State,
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json,
 };
+
+use super::error::AppError;
 use serde::{Deserialize, Serialize};
 
 /// ログインリクエスト
@@ -41,6 +44,8 @@ pub struct UserInfo {
     pub username: String,
     /// ロール
     pub role: String,
+    /// 初回パスワード変更が必要か
+    pub must_change_password: bool,
 }
 
 /// 認証情報レスポンス
@@ -52,6 +57,15 @@ pub struct MeResponse {
     pub username: String,
     /// ロール
     pub role: String,
+    /// 初回パスワード変更が必要か
+    pub must_change_password: bool,
+}
+
+/// パスワード変更リクエスト
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    /// 新しいパスワード
+    pub new_password: String,
 }
 
 /// POST /api/auth/login - ログイン
@@ -82,10 +96,11 @@ pub async fn login(
             &dev_user_id,
             crate::common::auth::UserRole::Admin,
             &app_state.jwt_secret,
+            false,
         )
         .map_err(|e| {
             tracing::error!("Failed to create JWT: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Jwt(format!("Failed to create JWT: {}", e))).into_response()
         })?;
 
         tracing::info!("Development mode login: admin/test");
@@ -108,6 +123,7 @@ pub async fn login(
                     id: dev_user_id,
                     username: "admin".to_string(),
                     role: "admin".to_string(),
+                    must_change_password: false,
                 },
             }),
         ));
@@ -118,21 +134,31 @@ pub async fn login(
         .await
         .map_err(|e| {
             tracing::error!("Failed to find user: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
         })?
         .ok_or_else(|| {
-            (StatusCode::UNAUTHORIZED, "Invalid username or password").into_response()
+            AppError(LbError::Authentication(
+                "Invalid username or password".to_string(),
+            ))
+            .into_response()
         })?;
 
     // パスワードを検証
     let is_valid = crate::auth::password::verify_password(&request.password, &user.password_hash)
         .map_err(|e| {
         tracing::error!("Failed to verify password: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::PasswordHash(format!(
+            "Failed to verify password: {}",
+            e
+        )))
+        .into_response()
     })?;
 
     if !is_valid {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid username or password").into_response());
+        return Err(AppError(LbError::Authentication(
+            "Invalid username or password".to_string(),
+        ))
+        .into_response());
     }
 
     // 最終ログイン時刻を更新
@@ -146,12 +172,16 @@ pub async fn login(
 
     // JWTを生成（有効期限24時間）
     let expires_in = 86400; // 24時間（秒）
-    let token =
-        crate::auth::jwt::create_jwt(&user.id.to_string(), user.role, &app_state.jwt_secret)
-            .map_err(|e| {
-                tracing::error!("Failed to create JWT: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
-            })?;
+    let token = crate::auth::jwt::create_jwt(
+        &user.id.to_string(),
+        user.role,
+        &app_state.jwt_secret,
+        user.must_change_password,
+    )
+    .map_err(|e| {
+        tracing::error!("Failed to create JWT: {}", e);
+        AppError(LbError::Jwt(format!("Failed to create JWT: {}", e))).into_response()
+    })?;
 
     let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
     let csrf_cookie = crate::auth::build_csrf_cookie(
@@ -170,8 +200,9 @@ pub async fn login(
             expires_in,
             user: UserInfo {
                 id: user.id.to_string(),
-                username: user.username,
+                username: user.username.clone(),
                 role: format!("{:?}", user.role).to_lowercase(),
+                must_change_password: user.must_change_password,
             },
         }),
     ))
@@ -232,18 +263,10 @@ pub async fn me(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
 ) -> Result<Json<MeResponse>, Response> {
-    if config::is_auth_disabled() {
-        return Ok(Json(MeResponse {
-            user_id: claims.sub.clone(),
-            username: "admin".to_string(),
-            role: format!("{:?}", UserRole::Admin).to_lowercase(),
-        }));
-    }
-
     // ユーザーIDをパース
     let user_id = claims.sub.parse::<uuid::Uuid>().map_err(|e| {
         tracing::error!("Failed to parse user ID: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Internal(format!("Failed to parse user ID: {}", e))).into_response()
     })?;
 
     // 開発モード: nil UUIDの場合は開発ユーザー情報を返す
@@ -253,6 +276,7 @@ pub async fn me(
             user_id: user_id.to_string(),
             username: "admin".to_string(),
             role: "admin".to_string(),
+            must_change_password: false,
         }));
     }
 
@@ -261,14 +285,15 @@ pub async fn me(
         .await
         .map_err(|e| {
             tracing::error!("Failed to find user: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
         })?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?;
+        .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
 
     Ok(Json(MeResponse {
         user_id: user.id.to_string(),
         username: user.username,
         role: format!("{:?}", user.role).to_lowercase(),
+        must_change_password: user.must_change_password,
     }))
 }
 
@@ -319,14 +344,23 @@ pub async fn register(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to find invitation code: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+                AppError(LbError::Database(format!(
+                    "Failed to find invitation code: {}",
+                    e
+                )))
+                .into_response()
             })?
-            .ok_or_else(|| (StatusCode::BAD_REQUEST, "Invalid invitation code").into_response())?;
+            .ok_or_else(|| {
+                AppError(LbError::Common(CommonError::Validation(
+                    "Invalid invitation code".to_string(),
+                )))
+                .into_response()
+            })?;
 
     // 招待コードが有効かチェック
     crate::db::invitations::validate_invitation(&invitation).map_err(|e| {
         tracing::info!("Invalid invitation code: {}", e);
-        (StatusCode::BAD_REQUEST, e.to_string()).into_response()
+        AppError(LbError::Common(CommonError::Validation(e.to_string()))).into_response()
     })?;
 
     // ユーザー名の重複チェック
@@ -334,17 +368,27 @@ pub async fn register(
         .await
         .map_err(|e| {
             tracing::error!("Failed to check username: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!(
+                "Failed to check username: {}",
+                e
+            )))
+            .into_response()
         })?;
 
     if existing.is_some() {
-        return Err((StatusCode::CONFLICT, "Username already exists").into_response());
+        return Err(
+            AppError(LbError::Conflict("Username already exists".to_string())).into_response(),
+        );
     }
 
     // パスワードをハッシュ化
     let password_hash = crate::auth::password::hash_password(&request.password).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::PasswordHash(format!(
+            "Failed to hash password: {}",
+            e
+        )))
+        .into_response()
     })?;
 
     // ユーザーを作成（招待登録は常にviewer）
@@ -353,11 +397,12 @@ pub async fn register(
         &request.username,
         &password_hash,
         UserRole::Viewer,
+        false,
     )
     .await
     .map_err(|e| {
         tracing::error!("Failed to create user: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Database(format!("Failed to create user: {}", e))).into_response()
     })?;
 
     // 招待コードを使用済みにする
@@ -385,6 +430,84 @@ pub async fn register(
             created_at: user.created_at.to_rfc3339(),
         }),
     ))
+}
+
+/// PUT /api/auth/change-password - パスワード変更
+///
+/// 認証済みユーザーが自身のパスワードを変更する。
+/// `must_change_password`フラグもクリアされる。
+///
+/// # Arguments
+/// * `Extension(claims)` - JWTクレーム（ミドルウェアで注入）
+/// * `State(app_state)` - アプリケーション状態
+/// * `Json(request)` - パスワード変更リクエスト
+///
+/// # Returns
+/// * `200 OK` - パスワード変更成功
+/// * `400 Bad Request` - バリデーションエラー
+/// * `401 Unauthorized` - 未認証
+/// * `500 Internal Server Error` - サーバーエラー
+pub async fn change_password(
+    Extension(claims): Extension<Claims>,
+    State(app_state): State<AppState>,
+    Json(request): Json<ChangePasswordRequest>,
+) -> Result<impl IntoResponse, Response> {
+    let user_id: uuid::Uuid = claims.sub.parse().map_err(|_| {
+        AppError(LbError::Authentication("Invalid user ID".to_string())).into_response()
+    })?;
+
+    // パスワード長バリデーション（6文字以上）
+    if request.new_password.len() < 6 {
+        return Err(AppError(LbError::Common(CommonError::Validation(
+            "Password must be at least 6 characters".to_string(),
+        )))
+        .into_response());
+    }
+
+    // 新パスワードをハッシュ化
+    let password_hash =
+        crate::auth::password::hash_password(&request.new_password).map_err(|e| {
+            tracing::error!("Failed to hash password: {}", e);
+            AppError(LbError::PasswordHash(format!(
+                "Failed to hash password: {}",
+                e
+            )))
+            .into_response()
+        })?;
+
+    // パスワードを更新
+    crate::db::users::update(
+        &app_state.db_pool,
+        user_id,
+        None,
+        Some(&password_hash),
+        None,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to update password: {}", e);
+        AppError(LbError::Database(format!(
+            "Failed to update password: {}",
+            e
+        )))
+        .into_response()
+    })?;
+
+    // must_change_passwordフラグをクリア
+    crate::db::users::clear_must_change_password(&app_state.db_pool, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to clear must_change_password: {}", e);
+            AppError(LbError::Database(format!(
+                "Failed to clear must_change_password: {}",
+                e
+            )))
+            .into_response()
+        })?;
+
+    tracing::info!("Password changed for user: {}", user_id);
+
+    Ok(StatusCode::OK)
 }
 
 #[cfg(test)]
@@ -415,6 +538,7 @@ mod tests {
                 id: "user-id".to_string(),
                 username: "admin".to_string(),
                 role: "admin".to_string(),
+                must_change_password: false,
             },
         };
         let json = serde_json::to_string(&response).unwrap();
@@ -429,6 +553,7 @@ mod tests {
             user_id: "user-123".to_string(),
             username: "testuser".to_string(),
             role: "user".to_string(),
+            must_change_password: false,
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("user-123"));
@@ -442,6 +567,7 @@ mod tests {
             id: "id-456".to_string(),
             username: "bob".to_string(),
             role: "admin".to_string(),
+            must_change_password: false,
         };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("id-456"));

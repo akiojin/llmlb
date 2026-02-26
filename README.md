@@ -89,7 +89,7 @@ available for compatibility.
 - **Request History Tracking**: Complete request/response logging with 7-day retention
 - **WebUI Management**: Manage endpoints, monitoring, and control through browser-based dashboard
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
-- **Self Update (User-Approved)**: Detect new GitHub Releases, notify via dashboard/tray, drain in-flight inference, then restart into the new version
+- **Self Update (User-Approved)**: Detect new GitHub Releases, notify via dashboard/tray, drain in-flight inference, then restart into the new version — with update scheduling, automatic rollback, and download progress tracking
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
 - **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the model name to proxy to the corresponding cloud provider while keeping the same OpenAI-compatible endpoint.
 
@@ -179,13 +179,37 @@ available, it notifies via the dashboard and (Windows/macOS) the tray menu.
 
 When you approve the update ("Restart to update"), llmlb rejects new inference requests (`/v1/*`)
 with 503 + `Retry-After`, waits for in-flight inference requests (including streaming) to finish,
-then applies the update and restarts.
+then applies the update and restarts. A drain timeout of 300 seconds prevents indefinite waiting.
+For Windows `.msi` updates, elevation/UAC approval may be required. During apply, the dashboard
+shows an applying-phase message and timeout countdown; if permission wait exceeds 10 minutes,
+the state transitions to `failed`.
+
+**Update scheduling:**
+
+- **Immediate**: Apply now (default) — drains in-flight requests, then restarts
+- **On idle**: Waits until no inference requests are in-flight, then applies automatically
+- **Scheduled**: Specify a date/time; llmlb starts the drain at the scheduled time
+
+Configure via dashboard settings modal or the scheduling API
+(`POST/GET/DELETE /api/system/update/schedule`).
+
+**Rollback:**
+
+- **Automatic**: After applying an update, llmlb monitors the new process for 30 seconds;
+  if the health check fails, it automatically restores from the `.bak` backup
+- **Manual**: Use the dashboard "Rollback" button or `POST /api/system/update/rollback`
+  when a `.bak` backup exists
+
+**Download progress:** The dashboard shows a real-time progress bar with bytes downloaded
+and percentage during update asset downloads.
 
 Auto-apply method depends on the platform/install:
 
 - Portable install: replace the executable in-place when writable
 - macOS `.pkg` / Windows `.msi`: run the installer (may require elevation)
 - Linux non-writable installs: auto-apply is not supported; reinstall manually from GitHub Releases
+
+For full details, see [specs/SPEC-a6e55b37/spec.md](./specs/SPEC-a6e55b37/spec.md).
 
 ### CLI Reference
 
@@ -723,9 +747,7 @@ See <https://github.com/akiojin/xLLM> for runtime build/run details.
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | `REQUEST_HISTORY_RETENTION_DAYS` |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | `LLM_DEFAULT_EMBEDDING_MODEL` |
-| `LLMLB_AUTH_DISABLED` | `false` | Disable auth checks (dev/test only) | `AUTH_DISABLED` |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | deprecated (use `LLMLB_DEFAULT_EMBEDDING_MODEL`) |
-| `AUTH_DISABLED` | `false` | Disable auth checks (dev/test only) | deprecated (use `LLMLB_AUTH_DISABLED`) |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | deprecated (use `LLMLB_REQUEST_HISTORY_RETENTION_DAYS`) |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | deprecated (use `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`) |
 
@@ -965,12 +987,16 @@ dashboard origin.
 | `invitations.manage` | Invitation management (`/api/invitations*`) |
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry and lists (`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`) |
-| `logs.read` | Node log proxy (`GET /api/nodes/:node_id/logs`) |
+| `logs.read` | Endpoint log proxy (`GET /api/endpoints/:id/logs`) |
 | `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
 
 Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_debug_api`, `sk_debug_admin` (see `docs/authentication.md`).
 
 Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
+`POST /api/me/api-keys` permission rules by role:
+- `admin`: must provide a non-empty `permissions` array.
+- `viewer`: must not provide `permissions`; server assigns fixed OpenAI permissions
+  (`openai.inference`, `openai.models.read`).
 
 #### User Management Endpoints
 
@@ -986,7 +1012,7 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/api/me/api-keys` | List own API keys | JWT |
-| POST | `/api/me/api-keys` | Create own API key (server assigns fixed permissions) | JWT |
+| POST | `/api/me/api-keys` | Create own API key (admin: explicit permissions, viewer: fixed OpenAI permissions) | JWT |
 | PUT | `/api/me/api-keys/:id` | Update own API key | JWT |
 | DELETE | `/api/me/api-keys/:id` | Delete own API key | JWT |
 
@@ -1049,7 +1075,7 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | GET | `/api/dashboard/stats` | System statistics | JWT only |
 | GET | `/api/dashboard/request-history` | Request history (legacy) | JWT only |
 | GET | `/api/dashboard/overview` | Dashboard overview | JWT only |
-| GET | `/api/dashboard/metrics/:node_id` | Node metrics history | JWT only |
+| GET | `/api/dashboard/metrics/:runtime_id` | Endpoint metrics history | JWT only |
 | GET | `/api/dashboard/request-responses` | Request/response list | JWT only |
 | GET | `/api/dashboard/request-responses/:id` | Request/response details | JWT only |
 | GET | `/api/dashboard/request-responses/export` | Export request/responses | JWT only |
@@ -1062,7 +1088,7 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/nodes/:node_id/logs` | Node logs proxy | JWT+Admin or API key (`logs.read`) |
+| GET | `/api/endpoints/:id/logs` | Endpoint logs proxy | JWT+Admin or API key (`logs.read`) |
 | GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (`metrics.read`) |
 
 #### Playground Proxy

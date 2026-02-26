@@ -98,7 +98,8 @@ test.describe('API Key Lifecycle @api', () => {
     )
 
     await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
-    await expect(createDialog.locator('#api-key-name')).toHaveValue('', { timeout: 20000 })
+    // Wait for onSuccess (dialog auto-closes on success).
+    await expect(createDialog).toBeHidden({ timeout: 20000 })
     const createResp = await createApiKeyResponse
     const createRespBody = (await createResp.json()) as { id?: string; key?: string }
     const apiKey = createRespBody.key?.trim() || ''
@@ -107,11 +108,7 @@ test.describe('API Key Lifecycle @api', () => {
       createdKeyIds.push(createRespBody.id)
     }
 
-    // Close create dialog to access the created key banner
-    await createDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-    await expect(createDialog).toBeHidden({ timeout: 10000 })
-
-    // Read the plaintext key
+    // Read the plaintext key (create dialog auto-closes on success)
     const createdAlert = apiKeysModal.getByText('API Key Created Successfully').locator('..')
     await expect(createdAlert).toBeVisible({ timeout: 10000 })
     await createdAlert.locator('#copy-api-key').click()

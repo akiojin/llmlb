@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { usersApi, type User } from '@/lib/api'
+import { usersApi, type User, type CreateUserResponse } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -50,6 +50,8 @@ import {
   RefreshCw,
   Shield,
   User as UserIcon,
+  Copy,
+  Check,
 } from 'lucide-react'
 
 interface UserModalProps {
@@ -62,11 +64,13 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   const [createOpen, setCreateOpen] = useState(false)
   const [editUser, setEditUser] = useState<User | null>(null)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
+  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   // Form state
   const [formUsername, setFormUsername] = useState('')
   const [formPassword, setFormPassword] = useState('')
-  const [formRole, setFormRole] = useState<'admin' | 'user'>('user')
+  const [formRole, setFormRole] = useState<'admin' | 'viewer'>('viewer')
 
   // Fetch users
   const { data: users, isLoading, refetch } = useQuery({
@@ -77,13 +81,13 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
 
   // Create user mutation
   const createMutation = useMutation({
-    mutationFn: (data: { username: string; password: string; role: string }) =>
+    mutationFn: (data: { username: string; role: string }) =>
       usersApi.create(data),
-    onSuccess: () => {
+    onSuccess: (result: CreateUserResponse) => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       resetForm()
       setCreateOpen(false)
-      toast({ title: 'User created' })
+      setGeneratedPassword(result.generated_password)
     },
     onError: (error) => {
       toast({
@@ -139,7 +143,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   const resetForm = () => {
     setFormUsername('')
     setFormPassword('')
-    setFormRole('user')
+    setFormRole('viewer')
   }
 
   // Populate form when editing
@@ -147,7 +151,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     if (editUser) {
       setFormUsername(editUser.username)
       setFormPassword('')
-      setFormRole(editUser.role as 'admin' | 'user')
+      setFormRole(editUser.role as 'admin' | 'viewer')
     } else {
       resetForm()
     }
@@ -156,7 +160,6 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   const handleCreate = () => {
     createMutation.mutate({
       username: formUsername,
-      password: formPassword,
       role: formRole,
     })
   }
@@ -168,6 +171,13 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     if (formPassword) data.password = formPassword
     if (formRole !== editUser.role) data.role = formRole
     updateMutation.mutate({ id: editUser.id, data })
+  }
+
+  const handleCopyPassword = async () => {
+    if (!generatedPassword) return
+    await navigator.clipboard.writeText(generatedPassword)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   const getRoleBadge = (role: string) => {
@@ -182,7 +192,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     return (
       <Badge variant="secondary" className="gap-1">
         <UserIcon className="h-3 w-3" />
-        User
+        Viewer
       </Badge>
     )
   }
@@ -279,7 +289,9 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create User</DialogTitle>
-            <DialogDescription>Add a new dashboard user.</DialogDescription>
+            <DialogDescription>
+              Add a new dashboard user. A password will be automatically generated.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -292,23 +304,13 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-password">Password</Label>
-              <Input
-                id="create-password"
-                type="password"
-                placeholder="••••••••"
-                value={formPassword}
-                onChange={(e) => setFormPassword(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="create-role">Role</Label>
-              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'user')}>
+              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
@@ -320,12 +322,61 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!formUsername || !formPassword || createMutation.isPending}
+              disabled={!formUsername || createMutation.isPending}
             >
               {createMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generated Password Dialog */}
+      <Dialog
+        open={!!generatedPassword}
+        onOpenChange={(open) => {
+          if (!open) {
+            setGeneratedPassword(null)
+            setCopied(false)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>User Created Successfully</DialogTitle>
+            <DialogDescription>
+              Please save this password. It will only be shown once.
+              The user will be required to change it on first login.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-2">
+              <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm">
+                {generatedPassword}
+              </code>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleCopyPassword}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setGeneratedPassword(null)
+                setCopied(false)
+              }}
+            >
+              I have saved the password
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -361,12 +412,12 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role</Label>
-              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'user')}>
+              <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>

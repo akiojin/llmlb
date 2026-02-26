@@ -3,6 +3,7 @@
 //! WebSocket接続 → リアルタイム更新 → ノード状態変化の受信
 //!
 //! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
+//! NOTE: AUTH_DISABLED廃止に伴い、JWT認証を使用するよう更新済み。
 
 use axum::Router;
 use futures::StreamExt;
@@ -11,21 +12,11 @@ use llmlb::{
     api, auth::jwt::create_jwt, balancer::LoadManager, registry::endpoints::EndpointRegistry,
     AppState,
 };
-use serial_test::serial;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-/// Guard to reset AUTH_DISABLED on drop
-struct AuthDisabledGuard;
-
-impl Drop for AuthDisabledGuard {
-    fn drop(&mut self) {
-        std::env::remove_var("AUTH_DISABLED");
-    }
-}
-
-async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
+async fn build_test_app() -> (AppState, Router) {
     let temp_dir = std::env::temp_dir().join(format!(
         "dashboard-ws-test-{}-{}",
         std::process::id(),
@@ -36,17 +27,8 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
 
     std::env::set_var("HOME", &temp_dir);
     std::env::set_var("USERPROFILE", &temp_dir);
-    // Disable authentication for integration tests (cleaned up by AuthDisabledGuard)
-    std::env::set_var("AUTH_DISABLED", "true");
-    let guard = AuthDisabledGuard;
 
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
+    let db_pool = crate::support::lb::create_test_db_pool().await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");
@@ -70,7 +52,7 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
     let state = AppState {
         load_manager,
         request_history,
-        db_pool,
+        db_pool: db_pool.clone(),
         jwt_secret,
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
@@ -79,22 +61,27 @@ async fn build_test_app() -> (AppState, Router, AuthDisabledGuard) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state.clone());
-    (state, app, guard)
+    (state, app)
 }
 
 fn ws_url_with_token(addr: std::net::SocketAddr, secret: &str) -> String {
-    let token = create_jwt("test-admin", UserRole::Admin, secret).expect("create test jwt");
+    let token = create_jwt("test-admin", UserRole::Admin, secret, false).expect("create test jwt");
     format!("ws://{}/ws/dashboard?token={}", addr, token)
 }
 
 #[tokio::test]
-#[serial]
 async fn test_dashboard_websocket_connection() {
     // Arrange: Router server startup
-    let (state, app, _guard) = build_test_app().await;
+    let (state, app) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -129,10 +116,9 @@ async fn test_dashboard_websocket_connection() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_dashboard_receives_node_registration_event() {
     // Arrange: Router server startup
-    let (state, app, _guard) = build_test_app().await;
+    let (state, app) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -155,11 +141,11 @@ async fn test_dashboard_receives_node_registration_event() {
     let _ = read.next().await;
 
     // Act: Register a node by publishing event directly (since we can't go through HTTP in this test)
-    let node_id = uuid::Uuid::new_v4();
+    let endpoint_id = uuid::Uuid::new_v4();
     state
         .event_bus
         .publish(llmlb::events::DashboardEvent::NodeRegistered {
-            runtime_id: node_id,
+            runtime_id: endpoint_id,
             machine_name: "test-node".to_string(),
             ip_address: "127.0.0.1".to_string(),
             status: llmlb::types::endpoint::EndpointStatus::Online,
@@ -175,7 +161,7 @@ async fn test_dashboard_receives_node_registration_event() {
     if let Message::Text(text) = msg {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
         assert_eq!(json["type"], "NodeRegistered");
-        assert_eq!(json["data"]["runtime_id"], node_id.to_string());
+        assert_eq!(json["data"]["runtime_id"], endpoint_id.to_string());
         assert_eq!(json["data"]["machine_name"], "test-node");
     } else {
         panic!("Expected text message, got {:?}", msg);
@@ -183,10 +169,9 @@ async fn test_dashboard_receives_node_registration_event() {
 }
 
 #[tokio::test]
-#[serial]
 async fn test_dashboard_receives_node_status_change() {
     // Arrange: Router server startup
-    let (state, app, _guard) = build_test_app().await;
+    let (state, app) = build_test_app().await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -209,11 +194,11 @@ async fn test_dashboard_receives_node_status_change() {
     let _ = read.next().await;
 
     // Act: Publish a node status change event
-    let node_id = uuid::Uuid::new_v4();
+    let endpoint_id = uuid::Uuid::new_v4();
     state
         .event_bus
         .publish(llmlb::events::DashboardEvent::EndpointStatusChanged {
-            runtime_id: node_id,
+            runtime_id: endpoint_id,
             old_status: llmlb::types::endpoint::EndpointStatus::Online,
             new_status: llmlb::types::endpoint::EndpointStatus::Offline,
         });
@@ -228,7 +213,7 @@ async fn test_dashboard_receives_node_status_change() {
     if let Message::Text(text) = msg {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
         assert_eq!(json["type"], "EndpointStatusChanged");
-        assert_eq!(json["data"]["runtime_id"], node_id.to_string());
+        assert_eq!(json["data"]["runtime_id"], endpoint_id.to_string());
         assert_eq!(json["data"]["new_status"], "offline");
     } else {
         panic!("Expected text message, got {:?}", msg);

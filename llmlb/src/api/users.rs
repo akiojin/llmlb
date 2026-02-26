@@ -3,6 +3,7 @@
 //! Admin専用のユーザーCRUD操作
 
 use crate::common::auth::{Claims, User, UserRole};
+use crate::common::error::LbError;
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -10,6 +11,8 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+
+use super::error::AppError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -18,10 +21,17 @@ use uuid::Uuid;
 pub struct CreateUserRequest {
     /// ユーザー名
     pub username: String,
-    /// パスワード
-    pub password: String,
     /// ロール
     pub role: UserRole,
+}
+
+/// ユーザー作成レスポンス（生成パスワード付き）
+#[derive(Debug, Serialize)]
+pub struct CreateUserResponse {
+    /// ユーザー情報
+    pub user: UserResponse,
+    /// 自動生成されたパスワード（管理者に一度だけ表示）
+    pub generated_password: String,
 }
 
 /// ユーザー更新リクエスト
@@ -73,7 +83,9 @@ impl From<User> for UserResponse {
 #[allow(clippy::result_large_err)]
 fn check_admin(claims: &Claims) -> Result<(), Response> {
     if claims.role != UserRole::Admin {
-        return Err((StatusCode::FORBIDDEN, "Admin access required").into_response());
+        return Err(
+            AppError(LbError::Authorization("Admin access required".to_string())).into_response(),
+        );
     }
     Ok(())
 }
@@ -100,7 +112,7 @@ pub async fn list_users(
         .await
         .map_err(|e| {
             tracing::error!("Failed to list users: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!("Failed to list users: {}", e))).into_response()
         })?;
 
     Ok(Json(ListUsersResponse {
@@ -126,7 +138,7 @@ pub async fn create_user(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Json(request): Json<CreateUserRequest>,
-) -> Result<(StatusCode, Json<UserResponse>), Response> {
+) -> Result<(StatusCode, Json<CreateUserResponse>), Response> {
     check_admin(&claims)?;
 
     // ユーザー名の重複チェック
@@ -134,33 +146,53 @@ pub async fn create_user(
         .await
         .map_err(|e| {
             tracing::error!("Failed to check username: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!(
+                "Failed to check username: {}",
+                e
+            )))
+            .into_response()
         })?;
 
     if existing.is_some() {
-        return Err((StatusCode::BAD_REQUEST, "Username already exists").into_response());
+        return Err(
+            AppError(LbError::Conflict("Username already exists".to_string())).into_response(),
+        );
     }
 
+    // パスワードを自動生成
+    let generated_password = crate::auth::generate_random_token(16);
+
     // パスワードをハッシュ化
-    let password_hash = crate::auth::password::hash_password(&request.password).map_err(|e| {
+    let password_hash = crate::auth::password::hash_password(&generated_password).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::PasswordHash(format!(
+            "Failed to hash password: {}",
+            e
+        )))
+        .into_response()
     })?;
 
-    // ユーザーを作成
+    // ユーザーを作成（初回パスワード変更必須）
     let user = crate::db::users::create(
         &app_state.db_pool,
         &request.username,
         &password_hash,
         request.role,
+        true,
     )
     .await
     .map_err(|e| {
         tracing::error!("Failed to create user: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Database(format!("Failed to create user: {}", e))).into_response()
     })?;
 
-    Ok((StatusCode::CREATED, Json(UserResponse::from(user))))
+    Ok((
+        StatusCode::CREATED,
+        Json(CreateUserResponse {
+            user: UserResponse::from(user),
+            generated_password,
+        }),
+    ))
 }
 
 /// PUT /api/users/:id - ユーザー更新
@@ -192,9 +224,9 @@ pub async fn update_user(
         .await
         .map_err(|e| {
             tracing::error!("Failed to find user: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
         })?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?;
+        .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
 
     // ユーザー名の重複チェック
     if let Some(ref username) = request.username {
@@ -202,11 +234,18 @@ pub async fn update_user(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to check username: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+                AppError(LbError::Database(format!(
+                    "Failed to check username: {}",
+                    e
+                )))
+                .into_response()
             })?
         {
             if existing.id != user_id {
-                return Err((StatusCode::BAD_REQUEST, "Username already exists").into_response());
+                return Err(
+                    AppError(LbError::Conflict("Username already exists".to_string()))
+                        .into_response(),
+                );
             }
         }
     }
@@ -215,7 +254,11 @@ pub async fn update_user(
     let password_hash = if let Some(ref password) = request.password {
         Some(crate::auth::password::hash_password(password).map_err(|e| {
             tracing::error!("Failed to hash password: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::PasswordHash(format!(
+                "Failed to hash password: {}",
+                e
+            )))
+            .into_response()
         })?)
     } else {
         None
@@ -232,7 +275,7 @@ pub async fn update_user(
     .await
     .map_err(|e| {
         tracing::error!("Failed to update user: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+        AppError(LbError::Database(format!("Failed to update user: {}", e))).into_response()
     })?;
 
     Ok(Json(UserResponse::from(user)))
@@ -265,24 +308,29 @@ pub async fn delete_user(
         .await
         .map_err(|e| {
             tracing::error!("Failed to find user: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
         })?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?;
+        .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
 
     // 最後の管理者チェック
     let is_last_admin = crate::db::users::is_last_admin(&app_state.db_pool, user_id)
         .await
         .map_err(|e| {
             tracing::error!("Failed to check if last admin: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!(
+                "Failed to check if last admin: {}",
+                e
+            )))
+            .into_response()
         })?;
 
     if is_last_admin {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Cannot delete the last administrator",
-        )
-            .into_response());
+        return Err(AppError(LbError::Common(
+            crate::common::error::CommonError::Validation(
+                "Cannot delete the last administrator".to_string(),
+            ),
+        ))
+        .into_response());
     }
 
     // ユーザーを削除
@@ -290,7 +338,7 @@ pub async fn delete_user(
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete user: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            AppError(LbError::Database(format!("Failed to delete user: {}", e))).into_response()
         })?;
 
     Ok(StatusCode::NO_CONTENT)

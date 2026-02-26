@@ -243,7 +243,7 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
                 {getTypeLabel(endpoint.endpoint_type)}
               </Badge>
               <span className="text-xs text-muted-foreground">
-                タイプは自動検出されます
+                Type is auto-detected
               </span>
               <span className="text-sm text-muted-foreground">
                 Models: {endpoint.model_count}

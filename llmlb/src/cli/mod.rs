@@ -23,7 +23,6 @@ use clap::{Parser, Subcommand};
     LLMLB_ADMIN_USERNAME    Initial admin username (default: admin)
     LLMLB_ADMIN_PASSWORD    Initial admin password (required on first run)
     LLMLB_DEFAULT_EMBEDDING_MODEL  Default embedding model
-    LLMLB_AUTH_DISABLED     Disable auth checks (dev/test only)
 "#)]
 pub struct Cli {
     /// Subcommand to execute

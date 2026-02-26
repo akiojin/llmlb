@@ -4,9 +4,9 @@
 
 use crate::common::{
     error::LbError,
-    protocol::{RecordStatus, RequestResponseRecord, RequestType, SpeechRequest},
-    types::ModelCapability,
+    protocol::{RequestResponseRecord, RequestType, SpeechRequest},
 };
+use crate::types::model::ModelCapability;
 use axum::{
     body::Body,
     extract::{ConnectInfo, Multipart, State},
@@ -14,7 +14,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::Utc;
 use serde_json::json;
 use std::time::Instant;
 use tracing::info;
@@ -41,7 +40,7 @@ fn error_response(error: LbError, status: StatusCode) -> Response {
         LbError::Http(msg) => (msg, "invalid_request_error"),
         LbError::ServiceUnavailable(msg) => (msg, "service_unavailable"),
         LbError::InvalidModelName(msg) => (msg, "invalid_request_error"),
-        _ => (error.to_string(), "api_error"),
+        _ => (error.external_message().to_string(), "api_error"),
     };
 
     (
@@ -211,7 +210,6 @@ pub async fn transcriptions(
     let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
-    let timestamp = Utc::now();
 
     // multipart データを解析
     let mut file_data: Option<Vec<u8>> = None;
@@ -347,31 +345,18 @@ pub async fn transcriptions(
     let status = response.status();
 
     // リクエスト履歴を記録
-    let record = RequestResponseRecord {
-        id: request_id,
-        timestamp,
-        request_type: RequestType::Transcription,
-        model: model.clone(),
-        node_id: backend.id(),
-        node_machine_name: backend.name(),
-        node_ip: backend.ip(),
+    let record = RequestResponseRecord::new(
+        backend.id(),
+        backend.name(),
+        backend.ip(),
+        model.clone(),
+        RequestType::Transcription,
+        json!({"model": model, "type": "transcription"}),
+        status,
+        duration,
         client_ip,
-        request_body: json!({"model": model, "type": "transcription"}),
-        response_body: None,
-        duration_ms: duration.as_millis() as u64,
-        status: if status.is_success() {
-            RecordStatus::Success
-        } else {
-            RecordStatus::Error {
-                message: format!("HTTP {}", status.as_u16()),
-            }
-        },
-        completed_at: Utc::now(),
-        input_tokens: None,
-        output_tokens: None,
-        total_tokens: None,
         api_key_id,
-    };
+    );
 
     save_request_record(state.request_history.clone(), record);
 
@@ -403,7 +388,6 @@ pub async fn speech(
     let api_key_id = auth_ctx.as_ref().map(|ext| ext.0.id);
     let start = Instant::now();
     let request_id = Uuid::new_v4();
-    let timestamp = Utc::now();
 
     // 入力テキストの検証
     if payload.input.is_empty() {
@@ -462,31 +446,18 @@ pub async fn speech(
     let status = response.status();
 
     // リクエスト履歴を記録
-    let record = RequestResponseRecord {
-        id: request_id,
-        timestamp,
-        request_type: RequestType::Speech,
-        model: payload.model.clone(),
-        node_id: backend.id(),
-        node_machine_name: backend.name(),
-        node_ip: backend.ip(),
+    let record = RequestResponseRecord::new(
+        backend.id(),
+        backend.name(),
+        backend.ip(),
+        payload.model.clone(),
+        RequestType::Speech,
+        serde_json::to_value(&payload).unwrap_or(json!({})),
+        status,
+        duration,
         client_ip,
-        request_body: serde_json::to_value(&payload).unwrap_or(json!({})),
-        response_body: None,
-        duration_ms: duration.as_millis() as u64,
-        status: if status.is_success() {
-            RecordStatus::Success
-        } else {
-            RecordStatus::Error {
-                message: format!("HTTP {}", status.as_u16()),
-            }
-        },
-        completed_at: Utc::now(),
-        input_tokens: None,
-        output_tokens: None,
-        total_tokens: None,
         api_key_id,
-    };
+    );
 
     save_request_record(state.request_history.clone(), record);
 
@@ -583,7 +554,7 @@ mod tests {
     // TextToSpeech capability を持たないモデルで /v1/audio/speech を呼ぶとエラー
     #[test]
     fn test_tts_capability_validation_error_message() {
-        use crate::common::types::{ModelCapability, ModelType};
+        use crate::types::model::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、TextToSpeechは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);
@@ -599,7 +570,7 @@ mod tests {
     // SpeechToText capability を持たないモデルで /v1/audio/transcriptions を呼ぶとエラー
     #[test]
     fn test_asr_capability_validation_error_message() {
-        use crate::common::types::{ModelCapability, ModelType};
+        use crate::types::model::{ModelCapability, ModelType};
 
         // LLMモデルはTextGenerationのみ、SpeechToTextは非対応
         let llm_caps = ModelCapability::from_model_type(ModelType::Llm);

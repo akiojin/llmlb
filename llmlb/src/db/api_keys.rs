@@ -372,13 +372,10 @@ fn serialize_permissions(permissions: &[ApiKeyPermission]) -> Result<String, LbE
 mod tests {
     use super::*;
     use crate::common::auth::UserRole;
-    use crate::db::migrations::initialize_database;
     use crate::db::users;
 
     async fn setup_test_db() -> SqlitePool {
-        initialize_database("sqlite::memory:")
-            .await
-            .expect("Failed to initialize test database")
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[test]
@@ -412,7 +409,7 @@ mod tests {
         let pool = setup_test_db().await;
 
         // テスト用ユーザーを作成
-        let user = users::create(&pool, "testuser", "hash", UserRole::Admin)
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
@@ -450,7 +447,7 @@ mod tests {
     async fn test_list_api_keys() {
         let pool = setup_test_db().await;
 
-        let user = users::create(&pool, "testuser", "hash", UserRole::Admin)
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
@@ -481,7 +478,7 @@ mod tests {
     async fn test_delete_api_key() {
         let pool = setup_test_db().await;
 
-        let user = users::create(&pool, "testuser", "hash", UserRole::Admin)
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 

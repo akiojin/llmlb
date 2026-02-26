@@ -108,8 +108,8 @@ impl RequestHistoryStorage {
         let id = record.id.to_string();
         let timestamp = record.timestamp.to_rfc3339();
         let request_type = format!("{:?}", record.request_type);
-        let node_id = record.node_id.to_string();
-        let node_ip = record.node_ip.to_string();
+        let endpoint_id_str = record.endpoint_id.to_string();
+        let endpoint_ip_str = record.endpoint_ip.to_string();
         let client_ip = record.client_ip.map(|ip| ip.to_string());
         let request_body = record.request_body.to_string();
         let response_body = record.response_body.as_ref().map(|v| v.to_string());
@@ -129,8 +129,8 @@ impl RequestHistoryStorage {
         let insert_sql = if ignore_conflicts {
             r#"
             INSERT OR IGNORE INTO request_history (
-                id, timestamp, request_type, model, node_id, node_machine_name,
-                node_ip, client_ip, request_body, response_body, duration_ms,
+                id, timestamp, request_type, model, endpoint_id, endpoint_name,
+                endpoint_ip, client_ip, request_body, response_body, duration_ms,
                 status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
                 api_key_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -138,8 +138,8 @@ impl RequestHistoryStorage {
         } else {
             r#"
             INSERT INTO request_history (
-                id, timestamp, request_type, model, node_id, node_machine_name,
-                node_ip, client_ip, request_body, response_body, duration_ms,
+                id, timestamp, request_type, model, endpoint_id, endpoint_name,
+                endpoint_ip, client_ip, request_body, response_body, duration_ms,
                 status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
                 api_key_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -151,9 +151,9 @@ impl RequestHistoryStorage {
             .bind(&timestamp)
             .bind(&request_type)
             .bind(&record.model)
-            .bind(&node_id)
-            .bind(&record.node_machine_name)
-            .bind(&node_ip)
+            .bind(&endpoint_id_str)
+            .bind(&record.endpoint_name)
+            .bind(&endpoint_ip_str)
             .bind(&client_ip)
             .bind(&request_body)
             .bind(&response_body)
@@ -197,6 +197,33 @@ impl RequestHistoryStorage {
         Ok(())
     }
 
+    /// 直近N分のリクエスト履歴を分単位で集計して返す（起動時seeding用）
+    pub async fn get_recent_history_by_minute(
+        &self,
+        minutes: i64,
+    ) -> RouterResult<Vec<MinuteHistoryPoint>> {
+        let cutoff = (Utc::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
+
+        let rows = sqlx::query_as::<_, MinuteHistoryRow>(
+            r#"
+            SELECT
+                strftime('%Y-%m-%dT%H:%M:00Z', completed_at) AS minute,
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+                SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS error_count
+            FROM request_history
+            WHERE completed_at >= ?
+            GROUP BY strftime('%Y-%m-%dT%H:%M:00Z', completed_at)
+            ORDER BY minute ASC
+            "#,
+        )
+        .bind(&cutoff)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to get recent history by minute: {}", e)))?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
     /// レコードをフィルタリング＆ページネーション
     pub async fn filter_and_paginate(
         &self,
@@ -213,9 +240,9 @@ impl RequestHistoryStorage {
             params.push(format!("%{}%", model));
         }
 
-        if let Some(node_id) = filter.node_id {
-            conditions.push("node_id = ?");
-            params.push(node_id.to_string());
+        if let Some(endpoint_id) = filter.endpoint_id {
+            conditions.push("endpoint_id = ?");
+            params.push(endpoint_id.to_string());
         }
 
         if let Some(ref status) = filter.status {
@@ -499,13 +526,15 @@ impl RequestHistoryStorage {
             .collect())
     }
 
-    /// トークン統計を取得（ノード別）
-    pub async fn get_token_statistics_by_node(&self) -> RouterResult<Vec<NodeTokenStatistics>> {
-        let rows = sqlx::query_as::<_, NodeTokenStatisticsRow>(
+    /// トークン統計を取得（エンドポイント別）
+    pub async fn get_token_statistics_by_endpoint(
+        &self,
+    ) -> RouterResult<Vec<EndpointTokenStatistics>> {
+        let rows = sqlx::query_as::<_, EndpointTokenStatisticsRow>(
             r#"
             SELECT
-                node_id,
-                node_machine_name,
+                endpoint_id,
+                endpoint_name,
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
                 COALESCE(SUM(output_tokens), 0) as total_output_tokens,
                 COALESCE(
@@ -519,21 +548,23 @@ impl RequestHistoryStorage {
                 ) as total_tokens,
                 COUNT(*) as request_count
             FROM request_history
-            GROUP BY node_id
+            GROUP BY endpoint_id
             ORDER BY total_tokens DESC
             "#,
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| LbError::Database(format!("Failed to get token statistics by node: {}", e)))?;
+        .map_err(|e| {
+            LbError::Database(format!("Failed to get token statistics by endpoint: {}", e))
+        })?;
 
         Ok(rows
             .into_iter()
             .filter_map(|row| {
-                let node_id = Uuid::parse_str(&row.node_id).ok()?;
-                Some(NodeTokenStatistics {
-                    node_id,
-                    node_machine_name: row.node_machine_name,
+                let endpoint_id = Uuid::parse_str(&row.endpoint_id).ok()?;
+                Some(EndpointTokenStatistics {
+                    endpoint_id,
+                    endpoint_name: row.endpoint_name,
                     total_input_tokens: row.total_input_tokens as u64,
                     total_output_tokens: row.total_output_tokens as u64,
                     total_tokens: row.total_tokens as u64,
@@ -689,9 +720,9 @@ struct RequestHistoryRow {
     timestamp: String,
     request_type: String,
     model: String,
-    node_id: String,
-    node_machine_name: String,
-    node_ip: String,
+    endpoint_id: String,
+    endpoint_name: String,
+    endpoint_ip: String,
     client_ip: Option<String>,
     request_body: String,
     response_body: Option<String>,
@@ -729,13 +760,13 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             _ => RequestType::Chat, // フォールバック
         };
 
-        let node_id = Uuid::parse_str(&row.node_id)
-            .map_err(|e| LbError::Database(format!("Invalid node UUID: {}", e)))?;
+        let endpoint_id = Uuid::parse_str(&row.endpoint_id)
+            .map_err(|e| LbError::Database(format!("Invalid endpoint UUID: {}", e)))?;
 
-        let node_ip: IpAddr = row
-            .node_ip
+        let endpoint_ip: IpAddr = row
+            .endpoint_ip
             .parse()
-            .map_err(|e| LbError::Database(format!("Invalid node IP: {}", e)))?;
+            .map_err(|e| LbError::Database(format!("Invalid endpoint IP: {}", e)))?;
 
         let client_ip = row
             .client_ip
@@ -771,9 +802,9 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             timestamp,
             request_type,
             model: row.model,
-            node_id,
-            node_machine_name: row.node_machine_name,
-            node_ip,
+            endpoint_id,
+            endpoint_name: row.endpoint_name,
+            endpoint_ip,
             client_ip,
             request_body,
             response_body,
@@ -794,13 +825,41 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
     }
 }
 
+/// 分単位の履歴集計ポイント（起動時seeding用）
+#[derive(Debug, Clone)]
+pub struct MinuteHistoryPoint {
+    /// 分（UTC ISO8601形式）
+    pub minute: String,
+    /// 成功リクエスト数
+    pub success_count: i64,
+    /// 失敗リクエスト数
+    pub error_count: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct MinuteHistoryRow {
+    minute: String,
+    success_count: i64,
+    error_count: i64,
+}
+
+impl From<MinuteHistoryRow> for MinuteHistoryPoint {
+    fn from(row: MinuteHistoryRow) -> Self {
+        MinuteHistoryPoint {
+            minute: row.minute,
+            success_count: row.success_count,
+            error_count: row.error_count,
+        }
+    }
+}
+
 /// レコードフィルタ
 #[derive(Debug, Clone, Default)]
 pub struct RecordFilter {
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ
@@ -821,8 +880,8 @@ impl RecordFilter {
             }
         }
 
-        if let Some(node_id) = self.node_id {
-            if record.node_id != node_id {
+        if let Some(endpoint_id) = self.endpoint_id {
+            if record.endpoint_id != endpoint_id {
                 return false;
             }
         }
@@ -907,13 +966,13 @@ pub struct ModelTokenStatistics {
     pub request_count: u64,
 }
 
-/// トークン統計（ノード別）
+/// トークン統計（エンドポイント別）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct NodeTokenStatistics {
-    /// ノードID
-    pub node_id: Uuid,
-    /// ノードマシン名
-    pub node_machine_name: String,
+pub struct EndpointTokenStatistics {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// エンドポイント名
+    pub endpoint_name: String,
     /// 入力トークン合計
     pub total_input_tokens: u64,
     /// 出力トークン合計
@@ -942,11 +1001,11 @@ struct ModelTokenStatisticsRow {
     request_count: i64,
 }
 
-/// SQLiteから取得したトークン統計行（ノード別）
+/// SQLiteから取得したトークン統計行（エンドポイント別）
 #[derive(sqlx::FromRow)]
-struct NodeTokenStatisticsRow {
-    node_id: String,
-    node_machine_name: String,
+struct EndpointTokenStatisticsRow {
+    endpoint_id: String,
+    endpoint_name: String,
     total_input_tokens: i64,
     total_output_tokens: i64,
     total_tokens: i64,
@@ -1674,14 +1733,11 @@ pub fn start_cleanup_task(storage: Arc<RequestHistoryStorage>) {
 mod tests {
     use super::*;
     use crate::common::protocol::RequestType;
-    use crate::db::migrations::initialize_database;
     use serial_test::serial;
     use tempfile::tempdir;
 
     async fn create_test_pool() -> SqlitePool {
-        initialize_database("sqlite::memory:")
-            .await
-            .expect("Failed to create test database")
+        crate::db::test_utils::test_db_pool().await
     }
 
     fn create_test_record(timestamp: DateTime<Utc>) -> RequestResponseRecord {
@@ -1690,9 +1746,9 @@ mod tests {
             timestamp,
             request_type: RequestType::Chat,
             model: "test-model".to_string(),
-            node_id: Uuid::new_v4(),
-            node_machine_name: "test-node".to_string(),
-            node_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint_name: "test-node".to_string(),
+            endpoint_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
             client_ip: Some("10.0.0.10".parse::<IpAddr>().unwrap()),
             request_body: serde_json::json!({"test": "request"}),
             response_body: Some(serde_json::json!({"test": "response"})),
@@ -1987,38 +2043,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_token_aggregation_by_node() {
+    async fn test_token_aggregation_by_endpoint() {
         let pool = create_test_pool().await;
         let storage = RequestHistoryStorage::new(pool);
 
-        let node_id_1 = Uuid::new_v4();
-        let node_id_2 = Uuid::new_v4();
+        let endpoint_id_1 = Uuid::new_v4();
+        let endpoint_id_2 = Uuid::new_v4();
 
-        // ノード1のレコード
+        // エンドポイント1のレコード
         let mut record_1 = create_test_record(Utc::now());
-        record_1.node_id = node_id_1;
+        record_1.endpoint_id = endpoint_id_1;
         record_1.input_tokens = Some(100);
         record_1.output_tokens = Some(50);
         record_1.total_tokens = Some(150);
         storage.save_record(&record_1).await.unwrap();
 
-        // ノード2のレコード
+        // エンドポイント2のレコード
         let mut record_2 = create_test_record(Utc::now());
         record_2.id = Uuid::new_v4();
-        record_2.node_id = node_id_2;
+        record_2.endpoint_id = endpoint_id_2;
         record_2.input_tokens = Some(200);
         record_2.output_tokens = Some(100);
         record_2.total_tokens = Some(300);
         storage.save_record(&record_2).await.unwrap();
 
-        let stats = storage.get_token_statistics_by_node().await.unwrap();
+        let stats = storage.get_token_statistics_by_endpoint().await.unwrap();
         assert_eq!(stats.len(), 2);
 
-        let node_1_stats = stats.iter().find(|s| s.node_id == node_id_1).unwrap();
-        assert_eq!(node_1_stats.total_input_tokens, 100);
+        let endpoint_1_stats = stats
+            .iter()
+            .find(|s| s.endpoint_id == endpoint_id_1)
+            .unwrap();
+        assert_eq!(endpoint_1_stats.total_input_tokens, 100);
 
-        let node_2_stats = stats.iter().find(|s| s.node_id == node_id_2).unwrap();
-        assert_eq!(node_2_stats.total_input_tokens, 200);
+        let endpoint_2_stats = stats
+            .iter()
+            .find(|s| s.endpoint_id == endpoint_id_2)
+            .unwrap();
+        assert_eq!(endpoint_2_stats.total_input_tokens, 200);
     }
 
     #[tokio::test]
@@ -2057,5 +2119,43 @@ mod tests {
         assert_eq!(stats[0].total_output_tokens, 50);
         assert_eq!(stats[0].total_tokens, 150);
         assert_eq!(stats[0].request_count, 1);
+    }
+
+    /// T012 [US5]: get_recent_history_by_minute が分単位でリクエスト履歴を
+    /// 正しく集計できることを検証
+    #[tokio::test]
+    async fn test_get_recent_history_by_minute() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let now = Utc::now();
+
+        // 成功レコードを3件保存
+        for i in 0..3 {
+            let mut record = create_test_record(now - Duration::seconds(i * 10));
+            record.status = RecordStatus::Success;
+            record.completed_at = now - Duration::seconds(i * 10);
+            storage.save_record(&record).await.unwrap();
+        }
+
+        // 失敗レコードを1件保存（同じ分内）
+        let mut fail_record = create_test_record(now - Duration::seconds(5));
+        fail_record.status = RecordStatus::Error {
+            message: "test error".to_string(),
+        };
+        fail_record.completed_at = now - Duration::seconds(5);
+        storage.save_record(&fail_record).await.unwrap();
+
+        // 直近10分の集計を取得
+        let history = storage.get_recent_history_by_minute(10).await.unwrap();
+
+        // 少なくとも1つの分単位エントリが返ること
+        assert!(!history.is_empty(), "should have at least one minute entry");
+
+        // 全エントリの合計を検証
+        let total_success: i64 = history.iter().map(|h| h.success_count).sum();
+        let total_error: i64 = history.iter().map(|h| h.error_count).sum();
+        assert_eq!(total_success, 3, "should have 3 success records");
+        assert_eq!(total_error, 1, "should have 1 error record");
     }
 }

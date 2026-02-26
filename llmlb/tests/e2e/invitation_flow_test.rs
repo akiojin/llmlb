@@ -30,7 +30,7 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
     // テスト用の管理者ユーザーを作成
     let password_hash = llmlb::auth::password::hash_password("admin123").unwrap();
-    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
+    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
         .ok();
 
@@ -56,6 +56,14 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+            db_pool.clone(),
+        )),
+        audit_archive_pool: None,
     };
 
     (api::create_app(state), db_pool)

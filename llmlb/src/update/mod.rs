@@ -5,11 +5,17 @@
 //! - Background download of the preferred payload for the current platform
 //! - User-approved apply flow: drain inference requests, then restart into the new version
 //! - Internal helper modes (`__internal`) to safely replace binaries / run installers
+//! - Update scheduling (immediate / idle / time-based)
+//! - Update history recording
+
+pub mod history;
+pub mod schedule;
 
 use crate::{inference_gate::InferenceGate, shutdown::ShutdownController};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
+use futures::StreamExt;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -18,11 +24,22 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc,
+        Arc, Mutex, OnceLock,
     },
     time::Duration,
 };
 use tokio::sync::{Notify, RwLock};
+
+/// Minimum interval between manual update checks (seconds).
+const MANUAL_CHECK_COOLDOWN_SECS: u64 = 60;
+
+/// Default drain timeout for normal update apply (seconds).
+const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 300;
+/// Timeout for Windows installer permission wait (seconds).
+#[cfg(target_os = "windows")]
+const DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS: u64 = 600;
+/// Default HTTP listen port for `llmlb serve`.
+const DEFAULT_LISTEN_PORT: u16 = 32768;
 
 const DEFAULT_OWNER: &str = "akiojin";
 const DEFAULT_REPO: &str = "llmlb";
@@ -73,6 +90,8 @@ pub enum UpdateState {
         in_flight: usize,
         /// When apply was requested.
         requested_at: DateTime<Utc>,
+        /// When the drain will time out and be cancelled.
+        timeout_at: DateTime<Utc>,
     },
     /// Update is being applied by an internal helper process.
     Applying {
@@ -80,6 +99,15 @@ pub enum UpdateState {
         latest: String,
         /// Apply method chosen for this platform/install.
         method: ApplyMethod,
+        /// Current apply phase for operator visibility.
+        phase: ApplyPhase,
+        /// Human-readable phase description.
+        phase_message: String,
+        /// When apply entered `state=applying`.
+        started_at: DateTime<Utc>,
+        /// Optional timeout deadline for the current phase.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout_at: Option<DateTime<Utc>>,
     },
     /// Update check/download/apply failed (best-effort; the server should keep running).
     Failed {
@@ -104,6 +132,12 @@ pub enum PayloadState {
     Downloading {
         /// When the download/extraction started.
         started_at: DateTime<Utc>,
+        /// Bytes downloaded so far (if known).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        downloaded_bytes: Option<u64>,
+        /// Total bytes expected (from Content-Length, if known).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_bytes: Option<u64>,
     },
     /// Payload is ready to apply.
     Ready {
@@ -157,6 +191,34 @@ pub enum ApplyMethod {
     WindowsMsi,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+/// Detailed phase of the applying state.
+pub enum ApplyPhase {
+    /// Apply flow has started and is preparing to execute.
+    Starting,
+    /// Waiting for the previous process handoff.
+    WaitingOldProcessExit,
+    /// Waiting for user/admin permission dialog approval.
+    WaitingPermission,
+    /// Installer is running.
+    RunningInstaller,
+    /// Restart is being initiated.
+    Restarting,
+}
+
+impl ApplyPhase {
+    fn message(&self) -> &'static str {
+        match self {
+            Self::Starting => "Preparing update apply",
+            Self::WaitingOldProcessExit => "Waiting for current process handoff",
+            Self::WaitingPermission => "Waiting for Windows permission dialog approval",
+            Self::RunningInstaller => "Installer is running",
+            Self::Restarting => "Restarting service",
+        }
+    }
+}
+
 #[derive(Clone)]
 /// Self-update manager.
 ///
@@ -180,10 +242,24 @@ struct UpdateManagerInner {
     repo: String,
     ttl: Duration,
 
+    /// Override for GitHub API base URL (for testing).
+    github_api_base_url: Option<String>,
+
     cache_path: PathBuf,
     updates_dir: PathBuf,
 
     state: RwLock<UpdateState>,
+
+    /// Rate-limit: last time a manual check was performed.
+    last_manual_check: Mutex<Option<tokio::time::Instant>>,
+
+    /// ダッシュボードイベントバス（状態遷移時にUpdateStateChangedを発行）
+    event_bus: OnceLock<crate::events::SharedEventBus>,
+
+    /// Schedule persistence.
+    schedule_store: schedule::ScheduleStore,
+    /// History persistence.
+    history_store: history::HistoryStore,
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     tray_proxy: RwLock<Option<crate::gui::tray::TrayEventProxy>>,
@@ -222,10 +298,78 @@ impl UpdateManager {
         gate: InferenceGate,
         shutdown: ShutdownController,
     ) -> Result<Self> {
+        Self::new_with_config(
+            http_client,
+            gate,
+            shutdown,
+            DEFAULT_OWNER.to_string(),
+            DEFAULT_REPO.to_string(),
+            None,
+        )
+    }
+
+    /// Create a new update manager with custom owner/repo and optional API base URL.
+    ///
+    /// `github_api_base_url` overrides the GitHub API base URL (useful for tests with wiremock).
+    pub fn new_with_config(
+        http_client: reqwest::Client,
+        gate: InferenceGate,
+        shutdown: ShutdownController,
+        owner: String,
+        repo: String,
+        github_api_base_url: Option<String>,
+    ) -> Result<Self> {
         let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
             .context("Failed to parse CARGO_PKG_VERSION as semver")?;
 
         let (cache_path, updates_dir) = default_paths()?;
+        let data_dir = cache_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+
+        Ok(Self {
+            inner: Arc::new(UpdateManagerInner {
+                started: AtomicBool::new(false),
+                apply_request_mode: AtomicU8::new(ApplyRequestMode::None as u8),
+                apply_notify: Notify::new(),
+                current_version,
+                http_client,
+                gate,
+                shutdown,
+                owner,
+                repo,
+                ttl: DEFAULT_TTL,
+                github_api_base_url,
+                cache_path,
+                updates_dir,
+                state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
+                last_manual_check: Mutex::new(None),
+                event_bus: OnceLock::new(),
+                schedule_store: schedule::ScheduleStore::new(&data_dir),
+                history_store: history::HistoryStore::new(&data_dir),
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                tray_proxy: RwLock::new(None),
+            }),
+        })
+    }
+
+    /// Create an `UpdateManager` with an explicit data directory (test-only).
+    ///
+    /// This avoids reading `LLMLB_DATA_DIR` from the environment, eliminating
+    /// race conditions when tests run in parallel.
+    #[cfg(test)]
+    fn new_with_data_dir(
+        http_client: reqwest::Client,
+        gate: InferenceGate,
+        shutdown: ShutdownController,
+        data_dir: &Path,
+    ) -> Result<Self> {
+        let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
+            .context("Failed to parse CARGO_PKG_VERSION as semver")?;
+
+        let cache_path = data_dir.join("update-check.json");
+        let updates_dir = data_dir.join("updates");
 
         Ok(Self {
             inner: Arc::new(UpdateManagerInner {
@@ -239,9 +383,14 @@ impl UpdateManager {
                 owner: DEFAULT_OWNER.to_string(),
                 repo: DEFAULT_REPO.to_string(),
                 ttl: DEFAULT_TTL,
+                github_api_base_url: None,
                 cache_path,
                 updates_dir,
                 state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
+                last_manual_check: Mutex::new(None),
+                event_bus: OnceLock::new(),
+                schedule_store: schedule::ScheduleStore::new(data_dir),
+                history_store: history::HistoryStore::new(data_dir),
                 #[cfg(any(target_os = "windows", target_os = "macos"))]
                 tray_proxy: RwLock::new(None),
             }),
@@ -251,7 +400,36 @@ impl UpdateManager {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     /// Attach a tray event proxy to publish update state (best-effort).
     pub async fn set_tray_proxy(&self, proxy: crate::gui::tray::TrayEventProxy) {
-        *self.inner.tray_proxy.write().await = Some(proxy);
+        *self.inner.tray_proxy.write().await = Some(proxy.clone());
+        let schedule = self.inner.schedule_store.load().ok().flatten();
+        proxy.notify_schedule(schedule.map(|s| schedule_to_tray_info(&s)));
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    fn notify_tray_schedule(&self, schedule: Option<schedule::UpdateSchedule>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let mgr = self.clone();
+        handle.spawn(async move {
+            if let Some(proxy) = mgr.inner.tray_proxy.read().await.clone() {
+                proxy.notify_schedule(schedule.map(|s| schedule_to_tray_info(&s)));
+            }
+        });
+    }
+
+    /// ダッシュボードイベントバスを設定する。
+    ///
+    /// 設定後、状態遷移時に `UpdateStateChanged` イベントが自動発行される。
+    pub fn set_event_bus(&self, bus: crate::events::SharedEventBus) {
+        let _ = self.inner.event_bus.set(bus);
+    }
+
+    /// 状態遷移をダッシュボードに通知する。
+    fn notify_state_changed(&self) {
+        if let Some(bus) = self.inner.event_bus.get() {
+            bus.publish(crate::events::DashboardEvent::UpdateStateChanged);
+        }
     }
 
     /// Return the current update state snapshot.
@@ -262,6 +440,7 @@ impl UpdateManager {
     /// Force an update check now (ignores TTL cache).
     ///
     /// Intended for the dashboard "Check for updates" button.
+    /// **Deprecated**: Use [`check_only`] + [`download_background`] instead.
     pub async fn check_now(&self) -> Result<UpdateState> {
         match self.check_and_maybe_download(true).await {
             Ok(()) => Ok(self.state().await),
@@ -272,9 +451,319 @@ impl UpdateManager {
         }
     }
 
+    /// Check GitHub for a newer release (synchronous, no download).
+    ///
+    /// This only queries the GitHub Releases API (timeout 5 s) and updates the
+    /// internal state.  It intentionally does **not** start downloading the
+    /// payload so the caller can return a fast response.
+    pub async fn check_only(&self, force: bool) -> Result<UpdateState> {
+        if !force {
+            if let Some(cache) = load_cache(&self.inner.cache_path).ok().flatten() {
+                let age = Utc::now().signed_duration_since(cache.last_checked_at);
+                if age.to_std().unwrap_or(Duration::MAX) < self.inner.ttl {
+                    self.apply_cache(cache).await?;
+                    return Ok(self.state().await);
+                }
+            }
+        }
+
+        let timeout = Duration::from_secs(5);
+        let release = match fetch_latest_release(
+            &self.inner.http_client,
+            &self.inner.owner,
+            &self.inner.repo,
+            timeout,
+            self.inner.github_api_base_url.as_deref(),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                // GitHub API failure (429 rate limit, timeout, etc.):
+                // preserve existing Available state (especially payload: Ready)
+                // or fall back to cached data.
+                tracing::warn!("GitHub API failed, falling back to cache: {e}");
+                let current = self.state().await;
+                if matches!(&current, UpdateState::Available { .. }) {
+                    return Ok(current);
+                }
+                if let Some(cache) = load_cache(&self.inner.cache_path).ok().flatten() {
+                    self.apply_cache(cache).await?;
+                    return Ok(self.state().await);
+                }
+                return Err(e);
+            }
+        };
+        let latest = parse_tag_to_version(&release.tag_name)?;
+        if latest <= self.inner.current_version {
+            *self.inner.state.write().await = UpdateState::UpToDate {
+                checked_at: Some(Utc::now()),
+            };
+            save_cache(
+                &self.inner.cache_path,
+                UpdateCacheFile {
+                    last_checked_at: Utc::now(),
+                    latest_version: Some(latest.to_string()),
+                    release_url: Some(release.html_url.clone()),
+                    portable_asset_url: None,
+                    installer_asset_url: None,
+                },
+            )?;
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            notify_tray_up_to_date(&self.inner.tray_proxy).await;
+            return Ok(self.state().await);
+        }
+
+        let platform = Platform::detect()?;
+        let (portable_asset, installer_asset) = select_assets(&release, &platform);
+
+        let cache = UpdateCacheFile {
+            last_checked_at: Utc::now(),
+            latest_version: Some(latest.to_string()),
+            release_url: Some(release.html_url.clone()),
+            portable_asset_url: portable_asset
+                .as_ref()
+                .map(|a| a.browser_download_url.clone()),
+            installer_asset_url: installer_asset
+                .as_ref()
+                .map(|a| a.browser_download_url.clone()),
+        };
+        save_cache(&self.inner.cache_path, cache.clone())?;
+
+        let mut st = self.inner.state.write().await;
+        *st = UpdateState::Available {
+            current: self.inner.current_version.to_string(),
+            latest: latest.to_string(),
+            release_url: release.html_url,
+            portable_asset_url: cache.portable_asset_url.clone(),
+            installer_asset_url: cache.installer_asset_url.clone(),
+            payload: PayloadState::NotReady,
+            checked_at: cache.last_checked_at,
+        };
+
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        notify_tray_available(&self.inner.tray_proxy, latest.to_string()).await;
+
+        Ok(st.clone())
+    }
+
+    /// Spawn a background task that downloads the update payload (if available).
+    ///
+    /// Returns immediately.  The download progress is reflected in
+    /// `PayloadState::Downloading { downloaded_bytes, total_bytes }`.
+    pub fn download_background(&self) {
+        let mgr = self.clone();
+        tokio::spawn(async move {
+            if let Err(e) = mgr.ensure_payload_ready().await {
+                tracing::warn!("background payload download failed: {e}");
+            }
+        });
+    }
+
+    /// Return `true` if a manual check was performed less than 60 s ago.
+    pub fn is_manual_check_rate_limited(&self) -> bool {
+        let guard = self.inner.last_manual_check.lock().unwrap();
+        match *guard {
+            Some(instant) => instant.elapsed() < Duration::from_secs(MANUAL_CHECK_COOLDOWN_SECS),
+            None => false,
+        }
+    }
+
+    /// Record that a manual check was just performed (for rate limiting).
+    pub fn record_manual_check(&self) {
+        let mut guard = self.inner.last_manual_check.lock().unwrap();
+        *guard = Some(tokio::time::Instant::now());
+    }
+
     /// Return the current in-flight inference request count.
     pub async fn in_flight(&self) -> usize {
         self.inner.gate.in_flight()
+    }
+
+    // ---- Schedule API ----
+
+    /// Get the current update schedule (if any).
+    pub fn get_schedule(&self) -> Result<Option<schedule::UpdateSchedule>> {
+        self.inner.schedule_store.load()
+    }
+
+    /// Create a new schedule. Returns `Err` if a schedule already exists.
+    pub fn create_schedule(
+        &self,
+        sched: schedule::UpdateSchedule,
+    ) -> Result<schedule::UpdateSchedule> {
+        if let Some(existing) = self.inner.schedule_store.load()? {
+            return Err(anyhow!(
+                "A schedule already exists (mode={:?}, target={})",
+                existing.mode,
+                existing.target_version
+            ));
+        }
+        if sched.mode == schedule::ScheduleMode::Scheduled && sched.scheduled_at.is_none() {
+            return Err(anyhow!("scheduled_at is required when mode is scheduled"));
+        }
+        self.inner.schedule_store.save(&sched)?;
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        self.notify_tray_schedule(Some(sched.clone()));
+        // If immediate, trigger apply right away.
+        if sched.mode == schedule::ScheduleMode::Immediate {
+            self.request_apply();
+        }
+        Ok(sched)
+    }
+
+    /// Cancel the current schedule. Returns `Err` if no schedule exists.
+    pub fn cancel_schedule(&self) -> Result<()> {
+        if !self.inner.schedule_store.remove()? {
+            return Err(anyhow!("No schedule exists"));
+        }
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        self.notify_tray_schedule(None);
+        Ok(())
+    }
+
+    /// Restore a persisted schedule on startup.
+    ///
+    /// If a schedule exists (e.g. after restart), it is re-activated:
+    /// - `Immediate`: triggers apply right away.
+    /// - `Idle` / `Scheduled`: the schedule loop will pick it up.
+    fn restore_schedule(&self) {
+        match self.inner.schedule_store.load() {
+            Ok(Some(sched)) => {
+                tracing::info!(
+                    "restored update schedule: mode={:?}, target={}",
+                    sched.mode,
+                    sched.target_version
+                );
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                self.notify_tray_schedule(Some(sched.clone()));
+                if sched.mode == schedule::ScheduleMode::Immediate {
+                    self.request_apply();
+                }
+                // Idle and Scheduled modes are handled by start_schedule_loop.
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!("failed to restore update schedule: {e}");
+            }
+        }
+    }
+
+    /// Start the background schedule monitoring loop.
+    ///
+    /// This loop polls the schedule store every 5 seconds and triggers apply
+    /// when schedule conditions are met:
+    /// - `Idle`: triggers when `in_flight == 0` and an update is available.
+    /// - `Scheduled`: triggers when the current time >= `scheduled_at`.
+    fn start_schedule_loop(&self) {
+        let mgr = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+            loop {
+                interval.tick().await;
+
+                let sched = match mgr.inner.schedule_store.load() {
+                    Ok(Some(s)) => s,
+                    _ => continue,
+                };
+
+                // Only trigger when the scheduled target version is still the latest available update.
+                let latest_available = {
+                    let st = mgr.inner.state.read().await;
+                    match &*st {
+                        UpdateState::Available { latest, .. } => Some(latest.clone()),
+                        _ => None,
+                    }
+                };
+                let Some(latest_available) = latest_available else {
+                    continue;
+                };
+                if latest_available != sched.target_version {
+                    continue;
+                }
+
+                let should_trigger = match sched.mode {
+                    schedule::ScheduleMode::Immediate => {
+                        // Immediate schedules are handled at creation and restore;
+                        // if still present, trigger now.
+                        true
+                    }
+                    schedule::ScheduleMode::Idle => mgr.inner.gate.in_flight() == 0,
+                    schedule::ScheduleMode::Scheduled => {
+                        if let Some(at) = sched.scheduled_at {
+                            Utc::now() >= at
+                        } else {
+                            // Defensive: malformed persisted schedules must never trigger immediately.
+                            false
+                        }
+                    }
+                };
+
+                if should_trigger {
+                    tracing::info!(
+                        "schedule triggered: mode={:?}, target={}",
+                        sched.mode,
+                        sched.target_version
+                    );
+                    // Remove the schedule before triggering to prevent re-trigger.
+                    let _ = mgr.inner.schedule_store.remove();
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
+                    mgr.notify_tray_schedule(None);
+                    mgr.request_apply();
+                }
+            }
+        });
+    }
+
+    /// Append a history entry.
+    pub fn record_history(&self, entry: history::HistoryEntry) {
+        if let Err(e) = self.inner.history_store.append(entry) {
+            tracing::warn!("Failed to record update history: {e}");
+        }
+    }
+
+    /// Load update history.
+    pub fn get_history(&self) -> Vec<history::HistoryEntry> {
+        self.inner.history_store.load().unwrap_or_default()
+    }
+
+    /// Check if a `.bak` file exists for rollback.
+    pub fn rollback_available(&self) -> bool {
+        let current_exe = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        current_exe.with_extension("bak").exists()
+    }
+
+    /// Request a manual rollback to the previous version.
+    ///
+    /// Restores the `.bak` file and restarts. Returns `Err` if no `.bak` exists.
+    pub fn request_rollback(&self) -> Result<()> {
+        let current_exe =
+            std::env::current_exe().context("Failed to resolve current executable path")?;
+        let backup = current_exe.with_extension("bak");
+        if !backup.exists() {
+            return Err(anyhow!("No previous version available (.bak not found)"));
+        }
+
+        // Record rollback in history.
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        self.record_history(history::HistoryEntry {
+            kind: history::HistoryEventKind::Rollback,
+            version: version.clone(),
+            message: Some(format!("Manual rollback from {version}")),
+            timestamp: Utc::now(),
+        });
+
+        // Spawn a helper process that waits for this process to exit, then restores the backup.
+        let args_file =
+            write_restart_args_file(&self.inner.updates_dir.join(format!("rollback-{version}")))?;
+        spawn_internal_rollback(&current_exe, &backup, &args_file)?;
+        self.inner.shutdown.request_shutdown();
+        Ok(())
     }
 
     /// Request applying the update as soon as it is safe.
@@ -308,11 +797,18 @@ impl UpdateManager {
         Ok(dropped_in_flight)
     }
 
-    /// Start background update check loop and apply loop (idempotent).
+    /// Start background update check loop, apply loop, and schedule loop (idempotent).
     pub fn start_background_tasks(&self) {
         if self.inner.started.swap(true, Ordering::SeqCst) {
             return;
         }
+
+        // Restore any persisted schedule on startup.
+        self.restore_schedule();
+
+        // Start schedule monitoring loop.
+        self.start_schedule_loop();
+
         let mgr = self.clone();
         tokio::spawn(async move {
             if let Err(e) = mgr.check_and_maybe_download(false).await {
@@ -501,6 +997,7 @@ impl UpdateManager {
             &self.inner.owner,
             &self.inner.repo,
             timeout,
+            self.inner.github_api_base_url.as_deref(),
         )
         .await?;
         let latest = parse_tag_to_version(&release.tag_name)?;
@@ -591,7 +1088,11 @@ impl UpdateManager {
         Ok(())
     }
 
-    async fn record_check_failure(&self, message: String) {
+    /// Record an update check failure.
+    ///
+    /// Preserves an already-discovered `Available` state even if a subsequent
+    /// manual check temporarily fails.
+    pub async fn record_check_failure(&self, message: String) {
         let mut st = self.inner.state.write().await;
         // Keep an already discovered update actionable even if a subsequent
         // manual check temporarily fails (e.g., transient GitHub outage).
@@ -653,6 +1154,8 @@ impl UpdateManager {
             if let UpdateState::Available { payload, .. } = &mut *st {
                 *payload = PayloadState::Downloading {
                     started_at: Utc::now(),
+                    downloaded_bytes: None,
+                    total_bytes: None,
                 };
             }
         }
@@ -688,12 +1191,33 @@ impl UpdateManager {
         let update_dir = self.inner.updates_dir.join(&latest);
         fs::create_dir_all(&update_dir).ok();
 
+        let state_ref = self.inner.clone();
+        let progress_cb: ProgressCallback = Box::new(move |downloaded, total| {
+            if let Ok(mut st) = state_ref.state.try_write() {
+                if let UpdateState::Available { payload, .. } = &mut *st {
+                    if matches!(payload, PayloadState::Downloading { .. }) {
+                        *payload = PayloadState::Downloading {
+                            started_at: Utc::now(),
+                            downloaded_bytes: Some(downloaded),
+                            total_bytes: total,
+                        };
+                    }
+                }
+            }
+        });
+
         let kind = match plan {
             ApplyPlan::Portable { url } => {
                 let asset_name =
                     asset_name_from_url(&url).unwrap_or_else(|| "llmlb-update".to_string());
                 let archive_path = update_dir.join(&asset_name);
-                download_to_path(&self.inner.http_client, &url, &archive_path).await?;
+                download_to_path(
+                    &self.inner.http_client,
+                    &url,
+                    &archive_path,
+                    Some(progress_cb),
+                )
+                .await?;
                 let extract_dir = update_dir.join("extract");
                 if extract_dir.exists() {
                     fs::remove_dir_all(&extract_dir).ok();
@@ -711,7 +1235,7 @@ impl UpdateManager {
                 let asset_name =
                     asset_name_from_url(&url).unwrap_or_else(|| "llmlb-installer".to_string());
                 let installer_path = update_dir.join(&asset_name);
-                download_to_path(&self.inner.http_client, &url, &installer_path).await?;
+                download_to_path(&self.inner.http_client, &url, &installer_path, None).await?;
                 PayloadKind::Installer {
                     installer_path: installer_path.to_string_lossy().to_string(),
                     kind,
@@ -754,6 +1278,75 @@ impl UpdateManager {
         }
     }
 
+    async fn set_applying_state(
+        &self,
+        latest: &str,
+        method: ApplyMethod,
+        phase: ApplyPhase,
+        started_at: DateTime<Utc>,
+        timeout_at: Option<DateTime<Utc>>,
+    ) {
+        *self.inner.state.write().await = UpdateState::Applying {
+            latest: latest.to_string(),
+            method,
+            phase: phase.clone(),
+            phase_message: phase.message().to_string(),
+            started_at,
+            timeout_at,
+        };
+        self.notify_state_changed();
+    }
+
+    #[allow(dead_code)]
+    fn spawn_apply_timeout_watchdog(
+        &self,
+        latest: String,
+        method: ApplyMethod,
+        phase: ApplyPhase,
+        timeout: Duration,
+        timeout_message: String,
+    ) {
+        let mgr = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
+
+            let should_fail = {
+                let st = mgr.inner.state.read().await;
+                matches!(
+                    &*st,
+                    UpdateState::Applying {
+                        latest: applying_latest,
+                        method: applying_method,
+                        phase: applying_phase,
+                        ..
+                    } if applying_latest == &latest
+                        && applying_method == &method
+                        && applying_phase == &phase
+                )
+            };
+
+            if !should_fail {
+                return;
+            }
+
+            mgr.inner.gate.stop_rejecting();
+            *mgr.inner.state.write().await = UpdateState::Failed {
+                latest: Some(latest.clone()),
+                release_url: None,
+                message: timeout_message.clone(),
+                failed_at: Utc::now(),
+            };
+            mgr.notify_state_changed();
+            tracing::warn!(
+                latest = %latest,
+                method = ?method,
+                phase = ?phase,
+                timeout_secs = timeout.as_secs(),
+                "update apply phase timed out"
+            );
+        });
+    }
+
     async fn apply_flow(&self, mode: ApplyRequestMode) -> Result<()> {
         let payload = match mode {
             ApplyRequestMode::Normal => self.ensure_payload_ready().await?,
@@ -777,13 +1370,18 @@ impl UpdateManager {
 
         // Start draining after payload is ready to minimize downtime.
         self.inner.gate.start_rejecting();
+        let applying_started_at = Utc::now();
 
         if mode == ApplyRequestMode::Force {
             // Mark as in-progress before waiting so UI/API cannot trigger duplicate apply actions.
-            *self.inner.state.write().await = UpdateState::Applying {
-                latest: latest.clone(),
-                method: apply_method.clone(),
-            };
+            self.set_applying_state(
+                &latest,
+                apply_method.clone(),
+                ApplyPhase::Starting,
+                applying_started_at,
+                None,
+            )
+            .await;
             // Force mode cancels active in-flight work instead of waiting for drain completion.
             self.inner.gate.abort_in_flight();
             if tokio::time::timeout(Duration::from_secs(3), self.inner.gate.wait_for_idle())
@@ -798,6 +1396,11 @@ impl UpdateManager {
 
         if mode == ApplyRequestMode::Normal {
             let requested_at = Utc::now();
+            let drain_timeout = Duration::from_secs(DEFAULT_DRAIN_TIMEOUT_SECS);
+            let timeout_at =
+                requested_at + chrono::Duration::seconds(DEFAULT_DRAIN_TIMEOUT_SECS as i64);
+            let deadline = tokio::time::Instant::now() + drain_timeout;
+
             loop {
                 let in_flight = self.inner.gate.in_flight();
                 if in_flight == 0 {
@@ -808,14 +1411,42 @@ impl UpdateManager {
                         latest: latest.clone(),
                         in_flight,
                         requested_at,
+                        timeout_at,
                     };
+                    self.notify_state_changed();
                 }
-                self.inner.gate.wait_for_idle().await;
+                if tokio::time::timeout_at(deadline, self.inner.gate.wait_for_idle())
+                    .await
+                    .is_err()
+                {
+                    // Drain timed out — cancel and restore normal operation.
+                    tracing::warn!(
+                        "drain timed out after {}s with {} in-flight requests",
+                        DEFAULT_DRAIN_TIMEOUT_SECS,
+                        self.inner.gate.in_flight()
+                    );
+                    self.inner.gate.stop_rejecting();
+                    *self.inner.state.write().await = UpdateState::Failed {
+                        latest: Some(latest.clone()),
+                        release_url: None,
+                        message: format!("Drain timed out after {}s", DEFAULT_DRAIN_TIMEOUT_SECS),
+                        failed_at: Utc::now(),
+                    };
+                    self.notify_state_changed();
+                    return Err(anyhow!(
+                        "Drain timed out after {}s",
+                        DEFAULT_DRAIN_TIMEOUT_SECS
+                    ));
+                }
             }
-            *self.inner.state.write().await = UpdateState::Applying {
-                latest: latest.clone(),
-                method: apply_method.clone(),
-            };
+            self.set_applying_state(
+                &latest,
+                apply_method.clone(),
+                ApplyPhase::Starting,
+                applying_started_at,
+                None,
+            )
+            .await;
         }
 
         let current_exe =
@@ -824,6 +1455,14 @@ impl UpdateManager {
 
         match payload {
             PayloadKind::Portable { binary_path } => {
+                self.set_applying_state(
+                    &latest,
+                    apply_method.clone(),
+                    ApplyPhase::Restarting,
+                    applying_started_at,
+                    None,
+                )
+                .await;
                 spawn_internal_apply_update(&current_exe, &binary_path, &args_file)?;
                 self.inner.shutdown.request_shutdown();
                 Ok(())
@@ -832,6 +1471,54 @@ impl UpdateManager {
                 installer_path,
                 kind,
             } => {
+                #[cfg(target_os = "windows")]
+                {
+                    if kind == InstallerKind::WindowsMsi {
+                        let timeout = Duration::from_secs(DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS);
+                        let timeout_at = Utc::now()
+                            + chrono::Duration::seconds(
+                                DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS as i64,
+                            );
+                        self.set_applying_state(
+                            &latest,
+                            apply_method.clone(),
+                            ApplyPhase::WaitingPermission,
+                            applying_started_at,
+                            Some(timeout_at),
+                        )
+                        .await;
+                        self.spawn_apply_timeout_watchdog(
+                            latest.clone(),
+                            apply_method.clone(),
+                            ApplyPhase::WaitingPermission,
+                            timeout,
+                            format!(
+                                "Windows installer permission wait timed out after {}s",
+                                DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS
+                            ),
+                        );
+                    } else {
+                        self.set_applying_state(
+                            &latest,
+                            apply_method.clone(),
+                            ApplyPhase::RunningInstaller,
+                            applying_started_at,
+                            None,
+                        )
+                        .await;
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    self.set_applying_state(
+                        &latest,
+                        apply_method.clone(),
+                        ApplyPhase::RunningInstaller,
+                        applying_started_at,
+                        None,
+                    )
+                    .await;
+                }
                 spawn_internal_run_installer(&current_exe, &installer_path, kind, &args_file)?;
                 self.inner.shutdown.request_shutdown();
                 Ok(())
@@ -898,8 +1585,10 @@ async fn fetch_latest_release(
     owner: &str,
     repo: &str,
     timeout: Duration,
+    api_base_url: Option<&str>,
 ) -> Result<GitHubRelease> {
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
+    let base = api_base_url.unwrap_or("https://api.github.com");
+    let url = format!("{base}/repos/{owner}/{repo}/releases/latest");
     let user_agent = format!("llmlb/{}", env!("CARGO_PKG_VERSION"));
     let res = client
         .get(url)
@@ -1067,21 +1756,40 @@ fn asset_name_from_url(url: &str) -> Option<String> {
     url.split('/').next_back().map(|s| s.to_string())
 }
 
-async fn download_to_path(client: &reqwest::Client, url: &str, path: &Path) -> Result<()> {
+/// Progress callback for streaming downloads: `(downloaded_bytes, total_bytes)`.
+type ProgressCallback = Box<dyn Fn(u64, Option<u64>) + Send + Sync>;
+
+async fn download_to_path(
+    client: &reqwest::Client,
+    url: &str,
+    path: &Path,
+    on_progress: Option<ProgressCallback>,
+) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).ok();
     }
     let res = client
         .get(url)
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(300))
         .send()
         .await?;
     if !res.status().is_success() {
         return Err(anyhow!("download failed with status {}", res.status()));
     }
-    let bytes = res.bytes().await?;
+    let total_bytes = res.content_length();
     let tmp = path.with_extension("tmp");
-    fs::write(&tmp, &bytes)?;
+    let mut file = fs::File::create(&tmp)?;
+    let mut downloaded: u64 = 0;
+    let mut stream = res.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("Error reading download stream")?;
+        io::Write::write_all(&mut file, &chunk)?;
+        downloaded += chunk.len() as u64;
+        if let Some(ref cb) = on_progress {
+            cb(downloaded, total_bytes);
+        }
+    }
+    drop(file);
     fs::rename(tmp, path)?;
     Ok(())
 }
@@ -1240,6 +1948,20 @@ fn escape_applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+#[cfg(any(test, target_os = "windows"))]
+fn escape_powershell_single_quoted_string(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn build_windows_msi_uac_script(msi_path: &str, marker_path: &str) -> String {
+    format!(
+        "$p = Start-Process msiexec.exe -Verb RunAs -PassThru -ArgumentList @('/i', '{}', '/passive'); Set-Content -Path '{}' -Value 'approved' -NoNewline; Wait-Process -Id $p.Id; exit $p.ExitCode",
+        escape_powershell_single_quoted_string(msi_path),
+        escape_powershell_single_quoted_string(marker_path),
+    )
+}
+
 fn wait_for_pid_exit(pid: u32, timeout: Duration) -> Result<()> {
     let started = std::time::Instant::now();
     while crate::lock::is_process_running(pid) {
@@ -1249,6 +1971,35 @@ fn wait_for_pid_exit(pid: u32, timeout: Duration) -> Result<()> {
         std::thread::sleep(Duration::from_millis(200));
     }
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn wait_for_permission_marker(
+    child: &mut std::process::Child,
+    marker_path: &Path,
+    timeout: Duration,
+    timeout_error: String,
+) -> Result<()> {
+    let started = std::time::Instant::now();
+    loop {
+        if marker_path.exists() {
+            return Ok(());
+        }
+        if let Some(status) = child
+            .try_wait()
+            .context("Failed to query installer process")?
+        {
+            return Err(anyhow!(
+                "installer process exited before permission approval was confirmed: {status}"
+            ));
+        }
+        if started.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(anyhow!(timeout_error));
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
 }
 
 pub(crate) fn internal_apply_update(
@@ -1287,7 +2038,122 @@ pub(crate) fn internal_apply_update(
     }
 
     restart_from_args_file(&target, &args_file)?;
+
+    // T265: Monitor the new process for 30 seconds. If it doesn't respond to
+    // health check, restore the backup and restart with the old version.
+    if let Err(e) = wait_for_health_check(&args_file, Duration::from_secs(30)) {
+        eprintln!("Health check failed after update: {e}");
+        eprintln!("Rolling back to previous version...");
+        if backup.exists() {
+            // Kill the new (broken) process if it's running.
+            // We don't know the PID, but we can try to restore the backup.
+            if let Err(restore_err) = fs::rename(&backup, &target) {
+                if restore_err.kind() == io::ErrorKind::CrossesDevices {
+                    let _ = fs::copy(&backup, &target);
+                    let _ = fs::remove_file(&backup);
+                } else {
+                    eprintln!("Failed to restore backup: {restore_err}");
+                    return Err(restore_err)
+                        .context("Failed to restore backup after health check failure");
+                }
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = fs::metadata(&target) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o755);
+                    fs::set_permissions(&target, perms).ok();
+                }
+            }
+            // Record rollback in history (best-effort).
+            record_auto_rollback_history(&args_file, &e.to_string());
+            restart_from_args_file(&target, &args_file)?;
+        }
+        return Err(e);
+    }
+
     Ok(())
+}
+
+/// Wait for the new process to respond to a health check on `/api/version`.
+fn wait_for_health_check(args_file: &Path, timeout: Duration) -> Result<()> {
+    let port = detect_server_port(args_file);
+    let url = format!("http://127.0.0.1:{port}/api/version");
+    let started = std::time::Instant::now();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .context("Failed to create HTTP client for health check")?;
+
+    loop {
+        if started.elapsed() > timeout {
+            return Err(anyhow!(
+                "Health check timed out after {}s (no response from {url})",
+                timeout.as_secs()
+            ));
+        }
+        match client.get(&url).send() {
+            Ok(res) if res.status().is_success() => return Ok(()),
+            _ => {}
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// Best-effort: detect server port from restart args or environment.
+fn detect_server_port(args_file: &Path) -> u16 {
+    detect_server_port_from_args_file(args_file)
+        .or_else(|| {
+            // Fall back to env var if restart args do not include explicit port.
+            std::env::var("LLMLB_PORT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or(DEFAULT_LISTEN_PORT)
+}
+
+fn detect_server_port_from_args_file(args_file: &Path) -> Option<u16> {
+    let content = fs::read_to_string(args_file).ok()?;
+    let parsed: RestartArgsFile = serde_json::from_str(&content).ok()?;
+    parse_port_from_args(&parsed.args)
+}
+
+fn parse_port_from_args(args: &[String]) -> Option<u16> {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if let Some(value) = arg.strip_prefix("--port=") {
+            if let Ok(port) = value.parse::<u16>() {
+                return Some(port);
+            }
+        }
+        if arg == "--port" || arg == "-p" {
+            if let Some(value) = iter.next() {
+                if let Ok(port) = value.parse::<u16>() {
+                    return Some(port);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Best-effort: record auto-rollback in history.
+fn record_auto_rollback_history(args_file: &Path, reason: &str) {
+    // Try to find the data dir from the args file's parent.
+    let data_dir = args_file
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .unwrap_or_else(|| Path::new("."));
+    let store = history::HistoryStore::new(data_dir);
+    let _ = store.append(history::HistoryEntry {
+        kind: history::HistoryEventKind::Rollback,
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        message: Some(format!("Auto-rollback: {reason}")),
+        timestamp: Utc::now(),
+    });
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -1316,16 +2182,36 @@ pub(crate) fn internal_run_installer(
             {
                 // Trigger UAC for msiexec via PowerShell.
                 let msi = installer.to_string_lossy().to_string();
-                let args = format!(
-                    "Start-Process msiexec.exe -Verb RunAs -Wait -ArgumentList @('/i', '{}', '/passive')",
-                    msi.replace('\'', "''")
-                );
-                let status = Command::new("powershell")
+                let marker_path = std::env::temp_dir().join(format!(
+                    "llmlb-msi-permission-{}-{}.marker",
+                    std::process::id(),
+                    Utc::now().timestamp_millis()
+                ));
+                let _ = fs::remove_file(&marker_path);
+                let marker = marker_path.to_string_lossy().to_string();
+                let args = build_windows_msi_uac_script(&msi, &marker);
+                let mut child = Command::new("powershell")
                     .arg("-NoProfile")
                     .arg("-Command")
                     .arg(args)
-                    .status()
+                    .spawn()
                     .context("Failed to run msiexec")?;
+                let wait_result = wait_for_permission_marker(
+                    &mut child,
+                    &marker_path,
+                    Duration::from_secs(DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS),
+                    format!(
+                        "Windows installer permission wait timed out after {}s",
+                        DEFAULT_WINDOWS_PERMISSION_TIMEOUT_SECS
+                    ),
+                )
+                .and_then(|_| {
+                    child
+                        .wait()
+                        .context("Failed to wait for installer completion")
+                });
+                let _ = fs::remove_file(&marker_path);
+                let status = wait_result?;
                 if !status.success() {
                     return Err(anyhow!("msiexec exited with {}", status));
                 }
@@ -1354,6 +2240,61 @@ pub(crate) fn internal_run_installer(
     ))
 }
 
+fn spawn_internal_rollback(current_exe: &Path, backup: &Path, args_file: &Path) -> Result<()> {
+    let pid = std::process::id().to_string();
+    let target = current_exe.to_string_lossy().to_string();
+    Command::new(current_exe)
+        .arg("__internal")
+        .arg("rollback")
+        .arg("--old-pid")
+        .arg(pid)
+        .arg("--target")
+        .arg(&target)
+        .arg("--backup")
+        .arg(backup)
+        .arg("--args-file")
+        .arg(args_file)
+        .spawn()
+        .context("Failed to spawn internal rollback")?;
+    Ok(())
+}
+
+/// Rollback: wait for old process to exit, restore `.bak`, restart.
+pub(crate) fn internal_rollback(
+    old_pid: u32,
+    target: PathBuf,
+    backup: PathBuf,
+    args_file: PathBuf,
+) -> Result<()> {
+    wait_for_pid_exit(old_pid, Duration::from_secs(60))?;
+
+    // Restore backup.
+    if !backup.exists() {
+        return Err(anyhow!("Backup file does not exist: {}", backup.display()));
+    }
+    if let Err(e) = fs::rename(&backup, &target) {
+        if e.kind() == io::ErrorKind::CrossesDevices {
+            fs::copy(&backup, &target)?;
+            let _ = fs::remove_file(&backup);
+        } else {
+            return Err(e).context("Failed to restore backup");
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&target) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&target, perms).ok();
+        }
+    }
+
+    restart_from_args_file(&target, &args_file)?;
+    Ok(())
+}
+
 fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<()> {
     let content = fs::read_to_string(args_file).context("Failed to read args-file")?;
     let parsed: RestartArgsFile =
@@ -1366,6 +2307,21 @@ fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<()> {
     }
     cmd.spawn().context("Failed to spawn restarted process")?;
     Ok(())
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn schedule_to_tray_info(schedule: &schedule::UpdateSchedule) -> crate::gui::tray::ScheduleInfo {
+    let mode = match schedule.mode {
+        schedule::ScheduleMode::Immediate => "Immediate",
+        schedule::ScheduleMode::Idle => "Idle",
+        schedule::ScheduleMode::Scheduled => "Scheduled",
+    }
+    .to_string();
+
+    crate::gui::tray::ScheduleInfo {
+        mode,
+        scheduled_at: schedule.scheduled_at.as_ref().cloned(),
+    }
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -1638,5 +2594,918 @@ mod tests {
             .expect("force apply request should be accepted");
         assert_eq!(dropped, 0);
         assert_eq!(manager.take_apply_request_mode(), ApplyRequestMode::Force);
+    }
+
+    #[test]
+    fn applying_state_serializes_phase_metadata() {
+        let state = UpdateState::Applying {
+            latest: "4.5.1".to_string(),
+            method: ApplyMethod::WindowsMsi,
+            phase: ApplyPhase::WaitingPermission,
+            phase_message: "Waiting for Windows permission dialog approval".to_string(),
+            started_at: Utc::now(),
+            timeout_at: Some(Utc::now() + chrono::Duration::seconds(600)),
+        };
+
+        let json = serde_json::to_value(state).expect("serialize applying state");
+        assert_eq!(json["state"], "applying");
+        assert_eq!(json["phase"], "waiting_permission");
+        assert!(json.get("phase_message").is_some());
+        assert!(json.get("started_at").is_some());
+        assert!(json.get("timeout_at").is_some());
+    }
+
+    #[test]
+    fn windows_msi_uac_script_marks_permission_before_waiting_for_installer() {
+        let script = build_windows_msi_uac_script(
+            r"C:\Program Files\llmlb\llmlb.msi",
+            r"C:\Temp\llmlb-marker.txt",
+        );
+        assert!(
+            script.contains("-PassThru"),
+            "script should return after UAC consent and expose process handle"
+        );
+        assert!(
+            script.contains("Set-Content -Path"),
+            "script should mark permission approval before waiting for installer"
+        );
+        assert!(
+            script.contains("Wait-Process -Id $p.Id"),
+            "script should wait for installer completion after permission marker"
+        );
+        assert!(
+            !script.contains("-Verb RunAs -Wait"),
+            "script must not use Start-Process -Wait because that mixes consent and install runtime"
+        );
+    }
+
+    #[test]
+    fn windows_msi_uac_script_escapes_single_quotes() {
+        let script =
+            build_windows_msi_uac_script(r"C:\path\it's\setup.msi", r"C:\path\marker's\state.txt");
+        assert!(
+            script.contains("it''s\\setup.msi"),
+            "msi path should escape single quotes for PowerShell single-quoted string"
+        );
+        assert!(
+            script.contains("marker''s\\state.txt"),
+            "marker path should escape single quotes for PowerShell single-quoted string"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_timeout_watchdog_transitions_to_failed() {
+        use tokio::time;
+
+        time::pause();
+
+        let gate = InferenceGate::default();
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            gate.clone(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        manager
+            .set_applying_state(
+                "4.5.1",
+                ApplyMethod::WindowsMsi,
+                ApplyPhase::WaitingPermission,
+                Utc::now(),
+                Some(Utc::now() + chrono::Duration::seconds(600)),
+            )
+            .await;
+        gate.start_rejecting();
+
+        manager.spawn_apply_timeout_watchdog(
+            "4.5.1".to_string(),
+            ApplyMethod::WindowsMsi,
+            ApplyPhase::WaitingPermission,
+            Duration::from_secs(10),
+            "Windows installer permission wait timed out after 600s".to_string(),
+        );
+
+        tokio::task::yield_now().await;
+        time::advance(Duration::from_secs(11)).await;
+        tokio::task::yield_now().await;
+
+        let state = manager.state().await;
+        match state {
+            UpdateState::Failed { message, .. } => {
+                assert!(
+                    message.contains("permission wait timed out"),
+                    "unexpected failure message: {message}"
+                );
+            }
+            other => panic!("expected failed state after watchdog timeout, got {other:?}"),
+        }
+        assert!(
+            !gate.is_rejecting(),
+            "gate should stop rejecting after apply timeout watchdog"
+        );
+    }
+
+    // =======================================================================
+    // T210: check_only — GitHub APIチェックのみ同期、DLは行わない
+    // =======================================================================
+    #[tokio::test]
+    async fn check_only_does_not_download_payload() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/repos/test-owner/test-repo/releases/latest"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "tag_name": "v99.0.0",
+                "html_url": "https://github.com/test-owner/test-repo/releases/tag/v99.0.0",
+                "assets": [{
+                    "name": format!("llmlb-{}.tar.gz", Platform::detect().unwrap().artifact().unwrap_or("linux-x86_64")),
+                    "browser_download_url": format!("{}/download/portable.tar.gz", mock_server.uri()),
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let manager = UpdateManager::new_with_config(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+            "test-owner".to_string(),
+            "test-repo".to_string(),
+            Some(mock_server.uri()),
+        )
+        .expect("create update manager");
+
+        let state = manager.check_only(true).await.expect("check_only");
+
+        // Should discover the update.
+        match &state {
+            UpdateState::Available {
+                latest, payload, ..
+            } => {
+                assert_eq!(latest, "99.0.0");
+                // check_only must NOT start downloading.
+                assert_eq!(*payload, PayloadState::NotReady);
+            }
+            other => panic!("expected available, got {other:?}"),
+        }
+    }
+
+    // =======================================================================
+    // T211: download_background — バックグラウンドDL開始、進捗更新
+    // =======================================================================
+    #[tokio::test]
+    async fn download_background_transitions_to_downloading() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Serve a tiny payload so download completes.
+        Mock::given(method("GET"))
+            .and(path("/download/portable.tar.gz"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(vec![0u8; 100])
+                    .insert_header("content-length", "100"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // Pre-seed available state with a portable asset URL pointing to mock.
+        {
+            let mut st = manager.inner.state.write().await;
+            *st = UpdateState::Available {
+                current: "4.5.0".to_string(),
+                latest: "4.5.1".to_string(),
+                release_url: "https://example.com/release".to_string(),
+                portable_asset_url: Some(format!("{}/download/portable.tar.gz", mock_server.uri())),
+                installer_asset_url: None,
+                payload: PayloadState::NotReady,
+                checked_at: Utc::now(),
+            };
+        }
+
+        // Start background download.
+        manager.download_background();
+
+        // Give some time for async task to start and update state.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let state = manager.state().await;
+        match &state {
+            UpdateState::Available { payload, .. } => {
+                // Should be Downloading or Ready (if completed quickly).
+                assert!(
+                    matches!(
+                        payload,
+                        PayloadState::Downloading { .. } | PayloadState::Ready { .. }
+                    ),
+                    "expected Downloading or Ready, got {payload:?}"
+                );
+            }
+            other => panic!("expected available, got {other:?}"),
+        }
+    }
+
+    // =======================================================================
+    // T212: レートリミット判定
+    // =======================================================================
+    #[tokio::test]
+    async fn rate_limit_rejects_within_60_seconds() {
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // First call should succeed (not rate-limited).
+        assert!(
+            !manager.is_manual_check_rate_limited(),
+            "first call should not be rate-limited"
+        );
+        manager.record_manual_check();
+
+        // Immediate second call should be rate-limited.
+        assert!(
+            manager.is_manual_check_rate_limited(),
+            "second call within 60s should be rate-limited"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limit_allows_after_cooldown() {
+        use tokio::time;
+
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        manager.record_manual_check();
+        assert!(manager.is_manual_check_rate_limited());
+
+        // Advance time past 60 seconds.
+        time::pause();
+        time::advance(Duration::from_secs(61)).await;
+
+        assert!(
+            !manager.is_manual_check_rate_limited(),
+            "should allow check after 60s cooldown"
+        );
+    }
+
+    // =======================================================================
+    // T250: ドレインタイムアウト — タイムアウト超過でキャンセル＋ゲート再開＋failed遷移
+    // =======================================================================
+    #[tokio::test]
+    async fn drain_timeout_cancels_and_transitions_to_failed() {
+        use tokio::time;
+
+        time::pause();
+
+        let gate = InferenceGate::default();
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            gate.clone(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // Set up available state with ready payload.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                });
+        }
+
+        // Simulate an in-flight request that never completes.
+        let _guard = gate.begin_for_test();
+
+        // Start apply_flow in a task — it will try to drain.
+        let mgr = manager.clone();
+        let apply_task =
+            tokio::spawn(async move { mgr.apply_flow(ApplyRequestMode::Normal).await });
+
+        // Let the drain start.
+        time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        // Verify we're in Draining state.
+        let state = manager.state().await;
+        assert!(
+            matches!(state, UpdateState::Draining { .. }),
+            "expected draining, got {state:?}"
+        );
+
+        // Advance time past the drain timeout (300s).
+        time::advance(Duration::from_secs(301)).await;
+        tokio::task::yield_now().await;
+
+        // apply_flow should return an error.
+        let result = apply_task.await.expect("task should complete");
+        assert!(result.is_err(), "apply_flow should fail on drain timeout");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("timed out"),
+            "error should mention timeout: {err_msg}"
+        );
+
+        // State should be Failed.
+        let state = manager.state().await;
+        match &state {
+            UpdateState::Failed { message, .. } => {
+                assert!(
+                    message.contains("timed out"),
+                    "failed message should mention timeout: {message}"
+                );
+            }
+            other => panic!("expected failed state, got {other:?}"),
+        }
+
+        // Gate should no longer be rejecting.
+        assert!(
+            !gate.is_rejecting(),
+            "gate should stop rejecting after drain timeout"
+        );
+    }
+
+    // T250 supplemental: drain that completes before timeout succeeds.
+    #[tokio::test]
+    async fn drain_completes_before_timeout() {
+        use tokio::time;
+
+        time::pause();
+
+        let gate = InferenceGate::default();
+        let manager = UpdateManager::new(
+            reqwest::Client::new(),
+            gate.clone(),
+            ShutdownController::default(),
+        )
+        .expect("create update manager");
+
+        // Set up available state with ready payload.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                });
+        }
+
+        // Simulate an in-flight request.
+        let guard = gate.begin_for_test();
+
+        let mgr = manager.clone();
+        let apply_task =
+            tokio::spawn(async move { mgr.apply_flow(ApplyRequestMode::Normal).await });
+
+        // Let drain start.
+        time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        // Complete the request before timeout.
+        drop(guard);
+        time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        // apply_flow will fail because it tries to spawn a real binary,
+        // but it should NOT fail due to timeout.
+        let result = apply_task.await.expect("task should complete");
+        // The error (if any) should be about spawning, not timeout.
+        if let Err(e) = &result {
+            assert!(
+                !e.to_string().contains("timed out"),
+                "should not time out: {e}"
+            );
+        }
+
+        // State should NOT be Failed due to timeout.
+        let state = manager.state().await;
+        assert!(
+            !matches!(
+                &state,
+                UpdateState::Failed { message, .. } if message.contains("timed out")
+            ),
+            "should not be in timeout-failed state: {state:?}"
+        );
+    }
+
+    /// Helper to create an UpdateManager with an isolated temp data dir for testing.
+    ///
+    /// Uses a unique env var approach with per-test isolation.
+    fn test_manager_with_gate(gate: InferenceGate) -> (UpdateManager, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        std::fs::create_dir_all(tmp.path()).expect("create data dir");
+        let manager = UpdateManager::new_with_data_dir(
+            reqwest::Client::new(),
+            gate,
+            ShutdownController::default(),
+            tmp.path(),
+        )
+        .expect("create update manager");
+        (manager, tmp)
+    }
+
+    // =======================================================================
+    // T232: アイドル時適用トリガー — in_flight=0でスケジュール起動
+    // =======================================================================
+    #[tokio::test]
+    async fn idle_schedule_triggers_when_in_flight_zero() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate.clone());
+
+        // Set up available state.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Create idle schedule.
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Idle,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        // No in-flight requests → in_flight == 0.
+        assert_eq!(gate.in_flight(), 0);
+
+        // Start schedule loop.
+        manager.start_schedule_loop();
+
+        // Give the loop time to detect idle and trigger.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Schedule should have been removed (triggered).
+        assert!(
+            manager.get_schedule().unwrap().is_none(),
+            "schedule should be consumed after idle trigger"
+        );
+
+        // Apply request should have been triggered.
+        let mode = manager.take_apply_request_mode();
+        assert_eq!(
+            mode,
+            ApplyRequestMode::Normal,
+            "idle schedule should trigger normal apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_schedule_does_not_trigger_while_busy() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate.clone());
+
+        // Set up available state.
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Simulate in-flight request.
+        let _guard = gate.begin_for_test();
+
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Idle,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Schedule should still exist (not triggered).
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "schedule should remain while requests are in-flight"
+        );
+
+        // No apply request should be pending.
+        let mode = manager.take_apply_request_mode();
+        assert_eq!(
+            mode,
+            ApplyRequestMode::None,
+            "should not trigger while busy"
+        );
+    }
+
+    #[test]
+    fn scheduled_mode_requires_scheduled_at() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+
+        let err = manager
+            .create_schedule(sched)
+            .expect_err("scheduled mode without scheduled_at must be rejected");
+        assert!(
+            err.to_string()
+                .contains("scheduled_at is required when mode is scheduled"),
+            "unexpected error: {err}"
+        );
+    }
+
+    // =======================================================================
+    // T233: 時刻指定適用トリガー — 指定時刻到達でドレイン開始
+    // =======================================================================
+    #[tokio::test]
+    async fn scheduled_time_triggers_when_past_due() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Schedule for 1 second ago (already past due).
+        let scheduled_at = Utc::now() - chrono::Duration::seconds(1);
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: Some(scheduled_at),
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+
+        // Give the loop time to detect and trigger.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_none(),
+            "schedule should be consumed after scheduled_at"
+        );
+
+        let mode = manager.take_apply_request_mode();
+        assert_eq!(
+            mode,
+            ApplyRequestMode::Normal,
+            "scheduled trigger should request normal apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            let mut state = available_state_with_payload(PayloadState::NotReady);
+            if let UpdateState::Available { latest, .. } = &mut state {
+                *latest = "4.5.2".to_string();
+            }
+            *manager.inner.state.write().await = state;
+        }
+
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: Some(Utc::now() - chrono::Duration::seconds(1)),
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "schedule should remain when target version no longer matches latest"
+        );
+        assert_eq!(
+            manager.take_apply_request_mode(),
+            ApplyRequestMode::None,
+            "target version mismatch must not trigger apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_scheduled_without_time_does_not_trigger() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Simulate malformed persisted data from an older version.
+        let malformed = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: None,
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager.inner.schedule_store.save(&malformed).unwrap();
+
+        manager.start_schedule_loop();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "malformed scheduled entry should not be consumed automatically"
+        );
+        assert_eq!(
+            manager.take_apply_request_mode(),
+            ApplyRequestMode::None,
+            "malformed scheduled entry must never trigger apply"
+        );
+    }
+
+    // =======================================================================
+    // T260: ヘルパー起動監視 — .bakから復元ロジックのテスト
+    // =======================================================================
+    #[test]
+    fn internal_rollback_restores_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("llmlb");
+        let backup = dir.path().join("llmlb.bak");
+        let args_file = dir.path().join("restart_args.json");
+
+        // Create a fake "old" binary.
+        fs::write(&backup, b"old-binary-content").unwrap();
+        // Create a fake args file (needed for restart_from_args_file).
+        let args = RestartArgsFile {
+            args: vec![],
+            cwd: dir.path().to_string_lossy().to_string(),
+        };
+        fs::write(&args_file, serde_json::to_vec(&args).unwrap()).unwrap();
+
+        // internal_rollback expects the old process to have exited.
+        // Using PID 0 or a non-existent PID: use current PID which is alive.
+        // Instead, use PID 1 which is always running on Unix — let's use a non-existent PID.
+        // PID u32::MAX is unlikely to exist.
+        let result = internal_rollback(u32::MAX, target.clone(), backup.clone(), args_file);
+
+        // The rollback should have restored the backup to the target path.
+        assert!(target.exists(), "target should be restored from backup");
+        assert!(!backup.exists(), "backup should be consumed (renamed)");
+        let content = fs::read(&target).unwrap();
+        assert_eq!(content, b"old-binary-content");
+
+        // The restart_from_args_file call will fail because the target is not
+        // executable, but the backup restoration should have succeeded.
+        // We check if the result is Err (from failed spawn) but not from rollback.
+        if let Err(e) = result {
+            // Expected: spawn failure because we wrote fake content, not a real binary.
+            assert!(
+                !e.to_string().contains("Backup file does not exist"),
+                "should not fail due to missing backup: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn internal_rollback_fails_without_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("llmlb");
+        let backup = dir.path().join("llmlb.bak");
+        let args_file = dir.path().join("restart_args.json");
+
+        let result = internal_rollback(u32::MAX, target, backup, args_file);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Backup file does not exist"));
+    }
+
+    // =======================================================================
+    // T262: ロールバック結果の update-history.json 記録
+    // =======================================================================
+    #[test]
+    fn record_auto_rollback_history_writes_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create directory structure: data_dir/updates/rollback-X.Y.Z/restart_args.json
+        let updates_dir = dir.path().join("updates").join("rollback-test");
+        fs::create_dir_all(&updates_dir).unwrap();
+        let args_file = updates_dir.join("restart_args.json");
+        fs::write(&args_file, "{}").unwrap();
+
+        super::record_auto_rollback_history(&args_file, "health check failed");
+
+        let store = history::HistoryStore::new(dir.path());
+        let entries = store.load().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].kind, history::HistoryEventKind::Rollback);
+        assert!(entries[0]
+            .message
+            .as_ref()
+            .unwrap()
+            .contains("health check failed"));
+    }
+
+    #[test]
+    fn detect_server_port_reads_restart_args_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let args_file = dir.path().join("restart_args.json");
+        let args = RestartArgsFile {
+            args: vec![
+                "serve".to_string(),
+                "--host".to_string(),
+                "127.0.0.1".to_string(),
+                "--port".to_string(),
+                "40123".to_string(),
+            ],
+            cwd: dir.path().to_string_lossy().to_string(),
+        };
+        fs::write(&args_file, serde_json::to_vec(&args).unwrap()).unwrap();
+
+        assert_eq!(detect_server_port(&args_file), 40123);
+    }
+
+    #[test]
+    fn parse_port_from_args_supports_equals_style() {
+        let args = vec!["serve".to_string(), "--port=40124".to_string()];
+        assert_eq!(parse_port_from_args(&args), Some(40124));
+    }
+
+    #[tokio::test]
+    async fn scheduled_time_does_not_trigger_before_time() {
+        let gate = InferenceGate::default();
+        let (manager, _tmp) = test_manager_with_gate(gate);
+
+        {
+            *manager.inner.state.write().await =
+                available_state_with_payload(PayloadState::NotReady);
+        }
+
+        // Schedule for 60 seconds from now (far future, won't trigger in test).
+        let scheduled_at = Utc::now() + chrono::Duration::seconds(60);
+        let sched = schedule::UpdateSchedule {
+            mode: schedule::ScheduleMode::Scheduled,
+            scheduled_at: Some(scheduled_at),
+            scheduled_by: "admin".to_string(),
+            target_version: "4.5.1".to_string(),
+            created_at: Utc::now(),
+        };
+        manager
+            .create_schedule(sched)
+            .expect("schedule should be created");
+
+        manager.start_schedule_loop();
+
+        // Wait a bit — should NOT trigger (still 60s away).
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            manager.get_schedule().unwrap().is_some(),
+            "schedule should not trigger before scheduled_at"
+        );
+        assert_eq!(
+            manager.take_apply_request_mode(),
+            ApplyRequestMode::None,
+            "should not trigger before time"
+        );
+    }
+
+    // =======================================================================
+    // check_only: GitHub API失敗時にキャッシュフォールバック
+    // (SPEC-a6e55b37 ユーザーストーリー10シナリオ4)
+    // =======================================================================
+    #[tokio::test]
+    async fn check_only_github_error_cache_fallback() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // GitHub API が 429 を返すようモック
+        Mock::given(method("GET"))
+            .and(path("/repos/test-owner/test-repo/releases/latest"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&mock_server)
+            .await;
+
+        // 単一テスト内で env var を設定してテスト間の競合を回避
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        unsafe {
+            std::env::set_var("LLMLB_DATA_DIR", tmp.path());
+        }
+        let manager = UpdateManager::new_with_config(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+            "test-owner".to_string(),
+            "test-repo".to_string(),
+            Some(mock_server.uri()),
+        )
+        .expect("create update manager");
+
+        // --- ケース1: キャッシュなし → エラーが返る ---
+        assert!(
+            !manager.inner.cache_path.exists(),
+            "cache should not exist in fresh temp dir"
+        );
+        let result = manager.check_only(true).await;
+        assert!(
+            result.is_err(),
+            "check_only should fail when no cache and GitHub returns 429"
+        );
+
+        // --- ケース2: キャッシュあり → フォールバックで成功 ---
+        save_cache(
+            &manager.inner.cache_path,
+            UpdateCacheFile {
+                last_checked_at: Utc::now(),
+                latest_version: Some("99.0.0".to_string()),
+                release_url: Some(
+                    "https://github.com/test-owner/test-repo/releases/tag/v99.0.0".to_string(),
+                ),
+                portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
+                installer_asset_url: None,
+            },
+        )
+        .expect("save cache");
+
+        // force=true でもキャッシュフォールバックすべき
+        let state = manager
+            .check_only(true)
+            .await
+            .expect("check_only should succeed via cache fallback");
+
+        match &state {
+            UpdateState::Available { latest, .. } => {
+                assert_eq!(latest, "99.0.0");
+            }
+            other => panic!("expected Available from cache fallback, got {other:?}"),
+        }
+
+        // --- ケース3: 既にAvailable(payload=Ready)なら状態を保持 ---
+        {
+            let mut st = manager.inner.state.write().await;
+            *st = UpdateState::Available {
+                current: "5.0.0".to_string(),
+                latest: "99.0.0".to_string(),
+                release_url: "https://example.com/release".to_string(),
+                portable_asset_url: Some("https://example.com/portable.tar.gz".to_string()),
+                installer_asset_url: None,
+                payload: PayloadState::Ready {
+                    kind: PayloadKind::Portable {
+                        binary_path: "/tmp/llmlb-new".to_string(),
+                    },
+                },
+                checked_at: Utc::now(),
+            };
+        }
+
+        let state = manager
+            .check_only(true)
+            .await
+            .expect("check_only should preserve existing Available state");
+
+        match &state {
+            UpdateState::Available { payload, .. } => {
+                assert!(
+                    matches!(payload, PayloadState::Ready { .. }),
+                    "payload should remain Ready, got {payload:?}"
+                );
+            }
+            other => panic!("expected Available with Ready payload, got {other:?}"),
+        }
     }
 }

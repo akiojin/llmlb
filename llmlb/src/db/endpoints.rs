@@ -283,7 +283,7 @@ pub async fn update_endpoint_status(
         r#"
         UPDATE endpoints SET
             status = ?,
-            latency_ms = ?,
+            latency_ms = COALESCE(?, latency_ms),
             last_seen = ?,
             last_error = ?,
             error_count = CASE WHEN ? = 'error' THEN error_count + 1 ELSE 0 END
@@ -754,14 +754,7 @@ mod tests {
     use crate::db::test_utils::TEST_LOCK;
 
     async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test database");
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-        pool
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[tokio::test]
@@ -923,6 +916,49 @@ mod tests {
             .unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].name, "Pending EP");
+    }
+
+    /// T001 [US2]: update_endpoint_status で latency_ms=None を渡した場合に
+    /// 既存のレイテンシ値が保持されることを検証
+    #[tokio::test]
+    async fn test_update_status_preserves_latency_on_none() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        // (1) エンドポイント登録
+        let endpoint = Endpoint::new(
+            "Latency Preserve".to_string(),
+            "http://localhost:9100".to_string(),
+            crate::types::endpoint::EndpointType::Xllm,
+        );
+        create_endpoint(&pool, &endpoint).await.unwrap();
+
+        // (2) latency_ms=Some(120) でステータス更新
+        update_endpoint_status(&pool, endpoint.id, EndpointStatus::Online, Some(120), None)
+            .await
+            .unwrap();
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(ep.latency_ms, Some(120));
+
+        // (3) latency_ms=None でオフラインに遷移（ヘルスチェック失敗を模擬）
+        update_endpoint_status(
+            &pool,
+            endpoint.id,
+            EndpointStatus::Offline,
+            None,
+            Some("health check failed"),
+        )
+        .await
+        .unwrap();
+
+        // (4) DBから読み取り、latency_ms が 120 のまま保持されていることを確認
+        let ep = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+        assert_eq!(
+            ep.latency_ms,
+            Some(120),
+            "latency_ms should be preserved when None is passed (COALESCE)"
+        );
+        assert_eq!(ep.status, EndpointStatus::Offline);
     }
 
     #[tokio::test]

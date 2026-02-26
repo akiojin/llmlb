@@ -22,13 +22,15 @@ async fn build_app() -> (Router, SqlitePool, String) {
 
     // /api/dashboard/* は JWT のみのため、テスト用JWTを発行して返す。
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let admin_user = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin)
-        .await
-        .expect("create admin user");
+    let admin_user =
+        llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
+            .await
+            .expect("create admin user");
     let jwt = llmlb::auth::jwt::create_jwt(
         &admin_user.id.to_string(),
         UserRole::Admin,
         &crate::support::lb::test_jwt_secret(),
+        false,
     )
     .expect("create admin jwt");
 
@@ -345,16 +347,17 @@ async fn test_export_request_responses_invalid_format() {
 async fn test_list_request_responses_with_client_ip_filter() {
     let (app, db_pool, jwt) = build_app().await;
     let now = Utc::now();
-    let node_id = Uuid::new_v4();
+    let endpoint_id = Uuid::new_v4();
 
     // 異なるIPのレコードを挿入
-    let mut record_a = create_test_record("model-a", node_id, now - Duration::hours(2), true);
+    let mut record_a = create_test_record("model-a", endpoint_id, now - Duration::hours(2), true);
     record_a.client_ip = Some("192.168.1.10".parse().unwrap());
 
-    let mut record_b = create_test_record("model-b", node_id, now - Duration::hours(1), true);
+    let mut record_b = create_test_record("model-b", endpoint_id, now - Duration::hours(1), true);
     record_b.client_ip = Some("192.168.1.20".parse().unwrap());
 
-    let mut record_c = create_test_record("model-c", node_id, now - Duration::minutes(30), true);
+    let mut record_c =
+        create_test_record("model-c", endpoint_id, now - Duration::minutes(30), true);
     record_c.client_ip = Some("192.168.1.10".parse().unwrap());
 
     insert_record(&db_pool, &record_a).await;
@@ -398,7 +401,7 @@ async fn test_list_request_responses_with_client_ip_filter() {
 
 fn create_test_record(
     model: &str,
-    node_id: Uuid,
+    endpoint_id: Uuid,
     timestamp: chrono::DateTime<Utc>,
     success: bool,
 ) -> RequestResponseRecord {
@@ -407,9 +410,9 @@ fn create_test_record(
         timestamp,
         request_type: RequestType::Chat,
         model: model.to_string(),
-        node_id,
-        node_machine_name: "test-node".to_string(),
-        node_ip: "127.0.0.1".parse().unwrap(),
+        endpoint_id,
+        endpoint_name: "test-node".to_string(),
+        endpoint_ip: "127.0.0.1".parse().unwrap(),
         client_ip: Some("10.0.0.1".parse().unwrap()),
         request_body: json!({
             "model": model,

@@ -1,7 +1,7 @@
 //! モデル情報の永続化 (SQLite)
 
 use crate::common::error::{LbError, RouterResult};
-use crate::common::types::ModelCapability;
+use crate::types::ModelCapability;
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 
@@ -301,20 +301,9 @@ impl ModelStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
 
     async fn create_test_pool() -> SqlitePool {
-        let pool = SqlitePoolOptions::new()
-            .connect("sqlite::memory:")
-            .await
-            .expect("Failed to create in-memory pool");
-
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-
-        pool
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[tokio::test]

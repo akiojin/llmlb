@@ -1,6 +1,6 @@
-//! status サブコマンド
+//! status subcommand
 //!
-//! 起動中のサーバーの状態を表示します。
+//! Displays the current status of running servers.
 
 use crate::lock::{is_process_running, list_all_locks, read_lock_info};
 use chrono::Utc;
@@ -8,7 +8,7 @@ use clap::Args;
 use reqwest::StatusCode;
 use std::time::Duration;
 
-/// status サブコマンドの引数
+/// Arguments for the status subcommand
 #[derive(Args, Debug, Clone)]
 pub struct StatusArgs {
     /// Show status of specific port only
@@ -16,7 +16,7 @@ pub struct StatusArgs {
     pub port: Option<u16>,
 }
 
-/// status コマンドを実行
+/// Execute the status command
 pub async fn execute(args: &StatusArgs) -> Result<(), anyhow::Error> {
     let client = reqwest::Client::new();
     if let Some(port) = args.port {

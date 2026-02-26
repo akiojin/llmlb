@@ -82,6 +82,7 @@ GGUF/llama.cpp 経由で対応するアーキテクチャの例です。網羅�
 - エンドポイント管理: Ollama、vLLM、xLLM等の外部推論サーバーをロードバランサーから一元管理
 - モデル同期: 登録エンドポイントから `GET /v1/models` でモデル一覧を自動同期
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
+- 自動アップデート: GitHub Releases検知→承認後にドレイン→再起動。スケジューリング（即時/アイドル/時刻指定）、自動＋手動ロールバック、DL進捗表示に対応
 
 ## ダッシュボード
 
@@ -371,9 +372,7 @@ C++ Runtime（xLLM）は別リポジトリに分離しました。
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（旧: `REQUEST_HISTORY_RETENTION_DAYS`） |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、旧: `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`） |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（旧: `LLM_DEFAULT_EMBEDDING_MODEL`） |
-| `LLMLB_AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、旧: `AUTH_DISABLED`） |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（非推奨） |
-| `AUTH_DISABLED` | `false` | 認証無効化（開発/テスト用、非推奨） |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（非推奨） |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、非推奨） |
 
@@ -390,14 +389,37 @@ llmlb はバックグラウンドで GitHub Releases を確認し（ベストエ
 更新を承認（`Restart to update`）すると、以下の順で適用します。
 
 - 新規推論リクエスト（`/v1/*`）を 503 + `Retry-After` で拒否
-- in-flight の推論リクエスト（ストリーミング含む）が完了するまで待機（ドレイン）
+- in-flight の推論リクエスト（ストリーミング含む）が完了するまで待機（ドレイン、最大300秒）
 - 更新を適用して再起動
+
+Windows の `.msi` 更新では権限昇格（UAC 承認）が必要になる場合があります。
+適用中はダッシュボードに applying の詳細フェーズとタイムアウトカウントダウンを表示し、
+承認待機が10分を超えた場合は `failed` 状態へ遷移します。
+
+**アップデートスケジュール:**
+
+- **即時（Immediate）**: 承認後すぐに適用（デフォルト）
+- **アイドル時（On idle）**: 推論リクエストがゼロになったタイミングで自動適用
+- **時刻指定（Scheduled）**: 日時を指定し、その時刻にドレインを開始して適用
+
+ダッシュボードの設定モーダルまたはスケジューリングAPI
+（`POST/GET/DELETE /api/system/update/schedule`）で設定できます。
+
+**ロールバック:**
+
+- **自動**: 更新適用後、新プロセスを30秒間監視し、ヘルスチェック無応答で `.bak` から自動復元
+- **手動**: ダッシュボードの「Rollback」ボタンまたは `POST /api/system/update/rollback`
+  で `.bak` バックアップから復元（バックアップ存在時のみ）
+
+**ダウンロード進捗:** ダッシュボードにリアルタイムのプログレスバー（バイト数＋パーセント）を表示します。
 
 自動適用方式は OS/インストール形態により分岐します。
 
 - ポータブル配置: 実行ファイルを置換（配置先が書き込み可能な場合）
 - macOS `.pkg` / Windows `.msi`: インストーラ実行（必要に応じて権限プロンプト/UAC）
 - Linux の書き込み不可配置: 自動適用は非対応（GitHub Releases から手動更新）
+
+詳細は [specs/SPEC-a6e55b37/spec.md](./specs/SPEC-a6e55b37/spec.md) を参照。
 
 クラウドAPI:
 
@@ -569,7 +591,7 @@ LLM Load Balancer (OpenAI-compatible)
 | `invitations.manage` | 招待管理（`/api/invitations*`） |
 | `models.manage` | モデル登録/削除（`POST /api/models/register`, `DELETE /api/models/*`） |
 | `registry.read` | モデルレジストリ/一覧（`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`） |
-| `logs.read` | ノードログ（`GET /api/nodes/:node_id/logs`） |
+| `logs.read` | エンドポイントログ（`GET /api/endpoints/:id/logs`） |
 | `metrics.read` | メトリクス（`GET /api/metrics/cloud`） |
 
 APIキー管理はJWTで本人用エンドポイントを利用します:
@@ -578,9 +600,10 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - `PUT /api/me/api-keys/:id`
 - `DELETE /api/me/api-keys/:id`
 
-`POST /api/me/api-keys` で作成されるキーの権限は固定です:
-- `openai.inference`
-- `openai.models.read`
+`POST /api/me/api-keys` の permissions 指定ルール:
+- `admin`: `permissions` 配列を必須で指定（1件以上）
+- `viewer`: `permissions` は指定不可（サーバーが `openai.inference` と
+  `openai.models.read` を固定付与）
 
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
@@ -636,7 +659,7 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - GET `/api/dashboard/stats`
 - GET `/api/dashboard/endpoints`
 - GET `/api/dashboard/models`
-- GET `/api/dashboard/metrics/:node_id`
+- GET `/api/dashboard/metrics/:runtime_id`
 - GET `/api/dashboard/request-history`（legacy）
 - GET `/api/dashboard/request-responses`
 - GET `/api/dashboard/request-responses/:id`
@@ -646,7 +669,7 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - GET `/api/dashboard/stats/tokens/monthly`
 - GET `/api/dashboard/logs/lb`
 - GET `/api/metrics/cloud`（JWT: admin / APIキー: `metrics.read`）
-- GET `/api/nodes/:node_id/logs`（JWT: admin / APIキー: `logs.read`）
+- GET `/api/endpoints/:id/logs`（JWT: admin / APIキー: `logs.read`）
 - POST `/api/endpoints/:id/chat/completions`（Endpoint Playground 用、JWTのみ）
 - GET `/dashboard/*`
 

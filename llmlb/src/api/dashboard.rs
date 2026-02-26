@@ -4,11 +4,9 @@
 //! システム統計を返却する。
 
 use super::error::AppError;
-use crate::common::{
-    error::{CommonError, LbError},
-    types::HealthMetrics,
-};
+use crate::common::error::{CommonError, LbError};
 use crate::db::request_history::{FilterStatus, RecordFilter};
+use crate::types::HealthMetrics;
 use crate::{
     balancer::RequestHistoryPoint,
     types::endpoint::{EndpointStatus, EndpointType},
@@ -204,14 +202,16 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
 
 /// GET /api/dashboard/metrics/:runtime_id
 pub async fn get_node_metrics(
-    Path(node_id): Path<Uuid>,
+    Path(endpoint_id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<HealthMetrics>>, AppError> {
-    let history = state.load_manager.metrics_history(node_id).await?;
+    let history = state.load_manager.metrics_history(endpoint_id).await?;
     Ok(Json(history))
 }
 
 /// GET /api/dashboard/stats/tokens - トークン統計取得
+///
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_token_stats(
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
@@ -251,6 +251,8 @@ pub struct DailyTokenStats {
 }
 
 /// GET /api/dashboard/stats/tokens/daily - 日次トークン統計取得
+///
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_daily_token_stats(
     State(state): State<AppState>,
     Query(query): Query<DailyTokenStatsQuery>,
@@ -261,7 +263,18 @@ pub async fn get_daily_token_stats(
         .get_daily_token_statistics(days)
         .await
         .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(
+        stats
+            .into_iter()
+            .map(|s| DailyTokenStats {
+                date: s.date,
+                total_input_tokens: s.total_input_tokens,
+                total_output_tokens: s.total_output_tokens,
+                total_tokens: s.total_tokens,
+                request_count: s.request_count,
+            })
+            .collect(),
+    ))
 }
 
 /// 月次トークン統計クエリパラメータ
@@ -292,6 +305,8 @@ pub struct MonthlyTokenStats {
 }
 
 /// GET /api/dashboard/stats/tokens/monthly - 月次トークン統計取得
+///
+/// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_monthly_token_stats(
     State(state): State<AppState>,
     Query(query): Query<MonthlyTokenStatsQuery>,
@@ -302,7 +317,18 @@ pub async fn get_monthly_token_stats(
         .get_monthly_token_statistics(months)
         .await
         .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(
+        stats
+            .into_iter()
+            .map(|s| MonthlyTokenStats {
+                month: s.month,
+                total_input_tokens: s.total_input_tokens,
+                total_output_tokens: s.total_output_tokens,
+                total_tokens: s.total_tokens,
+                request_count: s.request_count,
+            })
+            .collect(),
+    ))
 }
 
 /// エンドポイント一覧を収集
@@ -378,9 +404,18 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             }
         };
 
-    // Token totals must be consistent with the persisted request history.
-    // The dashboard "Statistics" tab queries request_history directly, so prefer the same source
-    // here to avoid "Total Tokens" mismatching after restarts / retention cleanup.
+    // request_history 廃止完了まで、audit_log/request_history の双方を見て過小計上を避ける
+    let token_totals_from_audit = match state.audit_log_storage.get_token_statistics().await {
+        Ok(stats) => Some(PersistedTokenTotals {
+            total_input_tokens: to_u64(stats.total_input_tokens),
+            total_output_tokens: to_u64(stats.total_output_tokens),
+            total_tokens: to_u64(stats.total_tokens),
+        }),
+        Err(e) => {
+            warn!("Failed to query token statistics from audit log: {}", e);
+            None
+        }
+    };
     let token_totals_from_history = match state.request_history.get_token_statistics().await {
         Ok(stats) => Some(PersistedTokenTotals {
             total_input_tokens: stats.total_input_tokens,
@@ -394,6 +429,16 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             );
             None
         }
+    };
+    let token_totals_from_db = match (token_totals_from_audit, token_totals_from_history) {
+        (Some(audit), Some(history)) => Some(PersistedTokenTotals {
+            total_input_tokens: audit.total_input_tokens.max(history.total_input_tokens),
+            total_output_tokens: audit.total_output_tokens.max(history.total_output_tokens),
+            total_tokens: audit.total_tokens.max(history.total_tokens),
+        }),
+        (Some(audit), None) => Some(audit),
+        (None, Some(history)) => Some(history),
+        (None, None) => None,
     };
 
     let cached_totals = LAST_KNOWN_PERSISTED_TOTALS
@@ -411,22 +456,22 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         PersistedRequestTotals::default()
     };
 
-    let token_totals = if let Some(token_totals) = token_totals_from_history {
+    let token_totals = if let Some(token_totals) = token_totals_from_db {
         token_totals
     } else if let Some(cached) = cached_totals {
-        warn!("Using last known persisted token totals after history query failure");
+        warn!("Using last known persisted token totals after token query failure");
         cached.token_totals
     } else {
         warn!("No cached persisted token totals available; returning zero values");
         PersistedTokenTotals::default()
     };
 
-    if request_totals_from_db.is_some() || token_totals_from_history.is_some() {
+    if request_totals_from_db.is_some() || token_totals_from_db.is_some() {
         let mut updated_cache = cached_totals.unwrap_or_default();
         if let Some(request_totals) = request_totals_from_db {
             updated_cache.request_totals = request_totals;
         }
-        if let Some(token_totals) = token_totals_from_history {
+        if let Some(token_totals) = token_totals_from_db {
             updated_cache.token_totals = token_totals;
         }
 
@@ -436,6 +481,23 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
             warn!("Failed to update persisted totals cache due to poisoned lock");
         }
     }
+
+    // Bug 2: インメモリ average_response_time_ms が None の場合、
+    // オンラインエンドポイントの latency_ms（DB永続化済み）から加重平均を計算
+    let average_response_time_ms = summary.average_response_time_ms.or_else(|| {
+        let online_endpoints: Vec<_> = endpoints
+            .iter()
+            .filter(|e| e.status == EndpointStatus::Online && e.latency_ms.is_some())
+            .collect();
+        if online_endpoints.is_empty() {
+            return None;
+        }
+        let total: f64 = online_endpoints
+            .iter()
+            .map(|e| e.latency_ms.unwrap() as f64)
+            .sum();
+        Some((total / online_endpoints.len() as f64) as f32)
+    });
 
     DashboardStats {
         total_nodes: summary.total_nodes,
@@ -448,7 +510,7 @@ async fn collect_stats(state: &AppState) -> DashboardStats {
         failed_requests: request_totals.failed_requests,
         total_active_requests: summary.total_active_requests,
         queued_requests: summary.queued_requests,
-        average_response_time_ms: summary.average_response_time_ms,
+        average_response_time_ms,
         average_gpu_usage: summary.average_gpu_usage,
         average_gpu_memory_usage: summary.average_gpu_memory_usage,
         last_metrics_updated_at: summary.last_metrics_updated_at,
@@ -490,9 +552,9 @@ pub struct RequestHistoryQuery {
     pub offset: Option<usize>,
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    #[serde(alias = "agent_id")]
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    #[serde(alias = "agent_id", alias = "node_id")]
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ（RFC3339）
@@ -532,7 +594,7 @@ impl RequestHistoryQuery {
 
         Ok(RecordFilter {
             model: self.model.clone(),
-            node_id: self.node_id,
+            endpoint_id: self.endpoint_id,
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
@@ -560,9 +622,9 @@ pub struct RequestHistoryExportQuery {
     pub format: RequestHistoryExportFormat,
     /// モデル名フィルタ（部分一致）
     pub model: Option<String>,
-    /// ノードIDフィルタ
-    #[serde(alias = "agent_id")]
-    pub node_id: Option<Uuid>,
+    /// エンドポイントIDフィルタ
+    #[serde(alias = "agent_id", alias = "node_id")]
+    pub endpoint_id: Option<Uuid>,
     /// ステータスフィルタ
     pub status: Option<FilterStatus>,
     /// 開始時刻フィルタ（RFC3339）
@@ -585,7 +647,7 @@ impl RequestHistoryExportQuery {
 
         Ok(RecordFilter {
             model: self.model.clone(),
-            node_id: self.node_id,
+            endpoint_id: self.endpoint_id,
             status: self.status,
             start_time: self.start_time,
             end_time: self.end_time,
@@ -797,9 +859,9 @@ pub async fn export_request_responses(
                                 record.timestamp.to_rfc3339(),
                                 format!("{:?}", record.request_type),
                                 record.model,
-                                record.node_id.to_string(),
-                                record.node_machine_name,
-                                record.node_ip.to_string(),
+                                record.endpoint_id.to_string(),
+                                record.endpoint_name,
+                                record.endpoint_ip.to_string(),
                                 record
                                     .client_ip
                                     .map(|ip| ip.to_string())
@@ -1159,6 +1221,81 @@ pub async fn update_setting(
 #[cfg(test)]
 mod tests {
     use super::parse_ip_alert_threshold;
+    use crate::types::endpoint::{Endpoint, EndpointStatus, EndpointType};
+
+    /// フォールバック計算: avg_response_time_ms が None の場合に
+    /// オンラインエンドポイントの latency_ms から平均値を計算するロジック
+    fn fallback_avg_response_time(summary_avg: Option<f32>, endpoints: &[Endpoint]) -> Option<f32> {
+        summary_avg.or_else(|| {
+            let online_endpoints: Vec<_> = endpoints
+                .iter()
+                .filter(|e| e.status == EndpointStatus::Online && e.latency_ms.is_some())
+                .collect();
+            if online_endpoints.is_empty() {
+                return None;
+            }
+            let total: f64 = online_endpoints
+                .iter()
+                .map(|e| e.latency_ms.unwrap() as f64)
+                .sum();
+            Some((total / online_endpoints.len() as f64) as f32)
+        })
+    }
+
+    /// T010 [US3]: collect_stats のフォールバック計算テスト
+    /// インメモリavg_response_time_msがNoneの場合、オンラインエンドポイントの
+    /// latency_msから平均値を計算する
+    #[test]
+    fn test_avg_response_time_fallback_from_latency() {
+        // (1) summary の average_response_time_ms が None
+        // (2) オンラインエンドポイント2つ (latency_ms=100, 200)
+        let mut ep1 = Endpoint::new(
+            "EP1".to_string(),
+            "http://localhost:8001".to_string(),
+            EndpointType::Xllm,
+        );
+        ep1.status = EndpointStatus::Online;
+        ep1.latency_ms = Some(100);
+
+        let mut ep2 = Endpoint::new(
+            "EP2".to_string(),
+            "http://localhost:8002".to_string(),
+            EndpointType::Xllm,
+        );
+        ep2.status = EndpointStatus::Online;
+        ep2.latency_ms = Some(200);
+
+        let endpoints = vec![ep1, ep2];
+
+        // (3) 結果は 150.0（平均値）
+        let result = fallback_avg_response_time(None, &endpoints);
+        assert_eq!(result, Some(150.0));
+    }
+
+    /// T010 追加シナリオ: 全エンドポイントがオフラインの場合は None のまま
+    #[test]
+    fn test_avg_response_time_fallback_all_offline() {
+        let mut ep1 = Endpoint::new(
+            "EP1".to_string(),
+            "http://localhost:8001".to_string(),
+            EndpointType::Xllm,
+        );
+        ep1.status = EndpointStatus::Offline;
+        ep1.latency_ms = Some(100);
+
+        let endpoints = vec![ep1];
+
+        let result = fallback_avg_response_time(None, &endpoints);
+        assert_eq!(result, None);
+    }
+
+    /// T010 追加シナリオ: summary に値がある場合はフォールバックしない
+    #[test]
+    fn test_avg_response_time_no_fallback_when_present() {
+        let endpoints = vec![];
+        let result = fallback_avg_response_time(Some(42.0), &endpoints);
+        assert_eq!(result, Some(42.0));
+    }
 
     #[test]
     fn parse_ip_alert_threshold_accepts_positive_integer() {

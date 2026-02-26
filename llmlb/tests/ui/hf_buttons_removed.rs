@@ -1,9 +1,35 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
 // Contract tests for HF button removal (FR-028)
 // Models section should not have Hugging Face related buttons
 
 // Read the index.html file content for testing
+fn get_file_content(relative_path: &str) -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path: PathBuf = root.join(relative_path);
+    fs::read_to_string(path).expect("Failed to read static dashboard asset")
+}
+
 fn get_index_html() -> String {
-    include_str!("../../src/web/static/index.html").to_string()
+    get_file_content("src/web/static/index.html")
+}
+
+fn contains_japanese(text: &str) -> bool {
+    text.chars().any(|ch| {
+        ('\u{3040}'..='\u{30FF}').contains(&ch) // Hiragana + Katakana
+            || ('\u{3400}'..='\u{4DBF}').contains(&ch) // CJK Extension A
+            || ('\u{4E00}'..='\u{9FFF}').contains(&ch) // CJK Unified Ideographs
+            || ('\u{2E80}'..='\u{2FDF}').contains(&ch) // CJK Radicals + punctuation
+            || ('\u{FF66}'..='\u{FF9F}').contains(&ch) // Halfwidth Katakana
+    })
+}
+
+fn assert_no_japanese(text: &str, location: &str) {
+    assert!(
+        !contains_japanese(text),
+        "{location} contains Japanese text"
+    )
 }
 
 #[test]
@@ -91,4 +117,36 @@ fn dashboard_has_no_japanese_text() {
         !html.contains("テスト用コンソール"),
         "Japanese text should be removed from chat modal"
     );
+}
+
+#[test]
+fn dashboard_static_assets_have_no_japanese_text() {
+    let html_paths = [
+        "src/web/static/index.html",
+        "src/web/static/login.html",
+        "src/web/static/register.html",
+        "src/web/static/change-password.html",
+    ];
+
+    for path in html_paths {
+        let content = get_file_content(path);
+        assert_no_japanese(&content, path);
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let assets_dir = root.join("src/web/static/assets");
+    for entry in fs::read_dir(assets_dir).expect("Failed to read dashboard assets directory") {
+        let entry = entry.expect("Failed to read dashboard asset entry");
+        let path = entry.path();
+        let is_js = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext == "js");
+        if !is_js {
+            continue;
+        }
+        let path_str = path.to_string_lossy().to_string();
+        let content = fs::read_to_string(&path).expect("Failed to read dashboard JS asset");
+        assert_no_japanese(&content, &path_str);
+    }
 }

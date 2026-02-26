@@ -194,7 +194,7 @@ pub async fn post_responses(
                 ));
             }
             Err(e) => {
-                if matches!(e, LbError::NoCapableNodes(_)) {
+                if matches!(e, LbError::NoCapableEndpoints(_)) {
                     let message = format!("No available endpoints support model: {}", model);
                     return Ok(model_unavailable_response(message));
                 }
@@ -239,7 +239,7 @@ pub async fn post_responses(
                     .await
                     .map_err(AppError::from)?;
                 record_endpoint_request_stats(
-                    state.db_pool.clone(),
+                    state.endpoint_registry.clone(),
                     endpoint.id,
                     model.clone(),
                     false,
@@ -275,7 +275,7 @@ pub async fn post_responses(
             update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
         } else {
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint.id,
                 model.clone(),
                 false,
@@ -296,7 +296,7 @@ pub async fn post_responses(
                 tps_api_kind,
                 endpoint.endpoint_type,
                 start,
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 state.load_manager.clone(),
                 state.event_bus.clone(),
             )
@@ -322,7 +322,7 @@ pub async fn post_responses(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.db_pool.clone(),
+                state.endpoint_registry.clone(),
                 endpoint.id,
                 model.clone(),
                 false,
@@ -366,7 +366,7 @@ pub async fn post_responses(
         (0, 0)
     };
     record_endpoint_request_stats(
-        state.db_pool.clone(),
+        state.endpoint_registry.clone(),
         endpoint.id,
         model.clone(),
         succeeded,
@@ -409,56 +409,18 @@ pub async fn post_responses(
 mod tests {
     use super::post_responses;
     use crate::{
-        balancer::LoadManager,
+        db::test_utils::TestAppStateBuilder,
         types::endpoint::{Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI},
         AppState,
     };
     use axum::{body::to_bytes, extract::State, http::StatusCode, Json};
     use serde_json::json;
-    use sqlx::SqlitePool;
-    use std::sync::Arc;
     use tokio::time::{sleep, Duration};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn create_local_state() -> AppState {
-        let db_pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("sqlite memory connect");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("migrations");
-        let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
-            db_pool.clone(),
-        ));
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret: "test-secret".into(),
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-        }
+        TestAppStateBuilder::new().await.build().await
     }
 
     async fn register_vllm_endpoint(

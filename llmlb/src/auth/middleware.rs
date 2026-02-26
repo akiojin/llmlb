@@ -368,9 +368,60 @@ pub async fn jwt_auth_middleware(
     })?;
 
     // 検証済みのClaimsをrequestの拡張データに格納
+    let claims_for_response = claims.clone();
     request.extensions_mut().insert(claims);
 
     // 次のミドルウェア/ハンドラーに進む
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(claims_for_response);
+    Ok(response)
+}
+
+/// JWT claims に admin ロールを要求するミドルウェア
+pub async fn require_admin_role_middleware(
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let claims = request.extensions().get::<Claims>().ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Missing authenticated user claims".to_string(),
+        )
+            .into_response()
+    })?;
+
+    if claims.role != UserRole::Admin {
+        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response());
+    }
+
+    Ok(next.run(request).await)
+}
+
+/// パスワード変更済みを要求するミドルウェア
+///
+/// JWTクレームの`must_change_password`が`true`の場合、403を返す。
+/// `/auth/me`, `/auth/logout`, `/auth/change-password`は除外済み（ルート構成で分離）。
+pub async fn require_password_changed_middleware(
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let claims = request.extensions().get::<Claims>().ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Missing authenticated user claims".to_string(),
+        )
+            .into_response()
+    })?;
+
+    if claims.must_change_password {
+        return Err((
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"error": "password_change_required"})),
+        )
+            .into_response());
+    }
+
     Ok(next.run(request).await)
 }
 
@@ -443,9 +494,13 @@ pub async fn api_key_auth_middleware(
 ) -> Result<Response, Response> {
     let api_key = extract_api_key(&request)?;
     let auth_context = authenticate_api_key(&pool, &api_key).await?;
+    let auth_context_for_response = auth_context.clone();
     request.extensions_mut().insert(auth_context);
 
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(auth_context_for_response);
+    Ok(response)
 }
 
 /// APIキーの権限を要求するミドルウェア
@@ -518,8 +573,12 @@ pub async fn jwt_or_api_key_permission_middleware(
             }
         }
 
+        let claims_for_response = claims.clone();
         request.extensions_mut().insert(claims);
-        return Ok(next.run(request).await);
+        let mut response = next.run(request).await;
+        // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+        response.extensions_mut().insert(claims_for_response);
+        return Ok(response);
     }
 
     // JWTがない/無効ならAPIキーで認証
@@ -546,11 +605,18 @@ pub async fn jwt_or_api_key_permission_middleware(
         sub: auth_context.created_by.to_string(),
         role: config.api_key_role,
         exp,
+        must_change_password: false,
     };
+    let claims_for_response = claims.clone();
+    let auth_context_for_response = auth_context.clone();
     request.extensions_mut().insert(claims);
     request.extensions_mut().insert(auth_context);
 
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+    // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
+    response.extensions_mut().insert(claims_for_response);
+    response.extensions_mut().insert(auth_context_for_response);
+    Ok(response)
 }
 
 // SPEC-e8e9326e: APIキー or ノードトークン認証ミドルウェアは廃止されました
@@ -571,69 +637,10 @@ fn hash_with_sha256(input: &str) -> String {
     format!("{:x}", result)
 }
 
-/// LLMLB_AUTH_DISABLED（旧: AUTH_DISABLED）用ダミーClaims注入ミドルウェア
-///
-/// 認証無効化モードの場合、すべてのリクエストにダミーのAdmin Claimsを注入する
-/// これにより、Extension<Claims>を要求するハンドラーが正常に動作する
-///
-/// # Arguments
-/// * `request` - HTTPリクエスト
-/// * `next` - 次のミドルウェア/ハンドラー
-///
-/// # Returns
-/// * `Response` - レスポンス
-pub async fn inject_dummy_admin_claims(mut request: Request, next: Next) -> Response {
-    // ダミーのAdmin Claimsを作成
-    let dummy_claims = Claims {
-        sub: "00000000-0000-0000-0000-000000000000".to_string(), // ダミーUUID
-        role: UserRole::Admin,
-        exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
-    };
-
-    // リクエストの拡張データに格納
-    request.extensions_mut().insert(dummy_claims);
-
-    next.run(request).await
-}
-
-/// LLMLB_AUTH_DISABLED（旧: AUTH_DISABLED）用ダミーClaims注入ミドルウェア（管理者ID参照）
-///
-/// 既存の管理者ユーザーIDを取得してClaimsへ設定する。
-/// 管理者が存在しない場合はnil UUIDを使用する。
-pub async fn inject_dummy_admin_claims_with_state(
-    State(app_state): State<AppState>,
-    mut request: Request,
-    next: Next,
-) -> Response {
-    let admin_id = match crate::db::users::find_any_admin_id(&app_state.db_pool).await {
-        Ok(Some(id)) => id,
-        Ok(None) => {
-            tracing::warn!("No admin user found; using nil UUID for dummy claims");
-            Uuid::nil()
-        }
-        Err(e) => {
-            tracing::error!("Failed to lookup admin user: {}", e);
-            Uuid::nil()
-        }
-    };
-
-    let dummy_claims = Claims {
-        sub: admin_id.to_string(),
-        role: UserRole::Admin,
-        exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
-    };
-
-    request.extensions_mut().insert(dummy_claims);
-
-    next.run(request).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::balancer::LoadManager;
     use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
-    use std::sync::Arc;
     use tower::ServiceExt;
 
     #[test]
@@ -687,118 +694,13 @@ mod tests {
         assert!(origin_matches(&headers));
     }
 
-    #[tokio::test]
-    async fn dummy_admin_claims_use_existing_admin_id() {
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("create sqlite pool");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-
-        let admin = crate::db::users::create(&db_pool, "admin-user", "hash", UserRole::Admin)
-            .await
-            .expect("create admin user");
-
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        let state = crate::AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret: "test-secret".to_string(),
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-        };
-
-        let app = Router::new()
-            .route(
-                "/t",
-                get(
-                    |axum::extract::Extension(claims): axum::extract::Extension<Claims>| async move {
-                        claims.sub
-                    },
-                ),
-            )
-            .layer(axum_middleware::from_fn_with_state(
-                state,
-                inject_dummy_admin_claims_with_state,
-            ));
-
-        let res = app
-            .oneshot(Request::builder().uri("/t").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(res.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let body_str = std::str::from_utf8(&body).unwrap();
-        assert_eq!(body_str, admin.id.to_string());
-    }
-
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn admin_middleware_allows_bearer_api_key() {
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        let state = crate::db::test_utils::TestAppStateBuilder::new()
             .await
-            .expect("create sqlite pool");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        let state = crate::AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret: "test-secret".to_string(),
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-        };
+            .build()
+            .await;
 
         let cfg = JwtOrApiKeyPermissionConfig {
             app_state: state,
@@ -827,43 +729,10 @@ mod tests {
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn admin_middleware_rejects_invalid_jwt_even_with_api_key() {
-        let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        let state = crate::db::test_utils::TestAppStateBuilder::new()
             .await
-            .expect("create sqlite pool");
-        sqlx::migrate!("./migrations")
-            .run(&db_pool)
-            .await
-            .expect("Failed to run migrations");
-        let request_history = std::sync::Arc::new(
-            crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
-        );
-        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(db_pool.clone())
-            .await
-            .expect("Failed to create endpoint registry");
-        let endpoint_registry_arc = Arc::new(endpoint_registry.clone());
-        let load_manager = LoadManager::new(endpoint_registry_arc);
-        let http_client = reqwest::Client::new();
-        let inference_gate = crate::inference_gate::InferenceGate::default();
-        let shutdown = crate::shutdown::ShutdownController::default();
-        let update_manager = crate::update::UpdateManager::new(
-            http_client.clone(),
-            inference_gate.clone(),
-            shutdown.clone(),
-        )
-        .expect("Failed to create update manager");
-        let state = crate::AppState {
-            load_manager,
-            request_history,
-            db_pool,
-            jwt_secret: "test-secret".to_string(),
-            http_client,
-            queue_config: crate::config::QueueConfig::from_env(),
-            event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-        };
+            .build()
+            .await;
 
         let cfg = JwtOrApiKeyPermissionConfig {
             app_state: state,
@@ -896,9 +765,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[tokio::test]
     async fn debug_api_key_is_accepted_in_debug_build_without_db() {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("create sqlite pool");
+        let pool = crate::db::test_utils::test_db_pool().await;
 
         let app = axum::Router::new()
             .route(
@@ -939,9 +806,7 @@ mod tests {
     #[cfg(not(debug_assertions))]
     #[tokio::test]
     async fn debug_api_key_is_rejected_in_release_build() {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("create sqlite pool");
+        let pool = crate::db::test_utils::test_db_pool().await;
 
         let app = axum::Router::new()
             .route("/t", axum::routing::get(|| async { "ok" }))

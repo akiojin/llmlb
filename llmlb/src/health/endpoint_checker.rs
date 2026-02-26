@@ -4,14 +4,14 @@
 //!
 //! ## Phase 1.4: `/api/health`対応
 //!
-//! - `/api/health`を優先的に呼び出し、GPU情報を取得
-//! - `/api/health`が失敗した場合は`/v1/models`にフォールバック
+//! - xLLMエンドポイントでは`/api/health`を優先的に呼び出し、GPU情報を取得
+//! - `/api/health`が失敗した場合、またはxLLM以外のエンドポイントでは`/v1/models`をフォールバック
 
 use crate::db::endpoints as db;
 use crate::detection::detect_endpoint_type_with_client;
 use crate::registry::endpoints::EndpointRegistry;
 use crate::sync;
-use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus};
+use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus, EndpointType};
 use chrono::Utc;
 use reqwest::Client;
 
@@ -205,43 +205,87 @@ impl EndpointHealthChecker {
 
     /// 単一エンドポイントのヘルスチェック
     ///
-    /// Phase 1.4: `/api/health`を優先的に呼び出し、GPU情報を取得。
+    /// Phase 1.4: xLLMのみ`/api/health`を優先的に呼び出し、GPU情報を取得。
     /// `/api/health`が失敗した場合は`/v1/models`にフォールバック。
+    /// 非xLLMでは`/api/health`を呼ばず、`/v1/models`で判定する。
     pub async fn check_endpoint(
         &self,
         endpoint: &Endpoint,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let status_before = endpoint.status;
-        let start = Instant::now();
+        let is_xllm = matches!(endpoint.endpoint_type, EndpointType::Xllm);
+        let (success, error_message, new_status, gpu_info, latency_ms) = if is_xllm {
+            let start = Instant::now();
+            match self.try_v0_health(endpoint).await {
+                Ok(gpu_info) => (
+                    true,
+                    None,
+                    EndpointStatus::Online,
+                    Some(gpu_info),
+                    start.elapsed().as_millis() as u32,
+                ),
+                Err(_v0_error) => {
+                    debug!(
+                        endpoint_id = %endpoint.id,
+                        endpoint_name = %endpoint.name,
+                        "/api/health failed, falling back to /v1/models"
+                    );
 
-        // まず /api/health を試行（GPU情報取得可能）
-        let health_result = self.try_v0_health(endpoint).await;
-        let elapsed = start.elapsed();
-        let latency_ms = elapsed.as_millis() as u32;
-
-        let (success, error_message, new_status, gpu_info) = match health_result {
-            Ok(gpu_info) => {
-                // /api/health 成功 → online、GPU情報あり
-                (true, None, EndpointStatus::Online, Some(gpu_info))
+                    let start = Instant::now();
+                    match self.try_v1_models(endpoint).await {
+                        Ok(()) => {
+                            // /v1/models 成功 → online、GPU情報なし
+                            (
+                                true,
+                                None,
+                                EndpointStatus::Online,
+                                None,
+                                start.elapsed().as_millis() as u32,
+                            )
+                        }
+                        Err(e) => {
+                            // 両方失敗
+                            let error = e.to_string();
+                            let new_status = self.determine_failure_status(endpoint, status_before);
+                            (
+                                false,
+                                Some(error),
+                                new_status,
+                                None,
+                                start.elapsed().as_millis() as u32,
+                            )
+                        }
+                    }
+                }
             }
-            Err(_v0_error) => {
-                // /api/health 失敗 → /v1/models にフォールバック
-                debug!(
-                    endpoint_id = %endpoint.id,
-                    endpoint_name = %endpoint.name,
-                    "/api/health failed, falling back to /v1/models"
-                );
-                match self.try_v1_models(endpoint).await {
-                    Ok(()) => {
-                        // /v1/models 成功 → online、GPU情報なし
-                        (true, None, EndpointStatus::Online, None)
-                    }
-                    Err(e) => {
-                        // 両方失敗
-                        let error = e.to_string();
-                        let new_status = self.determine_failure_status(endpoint, status_before);
-                        (false, Some(error), new_status, None)
-                    }
+        } else {
+            debug!(
+                endpoint_id = %endpoint.id,
+                endpoint_name = %endpoint.name,
+                "non-xLLM endpoint, using /v1/models directly"
+            );
+            let start = Instant::now();
+            match self.try_v1_models(endpoint).await {
+                Ok(()) => {
+                    // /v1/models 成功 → online、GPU情報なし
+                    (
+                        true,
+                        None,
+                        EndpointStatus::Online,
+                        None,
+                        start.elapsed().as_millis() as u32,
+                    )
+                }
+                Err(e) => {
+                    let error = e.to_string();
+                    let new_status = self.determine_failure_status(endpoint, status_before);
+                    (
+                        false,
+                        Some(error),
+                        new_status,
+                        None,
+                        start.elapsed().as_millis() as u32,
+                    )
                 }
             }
         };
@@ -272,6 +316,7 @@ impl EndpointHealthChecker {
         }
 
         // SPEC-e8e9326e: offline→online遷移時にタイプ再検出
+        let mut endpoint_type_for_auto_sync = endpoint.endpoint_type;
         let was_offline = matches!(
             status_before,
             EndpointStatus::Offline | EndpointStatus::Error
@@ -285,6 +330,7 @@ impl EndpointHealthChecker {
             .await
             {
                 Ok(result) => {
+                    endpoint_type_for_auto_sync = result.endpoint_type;
                     if result.endpoint_type != endpoint.endpoint_type {
                         info!(
                             endpoint_id = %endpoint.id,
@@ -316,7 +362,8 @@ impl EndpointHealthChecker {
         }
 
         if success {
-            self.maybe_auto_sync_models(endpoint, new_status).await;
+            self.maybe_auto_sync_models(endpoint, new_status, endpoint_type_for_auto_sync)
+                .await;
         }
 
         // ヘルスチェック履歴を記録
@@ -361,7 +408,12 @@ impl EndpointHealthChecker {
         }
     }
 
-    async fn maybe_auto_sync_models(&self, endpoint: &Endpoint, new_status: EndpointStatus) {
+    async fn maybe_auto_sync_models(
+        &self,
+        endpoint: &Endpoint,
+        new_status: EndpointStatus,
+        endpoint_type: EndpointType,
+    ) {
         if new_status != EndpointStatus::Online {
             return;
         }
@@ -390,13 +442,14 @@ impl EndpointHealthChecker {
         let last_auto_sync_models = self.last_auto_sync_models.clone();
 
         tokio::spawn(async move {
-            match sync::sync_models(
+            match sync::sync_models_with_type(
                 &pool,
                 &client,
                 endpoint_id,
                 &base_url,
                 api_key.as_deref(),
                 timeout_secs,
+                Some(endpoint_type),
             )
             .await
             {
@@ -570,14 +623,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test database");
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-        pool
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[tokio::test]
@@ -656,6 +702,160 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_health_check_skips_api_health_for_non_xllm_endpoints() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        let health_call_count = Arc::new(AtomicUsize::new(0));
+        let v1_call_count = Arc::new(AtomicUsize::new(0));
+
+        let health_call_count_clone = health_call_count.clone();
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(move |_req: &wiremock::Request| {
+                health_call_count_clone.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(200).set_body_json(json!({"health": "ok"}))
+            })
+            .mount(&mock)
+            .await;
+
+        let v1_call_count_clone = v1_call_count.clone();
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(move |_req: &wiremock::Request| {
+                v1_call_count_clone.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "object": "list",
+                    "data": [{"id": "test-model", "object": "model"}]
+                }))
+            })
+            .mount(&mock)
+            .await;
+
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            mock.uri(),
+            EndpointType::OpenaiCompatible,
+        );
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        assert_eq!(health_call_count.load(Ordering::SeqCst), 0);
+        assert_eq!(v1_call_count.load(Ordering::SeqCst), 1);
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.status, EndpointStatus::Online);
+    }
+
+    #[tokio::test]
+    async fn test_health_check_uses_api_health_for_xllm_endpoints() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        let health_call_count = Arc::new(AtomicUsize::new(0));
+        let v1_call_count = Arc::new(AtomicUsize::new(0));
+
+        let health_call_count_clone = health_call_count.clone();
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(move |_req: &wiremock::Request| {
+                health_call_count_clone.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "gpu": {
+                        "device_count": 1,
+                        "total_memory_bytes": 16_000_000_000u64,
+                        "used_memory_bytes": 4_000_000_000u64
+                    },
+                    "load": {
+                        "active_requests": 2
+                    }
+                }))
+            })
+            .mount(&mock)
+            .await;
+
+        let v1_call_count_clone = v1_call_count.clone();
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(move |_req: &wiremock::Request| {
+                v1_call_count_clone.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "object": "list",
+                    "data": [{"id": "xllm-model", "object": "model"}]
+                }))
+            })
+            .mount(&mock)
+            .await;
+
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        assert_eq!(health_call_count.load(Ordering::SeqCst), 1);
+        assert_eq!(v1_call_count.load(Ordering::SeqCst), 0);
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.status, EndpointStatus::Online);
+        assert_eq!(updated.gpu_device_count, Some(1));
+        assert_eq!(updated.active_requests, Some(2));
+    }
+
+    #[tokio::test]
+    async fn test_health_check_falls_back_to_v1_models_when_api_health_fails_for_xllm() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        let health_call_count = Arc::new(AtomicUsize::new(0));
+        let v1_call_count = Arc::new(AtomicUsize::new(0));
+
+        let health_call_count_clone = health_call_count.clone();
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(move |_req: &wiremock::Request| {
+                health_call_count_clone.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(500).set_body_string("internal error")
+            })
+            .mount(&mock)
+            .await;
+
+        let v1_call_count_clone = v1_call_count.clone();
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(move |_req: &wiremock::Request| {
+                v1_call_count_clone.fetch_add(1, Ordering::SeqCst);
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "object": "list",
+                    "data": [{"id": "xllm-model", "object": "model"}]
+                }))
+            })
+            .mount(&mock)
+            .await;
+
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        assert_eq!(health_call_count.load(Ordering::SeqCst), 1);
+        assert_eq!(v1_call_count.load(Ordering::SeqCst), 1);
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.status, EndpointStatus::Online);
+        assert_eq!(updated.gpu_device_count, None);
+    }
+
+    #[tokio::test]
     async fn test_health_check_triggers_auto_model_sync() {
         let _lock = TEST_LOCK.lock().await;
         let pool = setup_test_db().await;
@@ -674,7 +874,7 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Ollama);
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
         registry.add(endpoint.clone()).await.unwrap();
 
         let checker = EndpointHealthChecker::new(registry.clone());
@@ -692,6 +892,83 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
+    }
+
+    #[tokio::test]
+    async fn test_auto_model_sync_uses_redetected_endpoint_type_for_metadata() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "models": [
+                    {
+                        "type": "llm",
+                        "publisher": "lmstudio-community",
+                        "key": "lmstudio-model",
+                        "display_name": "LM Studio Model",
+                        "architecture": "llama",
+                        "loaded_instances": [],
+                        "max_context_length": 32768,
+                        "format": "gguf"
+                    }
+                ]
+            })))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "object": "list",
+                "data": [{"id": "lmstudio-model", "object": "model"}]
+            })))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models/lmstudio-model"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "lmstudio-model",
+                "max_context_length": 32768
+            })))
+            .mount(&mock)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            mock.uri(),
+            EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = EndpointStatus::Offline;
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let models = registry.list_models(endpoint.id).await.unwrap();
+            if let Some(model) = models.iter().find(|m| m.model_id == "lmstudio-model") {
+                if model.max_tokens == Some(32768) {
+                    break;
+                }
+            }
+
+            if Instant::now() > deadline {
+                panic!("Timed out waiting for auto model sync metadata update");
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.endpoint_type, EndpointType::LmStudio);
     }
 
     #[tokio::test]
@@ -727,7 +1004,7 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Ollama);
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
         registry.add(endpoint.clone()).await.unwrap();
 
         let mut checker = EndpointHealthChecker::new(registry.clone());

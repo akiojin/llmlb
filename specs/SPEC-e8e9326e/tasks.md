@@ -287,7 +287,7 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 - [x] T113 `llmlb/src/detection/xllm.rs` にxLLM判別ロジック実装（GET /api/system → xllm_version）
 - [x] T114 `llmlb/src/detection/ollama.rs` にOllama判別ロジック実装（GET /api/tags）
 - [x] T115 `llmlb/src/detection/vllm.rs` にvLLM判別ロジック実装（Server header）
-- [x] T116 `llmlb/src/detection/mod.rs` に判別優先順位ロジック実装（xLLM > Ollama > vLLM > OpenAI互換）
+- [x] T116 `llmlb/src/detection/mod.rs` に判別優先順位ロジック実装（xLLM > LM Studio > Ollama > vLLM > OpenAI互換）
 
 #### DB層拡張
 
@@ -316,7 +316,7 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 
 - [x] T128 `llmlb/src/metadata/mod.rs` にモデルメタデータ取得モジュールを作成
 - [x] T129 `llmlb/src/metadata/xllm.rs` にxLLMメタデータ取得実装（GET /api/models/:model/info → context_length）
-- [x] T130 `llmlb/src/metadata/ollama.rs` にOllamaメタデータ取得実装（POST /api/show → parameters.num_ctx）
+- [x] T130 `llmlb/src/metadata/ollama.rs` にOllamaメタデータ取得実装（POST /api/show）
 - [ ] T130a メタデータ取得の返却形式（max_tokens/context_length）を統一し、APIレスポンスに反映
 
 ---
@@ -351,6 +351,23 @@ T036, T038, T039, T040は「NodeRegistryの完全廃止」に関するクリー�
 #### モデル同期拡張
 
 - [x] T133 `llmlb/src/sync/mod.rs` にmax_tokens取得・保存を追加（xLLM/Ollamaのみ）
+
+---
+
+## 追加要件（2026-02-22）: LM Studio判別精度向上とmax_tokensバックフィル
+
+### Phase 4.8: テストファースト (TDD)
+
+- [x] T157 [P] `llmlb/tests/integration/endpoint_type_detection_test.rs` に `/api/tags` が `200 + {"error":...}` の場合でも LM Studio を優先判定するテストを追加
+- [x] T158 [P] `llmlb/src/metadata/ollama.rs` に `model_info` / `parameters(object|string)` から `context_length` を抽出するunit testを追加
+
+### Phase 4.9: 実装
+
+- [x] T159 `llmlb/src/detection/mod.rs` の判別優先順位を `xLLM > LM Studio > Ollama > vLLM > OpenAI互換` に更新
+- [x] T160 `llmlb/src/detection/ollama.rs` で `/api/tags` の `error` payload をOllama非該当として扱うガードを実装
+- [x] T161 `llmlb/src/metadata/ollama.rs` で `model_info` / `parameters(object|string)` の多段パースを実装
+- [x] T162 `llmlb/src/api/endpoints.rs` と `llmlb/src/health/endpoint_checker.rs` の同期経路で `sync_models_with_type(...)` を使用し、タイプ別 `max_tokens` 取得を有効化
+- [x] T163 `llmlb/src/bootstrap.rs` に起動時のオンラインエンドポイント自動バックフィル（モデル同期）を追加
 
 ### Phase 4.5: ダッシュボード統合
 

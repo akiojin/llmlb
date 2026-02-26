@@ -1,12 +1,88 @@
-# Unreleased
+# Changelog
 
-# [4.7.2](https://github.com/akiojin/llmlb/compare/v4.7.1...v4.7.2) (2026-02-20)
+## [Unreleased]
+
+## [5.1.0](https://github.com/akiojin/llmlb/compare/v5.0.4...v5.1.0) (2026-02-25)
+
+### Features
+
+- /releaseスキルにClosing Issue収集ステップを追加
+
+### Bug Fixes
+
+- APIキーのロールベース権限動作を復元 (#457)
+- APIキーコピーボタンの非セキュアコンテキスト対応とUI改善 (#456)
+
+## [5.0.4](https://github.com/akiojin/llmlb/compare/v5.0.3...v5.0.4) (2026-02-24)
+
+### Bug Fixes
+
+- CHANGELOG見出しレベルをh2に統一しRelease Notes抽出を修正
+- アップデートUIの4バグ修正とリアルタイム通知追加 (#454)
+
+## [5.0.3](https://github.com/akiojin/llmlb/compare/v5.0.2...v5.0.3) (2026-02-24)
+
+### Bug Fixes
+
+- ダッシュボードメトリクスの永続化と復元 (#452)
+- ユーザー登録バグ修正・パスワード自動生成・初回パスワード変更強制 (#451)
+- ユーザー作成時のロール値不一致を修正 (#450)
+- テスト用UpdateManagerで環境変数依存を排除しレースコンディションを修正 (#449)
+- adminユーザーでModelsタブが表示されない問題を修正 (#448)
+- GitHub API失敗時にキャッシュフォールバックを実装 (#445)
+
+## [5.0.2](https://github.com/akiojin/llmlb/compare/v5.0.1...v5.0.2) (2026-02-24)
+
+### Bug Fixes
+
+- スケジュール日時解析とヘルスチェック/トレイ通知を修正 (#443)
+
+## [5.0.1](https://github.com/akiojin/llmlb/compare/v5.0.0...v5.0.1) (2026-02-22)
+
+### Bug Fixes
+
+- 強制更新ボタンを常に表示し、無効理由を明示するよう改善 (#441)
+
+## [5.0.0](https://github.com/akiojin/llmlb/compare/v4.7.2...v5.0.0) (2026-02-22)
+
+### Breaking Changes
+
+- Phase 1: 型基盤リファクタリング — EndpointType/HealthStatus等を統一型に移行 (SPEC-71864d94)
+- Phase 2: エラー基盤リファクタリング — AppError統一とエラーハンドリング刷新 (SPEC-71864d94)
+- Phase 3: API層リファクタリング — ハンドラー署名とレスポンス型の統一 (SPEC-71864d94)
+- Phase 4: DB層リファクタリング — リポジトリパターン導入とトレイト統一 (SPEC-71864d94)
+
+### Features
+
+- 監査ログ機能の実装 (#438)
+- エンドポイントTPS（tokens/sec）をAPI種別ごとに分離しベンチマークAPIを追加 (#437)
+- クライアントIP記録とClients分析機能を追加 (#435)
+- 強制更新フローと即時適用レスポンスを追加 (#431)
+
+### Bug Fixes
+
+- LM Studio検出の優先度改善とmax\_tokensバックフィル (#439)
+- ダッシュボードのエンドポイントTPSソートを有効化 (#436)
+- force apply時の競合と状態遷移を修正 (#434)
+- LM Studio /api/v1/models のmodels形状に対応 (#433)
+
+### Refactoring
+
+- Phase 5/6/7: 構造リファクタリング — モジュール分割と責務整理 (SPEC-71864d94)
+- Phase 8: Dashboard リファクタリング — フロントエンド型定義の統一 (SPEC-71864d94)
+- ユーザー登録をセルフサービスAPIキー管理に統合 (#432)
+
+### Documentation
+
+- READMEからAUTH\_DISABLED廃止とnode\_id用語を更新 (SPEC-71864d94)
+
+## [4.7.2](https://github.com/akiojin/llmlb/compare/v4.7.1...v4.7.2) (2026-02-20)
 
 ### Bug Fixes
 
 - DBマイグレーションチェックサムをSPEC IDリネームに合わせて再整合 (#429)
 
-# [4.7.1](https://github.com/akiojin/llmlb/compare/v4.7.0...v4.7.1) (2026-02-20)
+## [4.7.1](https://github.com/akiojin/llmlb/compare/v4.7.0...v4.7.1) (2026-02-20)
 
 ### Bug Fixes
 
@@ -18,13 +94,13 @@
 - zip crateを7.2.0→8.1.0に更新 (#425)
 - npm/yarn依存パッケージ9件更新 (#426)
 
-# [4.7.0](https://github.com/akiojin/llmlb/compare/v4.6.0...v4.7.0) (2026-02-19)
+## [4.7.0](https://github.com/akiojin/llmlb/compare/v4.6.0...v4.7.0) (2026-02-19)
 
 ### Features
 
 - draining/applying時のボタンUI改善とヘッダー状態バッジを実装 (#422)
 
-# [4.6.0](https://github.com/akiojin/llmlb/compare/v4.5.1...v4.6.0) (2026-02-19)
+## [4.6.0](https://github.com/akiojin/llmlb/compare/v4.5.1...v4.6.0) (2026-02-19)
 
 ### Features
 
@@ -34,7 +110,7 @@
 
 - 手動アップデートチェックのUX改善とapplyフォールバックの堅牢化 (#418)
 
-# [4.5.1](https://github.com/akiojin/llmlb/compare/v4.5.0...v4.5.1) (2026-02-19)
+## [4.5.1](https://github.com/akiojin/llmlb/compare/v4.5.0...v4.5.1) (2026-02-19)
 
 ### Bug Fixes
 
@@ -44,7 +120,7 @@
 
 - SPEC IDを命名規則準拠のUUID8形式にリネーム
 
-# [4.5.0](https://github.com/akiojin/llmlb/compare/v4.4.0...v4.5.0) (2026-02-18)
+## [4.5.0](https://github.com/akiojin/llmlb/compare/v4.4.0...v4.5.0) (2026-02-18)
 
 ### Breaking Changes
 
@@ -67,7 +143,7 @@
 - JWT Cookie認証、CSRF保護、リクエスト履歴フィルタの改善 (#413)
 - DBマイグレーション 015 で不要カラムを削除 (#413)
 
-# [4.4.0](https://github.com/akiojin/llmlb/compare/v4.3.0...v4.4.0) (2026-02-17)
+## [4.4.0](https://github.com/akiojin/llmlb/compare/v4.3.0...v4.4.0) (2026-02-17)
 
 ### Features
 
@@ -81,7 +157,7 @@
 
 - リリースコマンドにorigin/develop pull ステップを追加
 
-# [4.3.0](https://github.com/akiojin/llmlb/compare/v4.2.1...v4.3.0) (2026-02-16)
+## [4.3.0](https://github.com/akiojin/llmlb/compare/v4.2.1...v4.3.0) (2026-02-16)
 
 ### Features
 
@@ -94,7 +170,7 @@
 - release.yml npm versionエラーとPRマージ時のskip問題を修正
 - HF APIタイムアウト時のインテグレーションテスト失敗を修正
 
-# [4.2.1](https://github.com/akiojin/llmlb/compare/v4.2.0...v4.2.1) (2026-02-15)
+## [4.2.1](https://github.com/akiojin/llmlb/compare/v4.2.0...v4.2.1) (2026-02-15)
 
 ### Bug Fixes
 
@@ -108,7 +184,7 @@
 
 - npm/yarnグループの依存関係を11件更新 (#390)
 
-# [4.2.0](https://github.com/akiojin/llmlb/compare/v4.1.0...v4.2.0) (2026-02-13)
+## [4.2.0](https://github.com/akiojin/llmlb/compare/v4.1.0...v4.2.0) (2026-02-13)
 
 ### Features
 
@@ -127,7 +203,7 @@
 
 - rand 0.10, zip 7, clap 4.5.58 にメジャーアップデート
 
-# [4.1.0](https://github.com/akiojin/llmlb/compare/v4.0.0...v4.1.0) (2026-02-13)
+## [4.1.0](https://github.com/akiojin/llmlb/compare/v4.0.0...v4.1.0) (2026-02-13)
 
 ### Features
 
@@ -158,7 +234,7 @@
 
 - publish dispatchにactions:write権限を追加
 
-# [4.0.0](https://github.com/akiojin/llmlb/compare/v3.1.0...v4.0.0) (2026-02-10)
+## [4.0.0](https://github.com/akiojin/llmlb/compare/v3.1.0...v4.0.0) (2026-02-10)
 
 ### Breaking Changes
 
@@ -168,7 +244,7 @@
 
 - セルフアップデート通知・ドレイン・適用・再起動機能を追加 (#379)
 
-# [3.1.0](https://github.com/akiojin/llmlb/compare/v3.0.3...v3.1.0) (2026-02-09)
+## [3.1.0](https://github.com/akiojin/llmlb/compare/v3.0.3...v3.1.0) (2026-02-09)
 
 ### Features
 
@@ -189,13 +265,13 @@
 - @modelcontextprotocol/sdk を 1.26.0 に更新
 - npm_and_yarn グループの依存関係を更新 (#372)
 
-# [3.0.3](https://github.com/akiojin/llmlb/compare/v3.0.2...v3.0.3) (2026-02-02)
+## [3.0.3](https://github.com/akiojin/llmlb/compare/v3.0.2...v3.0.3) (2026-02-02)
 
 ### Bug Fixes
 
 - マイグレーションv008のチェックサム互換性を修正 (#367)
 
-# [3.0.2](https://github.com/akiojin/llmlb/compare/v3.0.1...v3.0.2) (2026-02-02)
+## [3.0.2](https://github.com/akiojin/llmlb/compare/v3.0.1...v3.0.2) (2026-02-02)
 
 ### Breaking Changes
 
@@ -213,14 +289,14 @@
 - xllm/third_partyをmarkdownlint除外対象に追加
 - プラグイン設定の更新とフックマッチャーの改善
 
-# [2.4.1](https://github.com/akiojin/llmlb/compare/v2.4.0...v2.4.1) (2026-01-30)
+## [2.4.1](https://github.com/akiojin/llmlb/compare/v2.4.0...v2.4.1) (2026-01-30)
 
 ### Bug Fixes
 
 - reqwestでrustls-tlsを使用してOpenSSL依存を回避（Linux muslビルド修正）
 - release.ymlからpublish.ymlを明示的にトリガー（GITHUB_TOKEN制約対応）
 
-# [2.4.0](https://github.com/akiojin/llmlb/compare/v2.3.1...v2.4.0) (2026-01-30)
+## [2.4.0](https://github.com/akiojin/llmlb/compare/v2.3.1...v2.4.0) (2026-01-30)
 
 ### Breaking Changes
 
@@ -240,7 +316,7 @@
 
 - mock integration tests for cloud prefixes (non/stream) and regression ensuring non-prefixed models stay on local path
 
-# [2.1.0](https://github.com/akiojin/runtime-router/compare/v2.0.5...v2.1.0) (2025-11-19)
+## [2.1.0](https://github.com/akiojin/runtime-router/compare/v2.0.5...v2.1.0) (2025-11-19)
 
 
 ### Features
@@ -377,7 +453,7 @@
 
 * **installer:** sync windows msi binary names ([785494c](https://github.com/akiojin/runtime-router/commit/785494ce6f2f30586a651cc222fb2e568ae5e907))
 
-# [2.0.0](https://github.com/akiojin/runtime-router/compare/v1.5.0...v2.0.0) (2025-11-18)
+## [2.0.0](https://github.com/akiojin/runtime-router/compare/v1.5.0...v2.0.0) (2025-11-18)
 
 
 * feat!: プロジェクト名をruntime-routerに変更し、用語をrouter/nodeに統一 ([b248415](https://github.com/akiojin/runtime-router/commit/b2484151f18ce6cf78cd3cd1d9e12ce3fbc52f4e)), closes [#96](https://github.com/akiojin/runtime-router/issues/96)
@@ -482,7 +558,7 @@
    * docker-compose.ymlのサービス名変更
    * 環境変数の更新
 
-# [1.5.0](https://github.com/akiojin/runtime-router/compare/v1.4.1...v1.5.0) (2025-11-15)
+## [1.5.0](https://github.com/akiojin/runtime-router/compare/v1.4.1...v1.5.0) (2025-11-15)
 
 
 ### Bug Fixes
@@ -507,7 +583,7 @@
 
 * **router:** ダッシュボードをバイナリに同梱 ([b8c6c7d](https://github.com/akiojin/runtime-router/commit/b8c6c7de14aec59a740f29d51d13511eff8dcbb4))
 
-# [1.4.0](https://github.com/akiojin/runtime-router/compare/v1.3.1...v1.4.0) (2025-11-14)
+## [1.4.0](https://github.com/akiojin/runtime-router/compare/v1.3.1...v1.4.0) (2025-11-14)
 
 
 ### Bug Fixes
@@ -530,7 +606,7 @@
 
 * **installer:** embed cab into windows msi ([9ad1797](https://github.com/akiojin/runtime-router/commit/9ad1797cea81222f0676d1147f4f95b94ee2ba1b))
 
-# [1.3.0](https://github.com/akiojin/runtime-router/compare/v1.2.3...v1.3.0) (2025-11-14)
+## [1.3.0](https://github.com/akiojin/runtime-router/compare/v1.2.3...v1.3.0) (2025-11-14)
 
 
 ### Bug Fixes
@@ -574,7 +650,7 @@
 * **ci:** backmerge even if publish fails ([b0f54d8](https://github.com/akiojin/runtime-router/commit/b0f54d8d72de93acecc95d18e2811c4ca58b8c47))
 * **ci:** set macos linker for publish ([f590be2](https://github.com/akiojin/runtime-router/commit/f590be2971dd2839758dd8ebe307a0cec749ef55))
 
-# [1.2.0](https://github.com/akiojin/runtime-router/compare/v1.1.1...v1.2.0) (2025-11-12)
+## [1.2.0](https://github.com/akiojin/runtime-router/compare/v1.1.1...v1.2.0) (2025-11-12)
 
 
 ### Bug Fixes
@@ -598,7 +674,7 @@
 * **docs:** improve README subtitle clarity ([151672a](https://github.com/akiojin/runtime-router/commit/151672a3b1b89638c1cc82ab6810f2609d88da0b))
 * **lint:** disable MD001, MD012, MD025 for CHANGELOG compatibility ([c709a60](https://github.com/akiojin/runtime-router/commit/c709a60db66a2d0f2f472f9b913bd3f937f19acc))
 
-# [1.1.0](https://github.com/akiojin/runtime-router/compare/v1.0.0...v1.1.0) (2025-11-11)
+## [1.1.0](https://github.com/akiojin/runtime-router/compare/v1.0.0...v1.1.0) (2025-11-11)
 
 
 ### Bug Fixes
@@ -662,9 +738,9 @@
 * **docs:** CHANGELOGのmarkdownlintエラーを修正 ([b5036da](https://github.com/akiojin/runtime-router/commit/b5036da026a6aaa690368d2472933d06b0d1ba5d))
 * **docs:** CHANGELOGのmarkdownlintエラーを再修正 ([38980ac](https://github.com/akiojin/runtime-router/commit/38980ac6c26f8642d30f1d067497d057a00aadd2))
 
-# 1.0.0 (2025-11-06)
+## [1.0.0] - 2025-11-06
 
-## Bug Fixes
+### Bug Fixes
 
 * .gitattributesで改行をLFに統一 ([a7d3add](https://github.com/akiojin/runtime-router/commit/a7d3add456699819409e7775f5b3b9639c5c0c22))
 * **node:** default to cpu mode and detect premature runtime exit ([306e794](https://github.com/akiojin/runtime-router/commit/306e7941d3a9aa46be6b99e5f461e50b4ee3052b))
@@ -723,7 +799,7 @@
 * 残りのclippy警告をすべて修正 ([9c6ee9d](https://github.com/akiojin/runtime-router/commit/9c6ee9d2e712bbbca18915210f2e93c35a33cf7e))
 * 自動マージでチェック完了を待機 ([da98a51](https://github.com/akiojin/runtime-router/commit/da98a51dce278b14a96cf71544503aacd9024b73))
 
-## Features
+### Features
 
 * **node:** Node構造体にGPU能力フィールドを追加してダッシュボード表示対応 ([7e293ab](https://github.com/akiojin/runtime-router/commit/7e293ab37467b55327ce7e0dbbc5eec6e5c3c382))
 * **node:** allow configurable startup timeout and cpu fallback ([a847211](https://github.com/akiojin/runtime-router/commit/a847211461fde2bc9b7eae1053793dcd16974cca))

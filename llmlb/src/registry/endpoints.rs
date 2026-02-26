@@ -231,7 +231,9 @@ impl EndpointRegistry {
             let mut endpoints = self.endpoints.write().await;
             if let Some(endpoint) = endpoints.get_mut(&id) {
                 endpoint.status = status;
-                endpoint.latency_ms = latency_ms;
+                if let Some(v) = latency_ms {
+                    endpoint.latency_ms = Some(v);
+                }
                 // DBと同様に、last_error は成功時にクリアし、error_count は status=error のときのみ加算する。
                 endpoint.last_error = error.map(String::from);
                 endpoint.error_count = if status == EndpointStatus::Error {
@@ -354,6 +356,29 @@ impl EndpointRegistry {
 
         // DBを更新
         db::update_device_info(&self.pool, id, device_info.as_ref()).await
+    }
+
+    /// エンドポイントのリクエストカウンタをインクリメント（DBとキャッシュ両方）
+    pub async fn increment_request_counters(
+        &self,
+        id: Uuid,
+        success: bool,
+    ) -> Result<bool, sqlx::Error> {
+        let updated = db::increment_request_counters(&self.pool, id, success).await?;
+
+        if updated {
+            let mut endpoints = self.endpoints.write().await;
+            if let Some(endpoint) = endpoints.get_mut(&id) {
+                endpoint.total_requests += 1;
+                if success {
+                    endpoint.successful_requests += 1;
+                } else {
+                    endpoint.failed_requests += 1;
+                }
+            }
+        }
+
+        Ok(updated)
     }
 
     /// エンドポイントを削除（DBとキャッシュ両方）
@@ -548,14 +573,7 @@ mod tests {
     use crate::types::endpoint::{EndpointCapability, SupportedAPI};
 
     async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test database");
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-        pool
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[tokio::test]
@@ -660,6 +678,99 @@ mod tests {
         // オンラインエンドポイントのみ取得
         let online = registry.list_online().await;
         assert_eq!(online.len(), 1);
+    }
+
+    /// T005 [US1]: increment_request_counters がDBとキャッシュの両方の
+    /// リクエストカウンタを正しくインクリメントすることを検証
+    #[tokio::test]
+    async fn test_increment_request_counters_syncs_cache() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        // (1) エンドポイント登録（カウンタ=0）
+        let endpoint = Endpoint::new(
+            "Counter Sync".to_string(),
+            "http://localhost:9300".to_string(),
+            EndpointType::Xllm,
+        );
+        let endpoint_id = endpoint.id;
+        registry.add(endpoint).await.unwrap();
+
+        let ep = registry.get(endpoint_id).await.unwrap();
+        assert_eq!(ep.total_requests, 0);
+        assert_eq!(ep.successful_requests, 0);
+        assert_eq!(ep.failed_requests, 0);
+
+        // (2) success=true でインクリメント
+        registry
+            .increment_request_counters(endpoint_id, true)
+            .await
+            .unwrap();
+
+        // (3) キャッシュの total_requests=1, successful_requests=1 を確認
+        let ep = registry.get(endpoint_id).await.unwrap();
+        assert_eq!(ep.total_requests, 1);
+        assert_eq!(ep.successful_requests, 1);
+        assert_eq!(ep.failed_requests, 0);
+
+        // (4) success=false でインクリメント
+        registry
+            .increment_request_counters(endpoint_id, false)
+            .await
+            .unwrap();
+
+        // (5) キャッシュの total_requests=2, failed_requests=1 を確認
+        let ep = registry.get(endpoint_id).await.unwrap();
+        assert_eq!(ep.total_requests, 2);
+        assert_eq!(ep.successful_requests, 1);
+        assert_eq!(ep.failed_requests, 1);
+    }
+
+    /// T002 [US2]: update_status で latency_ms=None を渡した場合に
+    /// キャッシュ内のレイテンシ値が保持されることを検証
+    #[tokio::test]
+    async fn test_update_status_preserves_latency_in_cache() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        // (1) エンドポイント追加
+        let endpoint = Endpoint::new(
+            "Cache Latency".to_string(),
+            "http://localhost:9200".to_string(),
+            EndpointType::Xllm,
+        );
+        let endpoint_id = endpoint.id;
+        registry.add(endpoint).await.unwrap();
+
+        // (2) latency_ms=Some(120) でオンラインに更新
+        registry
+            .update_status(endpoint_id, EndpointStatus::Online, Some(120), None)
+            .await
+            .unwrap();
+        let ep = registry.get(endpoint_id).await.unwrap();
+        assert_eq!(ep.latency_ms, Some(120));
+
+        // (3) latency_ms=None でオフラインに遷移
+        registry
+            .update_status(
+                endpoint_id,
+                EndpointStatus::Offline,
+                None,
+                Some("health check failed"),
+            )
+            .await
+            .unwrap();
+
+        // (4) キャッシュから読み取り、latency_ms が Some(120) のまま保持されていることを確認
+        let ep = registry.get(endpoint_id).await.unwrap();
+        assert_eq!(
+            ep.latency_ms,
+            Some(120),
+            "cache latency_ms should be preserved when None is passed"
+        );
+        assert_eq!(ep.status, EndpointStatus::Offline);
     }
 
     #[tokio::test]

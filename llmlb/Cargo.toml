@@ -53,6 +53,7 @@ sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio
 bcrypt = "0.18"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 sha2 = "0.10"
+async-trait = "0.1"
 rand = "0.10"
 rpassword = "7.3"
 

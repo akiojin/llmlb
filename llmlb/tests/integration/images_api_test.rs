@@ -20,16 +20,7 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 async fn build_app() -> Router {
-    // Ensure AUTH_DISABLED is not set (may be polluted by parallel tests)
-    std::env::remove_var("AUTH_DISABLED");
-
-    let db_pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run migrations");
+    let db_pool = crate::support::lb::create_test_db_pool().await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");
@@ -50,7 +41,7 @@ async fn build_app() -> Router {
     let state = AppState {
         load_manager,
         request_history,
-        db_pool,
+        db_pool: db_pool.clone(),
         jwt_secret,
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
@@ -59,6 +50,12 @@ async fn build_app() -> Router {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+        audit_archive_pool: None,
     };
 
     api::create_app(state)

@@ -163,7 +163,7 @@ async fn test_filter_by_node_id() {
     storage.save_record(&record_b).await.unwrap();
 
     let filter = RecordFilter {
-        node_id: Some(node_a),
+        endpoint_id: Some(node_a),
         ..Default::default()
     };
     let result = storage.filter_and_paginate(&filter, 1, 10).await.unwrap();
@@ -236,11 +236,12 @@ async fn test_filter_by_time_range() {
 async fn test_pagination() {
     let storage = create_storage().await;
     let now = Utc::now();
-    let node_id = Uuid::new_v4();
+    let endpoint_id = Uuid::new_v4();
 
     for i in 0..150 {
         let timestamp = now - Duration::seconds(i as i64);
-        let record = create_test_record("model-page", node_id, timestamp, RecordStatus::Success);
+        let record =
+            create_test_record("model-page", endpoint_id, timestamp, RecordStatus::Success);
         storage.save_record(&record).await.unwrap();
     }
 
@@ -257,7 +258,7 @@ async fn test_pagination() {
 /// ヘルパー: テスト用のレコードを作成
 fn create_test_record(
     model: &str,
-    node_id: Uuid,
+    endpoint_id: Uuid,
     timestamp: chrono::DateTime<Utc>,
     status: RecordStatus,
 ) -> RequestResponseRecord {
@@ -266,9 +267,9 @@ fn create_test_record(
         timestamp,
         request_type: RequestType::Chat,
         model: model.to_string(),
-        node_id,
-        node_machine_name: "test-node".to_string(),
-        node_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
+        endpoint_id,
+        endpoint_name: "test-node".to_string(),
+        endpoint_ip: "192.168.1.100".parse::<IpAddr>().unwrap(),
         client_ip: Some("10.0.0.10".parse::<IpAddr>().unwrap()),
         request_body: serde_json::json!({
             "model": model,

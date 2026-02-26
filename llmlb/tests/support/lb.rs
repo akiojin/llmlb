@@ -57,6 +57,14 @@ pub async fn create_test_lb() -> (Router, SqlitePool) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+            db_pool.clone(),
+        )),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);
@@ -119,7 +127,7 @@ pub async fn spawn_test_lb() -> TestServer {
     let state = AppState {
         load_manager,
         request_history,
-        db_pool,
+        db_pool: db_pool.clone(),
         jwt_secret,
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
@@ -128,6 +136,12 @@ pub async fn spawn_test_lb() -> TestServer {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);
@@ -170,7 +184,7 @@ pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
     let state = AppState {
         load_manager: load_manager.clone(),
         request_history,
-        db_pool,
+        db_pool: db_pool.clone(),
         jwt_secret,
         http_client,
         queue_config: llmlb::config::QueueConfig::from_env(),
@@ -179,6 +193,12 @@ pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);
@@ -398,7 +418,7 @@ pub async fn register_responses_endpoint(
 
 /// 指定したノードを管理者として承認する
 #[allow(dead_code)]
-pub async fn approve_node(lb_addr: SocketAddr, node_id: &str) -> reqwest::Result<Response> {
+pub async fn approve_node(lb_addr: SocketAddr, endpoint_id: &str) -> reqwest::Result<Response> {
     let client = Client::new();
     let login_response = client
         .post(format!("http://{}/api/auth/login", lb_addr))
@@ -415,7 +435,7 @@ pub async fn approve_node(lb_addr: SocketAddr, node_id: &str) -> reqwest::Result
     client
         .post(format!(
             "http://{}/api/runtimes/{}/approve",
-            lb_addr, node_id
+            lb_addr, endpoint_id
         ))
         .header("authorization", format!("Bearer {}", token))
         .send()
@@ -431,8 +451,8 @@ pub async fn approve_node_from_register_response(
     let status = register_response.status();
     let body: Value = register_response.json().await.unwrap_or_default();
 
-    if let Some(node_id) = body.get("runtime_id").and_then(|v| v.as_str()) {
-        let _ = approve_node(lb_addr, node_id).await?;
+    if let Some(runtime_id) = body.get("runtime_id").and_then(|v| v.as_str()) {
+        let _ = approve_node(lb_addr, runtime_id).await?;
     }
 
     Ok((status, body))
@@ -443,7 +463,7 @@ pub async fn approve_node_from_register_response(
 pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> String {
     // 管理者ユーザーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin)
+    llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
         .ok();
 
@@ -469,7 +489,8 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
-            "expires_at": null
+            "expires_at": null,
+            "permissions": ["openai.inference", "openai.models.read"]
         }))
         .send()
         .await
@@ -540,6 +561,14 @@ pub async fn spawn_test_lb_with_db() -> (TestServer, SqlitePool) {
         inference_gate,
         shutdown,
         update_manager,
+        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
+            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+            llmlb::audit::writer::AuditLogWriterConfig::default(),
+        ),
+        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+            db_pool.clone(),
+        )),
+        audit_archive_pool: None,
     };
 
     let app = api::create_app(state);

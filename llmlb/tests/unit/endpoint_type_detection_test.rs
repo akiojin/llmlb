@@ -4,23 +4,24 @@
 
 use llmlb::types::endpoint::EndpointType;
 
-/// 判別優先度のテスト: xLLM > Ollama > vLLM > OpenAI-compatible
+/// 判別優先度のテスト: xLLM > LM Studio > Ollama > vLLM > OpenAI-compatible
 #[test]
 fn test_detection_priority_order() {
     // 各タイプの優先度を数値化
     fn priority(t: EndpointType) -> u8 {
         match t {
             EndpointType::Xllm => 5,
-            EndpointType::Ollama => 4,
-            EndpointType::LmStudio => 3,
+            EndpointType::LmStudio => 4,
+            EndpointType::Ollama => 3,
             EndpointType::Vllm => 2,
             EndpointType::OpenaiCompatible => 1,
         }
     }
 
     // xLLM が最高優先度
-    assert!(priority(EndpointType::Xllm) > priority(EndpointType::Ollama));
-    assert!(priority(EndpointType::Ollama) > priority(EndpointType::LmStudio));
+    assert!(priority(EndpointType::Xllm) > priority(EndpointType::LmStudio));
+    assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Ollama));
+    assert!(priority(EndpointType::Ollama) > priority(EndpointType::Vllm));
     assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Vllm));
     assert!(priority(EndpointType::Vllm) > priority(EndpointType::OpenaiCompatible));
 }

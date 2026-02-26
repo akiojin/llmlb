@@ -94,14 +94,39 @@ pub async fn upsert_daily_stats(
     output_tokens: u64,
     duration_ms: u64,
 ) -> Result<(), sqlx::Error> {
+    upsert_daily_stats_with_api_kind(
+        pool,
+        endpoint_id,
+        model_id,
+        date,
+        "chat_completions",
+        success,
+        output_tokens,
+        duration_ms,
+    )
+    .await
+}
+
+/// api_kind指定付きの日次統計UPSERT
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_daily_stats_with_api_kind(
+    pool: &SqlitePool,
+    endpoint_id: Uuid,
+    model_id: &str,
+    date: &str,
+    api_kind: &str,
+    success: bool,
+    output_tokens: u64,
+    duration_ms: u64,
+) -> Result<(), sqlx::Error> {
     let success_increment: i64 = if success { 1 } else { 0 };
     let failure_increment: i64 = if success { 0 } else { 1 };
 
     sqlx::query(
         r#"
-        INSERT INTO endpoint_daily_stats (endpoint_id, model_id, date, total_requests, successful_requests, failed_requests, total_output_tokens, total_duration_ms)
-        VALUES (?, ?, ?, 1, ?, ?, ?, ?)
-        ON CONFLICT(endpoint_id, model_id, date) DO UPDATE SET
+        INSERT INTO endpoint_daily_stats (endpoint_id, model_id, date, api_kind, total_requests, successful_requests, failed_requests, total_output_tokens, total_duration_ms)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+        ON CONFLICT(endpoint_id, model_id, date, api_kind) DO UPDATE SET
             total_requests = total_requests + 1,
             successful_requests = successful_requests + excluded.successful_requests,
             failed_requests = failed_requests + excluded.failed_requests,
@@ -112,6 +137,7 @@ pub async fn upsert_daily_stats(
     .bind(endpoint_id.to_string())
     .bind(model_id)
     .bind(date)
+    .bind(api_kind)
     .bind(success_increment)
     .bind(failure_increment)
     .bind(output_tokens as i64)
@@ -250,6 +276,73 @@ pub async fn get_today_stats(
     }))
 }
 
+/// 当日の全エンドポイントのTPS関連データを取得（起動時seeding用）
+pub async fn get_today_stats_all(
+    pool: &SqlitePool,
+    today: &str,
+) -> Result<Vec<TpsSeedEntry>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, TpsSeedRow>(
+        r#"
+        SELECT
+            endpoint_id,
+            model_id,
+            api_kind,
+            total_output_tokens,
+            total_duration_ms,
+            successful_requests
+        FROM endpoint_daily_stats
+        WHERE date = ?
+          AND total_output_tokens > 0
+          AND total_duration_ms > 0
+        "#,
+    )
+    .bind(today)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|r| r.into()).collect())
+}
+
+/// TPS seeding用のエントリ
+#[derive(Debug, Clone)]
+pub struct TpsSeedEntry {
+    /// エンドポイントID
+    pub endpoint_id: Uuid,
+    /// モデルID
+    pub model_id: String,
+    /// API種別（chat_completions/completions/responses）
+    pub api_kind: String,
+    /// 出力トークン累計
+    pub total_output_tokens: i64,
+    /// 処理時間累計（ミリ秒）
+    pub total_duration_ms: i64,
+    /// TPS対象リクエスト数（成功リクエストのみ）
+    pub successful_requests: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct TpsSeedRow {
+    endpoint_id: String,
+    model_id: String,
+    api_kind: String,
+    total_output_tokens: i64,
+    total_duration_ms: i64,
+    successful_requests: i64,
+}
+
+impl From<TpsSeedRow> for TpsSeedEntry {
+    fn from(row: TpsSeedRow) -> Self {
+        TpsSeedEntry {
+            endpoint_id: Uuid::parse_str(&row.endpoint_id).unwrap_or_default(),
+            model_id: row.model_id,
+            api_kind: row.api_kind,
+            total_output_tokens: row.total_output_tokens,
+            total_duration_ms: row.total_duration_ms,
+            successful_requests: row.successful_requests,
+        }
+    }
+}
+
 /// 日次統計バッチタスクを開始（SPEC-8c32349f）
 ///
 /// サーバーローカル時間の0:00に前日分の統計をログ出力する。
@@ -313,14 +406,7 @@ mod tests {
     use crate::db::test_utils::TEST_LOCK;
 
     async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create test database");
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-        pool
+        crate::db::test_utils::test_db_pool().await
     }
 
     #[tokio::test]
@@ -705,5 +791,33 @@ mod tests {
             (tps_a - 60.0).abs() < 0.01,
             "日次TPS計算: expected 60.0, got {tps_a}"
         );
+    }
+
+    /// T017 [US4]: get_today_stats_all が当日のTPS関連データを正しく返すことを検証
+    #[tokio::test]
+    async fn test_get_today_stats_all() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2026-02-24";
+
+        // (1) endpoint_daily_stats にデータ挿入
+        // total_output_tokens=100, total_duration_ms=2000 になるようにupsert
+        upsert_daily_stats(&pool, endpoint_id, "test-model", date, true, 100, 2000)
+            .await
+            .unwrap();
+
+        // (2) get_today_stats_all 呼び出し
+        let entries = get_today_stats_all(&pool, date).await.unwrap();
+
+        // (3) 返却された TpsSeedEntry が正しいことを確認
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].endpoint_id, endpoint_id);
+        assert_eq!(entries[0].model_id, "test-model");
+        assert_eq!(entries[0].api_kind, "chat_completions");
+        assert_eq!(entries[0].total_output_tokens, 100);
+        assert_eq!(entries[0].total_duration_ms, 2000);
+        assert_eq!(entries[0].successful_requests, 1);
     }
 }

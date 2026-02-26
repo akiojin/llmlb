@@ -4,6 +4,7 @@
 //!
 //! このモジュールはEndpointRegistry/Endpoint型を使用しています。
 
+use super::error::AppError;
 use crate::common::error::{CommonError, LbError, RouterResult};
 use crate::{
     db::models::ModelStorage,
@@ -957,44 +958,6 @@ struct HfLfs {
     size: Option<u64>,
 }
 
-/// Axum用のエラーレスポンス型
-#[derive(Debug)]
-pub struct AppError(LbError);
-
-impl From<LbError> for AppError {
-    fn from(err: LbError) -> Self {
-        AppError(err)
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        let (status, message) = match &self.0 {
-            LbError::NodeNotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
-            LbError::NotFound(_) => (StatusCode::NOT_FOUND, self.0.to_string()),
-            LbError::NoNodesAvailable => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
-            LbError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
-            LbError::NodeOffline(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
-            LbError::InvalidModelName(_) => (StatusCode::BAD_REQUEST, self.0.to_string()),
-            LbError::InsufficientStorage(_) => {
-                (StatusCode::INSUFFICIENT_STORAGE, self.0.to_string())
-            }
-            LbError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            LbError::Http(_) => (StatusCode::BAD_GATEWAY, self.0.to_string()),
-            LbError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.0.to_string()),
-            LbError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            LbError::PasswordHash(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            LbError::Jwt(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()),
-            LbError::Authentication(_) => (StatusCode::UNAUTHORIZED, self.0.to_string()),
-            LbError::Authorization(_) => (StatusCode::FORBIDDEN, self.0.to_string()),
-            LbError::NoCapableNodes(_) => (StatusCode::SERVICE_UNAVAILABLE, self.0.to_string()),
-            LbError::Common(err) => (StatusCode::BAD_REQUEST, err.to_string()),
-        };
-
-        (status, Json(serde_json::json!({ "error": message }))).into_response()
-    }
-}
-
 // NOTE: GET /api/models/available は廃止されました。
 // HFカタログは直接 https://huggingface.co を参照してください。
 
@@ -1135,7 +1098,7 @@ pub async fn register_model(
         ArtifactFormat::Safetensors => tags.push("safetensors".to_string()),
     }
     let description = req.display_name.clone().unwrap_or_else(|| repo.clone());
-    let capabilities = vec![crate::common::types::ModelCapability::TextGeneration];
+    let capabilities = vec![crate::types::ModelCapability::TextGeneration];
     let size_bytes = content_length;
     let required_memory_bytes = required_memory;
 
@@ -1208,46 +1171,42 @@ pub async fn get_model_registry_manifest(
     use axum::body::Body;
     use axum::response::Response;
 
-    // エラーレスポンスを作成するヘルパー（Response::builder()はこの用途では失敗しない）
-    fn error_response(status: StatusCode, message: &str) -> Response {
-        Response::builder()
-            .status(status)
-            .body(Body::from(format!("{{\"error\": \"{}\"}}", message)))
-            .expect("Response builder should not fail with valid status and string body")
-    }
-
     if let Err(e) = validate_model_name(&model_name) {
-        return error_response(StatusCode::BAD_REQUEST, &e.to_string());
+        return AppError(e).into_response();
     }
 
     let model = match load_registered_model(&state.db_pool, &model_name).await {
         Ok(Some(m)) => m,
         Ok(None) => {
-            return error_response(
-                StatusCode::NOT_FOUND,
-                &format!("Model not found: {}", model_name),
-            );
+            return AppError(LbError::NotFound(format!(
+                "Model not found: {}",
+                model_name
+            )))
+            .into_response();
         }
         Err(e) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+            return AppError(e).into_response();
         }
     };
 
     let Some(repo) = model.repo.clone() else {
-        return error_response(StatusCode::BAD_REQUEST, "repo not set for model");
+        return AppError(LbError::Common(CommonError::Validation(
+            "repo not set for model".into(),
+        )))
+        .into_response();
     };
 
     let siblings = match fetch_repo_siblings(&state.http_client, &repo).await {
         Ok(list) => list,
         Err(e) => {
-            return error_response(StatusCode::BAD_GATEWAY, &e.to_string());
+            return AppError(e).into_response();
         }
     };
 
     let selection = match resolve_primary_artifact(&siblings, model.filename.clone()) {
         Ok(sel) => sel,
         Err(e) => {
-            return error_response(StatusCode::BAD_REQUEST, &e.to_string());
+            return AppError(e).into_response();
         }
     };
 
@@ -1277,7 +1236,7 @@ pub async fn get_model_registry_manifest(
         }
         ArtifactFormat::Safetensors => {
             if let Err(e) = require_safetensors_metadata_files(&siblings) {
-                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
+                return AppError(e).into_response();
             }
 
             let mut names: Vec<String> =
@@ -1296,7 +1255,7 @@ pub async fn get_model_registry_manifest(
                         }
                     }
                     Err(e) => {
-                        return error_response(StatusCode::BAD_REQUEST, &e.to_string());
+                        return AppError(e).into_response();
                     }
                 }
             }

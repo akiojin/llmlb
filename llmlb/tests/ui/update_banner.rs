@@ -116,6 +116,26 @@ fn force_update_requires_ready_payload() {
     );
 }
 
+// FR-018: 強制更新ボタンはアップデートが利用可能な場合のみ表示する
+#[test]
+fn force_update_button_shown_only_when_update_available() {
+    let source = get_dashboard_source();
+    assert!(
+        source.contains("const showForceButton = hasAvailableUpdate"),
+        "Force update button should only be visible when an update is available"
+    );
+}
+
+// FR-031: ロールバックボタンは.bakが存在する場合のみ表示する
+#[test]
+fn rollback_button_shown_only_when_available() {
+    let source = get_dashboard_source();
+    assert!(
+        source.contains("isAdmin && rollbackAvailable && ("),
+        "Rollback button should only be visible when rollback is available"
+    );
+}
+
 // FR-014: queued=false時に即時適用分岐を持つこと
 #[test]
 fn apply_update_handles_non_queued_response() {

@@ -1,0 +1,795 @@
+//! 監査ログAPIハンドラー (SPEC-8301d106)
+//!
+//! `/api/dashboard/audit-logs` 系のエンドポイント
+
+use super::error::AppError;
+use crate::audit::hash_chain::{self, ChainVerificationResult};
+use crate::audit::types::{AuditLogEntry, AuditLogFilter};
+use crate::AppState;
+use axum::{
+    extract::{Query, State},
+    Json,
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// 監査ログ一覧取得のクエリパラメータ
+#[derive(Debug, Deserialize)]
+pub struct AuditLogQueryParams {
+    /// アクター種別でフィルタ
+    pub actor_type: Option<String>,
+    /// アクターIDでフィルタ
+    pub actor_id: Option<String>,
+    /// HTTPメソッドでフィルタ
+    pub http_method: Option<String>,
+    /// リクエストパスでフィルタ
+    pub request_path: Option<String>,
+    /// ステータスコードでフィルタ
+    pub status_code: Option<u16>,
+    /// 開始日時
+    pub time_from: Option<DateTime<Utc>>,
+    /// 終了日時
+    pub time_to: Option<DateTime<Utc>>,
+    /// フリーテキスト検索
+    pub search: Option<String>,
+    /// ページ番号（1始まり、デフォルト: 1）
+    pub page: Option<i64>,
+    /// ページあたり件数（デフォルト: 50）
+    pub per_page: Option<i64>,
+    /// アーカイブDBも検索対象に含める
+    pub include_archive: Option<bool>,
+    /// 出力フォーマット（デフォルト: json、csv等は将来対応）
+    pub format: Option<String>,
+}
+
+impl From<AuditLogQueryParams> for AuditLogFilter {
+    fn from(params: AuditLogQueryParams) -> Self {
+        Self {
+            actor_type: params.actor_type,
+            actor_id: params.actor_id,
+            http_method: params.http_method,
+            request_path: params.request_path,
+            status_code: params.status_code,
+            time_from: params.time_from,
+            time_to: params.time_to,
+            search_text: params.search,
+            page: params.page,
+            per_page: params.per_page,
+            include_archive: params.include_archive,
+        }
+    }
+}
+
+/// 監査ログ一覧レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuditLogListResponse {
+    /// 監査ログエントリ一覧
+    pub items: Vec<AuditLogEntry>,
+    /// 総件数
+    pub total: i64,
+    /// 現在のページ番号
+    pub page: i64,
+    /// ページあたり件数
+    pub per_page: i64,
+}
+
+/// 監査ログ統計レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuditLogStatsResponse {
+    /// 総エントリ数
+    pub total_entries: i64,
+    /// HTTPメソッド別カウント
+    pub by_method: Vec<MethodCount>,
+    /// アクター種別カウント
+    pub by_actor_type: Vec<ActorTypeCount>,
+    /// 直近24時間のエントリ数
+    pub last_24h: i64,
+}
+
+/// HTTPメソッド別カウント
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MethodCount {
+    /// HTTPメソッド名
+    pub method: String,
+    /// カウント
+    pub count: i64,
+}
+
+/// アクター種別カウント
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ActorTypeCount {
+    /// アクター種別
+    pub actor_type: String,
+    /// カウント
+    pub count: i64,
+}
+
+/// GET /api/dashboard/audit-logs - 監査ログ一覧取得
+pub async fn list_audit_logs(
+    State(state): State<AppState>,
+    Query(params): Query<AuditLogQueryParams>,
+) -> Result<Json<AuditLogListResponse>, AppError> {
+    // フォーマット検証（現在はJSONのみ対応）
+    if let Some(ref fmt) = params.format {
+        if fmt != "json" {
+            return Err(AppError(crate::common::error::LbError::Common(
+                crate::common::error::CommonError::Validation(format!(
+                    "Unsupported format: '{}'. Only 'json' is currently supported.",
+                    fmt
+                )),
+            )));
+        }
+    }
+
+    let page = params.page.unwrap_or(1);
+    let per_page = params.per_page.unwrap_or(50);
+    let include_archive = params.include_archive.unwrap_or(false);
+    let search_text = params.search.clone();
+
+    let filter: AuditLogFilter = params.into();
+    let storage = &state.audit_log_storage;
+
+    let (items, total) = match (include_archive, state.audit_archive_pool.as_ref()) {
+        (true, Some(archive_pool)) => {
+            query_with_archive(storage, archive_pool, &filter, search_text.as_deref()).await?
+        }
+        _ => {
+            if let Some(ref query) = search_text {
+                let items = storage.search_fts(query, &filter).await?;
+                let total = storage.count_fts(query, &filter).await?;
+                (items, total)
+            } else {
+                let items = storage.query(&filter).await?;
+                let total = storage.count(&filter).await?;
+                (items, total)
+            }
+        }
+    };
+
+    Ok(Json(AuditLogListResponse {
+        items,
+        total,
+        page,
+        per_page,
+    }))
+}
+
+async fn query_with_archive(
+    storage: &crate::db::audit_log::AuditLogStorage,
+    archive_pool: &sqlx::SqlitePool,
+    filter: &AuditLogFilter,
+    search_text: Option<&str>,
+) -> Result<(Vec<AuditLogEntry>, i64), AppError> {
+    let page = filter.page.unwrap_or(1).max(1);
+    let per_page = filter.per_page.unwrap_or(50).max(1);
+    let fetch_limit = page.saturating_mul(per_page);
+
+    let mut merged_filter = filter.clone();
+    merged_filter.page = Some(1);
+    merged_filter.per_page = Some(fetch_limit);
+
+    let (main_items, main_total, archive_items, archive_total) = if let Some(query) = search_text {
+        (
+            storage.search_fts(query, &merged_filter).await?,
+            storage.count_fts(query, filter).await?,
+            storage
+                .search_fts_archive(query, &merged_filter, archive_pool)
+                .await?,
+            storage
+                .count_fts_archive(query, filter, archive_pool)
+                .await?,
+        )
+    } else {
+        (
+            storage.query(&merged_filter).await?,
+            storage.count(filter).await?,
+            storage.query_archive(&merged_filter, archive_pool).await?,
+            storage.count_archive(filter, archive_pool).await?,
+        )
+    };
+
+    let mut all_items = Vec::with_capacity(main_items.len() + archive_items.len());
+    all_items.extend(main_items);
+    all_items.extend(archive_items);
+    all_items.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| b.id.cmp(&a.id))
+            .then_with(|| b.request_path.cmp(&a.request_path))
+    });
+
+    let offset = ((page - 1) * per_page) as usize;
+    let limit = per_page as usize;
+    let paged_items = all_items.into_iter().skip(offset).take(limit).collect();
+    let total = main_total + archive_total;
+
+    Ok((paged_items, total))
+}
+
+/// GET /api/dashboard/audit-logs/stats - 監査ログ統計取得
+pub async fn get_audit_log_stats(
+    State(state): State<AppState>,
+) -> Result<Json<AuditLogStatsResponse>, AppError> {
+    let storage = &state.audit_log_storage;
+
+    let total_entries = storage.count(&AuditLogFilter::default()).await?;
+
+    let last_24h_filter = AuditLogFilter {
+        time_from: Some(Utc::now() - chrono::Duration::hours(24)),
+        ..Default::default()
+    };
+    let last_24h = storage.count(&last_24h_filter).await?;
+
+    let by_method = storage.count_by_method().await?;
+    let by_actor_type = storage.count_by_actor_type().await?;
+
+    Ok(Json(AuditLogStatsResponse {
+        total_entries,
+        by_method: by_method
+            .into_iter()
+            .map(|(method, count)| MethodCount { method, count })
+            .collect(),
+        by_actor_type: by_actor_type
+            .into_iter()
+            .map(|(actor_type, count)| ActorTypeCount { actor_type, count })
+            .collect(),
+        last_24h,
+    }))
+}
+
+/// POST /api/dashboard/audit-logs/verify - ハッシュチェーン検証
+pub async fn verify_hash_chain(
+    State(state): State<AppState>,
+) -> Result<Json<ChainVerificationResult>, AppError> {
+    let result = hash_chain::verify_chain(&state.audit_log_storage).await?;
+    Ok(Json(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audit::types::ActorType;
+    use crate::audit::writer::{AuditLogWriter, AuditLogWriterConfig};
+    use crate::balancer::LoadManager;
+    use crate::db::audit_log::AuditLogStorage;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::get,
+        Router,
+    };
+    use chrono::Utc;
+    use std::sync::Arc;
+    use tower::ServiceExt;
+
+    async fn create_test_pool() -> sqlx::SqlitePool {
+        crate::db::test_utils::test_db_pool().await
+    }
+
+    fn create_test_entry(
+        path: &str,
+        method: &str,
+        actor: ActorType,
+        username: Option<&str>,
+    ) -> AuditLogEntry {
+        AuditLogEntry {
+            id: None,
+            timestamp: Utc::now(),
+            http_method: method.to_string(),
+            request_path: path.to_string(),
+            status_code: 200,
+            actor_type: actor,
+            actor_id: Some("user-1".to_string()),
+            actor_username: username.map(|s| s.to_string()),
+            api_key_owner_id: None,
+            client_ip: Some("127.0.0.1".to_string()),
+            duration_ms: Some(10),
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            model_name: None,
+            endpoint_id: None,
+            detail: None,
+            batch_id: None,
+            is_migrated: false,
+        }
+    }
+
+    async fn create_test_state_with_archive(
+        pool: sqlx::SqlitePool,
+        archive_pool: Option<sqlx::SqlitePool>,
+    ) -> AppState {
+        let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
+            pool.clone(),
+        ));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(pool.clone())
+            .await
+            .expect("Failed to create endpoint registry");
+        let load_manager = LoadManager::new(Arc::new(endpoint_registry.clone()));
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("Failed to create update manager");
+        let audit_log_storage = Arc::new(AuditLogStorage::new(pool.clone()));
+        let audit_log_writer = AuditLogWriter::new(
+            AuditLogStorage::new(pool.clone()),
+            AuditLogWriterConfig {
+                flush_interval_secs: 300,
+                buffer_capacity: 100,
+                batch_interval_secs: 300,
+            },
+        );
+
+        AppState {
+            load_manager,
+            request_history,
+            db_pool: pool,
+            jwt_secret: "test-secret".to_string(),
+            http_client,
+            queue_config: crate::config::QueueConfig::from_env(),
+            event_bus: crate::events::create_shared_event_bus(),
+            endpoint_registry,
+            inference_gate,
+            shutdown,
+            update_manager,
+            audit_log_writer,
+            audit_log_storage,
+            audit_archive_pool: archive_pool,
+        }
+    }
+
+    async fn create_test_state(pool: sqlx::SqlitePool) -> AppState {
+        create_test_state_with_archive(pool, None).await
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_empty() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.items.len(), 0);
+        assert_eq!(response.total, 0);
+        assert_eq!(response.page, 1);
+        assert_eq!(response.per_page, 50);
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_with_data() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let entries = vec![
+            create_test_entry("/api/users", "GET", ActorType::User, Some("admin")),
+            create_test_entry("/api/endpoints", "POST", ActorType::User, Some("admin")),
+            create_test_entry("/v1/chat/completions", "POST", ActorType::ApiKey, None),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.items.len(), 3);
+        assert_eq!(response.total, 3);
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_with_actor_type_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let entries = vec![
+            create_test_entry("/api/users", "GET", ActorType::User, Some("admin")),
+            create_test_entry("/v1/chat/completions", "POST", ActorType::ApiKey, None),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?actor_type=user")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.total, 1);
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_pagination() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let mut entries = Vec::new();
+        for i in 0..5 {
+            entries.push(create_test_entry(
+                &format!("/api/test/{}", i),
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            ));
+        }
+        storage.insert_batch(&entries).await.unwrap();
+
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?page=1&per_page=2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.items.len(), 2);
+        assert_eq!(response.total, 5);
+        assert_eq!(response.page, 1);
+        assert_eq!(response.per_page, 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_audit_log_stats() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let entries = vec![
+            create_test_entry("/api/users", "GET", ActorType::User, Some("admin")),
+            create_test_entry("/api/users", "POST", ActorType::User, Some("admin")),
+            create_test_entry("/v1/chat/completions", "POST", ActorType::ApiKey, None),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs/stats", get(get_audit_log_stats))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs/stats")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogStatsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total_entries, 3);
+        assert_eq!(response.last_24h, 3);
+        assert!(response.by_method.len() >= 2); // GET and POST
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_response_contract() {
+        // レスポンスJSON構造のcontract test
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let entries = vec![create_test_entry(
+            "/api/users",
+            "GET",
+            ActorType::User,
+            Some("admin"),
+        )];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+
+        // JSON構造の検証
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.get("items").is_some(), "Response must have 'items'");
+        assert!(json.get("total").is_some(), "Response must have 'total'");
+        assert!(json.get("page").is_some(), "Response must have 'page'");
+        assert!(
+            json.get("per_page").is_some(),
+            "Response must have 'per_page'"
+        );
+
+        // 各itemの必須フィールド検証
+        let items = json["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        let item = &items[0];
+        assert!(item.get("id").is_some(), "Item must have 'id'");
+        assert!(
+            item.get("timestamp").is_some(),
+            "Item must have 'timestamp'"
+        );
+        assert!(
+            item.get("http_method").is_some(),
+            "Item must have 'http_method'"
+        );
+        assert!(
+            item.get("request_path").is_some(),
+            "Item must have 'request_path'"
+        );
+        assert!(
+            item.get("status_code").is_some(),
+            "Item must have 'status_code'"
+        );
+        assert!(
+            item.get("actor_type").is_some(),
+            "Item must have 'actor_type'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_unsupported_format_returns_400() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?format=csv")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_json_format_accepted() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?format=json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_include_archive() {
+        let pool = create_test_pool().await;
+        let main_storage = AuditLogStorage::new(pool.clone());
+        main_storage
+            .insert_batch(&[create_test_entry(
+                "/api/main-only",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let archive_pool = crate::db::audit_log::create_archive_pool(":memory:")
+            .await
+            .unwrap();
+        let archive_storage = AuditLogStorage::new(archive_pool.clone());
+        archive_storage
+            .insert_batch(&[create_test_entry(
+                "/api/archive-only",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let state = create_test_state_with_archive(pool, Some(archive_pool)).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?include_archive=true")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 2);
+        assert_eq!(response.items.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_include_archive_with_search() {
+        let pool = create_test_pool().await;
+        let main_storage = AuditLogStorage::new(pool.clone());
+        main_storage
+            .insert_batch(&[create_test_entry(
+                "/api/main-only",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let archive_pool = crate::db::audit_log::create_archive_pool(":memory:")
+            .await
+            .unwrap();
+        let archive_storage = AuditLogStorage::new(archive_pool.clone());
+        archive_storage
+            .insert_batch(&[create_test_entry(
+                "/api/archive-search-target",
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            )])
+            .await
+            .unwrap();
+
+        let state = create_test_state_with_archive(pool, Some(archive_pool)).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?include_archive=true&search=archive-search-target")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 1);
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].request_path, "/api/archive-search-target");
+    }
+
+    #[tokio::test]
+    async fn test_list_audit_logs_include_archive_deep_pagination() {
+        let pool = create_test_pool().await;
+        let archive_pool = crate::db::audit_log::create_archive_pool(":memory:")
+            .await
+            .unwrap();
+        let archive_storage = AuditLogStorage::new(archive_pool.clone());
+
+        let now = Utc::now();
+        let mut archive_entries = Vec::new();
+        for i in 0..1200 {
+            let mut entry = create_test_entry(
+                &format!("/api/archive-only-{}", i),
+                "GET",
+                ActorType::User,
+                Some("admin"),
+            );
+            entry.timestamp = now - chrono::Duration::seconds(i);
+            archive_entries.push(entry);
+        }
+        archive_storage
+            .insert_batch(&archive_entries)
+            .await
+            .unwrap();
+
+        let state = create_test_state_with_archive(pool, Some(archive_pool)).await;
+        let app = Router::new()
+            .route("/audit-logs", get(list_audit_logs))
+            .with_state(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/audit-logs?include_archive=true&page=23&per_page=50")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: AuditLogListResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.total, 1200);
+        assert_eq!(response.items.len(), 50);
+    }
+}

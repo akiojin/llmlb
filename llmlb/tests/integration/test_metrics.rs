@@ -37,13 +37,13 @@ async fn test_metrics_collection_and_storage() {
     // let node_response = server.post("/api/runtimes")
     //     .json(&node_req)
     //     .await;
-    // let node_id: Uuid = node_response.json().get("runtime_id").as_str().unwrap().parse().unwrap();
+    // let endpoint_id: Uuid = node_response.json().get("runtime_id").as_str().unwrap().parse().unwrap();
 
-    let _node_id = Uuid::new_v4(); // テスト用プレースホルダー
+    let _endpoint_id = Uuid::new_v4(); // テスト用プレースホルダー
 
     // Act: メトリクス送信
     // let metrics_data = json!({
-    //     "runtime_id": node_id,
+    //     "runtime_id": endpoint_id,
     //     "cpu_usage": 45.5,
     //     "memory_usage": 60.2,
     //     "active_requests": 3,
@@ -66,7 +66,7 @@ async fn test_metrics_collection_and_storage() {
 
     // NOTE: メトリクス収集は既存のunit/apiテストでカバーされているため、
     // ここではRED用のpanicを除去して実行可能性のみ担保する。
-    assert!(_node_id.as_u128() > 0);
+    assert!(_endpoint_id.as_u128() > 0);
 }
 
 #[tokio::test]
@@ -79,11 +79,11 @@ async fn test_metrics_update_existing_data() {
     // let app = llmlb::api::create_app(state);
     // let server = axum_test::TestServer::new(app).unwrap();
 
-    let _node_id = Uuid::new_v4();
+    let _endpoint_id = Uuid::new_v4();
 
     // 初回メトリクス送信
     // let initial_metrics = json!({
-    //     "runtime_id": node_id,
+    //     "runtime_id": endpoint_id,
     //     "cpu_usage": 30.0,
     //     "memory_usage": 40.0,
     //     "active_requests": 1,
@@ -96,7 +96,7 @@ async fn test_metrics_update_existing_data() {
 
     // Act: 更新メトリクス送信
     // let updated_metrics = json!({
-    //     "runtime_id": node_id,
+    //     "runtime_id": endpoint_id,
     //     "cpu_usage": 75.0,
     //     "memory_usage": 80.0,
     //     "active_requests": 5,
@@ -119,7 +119,7 @@ async fn test_metrics_update_existing_data() {
 
     // NOTE: メトリクス更新は既存のunit/apiテストでカバーされているため、
     // ここではRED用のpanicを除去して実行可能性のみ担保する。
-    assert!(_node_id.as_u128() > 0);
+    assert!(_endpoint_id.as_u128() > 0);
 }
 
 #[tokio::test]

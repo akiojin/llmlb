@@ -18,3 +18,6 @@ mod openai_error_format_test;
 
 // SPEC-62ac4b68: IPアドレスロギング＆クライアント分析
 mod ip_normalize_test;
+
+// Property-based tests (proptest)
+mod proptest_tests;

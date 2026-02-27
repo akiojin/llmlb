@@ -728,6 +728,333 @@ mod tests {
         }
     }
 
+    // =======================================================================
+    // LockError Display / Debug tests
+    // =======================================================================
+    #[test]
+    fn lock_error_already_running_display() {
+        let err = LockError::AlreadyRunning {
+            port: 8080,
+            pid: 1234,
+            started_at: Utc.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("8080"));
+        assert!(msg.contains("1234"));
+        assert!(msg.contains("llmlb stop --port 8080"));
+        assert!(msg.contains("kill -TERM 1234"));
+    }
+
+    #[test]
+    fn lock_error_acquire_failed_display() {
+        let err = LockError::AcquireFailed(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "permission denied",
+        ));
+        let msg = format!("{}", err);
+        assert!(msg.contains("Failed to acquire lock"));
+    }
+
+    #[test]
+    fn lock_error_release_failed_display() {
+        let err = LockError::ReleaseFailed(std::io::Error::other("file busy"));
+        let msg = format!("{}", err);
+        assert!(msg.contains("Failed to release lock"));
+    }
+
+    #[test]
+    fn lock_error_corrupted_display() {
+        let err = LockError::Corrupted("invalid JSON".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Lock file corrupted"));
+        assert!(msg.contains("invalid JSON"));
+    }
+
+    #[test]
+    fn lock_error_directory_creation_failed_display() {
+        let err = LockError::DirectoryCreationFailed(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "cannot create",
+        ));
+        let msg = format!("{}", err);
+        assert!(msg.contains("Failed to create lock directory"));
+    }
+
+    #[test]
+    fn lock_error_file_locked_display() {
+        let err = LockError::FileLocked { port: 9090 };
+        let msg = format!("{}", err);
+        assert!(msg.contains("9090"));
+        assert!(msg.contains("llmlb stop --port 9090"));
+    }
+
+    // =======================================================================
+    // LockInfo equality
+    // =======================================================================
+    #[test]
+    fn lock_info_equality() {
+        let ts = Utc.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap();
+        let a = LockInfo {
+            pid: 100,
+            started_at: ts,
+            port: 8000,
+        };
+        let b = LockInfo {
+            pid: 100,
+            started_at: ts,
+            port: 8000,
+        };
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn lock_info_inequality_different_pid() {
+        let ts = Utc::now();
+        let a = LockInfo {
+            pid: 100,
+            started_at: ts,
+            port: 8000,
+        };
+        let b = LockInfo {
+            pid: 200,
+            started_at: ts,
+            port: 8000,
+        };
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn lock_info_inequality_different_port() {
+        let ts = Utc::now();
+        let a = LockInfo {
+            pid: 100,
+            started_at: ts,
+            port: 8000,
+        };
+        let b = LockInfo {
+            pid: 100,
+            started_at: ts,
+            port: 9000,
+        };
+        assert_ne!(a, b);
+    }
+
+    // =======================================================================
+    // LockInfo clone
+    // =======================================================================
+    #[test]
+    fn lock_info_clone_is_equal() {
+        let info = LockInfo {
+            pid: 42,
+            started_at: Utc::now(),
+            port: 3000,
+        };
+        let cloned = info.clone();
+        assert_eq!(info, cloned);
+    }
+
+    // =======================================================================
+    // lock_path: various ports
+    // =======================================================================
+    #[test]
+    fn lock_path_port_zero() {
+        let path = lock_path(0);
+        assert!(path.to_string_lossy().contains("serve_0.lock"));
+    }
+
+    #[test]
+    fn lock_path_port_max() {
+        let path = lock_path(u16::MAX);
+        assert!(path
+            .to_string_lossy()
+            .contains(&format!("serve_{}.lock", u16::MAX)));
+    }
+
+    #[test]
+    fn lock_path_different_ports_are_different() {
+        let p1 = lock_path(8000);
+        let p2 = lock_path(8001);
+        assert_ne!(p1, p2);
+    }
+
+    // =======================================================================
+    // read_lock_info: empty file
+    // =======================================================================
+    #[test]
+    fn test_read_lock_info_empty_file() {
+        let port = 58886;
+        let path = lock_path(port);
+        std::fs::create_dir_all(lock_dir()).ok();
+        std::fs::write(&path, "").unwrap();
+
+        let result = read_lock_info(port);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), LockError::Corrupted(_)));
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    // =======================================================================
+    // read_lock_info: partial JSON
+    // =======================================================================
+    #[test]
+    fn test_read_lock_info_partial_json() {
+        let port = 58885;
+        let path = lock_path(port);
+        std::fs::create_dir_all(lock_dir()).ok();
+        std::fs::write(&path, "{\"pid\": 123").unwrap();
+
+        let result = read_lock_info(port);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), LockError::Corrupted(_)));
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    // =======================================================================
+    // read_lock_info: valid JSON with extra fields
+    // =======================================================================
+    #[test]
+    fn test_read_lock_info_extra_fields_ignored() {
+        let port = 58884;
+        let path = lock_path(port);
+        std::fs::create_dir_all(lock_dir()).ok();
+
+        let json = serde_json::json!({
+            "pid": 12345,
+            "started_at": "2026-01-01T12:00:00Z",
+            "port": port,
+            "extra_field": "should be ignored"
+        });
+        std::fs::write(&path, serde_json::to_string(&json).unwrap()).unwrap();
+
+        let result = read_lock_info(port);
+        assert!(result.is_ok());
+        let info = result.unwrap().unwrap();
+        assert_eq!(info.pid, 12345);
+        assert_eq!(info.port, port);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    // =======================================================================
+    // ServerLock::info() accessor
+    // =======================================================================
+    #[test]
+    fn server_lock_info_returns_correct_data() {
+        let port = 57770;
+        let path = lock_path(port);
+        std::fs::remove_file(&path).ok();
+
+        let lock = ServerLock::acquire(port).unwrap();
+        let info = lock.info();
+        assert_eq!(info.port, port);
+        assert_eq!(info.pid, std::process::id());
+
+        drop(lock);
+    }
+
+    // =======================================================================
+    // ServerLock: Debug impl
+    // =======================================================================
+    #[test]
+    fn server_lock_debug_format() {
+        let port = 57769;
+        let path = lock_path(port);
+        std::fs::remove_file(&path).ok();
+
+        let lock = ServerLock::acquire(port).unwrap();
+        let debug = format!("{:?}", lock);
+        assert!(debug.contains("ServerLock"));
+        assert!(debug.contains("lock_path"));
+        assert!(debug.contains("info"));
+
+        drop(lock);
+    }
+
+    // =======================================================================
+    // ServerLock: acquire + release + re-acquire
+    // =======================================================================
+    #[test]
+    fn server_lock_reacquire_after_release() {
+        let port = 57768;
+        let path = lock_path(port);
+        std::fs::remove_file(&path).ok();
+
+        // First acquire
+        let lock1 = ServerLock::acquire(port).unwrap();
+        lock1.release().unwrap();
+
+        // Re-acquire should succeed
+        let lock2 = ServerLock::acquire(port).unwrap();
+        assert_eq!(lock2.info().port, port);
+
+        drop(lock2);
+    }
+
+    // =======================================================================
+    // ServerLock: multiple different ports
+    // =======================================================================
+    #[test]
+    fn server_lock_multiple_ports() {
+        let port_a = 57767;
+        let port_b = 57766;
+        let path_a = lock_path(port_a);
+        let path_b = lock_path(port_b);
+        std::fs::remove_file(&path_a).ok();
+        std::fs::remove_file(&path_b).ok();
+
+        let lock_a = ServerLock::acquire(port_a).unwrap();
+        let lock_b = ServerLock::acquire(port_b).unwrap();
+
+        assert_eq!(lock_a.info().port, port_a);
+        assert_eq!(lock_b.info().port, port_b);
+
+        drop(lock_a);
+        drop(lock_b);
+    }
+
+    // =======================================================================
+    // LockInfo: JSON pretty-print consistency
+    // =======================================================================
+    #[test]
+    fn lock_info_json_pretty_and_compact_roundtrip() {
+        let info = LockInfo {
+            pid: 99999,
+            started_at: Utc.with_ymd_and_hms(2026, 6, 15, 8, 30, 0).unwrap(),
+            port: 12345,
+        };
+
+        let pretty = serde_json::to_string_pretty(&info).unwrap();
+        let compact = serde_json::to_string(&info).unwrap();
+
+        let from_pretty: LockInfo = serde_json::from_str(&pretty).unwrap();
+        let from_compact: LockInfo = serde_json::from_str(&compact).unwrap();
+
+        assert_eq!(from_pretty, from_compact);
+        assert_eq!(from_pretty, info);
+    }
+
+    // =======================================================================
+    // lock_dir: consistent path
+    // =======================================================================
+    #[test]
+    fn lock_dir_is_consistent() {
+        let d1 = lock_dir();
+        let d2 = lock_dir();
+        assert_eq!(d1, d2);
+    }
+
+    // =======================================================================
+    // is_process_running: PID 0 behavior (edge case)
+    // =======================================================================
+    #[test]
+    fn is_process_running_pid_zero() {
+        // PID 0 may or may not exist depending on OS
+        // Just ensure it doesn't panic
+        let _ = is_process_running(0);
+    }
+
     #[test]
     fn test_list_all_locks_excludes_stale() {
         let port = 57771;

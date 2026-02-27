@@ -1099,4 +1099,400 @@ paths: {}
         assert!(text.contains("http://localhost:32768"));
         assert!(text.contains("API Categories"));
     }
+
+    // --- additional coverage tests ---
+
+    #[test]
+    fn tokenize_simple() {
+        let tokens = tokenize("curl http://localhost:32768/v1/models");
+        assert_eq!(tokens, vec!["curl", "http://localhost:32768/v1/models"]);
+    }
+
+    #[test]
+    fn tokenize_with_single_quotes() {
+        let tokens = tokenize("curl -d '{\"key\":\"value\"}' http://localhost:32768");
+        assert_eq!(
+            tokens,
+            vec![
+                "curl",
+                "-d",
+                "{\"key\":\"value\"}",
+                "http://localhost:32768"
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenize_with_double_quotes() {
+        let tokens = tokenize("curl -H \"Content-Type: application/json\" http://localhost:32768");
+        assert_eq!(
+            tokens,
+            vec![
+                "curl",
+                "-H",
+                "Content-Type: application/json",
+                "http://localhost:32768"
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenize_empty_string() {
+        let tokens = tokenize("");
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn tokenize_multiple_spaces() {
+        let tokens = tokenize("curl    -s    http://localhost:32768");
+        assert_eq!(tokens, vec!["curl", "-s", "http://localhost:32768"]);
+    }
+
+    #[test]
+    fn sanitize_rejects_pipe_pattern() {
+        let err =
+            sanitize_command("curl http://localhost:32768 | grep ok").expect_err("must reject");
+        assert!(err.contains("shell injection"));
+    }
+
+    #[test]
+    fn sanitize_rejects_backtick() {
+        let err = sanitize_command("curl http://localhost:32768`id`").expect_err("must reject");
+        assert!(err.contains("shell injection"));
+    }
+
+    #[test]
+    fn sanitize_rejects_dollar_paren() {
+        let err =
+            sanitize_command("curl http://localhost:32768$(whoami)").expect_err("must reject");
+        assert!(err.contains("shell injection"));
+    }
+
+    #[test]
+    fn sanitize_rejects_output_option_short() {
+        let err =
+            sanitize_command("curl -o /tmp/file http://localhost:32768").expect_err("must reject");
+        assert!(err.contains("Forbidden option"));
+    }
+
+    #[test]
+    fn sanitize_rejects_remote_name() {
+        let err = sanitize_command("curl -O http://localhost:32768/file").expect_err("must reject");
+        assert!(err.contains("Forbidden option"));
+    }
+
+    #[test]
+    fn sanitize_rejects_config_option() {
+        let err = sanitize_command("curl -K /etc/curlrc http://localhost:32768")
+            .expect_err("must reject");
+        assert!(err.contains("Forbidden option"));
+    }
+
+    #[test]
+    fn sanitize_rejects_redirect_pattern() {
+        let err =
+            sanitize_command("curl http://localhost:32768 >> /tmp/log").expect_err("must reject");
+        assert!(err.contains("shell injection"));
+    }
+
+    #[test]
+    fn sanitize_accepts_curl_alone() {
+        // "curl" alone (no URL) should still pass sanitization
+        assert!(sanitize_command("curl").is_ok());
+    }
+
+    #[test]
+    fn extract_url_returns_none_for_no_url() {
+        let url = extract_url("curl -X POST -d '{}'");
+        assert!(url.is_none());
+    }
+
+    #[test]
+    fn extract_url_skips_flag_arguments() {
+        let url = extract_url(
+            "curl -X POST -H \"Content-Type: application/json\" http://localhost:32768/api/test",
+        );
+        assert_eq!(url.as_deref(), Some("http://localhost:32768/api/test"));
+    }
+
+    #[test]
+    fn extract_url_handles_https() {
+        let url = extract_url("curl https://api.example.com/v1/models");
+        assert_eq!(url.as_deref(), Some("https://api.example.com/v1/models"));
+    }
+
+    #[test]
+    fn extract_url_ignores_non_http_tokens() {
+        let url = extract_url("curl ftp://example.com/file");
+        assert!(url.is_none());
+    }
+
+    #[test]
+    fn validate_host_accepts_ipv6_localhost() {
+        // IPv6 bracket notation matches via host_with_optional_port fallback
+        let router = Url::parse("http://[::1]:32768").expect("valid");
+        assert!(validate_host("http://[::1]:32768/api", &router).is_ok());
+    }
+
+    #[test]
+    fn validate_host_rejects_invalid_url() {
+        let router = Url::parse("http://localhost:32768").expect("valid");
+        let err = validate_host("not-a-url", &router).expect_err("must reject");
+        assert!(err.contains("Invalid URL"));
+    }
+
+    #[test]
+    fn validate_host_rejects_invalid_scheme() {
+        let router = Url::parse("http://localhost:32768").expect("valid");
+        let err = validate_host("ftp://localhost:32768/api", &router).expect_err("must reject");
+        assert!(err.contains("Invalid protocol"));
+    }
+
+    #[test]
+    fn host_with_optional_port_no_port() {
+        let url = Url::parse("http://example.com").expect("valid");
+        // http has default port 80 which is implicit
+        let result = host_with_optional_port(&url);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "example.com");
+    }
+
+    #[test]
+    fn host_with_optional_port_explicit_port() {
+        let url = Url::parse("http://example.com:9090").expect("valid");
+        let result = host_with_optional_port(&url);
+        assert_eq!(result.unwrap(), "example.com:9090");
+    }
+
+    #[test]
+    fn safe_pathname_valid_url() {
+        let path = safe_pathname("http://localhost:32768/v1/chat/completions");
+        assert_eq!(path, "/v1/chat/completions");
+    }
+
+    #[test]
+    fn safe_pathname_invalid_url_returns_input() {
+        let path = safe_pathname("not-a-url");
+        assert_eq!(path, "not-a-url");
+    }
+
+    #[test]
+    fn inject_auth_no_keys_configured() {
+        let cfg = test_config(|_| {});
+        let out = inject_auth_headers(
+            "curl http://localhost:32768/v1/models",
+            "http://localhost:32768/v1/models",
+            &cfg,
+        );
+        // No keys configured, command unchanged
+        assert_eq!(out, "curl http://localhost:32768/v1/models");
+    }
+
+    #[test]
+    fn inject_auth_skips_for_non_api_non_v1_path() {
+        let cfg = test_config(|c| {
+            c.api_key = Some("sk_api".to_string());
+            c.admin_api_key = Some("sk_admin".to_string());
+        });
+        let out = inject_auth_headers(
+            "curl http://localhost:32768/health",
+            "http://localhost:32768/health",
+            &cfg,
+        );
+        // Path is neither /api/ nor /v1/, no auth injection
+        assert_eq!(out, "curl http://localhost:32768/health");
+    }
+
+    #[test]
+    fn inject_auth_for_api_falls_back_to_api_key() {
+        let cfg = test_config(|c| c.api_key = Some("sk_api".to_string()));
+        let out = inject_auth_headers(
+            "curl http://localhost:32768/api/endpoints",
+            "http://localhost:32768/api/endpoints",
+            &cfg,
+        );
+        // No admin key or jwt, falls back to api_key for /api/ path
+        assert_eq!(
+            out,
+            "curl -H \"X-API-Key: sk_api\" http://localhost:32768/api/endpoints"
+        );
+    }
+
+    #[test]
+    fn inject_auth_skips_if_authorization_header_present() {
+        let cfg = test_config(|c| c.api_key = Some("sk_api".to_string()));
+        let cmd = "curl -H \"Authorization: Bearer my_token\" http://localhost:32768/v1/models";
+        let out = inject_auth_headers(cmd, "http://localhost:32768/v1/models", &cfg);
+        assert_eq!(out, cmd);
+    }
+
+    #[test]
+    fn inject_auth_skips_if_node_token_header_present() {
+        let cfg = test_config(|c| c.api_key = Some("sk_api".to_string()));
+        let cmd = "curl -H \"X-Node-Token: nt_abc\" http://localhost:32768/v1/models";
+        let out = inject_auth_headers(cmd, "http://localhost:32768/v1/models", &cfg);
+        assert_eq!(out, cmd);
+    }
+
+    #[test]
+    fn mask_sensitive_replaces_node_token() {
+        let cmd = "curl -H \"X-Node-Token: nt_abc-123\" http://localhost:32768";
+        let masked = mask_sensitive(cmd);
+        // NODE_TOKEN_HEADER_RE replaces the whole header value first
+        assert!(masked.contains("X-Node-Token: ***"));
+        assert!(!masked.contains("nt_abc-123"));
+    }
+
+    #[test]
+    fn mask_sensitive_no_sensitive_data() {
+        let cmd = "curl http://localhost:32768/v1/models";
+        let masked = mask_sensitive(cmd);
+        assert_eq!(masked, cmd);
+    }
+
+    #[test]
+    fn split_status_and_body_no_marker() {
+        let (status, body) = split_status_and_body("just some text");
+        assert!(status.is_none());
+        assert_eq!(body, "just some text");
+    }
+
+    #[test]
+    fn split_status_and_body_invalid_status() {
+        let (status, body) = split_status_and_body("body\n__STATUS_CODE__:abc");
+        assert!(status.is_none()); // "abc" can't be parsed as u16
+        assert_eq!(body, "body");
+    }
+
+    #[test]
+    fn split_status_and_body_empty_body() {
+        let (status, body) = split_status_and_body("__STATUS_CODE__:404");
+        assert_eq!(status, Some(404));
+        assert_eq!(body, "");
+    }
+
+    #[test]
+    fn parse_curl_args_valid() {
+        let args = parse_curl_args("curl -X POST http://localhost:32768").unwrap();
+        assert_eq!(args, vec!["-X", "POST", "http://localhost:32768"]);
+    }
+
+    #[test]
+    fn parse_curl_args_not_curl() {
+        let result = parse_curl_args("wget http://localhost");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_curl_args_empty() {
+        let result = parse_curl_args("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn default_openapi_spec_structure() {
+        let spec = default_openapi_spec();
+        assert_eq!(spec["openapi"], "3.1.0");
+        assert!(spec["info"]["title"].as_str().is_some());
+        assert!(spec["paths"].is_object());
+        assert!(spec["components"]["schemas"].is_object());
+    }
+
+    #[test]
+    fn curl_failure_error_with_error_message() {
+        let result = CurlResult {
+            success: false,
+            status_code: Some(500),
+            body: None,
+            error: Some("server error".to_string()),
+            duration_ms: 100,
+            executed_command: "curl ...".to_string(),
+        };
+        let err = curl_failure_error(&result);
+        assert!(err.to_string().contains("server error"));
+    }
+
+    #[test]
+    fn curl_failure_error_with_status_code() {
+        let result = CurlResult {
+            success: false,
+            status_code: Some(404),
+            body: None,
+            error: None,
+            duration_ms: 50,
+            executed_command: "curl ...".to_string(),
+        };
+        let err = curl_failure_error(&result);
+        assert!(err.to_string().contains("404"));
+    }
+
+    #[test]
+    fn curl_failure_error_generic() {
+        let result = CurlResult {
+            success: false,
+            status_code: None,
+            body: None,
+            error: None,
+            duration_ms: 10,
+            executed_command: "curl ...".to_string(),
+        };
+        let err = curl_failure_error(&result);
+        assert!(err.to_string().contains("failed"));
+    }
+
+    #[test]
+    fn openai_guide_contains_endpoints() {
+        let text = openai_guide("http://localhost:32768");
+        assert!(text.contains("/v1/chat/completions"));
+        assert!(text.contains("/v1/models"));
+        assert!(text.contains("/v1/embeddings"));
+    }
+
+    #[test]
+    fn endpoint_management_guide_contains_crud() {
+        let text = endpoint_management_guide("http://localhost:32768");
+        assert!(text.contains("/api/endpoints"));
+        assert!(text.contains("POST"));
+        assert!(text.contains("GET"));
+    }
+
+    #[test]
+    fn model_management_guide_contains_register() {
+        let text = model_management_guide("http://localhost:32768");
+        assert!(text.contains("/api/models/register"));
+        assert!(text.contains("DELETE"));
+    }
+
+    #[test]
+    fn dashboard_guide_contains_overview() {
+        let text = dashboard_guide("http://localhost:32768");
+        assert!(text.contains("/api/dashboard/overview"));
+        assert!(text.contains("/api/dashboard/stats"));
+    }
+
+    #[test]
+    fn sanitize_rejects_dollar_brace() {
+        let err = sanitize_command("curl http://localhost:32768${HOME}").expect_err("must reject");
+        assert!(err.contains("shell injection"));
+    }
+
+    #[test]
+    fn sanitize_rejects_forbidden_option_with_equals() {
+        let err = sanitize_command("curl --output=/tmp/file http://localhost:32768")
+            .expect_err("must reject");
+        assert!(err.contains("Forbidden option"));
+    }
+
+    #[test]
+    fn sanitize_rejects_user_option() {
+        let err = sanitize_command("curl --user admin:pass http://localhost:32768")
+            .expect_err("must reject");
+        assert!(err.contains("Forbidden option"));
+    }
+
+    #[test]
+    fn extract_url_skips_compressed_flag() {
+        let url = extract_url("curl --compressed http://localhost:32768/v1/models");
+        assert_eq!(url.as_deref(), Some("http://localhost:32768/v1/models"));
+    }
 }

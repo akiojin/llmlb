@@ -893,4 +893,400 @@ mod tests {
         assert_eq!(entries[0].total_duration_ms, 2000);
         assert_eq!(entries[0].successful_requests, 1);
     }
+
+    // --- Additional tests ---
+
+    #[tokio::test]
+    async fn test_upsert_with_api_kind() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2025-02-01";
+
+        // Insert with different api_kinds for the same model
+        upsert_daily_stats_with_api_kind(
+            &pool,
+            endpoint_id,
+            "llama3:8b",
+            date,
+            "chat_completions",
+            true,
+            100,
+            1000,
+        )
+        .await
+        .unwrap();
+
+        upsert_daily_stats_with_api_kind(
+            &pool,
+            endpoint_id,
+            "llama3:8b",
+            date,
+            "completions",
+            true,
+            50,
+            500,
+        )
+        .await
+        .unwrap();
+
+        // Model stats should show aggregated values across api_kinds
+        let stats = get_model_stats(&pool, endpoint_id).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_requests, 2);
+        assert_eq!(stats[0].total_output_tokens, 150);
+        assert_eq!(stats[0].total_duration_ms, 1500);
+    }
+
+    #[tokio::test]
+    async fn test_upsert_same_api_kind_increments() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2025-02-02";
+
+        // Same endpoint/model/date/api_kind should increment
+        upsert_daily_stats_with_api_kind(
+            &pool,
+            endpoint_id,
+            "model-a",
+            date,
+            "responses",
+            true,
+            10,
+            100,
+        )
+        .await
+        .unwrap();
+
+        upsert_daily_stats_with_api_kind(
+            &pool,
+            endpoint_id,
+            "model-a",
+            date,
+            "responses",
+            false,
+            20,
+            200,
+        )
+        .await
+        .unwrap();
+
+        let stats = get_today_stats(&pool, endpoint_id, date).await.unwrap();
+        assert_eq!(stats.total_requests, 2);
+        assert_eq!(stats.successful_requests, 1);
+        assert_eq!(stats.failed_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_today_stats_empty_returns_zeros() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let stats = get_today_stats(&pool, endpoint_id, "2099-01-01")
+            .await
+            .unwrap();
+        assert_eq!(stats.total_requests, 0);
+        assert_eq!(stats.successful_requests, 0);
+        assert_eq!(stats.failed_requests, 0);
+        assert_eq!(stats.date, "2099-01-01");
+    }
+
+    #[tokio::test]
+    async fn test_get_daily_stats_empty_for_other_endpoint() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let ep1 = Uuid::new_v4();
+        let ep2 = Uuid::new_v4();
+
+        upsert_daily_stats(&pool, ep1, "model", "2025-01-01", true, 0, 0)
+            .await
+            .unwrap();
+
+        let stats = get_daily_stats(&pool, ep2, 36500).await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_model_stats_empty_for_other_endpoint() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let ep1 = Uuid::new_v4();
+        let ep2 = Uuid::new_v4();
+
+        upsert_daily_stats(&pool, ep1, "model", "2025-01-01", true, 10, 100)
+            .await
+            .unwrap();
+
+        let stats = get_model_stats(&pool, ep2).await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_today_stats_all_excludes_zero_tokens() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2026-03-01";
+
+        // Record with zero tokens should be excluded from TPS seeding
+        upsert_daily_stats(&pool, endpoint_id, "model-zero", date, true, 0, 0)
+            .await
+            .unwrap();
+
+        // Record with tokens should be included
+        upsert_daily_stats(
+            &pool,
+            endpoint_id,
+            "model-with-tokens",
+            date,
+            true,
+            100,
+            2000,
+        )
+        .await
+        .unwrap();
+
+        let entries = get_today_stats_all(&pool, date).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model_id, "model-with-tokens");
+    }
+
+    #[tokio::test]
+    async fn test_get_today_stats_all_empty_date() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let entries = get_today_stats_all(&pool, "2099-12-31").await.unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_multiple_endpoints_daily_stats() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let ep1 = Uuid::new_v4();
+        let ep2 = Uuid::new_v4();
+        let date = "2025-03-01";
+
+        upsert_daily_stats(&pool, ep1, "model-a", date, true, 50, 500)
+            .await
+            .unwrap();
+        upsert_daily_stats(&pool, ep2, "model-a", date, true, 100, 1000)
+            .await
+            .unwrap();
+
+        // Each endpoint should have independent stats
+        let stats1 = get_today_stats(&pool, ep1, date).await.unwrap();
+        assert_eq!(stats1.total_requests, 1);
+
+        let stats2 = get_today_stats(&pool, ep2, date).await.unwrap();
+        assert_eq!(stats2.total_requests, 1);
+
+        // Model stats are per-endpoint
+        let model_stats1 = get_model_stats(&pool, ep1).await.unwrap();
+        assert_eq!(model_stats1.len(), 1);
+        assert_eq!(model_stats1[0].total_output_tokens, 50);
+
+        let model_stats2 = get_model_stats(&pool, ep2).await.unwrap();
+        assert_eq!(model_stats2.len(), 1);
+        assert_eq!(model_stats2[0].total_output_tokens, 100);
+    }
+
+    #[tokio::test]
+    async fn test_daily_stat_entry_serialization() {
+        let entry = DailyStatEntry {
+            date: "2025-01-15".to_string(),
+            total_requests: 100,
+            successful_requests: 90,
+            failed_requests: 10,
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["date"], "2025-01-15");
+        assert_eq!(json["total_requests"], 100);
+        assert_eq!(json["successful_requests"], 90);
+        assert_eq!(json["failed_requests"], 10);
+    }
+
+    #[tokio::test]
+    async fn test_model_stat_entry_serialization() {
+        let entry = ModelStatEntry {
+            model_id: "llama3:8b".to_string(),
+            total_requests: 50,
+            successful_requests: 45,
+            failed_requests: 5,
+            total_output_tokens: 10000,
+            total_duration_ms: 50000,
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["model_id"], "llama3:8b");
+        assert_eq!(json["total_output_tokens"], 10000);
+        assert_eq!(json["total_duration_ms"], 50000);
+    }
+
+    #[tokio::test]
+    async fn test_upsert_failure_increments_correctly() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2025-04-01";
+
+        // All failures
+        for _ in 0..5 {
+            upsert_daily_stats(&pool, endpoint_id, "model-f", date, false, 0, 0)
+                .await
+                .unwrap();
+        }
+
+        let stats = get_today_stats(&pool, endpoint_id, date).await.unwrap();
+        assert_eq!(stats.total_requests, 5);
+        assert_eq!(stats.successful_requests, 0);
+        assert_eq!(stats.failed_requests, 5);
+    }
+
+    #[tokio::test]
+    async fn test_get_today_stats_all_multiple_models() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2026-04-01";
+
+        upsert_daily_stats(&pool, endpoint_id, "model-x", date, true, 100, 1000)
+            .await
+            .unwrap();
+        upsert_daily_stats(&pool, endpoint_id, "model-y", date, true, 200, 2000)
+            .await
+            .unwrap();
+
+        let entries = get_today_stats_all(&pool, date).await.unwrap();
+        assert_eq!(entries.len(), 2);
+
+        let model_ids: Vec<&str> = entries.iter().map(|e| e.model_id.as_str()).collect();
+        assert!(model_ids.contains(&"model-x"));
+        assert!(model_ids.contains(&"model-y"));
+    }
+
+    #[tokio::test]
+    async fn test_daily_stat_row_into_daily_stat_entry() {
+        // Verify From<DailyStatRow> for DailyStatEntry via the public API
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2025-06-01";
+
+        upsert_daily_stats(&pool, endpoint_id, "m1", date, true, 0, 0)
+            .await
+            .unwrap();
+
+        let stats = get_today_stats(&pool, endpoint_id, date).await.unwrap();
+        assert_eq!(stats.date, "2025-06-01");
+        assert_eq!(stats.total_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn test_model_stat_row_into_model_stat_entry() {
+        // Verify From<ModelStatRow> for ModelStatEntry via the public API
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+
+        upsert_daily_stats(&pool, endpoint_id, "m-conv", "2025-06-01", true, 500, 10000)
+            .await
+            .unwrap();
+
+        let stats = get_model_stats(&pool, endpoint_id).await.unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].model_id, "m-conv");
+        assert_eq!(stats[0].total_output_tokens, 500);
+        assert_eq!(stats[0].total_duration_ms, 10000);
+    }
+
+    #[tokio::test]
+    async fn test_tps_seed_entry_fields() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2026-06-01";
+
+        upsert_daily_stats_with_api_kind(
+            &pool,
+            endpoint_id,
+            "tps-model",
+            date,
+            "responses",
+            true,
+            999,
+            5000,
+        )
+        .await
+        .unwrap();
+
+        let entries = get_today_stats_all(&pool, date).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert_eq!(entry.endpoint_id, endpoint_id);
+        assert_eq!(entry.model_id, "tps-model");
+        assert_eq!(entry.api_kind, "responses");
+        assert_eq!(entry.total_output_tokens, 999);
+        assert_eq!(entry.total_duration_ms, 5000);
+        assert_eq!(entry.successful_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_model_stats_empty() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let stats = get_all_model_stats(&pool).await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_upsert_large_token_counts() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+
+        let endpoint_id = Uuid::new_v4();
+        let date = "2025-07-01";
+
+        // Large values to test for overflow
+        upsert_daily_stats(
+            &pool,
+            endpoint_id,
+            "big-model",
+            date,
+            true,
+            1_000_000,
+            60_000,
+        )
+        .await
+        .unwrap();
+        upsert_daily_stats(
+            &pool,
+            endpoint_id,
+            "big-model",
+            date,
+            true,
+            2_000_000,
+            120_000,
+        )
+        .await
+        .unwrap();
+
+        let stats = get_model_stats(&pool, endpoint_id).await.unwrap();
+        assert_eq!(stats[0].total_output_tokens, 3_000_000);
+        assert_eq!(stats[0].total_duration_ms, 180_000);
+    }
 }

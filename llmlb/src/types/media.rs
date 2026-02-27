@@ -193,4 +193,63 @@ mod tests {
         let default_format: ImageResponseFormat = Default::default();
         assert_eq!(default_format, ImageResponseFormat::Url);
     }
+
+    // --- 追加テスト ---
+
+    #[test]
+    fn test_audio_format_serde_roundtrip() {
+        for fmt in [
+            AudioFormat::Wav,
+            AudioFormat::Mp3,
+            AudioFormat::Flac,
+            AudioFormat::Ogg,
+            AudioFormat::Opus,
+        ] {
+            let json = serde_json::to_string(&fmt).unwrap();
+            let deserialized: AudioFormat = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, fmt);
+        }
+    }
+
+    #[test]
+    fn test_image_size_serde_roundtrip() {
+        for size in [
+            ImageSize::Size256,
+            ImageSize::Size512,
+            ImageSize::Size1024,
+            ImageSize::Size1792x1024,
+            ImageSize::Size1024x1792,
+        ] {
+            let json = serde_json::to_string(&size).unwrap();
+            let deserialized: ImageSize = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, size);
+        }
+    }
+
+    #[test]
+    fn test_image_quality_serde_roundtrip() {
+        for quality in [ImageQuality::Standard, ImageQuality::Hd] {
+            let json = serde_json::to_string(&quality).unwrap();
+            let deserialized: ImageQuality = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, quality);
+        }
+    }
+
+    #[test]
+    fn test_image_style_serde_roundtrip() {
+        for style in [ImageStyle::Vivid, ImageStyle::Natural] {
+            let json = serde_json::to_string(&style).unwrap();
+            let deserialized: ImageStyle = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, style);
+        }
+    }
+
+    #[test]
+    fn test_image_response_format_serde_roundtrip() {
+        for fmt in [ImageResponseFormat::Url, ImageResponseFormat::B64Json] {
+            let json = serde_json::to_string(&fmt).unwrap();
+            let deserialized: ImageResponseFormat = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, fmt);
+        }
+    }
 }

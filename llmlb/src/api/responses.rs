@@ -617,4 +617,219 @@ mod tests {
         assert_eq!(stat.successful_requests, 1);
         assert_eq!(stat.failed_requests, 0);
     }
+
+    // --- extract_model tests ---
+
+    #[test]
+    fn extract_model_returns_model_string() {
+        let payload = json!({"model": "gpt-4", "input": "hello"});
+        let model = super::extract_model(&payload).expect("should extract model");
+        assert_eq!(model, "gpt-4");
+    }
+
+    #[test]
+    fn extract_model_returns_error_when_missing() {
+        let payload = json!({"input": "hello"});
+        let result = super::extract_model(&payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_model_returns_error_for_non_string() {
+        let payload = json!({"model": 42, "input": "hello"});
+        let result = super::extract_model(&payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_model_returns_error_for_null() {
+        let payload = json!({"model": null});
+        let result = super::extract_model(&payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_model_returns_error_for_array_model() {
+        let payload = json!({"model": ["gpt-4"]});
+        let result = super::extract_model(&payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_model_returns_error_for_empty_object() {
+        let payload = json!({});
+        let result = super::extract_model(&payload);
+        assert!(result.is_err());
+    }
+
+    // --- extract_stream tests ---
+
+    #[test]
+    fn extract_stream_returns_true_when_set() {
+        let payload = json!({"model": "test", "stream": true});
+        assert!(super::extract_stream(&payload));
+    }
+
+    #[test]
+    fn extract_stream_returns_false_when_set_false() {
+        let payload = json!({"model": "test", "stream": false});
+        assert!(!super::extract_stream(&payload));
+    }
+
+    #[test]
+    fn extract_stream_defaults_to_false_when_missing() {
+        let payload = json!({"model": "test"});
+        assert!(!super::extract_stream(&payload));
+    }
+
+    #[test]
+    fn extract_stream_defaults_to_false_for_non_boolean() {
+        let payload = json!({"model": "test", "stream": "yes"});
+        assert!(!super::extract_stream(&payload));
+    }
+
+    #[test]
+    fn extract_stream_defaults_to_false_for_integer() {
+        let payload = json!({"model": "test", "stream": 1});
+        assert!(!super::extract_stream(&payload));
+    }
+
+    #[test]
+    fn extract_stream_defaults_to_false_for_null() {
+        let payload = json!({"model": "test", "stream": null});
+        assert!(!super::extract_stream(&payload));
+    }
+
+    // --- openai_error_response tests ---
+
+    #[test]
+    fn openai_error_response_returns_requested_status() {
+        let resp = super::openai_error_response("bad request", StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn openai_error_response_returns_404() {
+        let resp = super::openai_error_response("not found", StatusCode::NOT_FOUND);
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn openai_error_response_returns_500() {
+        let resp =
+            super::openai_error_response("internal error", StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // --- model_unavailable_response tests ---
+
+    #[test]
+    fn model_unavailable_response_returns_503() {
+        let resp = super::model_unavailable_response("no endpoints for model X");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn model_unavailable_response_accepts_owned_string() {
+        let msg = format!("No available endpoints support model: {}", "llama3");
+        let resp = super::model_unavailable_response(msg);
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    // --- add_queue_headers tests ---
+
+    #[test]
+    fn add_queue_headers_sets_status_and_wait() {
+        use axum::http::HeaderName;
+
+        let mut resp = axum::response::Response::new(axum::body::Body::empty());
+        super::add_queue_headers(&mut resp, 150);
+
+        assert_eq!(
+            resp.headers()
+                .get(HeaderName::from_static("x-queue-status"))
+                .map(|v| v.to_str().unwrap()),
+            Some("queued")
+        );
+        assert_eq!(
+            resp.headers()
+                .get(HeaderName::from_static("x-queue-wait-ms"))
+                .map(|v| v.to_str().unwrap()),
+            Some("150")
+        );
+    }
+
+    #[test]
+    fn add_queue_headers_zero_wait() {
+        use axum::http::HeaderName;
+
+        let mut resp = axum::response::Response::new(axum::body::Body::empty());
+        super::add_queue_headers(&mut resp, 0);
+
+        assert_eq!(
+            resp.headers()
+                .get(HeaderName::from_static("x-queue-wait-ms"))
+                .map(|v| v.to_str().unwrap()),
+            Some("0")
+        );
+    }
+
+    #[test]
+    fn add_queue_headers_large_wait_value() {
+        use axum::http::HeaderName;
+
+        let mut resp = axum::response::Response::new(axum::body::Body::empty());
+        super::add_queue_headers(&mut resp, 999_999);
+
+        assert_eq!(
+            resp.headers()
+                .get(HeaderName::from_static("x-queue-wait-ms"))
+                .map(|v| v.to_str().unwrap()),
+            Some("999999")
+        );
+    }
+
+    // --- queue_error_response tests ---
+
+    #[test]
+    fn queue_error_response_returns_429_with_retry_after() {
+        let resp = super::queue_error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limited",
+            "rate_limit_exceeded",
+            Some(30),
+        );
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            resp.headers()
+                .get("retry-after")
+                .map(|v| v.to_str().unwrap()),
+            Some("30")
+        );
+    }
+
+    #[test]
+    fn queue_error_response_returns_504_without_retry_after() {
+        let resp =
+            super::queue_error_response(StatusCode::GATEWAY_TIMEOUT, "Timeout", "timeout", None);
+        assert_eq!(resp.status(), StatusCode::GATEWAY_TIMEOUT);
+        assert!(resp.headers().get("retry-after").is_none());
+    }
+
+    #[test]
+    fn queue_error_response_with_zero_retry_after() {
+        let resp = super::queue_error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Queue full",
+            "rate_limit_exceeded",
+            Some(0),
+        );
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            resp.headers()
+                .get("retry-after")
+                .map(|v| v.to_str().unwrap()),
+            Some("0")
+        );
+    }
 }

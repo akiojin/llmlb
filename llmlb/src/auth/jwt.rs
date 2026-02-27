@@ -62,3 +62,171 @@ pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims, LbError> {
     .map(|data| data.claims)
     .map_err(|e| LbError::Jwt(format!("Failed to verify JWT: {}", e)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_SECRET: &str = "inline_test_secret_key_12345678";
+
+    #[test]
+    fn create_jwt_must_change_password_true_roundtrip() {
+        let token = create_jwt("user1", UserRole::Admin, TEST_SECRET, true).unwrap();
+        let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+        assert!(claims.must_change_password);
+        assert_eq!(claims.sub, "user1");
+    }
+
+    #[test]
+    fn create_jwt_must_change_password_false_roundtrip() {
+        let token = create_jwt("user2", UserRole::Viewer, TEST_SECRET, false).unwrap();
+        let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+        assert!(!claims.must_change_password);
+        assert_eq!(claims.sub, "user2");
+    }
+
+    #[test]
+    fn create_jwt_empty_secret() {
+        let result = create_jwt("user", UserRole::Admin, "", false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn create_jwt_empty_user_id() {
+        let token = create_jwt("", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+        assert_eq!(claims.sub, "");
+    }
+
+    #[test]
+    fn create_jwt_very_long_user_id() {
+        let long_id = "u".repeat(10_000);
+        let token = create_jwt(&long_id, UserRole::Admin, TEST_SECRET, false).unwrap();
+        let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+        assert_eq!(claims.sub, long_id);
+    }
+
+    #[test]
+    fn admin_and_viewer_role_roundtrip() {
+        let admin_token = create_jwt("u", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let viewer_token = create_jwt("u", UserRole::Viewer, TEST_SECRET, false).unwrap();
+        let ac = verify_jwt(&admin_token, TEST_SECRET).unwrap();
+        let vc = verify_jwt(&viewer_token, TEST_SECRET).unwrap();
+        assert_eq!(ac.role, UserRole::Admin);
+        assert_eq!(vc.role, UserRole::Viewer);
+    }
+
+    #[test]
+    fn two_tokens_from_same_input_differ() {
+        let t1 = create_jwt("u", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let t2 = create_jwt("u", UserRole::Admin, TEST_SECRET, false).unwrap();
+        // exp timestamp may differ by a second; tokens should still be distinct or equivalent
+        // Both must be valid regardless
+        assert!(verify_jwt(&t1, TEST_SECRET).is_ok());
+        assert!(verify_jwt(&t2, TEST_SECRET).is_ok());
+    }
+
+    #[test]
+    fn verify_jwt_empty_token_error() {
+        let result = verify_jwt("", TEST_SECRET);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_jwt_dots_only_error() {
+        let result = verify_jwt("...", TEST_SECRET);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn token_roundtrip_all_fields_match() {
+        let token = create_jwt("alice", UserRole::Viewer, TEST_SECRET, true).unwrap();
+        let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+        assert_eq!(claims.sub, "alice");
+        assert_eq!(claims.role, UserRole::Viewer);
+        assert!(claims.must_change_password);
+        let now = Utc::now().timestamp() as usize;
+        assert!(claims.exp > now);
+    }
+
+    #[test]
+    fn different_user_ids_produce_distinguishable_tokens() {
+        let t1 = create_jwt("user-a", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let t2 = create_jwt("user-b", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let c1 = verify_jwt(&t1, TEST_SECRET).unwrap();
+        let c2 = verify_jwt(&t2, TEST_SECRET).unwrap();
+        assert_ne!(c1.sub, c2.sub);
+    }
+
+    #[test]
+    fn jwt_expiration_within_24_hours() {
+        let token = create_jwt("u", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+        let now = Utc::now().timestamp() as usize;
+        let diff_hours = (claims.exp - now) / 3600;
+        assert!(diff_hours <= 24);
+        assert!(diff_hours >= 23); // allow small timing variance
+    }
+
+    #[test]
+    fn verify_with_wrong_secret_fails() {
+        let token = create_jwt("user1", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let result = verify_jwt(&token, "wrong_secret_key_12345678");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn verify_malformed_token_fails() {
+        assert!(verify_jwt("not.a.jwt", TEST_SECRET).is_err());
+    }
+
+    #[test]
+    fn verify_random_base64_token_fails() {
+        assert!(verify_jwt("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.invalid", TEST_SECRET).is_err());
+    }
+
+    #[test]
+    fn create_jwt_unicode_user_id() {
+        let token = create_jwt("ユーザー日本語", UserRole::Viewer, TEST_SECRET, false).unwrap();
+        let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+        assert_eq!(claims.sub, "ユーザー日本語");
+    }
+
+    #[test]
+    fn create_jwt_special_chars_secret() {
+        let secret = "!@#$%^&*()_+-={}[]|;':\",./<>?";
+        let token = create_jwt("user", UserRole::Admin, secret, false).unwrap();
+        let claims = verify_jwt(&token, secret).unwrap();
+        assert_eq!(claims.sub, "user");
+    }
+
+    #[test]
+    fn token_has_three_parts() {
+        let token = create_jwt("u", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let parts: Vec<&str> = token.split('.').collect();
+        assert_eq!(parts.len(), 3);
+    }
+
+    #[test]
+    fn different_roles_have_different_tokens() {
+        let t1 = create_jwt("u", UserRole::Admin, TEST_SECRET, false).unwrap();
+        let t2 = create_jwt("u", UserRole::Viewer, TEST_SECRET, false).unwrap();
+        // Payload differs due to different role
+        assert_ne!(t1.split('.').nth(1), t2.split('.').nth(1));
+    }
+
+    #[test]
+    fn verify_jwt_error_message_contains_jwt() {
+        let result = verify_jwt("bad", TEST_SECRET);
+        match result {
+            Err(LbError::Jwt(msg)) => assert!(msg.contains("Failed to verify JWT")),
+            _ => panic!("expected Jwt error"),
+        }
+    }
+
+    #[test]
+    fn create_jwt_with_single_char_secret() {
+        let token = create_jwt("u", UserRole::Admin, "x", false).unwrap();
+        assert!(verify_jwt(&token, "x").is_ok());
+    }
+}

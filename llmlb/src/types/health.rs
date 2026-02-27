@@ -106,4 +106,111 @@ mod tests {
             "\"failed\""
         );
     }
+
+    // --- 追加テスト ---
+
+    #[test]
+    fn test_request_status_serde_roundtrip() {
+        for status in [
+            RequestStatus::Pending,
+            RequestStatus::Processing,
+            RequestStatus::Completed,
+            RequestStatus::Failed,
+        ] {
+            let json = serde_json::to_string(&status).unwrap();
+            let deserialized: RequestStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, status);
+        }
+    }
+
+    #[test]
+    fn test_health_metrics_serde_roundtrip() {
+        let metrics = HealthMetrics {
+            endpoint_id: Uuid::new_v4(),
+            cpu_usage: 45.5,
+            memory_usage: 72.3,
+            gpu_usage: Some(88.0),
+            gpu_memory_usage: Some(65.2),
+            gpu_memory_total_mb: Some(24576),
+            gpu_memory_used_mb: Some(16000),
+            gpu_temperature: Some(72.0),
+            gpu_model_name: Some("NVIDIA RTX 4090".to_string()),
+            gpu_compute_capability: Some("8.9".to_string()),
+            gpu_capability_score: Some(100),
+            active_requests: 5,
+            total_requests: 1000,
+            average_response_time_ms: Some(150.0),
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        let deserialized: HealthMetrics = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.cpu_usage, metrics.cpu_usage);
+        assert_eq!(deserialized.memory_usage, metrics.memory_usage);
+        assert_eq!(deserialized.gpu_usage, metrics.gpu_usage);
+        assert_eq!(deserialized.active_requests, metrics.active_requests);
+        assert_eq!(deserialized.total_requests, metrics.total_requests);
+    }
+
+    #[test]
+    fn test_health_metrics_optional_fields_none() {
+        let metrics = HealthMetrics {
+            endpoint_id: Uuid::new_v4(),
+            cpu_usage: 10.0,
+            memory_usage: 20.0,
+            gpu_usage: None,
+            gpu_memory_usage: None,
+            gpu_memory_total_mb: None,
+            gpu_memory_used_mb: None,
+            gpu_temperature: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
+            active_requests: 0,
+            total_requests: 0,
+            average_response_time_ms: None,
+            timestamp: Utc::now(),
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        // skip_serializing_if="Option::is_none" fields should be absent
+        assert!(!json.contains("gpu_usage"));
+        assert!(!json.contains("gpu_memory_usage"));
+        assert!(!json.contains("gpu_temperature"));
+        assert!(!json.contains("gpu_model_name"));
+    }
+
+    #[test]
+    fn test_request_serde_roundtrip() {
+        let request = Request {
+            id: Uuid::new_v4(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint: "/v1/chat/completions".to_string(),
+            status: RequestStatus::Completed,
+            duration_ms: Some(250),
+            created_at: Utc::now(),
+            completed_at: Some(Utc::now()),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: Request = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.endpoint, "/v1/chat/completions");
+        assert_eq!(deserialized.status, RequestStatus::Completed);
+        assert_eq!(deserialized.duration_ms, Some(250));
+    }
+
+    #[test]
+    fn test_request_pending_no_completion() {
+        let request = Request {
+            id: Uuid::new_v4(),
+            endpoint_id: Uuid::new_v4(),
+            endpoint: "/v1/embeddings".to_string(),
+            status: RequestStatus::Pending,
+            duration_ms: None,
+            created_at: Utc::now(),
+            completed_at: None,
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: Request = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.status, RequestStatus::Pending);
+        assert!(deserialized.duration_ms.is_none());
+        assert!(deserialized.completed_at.is_none());
+    }
 }

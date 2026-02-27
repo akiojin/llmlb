@@ -1339,3 +1339,612 @@ pub async fn get_model_info(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::endpoint::{
+        DeviceInfo, DeviceType, DownloadStatus, Endpoint, EndpointModel, EndpointStatus,
+        EndpointType, GpuDevice, ModelDownloadTask,
+    };
+    use chrono::Utc;
+    use serde_json::json;
+
+    #[test]
+    fn test_default_health_check_interval() {
+        assert_eq!(default_health_check_interval(), 30);
+    }
+
+    #[test]
+    fn test_default_inference_timeout() {
+        assert_eq!(default_inference_timeout(), 120);
+    }
+
+    #[test]
+    fn test_create_endpoint_request_minimal() {
+        let json = json!({
+            "name": "test-ep",
+            "base_url": "http://localhost:8080"
+        });
+        let req: CreateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.name, "test-ep");
+        assert_eq!(req.base_url, "http://localhost:8080");
+        assert!(req.api_key.is_none());
+        assert_eq!(req.health_check_interval_secs, 30);
+        assert_eq!(req.inference_timeout_secs, 120);
+        assert!(req.notes.is_none());
+        assert!(req.capabilities.is_empty());
+    }
+
+    #[test]
+    fn test_create_endpoint_request_full() {
+        let json = json!({
+            "name": "my-endpoint",
+            "base_url": "http://gpu-server:11434",
+            "api_key": "sk-test-key",
+            "health_check_interval_secs": 60,
+            "inference_timeout_secs": 300,
+            "notes": "Production GPU node",
+            "capabilities": ["image_generation"]
+        });
+        let req: CreateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.name, "my-endpoint");
+        assert_eq!(req.api_key, Some("sk-test-key".to_string()));
+        assert_eq!(req.health_check_interval_secs, 60);
+        assert_eq!(req.inference_timeout_secs, 300);
+        assert_eq!(req.notes, Some("Production GPU node".to_string()));
+        assert_eq!(req.capabilities.len(), 1);
+    }
+
+    #[test]
+    fn test_create_endpoint_request_missing_name_fails() {
+        let json = json!({ "base_url": "http://localhost:8080" });
+        assert!(serde_json::from_value::<CreateEndpointRequest>(json).is_err());
+    }
+
+    #[test]
+    fn test_create_endpoint_request_missing_base_url_fails() {
+        let json = json!({ "name": "test" });
+        assert!(serde_json::from_value::<CreateEndpointRequest>(json).is_err());
+    }
+
+    #[test]
+    fn test_update_endpoint_request_empty() {
+        let json = json!({});
+        let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert!(req.name.is_none());
+        assert!(req.base_url.is_none());
+        assert!(req.api_key.is_none());
+        assert!(req.health_check_interval_secs.is_none());
+        assert!(req.inference_timeout_secs.is_none());
+        assert!(req.notes.is_none());
+    }
+
+    #[test]
+    fn test_update_endpoint_request_partial() {
+        let json = json!({ "name": "new-name", "health_check_interval_secs": 45 });
+        let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.name, Some("new-name".to_string()));
+        assert_eq!(req.health_check_interval_secs, Some(45));
+        assert!(req.base_url.is_none());
+    }
+
+    #[test]
+    fn test_update_endpoint_request_notes_null_clears() {
+        let json = json!({ "notes": null });
+        let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.notes, Some(None));
+    }
+
+    #[test]
+    fn test_update_endpoint_request_notes_with_value() {
+        let json = json!({ "notes": "updated note" });
+        let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.notes, Some(Some("updated note".to_string())));
+    }
+
+    fn sample_endpoint() -> Endpoint {
+        let mut ep = Endpoint::new(
+            "test-ep".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        ep.status = EndpointStatus::Online;
+        ep.latency_ms = Some(42);
+        ep.error_count = 0;
+        ep.notes = Some("note".to_string());
+        ep
+    }
+
+    #[test]
+    fn test_endpoint_response_from_endpoint() {
+        let ep = sample_endpoint();
+        let id = ep.id;
+        let resp = EndpointResponse::from(ep);
+        assert_eq!(resp.id, id);
+        assert_eq!(resp.name, "test-ep");
+        assert_eq!(resp.base_url, "http://localhost:8080");
+        assert_eq!(resp.status, "online");
+        assert_eq!(resp.endpoint_type, "xllm");
+        assert_eq!(resp.latency_ms, Some(42));
+        assert_eq!(resp.error_count, 0);
+        assert_eq!(resp.notes, Some("note".to_string()));
+        assert!(resp.model_count.is_none());
+        assert!(resp.models.is_none());
+    }
+
+    #[test]
+    fn test_endpoint_response_serialization() {
+        let ep = sample_endpoint();
+        let resp = EndpointResponse::from(ep);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["name"], "test-ep");
+        assert_eq!(json["status"], "online");
+        assert_eq!(json["endpoint_type"], "xllm");
+        assert_eq!(json["latency_ms"], 42);
+    }
+
+    #[test]
+    fn test_endpoint_response_with_device_info() {
+        let mut ep = sample_endpoint();
+        ep.device_info = Some(DeviceInfo {
+            device_type: DeviceType::Gpu,
+            gpu_devices: vec![GpuDevice {
+                name: "RTX 4090".to_string(),
+                total_memory_bytes: 24_000_000_000,
+                used_memory_bytes: 8_000_000_000,
+            }],
+        });
+        let resp = EndpointResponse::from(ep);
+        assert!(resp.device_info.is_some());
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json["device_info"].is_object());
+    }
+
+    #[test]
+    fn test_endpoint_response_offline_status() {
+        let mut ep = sample_endpoint();
+        ep.status = EndpointStatus::Offline;
+        ep.latency_ms = None;
+        ep.last_error = Some("Connection refused".to_string());
+        ep.error_count = 5;
+        let resp = EndpointResponse::from(ep);
+        assert_eq!(resp.status, "offline");
+        assert!(resp.latency_ms.is_none());
+        assert_eq!(resp.last_error, Some("Connection refused".to_string()));
+        assert_eq!(resp.error_count, 5);
+    }
+
+    #[test]
+    fn test_endpoint_response_pending_status() {
+        let mut ep = sample_endpoint();
+        ep.status = EndpointStatus::Pending;
+        let resp = EndpointResponse::from(ep);
+        assert_eq!(resp.status, "pending");
+    }
+
+    #[test]
+    fn test_endpoint_response_error_status() {
+        let mut ep = sample_endpoint();
+        ep.status = EndpointStatus::Error;
+        let resp = EndpointResponse::from(ep);
+        assert_eq!(resp.status, "error");
+    }
+
+    #[test]
+    fn test_list_endpoints_response_empty() {
+        let resp = ListEndpointsResponse {
+            endpoints: vec![],
+            total: 0,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["total"], 0);
+        assert!(json["endpoints"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_list_endpoints_query_empty() {
+        let json = json!({});
+        let q: ListEndpointsQuery = serde_json::from_value(json).unwrap();
+        assert!(q.status.is_none());
+        assert!(q.endpoint_type.is_none());
+    }
+
+    #[test]
+    fn test_list_endpoints_query_with_filters() {
+        let json = json!({ "status": "online", "type": "xllm" });
+        let q: ListEndpointsQuery = serde_json::from_value(json).unwrap();
+        assert_eq!(q.status, Some("online".to_string()));
+        assert_eq!(q.endpoint_type, Some("xllm".to_string()));
+    }
+
+    #[test]
+    fn test_endpoint_model_response_from() {
+        let model = EndpointModel {
+            endpoint_id: Uuid::new_v4(),
+            model_id: "llama3".to_string(),
+            capabilities: Some(vec!["chat".to_string()]),
+            max_tokens: Some(8192),
+            last_checked: Some(Utc::now()),
+            supported_apis: vec![],
+        };
+        let resp = EndpointModelResponse::from(model);
+        assert_eq!(resp.model_id, "llama3");
+        assert_eq!(resp.capabilities, Some(vec!["chat".to_string()]));
+        assert_eq!(resp.max_tokens, Some(8192));
+        assert!(resp.last_checked.is_some());
+    }
+
+    #[test]
+    fn test_endpoint_model_response_from_minimal() {
+        let model = EndpointModel {
+            endpoint_id: Uuid::new_v4(),
+            model_id: "embed-v1".to_string(),
+            capabilities: None,
+            max_tokens: None,
+            last_checked: None,
+            supported_apis: vec![],
+        };
+        let resp = EndpointModelResponse::from(model);
+        assert_eq!(resp.model_id, "embed-v1");
+        assert!(resp.capabilities.is_none());
+        assert!(resp.max_tokens.is_none());
+        assert!(resp.last_checked.is_none());
+    }
+
+    #[test]
+    fn test_endpoint_models_response_serialization() {
+        let id = Uuid::new_v4();
+        let resp = EndpointModelsResponse {
+            endpoint_id: id,
+            models: vec![EndpointModelResponse {
+                model_id: "gpt-4".to_string(),
+                capabilities: Some(vec!["chat".to_string(), "embeddings".to_string()]),
+                max_tokens: Some(128000),
+                last_checked: None,
+            }],
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["endpoint_id"], id.to_string());
+        assert_eq!(json["models"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_sync_models_response_serialization() {
+        let resp = SyncModelsResponse {
+            synced_models: vec![],
+            added: 3,
+            removed: 1,
+            updated: 2,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["added"], 3);
+        assert_eq!(json["removed"], 1);
+        assert_eq!(json["updated"], 2);
+    }
+
+    #[test]
+    fn test_connection_response_success() {
+        let resp = TestConnectionResponse {
+            success: true,
+            latency_ms: Some(15),
+            error: None,
+            models_found: Some(vec!["llama3".to_string()]),
+            endpoint_info: Some(EndpointTestInfo { model_count: 1 }),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["success"], true);
+        assert_eq!(json["latency_ms"], 15);
+    }
+
+    #[test]
+    fn test_connection_response_failure() {
+        let resp = TestConnectionResponse {
+            success: false,
+            latency_ms: None,
+            error: Some("Connection refused".to_string()),
+            models_found: None,
+            endpoint_info: None,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["success"], false);
+        assert_eq!(json["error"], "Connection refused");
+    }
+
+    #[test]
+    fn test_download_model_request() {
+        let json = json!({ "model": "llama3:8b" });
+        let req: DownloadModelRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.model, "llama3:8b");
+    }
+
+    #[test]
+    fn test_download_model_request_missing_model_fails() {
+        let json = json!({});
+        assert!(serde_json::from_value::<DownloadModelRequest>(json).is_err());
+    }
+
+    #[test]
+    fn test_download_task_response_from() {
+        let task = ModelDownloadTask {
+            id: "task-1".to_string(),
+            endpoint_id: Uuid::new_v4(),
+            model: "llama3:8b".to_string(),
+            status: DownloadStatus::Downloading,
+            progress: 45.5,
+            speed_mbps: Some(120.0),
+            eta_seconds: Some(60),
+            error_message: None,
+            started_at: Utc::now(),
+            completed_at: None,
+            filename: None,
+        };
+        let resp = DownloadTaskResponse::from(task);
+        assert_eq!(resp.task_id, "task-1");
+        assert_eq!(resp.model, "llama3:8b");
+        assert_eq!(resp.status, "downloading");
+        assert!((resp.progress - 45.5).abs() < f64::EPSILON);
+        assert_eq!(resp.speed_mbps, Some(120.0));
+        assert_eq!(resp.eta_seconds, Some(60));
+        assert!(resp.error_message.is_none());
+    }
+
+    #[test]
+    fn test_download_task_response_completed() {
+        let task = ModelDownloadTask {
+            id: "task-2".to_string(),
+            endpoint_id: Uuid::new_v4(),
+            model: "mistral:7b".to_string(),
+            status: DownloadStatus::Completed,
+            progress: 100.0,
+            speed_mbps: None,
+            eta_seconds: None,
+            error_message: None,
+            started_at: Utc::now(),
+            completed_at: None,
+            filename: Some("model.gguf".to_string()),
+        };
+        let resp = DownloadTaskResponse::from(task);
+        assert_eq!(resp.status, "completed");
+        assert!((resp.progress - 100.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_download_task_response_failed() {
+        let task = ModelDownloadTask {
+            id: "task-3".to_string(),
+            endpoint_id: Uuid::new_v4(),
+            model: "big-model".to_string(),
+            status: DownloadStatus::Failed,
+            progress: 30.0,
+            speed_mbps: None,
+            eta_seconds: None,
+            error_message: Some("Disk full".to_string()),
+            started_at: Utc::now(),
+            completed_at: None,
+            filename: None,
+        };
+        let resp = DownloadTaskResponse::from(task);
+        assert_eq!(resp.status, "failed");
+        assert_eq!(resp.error_message, Some("Disk full".to_string()));
+    }
+
+    #[test]
+    fn test_download_task_response_serialization_skips_none() {
+        let task = ModelDownloadTask {
+            id: "task-4".to_string(),
+            endpoint_id: Uuid::new_v4(),
+            model: "test".to_string(),
+            status: DownloadStatus::Pending,
+            progress: 0.0,
+            speed_mbps: None,
+            eta_seconds: None,
+            error_message: None,
+            started_at: Utc::now(),
+            completed_at: None,
+            filename: None,
+        };
+        let resp = DownloadTaskResponse::from(task);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json.get("speed_mbps").is_none());
+        assert!(json.get("eta_seconds").is_none());
+        assert!(json.get("error_message").is_none());
+    }
+
+    #[test]
+    fn test_download_progress_response_empty() {
+        let id = Uuid::new_v4();
+        let resp = DownloadProgressResponse {
+            endpoint_id: id,
+            tasks: vec![],
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["endpoint_id"], id.to_string());
+        assert!(json["tasks"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_model_info_response_serialization() {
+        let id = Uuid::new_v4();
+        let resp = ModelInfoResponse {
+            model_id: "llama3".to_string(),
+            endpoint_id: id,
+            max_tokens: Some(8192),
+            last_checked: Some("2024-01-01T00:00:00Z".to_string()),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["model_id"], "llama3");
+        assert_eq!(json["endpoint_id"], id.to_string());
+        assert_eq!(json["max_tokens"], 8192);
+    }
+
+    #[test]
+    fn test_model_info_response_skips_none() {
+        let resp = ModelInfoResponse {
+            model_id: "test".to_string(),
+            endpoint_id: Uuid::new_v4(),
+            max_tokens: None,
+            last_checked: None,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json.get("max_tokens").is_none());
+        assert!(json.get("last_checked").is_none());
+    }
+
+    #[test]
+    fn test_model_info_path_deserialization() {
+        let id = Uuid::new_v4();
+        let json = json!({ "id": id.to_string(), "model": "llama3:8b" });
+        let path: ModelInfoPath = serde_json::from_value(json).unwrap();
+        assert_eq!(path.id, id);
+        assert_eq!(path.model, "llama3:8b");
+    }
+
+    #[test]
+    fn test_error_response_serialization() {
+        let resp = ErrorResponse {
+            error: "Something went wrong".to_string(),
+            code: "INTERNAL_ERROR".to_string(),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["error"], "Something went wrong");
+        assert_eq!(json["code"], "INTERNAL_ERROR");
+    }
+
+    #[test]
+    fn test_ensure_admin_with_admin_role() {
+        let claims = Claims {
+            sub: "admin-user".to_string(),
+            role: UserRole::Admin,
+            exp: 0,
+            must_change_password: false,
+        };
+        assert!(ensure_admin(&claims).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_admin_with_viewer_role() {
+        let claims = Claims {
+            sub: "viewer-user".to_string(),
+            role: UserRole::Viewer,
+            exp: 0,
+            must_change_password: false,
+        };
+        assert!(ensure_admin(&claims).is_err());
+    }
+
+    #[test]
+    fn test_endpoint_test_info_serialization() {
+        let info = EndpointTestInfo { model_count: 5 };
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["model_count"], 5);
+    }
+
+    #[test]
+    fn test_system_info_response_empty() {
+        let json = json!({});
+        let resp: SystemInfoResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.device.is_none());
+    }
+
+    #[test]
+    fn test_system_info_response_with_device() {
+        let json = json!({
+            "device": {
+                "device_type": "gpu",
+                "gpu_devices": [{
+                    "name": "RTX 4090",
+                    "total_memory_bytes": 24000000000_u64,
+                    "used_memory_bytes": 8000000000_u64
+                }]
+            }
+        });
+        let resp: SystemInfoResponse = serde_json::from_value(json).unwrap();
+        let device = resp.device.unwrap();
+        assert_eq!(device.device_type, "gpu");
+        assert_eq!(device.gpu_devices.len(), 1);
+        assert_eq!(device.gpu_devices[0].name, "RTX 4090");
+    }
+
+    #[test]
+    fn test_system_info_response_cpu_device() {
+        let json = json!({
+            "device": { "device_type": "cpu", "gpu_devices": [] }
+        });
+        let resp: SystemInfoResponse = serde_json::from_value(json).unwrap();
+        let device = resp.device.unwrap();
+        assert_eq!(device.device_type, "cpu");
+        assert!(device.gpu_devices.is_empty());
+    }
+
+    #[test]
+    fn test_system_device_info_defaults() {
+        let json = json!({});
+        let info: SystemDeviceInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(info.device_type, "");
+        assert!(info.gpu_devices.is_empty());
+    }
+
+    #[test]
+    fn test_system_gpu_device_defaults() {
+        let json = json!({});
+        let gpu: SystemGpuDevice = serde_json::from_value(json).unwrap();
+        assert_eq!(gpu.name, "");
+        assert_eq!(gpu.total_memory_bytes, 0);
+        assert_eq!(gpu.used_memory_bytes, 0);
+    }
+
+    #[test]
+    fn test_optional_field_absent() {
+        let json = json!({});
+        let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert!(req.notes.is_none());
+    }
+
+    #[test]
+    fn test_optional_field_null() {
+        let json = json!({ "notes": null });
+        let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.notes, Some(None));
+    }
+
+    #[test]
+    fn test_optional_field_present() {
+        let json = json!({ "notes": "hello" });
+        let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.notes, Some(Some("hello".to_string())));
+    }
+
+    #[test]
+    fn test_endpoint_response_all_types() {
+        for (ep_type, expected) in [
+            (EndpointType::Xllm, "xllm"),
+            (EndpointType::Ollama, "ollama"),
+            (EndpointType::Vllm, "vllm"),
+            (EndpointType::OpenaiCompatible, "openai_compatible"),
+            (EndpointType::LmStudio, "lm_studio"),
+        ] {
+            let ep = Endpoint::new("ep".to_string(), "http://localhost".to_string(), ep_type);
+            let resp = EndpointResponse::from(ep);
+            assert_eq!(resp.endpoint_type, expected);
+        }
+    }
+
+    #[test]
+    fn test_create_endpoint_request_multiple_capabilities() {
+        let json = json!({
+            "name": "multi-cap",
+            "base_url": "http://localhost:8080",
+            "capabilities": ["image_generation", "audio_transcription", "audio_speech"]
+        });
+        let req: CreateEndpointRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.capabilities.len(), 3);
+    }
+
+    #[test]
+    fn test_endpoint_response_registered_at_is_rfc3339() {
+        let ep = sample_endpoint();
+        let resp = EndpointResponse::from(ep);
+        assert!(chrono::DateTime::parse_from_rfc3339(&resp.registered_at).is_ok());
+    }
+}

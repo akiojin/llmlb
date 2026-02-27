@@ -2158,4 +2158,877 @@ mod tests {
         assert_eq!(total_success, 3, "should have 3 success records");
         assert_eq!(total_error, 1, "should have 1 error record");
     }
+
+    // --- Additional tests ---
+
+    #[tokio::test]
+    async fn test_get_record_by_id() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let record = create_test_record(Utc::now());
+        storage.save_record(&record).await.unwrap();
+
+        let found = storage.get_record_by_id(record.id).await.unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, record.id);
+    }
+
+    #[tokio::test]
+    async fn test_get_record_by_id_not_found() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let found = storage.get_record_by_id(Uuid::new_v4()).await.unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_records_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let loaded = storage.load_records().await.unwrap();
+        assert!(loaded.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_load_records_ordering() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let now = Utc::now();
+        let old = create_test_record(now - Duration::hours(2));
+        let new = create_test_record(now);
+
+        storage.save_record(&old).await.unwrap();
+        storage.save_record(&new).await.unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 2);
+        // Descending order: newest first
+        assert_eq!(loaded[0].id, new.id);
+        assert_eq!(loaded[1].id, old.id);
+    }
+
+    #[tokio::test]
+    async fn test_save_error_record() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record = create_test_record(Utc::now());
+        record.status = RecordStatus::Error {
+            message: "connection refused".to_string(),
+        };
+        storage.save_record(&record).await.unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        match &loaded[0].status {
+            RecordStatus::Error { message } => {
+                assert_eq!(message, "connection refused");
+            }
+            _ => panic!("expected error status"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_filter_by_status() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut success = create_test_record(Utc::now());
+        success.status = RecordStatus::Success;
+        storage.save_record(&success).await.unwrap();
+
+        let mut error = create_test_record(Utc::now() - Duration::seconds(1));
+        error.status = RecordStatus::Error {
+            message: "fail".to_string(),
+        };
+        storage.save_record(&error).await.unwrap();
+
+        // Filter success only
+        let filter = RecordFilter {
+            status: Some(FilterStatus::Success),
+            ..Default::default()
+        };
+        let result = storage.filter_and_paginate(&filter, 1, 10).await.unwrap();
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.records[0].id, success.id);
+
+        // Filter error only
+        let filter = RecordFilter {
+            status: Some(FilterStatus::Error),
+            ..Default::default()
+        };
+        let result = storage.filter_and_paginate(&filter, 1, 10).await.unwrap();
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.records[0].id, error.id);
+    }
+
+    #[tokio::test]
+    async fn test_filter_by_endpoint_id() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let ep1 = Uuid::new_v4();
+        let ep2 = Uuid::new_v4();
+
+        let mut r1 = create_test_record(Utc::now());
+        r1.endpoint_id = ep1;
+        storage.save_record(&r1).await.unwrap();
+
+        let mut r2 = create_test_record(Utc::now() - Duration::seconds(1));
+        r2.endpoint_id = ep2;
+        storage.save_record(&r2).await.unwrap();
+
+        let filter = RecordFilter {
+            endpoint_id: Some(ep1),
+            ..Default::default()
+        };
+        let result = storage.filter_and_paginate(&filter, 1, 10).await.unwrap();
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.records[0].endpoint_id, ep1);
+    }
+
+    #[tokio::test]
+    async fn test_filter_by_time_range() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let now = Utc::now();
+        let old = create_test_record(now - Duration::hours(5));
+        let mid = create_test_record(now - Duration::hours(2));
+        let recent = create_test_record(now);
+
+        storage.save_record(&old).await.unwrap();
+        storage.save_record(&mid).await.unwrap();
+        storage.save_record(&recent).await.unwrap();
+
+        // Filter: last 3 hours
+        let filter = RecordFilter {
+            start_time: Some(now - Duration::hours(3)),
+            ..Default::default()
+        };
+        let result = storage.filter_and_paginate(&filter, 1, 10).await.unwrap();
+        assert_eq!(result.total_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_does_not_remove_recent() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let record = create_test_record(Utc::now());
+        storage.save_record(&record).await.unwrap();
+
+        // Cleanup with 1 day retention should keep today's records
+        storage
+            .cleanup_old_records(Duration::days(1))
+            .await
+            .unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_token_statistics_empty_db() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 0);
+        assert_eq!(stats.total_output_tokens, 0);
+        assert_eq!(stats.total_tokens, 0);
+    }
+
+    #[tokio::test]
+    async fn test_token_statistics_by_model_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let stats = storage.get_token_statistics_by_model().await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_token_statistics_by_endpoint_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let stats = storage.get_token_statistics_by_endpoint().await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_record_with_api_key_id() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let api_key = Uuid::new_v4();
+        let mut record = create_test_record(Utc::now());
+        record.api_key_id = Some(api_key);
+        storage.save_record(&record).await.unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].api_key_id, Some(api_key));
+    }
+
+    #[tokio::test]
+    async fn test_record_with_no_client_ip() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record = create_test_record(Utc::now());
+        record.client_ip = None;
+        storage.save_record(&record).await.unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].client_ip.is_none());
+    }
+
+    #[test]
+    fn test_record_filter_matches() {
+        let record = create_test_record(Utc::now());
+
+        // Empty filter matches everything
+        let filter = RecordFilter::default();
+        assert!(filter.matches(&record));
+
+        // Model filter (partial match)
+        let filter = RecordFilter {
+            model: Some("test".to_string()),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        // Non-matching model
+        let filter = RecordFilter {
+            model: Some("nonexistent".to_string()),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+    }
+
+    #[test]
+    fn test_parse_legacy_records_empty() {
+        let records = parse_legacy_records("").unwrap();
+        assert!(records.is_empty());
+
+        let records = parse_legacy_records("   ").unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn test_parse_legacy_records_invalid_json() {
+        let result = parse_legacy_records("not json at all");
+        assert!(result.is_err());
+    }
+
+    // =====================================================================
+    // 追加テスト: RecordFilter
+    // =====================================================================
+
+    #[test]
+    fn test_record_filter_matches_endpoint_id() {
+        let record = create_test_record(Utc::now());
+
+        let filter = RecordFilter {
+            endpoint_id: Some(record.endpoint_id),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        let filter = RecordFilter {
+            endpoint_id: Some(Uuid::new_v4()),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+    }
+
+    #[test]
+    fn test_record_filter_matches_status() {
+        let mut record = create_test_record(Utc::now());
+        record.status = RecordStatus::Success;
+
+        let filter = RecordFilter {
+            status: Some(FilterStatus::Success),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        let filter = RecordFilter {
+            status: Some(FilterStatus::Error),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+
+        // Error record
+        record.status = RecordStatus::Error {
+            message: "fail".to_string(),
+        };
+        let filter = RecordFilter {
+            status: Some(FilterStatus::Error),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        let filter = RecordFilter {
+            status: Some(FilterStatus::Success),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+    }
+
+    #[test]
+    fn test_record_filter_matches_time_range() {
+        let now = Utc::now();
+        let record = create_test_record(now);
+
+        // start_time before record -> match
+        let filter = RecordFilter {
+            start_time: Some(now - Duration::hours(1)),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        // start_time after record -> no match
+        let filter = RecordFilter {
+            start_time: Some(now + Duration::hours(1)),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+
+        // end_time after record -> match
+        let filter = RecordFilter {
+            end_time: Some(now + Duration::hours(1)),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        // end_time before record -> no match
+        let filter = RecordFilter {
+            end_time: Some(now - Duration::hours(1)),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+    }
+
+    #[test]
+    fn test_record_filter_matches_client_ip() {
+        let record = create_test_record(Utc::now());
+        // record has client_ip = Some("10.0.0.10")
+
+        let filter = RecordFilter {
+            client_ip: Some("10.0.0.10".to_string()),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        let filter = RecordFilter {
+            client_ip: Some("192.168.1.1".to_string()),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+
+        // Record with no client_ip
+        let mut record_no_ip = create_test_record(Utc::now());
+        record_no_ip.client_ip = None;
+        let filter = RecordFilter {
+            client_ip: Some("10.0.0.10".to_string()),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record_no_ip));
+    }
+
+    #[test]
+    fn test_record_filter_matches_combined() {
+        let record = create_test_record(Utc::now());
+
+        // Multiple filters that all match
+        let filter = RecordFilter {
+            model: Some("test".to_string()),
+            endpoint_id: Some(record.endpoint_id),
+            status: Some(FilterStatus::Success),
+            ..Default::default()
+        };
+        assert!(filter.matches(&record));
+
+        // One filter doesn't match -> overall doesn't match
+        let filter = RecordFilter {
+            model: Some("test".to_string()),
+            endpoint_id: Some(Uuid::new_v4()), // wrong endpoint
+            status: Some(FilterStatus::Success),
+            ..Default::default()
+        };
+        assert!(!filter.matches(&record));
+    }
+
+    // =====================================================================
+    // 追加テスト: FilterStatus deserialization
+    // =====================================================================
+
+    #[test]
+    fn test_filter_status_deserialize() {
+        let success: FilterStatus = serde_json::from_str("\"success\"").unwrap();
+        assert_eq!(success, FilterStatus::Success);
+
+        let error: FilterStatus = serde_json::from_str("\"error\"").unwrap();
+        assert_eq!(error, FilterStatus::Error);
+    }
+
+    // =====================================================================
+    // 追加テスト: FilteredRecords serialize
+    // =====================================================================
+
+    #[test]
+    fn test_filtered_records_serialize() {
+        let fr = FilteredRecords {
+            records: vec![],
+            total_count: 0,
+            page: 1,
+            per_page: 10,
+        };
+        let json = serde_json::to_value(&fr).unwrap();
+        assert_eq!(json["total_count"], 0);
+        assert_eq!(json["page"], 1);
+        assert_eq!(json["per_page"], 10);
+    }
+
+    // =====================================================================
+    // 追加テスト: TokenStatistics serialize
+    // =====================================================================
+
+    #[test]
+    fn test_token_statistics_serialize() {
+        let stats = TokenStatistics {
+            total_input_tokens: 100,
+            total_output_tokens: 50,
+            total_tokens: 150,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["total_input_tokens"], 100);
+        assert_eq!(json["total_output_tokens"], 50);
+        assert_eq!(json["total_tokens"], 150);
+    }
+
+    // =====================================================================
+    // 追加テスト: ModelTokenStatistics serialize
+    // =====================================================================
+
+    #[test]
+    fn test_model_token_statistics_serialize() {
+        let stats = ModelTokenStatistics {
+            model: "gpt-4".to_string(),
+            total_input_tokens: 200,
+            total_output_tokens: 100,
+            total_tokens: 300,
+            request_count: 5,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["model"], "gpt-4");
+        assert_eq!(json["request_count"], 5);
+    }
+
+    // =====================================================================
+    // 追加テスト: EndpointTokenStatistics serialize
+    // =====================================================================
+
+    #[test]
+    fn test_endpoint_token_statistics_serialize() {
+        let ep_id = Uuid::new_v4();
+        let stats = EndpointTokenStatistics {
+            endpoint_id: ep_id,
+            endpoint_name: "ep-1".to_string(),
+            total_input_tokens: 300,
+            total_output_tokens: 150,
+            total_tokens: 450,
+            request_count: 10,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["endpoint_name"], "ep-1");
+        assert_eq!(json["request_count"], 10);
+    }
+
+    // =====================================================================
+    // 追加テスト: MinuteHistoryPoint
+    // =====================================================================
+
+    #[test]
+    fn test_minute_history_point_from_row() {
+        let row = MinuteHistoryRow {
+            minute: "2024-01-01T12:00:00Z".to_string(),
+            success_count: 5,
+            error_count: 2,
+        };
+        let point: MinuteHistoryPoint = row.into();
+        assert_eq!(point.minute, "2024-01-01T12:00:00Z");
+        assert_eq!(point.success_count, 5);
+        assert_eq!(point.error_count, 2);
+    }
+
+    // =====================================================================
+    // 追加テスト: legacy_migrated_path
+    // =====================================================================
+
+    #[test]
+    fn test_legacy_migrated_path() {
+        let original = std::path::Path::new("/data/request_history.json");
+        let migrated = legacy_migrated_path(original);
+        assert_eq!(
+            migrated,
+            std::path::PathBuf::from("/data/request_history.json.migrated")
+        );
+    }
+
+    // =====================================================================
+    // 追加テスト: parse_legacy_records valid array
+    // =====================================================================
+
+    #[test]
+    fn test_parse_legacy_records_valid_array() {
+        let record = create_test_record(Utc::now());
+        let json = serde_json::to_string(&vec![&record]).unwrap();
+        let records = parse_legacy_records(&json).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, record.id);
+    }
+
+    // =====================================================================
+    // 追加テスト: ClientIpFilter
+    // =====================================================================
+
+    #[test]
+    fn test_client_ip_filter_exact_ipv4() {
+        let f = ClientIpFilter::from_input("192.168.1.1");
+        match f {
+            ClientIpFilter::Exact(ip) => assert_eq!(ip, "192.168.1.1"),
+            _ => panic!("expected Exact"),
+        }
+    }
+
+    #[test]
+    fn test_client_ip_filter_exact_ipv6() {
+        let f = ClientIpFilter::from_input("::1");
+        match f {
+            ClientIpFilter::Exact(ip) => assert_eq!(ip, "::1"),
+            _ => panic!("expected Exact"),
+        }
+    }
+
+    #[test]
+    fn test_client_ip_filter_ipv6_prefix64() {
+        let f = ClientIpFilter::from_input("2001:db8::/64");
+        match f {
+            ClientIpFilter::Ipv6Prefix64(prefix) => assert!(prefix.contains("/64")),
+            _ => panic!("expected Ipv6Prefix64"),
+        }
+    }
+
+    #[test]
+    fn test_client_ip_filter_invalid_input() {
+        // Non-IP string treated as exact
+        let f = ClientIpFilter::from_input("not-an-ip");
+        match f {
+            ClientIpFilter::Exact(ip) => assert_eq!(ip, "not-an-ip"),
+            _ => panic!("expected Exact"),
+        }
+    }
+
+    // =====================================================================
+    // 追加テスト: build_in_clause
+    // =====================================================================
+
+    #[test]
+    fn test_build_in_clause() {
+        let clause = build_in_clause("client_ip", 3);
+        assert_eq!(clause, "client_ip IN (?, ?, ?)");
+    }
+
+    #[test]
+    fn test_build_in_clause_single() {
+        let clause = build_in_clause("col", 1);
+        assert_eq!(clause, "col IN (?)");
+    }
+
+    // =====================================================================
+    // 追加テスト: ClientDetail::empty
+    // =====================================================================
+
+    #[test]
+    fn test_client_detail_empty() {
+        let detail = ClientDetail::empty();
+        assert_eq!(detail.total_requests, 0);
+        assert!(detail.first_seen.is_none());
+        assert!(detail.last_seen.is_none());
+        assert!(detail.recent_requests.is_empty());
+        assert!(detail.model_distribution.is_empty());
+        assert_eq!(detail.hourly_pattern.len(), 24);
+        for (i, hp) in detail.hourly_pattern.iter().enumerate() {
+            assert_eq!(hp.hour, i as i64);
+            assert_eq!(hp.count, 0);
+        }
+    }
+
+    // =====================================================================
+    // 追加テスト: HeatmapCell serialize
+    // =====================================================================
+
+    #[test]
+    fn test_heatmap_cell_serialize() {
+        let cell = HeatmapCell {
+            day_of_week: 0,
+            hour: 12,
+            count: 42,
+        };
+        let json = serde_json::to_value(&cell).unwrap();
+        assert_eq!(json["day_of_week"], 0);
+        assert_eq!(json["hour"], 12);
+        assert_eq!(json["count"], 42);
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - filter_and_paginate with client_ip
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_filter_by_client_ip() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut r1 = create_test_record(Utc::now());
+        r1.client_ip = Some("10.0.0.1".parse().unwrap());
+        storage.save_record(&r1).await.unwrap();
+
+        let mut r2 = create_test_record(Utc::now() - Duration::seconds(1));
+        r2.client_ip = Some("10.0.0.2".parse().unwrap());
+        storage.save_record(&r2).await.unwrap();
+
+        let filter = RecordFilter {
+            client_ip: Some("10.0.0.1".to_string()),
+            ..Default::default()
+        };
+        let result = storage.filter_and_paginate(&filter, 1, 10).await.unwrap();
+        assert_eq!(result.total_count, 1);
+        assert_eq!(
+            result.records[0].client_ip,
+            Some("10.0.0.1".parse().unwrap())
+        );
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - filter_and_paginate empty results
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_filter_and_paginate_no_results() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let filter = RecordFilter {
+            model: Some("nonexistent-model".to_string()),
+            ..Default::default()
+        };
+        let result = storage.filter_and_paginate(&filter, 1, 10).await.unwrap();
+        assert_eq!(result.total_count, 0);
+        assert!(result.records.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - filter_and_paginate page 0
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_filter_and_paginate_page_zero() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let record = create_test_record(Utc::now());
+        storage.save_record(&record).await.unwrap();
+
+        // page 0 should behave like page 1 (saturating_sub)
+        let filter = RecordFilter::default();
+        let result = storage.filter_and_paginate(&filter, 0, 10).await.unwrap();
+        assert_eq!(result.records.len(), 1);
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - multiple request types
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_save_record_various_request_types() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let request_types = [
+            RequestType::Chat,
+            RequestType::Embeddings,
+            RequestType::Transcription,
+            RequestType::Speech,
+            RequestType::ImageGeneration,
+        ];
+
+        for (i, rt) in request_types.iter().enumerate() {
+            let mut record = create_test_record(Utc::now() - Duration::seconds(i as i64));
+            record.request_type = *rt;
+            storage.save_record(&record).await.unwrap();
+        }
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 5);
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - save record without response body
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_save_record_without_response_body() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let mut record = create_test_record(Utc::now());
+        record.response_body = None;
+        storage.save_record(&record).await.unwrap();
+
+        let loaded = storage.load_records().await.unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].response_body.is_none());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_client_ip_ranking empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_client_ip_ranking_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let result = storage.get_client_ip_ranking(24, 1, 10).await.unwrap();
+        assert!(result.rankings.is_empty());
+        assert_eq!(result.total_count, 0);
+        assert_eq!(result.page, 1);
+        assert_eq!(result.per_page, 10);
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_client_ip_ranking with data
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_client_ip_ranking_with_data() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        // Insert records with different client IPs
+        for i in 0..3 {
+            let mut r = create_test_record(Utc::now() - Duration::seconds(i));
+            r.client_ip = Some("10.0.0.1".parse().unwrap());
+            storage.save_record(&r).await.unwrap();
+        }
+        let mut r2 = create_test_record(Utc::now() - Duration::seconds(10));
+        r2.client_ip = Some("10.0.0.2".parse().unwrap());
+        storage.save_record(&r2).await.unwrap();
+
+        let result = storage.get_client_ip_ranking(24, 1, 10).await.unwrap();
+        assert_eq!(result.total_count, 2);
+        // First should be the one with more requests
+        assert_eq!(result.rankings[0].request_count, 3);
+        assert_eq!(result.rankings[1].request_count, 1);
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_ip_request_counts_since
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_ip_request_counts_since_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let counts = storage.get_ip_request_counts_since(24).await.unwrap();
+        assert!(counts.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_request_heatmap
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_request_heatmap_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let cells = storage.get_request_heatmap(168).await.unwrap();
+        // Always 7*24 = 168 cells
+        assert_eq!(cells.len(), 168);
+        // All zero counts
+        for cell in &cells {
+            assert_eq!(cell.count, 0);
+        }
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_unique_ip_timeline
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_unique_ip_timeline_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let timeline = storage.get_unique_ip_timeline(24).await.unwrap();
+        assert_eq!(timeline.len(), 24);
+        for point in &timeline {
+            assert_eq!(point.unique_ips, 0);
+        }
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_model_distribution_by_clients empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_model_distribution_by_clients_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let dist = storage.get_model_distribution_by_clients(24).await.unwrap();
+        assert!(dist.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_client_detail empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_client_detail_unknown_ip() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let detail = storage
+            .get_client_detail("192.168.99.99", 10)
+            .await
+            .unwrap();
+        assert_eq!(detail.total_requests, 0);
+        assert!(detail.recent_requests.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_client_api_keys empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_client_api_keys_empty() {
+        let pool = create_test_pool().await;
+        let storage = RequestHistoryStorage::new(pool);
+
+        let keys = storage.get_client_api_keys("10.0.0.1").await.unwrap();
+        assert!(keys.is_empty());
+    }
 }

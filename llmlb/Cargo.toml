@@ -97,3 +97,4 @@ criterion = { version = "0.8", features = ["async_tokio"] }
 sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "uuid"] }
 serial_test = "3.0"
 tokio-tungstenite = "0.28"
+proptest = "1"

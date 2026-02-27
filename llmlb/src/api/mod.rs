@@ -750,6 +750,71 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
+    // --- normalize_dashboard_path tests ---
+
+    #[test]
+    fn test_normalize_dashboard_path_empty() {
+        assert_eq!(
+            normalize_dashboard_path(""),
+            Some(DASHBOARD_INDEX.to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_dashboard_path_just_slashes() {
+        assert_eq!(
+            normalize_dashboard_path("/"),
+            Some(DASHBOARD_INDEX.to_string())
+        );
+        assert_eq!(
+            normalize_dashboard_path("///"),
+            Some(DASHBOARD_INDEX.to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_dashboard_path_valid_file() {
+        assert_eq!(
+            normalize_dashboard_path("assets/index.js"),
+            Some("assets/index.js".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_dashboard_path_strips_slashes() {
+        assert_eq!(
+            normalize_dashboard_path("/assets/style.css/"),
+            Some("assets/style.css".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_dashboard_path_rejects_dotdot() {
+        assert_eq!(normalize_dashboard_path("../etc/passwd"), None);
+        assert_eq!(normalize_dashboard_path("assets/../../../etc/passwd"), None);
+    }
+
+    #[test]
+    fn test_normalize_dashboard_path_rejects_backslash() {
+        assert_eq!(normalize_dashboard_path("assets\\evil.js"), None);
+    }
+
+    #[test]
+    fn test_normalize_dashboard_path_normal_subdirectory() {
+        assert_eq!(
+            normalize_dashboard_path("assets/js/main.js"),
+            Some("assets/js/main.js".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_dashboard_path_single_file() {
+        assert_eq!(
+            normalize_dashboard_path("favicon.ico"),
+            Some("favicon.ico".to_string())
+        );
+    }
+
     #[tokio::test]
     async fn test_dashboard_audit_logs_allows_admin_role() {
         let state = test_state().await;

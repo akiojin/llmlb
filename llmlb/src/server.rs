@@ -61,3 +61,22 @@ async fn shutdown_signal(shutdown: ShutdownController) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn shutdown_signal_completes_when_controller_requests_shutdown() {
+        let shutdown = ShutdownController::default();
+        let wait_task = tokio::spawn(shutdown_signal(shutdown.clone()));
+
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        shutdown.request_shutdown();
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), wait_task)
+            .await
+            .expect("shutdown signal task timed out")
+            .expect("shutdown signal task panicked");
+    }
+}

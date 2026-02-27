@@ -130,3 +130,117 @@ fn format_http_status(status: Option<StatusCode>) -> String {
         None => "UNREACHABLE".to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration as ChronoDuration;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    fn unique_test_port() -> u16 {
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("failed to reserve test port");
+        let port = listener
+            .local_addr()
+            .expect("failed to read test port")
+            .port();
+        drop(listener);
+        port
+    }
+
+    #[test]
+    fn determine_status_label_covers_all_branches() {
+        let now = Utc::now();
+
+        assert_eq!(
+            determine_status_label(0, false, now, Some(StatusCode::OK)),
+            "Running"
+        );
+        assert_eq!(determine_status_label(0, false, now, None), "Unknown");
+        assert_eq!(
+            determine_status_label(12345, false, now, Some(StatusCode::OK)),
+            "Stale"
+        );
+        assert_eq!(
+            determine_status_label(12345, true, now, Some(StatusCode::OK)),
+            "Running"
+        );
+        assert_eq!(
+            determine_status_label(12345, true, now - ChronoDuration::seconds(10), None),
+            "Starting"
+        );
+        assert_eq!(
+            determine_status_label(12345, true, now - ChronoDuration::seconds(90), None),
+            "Unreachable"
+        );
+    }
+
+    #[test]
+    fn format_http_status_covers_variants() {
+        assert_eq!(format_http_status(Some(StatusCode::OK)), "OK");
+        assert_eq!(
+            format_http_status(Some(StatusCode::SERVICE_UNAVAILABLE)),
+            "HTTP 503 Service Unavailable"
+        );
+        assert_eq!(format_http_status(None), "UNREACHABLE");
+    }
+
+    #[tokio::test]
+    async fn check_http_returns_status_when_reachable() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/dashboard/"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let status = check_http(&client, &format!("{}/dashboard/", server.uri())).await;
+        assert_eq!(status, Some(StatusCode::OK));
+    }
+
+    #[tokio::test]
+    async fn check_http_returns_none_when_unreachable() {
+        let client = reqwest::Client::new();
+        let status = check_http(&client, "http://127.0.0.1:9/dashboard/").await;
+        assert!(status.is_none());
+    }
+
+    #[tokio::test]
+    async fn execute_succeeds_when_port_has_no_lock_file() {
+        let args = StatusArgs {
+            port: Some(unique_test_port()),
+        };
+        execute(&args)
+            .await
+            .expect("status command should succeed for missing lock");
+    }
+
+    #[tokio::test]
+    async fn execute_succeeds_for_stale_lock() {
+        let port = unique_test_port();
+        let path = crate::lock::lock_path(port);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("failed to create lock dir");
+        }
+        let stale = crate::lock::LockInfo {
+            pid: u32::MAX,
+            started_at: Utc::now(),
+            port,
+        };
+        std::fs::write(
+            &path,
+            serde_json::to_string(&stale).expect("failed to serialize lock info"),
+        )
+        .expect("failed to write lock file");
+
+        let args = StatusArgs { port: Some(port) };
+        let result = execute(&args).await;
+        let _ = std::fs::remove_file(&path);
+
+        result.expect("status command should handle stale lock");
+    }
+}

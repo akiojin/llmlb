@@ -49,3 +49,145 @@ pub fn ipv6_to_prefix64(ip_str: &str) -> String {
         _ => ip_str.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipv4_string_passthrough() {
+        assert_eq!(ipv6_to_prefix64("192.168.1.1"), "192.168.1.1");
+    }
+
+    #[test]
+    fn standard_ipv6_to_prefix64() {
+        let result = ipv6_to_prefix64("2001:db8:1234:5678:abcd:ef01:2345:6789");
+        assert_eq!(result, "2001:db8:1234:5678::/64");
+    }
+
+    #[test]
+    fn loopback_ipv6_to_prefix64() {
+        let result = ipv6_to_prefix64("::1");
+        assert_eq!(result, "::/64");
+    }
+
+    #[test]
+    fn invalid_string_passthrough() {
+        assert_eq!(ipv6_to_prefix64("not-an-ip"), "not-an-ip");
+    }
+
+    #[test]
+    fn all_zeros_ipv6_to_prefix64() {
+        let result = ipv6_to_prefix64("::");
+        assert_eq!(result, "::/64");
+    }
+
+    #[test]
+    fn full_128bit_ipv6_preserves_upper_64() {
+        let result = ipv6_to_prefix64("fe80:1111:2222:3333:4444:5555:6666:7777");
+        assert_eq!(result, "fe80:1111:2222:3333::/64");
+    }
+
+    #[test]
+    fn normalize_ip_ipv4_passthrough() {
+        let addr: IpAddr = "192.168.1.1".parse().unwrap();
+        assert_eq!(normalize_ip(addr), addr);
+    }
+
+    #[test]
+    fn normalize_ip_ipv4_mapped_ipv6() {
+        let addr: IpAddr = "::ffff:192.168.1.1".parse().unwrap();
+        let normalized = normalize_ip(addr);
+        assert_eq!(normalized, "192.168.1.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn normalize_ip_pure_ipv6_unchanged() {
+        let addr: IpAddr = "2001:db8::1".parse().unwrap();
+        assert_eq!(normalize_ip(addr), addr);
+    }
+
+    #[test]
+    fn normalize_ip_loopback_ipv4() {
+        let addr: IpAddr = "127.0.0.1".parse().unwrap();
+        assert_eq!(normalize_ip(addr), addr);
+    }
+
+    #[test]
+    fn normalize_ip_loopback_ipv6() {
+        let addr: IpAddr = "::1".parse().unwrap();
+        assert_eq!(normalize_ip(addr), addr);
+    }
+
+    #[test]
+    fn normalize_socket_ip_ipv4() {
+        let sock: SocketAddr = "192.168.1.1:8080".parse().unwrap();
+        assert_eq!(
+            normalize_socket_ip(&sock),
+            "192.168.1.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn normalize_socket_ip_ipv4_mapped() {
+        let sock: SocketAddr = "[::ffff:10.0.0.1]:443".parse().unwrap();
+        assert_eq!(
+            normalize_socket_ip(&sock),
+            "10.0.0.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn normalize_socket_ip_pure_ipv6() {
+        let sock: SocketAddr = "[2001:db8::1]:9090".parse().unwrap();
+        assert_eq!(
+            normalize_socket_ip(&sock),
+            "2001:db8::1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn ipv6_to_prefix64_link_local() {
+        let result = ipv6_to_prefix64("fe80::1");
+        assert_eq!(result, "fe80::/64");
+    }
+
+    #[test]
+    fn ipv6_to_prefix64_empty_string() {
+        assert_eq!(ipv6_to_prefix64(""), "");
+    }
+
+    #[test]
+    fn normalize_ip_ipv4_mapped_loopback() {
+        let addr: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
+        let normalized = normalize_ip(addr);
+        assert_eq!(normalized, "127.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn normalize_ip_unspecified_ipv4() {
+        let addr: IpAddr = "0.0.0.0".parse().unwrap();
+        assert_eq!(normalize_ip(addr), addr);
+    }
+
+    #[test]
+    fn normalize_ip_unspecified_ipv6() {
+        let addr: IpAddr = "::".parse().unwrap();
+        assert_eq!(normalize_ip(addr), addr);
+    }
+
+    #[test]
+    fn normalize_socket_ip_loopback_port() {
+        let sock: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        assert_eq!(
+            normalize_socket_ip(&sock),
+            "127.0.0.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn ipv6_to_prefix64_ipv4_mapped() {
+        let result = ipv6_to_prefix64("::ffff:192.168.1.1");
+        assert!(result.ends_with("/64") || result == "::ffff:192.168.1.1");
+    }
+}

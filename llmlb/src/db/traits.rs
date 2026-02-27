@@ -1122,4 +1122,737 @@ mod tests {
         let found = repo.find_by_id(user.id).await.unwrap();
         assert!(found.is_some());
     }
+
+    // --- 追加テスト ---
+
+    #[tokio::test]
+    async fn test_mock_user_update() {
+        let repo = MockUserRepository::new();
+        let user = repo
+            .create_user("alice", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+
+        let updated = repo
+            .update_user(user.id, Some("alice2"), None, Some(UserRole::Admin))
+            .await
+            .unwrap();
+        assert_eq!(updated.username, "alice2");
+        assert_eq!(updated.role, UserRole::Admin);
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_update_nonexistent_fails() {
+        let repo = MockUserRepository::new();
+        let result = repo
+            .update_user(Uuid::new_v4(), Some("name"), None, None)
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_find_by_username_not_found() {
+        let repo = MockUserRepository::new();
+        let found = repo.find_by_username("nobody").await.unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_last_admin_with_multiple_admins() {
+        let repo = MockUserRepository::new();
+        let admin1 = repo
+            .create_user("admin1", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        let _admin2 = repo
+            .create_user("admin2", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+
+        assert!(!repo.is_last_admin(admin1.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_last_admin_check_viewer() {
+        let repo = MockUserRepository::new();
+        let _admin = repo
+            .create_user("admin", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        let viewer = repo
+            .create_user("viewer", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+
+        assert!(!repo.is_last_admin(viewer.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_update_full() {
+        let repo = MockEndpointRepository::new();
+        let ep = Endpoint::new(
+            "original".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        repo.create_endpoint(&ep).await.unwrap();
+
+        let mut updated_ep = ep.clone();
+        updated_ep.name = "updated".to_string();
+        let ok = repo.update_endpoint(&updated_ep).await.unwrap();
+        assert!(ok);
+
+        let fetched = repo.get_endpoint(ep.id).await.unwrap().unwrap();
+        assert_eq!(fetched.name, "updated");
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_update_nonexistent() {
+        let repo = MockEndpointRepository::new();
+        let ep = Endpoint::new(
+            "ghost".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        let ok = repo.update_endpoint(&ep).await.unwrap();
+        assert!(!ok);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_list_by_status() {
+        let repo = MockEndpointRepository::new();
+
+        let mut ep1 = Endpoint::new(
+            "online".to_string(),
+            "http://a:1".to_string(),
+            EndpointType::Xllm,
+        );
+        ep1.status = EndpointStatus::Online;
+        let ep2 = Endpoint::new(
+            "pending".to_string(),
+            "http://b:2".to_string(),
+            EndpointType::Vllm,
+        );
+        repo.create_endpoint(&ep1).await.unwrap();
+        repo.create_endpoint(&ep2).await.unwrap();
+
+        let online = repo
+            .list_endpoints_by_status(EndpointStatus::Online)
+            .await
+            .unwrap();
+        assert_eq!(online.len(), 1);
+        assert_eq!(online[0].name, "online");
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_list_by_type() {
+        let repo = MockEndpointRepository::new();
+
+        let ep1 = Endpoint::new(
+            "xllm-ep".to_string(),
+            "http://a:1".to_string(),
+            EndpointType::Xllm,
+        );
+        let ep2 = Endpoint::new(
+            "vllm-ep".to_string(),
+            "http://b:2".to_string(),
+            EndpointType::Vllm,
+        );
+        repo.create_endpoint(&ep1).await.unwrap();
+        repo.create_endpoint(&ep2).await.unwrap();
+
+        let xllm = repo
+            .list_endpoints_by_type(EndpointType::Xllm)
+            .await
+            .unwrap();
+        assert_eq!(xllm.len(), 1);
+        assert_eq!(xllm[0].name, "xllm-ep");
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_dynamic_dispatch() {
+        let repo: Box<dyn EndpointRepository> = Box::new(MockEndpointRepository::new());
+        let ep = Endpoint::new(
+            "dynamic".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        repo.create_endpoint(&ep).await.unwrap();
+
+        let found = repo.get_endpoint(ep.id).await.unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "dynamic");
+    }
+
+    // --- additional coverage tests ---
+
+    #[tokio::test]
+    async fn test_mock_user_delete_nonexistent_is_noop() {
+        let repo = MockUserRepository::new();
+        // Deleting a non-existent user should succeed silently
+        repo.delete_user(Uuid::new_v4()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_list_empty() {
+        let repo = MockUserRepository::new();
+        let users = repo.list_users().await.unwrap();
+        assert!(users.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_update_last_login() {
+        let repo = MockUserRepository::new();
+        let user = repo
+            .create_user("login_test", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+        // update_last_login is a no-op in the mock; just verify it doesn't error
+        repo.update_last_login(user.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_is_last_admin_nonexistent_fails() {
+        let repo = MockUserRepository::new();
+        let result = repo.is_last_admin(Uuid::new_v4()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_must_change_password_flag() {
+        let repo = MockUserRepository::new();
+        let user = repo
+            .create_user("pwchange", "hash", UserRole::Viewer, true)
+            .await
+            .unwrap();
+        assert!(user.must_change_password);
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_find_by_id_not_found() {
+        let repo = MockUserRepository::new();
+        let found = repo.find_by_id(Uuid::new_v4()).await.unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_delete_nonexistent() {
+        let repo = MockEndpointRepository::new();
+        let deleted = repo.delete_endpoint(Uuid::new_v4()).await.unwrap();
+        assert!(!deleted);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_find_by_name_not_found() {
+        let repo = MockEndpointRepository::new();
+        let found = repo.find_by_name("nonexistent").await.unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_list_empty() {
+        let repo = MockEndpointRepository::new();
+        let all = repo.list_endpoints().await.unwrap();
+        assert!(all.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_update_status_nonexistent() {
+        let repo = MockEndpointRepository::new();
+        let updated = repo
+            .update_endpoint_status(Uuid::new_v4(), EndpointStatus::Online, Some(10), None)
+            .await
+            .unwrap();
+        assert!(!updated);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_multiple_types_filter() {
+        let repo = MockEndpointRepository::new();
+
+        let ep_xllm = Endpoint::new(
+            "xllm1".to_string(),
+            "http://a:1".to_string(),
+            EndpointType::Xllm,
+        );
+        let ep_vllm = Endpoint::new(
+            "vllm1".to_string(),
+            "http://b:2".to_string(),
+            EndpointType::Vllm,
+        );
+        let ep_compat = Endpoint::new(
+            "compat1".to_string(),
+            "http://c:3".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        repo.create_endpoint(&ep_xllm).await.unwrap();
+        repo.create_endpoint(&ep_vllm).await.unwrap();
+        repo.create_endpoint(&ep_compat).await.unwrap();
+
+        let xllm_list = repo
+            .list_endpoints_by_type(EndpointType::Xllm)
+            .await
+            .unwrap();
+        assert_eq!(xllm_list.len(), 1);
+        assert_eq!(xllm_list[0].name, "xllm1");
+
+        let vllm_list = repo
+            .list_endpoints_by_type(EndpointType::Vllm)
+            .await
+            .unwrap();
+        assert_eq!(vllm_list.len(), 1);
+
+        let compat_list = repo
+            .list_endpoints_by_type(EndpointType::OpenaiCompatible)
+            .await
+            .unwrap();
+        assert_eq!(compat_list.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_request_totals_default() {
+        let repo = MockEndpointRepository::new();
+        let totals = repo.get_request_totals().await.unwrap();
+        assert_eq!(totals.total_requests, 0);
+        assert_eq!(totals.successful_requests, 0);
+        assert_eq!(totals.failed_requests, 0);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_model_operations() {
+        let repo = MockEndpointRepository::new();
+        let ep_id = Uuid::new_v4();
+
+        // add_endpoint_model is a no-op in mock
+        let model = EndpointModel {
+            endpoint_id: ep_id,
+            model_id: "test-model".to_string(),
+            capabilities: None,
+            max_tokens: None,
+            last_checked: Some(Utc::now()),
+            supported_apis: vec![],
+        };
+        repo.add_endpoint_model(&model).await.unwrap();
+
+        // list returns empty in mock
+        let models = repo.list_endpoint_models(ep_id).await.unwrap();
+        assert!(models.is_empty());
+
+        // delete returns true in mock
+        let deleted = repo
+            .delete_endpoint_model(ep_id, "test-model")
+            .await
+            .unwrap();
+        assert!(deleted);
+
+        // delete all returns 0 in mock
+        let count = repo.delete_all_endpoint_models(ep_id).await.unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_health_check_operations() {
+        let repo = MockEndpointRepository::new();
+        let ep_id = Uuid::new_v4();
+
+        let check = EndpointHealthCheck {
+            id: 0,
+            endpoint_id: ep_id,
+            checked_at: Utc::now(),
+            success: true,
+            latency_ms: Some(42),
+            error_message: None,
+            status_before: EndpointStatus::Pending,
+            status_after: EndpointStatus::Online,
+        };
+        let result_id = repo.record_health_check(&check).await.unwrap();
+        assert_eq!(result_id, 1);
+
+        let checks = repo.list_health_checks(ep_id, 10).await.unwrap();
+        assert!(checks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_inference_latency_update() {
+        let repo = MockEndpointRepository::new();
+        let ok = repo
+            .update_inference_latency(Uuid::new_v4(), Some(123.456))
+            .await
+            .unwrap();
+        assert!(ok);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_device_info_update() {
+        let repo = MockEndpointRepository::new();
+        let ok = repo.update_device_info(Uuid::new_v4(), None).await.unwrap();
+        assert!(ok);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_increment_request_counters() {
+        let repo = MockEndpointRepository::new();
+        let ok = repo
+            .increment_request_counters(Uuid::new_v4(), true)
+            .await
+            .unwrap();
+        assert!(ok);
+        let ok = repo
+            .increment_request_counters(Uuid::new_v4(), false)
+            .await
+            .unwrap();
+        assert!(ok);
+    }
+
+    // =======================================================================
+    // 追加テスト: MockUserRepository - 複合操作・エッジケース
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_mock_user_update_username_only() {
+        let repo = MockUserRepository::new();
+        let user = repo
+            .create_user("original", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+
+        let updated = repo
+            .update_user(user.id, Some("renamed"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(updated.username, "renamed");
+        // ロールは変わらない
+        assert_eq!(updated.role, UserRole::Admin);
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_update_role_only() {
+        let repo = MockUserRepository::new();
+        let user = repo
+            .create_user("keeper", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+
+        let updated = repo
+            .update_user(user.id, None, None, Some(UserRole::Admin))
+            .await
+            .unwrap();
+        assert_eq!(updated.username, "keeper");
+        assert_eq!(updated.role, UserRole::Admin);
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_create_multiple_and_list() {
+        let repo = MockUserRepository::new();
+        for i in 0..5 {
+            repo.create_user(
+                &format!("user{}", i),
+                "hash",
+                if i % 2 == 0 {
+                    UserRole::Admin
+                } else {
+                    UserRole::Viewer
+                },
+                false,
+            )
+            .await
+            .unwrap();
+        }
+        let users = repo.list_users().await.unwrap();
+        assert_eq!(users.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_delete_then_recreate() {
+        let repo = MockUserRepository::new();
+        let user = repo
+            .create_user("ephemeral", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+        repo.delete_user(user.id).await.unwrap();
+        assert!(repo.find_by_username("ephemeral").await.unwrap().is_none());
+
+        // 同名で再作成
+        let user2 = repo
+            .create_user("ephemeral", "hash2", UserRole::Admin, false)
+            .await
+            .unwrap();
+        assert_ne!(user.id, user2.id);
+        assert_eq!(user2.role, UserRole::Admin);
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_last_admin_after_role_change() {
+        let repo = MockUserRepository::new();
+        let admin = repo
+            .create_user("sole_admin", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        assert!(repo.is_last_admin(admin.id).await.unwrap());
+
+        // AdminからViewerへ降格
+        let demoted = repo
+            .update_user(admin.id, None, None, Some(UserRole::Viewer))
+            .await
+            .unwrap();
+        assert_eq!(demoted.role, UserRole::Viewer);
+        // Viewerに対するis_last_adminはfalse
+        assert!(!repo.is_last_admin(admin.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_mock_user_find_after_update() {
+        let repo = MockUserRepository::new();
+        let user = repo
+            .create_user("before", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+        repo.update_user(user.id, Some("after"), None, None)
+            .await
+            .unwrap();
+
+        // 旧名では見つからない
+        assert!(repo.find_by_username("before").await.unwrap().is_none());
+        // 新名で見つかる
+        let found = repo.find_by_username("after").await.unwrap().unwrap();
+        assert_eq!(found.id, user.id);
+    }
+
+    // =======================================================================
+    // 追加テスト: MockEndpointRepository - 複合操作・エッジケース
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_mock_endpoint_status_transitions() {
+        let repo = MockEndpointRepository::new();
+        let ep = Endpoint::new(
+            "transition".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        repo.create_endpoint(&ep).await.unwrap();
+        assert_eq!(
+            repo.get_endpoint(ep.id).await.unwrap().unwrap().status,
+            EndpointStatus::Pending
+        );
+
+        // Pending -> Online
+        repo.update_endpoint_status(ep.id, EndpointStatus::Online, Some(10), None)
+            .await
+            .unwrap();
+        assert_eq!(
+            repo.get_endpoint(ep.id).await.unwrap().unwrap().status,
+            EndpointStatus::Online
+        );
+
+        // Online -> Error
+        repo.update_endpoint_status(
+            ep.id,
+            EndpointStatus::Error,
+            None,
+            Some("connection refused"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            repo.get_endpoint(ep.id).await.unwrap().unwrap().status,
+            EndpointStatus::Error
+        );
+
+        // Error -> Offline
+        repo.update_endpoint_status(ep.id, EndpointStatus::Offline, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            repo.get_endpoint(ep.id).await.unwrap().unwrap().status,
+            EndpointStatus::Offline
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_list_by_status_no_matches() {
+        let repo = MockEndpointRepository::new();
+        let ep = Endpoint::new(
+            "pending-only".to_string(),
+            "http://localhost:1".to_string(),
+            EndpointType::Xllm,
+        );
+        repo.create_endpoint(&ep).await.unwrap();
+
+        // Onlineで検索しても0件
+        let online = repo
+            .list_endpoints_by_status(EndpointStatus::Online)
+            .await
+            .unwrap();
+        assert!(online.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_list_by_type_no_matches() {
+        let repo = MockEndpointRepository::new();
+        let ep = Endpoint::new(
+            "xllm".to_string(),
+            "http://localhost:1".to_string(),
+            EndpointType::Xllm,
+        );
+        repo.create_endpoint(&ep).await.unwrap();
+
+        // Vllmで検索しても0件
+        let vllm = repo
+            .list_endpoints_by_type(EndpointType::Vllm)
+            .await
+            .unwrap();
+        assert!(vllm.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_find_by_name_after_update() {
+        let repo = MockEndpointRepository::new();
+        let ep = Endpoint::new(
+            "old-name".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        repo.create_endpoint(&ep).await.unwrap();
+
+        let mut updated_ep = ep.clone();
+        updated_ep.name = "new-name".to_string();
+        repo.update_endpoint(&updated_ep).await.unwrap();
+
+        // 旧名では見つからない
+        assert!(repo.find_by_name("old-name").await.unwrap().is_none());
+        // 新名で見つかる
+        let found = repo.find_by_name("new-name").await.unwrap().unwrap();
+        assert_eq!(found.id, ep.id);
+    }
+
+    #[tokio::test]
+    async fn test_mock_endpoint_create_delete_multiple() {
+        let repo = MockEndpointRepository::new();
+        let mut ids = vec![];
+        for i in 0..3 {
+            let ep = Endpoint::new(
+                format!("ep-{}", i),
+                format!("http://host{}:80", i),
+                EndpointType::Xllm,
+            );
+            ids.push(ep.id);
+            repo.create_endpoint(&ep).await.unwrap();
+        }
+        assert_eq!(repo.list_endpoints().await.unwrap().len(), 3);
+
+        // 1つ削除
+        repo.delete_endpoint(ids[1]).await.unwrap();
+        assert_eq!(repo.list_endpoints().await.unwrap().len(), 2);
+
+        // 全て削除
+        for id in &ids {
+            repo.delete_endpoint(*id).await.unwrap();
+        }
+        assert!(repo.list_endpoints().await.unwrap().is_empty());
+    }
+
+    // =======================================================================
+    // 追加テスト: Arc<dyn Repository> 動的ディスパッチ
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_arc_user_repository_dispatch() {
+        use std::sync::Arc;
+        let repo: Arc<dyn UserRepository> = Arc::new(MockUserRepository::new());
+
+        let user = repo
+            .create_user("arc_user", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        let found = repo.find_by_id(user.id).await.unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().username, "arc_user");
+    }
+
+    #[tokio::test]
+    async fn test_arc_endpoint_repository_dispatch() {
+        use std::sync::Arc;
+        let repo: Arc<dyn EndpointRepository> = Arc::new(MockEndpointRepository::new());
+
+        let ep = Endpoint::new(
+            "arc-ep".to_string(),
+            "http://localhost:9000".to_string(),
+            EndpointType::Vllm,
+        );
+        repo.create_endpoint(&ep).await.unwrap();
+        let found = repo.get_endpoint(ep.id).await.unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().endpoint_type, EndpointType::Vllm);
+    }
+
+    // =======================================================================
+    // 追加テスト: ジェネリック関数経由でのtrait利用
+    // =======================================================================
+
+    async fn count_admins(repo: &dyn UserRepository) -> usize {
+        repo.list_users()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|u| u.role == UserRole::Admin)
+            .count()
+    }
+
+    #[tokio::test]
+    async fn test_generic_count_admins() {
+        let repo = MockUserRepository::new();
+        assert_eq!(count_admins(&repo).await, 0);
+
+        repo.create_user("a1", "h", UserRole::Admin, false)
+            .await
+            .unwrap();
+        repo.create_user("v1", "h", UserRole::Viewer, false)
+            .await
+            .unwrap();
+        repo.create_user("a2", "h", UserRole::Admin, false)
+            .await
+            .unwrap();
+        assert_eq!(count_admins(&repo).await, 2);
+    }
+
+    async fn find_endpoints_by_url_prefix(
+        repo: &dyn EndpointRepository,
+        prefix: &str,
+    ) -> Vec<Endpoint> {
+        repo.list_endpoints()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.base_url.starts_with(prefix))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_generic_filter_endpoints_by_url() {
+        let repo = MockEndpointRepository::new();
+        let ep1 = Endpoint::new(
+            "local".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        let ep2 = Endpoint::new(
+            "remote".to_string(),
+            "http://10.0.0.1:8080".to_string(),
+            EndpointType::Vllm,
+        );
+        repo.create_endpoint(&ep1).await.unwrap();
+        repo.create_endpoint(&ep2).await.unwrap();
+
+        let local = find_endpoints_by_url_prefix(&repo, "http://localhost").await;
+        assert_eq!(local.len(), 1);
+        assert_eq!(local[0].name, "local");
+
+        let remote = find_endpoints_by_url_prefix(&repo, "http://10.").await;
+        assert_eq!(remote.len(), 1);
+        assert_eq!(remote[0].name, "remote");
+
+        let none = find_endpoints_by_url_prefix(&repo, "https://").await;
+        assert!(none.is_empty());
+    }
 }

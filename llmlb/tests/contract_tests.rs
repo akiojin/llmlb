@@ -121,5 +121,21 @@ mod clients_alert_test;
 #[path = "contract/users_create_viewer_test.rs"]
 mod users_create_viewer_test;
 
+// 認証API契約テスト
+#[path = "contract/auth_api_test.rs"]
+mod auth_api_test;
+
+// ユーザー管理API契約テスト
+#[path = "contract/users_api_test.rs"]
+mod users_api_test;
+
+// APIキー管理API契約テスト
+#[path = "contract/api_keys_api_test.rs"]
+mod api_keys_api_test;
+
+// SPEC-e8e9326e: エンドポイント管理API拡張契約テスト（不足ケース補完）
+#[path = "contract/endpoints_contract_extended_test.rs"]
+mod endpoints_contract_extended_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

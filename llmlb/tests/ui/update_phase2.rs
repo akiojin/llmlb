@@ -152,7 +152,7 @@ fn system_ts_has_drain_timeout_at() {
 fn system_ts_has_applying_phase_fields() {
     let source = get_system_ts_source();
     assert!(
-        source.contains("waiting_permission"),
+        source.contains("running_installer"),
         "system.ts should include applying phase values"
     );
     assert!(

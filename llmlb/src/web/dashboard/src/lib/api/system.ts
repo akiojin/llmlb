@@ -39,7 +39,6 @@ export type UpdateState =
       phase?:
         | 'starting'
         | 'waiting_old_process_exit'
-        | 'waiting_permission'
         | 'running_installer'
         | 'restarting'
       phase_message?: string

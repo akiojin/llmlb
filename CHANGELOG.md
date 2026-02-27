@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [5.2.0](https://github.com/akiojin/llmlb/compare/v5.1.1...v5.2.0) (2026-02-27)
+
+### Features
+
+- Windows updater を Inno Setup ベースへ移行
+
+### Bug Fixes
+
+- release/hotfix スキル定義の YAML description quoting を修正
+
+### Documentation
+
+- Claude 運用指針と memory/lessons.md を更新
+- SPEC-ee2aa3ef に Codex サポート方針を追加
+
 ## [5.1.1](https://github.com/akiojin/llmlb/compare/v5.1.0...v5.1.1) (2026-02-26)
 
 ### Bug Fixes

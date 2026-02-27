@@ -253,7 +253,7 @@ python3 .codex/skills/.system/skill-creator/scripts/package_skill.py \
 | Linux x86_64 | `llmlb-linux-x86_64.tar.gz` |
 | macOS ARM64 (Apple Silicon) | `llmlb-macos-arm64.tar.gz`, `llmlb-macos-arm64.pkg` |
 | macOS x86_64 (Intel) | `llmlb-macos-x86_64.tar.gz`, `llmlb-macos-x86_64.pkg` |
-| Windows x86_64 | `llmlb-windows-x86_64.zip`, `llmlb-windows-x86_64.msi` |
+| Windows x86_64 | `llmlb-windows-x86_64.zip`, `llmlb-windows-x86_64-setup.exe` |
 
 #### macOS での注意事項
 
@@ -392,9 +392,9 @@ llmlb はバックグラウンドで GitHub Releases を確認し（ベストエ
 - in-flight の推論リクエスト（ストリーミング含む）が完了するまで待機（ドレイン、最大300秒）
 - 更新を適用して再起動
 
-Windows の `.msi` 更新では権限昇格（UAC 承認）が必要になる場合があります。
-適用中はダッシュボードに applying の詳細フェーズとタイムアウトカウントダウンを表示し、
-承認待機が10分を超えた場合は `failed` 状態へ遷移します。
+Windows の `-setup.exe` 更新では
+`/VERYSILENT /CLOSEAPPLICATIONS /SUPPRESSMSGBOXES` を付けてユーザー権限
+（`%LOCALAPPDATA%` 配置）でサイレント実行するため、UAC 承認は不要です。
 
 **アップデートスケジュール:**
 
@@ -416,7 +416,7 @@ Windows の `.msi` 更新では権限昇格（UAC 承認）が必要になる場
 自動適用方式は OS/インストール形態により分岐します。
 
 - ポータブル配置: 実行ファイルを置換（配置先が書き込み可能な場合）
-- macOS `.pkg` / Windows `.msi`: インストーラ実行（必要に応じて権限プロンプト/UAC）
+- macOS `.pkg` / Windows `-setup.exe`: インストーラ実行（Windows はUACなしでサイレント実行）
 - Linux の書き込み不可配置: 自動適用は非対応（GitHub Releases から手動更新）
 
 詳細は [specs/SPEC-a6e55b37/spec.md](./specs/SPEC-a6e55b37/spec.md) を参照。

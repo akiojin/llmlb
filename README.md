@@ -180,9 +180,9 @@ available, it notifies via the dashboard and (Windows/macOS) the tray menu.
 When you approve the update ("Restart to update"), llmlb rejects new inference requests (`/v1/*`)
 with 503 + `Retry-After`, waits for in-flight inference requests (including streaming) to finish,
 then applies the update and restarts. A drain timeout of 300 seconds prevents indefinite waiting.
-For Windows `.msi` updates, elevation/UAC approval may be required. During apply, the dashboard
-shows an applying-phase message and timeout countdown; if permission wait exceeds 10 minutes,
-the state transitions to `failed`.
+For Windows `-setup.exe` updates, llmlb runs the installer silently with
+`/VERYSILENT /CLOSEAPPLICATIONS /SUPPRESSMSGBOXES` in user context (`%LOCALAPPDATA%` install),
+so no UAC prompt is required.
 
 **Update scheduling:**
 
@@ -206,7 +206,7 @@ and percentage during update asset downloads.
 Auto-apply method depends on the platform/install:
 
 - Portable install: replace the executable in-place when writable
-- macOS `.pkg` / Windows `.msi`: run the installer (may require elevation)
+- macOS `.pkg` / Windows `-setup.exe`: run the installer (Windows runs silently without UAC)
 - Linux non-writable installs: auto-apply is not supported; reinstall manually from GitHub Releases
 
 For full details, see [specs/SPEC-a6e55b37/spec.md](./specs/SPEC-a6e55b37/spec.md).
@@ -552,7 +552,7 @@ Download platform-specific binaries from [GitHub Releases](https://github.com/ak
 | Linux x86_64 | `llmlb-linux-x86_64.tar.gz` |
 | macOS ARM64 (Apple Silicon) | `llmlb-macos-arm64.tar.gz`, `llmlb-macos-arm64.pkg` |
 | macOS x86_64 (Intel) | `llmlb-macos-x86_64.tar.gz`, `llmlb-macos-x86_64.pkg` |
-| Windows x86_64 | `llmlb-windows-x86_64.zip`, `llmlb-windows-x86_64.msi` |
+| Windows x86_64 | `llmlb-windows-x86_64.zip`, `llmlb-windows-x86_64-setup.exe` |
 
 #### macOS Notes
 

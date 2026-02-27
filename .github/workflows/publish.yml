@@ -105,10 +105,10 @@ jobs:
         if: matrix.use_cross != true
         run: cargo build --release --target ${{ matrix.target }} -p llmlb
 
-      - name: Install WiX Toolset
+      - name: Install Inno Setup
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install wixtoolset --version 3.11.2 -y --allow-downgrade --force
+        run: choco install innosetup -y
 
       - name: Package binaries (Unix)
         if: runner.os != 'Windows'
@@ -216,7 +216,7 @@ jobs:
           rm -rf "$pkg_root_llmlb"
           echo "lb_pkg=$pkg_llmlb" >> "$GITHUB_OUTPUT"
 
-      - name: Build Windows installers (.msi)
+      - name: Build Windows installers (Inno Setup)
         if: runner.os == 'Windows'
         id: package_windows_installers
         shell: pwsh
@@ -226,19 +226,22 @@ jobs:
             Write-Error "Release version is not available."
             exit 1
           }
-          # MSI only supports x.x.x.x format - strip prerelease suffix
-          # e.g., "3.0.0-alpha.4" -> "3.0.0.0"
-          $msiVersion = $version -replace '-.*$', '.0'
-          Write-Host "Original version: $version, MSI version: $msiVersion"
           $binaryDir = Join-Path $PWD "target/${{ matrix.target }}/release"
-          $lbWxs = Join-Path $PWD "installers/windows/llmlb.wxs"
-          $lbObj = "llmlb.wixobj"
-          $lbMsi = "llmlb-${{ matrix.artifact }}.msi"
-          $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
-          $env:PATH = "$wixPath;$env:PATH"
-          candle.exe $lbWxs -out $lbObj -dBinariesDir="$binaryDir" -dProductVersion="$msiVersion"
-          light.exe $lbObj -out $lbMsi -sice:ICE03
-          "lb_msi=$lbMsi" >> $env:GITHUB_OUTPUT
+          $iss = Join-Path $PWD "installers/windows/llmlb.iss"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "ISCC.exe"
+          }
+          & $iscc "/DAppVersion=$version" "/DBinariesDir=$binaryDir" $iss
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          $lbSetup = Join-Path $PWD "installers/windows/output/llmlb-windows-x86_64-setup.exe"
+          if (-not (Test-Path $lbSetup)) {
+            Write-Error "Setup artifact not found: $lbSetup"
+            exit 1
+          }
+          "lb_setup=$lbSetup" >> $env:GITHUB_OUTPUT
 
       - name: Upload release artifact (Unix)
         if: runner.os != 'Windows'
@@ -265,11 +268,11 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Windows lb installer
-        if: runner.os == 'Windows' && steps.package_windows_installers.outputs.lb_msi != ''
+        if: runner.os == 'Windows' && steps.package_windows_installers.outputs.lb_setup != ''
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}-lb-msi
-          path: ${{ steps.package_windows_installers.outputs.lb_msi }}
+          name: ${{ matrix.artifact }}-lb-setup
+          path: ${{ steps.package_windows_installers.outputs.lb_setup }}
           if-no-files-found: error
 
   publish-binaries:
@@ -293,4 +296,3 @@ jobs:
           files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

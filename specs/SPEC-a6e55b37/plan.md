@@ -106,7 +106,7 @@ llmlb が GitHub Releases の更新を検知し、ユーザーが承認した場
       - `ready`: `kind`（`portable`/`installer`）
       - `error`: `message`
   - `draining`: `latest`, `in_flight`, `requested_at`, `timeout_at`
-  - `applying`: `latest`, `method`（`portable_replace|mac_pkg|windows_msi`）
+  - `applying`: `latest`, `method`（`portable_replace|mac_pkg|windows_setup`）
   - `failed`: `latest?`, `release_url?`, `message`, `failed_at`
 - `schedule`: スケジュール情報（予約がある場合）
   - `mode`: `immediate|idle|scheduled`

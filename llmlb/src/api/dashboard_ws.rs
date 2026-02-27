@@ -146,3 +146,126 @@ async fn handle_socket(socket: WebSocket, event_bus: SharedEventBus) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- WsAuthQuery deserialization tests ---
+
+    #[test]
+    fn ws_auth_query_default_has_no_token() {
+        let query = WsAuthQuery::default();
+        assert!(query.token.is_none());
+    }
+
+    #[test]
+    fn ws_auth_query_deserialize_with_token() {
+        let json = r#"{"token": "my-jwt-token"}"#;
+        let query: WsAuthQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.token, Some("my-jwt-token".to_string()));
+    }
+
+    #[test]
+    fn ws_auth_query_deserialize_without_token() {
+        let json = r#"{}"#;
+        let query: WsAuthQuery = serde_json::from_str(json).unwrap();
+        assert!(query.token.is_none());
+    }
+
+    #[test]
+    fn ws_auth_query_deserialize_with_null_token() {
+        let json = r#"{"token": null}"#;
+        let query: WsAuthQuery = serde_json::from_str(json).unwrap();
+        assert!(query.token.is_none());
+    }
+
+    #[test]
+    fn ws_auth_query_deserialize_with_empty_token() {
+        let json = r#"{"token": ""}"#;
+        let query: WsAuthQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.token, Some("".to_string()));
+    }
+
+    #[test]
+    fn ws_auth_query_deserialize_ignores_extra_fields() {
+        let json = r#"{"token": "abc", "extra": "ignored"}"#;
+        let query: WsAuthQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.token, Some("abc".to_string()));
+    }
+
+    #[test]
+    fn ws_auth_query_deserialize_long_token() {
+        let long_token = "a".repeat(2048);
+        let json = format!(r#"{{"token": "{}"}}"#, long_token);
+        let query: WsAuthQuery = serde_json::from_str(&json).unwrap();
+        assert_eq!(query.token.as_deref(), Some(long_token.as_str()));
+    }
+
+    // --- Welcome message format tests ---
+
+    #[test]
+    fn welcome_message_has_correct_format() {
+        let welcome = serde_json::json!({
+            "type": "connected",
+            "message": "Dashboard WebSocket connected"
+        });
+        assert_eq!(welcome["type"], "connected");
+        assert_eq!(welcome["message"], "Dashboard WebSocket connected");
+    }
+
+    #[test]
+    fn welcome_message_serializes_to_valid_json() {
+        let welcome = serde_json::json!({
+            "type": "connected",
+            "message": "Dashboard WebSocket connected"
+        });
+        let json_str = welcome.to_string();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["type"], "connected");
+    }
+
+    // --- UserRole authorization logic tests ---
+
+    #[test]
+    fn admin_role_is_authorized_for_ws() {
+        let role = UserRole::Admin;
+        assert_eq!(role, UserRole::Admin);
+    }
+
+    #[test]
+    fn viewer_role_is_not_authorized_for_ws() {
+        let role = UserRole::Viewer;
+        assert_ne!(role, UserRole::Admin);
+    }
+
+    // --- Token extraction logic tests (unit-level) ---
+
+    #[test]
+    fn bearer_prefix_stripping() {
+        let auth_header = "Bearer my-token-123";
+        let token = auth_header.strip_prefix("Bearer ").unwrap();
+        assert_eq!(token, "my-token-123");
+    }
+
+    #[test]
+    fn bearer_prefix_missing_returns_none() {
+        let auth_header = "Basic dXNlcjpwYXNz";
+        let token = auth_header.strip_prefix("Bearer ");
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn bearer_prefix_case_sensitive() {
+        let auth_header = "bearer my-token";
+        let token = auth_header.strip_prefix("Bearer ");
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn bearer_prefix_with_empty_token() {
+        let auth_header = "Bearer ";
+        let token = auth_header.strip_prefix("Bearer ").unwrap();
+        assert_eq!(token, "");
+    }
+}

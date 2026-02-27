@@ -51,11 +51,64 @@ Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}')); Flags: preservestringtype
 
 [Code]
+function NormalizePathEntry(Value: string): string;
+var
+  LastChar: string;
+begin
+  Value := Trim(Value);
+
+  if (Length(Value) >= 2) and (Copy(Value, 1, 1) = '"') and (Copy(Value, Length(Value), 1) = '"') then
+    Value := Copy(Value, 2, Length(Value) - 2);
+
+  while Length(Value) > 0 do
+  begin
+    LastChar := Copy(Value, Length(Value), 1);
+    if (LastChar <> '\') and (LastChar <> '/') then
+      Break;
+    Delete(Value, Length(Value), 1);
+  end;
+
+  Result := UpperCase(Value);
+end;
+
+function PathContainsDir(PathValue: string; Dir: string): Boolean;
+var
+  Remaining: string;
+  Entry: string;
+  Target: string;
+  SeparatorPos: Integer;
+begin
+  Result := False;
+  Remaining := PathValue;
+  Target := NormalizePathEntry(Dir);
+
+  while True do
+  begin
+    SeparatorPos := Pos(';', Remaining);
+    if SeparatorPos = 0 then
+      Entry := Remaining
+    else
+    begin
+      Entry := Copy(Remaining, 1, SeparatorPos - 1);
+      Delete(Remaining, 1, SeparatorPos);
+    end;
+
+    if NormalizePathEntry(Entry) = Target then
+    begin
+      Result := True;
+      Exit;
+    end;
+
+    if SeparatorPos = 0 then
+      Break;
+  end;
+end;
+
 function NeedsAddPath(Dir: string): Boolean;
 var
   PathValue: string;
 begin
   if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', PathValue) then
     PathValue := '';
-  Result := Pos(';' + UpperCase(Dir) + ';', ';' + UpperCase(PathValue) + ';') = 0;
+  Result := not PathContainsDir(PathValue, Dir);
 end;

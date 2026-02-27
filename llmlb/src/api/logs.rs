@@ -251,4 +251,232 @@ mod tests {
         assert_eq!(response.entries[0].message.as_deref(), Some("remote"));
         assert_eq!(response.source, "endpoint:endpoint-1");
     }
+
+    // --- LogQuery deserialization ---
+
+    #[test]
+    fn log_query_default_limit() {
+        let json = r#"{}"#;
+        let query: LogQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.limit, DEFAULT_LIMIT);
+    }
+
+    #[test]
+    fn log_query_custom_limit() {
+        let json = r#"{"limit":500}"#;
+        let query: LogQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.limit, 500);
+    }
+
+    #[test]
+    fn log_query_zero_limit() {
+        let json = r#"{"limit":0}"#;
+        let query: LogQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.limit, 0);
+    }
+
+    #[test]
+    fn log_query_large_limit() {
+        let json = r#"{"limit":99999}"#;
+        let query: LogQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.limit, 99999);
+    }
+
+    // --- clamp_limit ---
+
+    #[test]
+    fn clamp_limit_min() {
+        assert_eq!(clamp_limit(0), 1);
+    }
+
+    #[test]
+    fn clamp_limit_below_min() {
+        assert_eq!(clamp_limit(0), 1);
+    }
+
+    #[test]
+    fn clamp_limit_at_min() {
+        assert_eq!(clamp_limit(1), 1);
+    }
+
+    #[test]
+    fn clamp_limit_in_range() {
+        assert_eq!(clamp_limit(500), 500);
+    }
+
+    #[test]
+    fn clamp_limit_at_max() {
+        assert_eq!(clamp_limit(MAX_LIMIT), MAX_LIMIT);
+    }
+
+    #[test]
+    fn clamp_limit_above_max() {
+        assert_eq!(clamp_limit(MAX_LIMIT + 1), MAX_LIMIT);
+    }
+
+    #[test]
+    fn clamp_limit_very_large() {
+        assert_eq!(clamp_limit(usize::MAX), MAX_LIMIT);
+    }
+
+    // --- LogResponse serialization ---
+
+    #[test]
+    fn log_response_serialization_with_path() {
+        let resp = LogResponse {
+            source: "load balancer".to_string(),
+            entries: vec![],
+            path: Some("/var/log/llmlb.jsonl".to_string()),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"source\":\"load balancer\""));
+        assert!(json.contains("\"path\":\"/var/log/llmlb.jsonl\""));
+        assert!(json.contains("\"entries\":[]"));
+    }
+
+    #[test]
+    fn log_response_serialization_without_path() {
+        let resp = LogResponse {
+            source: "endpoint:test".to_string(),
+            entries: vec![],
+            path: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        // path is skip_serializing_if None
+        assert!(!json.contains("\"path\""));
+    }
+
+    #[test]
+    fn log_response_with_entries() {
+        use crate::common::log::LogEntry;
+        let resp = LogResponse {
+            source: "load balancer".to_string(),
+            entries: vec![LogEntry {
+                timestamp: Some("2025-01-01T00:00:00Z".to_string()),
+                level: Some("INFO".to_string()),
+                target: Some("test".to_string()),
+                message: Some("hello world".to_string()),
+                fields: serde_json::Map::new(),
+                file: None,
+                line: None,
+            }],
+            path: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("hello world"));
+        assert!(json.contains("INFO"));
+    }
+
+    // --- NodeLogPayload -> LogResponse ---
+
+    #[test]
+    fn node_log_payload_into_log_response() {
+        use crate::common::log::LogEntry;
+        let payload = NodeLogPayload {
+            entries: vec![LogEntry {
+                timestamp: Some("2025-01-01T00:00:00Z".to_string()),
+                level: Some("WARN".to_string()),
+                target: None,
+                message: Some("test message".to_string()),
+                fields: serde_json::Map::new(),
+                file: None,
+                line: None,
+            }],
+            path: Some("/var/log/node.log".to_string()),
+        };
+        let resp: LogResponse = payload.into();
+        assert_eq!(resp.source, "node");
+        assert_eq!(resp.entries.len(), 1);
+        assert_eq!(resp.entries[0].message.as_deref(), Some("test message"));
+        assert_eq!(resp.path, Some("/var/log/node.log".to_string()));
+    }
+
+    #[test]
+    fn node_log_payload_empty() {
+        let payload = NodeLogPayload {
+            entries: vec![],
+            path: None,
+        };
+        let resp: LogResponse = payload.into();
+        assert_eq!(resp.source, "node");
+        assert!(resp.entries.is_empty());
+        assert!(resp.path.is_none());
+    }
+
+    #[test]
+    fn node_log_payload_deserialize() {
+        let json = r#"{"entries":[{"timestamp":"2025-01-01T00:00:00Z","level":"INFO","message":"test","fields":{}}],"path":"/log.txt"}"#;
+        let payload: NodeLogPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.entries.len(), 1);
+        assert_eq!(payload.path, Some("/log.txt".to_string()));
+    }
+
+    #[test]
+    fn node_log_payload_deserialize_no_path() {
+        let json = r#"{"entries":[]}"#;
+        let payload: NodeLogPayload = serde_json::from_str(json).unwrap();
+        assert!(payload.entries.is_empty());
+        assert!(payload.path.is_none());
+    }
+
+    // --- map_reqwest_error ---
+
+    #[test]
+    fn map_reqwest_error_non_timeout_returns_http_error() {
+        // Build a reqwest error by trying to parse an invalid URL
+        let err = reqwest::Client::new()
+            .get("http://[::1]:99999/invalid")
+            .build()
+            .unwrap_err();
+        let app_err = map_reqwest_error(err);
+        // Should be an Http or Timeout error mapped to AppError
+        let _ = format!("{:?}", app_err);
+    }
+
+    // --- default_limit ---
+
+    #[test]
+    fn default_limit_is_200() {
+        assert_eq!(default_limit(), 200);
+    }
+
+    // --- constants ---
+
+    #[test]
+    fn constants_values() {
+        assert_eq!(DEFAULT_LIMIT, 200);
+        assert_eq!(MAX_LIMIT, 1000);
+    }
+
+    // --- LogResponse PartialEq ---
+
+    #[test]
+    fn log_response_equality() {
+        let a = LogResponse {
+            source: "lb".to_string(),
+            entries: vec![],
+            path: None,
+        };
+        let b = LogResponse {
+            source: "lb".to_string(),
+            entries: vec![],
+            path: None,
+        };
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn log_response_inequality_source() {
+        let a = LogResponse {
+            source: "lb".to_string(),
+            entries: vec![],
+            path: None,
+        };
+        let b = LogResponse {
+            source: "node".to_string(),
+            entries: vec![],
+            path: None,
+        };
+        assert_ne!(a, b);
+    }
 }

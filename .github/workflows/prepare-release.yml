@@ -18,7 +18,7 @@ jobs:
   validate-and-merge:
     name: Validate and merge to main
     runs-on: ubuntu-latest
-    # developブランチからのPRのみ実行（release-pleaseのPRは除外）
+    # developブランチからのPRのみ実行
     if: github.event_name == 'pull_request' && github.head_ref == 'develop'
     steps:
       - name: Auto-merge PR from develop

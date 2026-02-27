@@ -33,3 +33,106 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, LbError> {
     verify(password, hash)
         .map_err(|e| LbError::PasswordHash(format!("Failed to verify password: {}", e)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unicode_password_hash_and_verify() {
+        let pw = "\u{1F600}\u{65E5}\u{672C}\u{8A9E}\u{30D1}\u{30B9}\u{30EF}\u{30FC}\u{30C9}";
+        let h = hash_password(pw).unwrap();
+        assert!(verify_password(pw, &h).unwrap());
+    }
+
+    #[test]
+    fn very_long_password_256_chars() {
+        let pw = "A".repeat(256);
+        let h = hash_password(&pw).unwrap();
+        assert!(verify_password(&pw, &h).unwrap());
+    }
+
+    #[test]
+    fn special_characters_password() {
+        let pw = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
+        let h = hash_password(pw).unwrap();
+        assert!(verify_password(pw, &h).unwrap());
+    }
+
+    #[test]
+    fn spaces_only_password() {
+        let pw = "     ";
+        let h = hash_password(pw).unwrap();
+        assert!(verify_password(pw, &h).unwrap());
+    }
+
+    #[test]
+    fn newline_in_password() {
+        let pw = "line1\nline2\r\nline3";
+        let h = hash_password(pw).unwrap();
+        assert!(verify_password(pw, &h).unwrap());
+    }
+
+    #[test]
+    fn same_password_verify_matches() {
+        let pw = "consistent";
+        let h = hash_password(pw).unwrap();
+        assert!(verify_password(pw, &h).unwrap());
+        // second call also matches
+        assert!(verify_password(pw, &h).unwrap());
+    }
+
+    #[test]
+    fn invalid_hash_string_verify_error() {
+        let result = verify_password("password", "not_a_valid_bcrypt_hash");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn empty_password_hashes_and_verifies() {
+        let h = hash_password("").unwrap();
+        assert!(verify_password("", &h).unwrap());
+    }
+
+    #[test]
+    fn wrong_password_does_not_verify() {
+        let h = hash_password("correct").unwrap();
+        assert!(!verify_password("wrong", &h).unwrap());
+    }
+
+    #[test]
+    fn hash_starts_with_bcrypt_prefix() {
+        let h = hash_password("test").unwrap();
+        assert!(h.starts_with("$2b$") || h.starts_with("$2a$") || h.starts_with("$2y$"));
+    }
+
+    #[test]
+    fn same_password_produces_different_hashes() {
+        let h1 = hash_password("same").unwrap();
+        let h2 = hash_password("same").unwrap();
+        assert_ne!(h1, h2); // bcrypt uses random salt
+    }
+
+    #[test]
+    fn hash_has_expected_length() {
+        let h = hash_password("test123").unwrap();
+        assert_eq!(h.len(), 60); // bcrypt hash is always 60 chars
+    }
+
+    #[test]
+    fn verify_error_returns_lb_error() {
+        match verify_password("pw", "bad_hash") {
+            Err(LbError::PasswordHash(msg)) => {
+                assert!(msg.contains("Failed to verify password"));
+            }
+            _ => panic!("expected PasswordHash error"),
+        }
+    }
+
+    #[test]
+    fn null_byte_in_password() {
+        let pw = "pass\0word";
+        let h = hash_password(pw).unwrap();
+        assert!(verify_password(pw, &h).unwrap());
+    }
+}

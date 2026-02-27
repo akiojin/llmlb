@@ -228,6 +228,10 @@ async fn detect_openai_compatible(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[test]
     fn test_detection_timeout_is_reasonable() {
@@ -242,5 +246,111 @@ mod tests {
 
         let unsupported = DetectionError::UnsupportedType("no match".to_string());
         assert!(unsupported.to_string().contains("unsupported"));
+    }
+
+    #[tokio::test]
+    async fn detect_endpoint_type_detects_openai_compatible() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/system"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/tags"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [
+                    {"id": "gpt-test", "object": "model"}
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap();
+
+        let detected = detect_endpoint_type_with_client(&client, &server.uri(), None)
+            .await
+            .expect("should detect openai-compatible endpoint");
+        assert_eq!(
+            detected.endpoint_type,
+            crate::types::endpoint::EndpointType::OpenaiCompatible
+        );
+        assert!(detected.reason.contains("/v1/models"));
+    }
+
+    #[tokio::test]
+    async fn detect_endpoint_type_returns_unsupported_when_response_shape_is_unknown() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/system"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/models"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/tags"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "hello": "world"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap();
+
+        let err = detect_endpoint_type_with_client(&client, &server.uri(), None)
+            .await
+            .expect_err("should fail for unsupported endpoint shape");
+        match err {
+            DetectionError::UnsupportedType(msg) => {
+                assert!(msg.contains("does not match any supported type"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn detect_endpoint_type_returns_unreachable_for_dead_host() {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(100))
+            .build()
+            .unwrap();
+
+        let err = detect_endpoint_type_with_client(&client, "http://127.0.0.1:9", None)
+            .await
+            .expect_err("connection should fail");
+        match err {
+            DetectionError::Unreachable(msg) => {
+                assert!(msg.contains("could not connect"));
+            }
+            other => panic!("unexpected error: {other}"),
+        }
     }
 }

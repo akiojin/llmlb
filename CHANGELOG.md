@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [5.2.1](https://github.com/akiojin/llmlb/compare/v5.2.0...v5.2.1) (2026-02-27)
+
+### Bug Fixes
+
+- Windows installer の PATH 重複判定で末尾スラッシュと引用符の差異を吸収
+
+### Documentation
+
+- バージョニング方針の記述を SemVer + `chore(release)` 運用に統一
+
 ## [5.2.0](https://github.com/akiojin/llmlb/compare/v5.1.1...v5.2.0) (2026-02-27)
 
 ### Features

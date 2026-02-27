@@ -613,4 +613,241 @@ mod tests {
         assert_eq!(accumulator.accumulated_content(), "Hello world");
         assert!(accumulator.is_done());
     }
+
+    // --- additional coverage tests ---
+
+    #[test]
+    fn test_token_usage_new() {
+        let usage = TokenUsage::new(Some(10), Some(20), Some(30));
+        assert_eq!(usage.input_tokens, Some(10));
+        assert_eq!(usage.output_tokens, Some(20));
+        assert_eq!(usage.total_tokens, Some(30));
+    }
+
+    #[test]
+    fn test_token_usage_default_is_empty() {
+        let usage = TokenUsage::default();
+        assert!(usage.is_empty());
+        assert_eq!(usage.input_tokens, None);
+        assert_eq!(usage.output_tokens, None);
+        assert_eq!(usage.total_tokens, None);
+    }
+
+    #[test]
+    fn test_token_usage_equality() {
+        let a = TokenUsage::new(Some(5), Some(10), Some(15));
+        let b = TokenUsage::new(Some(5), Some(10), Some(15));
+        assert_eq!(a, b);
+
+        let c = TokenUsage::new(Some(5), Some(11), Some(16));
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_token_usage_clone() {
+        let original = TokenUsage::new(Some(100), Some(200), Some(300));
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_streaming_accumulator_skips_empty_lines() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        accumulator.process_chunk("");
+        accumulator.process_chunk("   ");
+        assert_eq!(accumulator.accumulated_content(), "");
+        assert!(!accumulator.is_done());
+    }
+
+    #[test]
+    fn test_streaming_accumulator_skips_comment_lines() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        accumulator.process_chunk(": this is a comment");
+        assert_eq!(accumulator.accumulated_content(), "");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_skips_non_data_lines() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        accumulator.process_chunk("event: message");
+        accumulator.process_chunk("id: 123");
+        assert_eq!(accumulator.accumulated_content(), "");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_data_colon_no_space() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        // "data:" without space after colon
+        let chunk = r#"data:{"id":"chatcmpl-123","choices":[{"delta":{"content":"test"}}]}"#;
+        accumulator.process_chunk(chunk);
+        assert_eq!(accumulator.accumulated_content(), "test");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_invalid_json_is_silently_ignored() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        accumulator.process_chunk("data: not valid json");
+        assert_eq!(accumulator.accumulated_content(), "");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_finalize_with_only_input_tokens() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+        accumulator.set_input_tokens(Some(50));
+
+        // No content accumulated, no usage extracted
+        let done = "data: [DONE]";
+        accumulator.process_chunk(done);
+
+        let usage = accumulator.finalize();
+        assert_eq!(usage.input_tokens, Some(50));
+        assert_eq!(usage.output_tokens, Some(0)); // empty content -> 0
+        assert_eq!(usage.total_tokens, Some(50)); // 50 + 0
+    }
+
+    #[test]
+    fn test_streaming_accumulator_finalize_no_input_no_content() {
+        let accumulator = StreamingTokenAccumulator::new("gpt-4");
+        let usage = accumulator.finalize();
+        assert_eq!(usage.input_tokens, None);
+        assert_eq!(usage.output_tokens, Some(0)); // empty content -> 0
+        assert_eq!(usage.total_tokens, Some(0));
+    }
+
+    #[test]
+    fn test_streaming_accumulator_responses_api_output_text_done_fallback() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        // response.output_text.done with text, no delta events prior
+        let chunk = r#"data: {"type":"response.output_text.done","text":"Full response text"}"#;
+        accumulator.process_chunk(chunk);
+
+        assert_eq!(accumulator.accumulated_content(), "Full response text");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_responses_api_done_ignored_if_delta_accumulated() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        // First accumulate via delta
+        let delta = r#"data: {"type":"response.output_text.delta","delta":"Hello"}"#;
+        accumulator.process_chunk(delta);
+
+        // Then done event with full text should be ignored (delta already accumulated)
+        let done = r#"data: {"type":"response.output_text.done","text":"Hello world full text"}"#;
+        accumulator.process_chunk(done);
+
+        assert_eq!(accumulator.accumulated_content(), "Hello");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_unknown_event_type_ignored() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        let chunk = r#"data: {"type":"response.created","id":"resp-123"}"#;
+        accumulator.process_chunk(chunk);
+
+        assert_eq!(accumulator.accumulated_content(), "");
+    }
+
+    #[test]
+    fn test_extract_usage_responses_api_nested_usage() {
+        // response.done event wraps usage inside "response" key
+        let data = json!({
+            "type": "response.done",
+            "response": {
+                "usage": {
+                    "input_tokens": 15,
+                    "output_tokens": 25,
+                    "total_tokens": 40
+                }
+            }
+        });
+        let usage = extract_usage_from_response(&data).unwrap();
+        assert_eq!(usage.input_tokens, Some(15));
+        assert_eq!(usage.output_tokens, Some(25));
+        assert_eq!(usage.total_tokens, Some(40));
+    }
+
+    #[test]
+    fn test_extract_or_estimate_with_only_input_text() {
+        let response = json!({});
+        let usage = extract_or_estimate_tokens(
+            &response,
+            Some("This is a test input sentence."),
+            None,
+            "gpt-4",
+        );
+        assert!(usage.input_tokens.is_some());
+        assert!(usage.output_tokens.is_none());
+        // total should equal input when output is None
+        assert_eq!(usage.total_tokens, usage.input_tokens);
+    }
+
+    #[test]
+    fn test_extract_or_estimate_with_only_output_text() {
+        let response = json!({});
+        let usage = extract_or_estimate_tokens(
+            &response,
+            None,
+            Some("This is a test output sentence."),
+            "gpt-4",
+        );
+        assert!(usage.input_tokens.is_none());
+        assert!(usage.output_tokens.is_some());
+        assert_eq!(usage.total_tokens, usage.output_tokens);
+    }
+
+    #[test]
+    fn test_estimate_tokens_long_text() {
+        let text = "Hello world. ".repeat(100);
+        let tokens = estimate_tokens(&text, "gpt-4");
+        assert!(tokens.is_some());
+        let count = tokens.unwrap();
+        // 1300 chars should produce many tokens
+        assert!(count > 50, "expected many tokens for long text: {}", count);
+    }
+
+    #[test]
+    fn test_estimate_tokens_special_characters() {
+        let text = "foo\nbar\ttab \"quoted\" 'single'";
+        let tokens = estimate_tokens(text, "gpt-4");
+        assert!(tokens.is_some());
+        assert!(tokens.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_streaming_accumulator_multiple_choices_in_single_chunk() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+
+        let chunk = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"A"}},{"delta":{"content":"B"}}]}"#;
+        accumulator.process_chunk(chunk);
+
+        assert_eq!(accumulator.accumulated_content(), "AB");
+    }
+
+    #[test]
+    fn test_streaming_accumulator_usage_overrides_estimation() {
+        let mut accumulator = StreamingTokenAccumulator::new("gpt-4");
+        accumulator.set_input_tokens(Some(999));
+
+        let chunk = r#"data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"test"}}]}"#;
+        let usage_chunk = r#"data: {"id":"chatcmpl-123","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}"#;
+        let done = "data: [DONE]";
+
+        accumulator.process_chunk(chunk);
+        accumulator.process_chunk(usage_chunk);
+        accumulator.process_chunk(done);
+
+        let usage = accumulator.finalize();
+        // Should use extracted usage, not estimated
+        assert_eq!(usage.input_tokens, Some(10));
+        assert_eq!(usage.output_tokens, Some(3));
+        assert_eq!(usage.total_tokens, Some(13));
+    }
 }

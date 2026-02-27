@@ -707,6 +707,1010 @@ mod tests {
         let tps = ep_tps.aggregate_tps.unwrap();
         assert!((tps - 50.0).abs() < 0.1, "TPS should be ~50.0, got {tps}");
     }
+
+    // ===== 追加テスト: LoadManager 基本機能 =====
+
+    #[test]
+    fn endpoint_load_state_default_values() {
+        let state = EndpointLoadState::default();
+        assert_eq!(state.assigned_active, 0);
+        assert_eq!(state.total_assigned, 0);
+        assert_eq!(state.success_count, 0);
+        assert_eq!(state.error_count, 0);
+        assert_eq!(state.total_latency_ms, 0);
+        assert!(!state.initializing);
+        assert!(state.ready_models.is_none());
+        assert!(state.last_metrics.is_none());
+        assert!(state.metrics_history.is_empty());
+        assert_eq!(state.total_input_tokens, 0);
+        assert_eq!(state.total_output_tokens, 0);
+        assert_eq!(state.total_tokens, 0);
+    }
+
+    #[test]
+    fn endpoint_load_state_combined_active_no_metrics() {
+        let state = EndpointLoadState {
+            assigned_active: 3,
+            ..Default::default()
+        };
+        assert_eq!(state.combined_active(), 3);
+    }
+
+    #[test]
+    fn endpoint_load_state_combined_active_metrics_higher() {
+        let state = EndpointLoadState {
+            assigned_active: 2,
+            last_metrics: Some(HealthMetrics {
+                endpoint_id: Uuid::new_v4(),
+                cpu_usage: 0.0,
+                memory_usage: 0.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 7,
+                total_requests: 0,
+                average_response_time_ms: None,
+                timestamp: Utc::now(),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(state.combined_active(), 7);
+    }
+
+    #[test]
+    fn endpoint_load_state_combined_active_assigned_higher() {
+        let state = EndpointLoadState {
+            assigned_active: 10,
+            last_metrics: Some(HealthMetrics {
+                endpoint_id: Uuid::new_v4(),
+                cpu_usage: 0.0,
+                memory_usage: 0.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 3,
+                total_requests: 0,
+                average_response_time_ms: None,
+                timestamp: Utc::now(),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(state.combined_active(), 10);
+    }
+
+    #[test]
+    fn endpoint_load_state_average_latency_ms_no_completed() {
+        let state = EndpointLoadState::default();
+        assert!(state.average_latency_ms().is_none());
+    }
+
+    #[test]
+    fn endpoint_load_state_average_latency_ms_with_data() {
+        let state = EndpointLoadState {
+            success_count: 8,
+            error_count: 2,
+            total_latency_ms: 1000,
+            ..Default::default()
+        };
+        let avg = state.average_latency_ms().unwrap();
+        assert!((avg - 100.0).abs() < 0.01, "expected 100.0, got {avg}");
+    }
+
+    #[test]
+    fn endpoint_load_state_is_stale_no_metrics() {
+        let state = EndpointLoadState::default();
+        assert!(state.is_stale(Utc::now()));
+    }
+
+    #[test]
+    fn endpoint_load_state_is_stale_fresh() {
+        let now = Utc::now();
+        let state = EndpointLoadState {
+            last_metrics: Some(HealthMetrics {
+                endpoint_id: Uuid::new_v4(),
+                cpu_usage: 0.0,
+                memory_usage: 0.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                total_requests: 0,
+                average_response_time_ms: None,
+                timestamp: now,
+            }),
+            ..Default::default()
+        };
+        assert!(!state.is_stale(now));
+    }
+
+    #[test]
+    fn endpoint_load_state_effective_average_ms_no_data() {
+        let state = EndpointLoadState::default();
+        assert!(state.effective_average_ms().is_none());
+    }
+
+    #[test]
+    fn endpoint_load_state_effective_average_ms_fallback_to_computed() {
+        let now = Utc::now();
+        let state = EndpointLoadState {
+            success_count: 5,
+            error_count: 0,
+            total_latency_ms: 500,
+            last_metrics: Some(HealthMetrics {
+                endpoint_id: Uuid::new_v4(),
+                cpu_usage: 0.0,
+                memory_usage: 0.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                total_requests: 0,
+                average_response_time_ms: None,
+                timestamp: now,
+            }),
+            ..Default::default()
+        };
+        let avg = state.effective_average_ms().unwrap();
+        assert!(
+            (avg - 100.0).abs() < 0.01,
+            "fallback to computed: expected 100.0, got {avg}"
+        );
+    }
+
+    #[test]
+    fn endpoint_load_state_last_updated_none() {
+        let state = EndpointLoadState::default();
+        assert!(state.last_updated().is_none());
+    }
+
+    #[test]
+    fn endpoint_load_state_last_updated_some() {
+        let now = Utc::now();
+        let state = EndpointLoadState {
+            last_metrics: Some(HealthMetrics {
+                endpoint_id: Uuid::new_v4(),
+                cpu_usage: 0.0,
+                memory_usage: 0.0,
+                gpu_usage: None,
+                gpu_memory_usage: None,
+                gpu_memory_total_mb: None,
+                gpu_memory_used_mb: None,
+                gpu_temperature: None,
+                gpu_model_name: None,
+                gpu_compute_capability: None,
+                gpu_capability_score: None,
+                active_requests: 0,
+                total_requests: 0,
+                average_response_time_ms: None,
+                timestamp: now,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(state.last_updated(), Some(now));
+    }
+
+    // ===== align_to_minute テスト =====
+
+    #[test]
+    fn align_to_minute_strips_seconds_and_nanos() {
+        let ts = chrono::TimeZone::with_ymd_and_hms(&Utc, 2025, 6, 15, 10, 30, 45).unwrap();
+        let aligned = super::align_to_minute(ts);
+        assert_eq!(aligned.second(), 0);
+        assert_eq!(aligned.nanosecond(), 0);
+        assert_eq!(aligned.minute(), 30);
+        assert_eq!(aligned.hour(), 10);
+    }
+
+    #[test]
+    fn align_to_minute_already_aligned() {
+        let ts = chrono::TimeZone::with_ymd_and_hms(&Utc, 2025, 1, 1, 0, 0, 0).unwrap();
+        let aligned = super::align_to_minute(ts);
+        assert_eq!(aligned, ts);
+    }
+
+    // ===== prune_history テスト =====
+
+    #[test]
+    fn prune_history_removes_old_entries() {
+        let now = super::align_to_minute(Utc::now());
+        let mut history = std::collections::VecDeque::new();
+        // 120分前のエントリ（60分窓より古い）
+        let old_minute = now - chrono::Duration::minutes(120);
+        history.push_back(RequestHistoryPoint {
+            minute: old_minute,
+            success: 10,
+            error: 1,
+        });
+        // 30分前のエントリ（窓内）
+        let recent_minute = now - chrono::Duration::minutes(30);
+        history.push_back(RequestHistoryPoint {
+            minute: recent_minute,
+            success: 5,
+            error: 0,
+        });
+
+        super::prune_history(&mut history, now);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].minute, recent_minute);
+    }
+
+    #[test]
+    fn prune_history_keeps_all_within_window() {
+        let now = super::align_to_minute(Utc::now());
+        let mut history = std::collections::VecDeque::new();
+        for i in 0..5 {
+            history.push_back(RequestHistoryPoint {
+                minute: now - chrono::Duration::minutes(i),
+                success: 1,
+                error: 0,
+            });
+        }
+        super::prune_history(&mut history, now);
+        assert_eq!(history.len(), 5);
+    }
+
+    #[test]
+    fn prune_history_empty_is_noop() {
+        let now = super::align_to_minute(Utc::now());
+        let mut history = std::collections::VecDeque::new();
+        super::prune_history(&mut history, now);
+        assert!(history.is_empty());
+    }
+
+    // ===== new_history_point テスト =====
+
+    #[test]
+    fn new_history_point_success() {
+        let now = super::align_to_minute(Utc::now());
+        let point = super::new_history_point(now, RequestOutcome::Success);
+        assert_eq!(point.minute, now);
+        assert_eq!(point.success, 1);
+        assert_eq!(point.error, 0);
+    }
+
+    #[test]
+    fn new_history_point_error() {
+        let now = super::align_to_minute(Utc::now());
+        let point = super::new_history_point(now, RequestOutcome::Error);
+        assert_eq!(point.minute, now);
+        assert_eq!(point.success, 0);
+        assert_eq!(point.error, 1);
+    }
+
+    #[test]
+    fn new_history_point_queued() {
+        let now = super::align_to_minute(Utc::now());
+        let point = super::new_history_point(now, RequestOutcome::Queued);
+        assert_eq!(point.minute, now);
+        assert_eq!(point.success, 0);
+        assert_eq!(point.error, 0);
+    }
+
+    // ===== increment_history テスト =====
+
+    #[test]
+    fn increment_history_success() {
+        let mut point = RequestHistoryPoint {
+            minute: Utc::now(),
+            success: 5,
+            error: 2,
+        };
+        super::increment_history(&mut point, RequestOutcome::Success);
+        assert_eq!(point.success, 6);
+        assert_eq!(point.error, 2);
+    }
+
+    #[test]
+    fn increment_history_error() {
+        let mut point = RequestHistoryPoint {
+            minute: Utc::now(),
+            success: 5,
+            error: 2,
+        };
+        super::increment_history(&mut point, RequestOutcome::Error);
+        assert_eq!(point.success, 5);
+        assert_eq!(point.error, 3);
+    }
+
+    #[test]
+    fn increment_history_queued_no_change() {
+        let mut point = RequestHistoryPoint {
+            minute: Utc::now(),
+            success: 5,
+            error: 2,
+        };
+        super::increment_history(&mut point, RequestOutcome::Queued);
+        assert_eq!(point.success, 5);
+        assert_eq!(point.error, 2);
+    }
+
+    // ===== compute_round_robin_priority_for_endpoints テスト =====
+
+    #[test]
+    fn compute_round_robin_priority_empty() {
+        let endpoints: Vec<crate::types::endpoint::Endpoint> = vec![];
+        let priority = super::compute_round_robin_priority_for_endpoints(&endpoints, 0);
+        assert!(priority.is_empty());
+    }
+
+    #[test]
+    fn compute_round_robin_priority_single() {
+        let ep = Endpoint::new(
+            "ep1".to_string(),
+            "http://localhost:1".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        let id = ep.id;
+        let endpoints = vec![ep];
+        let priority = super::compute_round_robin_priority_for_endpoints(&endpoints, 0);
+        assert_eq!(priority.len(), 1);
+        assert_eq!(priority[&id], 0);
+    }
+
+    #[test]
+    fn compute_round_robin_priority_wraps_around() {
+        let ep1 = Endpoint::new(
+            "ep1".to_string(),
+            "http://localhost:1".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        let ep2 = Endpoint::new(
+            "ep2".to_string(),
+            "http://localhost:2".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        let ep3 = Endpoint::new(
+            "ep3".to_string(),
+            "http://localhost:3".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        let id1 = ep1.id;
+        let id2 = ep2.id;
+        let id3 = ep3.id;
+        let endpoints = vec![ep1, ep2, ep3];
+        // start_index=1 => priority: ep2=0, ep3=1, ep1=2
+        let priority = super::compute_round_robin_priority_for_endpoints(&endpoints, 1);
+        assert_eq!(priority[&id2], 0);
+        assert_eq!(priority[&id3], 1);
+        assert_eq!(priority[&id1], 2);
+    }
+
+    // ===== fill_history テスト =====
+
+    #[test]
+    fn fill_history_fills_gaps() {
+        let now = super::align_to_minute(Utc::now());
+        let mut map = std::collections::HashMap::new();
+        // 10分前にデータがある
+        let ten_ago = now - chrono::Duration::minutes(10);
+        map.insert(
+            ten_ago,
+            RequestHistoryPoint {
+                minute: ten_ago,
+                success: 42,
+                error: 0,
+            },
+        );
+
+        let result = super::fill_history(now, &mut map);
+        // REQUEST_HISTORY_WINDOW_MINUTESは60なので、結果は60エントリ
+        assert_eq!(
+            result.len(),
+            super::types::REQUEST_HISTORY_WINDOW_MINUTES as usize
+        );
+        // 10分前のエントリには success=42 が含まれる
+        let ten_ago_entry = result.iter().find(|p| p.minute == ten_ago);
+        assert!(ten_ago_entry.is_some());
+        assert_eq!(ten_ago_entry.unwrap().success, 42);
+        // 他のエントリは success=0, error=0
+        let zero_entries: Vec<_> = result.iter().filter(|p| p.minute != ten_ago).collect();
+        for e in zero_entries {
+            assert_eq!(e.success, 0);
+            assert_eq!(e.error, 0);
+        }
+    }
+
+    // ===== admission_control テスト =====
+
+    #[tokio::test]
+    async fn admission_control_accept_when_low_load() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let decision = load_manager.admission_control(100);
+        assert_eq!(decision, AdmissionDecision::Accept);
+    }
+
+    // ===== has_ready_nodes / all_initializing テスト =====
+
+    #[tokio::test]
+    async fn has_ready_nodes_empty_state() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        // 初期状態ではstateにエントリなし
+        assert!(!load_manager.has_ready_nodes().await);
+    }
+
+    #[tokio::test]
+    async fn has_ready_nodes_with_ready_endpoint() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        load_manager
+            .upsert_initial_state(endpoint_id, false, Some((1, 1)))
+            .await;
+        assert!(load_manager.has_ready_nodes().await);
+    }
+
+    #[tokio::test]
+    async fn has_ready_nodes_all_initializing() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        load_manager
+            .upsert_initial_state(endpoint_id, true, Some((0, 1)))
+            .await;
+        assert!(!load_manager.has_ready_nodes().await);
+    }
+
+    #[tokio::test]
+    async fn all_initializing_empty() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        // stateが空の場合はfalse
+        assert!(!load_manager.all_initializing().await);
+    }
+
+    #[tokio::test]
+    async fn all_initializing_true_when_all_are() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        load_manager
+            .upsert_initial_state(endpoint_id, true, Some((0, 1)))
+            .await;
+        assert!(load_manager.all_initializing().await);
+    }
+
+    #[tokio::test]
+    async fn all_initializing_false_when_one_ready() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        load_manager
+            .upsert_initial_state(endpoint_id, false, Some((1, 1)))
+            .await;
+        assert!(!load_manager.all_initializing().await);
+    }
+
+    // ===== queue_waiters テスト =====
+
+    #[tokio::test]
+    async fn queue_waiters_starts_at_zero() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        assert_eq!(load_manager.queue_waiters(), 0);
+    }
+
+    // ===== endpoint_registry テスト =====
+
+    #[tokio::test]
+    async fn endpoint_registry_returns_registry() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let registry = load_manager.endpoint_registry();
+        let ep = registry.get(endpoint_id).await;
+        assert!(ep.is_some());
+    }
+
+    // ===== record_metrics テスト =====
+
+    #[tokio::test]
+    async fn record_metrics_unknown_endpoint_returns_error() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let update = MetricsUpdate {
+            endpoint_id: Uuid::new_v4(),
+            cpu_usage: 10.0,
+            memory_usage: 20.0,
+            gpu_usage: None,
+            gpu_memory_usage: None,
+            gpu_memory_total_mb: None,
+            gpu_memory_used_mb: None,
+            gpu_temperature: None,
+            gpu_model_name: None,
+            gpu_compute_capability: None,
+            gpu_capability_score: None,
+            active_requests: 0,
+            average_response_time_ms: None,
+            initializing: false,
+            ready_models: None,
+        };
+        let result = load_manager.record_metrics(update).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn record_metrics_valid_endpoint_succeeds() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let update = MetricsUpdate {
+            endpoint_id,
+            cpu_usage: 50.0,
+            memory_usage: 60.0,
+            gpu_usage: Some(70.0),
+            gpu_memory_usage: Some(80.0),
+            gpu_memory_total_mb: Some(8192),
+            gpu_memory_used_mb: Some(4096),
+            gpu_temperature: Some(65.0),
+            gpu_model_name: Some("NVIDIA RTX 4090".to_string()),
+            gpu_compute_capability: Some("8.9".to_string()),
+            gpu_capability_score: Some(90),
+            active_requests: 2,
+            average_response_time_ms: Some(150.0),
+            initializing: false,
+            ready_models: Some((1, 1)),
+        };
+        let result = load_manager.record_metrics(update).await;
+        assert!(result.is_ok());
+
+        let snapshot = load_manager.snapshot(endpoint_id).await.unwrap();
+        assert_eq!(snapshot.cpu_usage, Some(50.0));
+        assert_eq!(snapshot.memory_usage, Some(60.0));
+        assert_eq!(snapshot.gpu_usage, Some(70.0));
+    }
+
+    // ===== begin_request / finish_request テスト =====
+
+    #[tokio::test]
+    async fn begin_request_unknown_endpoint_returns_error() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager.begin_request(Uuid::new_v4()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn finish_request_unknown_endpoint_returns_error() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager
+            .finish_request(
+                Uuid::new_v4(),
+                RequestOutcome::Success,
+                StdDuration::from_millis(100),
+            )
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn finish_request_with_tokens_unknown_endpoint_returns_error() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager
+            .finish_request_with_tokens(
+                Uuid::new_v4(),
+                RequestOutcome::Success,
+                StdDuration::from_millis(100),
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn finish_request_success_updates_counts() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let _lease = load_manager.begin_request(endpoint_id).await.unwrap();
+        load_manager
+            .finish_request(
+                endpoint_id,
+                RequestOutcome::Success,
+                StdDuration::from_millis(100),
+            )
+            .await
+            .unwrap();
+
+        let snap = load_manager.snapshot(endpoint_id).await.unwrap();
+        assert_eq!(snap.successful_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn finish_request_error_updates_counts() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let _lease = load_manager.begin_request(endpoint_id).await.unwrap();
+        load_manager
+            .finish_request(
+                endpoint_id,
+                RequestOutcome::Error,
+                StdDuration::from_millis(100),
+            )
+            .await
+            .unwrap();
+
+        let snap = load_manager.snapshot(endpoint_id).await.unwrap();
+        assert_eq!(snap.failed_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn finish_request_queued_does_not_decrement_active() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let _lease = load_manager.begin_request(endpoint_id).await.unwrap();
+        load_manager
+            .finish_request(
+                endpoint_id,
+                RequestOutcome::Queued,
+                StdDuration::from_millis(0),
+            )
+            .await
+            .unwrap();
+
+        let snap = load_manager.snapshot(endpoint_id).await.unwrap();
+        // Queued does not decrement active
+        assert_eq!(snap.successful_requests, 0);
+        assert_eq!(snap.failed_requests, 0);
+    }
+
+    // ===== finish_request_with_tokens テスト =====
+
+    #[tokio::test]
+    async fn finish_request_with_tokens_records_token_usage() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let _lease = load_manager.begin_request(endpoint_id).await.unwrap();
+
+        let token_usage = Some(crate::token::TokenUsage {
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            total_tokens: Some(150),
+        });
+
+        load_manager
+            .finish_request_with_tokens(
+                endpoint_id,
+                RequestOutcome::Success,
+                StdDuration::from_millis(200),
+                token_usage,
+            )
+            .await
+            .unwrap();
+
+        let snap = load_manager.snapshot(endpoint_id).await.unwrap();
+        assert_eq!(snap.total_input_tokens, 100);
+        assert_eq!(snap.total_output_tokens, 50);
+        assert_eq!(snap.total_tokens, 150);
+    }
+
+    #[tokio::test]
+    async fn finish_request_with_tokens_none_usage() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let _lease = load_manager.begin_request(endpoint_id).await.unwrap();
+
+        load_manager
+            .finish_request_with_tokens(
+                endpoint_id,
+                RequestOutcome::Success,
+                StdDuration::from_millis(100),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let snap = load_manager.snapshot(endpoint_id).await.unwrap();
+        assert_eq!(snap.total_input_tokens, 0);
+        assert_eq!(snap.total_output_tokens, 0);
+        assert_eq!(snap.total_tokens, 0);
+    }
+
+    #[tokio::test]
+    async fn finish_request_with_tokens_partial_usage() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let _lease = load_manager.begin_request(endpoint_id).await.unwrap();
+
+        let token_usage = Some(crate::token::TokenUsage {
+            input_tokens: Some(100),
+            output_tokens: None,
+            total_tokens: None,
+        });
+
+        load_manager
+            .finish_request_with_tokens(
+                endpoint_id,
+                RequestOutcome::Success,
+                StdDuration::from_millis(100),
+                token_usage,
+            )
+            .await
+            .unwrap();
+
+        let snap = load_manager.snapshot(endpoint_id).await.unwrap();
+        assert_eq!(snap.total_input_tokens, 100);
+        assert_eq!(snap.total_output_tokens, 0);
+        // total_tokens is derived: input(100) + output(None) = Some(100)
+        assert_eq!(snap.total_tokens, 100);
+    }
+
+    // ===== snapshot / snapshots テスト =====
+
+    #[tokio::test]
+    async fn snapshot_unknown_endpoint_returns_error() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager.snapshot(Uuid::new_v4()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn snapshots_returns_all_endpoints() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let snaps = load_manager.snapshots().await;
+        assert_eq!(snaps.len(), 1);
+    }
+
+    // ===== metrics_history テスト =====
+
+    #[tokio::test]
+    async fn metrics_history_unknown_endpoint_returns_error() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager.metrics_history(Uuid::new_v4()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn metrics_history_empty_for_no_metrics() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        let history = load_manager.metrics_history(endpoint_id).await.unwrap();
+        assert!(history.is_empty());
+    }
+
+    // ===== summary テスト =====
+
+    #[tokio::test]
+    async fn summary_empty_state() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let summary = load_manager.summary().await;
+        assert_eq!(summary.total_nodes, 1); // setup creates 1 endpoint
+        assert_eq!(summary.total_requests, 0);
+        assert_eq!(summary.successful_requests, 0);
+        assert_eq!(summary.failed_requests, 0);
+    }
+
+    // ===== record_request_history テスト =====
+
+    #[tokio::test]
+    async fn record_request_history_creates_entry() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let ts = Utc::now();
+        load_manager
+            .record_request_history(RequestOutcome::Success, ts)
+            .await;
+        let history = load_manager.request_history().await;
+        let total_success: u64 = history.iter().map(|h| h.success).sum();
+        assert_eq!(total_success, 1);
+    }
+
+    #[tokio::test]
+    async fn record_request_history_same_minute_aggregates() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let ts = Utc::now();
+        load_manager
+            .record_request_history(RequestOutcome::Success, ts)
+            .await;
+        load_manager
+            .record_request_history(RequestOutcome::Success, ts)
+            .await;
+        load_manager
+            .record_request_history(RequestOutcome::Error, ts)
+            .await;
+
+        let history = load_manager.request_history().await;
+        let total_success: u64 = history.iter().map(|h| h.success).sum();
+        let total_error: u64 = history.iter().map(|h| h.error).sum();
+        assert_eq!(total_success, 2);
+        assert_eq!(total_error, 1);
+    }
+
+    // ===== select_endpoint_direct テスト =====
+
+    #[tokio::test]
+    async fn select_endpoint_direct_no_online_returns_error() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+        let registry = EndpointRegistry::new(pool)
+            .await
+            .expect("Failed to create endpoint registry");
+        let load_manager = LoadManager::new(Arc::new(registry));
+
+        let result = load_manager.select_endpoint_direct().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn select_endpoint_direct_selects_online() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("Failed to run migrations");
+        let registry = EndpointRegistry::new(pool)
+            .await
+            .expect("Failed to create endpoint registry");
+        let mut ep = Endpoint::new(
+            "online-ep".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        ep.status = EndpointStatus::Online;
+        registry.add(ep).await.expect("Failed to add endpoint");
+
+        let load_manager = LoadManager::new(Arc::new(registry));
+        let result = load_manager.select_endpoint_direct().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "online-ep");
+    }
+
+    // ===== select_endpoint_direct_for_model テスト =====
+
+    #[tokio::test]
+    async fn select_endpoint_direct_for_model_no_match() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager
+            .select_endpoint_direct_for_model("nonexistent-model")
+            .await;
+        assert!(result.is_err());
+    }
+
+    // ===== wait_for_ready_with_timeout テスト =====
+
+    #[tokio::test]
+    async fn wait_for_ready_with_timeout_already_ready() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+        load_manager
+            .upsert_initial_state(endpoint_id, false, Some((1, 1)))
+            .await;
+        let result = load_manager
+            .wait_for_ready_with_timeout(10, StdDuration::from_millis(100))
+            .await;
+        assert_eq!(result, WaitResult::Ready);
+    }
+
+    #[tokio::test]
+    async fn wait_for_ready_with_timeout_capacity_exceeded() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        // max_waiters=0 なので即座に CapacityExceeded
+        let result = load_manager
+            .wait_for_ready_with_timeout(0, StdDuration::from_millis(100))
+            .await;
+        assert_eq!(result, WaitResult::CapacityExceeded);
+    }
+
+    // ===== wait_for_idle_node_with_timeout テスト =====
+
+    #[tokio::test]
+    async fn wait_for_idle_node_capacity_exceeded() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager
+            .wait_for_idle_node_with_timeout(0, StdDuration::from_millis(100))
+            .await;
+        assert_eq!(result, WaitResult::CapacityExceeded);
+    }
+
+    // ===== wait_for_idle_node_with_timeout_for_model テスト =====
+
+    #[tokio::test]
+    async fn wait_for_idle_node_for_model_capacity_exceeded() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, _) = setup_test_load_manager().await;
+        let result = load_manager
+            .wait_for_idle_node_with_timeout_for_model(
+                "test-model",
+                0,
+                StdDuration::from_millis(100),
+            )
+            .await;
+        assert_eq!(result, WaitResult::CapacityExceeded);
+    }
+
+    // ===== seed_tps_from_db api_kind マッピングテスト =====
+
+    #[tokio::test]
+    async fn seed_tps_from_db_maps_api_kind_correctly() {
+        let _lock = TEST_LOCK.lock().await;
+        let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+        let entries = vec![
+            crate::db::endpoint_daily_stats::TpsSeedEntry {
+                endpoint_id,
+                model_id: "model-completions".to_string(),
+                api_kind: "completions".to_string(),
+                total_output_tokens: 100,
+                total_duration_ms: 1000,
+                successful_requests: 1,
+            },
+            crate::db::endpoint_daily_stats::TpsSeedEntry {
+                endpoint_id,
+                model_id: "model-responses".to_string(),
+                api_kind: "responses".to_string(),
+                total_output_tokens: 200,
+                total_duration_ms: 2000,
+                successful_requests: 2,
+            },
+            crate::db::endpoint_daily_stats::TpsSeedEntry {
+                endpoint_id,
+                model_id: "model-default".to_string(),
+                api_kind: "unknown_type".to_string(),
+                total_output_tokens: 50,
+                total_duration_ms: 500,
+                successful_requests: 1,
+            },
+        ];
+
+        load_manager.seed_tps_from_db(entries).await;
+
+        let tps = load_manager.get_model_tps(endpoint_id).await;
+        assert_eq!(tps.len(), 3);
+        assert!(tps
+            .iter()
+            .any(|t| t.model_id == "model-completions" && t.api_kind == TpsApiKind::Completions));
+        assert!(tps
+            .iter()
+            .any(|t| t.model_id == "model-responses" && t.api_kind == TpsApiKind::Responses));
+        assert!(tps
+            .iter()
+            .any(|t| t.model_id == "model-default" && t.api_kind == TpsApiKind::ChatCompletions));
+    }
+
+    // ===== build_history_window テスト =====
+
+    #[test]
+    fn build_history_window_returns_full_window() {
+        let history = std::collections::VecDeque::new();
+        let result = super::build_history_window(&history);
+        assert_eq!(
+            result.len(),
+            super::types::REQUEST_HISTORY_WINDOW_MINUTES as usize
+        );
+    }
 }
 
 /// ロードマネージャー

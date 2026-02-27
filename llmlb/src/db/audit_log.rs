@@ -2432,4 +2432,891 @@ mod tests {
             "every archived batched entry must have a matching archive batch hash row"
         );
     }
+
+    // --- 追加テスト ---
+
+    #[tokio::test]
+    async fn test_get_token_statistics_empty_db() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 0);
+        assert_eq!(stats.total_output_tokens, 0);
+        assert_eq!(stats.total_tokens, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_token_statistics_by_model_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let stats = storage.get_token_statistics_by_model().await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_count_by_method() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+            make_entry("DELETE", "/api/endpoints/1", 200, ActorType::User),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let counts = storage.count_by_method().await.unwrap();
+        assert!(!counts.is_empty());
+        // GET=2 が最多
+        assert_eq!(counts[0].0, "GET");
+        assert_eq!(counts[0].1, 2);
+    }
+
+    #[tokio::test]
+    async fn test_count_by_actor_type() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let counts = storage.count_by_actor_type().await.unwrap();
+        assert!(!counts.is_empty());
+        assert_eq!(counts[0].0, "user");
+        assert_eq!(counts[0].1, 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_unbatched_entries() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool.clone());
+
+        let entries = vec![
+            make_entry("GET", "/api/a", 200, ActorType::User),
+            make_entry("POST", "/api/b", 200, ActorType::ApiKey),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // All entries are unbatched initially
+        let unbatched = storage.get_unbatched_entries().await.unwrap();
+        assert_eq!(unbatched.len(), 2);
+
+        // Assign one to a batch
+        let batch = AuditBatchHash {
+            id: None,
+            sequence_number: 1,
+            batch_start: Utc::now(),
+            batch_end: Utc::now(),
+            record_count: 1,
+            hash: "test".to_string(),
+            previous_hash: "0".repeat(64),
+        };
+        let batch_id = storage.insert_batch_hash(&batch).await.unwrap();
+
+        let all = storage.query(&AuditLogFilter::default()).await.unwrap();
+        let first_id = all[0].id.unwrap();
+        storage
+            .update_entries_batch_id(&[first_id], batch_id)
+            .await
+            .unwrap();
+
+        let unbatched = storage.get_unbatched_entries().await.unwrap();
+        assert_eq!(unbatched.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_update_entries_batch_id_empty_ids() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        // Empty list should be a no-op
+        storage.update_entries_batch_id(&[], 1).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_query_with_http_method_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+            make_entry("DELETE", "/api/endpoints/1", 204, ActorType::User),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let filter = AuditLogFilter {
+            http_method: Some("POST".to_string()),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].http_method, "POST");
+    }
+
+    #[tokio::test]
+    async fn test_query_with_status_code_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("GET", "/v1/models", 401, ActorType::Anonymous),
+            make_entry("POST", "/v1/chat/completions", 500, ActorType::ApiKey),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let filter = AuditLogFilter {
+            status_code: Some(401),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status_code, 401);
+    }
+
+    #[tokio::test]
+    async fn test_query_with_request_path_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/v1/models", 200, ActorType::User),
+            make_entry("POST", "/v1/chat/completions", 200, ActorType::ApiKey),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let filter = AuditLogFilter {
+            request_path: Some("/v1/models".to_string()),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_path, "/v1/models");
+    }
+
+    #[test]
+    fn test_build_where_clause_empty_filter() {
+        let filter = AuditLogFilter::default();
+        let (clause, values) = build_where_clause(&filter);
+        assert!(clause.is_empty());
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn test_build_where_clause_multiple_filters() {
+        let filter = AuditLogFilter {
+            actor_type: Some("user".to_string()),
+            http_method: Some("GET".to_string()),
+            ..Default::default()
+        };
+        let (clause, values) = build_where_clause(&filter);
+        assert!(clause.starts_with("WHERE"));
+        assert!(clause.contains("AND"));
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn test_build_extra_where_empty() {
+        let result = build_extra_where("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_build_extra_where_with_conditions() {
+        let result = build_extra_where("WHERE actor_type = ? AND http_method = ?");
+        assert!(result.starts_with("AND"));
+        assert!(result.contains("e.actor_type"));
+        assert!(result.contains("e.http_method"));
+    }
+
+    #[test]
+    fn test_sanitize_fts_query_special_chars() {
+        // Double quotes are stripped
+        assert_eq!(sanitize_fts_query("te\"st"), "\"test\"");
+        // Multiple words with quotes
+        assert_eq!(sanitize_fts_query("he\"llo wor\"ld"), "\"hello\" \"world\"");
+    }
+
+    #[tokio::test]
+    async fn test_count_fts_empty_query() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let count = storage
+            .count_fts("", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    // =====================================================================
+    // 追加テスト: AuditLogRow -> AuditLogEntry conversion
+    // =====================================================================
+
+    #[test]
+    fn test_audit_log_entry_try_from_row() {
+        let row = AuditLogRow {
+            id: 1,
+            timestamp: "2024-06-15T12:00:00+00:00".to_string(),
+            http_method: "GET".to_string(),
+            request_path: "/v1/models".to_string(),
+            status_code: 200,
+            actor_type: "user".to_string(),
+            actor_id: Some("user-1".to_string()),
+            actor_username: Some("admin".to_string()),
+            api_key_owner_id: None,
+            client_ip: Some("127.0.0.1".to_string()),
+            duration_ms: Some(42),
+            input_tokens: Some(100),
+            output_tokens: Some(50),
+            total_tokens: Some(150),
+            model_name: Some("gpt-4".to_string()),
+            endpoint_id: Some("ep-1".to_string()),
+            detail: Some("test detail".to_string()),
+            batch_id: None,
+            is_migrated: 0,
+        };
+
+        let entry = AuditLogEntry::try_from(row).unwrap();
+        assert_eq!(entry.id, Some(1));
+        assert_eq!(entry.http_method, "GET");
+        assert_eq!(entry.request_path, "/v1/models");
+        assert_eq!(entry.status_code, 200);
+        assert_eq!(entry.actor_type, ActorType::User);
+        assert_eq!(entry.actor_id, Some("user-1".to_string()));
+        assert_eq!(entry.actor_username, Some("admin".to_string()));
+        assert_eq!(entry.client_ip, Some("127.0.0.1".to_string()));
+        assert_eq!(entry.duration_ms, Some(42));
+        assert_eq!(entry.input_tokens, Some(100));
+        assert_eq!(entry.output_tokens, Some(50));
+        assert_eq!(entry.total_tokens, Some(150));
+        assert_eq!(entry.model_name, Some("gpt-4".to_string()));
+        assert!(!entry.is_migrated);
+    }
+
+    #[test]
+    fn test_audit_log_entry_try_from_row_migrated() {
+        let row = AuditLogRow {
+            id: 2,
+            timestamp: "2024-06-15T12:00:00+00:00".to_string(),
+            http_method: "POST".to_string(),
+            request_path: "/v1/chat/completions".to_string(),
+            status_code: 200,
+            actor_type: "api_key".to_string(),
+            actor_id: None,
+            actor_username: None,
+            api_key_owner_id: None,
+            client_ip: None,
+            duration_ms: None,
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            model_name: None,
+            endpoint_id: None,
+            detail: None,
+            batch_id: Some(5),
+            is_migrated: 1,
+        };
+
+        let entry = AuditLogEntry::try_from(row).unwrap();
+        assert!(entry.is_migrated);
+        assert_eq!(entry.batch_id, Some(5));
+        assert!(entry.actor_id.is_none());
+        assert!(entry.client_ip.is_none());
+        assert!(entry.duration_ms.is_none());
+    }
+
+    #[test]
+    fn test_audit_log_entry_try_from_invalid_timestamp() {
+        let row = AuditLogRow {
+            id: 1,
+            timestamp: "not-a-date".to_string(),
+            http_method: "GET".to_string(),
+            request_path: "/".to_string(),
+            status_code: 200,
+            actor_type: "user".to_string(),
+            actor_id: None,
+            actor_username: None,
+            api_key_owner_id: None,
+            client_ip: None,
+            duration_ms: None,
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            model_name: None,
+            endpoint_id: None,
+            detail: None,
+            batch_id: None,
+            is_migrated: 0,
+        };
+
+        let result = AuditLogEntry::try_from(row);
+        assert!(result.is_err());
+    }
+
+    // =====================================================================
+    // 追加テスト: AuditBatchHashRow -> AuditBatchHash conversion
+    // =====================================================================
+
+    #[test]
+    fn test_audit_batch_hash_try_from_row() {
+        let row = AuditBatchHashRow {
+            id: 1,
+            sequence_number: 42,
+            batch_start: "2024-01-01T00:00:00+00:00".to_string(),
+            batch_end: "2024-01-01T01:00:00+00:00".to_string(),
+            record_count: 100,
+            hash: "abcdef".to_string(),
+            previous_hash: "000000".to_string(),
+        };
+
+        let batch = AuditBatchHash::try_from(row).unwrap();
+        assert_eq!(batch.id, Some(1));
+        assert_eq!(batch.sequence_number, 42);
+        assert_eq!(batch.record_count, 100);
+        assert_eq!(batch.hash, "abcdef");
+        assert_eq!(batch.previous_hash, "000000");
+    }
+
+    #[test]
+    fn test_audit_batch_hash_try_from_invalid_date() {
+        let row = AuditBatchHashRow {
+            id: 1,
+            sequence_number: 1,
+            batch_start: "not-a-date".to_string(),
+            batch_end: "2024-01-01T00:00:00+00:00".to_string(),
+            record_count: 0,
+            hash: "x".to_string(),
+            previous_hash: "y".to_string(),
+        };
+
+        let result = AuditBatchHash::try_from(row);
+        assert!(result.is_err());
+    }
+
+    // =====================================================================
+    // 追加テスト: TokenStatistics
+    // =====================================================================
+
+    #[test]
+    fn test_token_statistics_serialize() {
+        let stats = TokenStatistics {
+            total_input_tokens: 100,
+            total_output_tokens: 50,
+            total_tokens: 150,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["total_input_tokens"], 100);
+        assert_eq!(json["total_output_tokens"], 50);
+        assert_eq!(json["total_tokens"], 150);
+    }
+
+    // =====================================================================
+    // 追加テスト: ModelTokenStatistics
+    // =====================================================================
+
+    #[test]
+    fn test_model_token_statistics_serialize() {
+        let stats = ModelTokenStatistics {
+            model_name: "llama".to_string(),
+            total_input_tokens: 200,
+            total_output_tokens: 100,
+            total_tokens: 300,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["model_name"], "llama");
+        assert_eq!(json["total_tokens"], 300);
+    }
+
+    // =====================================================================
+    // 追加テスト: DailyTokenStatistics
+    // =====================================================================
+
+    #[test]
+    fn test_daily_token_statistics_serialize() {
+        let stats = DailyTokenStatistics {
+            date: "2024-06-15".to_string(),
+            total_input_tokens: 500,
+            total_output_tokens: 250,
+            total_tokens: 750,
+            request_count: 10,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["date"], "2024-06-15");
+        assert_eq!(json["request_count"], 10);
+    }
+
+    // =====================================================================
+    // 追加テスト: MonthlyTokenStatistics
+    // =====================================================================
+
+    #[test]
+    fn test_monthly_token_statistics_serialize() {
+        let stats = MonthlyTokenStatistics {
+            month: "2024-06".to_string(),
+            total_input_tokens: 5000,
+            total_output_tokens: 2500,
+            total_tokens: 7500,
+            request_count: 100,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["month"], "2024-06");
+        assert_eq!(json["request_count"], 100);
+    }
+
+    // =====================================================================
+    // 追加テスト: build_where_clause single filter
+    // =====================================================================
+
+    #[test]
+    fn test_build_where_clause_actor_id_only() {
+        let filter = AuditLogFilter {
+            actor_id: Some("user-123".to_string()),
+            ..Default::default()
+        };
+        let (clause, values) = build_where_clause(&filter);
+        assert!(clause.starts_with("WHERE"));
+        assert!(clause.contains("actor_id"));
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], "user-123");
+    }
+
+    #[test]
+    fn test_build_where_clause_request_path_only() {
+        let filter = AuditLogFilter {
+            request_path: Some("/v1/models".to_string()),
+            ..Default::default()
+        };
+        let (clause, values) = build_where_clause(&filter);
+        assert!(clause.contains("request_path"));
+        assert_eq!(values[0], "/v1/models");
+    }
+
+    #[test]
+    fn test_build_where_clause_status_code_only() {
+        let filter = AuditLogFilter {
+            status_code: Some(401),
+            ..Default::default()
+        };
+        let (clause, values) = build_where_clause(&filter);
+        assert!(clause.contains("status_code"));
+        assert_eq!(values[0], "401");
+    }
+
+    #[test]
+    fn test_build_where_clause_time_range() {
+        let now = Utc::now();
+        let filter = AuditLogFilter {
+            time_from: Some(now - chrono::Duration::hours(1)),
+            time_to: Some(now),
+            ..Default::default()
+        };
+        let (clause, values) = build_where_clause(&filter);
+        assert!(clause.contains("timestamp >= ?"));
+        assert!(clause.contains("timestamp <= ?"));
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn test_build_where_clause_all_filters() {
+        let now = Utc::now();
+        let filter = AuditLogFilter {
+            actor_type: Some("user".to_string()),
+            actor_id: Some("id-1".to_string()),
+            http_method: Some("GET".to_string()),
+            request_path: Some("/api".to_string()),
+            status_code: Some(200),
+            time_from: Some(now),
+            time_to: Some(now),
+            ..Default::default()
+        };
+        let (clause, values) = build_where_clause(&filter);
+        assert!(clause.starts_with("WHERE"));
+        assert_eq!(values.len(), 7);
+    }
+
+    // =====================================================================
+    // 追加テスト: build_extra_where prefix replacement
+    // =====================================================================
+
+    #[test]
+    fn test_build_extra_where_replaces_all_column_names() {
+        let where_clause = "WHERE actor_type = ? AND actor_id = ? AND http_method = ? AND request_path = ? AND status_code = ? AND timestamp >= ?";
+        let result = build_extra_where(where_clause);
+        assert!(result.starts_with("AND"));
+        assert!(result.contains("e.actor_type"));
+        assert!(result.contains("e.actor_id"));
+        assert!(result.contains("e.http_method"));
+        assert!(result.contains("e.request_path"));
+        assert!(result.contains("e.status_code"));
+        assert!(result.contains("e.timestamp"));
+    }
+
+    // =====================================================================
+    // 追加テスト: sanitize_fts_query edge cases
+    // =====================================================================
+
+    #[test]
+    fn test_sanitize_fts_query_only_quotes() {
+        // A word that is only quotes should be filtered out
+        assert_eq!(sanitize_fts_query("\"\"\""), "");
+    }
+
+    #[test]
+    fn test_sanitize_fts_query_tabs_and_newlines() {
+        // Whitespace characters are split by split_whitespace
+        assert_eq!(
+            sanitize_fts_query("hello\tworld\nnew"),
+            "\"hello\" \"world\" \"new\""
+        );
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - query with time range filter
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_query_with_time_range_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let now = Utc::now();
+        let old_entry = AuditLogEntry {
+            timestamp: now - chrono::Duration::hours(5),
+            ..make_entry("GET", "/api/old", 200, ActorType::User)
+        };
+        let new_entry = AuditLogEntry {
+            timestamp: now,
+            ..make_entry("GET", "/api/new", 200, ActorType::User)
+        };
+        storage.insert_batch(&[old_entry, new_entry]).await.unwrap();
+
+        // Filter: last 2 hours
+        let filter = AuditLogFilter {
+            time_from: Some(now - chrono::Duration::hours(2)),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_path, "/api/new");
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - query with actor_id filter
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_query_with_actor_id_filter() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let mut entry1 = make_entry("GET", "/api/a", 200, ActorType::User);
+        entry1.actor_id = Some("alice".to_string());
+        let mut entry2 = make_entry("GET", "/api/b", 200, ActorType::User);
+        entry2.actor_id = Some("bob".to_string());
+        storage.insert_batch(&[entry1, entry2]).await.unwrap();
+
+        let filter = AuditLogFilter {
+            actor_id: Some("alice".to_string()),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].actor_id, Some("alice".to_string()));
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - count with pagination does not affect count
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_count_ignores_pagination() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/a", 200, ActorType::User),
+            make_entry("GET", "/b", 200, ActorType::User),
+            make_entry("GET", "/c", 200, ActorType::User),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let filter = AuditLogFilter {
+            page: Some(1),
+            per_page: Some(1),
+            ..Default::default()
+        };
+        let count = storage.count(&filter).await.unwrap();
+        assert_eq!(count, 3); // count ignores pagination
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_by_id returns correct fields
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_by_id_with_all_fields() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let mut entry = make_entry("DELETE", "/api/users/1", 204, ActorType::User);
+        entry.actor_id = Some("admin-user".to_string());
+        entry.actor_username = Some("Admin".to_string());
+        entry.detail = Some("Deleted user 1".to_string());
+        entry.input_tokens = None;
+        entry.output_tokens = None;
+        entry.total_tokens = None;
+        entry.model_name = None;
+        storage.insert_batch(&[entry]).await.unwrap();
+
+        let all = storage.query(&AuditLogFilter::default()).await.unwrap();
+        let id = all[0].id.unwrap();
+
+        let found = storage.get_by_id(id).await.unwrap().unwrap();
+        assert_eq!(found.http_method, "DELETE");
+        assert_eq!(found.request_path, "/api/users/1");
+        assert_eq!(found.status_code, 204);
+        assert_eq!(found.actor_id, Some("admin-user".to_string()));
+        assert_eq!(found.actor_username, Some("Admin".to_string()));
+        assert_eq!(found.detail, Some("Deleted user 1".to_string()));
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - search_fts empty query
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_search_fts_empty_query() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![make_entry("GET", "/v1/models", 200, ActorType::User)];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let results = storage
+            .search_fts("", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - search_fts whitespace-only query
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_search_fts_whitespace_query() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![make_entry("GET", "/v1/models", 200, ActorType::User)];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let results = storage
+            .search_fts("   ", &AuditLogFilter::default())
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - count_by_method empty db
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_count_by_method_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let counts = storage.count_by_method().await.unwrap();
+        assert!(counts.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - count_by_actor_type empty db
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_count_by_actor_type_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let counts = storage.count_by_actor_type().await.unwrap();
+        assert!(counts.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_unbatched_entries empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_unbatched_entries_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let unbatched = storage.get_unbatched_entries().await.unwrap();
+        assert!(unbatched.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - get_all_batch_hashes empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_all_batch_hashes_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let hashes = storage.get_all_batch_hashes().await.unwrap();
+        assert!(hashes.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - daily token statistics empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_daily_token_statistics_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let stats = storage.get_daily_token_statistics(30).await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - monthly token statistics empty
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_monthly_token_statistics_empty() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let stats = storage.get_monthly_token_statistics(12).await.unwrap();
+        assert!(stats.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - insert_batch multiple times
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_insert_batch_multiple_batches() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let batch1 = vec![make_entry("GET", "/a", 200, ActorType::User)];
+        let batch2 = vec![
+            make_entry("POST", "/b", 201, ActorType::ApiKey),
+            make_entry("DELETE", "/c", 204, ActorType::User),
+        ];
+
+        storage.insert_batch(&batch1).await.unwrap();
+        storage.insert_batch(&batch2).await.unwrap();
+
+        let total = storage.count(&AuditLogFilter::default()).await.unwrap();
+        assert_eq!(total, 3);
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - query with combined filters
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_query_combined_actor_type_and_method() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/a", 200, ActorType::User),
+            make_entry("POST", "/b", 200, ActorType::User),
+            make_entry("GET", "/c", 200, ActorType::ApiKey),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        let filter = AuditLogFilter {
+            actor_type: Some("user".to_string()),
+            http_method: Some("GET".to_string()),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].request_path, "/a");
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - query pagination boundary
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_query_pagination_beyond_last_page() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let entries = vec![
+            make_entry("GET", "/a", 200, ActorType::User),
+            make_entry("GET", "/b", 200, ActorType::User),
+        ];
+        storage.insert_batch(&entries).await.unwrap();
+
+        // Page far beyond data
+        let filter = AuditLogFilter {
+            page: Some(100),
+            per_page: Some(10),
+            ..Default::default()
+        };
+        let results = storage.query(&filter).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - token statistics with mixed null
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_token_statistics_all_null_tokens() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let mut entry = make_entry("POST", "/v1/chat", 200, ActorType::ApiKey);
+        entry.input_tokens = None;
+        entry.output_tokens = None;
+        entry.total_tokens = None;
+        storage.insert_batch(&[entry]).await.unwrap();
+
+        let stats = storage.get_token_statistics().await.unwrap();
+        assert_eq!(stats.total_input_tokens, 0);
+        assert_eq!(stats.total_output_tokens, 0);
+        assert_eq!(stats.total_tokens, 0);
+    }
+
+    // =====================================================================
+    // 追加テスト: DB操作 - model stats excludes null model_name
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_get_token_statistics_by_model_excludes_null_model() {
+        let pool = create_test_pool().await;
+        let storage = AuditLogStorage::new(pool);
+
+        let mut entry = make_entry("POST", "/v1/chat", 200, ActorType::ApiKey);
+        entry.model_name = None;
+        entry.input_tokens = Some(100);
+        entry.output_tokens = Some(50);
+        entry.total_tokens = Some(150);
+        storage.insert_batch(&[entry]).await.unwrap();
+
+        let stats = storage.get_token_statistics_by_model().await.unwrap();
+        // model_name IS NULL entries are excluded by WHERE clause
+        assert!(stats.is_empty());
+    }
 }

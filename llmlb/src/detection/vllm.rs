@@ -76,6 +76,12 @@ pub async fn detect_vllm(client: &Client, base_url: &str, api_key: Option<&str>)
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use wiremock::{
+        matchers::{header, method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
     #[test]
     fn test_vllm_server_header_detection_logic() {
         // Test case-insensitive matching
@@ -101,5 +107,63 @@ mod tests {
                 header
             );
         }
+    }
+
+    #[tokio::test]
+    async fn detect_vllm_by_server_header() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .and(header("authorization", "Bearer sk-vllm"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("server", "vLLM/0.6.0")
+                    .set_body_json(serde_json::json!({"data": []})),
+            )
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let detected = detect_vllm(&client, &server.uri(), Some("sk-vllm")).await;
+        assert!(detected.is_some());
+        assert!(detected.unwrap().contains("Server header contains vllm"));
+    }
+
+    #[tokio::test]
+    async fn detect_vllm_by_owned_by_field() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [
+                    {"id": "model-a", "owned_by": "community-vllm"}
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let detected = detect_vllm(&client, &server.uri(), None).await;
+        assert_eq!(
+            detected,
+            Some("vLLM: owned_by field contains vllm".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn detect_vllm_returns_none_when_not_matched() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [
+                    {"id": "model-a", "owned_by": "openai"}
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        assert_eq!(detect_vllm(&client, &server.uri(), None).await, None);
     }
 }

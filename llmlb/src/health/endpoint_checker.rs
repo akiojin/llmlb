@@ -1042,4 +1042,226 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
+
+    // --- additional coverage tests ---
+
+    #[test]
+    fn test_gpu_info_default() {
+        let info = GpuInfo::default();
+        assert!(info.gpu_device_count.is_none());
+        assert!(info.gpu_total_memory_bytes.is_none());
+        assert!(info.gpu_used_memory_bytes.is_none());
+        assert!(info.gpu_capability_score.is_none());
+        assert!(info.active_requests.is_none());
+    }
+
+    #[test]
+    fn test_gpu_info_clone() {
+        let info = GpuInfo {
+            gpu_device_count: Some(2),
+            gpu_total_memory_bytes: Some(16_000_000_000),
+            gpu_used_memory_bytes: Some(8_000_000_000),
+            gpu_capability_score: Some(0.95),
+            active_requests: Some(5),
+        };
+        let cloned = info.clone();
+        assert_eq!(cloned.gpu_device_count, Some(2));
+        assert_eq!(cloned.gpu_total_memory_bytes, Some(16_000_000_000));
+        assert_eq!(cloned.gpu_used_memory_bytes, Some(8_000_000_000));
+        assert_eq!(cloned.gpu_capability_score, Some(0.95));
+        assert_eq!(cloned.active_requests, Some(5));
+    }
+
+    #[tokio::test]
+    async fn test_determine_failure_status_error_first_failure() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let checker = EndpointHealthChecker::new(registry);
+
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
+
+        // error + error_count=0 → error (not enough failures for offline)
+        let new_status = checker.determine_failure_status(&endpoint, EndpointStatus::Error);
+        assert_eq!(new_status, EndpointStatus::Error);
+    }
+
+    #[tokio::test]
+    async fn test_determine_failure_status_error_reaches_threshold() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let checker = EndpointHealthChecker::new(registry);
+
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
+        endpoint.error_count = 1; // already 1 failure
+
+        // error + error_count=1 → offline (reaches threshold)
+        let new_status = checker.determine_failure_status(&endpoint, EndpointStatus::Error);
+        assert_eq!(new_status, EndpointStatus::Offline);
+    }
+
+    #[tokio::test]
+    async fn test_determine_failure_status_offline_stays_offline() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let checker = EndpointHealthChecker::new(registry);
+
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
+
+        let new_status = checker.determine_failure_status(&endpoint, EndpointStatus::Offline);
+        assert_eq!(new_status, EndpointStatus::Offline);
+    }
+
+    #[tokio::test]
+    async fn test_check_all_endpoints_empty_registry() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let checker = EndpointHealthChecker::new(registry);
+
+        // Should succeed with no endpoints
+        let result = checker.check_all_endpoints().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_check_all_endpoints_parallel_empty_registry() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let checker = EndpointHealthChecker::new(registry);
+
+        let result = checker.check_all_endpoints_parallel().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_health_check_both_fail_for_xllm_goes_offline() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&mock)
+            .await;
+
+        let mut endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
+        // Set status to pending so first failure goes directly to offline
+        endpoint.status = EndpointStatus::Pending;
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        let result = checker.check_endpoint(&endpoint).await;
+        assert!(result.is_err());
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.status, EndpointStatus::Offline);
+    }
+
+    #[tokio::test]
+    async fn test_health_check_non_xllm_failure_from_online() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "Test".to_string(),
+            mock.uri(),
+            EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = EndpointStatus::Online;
+        endpoint.error_count = 0;
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        let result = checker.check_endpoint(&endpoint).await;
+        assert!(result.is_err());
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        // First failure from online goes to Error status
+        assert_eq!(updated.status, EndpointStatus::Error);
+    }
+
+    #[tokio::test]
+    async fn test_with_interval_chaining() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let checker = EndpointHealthChecker::new(registry)
+            .with_interval(10)
+            .with_interval(120);
+
+        assert_eq!(checker.check_interval_secs, 120);
+    }
+
+    #[tokio::test]
+    async fn test_check_endpoint_by_id_not_found() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let checker = EndpointHealthChecker::new(registry);
+
+        let result = checker.check_endpoint_by_id(Uuid::new_v4()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_xllm_health_with_partial_gpu_info() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mock = MockServer::start().await;
+        // Return only partial GPU info (no load section)
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "gpu": {
+                    "device_count": 4,
+                    "total_memory_bytes": 80_000_000_000u64
+                }
+            })))
+            .mount(&mock)
+            .await;
+
+        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
+        registry.add(endpoint.clone()).await.unwrap();
+
+        let checker = EndpointHealthChecker::new(registry.clone());
+        checker.check_endpoint(&endpoint).await.unwrap();
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.status, EndpointStatus::Online);
+        assert_eq!(updated.gpu_device_count, Some(4));
+        assert_eq!(updated.active_requests, None);
+    }
 }

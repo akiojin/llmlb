@@ -82,6 +82,10 @@ pub async fn detect_ollama(client: &Client, base_url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[test]
     fn test_ollama_tags_response_deserialize() {
@@ -114,5 +118,54 @@ mod tests {
         let response: OllamaTagsResponse = serde_json::from_str(json).unwrap();
         assert!(response.models.is_none());
         assert!(response.error.is_some());
+    }
+
+    #[tokio::test]
+    async fn detect_ollama_returns_reason_when_models_present() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/tags"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "models": [
+                    {"name": "llama3:8b", "size": 4_000_000_000i64}
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let detected = detect_ollama(&client, &server.uri()).await;
+        assert_eq!(
+            detected,
+            Some("Ollama: /api/tags returned models".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn detect_ollama_returns_none_for_error_payload() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/tags"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "error": "Unexpected endpoint or method. (GET /api/tags)"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        assert_eq!(detect_ollama(&client, &server.uri()).await, None);
+    }
+
+    #[tokio::test]
+    async fn detect_ollama_returns_none_on_non_success_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/tags"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        assert_eq!(detect_ollama(&client, &server.uri()).await, None);
     }
 }

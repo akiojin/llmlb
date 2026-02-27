@@ -1,6 +1,6 @@
 ---
 name: hotfix
-description: Execute the hotfix workflow when the user asks `hotfix` or `/hotfix`: create a hotfix branch from main, guide fix+checks, open PR to main, and confirm patch release.
+description: 'Execute the hotfix workflow when the user asks `hotfix` or `/hotfix`: create a hotfix branch from main, guide fix+checks, open PR to main, and confirm patch release.'
 ---
 
 # Hotfix Workflow

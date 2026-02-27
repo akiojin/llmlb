@@ -1,6 +1,6 @@
 ---
 name: release
-description: Execute the release workflow when the user asks `release` or `/release`: sync develop, update version/changelog, create `chore(release)` commit, collect closing issues, create develop->main release PR, and verify release/publish artifacts.
+description: 'Execute the release workflow when the user asks `release` or `/release`: sync develop, update version/changelog, create `chore(release)` commit, collect closing issues, create develop->main release PR, and verify release/publish artifacts.'
 ---
 
 # Release Workflow

@@ -55,6 +55,7 @@ fn stop_subcommand_succeeds_for_unused_port() {
 #[test]
 fn internal_rollback_subcommand_fails_without_backup() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let nonexistent_pid = (u32::MAX - 1).to_string();
     let target = temp_dir.path().join("llmlb-target");
     let backup = temp_dir.path().join("missing.bak");
     let args_file = temp_dir.path().join("args.json");
@@ -65,7 +66,7 @@ fn internal_rollback_subcommand_fails_without_backup() {
             "__internal",
             "rollback",
             "--old-pid",
-            "0",
+            nonexistent_pid.as_str(),
             "--target",
             target.to_string_lossy().as_ref(),
             "--backup",

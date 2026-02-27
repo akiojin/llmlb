@@ -448,8 +448,10 @@ pub fn resolve_provider(provider_name: &str) -> Option<Box<dyn CloudProvider>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn openai_provider_transform_request_sets_model() {
         let provider = OpenAiProvider;
         std::env::set_var("OPENAI_BASE_URL", "http://localhost:1234");
@@ -463,6 +465,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn google_provider_transform_request_builds_correct_url() {
         let provider = GoogleProvider;
         std::env::set_var("GOOGLE_API_BASE_URL", "http://localhost:5678");
@@ -480,6 +483,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn google_provider_stream_url() {
         let provider = GoogleProvider;
         std::env::set_var("GOOGLE_API_BASE_URL", "http://localhost:5678");
@@ -495,6 +499,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn anthropic_provider_transform_request_separates_system() {
         let provider = AnthropicProvider;
         std::env::set_var("ANTHROPIC_API_BASE_URL", "http://localhost:9999");
@@ -593,6 +598,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn openai_provider_preserves_messages() {
         let provider = OpenAiProvider;
         std::env::set_var("OPENAI_BASE_URL", "http://localhost:1234");
@@ -618,6 +624,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn google_provider_generation_config() {
         let provider = GoogleProvider;
         std::env::set_var("GOOGLE_API_BASE_URL", "http://localhost:5678");
@@ -638,6 +645,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn google_provider_generation_config_strips_nulls() {
         let provider = GoogleProvider;
         std::env::set_var("GOOGLE_API_BASE_URL", "http://localhost:5678");
@@ -686,6 +694,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn anthropic_provider_default_max_tokens() {
         let provider = AnthropicProvider;
         std::env::set_var("ANTHROPIC_API_BASE_URL", "http://localhost:9999");
@@ -702,6 +711,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn anthropic_provider_strips_null_values() {
         let provider = AnthropicProvider;
         std::env::set_var("ANTHROPIC_API_BASE_URL", "http://localhost:9999");
@@ -720,6 +730,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn anthropic_provider_no_system_message() {
         let provider = AnthropicProvider;
         std::env::set_var("ANTHROPIC_API_BASE_URL", "http://localhost:9999");
@@ -736,6 +747,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn anthropic_provider_stream_flag() {
         let provider = AnthropicProvider;
         std::env::set_var("ANTHROPIC_API_BASE_URL", "http://localhost:9999");
@@ -806,6 +818,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn openai_provider_api_base_url_default() {
         std::env::remove_var("OPENAI_BASE_URL");
         let provider = OpenAiProvider;
@@ -814,6 +827,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn google_provider_api_base_url_default() {
         std::env::remove_var("GOOGLE_API_BASE_URL");
         let provider = GoogleProvider;
@@ -822,6 +836,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn anthropic_provider_api_base_url_default() {
         std::env::remove_var("ANTHROPIC_API_BASE_URL");
         let provider = AnthropicProvider;

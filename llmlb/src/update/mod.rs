@@ -3453,9 +3453,9 @@ mod tests {
                         .to_string(),
                 },
                 GitHubAsset {
-                    name: "llmlb-windows-x86_64.msi".to_string(),
-                    browser_download_url: "https://dl.example.com/llmlb-windows-x86_64.msi"
-                        .to_string(),
+                    name: "llmlb-windows-x86_64-setup.exe".to_string(),
+                    browser_download_url:
+                        "https://dl.example.com/llmlb-windows-x86_64-setup.exe".to_string(),
                 },
             ],
         };
@@ -3468,7 +3468,7 @@ mod tests {
         assert!(portable.is_some());
         assert!(installer.is_some());
         assert_eq!(portable.unwrap().name, "llmlb-windows-x86_64.zip");
-        assert_eq!(installer.unwrap().name, "llmlb-windows-x86_64.msi");
+        assert_eq!(installer.unwrap().name, "llmlb-windows-x86_64-setup.exe");
     }
 
     #[test]
@@ -3659,7 +3659,6 @@ mod tests {
         let phases = [
             ApplyPhase::Starting,
             ApplyPhase::WaitingOldProcessExit,
-            ApplyPhase::WaitingPermission,
             ApplyPhase::RunningInstaller,
             ApplyPhase::Restarting,
         ];
@@ -3835,13 +3834,13 @@ mod tests {
     #[test]
     fn payload_kind_installer_serialization() {
         let kind = PayloadKind::Installer {
-            installer_path: "/tmp/llmlb.msi".to_string(),
-            kind: InstallerKind::WindowsMsi,
+            installer_path: "/tmp/llmlb-setup.exe".to_string(),
+            kind: InstallerKind::WindowsSetup,
         };
         let json = serde_json::to_value(&kind).unwrap();
         // Externally tagged: {"installer": {"installer_path": "...", "kind": "..."}}
-        assert_eq!(json["installer"]["installer_path"], "/tmp/llmlb.msi");
-        assert_eq!(json["installer"]["kind"], "windows_msi");
+        assert_eq!(json["installer"]["installer_path"], "/tmp/llmlb-setup.exe");
+        assert_eq!(json["installer"]["kind"], "windows_setup");
     }
 
     // =======================================================================
@@ -3850,14 +3849,14 @@ mod tests {
     #[test]
     fn installer_kind_serialization() {
         let mac = InstallerKind::MacPkg;
-        let win = InstallerKind::WindowsMsi;
+        let win = InstallerKind::WindowsSetup;
         assert_eq!(
             serde_json::to_value(&mac).unwrap(),
             serde_json::json!("mac_pkg")
         );
         assert_eq!(
             serde_json::to_value(&win).unwrap(),
-            serde_json::json!("windows_msi")
+            serde_json::json!("windows_setup")
         );
     }
 
@@ -3875,8 +3874,8 @@ mod tests {
             serde_json::json!("mac_pkg")
         );
         assert_eq!(
-            serde_json::to_value(&ApplyMethod::WindowsMsi).unwrap(),
-            serde_json::json!("windows_msi")
+            serde_json::to_value(&ApplyMethod::WindowsSetup).unwrap(),
+            serde_json::json!("windows_setup")
         );
     }
 
@@ -4072,30 +4071,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("unsupported archive format"));
-    }
-
-    // =======================================================================
-    // escape_powershell_single_quoted_string
-    // =======================================================================
-    #[test]
-    fn powershell_escape_no_quotes() {
-        assert_eq!(
-            escape_powershell_single_quoted_string("hello world"),
-            "hello world"
-        );
-    }
-
-    #[test]
-    fn powershell_escape_with_single_quotes() {
-        assert_eq!(
-            escape_powershell_single_quoted_string("it's a test"),
-            "it''s a test"
-        );
-    }
-
-    #[test]
-    fn powershell_escape_multiple_quotes() {
-        assert_eq!(escape_powershell_single_quoted_string("a'b'c"), "a''b''c");
     }
 
     // =======================================================================

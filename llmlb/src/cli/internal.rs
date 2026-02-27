@@ -134,8 +134,8 @@ mod tests {
             crate::update::InstallerKind::MacPkg
         ));
         assert!(matches!(
-            crate::update::InstallerKind::from(InstallerKindArg::WindowsMsi),
-            crate::update::InstallerKind::WindowsMsi
+            crate::update::InstallerKind::from(InstallerKindArg::WindowsSetup),
+            crate::update::InstallerKind::WindowsSetup
         ));
     }
 
@@ -183,7 +183,7 @@ mod tests {
     fn execute_run_installer_returns_error_on_unsupported_flow() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let target = dir.path().join("llmlb-target");
-        let installer = dir.path().join("installer.msi");
+        let installer = dir.path().join("installer.exe");
         let args_file = dir.path().join("args.json");
         std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
 
@@ -191,7 +191,7 @@ mod tests {
             old_pid: 0,
             target,
             installer,
-            installer_kind: InstallerKindArg::WindowsMsi,
+            installer_kind: InstallerKindArg::WindowsSetup,
             args_file,
         }));
 

@@ -136,7 +136,7 @@ fn simple_json_value() -> impl Strategy<Value = Value> {
         Just(Value::Null),
         any::<bool>().prop_map(Value::Bool),
         any::<i64>().prop_map(|n| Value::Number(serde_json::Number::from(n))),
-        "[a-zA-Z0-9 ]{0,50}".prop_map(|s| Value::String(s)),
+        "[a-zA-Z0-9 ]{0,50}".prop_map(Value::String),
     ]
 }
 

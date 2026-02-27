@@ -143,12 +143,14 @@ mod tests {
     }
 }
 
+#[allow(clippy::items_after_test_module)]
 impl From<LbError> for AppError {
     fn from(err: LbError) -> Self {
         AppError(err)
     }
 }
 
+#[allow(clippy::items_after_test_module)]
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let status = self.0.status_code();

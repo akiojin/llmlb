@@ -2864,7 +2864,7 @@ mod tests {
         let pool = create_test_pool().await;
         let storage = RequestHistoryStorage::new(pool);
 
-        let request_types = vec![
+        let request_types = [
             RequestType::Chat,
             RequestType::Embeddings,
             RequestType::Transcription,
@@ -2874,7 +2874,7 @@ mod tests {
 
         for (i, rt) in request_types.iter().enumerate() {
             let mut record = create_test_record(Utc::now() - Duration::seconds(i as i64));
-            record.request_type = rt.clone();
+            record.request_type = *rt;
             storage.save_record(&record).await.unwrap();
         }
 

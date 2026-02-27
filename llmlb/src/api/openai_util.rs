@@ -306,14 +306,14 @@ mod tests {
     #[test]
     fn sanitize_preserves_numbers_null_bool() {
         // Given: various primitive types
-        let payload = json!({"count": 42, "active": true, "name": null, "ratio": 3.14});
+        let payload = json!({"count": 42, "active": true, "name": null, "ratio": 2.5});
         // When: sanitized
         let result = sanitize_openai_payload_for_history(&payload);
         // Then: all values are unchanged
         assert_eq!(result["count"], 42);
         assert_eq!(result["active"], true);
         assert!(result["name"].is_null());
-        assert_eq!(result["ratio"], 3.14);
+        assert_eq!(result["ratio"], 2.5);
     }
 
     #[test]
@@ -774,11 +774,11 @@ mod tests {
     #[test]
     fn sanitize_float_value_passes_through() {
         // Given: a float JSON value
-        let payload = json!(3.14);
+        let payload = json!(2.5);
         // When: sanitized
         let result = sanitize_openai_payload_for_history(&payload);
         // Then: unchanged
-        assert_eq!(result, json!(3.14));
+        assert_eq!(result, json!(2.5));
     }
 
     #[test]

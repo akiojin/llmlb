@@ -2154,8 +2154,8 @@ mod tests {
     #[test]
     fn test_ip_alert_threshold_constants() {
         use super::{IP_ALERT_THRESHOLD_DEFAULT_VALUE, IP_ALERT_THRESHOLD_MIN};
-        assert!(IP_ALERT_THRESHOLD_DEFAULT_VALUE >= IP_ALERT_THRESHOLD_MIN);
-        assert!(IP_ALERT_THRESHOLD_MIN >= 1);
+        assert_eq!(IP_ALERT_THRESHOLD_DEFAULT_VALUE, 100);
+        assert_eq!(IP_ALERT_THRESHOLD_MIN, 1);
     }
 
     // ===== RequestHistoryQuery deserialization =====

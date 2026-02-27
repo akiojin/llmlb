@@ -79,7 +79,7 @@ async fn test_list_users_as_admin() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let data: Value = serde_json::from_slice(&body).unwrap();
     assert!(data["users"].is_array());
-    assert!(data["users"].as_array().unwrap().len() >= 1);
+    assert!(!data["users"].as_array().unwrap().is_empty());
 }
 
 /// 認証なしでユーザー一覧は401
@@ -275,7 +275,7 @@ async fn test_update_user_role() {
         .oneshot(
             bearer_request(&jwt)
                 .method("PUT")
-                .uri(&format!("/api/users/{}", viewer.id))
+                .uri(format!("/api/users/{}", viewer.id))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({ "role": "admin" })).unwrap(),
@@ -307,7 +307,7 @@ async fn test_update_user_username() {
         .oneshot(
             bearer_request(&jwt)
                 .method("PUT")
-                .uri(&format!("/api/users/{}", user.id))
+                .uri(format!("/api/users/{}", user.id))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({ "username": "newname" })).unwrap(),
@@ -335,7 +335,7 @@ async fn test_update_nonexistent_user() {
         .oneshot(
             bearer_request(&jwt)
                 .method("PUT")
-                .uri(&format!("/api/users/{}", fake_id))
+                .uri(format!("/api/users/{}", fake_id))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({ "username": "ghost" })).unwrap(),
@@ -367,7 +367,7 @@ async fn test_update_user_duplicate_username() {
         .oneshot(
             bearer_request(&jwt)
                 .method("PUT")
-                .uri(&format!("/api/users/{}", user.id))
+                .uri(format!("/api/users/{}", user.id))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({ "username": "user_b" })).unwrap(),
@@ -400,7 +400,7 @@ async fn test_delete_user() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/users/{}", user.id))
+                .uri(format!("/api/users/{}", user.id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -422,7 +422,7 @@ async fn test_delete_nonexistent_user() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/users/{}", fake_id))
+                .uri(format!("/api/users/{}", fake_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -449,7 +449,7 @@ async fn test_delete_last_admin_fails() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/users/{}", admin_user.id))
+                .uri(format!("/api/users/{}", admin_user.id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -470,7 +470,7 @@ async fn test_delete_user_requires_auth() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/api/users/{}", fake_id))
+                .uri(format!("/api/users/{}", fake_id))
                 .body(Body::empty())
                 .unwrap(),
         )

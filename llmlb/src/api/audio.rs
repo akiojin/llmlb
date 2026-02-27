@@ -964,7 +964,7 @@ mod tests {
     fn test_input_exactly_4096_chars() {
         let input = "x".repeat(4096);
         assert_eq!(input.chars().count(), 4096);
-        assert!(!(input.chars().count() > 4096));
+        assert!(input.chars().count() <= 4096);
     }
 
     #[test]

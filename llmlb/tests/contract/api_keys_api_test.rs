@@ -360,7 +360,7 @@ async fn test_list_api_keys() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let data: Value = serde_json::from_slice(&body).unwrap();
     assert!(data["api_keys"].is_array());
-    assert!(data["api_keys"].as_array().unwrap().len() >= 1);
+    assert!(!data["api_keys"].as_array().unwrap().is_empty());
 }
 
 /// 認証なしでAPIキー一覧は401
@@ -425,7 +425,7 @@ async fn test_delete_api_key() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/me/api-keys/{}", key_id))
+                .uri(format!("/api/me/api-keys/{}", key_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -447,7 +447,7 @@ async fn test_delete_nonexistent_api_key() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/me/api-keys/{}", fake_id))
+                .uri(format!("/api/me/api-keys/{}", fake_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -468,7 +468,7 @@ async fn test_delete_api_key_requires_auth() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/api/me/api-keys/{}", fake_id))
+                .uri(format!("/api/me/api-keys/{}", fake_id))
                 .body(Body::empty())
                 .unwrap(),
         )

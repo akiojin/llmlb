@@ -1064,12 +1064,13 @@ mod tests {
     #[test]
     fn test_image_size_max_boundary() {
         const MAX_IMAGE_SIZE: usize = 4 * 1024 * 1024;
+        let fits_limit = |size: usize| size <= MAX_IMAGE_SIZE;
 
         // Exactly at boundary - allowed
-        assert!(MAX_IMAGE_SIZE <= MAX_IMAGE_SIZE);
+        assert!(fits_limit(MAX_IMAGE_SIZE));
 
         // One byte over - rejected
-        assert!(MAX_IMAGE_SIZE + 1 > MAX_IMAGE_SIZE);
+        assert!(!fits_limit(MAX_IMAGE_SIZE + 1));
 
         // Well below boundary - allowed
         let small = 1024_usize;
@@ -1117,21 +1118,30 @@ mod tests {
     fn test_model_default_for_edits() {
         // When model is None, default is "stable-diffusion-xl"
         let model: Option<String> = None;
-        let resolved = model.unwrap_or_else(|| "stable-diffusion-xl".to_string());
+        let resolved = match model {
+            Some(model) => model,
+            None => "stable-diffusion-xl".to_string(),
+        };
         assert_eq!(resolved, "stable-diffusion-xl");
     }
 
     #[test]
     fn test_model_override_for_edits() {
         let model: Option<String> = Some("dall-e-3".to_string());
-        let resolved = model.unwrap_or_else(|| "stable-diffusion-xl".to_string());
+        let resolved = match model {
+            Some(model) => model,
+            None => "stable-diffusion-xl".to_string(),
+        };
         assert_eq!(resolved, "dall-e-3");
     }
 
     #[test]
     fn test_model_default_for_variations() {
         let model: Option<String> = None;
-        let resolved = model.unwrap_or_else(|| "stable-diffusion-xl".to_string());
+        let resolved = match model {
+            Some(model) => model,
+            None => "stable-diffusion-xl".to_string(),
+        };
         assert_eq!(resolved, "stable-diffusion-xl");
     }
 }

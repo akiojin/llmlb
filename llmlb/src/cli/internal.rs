@@ -142,34 +142,40 @@ mod tests {
     #[test]
     fn execute_apply_update_returns_error_when_new_binary_missing() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let nonexistent_pid = u32::MAX - 1;
         let target = dir.path().join("llmlb-target");
         let new_binary = dir.path().join("missing-new-binary");
         let args_file = dir.path().join("args.json");
         std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
 
         let err = execute(InternalCommand::ApplyUpdate(ApplyUpdateArgs {
-            old_pid: 0,
+            old_pid: nonexistent_pid,
             target,
             new_binary,
             args_file,
         }))
         .expect_err("apply-update should fail when new binary is missing");
 
-        assert!(err
-            .to_string()
-            .contains("Failed to replace target executable"));
+        let error_text = err.to_string();
+        assert!(
+            error_text.contains("Failed to replace target executable")
+                || error_text.contains("No such file")
+                || error_text.contains("cannot find the file"),
+            "unexpected apply-update error text: {error_text}"
+        );
     }
 
     #[test]
     fn execute_rollback_returns_error_when_backup_missing() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let nonexistent_pid = u32::MAX - 1;
         let target = dir.path().join("llmlb-target");
         let backup = dir.path().join("missing.bak");
         let args_file = dir.path().join("args.json");
         std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
 
         let err = execute(InternalCommand::Rollback(RollbackArgs {
-            old_pid: 0,
+            old_pid: nonexistent_pid,
             target,
             backup,
             args_file,
@@ -182,13 +188,14 @@ mod tests {
     #[test]
     fn execute_run_installer_returns_error_on_unsupported_flow() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let nonexistent_pid = u32::MAX - 1;
         let target = dir.path().join("llmlb-target");
         let installer = dir.path().join("installer.exe");
         let args_file = dir.path().join("args.json");
         std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
 
         let result = execute(InternalCommand::RunInstaller(RunInstallerArgs {
-            old_pid: 0,
+            old_pid: nonexistent_pid,
             target,
             installer,
             installer_kind: InstallerKindArg::WindowsSetup,

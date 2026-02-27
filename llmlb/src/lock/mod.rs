@@ -757,8 +757,7 @@ mod tests {
 
     #[test]
     fn lock_error_release_failed_display() {
-        let err =
-            LockError::ReleaseFailed(std::io::Error::new(std::io::ErrorKind::Other, "file busy"));
+        let err = LockError::ReleaseFailed(std::io::Error::other("file busy"));
         let msg = format!("{}", err);
         assert!(msg.contains("Failed to release lock"));
     }

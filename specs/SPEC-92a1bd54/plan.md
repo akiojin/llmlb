@@ -70,7 +70,7 @@ llmlbにOpen Responses API（OpenAI Responses APIベースのオープン仕様�
 
 **バージョニング**:
 
-- バージョン番号割り当て済み? ✅ semantic-release
+- バージョン番号割り当て済み? ✅ SemVerリリースフロー
 - 変更ごとにBUILDインクリメント? ✅
 - 破壊的変更を処理? N/A（新規追加）
 

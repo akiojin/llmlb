@@ -81,7 +81,7 @@ Claude Code PreToolUse Hook APIを活用し、Worktree環境での作業境界�
 
 **バージョニング**:
 - バージョン番号割り当て済み?: N/A (hookスクリプトはプロジェクトに統合)
-- 変更ごとにBUILDインクリメント?: semantic-releaseに委譲 ✅
+- 変更ごとにBUILDインクリメント?: SemVerリリースフローに委譲 ✅
 - 破壊的変更を処理?: hookスクリプトの更新はfeat:コミット ✅
 
 ## プロジェクト構造

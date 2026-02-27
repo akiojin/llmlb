@@ -439,10 +439,10 @@
 
 ### Bug Fixes
 
-* **ci:** align release-please inputs ([94e5b91](https://github.com/akiojin/runtime-router/commit/94e5b91a4a231df207c3146bc8ee63b959201087))
-* **ci:** finalize release-please setup on main ([523cd38](https://github.com/akiojin/runtime-router/commit/523cd384c7ff4d37c7bb0f8d00aa7e69e74f616e))
+* **ci:** align リリースPR自動化 inputs ([94e5b91](https://github.com/akiojin/runtime-router/commit/94e5b91a4a231df207c3146bc8ee63b959201087))
+* **ci:** finalize リリースPR自動化 setup on main ([523cd38](https://github.com/akiojin/runtime-router/commit/523cd384c7ff4d37c7bb0f8d00aa7e69e74f616e))
 * **ci:** remove stale needs from publish backmerge ([58a04f9](https://github.com/akiojin/runtime-router/commit/58a04f9535da4cac57bde8272bc1723518ddd734))
-* **ci:** use release-please action manifest on main ([bce65ed](https://github.com/akiojin/runtime-router/commit/bce65ed266896bd3a672930f91f118c4522d6381))
+* **ci:** use リリースPR自動化 action manifest on main ([bce65ed](https://github.com/akiojin/runtime-router/commit/bce65ed266896bd3a672930f91f118c4522d6381))
 
 ## [2.0.5](https://github.com/akiojin/runtime-router/compare/v2.0.4...v2.0.5) (2025-11-19)
 
@@ -716,7 +716,7 @@
 * **ci:** correct required status checks with actual check names ([be4cef2](https://github.com/akiojin/runtime-router/commit/be4cef2d0d1dc229eb1f402892ced5d21d50e89d))
 * **ci:** hookテストワークフローをpnpmに対応 ([0bd14e4](https://github.com/akiojin/runtime-router/commit/0bd14e489153785c25ae217b8b8593f7b2c02ffb))
 * **ci:** pnpm/action-setup@v4のバージョン競合を解消 ([d151529](https://github.com/akiojin/runtime-router/commit/d1515291ba5a8172d82fce67cef21f4062f829e4))
-* **ci:** restrict semantic-release to main branch only ([135f9fb](https://github.com/akiojin/runtime-router/commit/135f9fb9f966376903b7db097b0839357a059f81))
+* **ci:** restrict SemVerリリースフロー to main branch only ([135f9fb](https://github.com/akiojin/runtime-router/commit/135f9fb9f966376903b7db097b0839357a059f81))
 * **ci:** unify pnpm version to 10.20.0 across all workflows ([1808297](https://github.com/akiojin/runtime-router/commit/180829759629b7865c05dce5b2ec2345b5fcbf43))
 * **ci:** unity-mcp-serverの設定でAuto Mergeワークフローを更新 ([2e27a43](https://github.com/akiojin/runtime-router/commit/2e27a433bdd4eb75ba7b4608755bf61584d3d2af))
 * **docker:** change global package installation from pnpm to npm ([0d4ee13](https://github.com/akiojin/runtime-router/commit/0d4ee1349e73527252e4fcb46fd072264a58501c))

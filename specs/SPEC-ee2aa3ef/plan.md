@@ -20,10 +20,10 @@
 
 ## 概要
 
-開発者がコマンド一つで正式版リリースを開始でき、品質チェックから本番公開まで完全自動化されたリリースシステム。semantic-releaseとGitHub Actionsを組み合わせて、Conventional Commitsから自動バージョニング、CHANGELOG生成、マルチプラットフォームバイナリビルドまでを実現。
+開発者がコマンド一つで正式版リリースを開始でき、品質チェックから本番公開まで完全自動化されたリリースシステム。SemVerリリースフローとGitHub Actionsを組み合わせて、Conventional Commitsから自動バージョニング、CHANGELOG生成、マルチプラットフォームバイナリビルドまでを実現。
 
 **技術アプローチ**:
-- semantic-release: 自動バージョニング・CHANGELOG・GitHub Release作成
+- SemVerリリースフロー: 自動バージョニング・CHANGELOG・GitHub Release作成
 - GitHub Actions: CI/CD実行環境
 - Bash スクリプト: リリースPR作成・ホットフィックス支援
 - LLMインターフェース: Claudeスラッシュコマンド + Codexスキル
@@ -31,7 +31,7 @@
 ## 技術コンテキスト
 
 **言語/バージョン**: Rust 1.75+, Bash 4.0+, Node.js 20+
-**主要依存関係**: semantic-release, @semantic-release/*, GitHub CLI (gh), cargo-edit
+**主要依存関係**: GitHub Actions, GitHub CLI (gh), cargo-edit, commitlint
 **ストレージ**: Git (バージョン履歴)、GitHub (リリース成果物)
 **テスト**: GitHub Actions品質チェック (cargo test, clippy, fmt, commitlint, markdownlint)
 **対象プラットフォーム**: Linux x86_64, Windows x86_64, macOS x86_64/ARM64
@@ -59,7 +59,7 @@
 
 **シンプルさ**:
 - プロジェクト数: 1 (llmlbワークスペース) ✅
-- フレームワークを直接使用? semantic-release・GitHub Actions直接利用 ✅
+- フレームワークを直接使用? SemVerリリースフロー・GitHub Actions直接利用 ✅
 - 単一データモデル? N/A (インフラ・ツールチェーン) ✅
 - パターン回避? リリーススクリプトは最小限の構造、不要な抽象化なし ✅
 
@@ -77,7 +77,7 @@
   - 代替: GitHub Actions実行での統合テスト（品質チェック必須）
 - Gitコミットはテストが実装より先に表示? ⚠️ スクリプト実装後、CIで検証
 - 順序: Contract→Integration→E2E→Unit? ⚠️ CI検証が統合テストとして機能
-- 実依存関係を使用? ✅ 実GitHub Actions環境、実semantic-release
+- 実依存関係を使用? ✅ 実GitHub Actions環境、実SemVerリリースフロー
 - Integration testの対象: ✅ 全リリースフロー（PR→品質チェック→マージ→リリース）
 - **正当化**: インフラストラクチャコードであり、実行環境（GitHub Actions）でのみ検証可能
 
@@ -86,7 +86,7 @@
 - エラーコンテキスト十分? ✅ 失敗理由、推奨アクション、次のステップを明示
 
 **バージョニング**:
-- バージョン番号割り当て済み? ✅ semantic-releaseが自動計算（Conventional Commitsベース）
+- バージョン番号割り当て済み? ✅ SemVerリリースフローが自動計算（Conventional Commitsベース）
 - 変更ごとにBUILDインクリメント? ✅ 自動（feat/fix/BREAKINGに基づく）
 - 破壊的変更を処理? ✅ BREAKING CHANGE検出でメジャーバージョンアップ
 
@@ -116,12 +116,12 @@ scripts/release/
 └── hotfix/SKILL.md           # hotfix スキル ✅
 
 .github/workflows/
-├── semantic-release.yml      # 自動バージョニング・リリース ✅
+├── release.yml      # 自動バージョニング・リリース ✅
 ├── release-binaries.yml      # マルチプラットフォームビルド ✅
 ├── quality-checks.yml        # 品質チェック並列実行 ✅
 └── auto-merge.yml            # 自動マージ（既存）
 
-.releaserc.json               # semantic-release設定 ✅
+.github/workflows/release.yml               # SemVerリリースフロー設定 ✅
 CLAUDE.md                     # 古いnpm version記述削除 ✅
 ```
 
@@ -129,7 +129,7 @@ CLAUDE.md                     # 古いnpm version記述削除 ✅
 
 **スキップ理由**: 技術スタックはプロジェクト既存の設定を踏襲。
 
-- ✅ semantic-release: 既にpackage.jsonに設定済み
+- ✅ SemVerリリースフロー: 既にpackage.jsonに設定済み
 - ✅ GitHub Actions: 既存ワークフロー（quality-checks, auto-merge）を拡張
 - ✅ Rust toolchain: 既存のCargo.toml設定を利用
 - ✅ Conventional Commits: commitlint既に導入済み
@@ -148,7 +148,7 @@ CLAUDE.md                     # 古いnpm version記述削除 ✅
 **状態管理**:
 - Git ブランチ状態（main, develop, feature/**, hotfix/**）
 - GitHub PR状態（品質チェック、承認、マージ）
-- semantic-release状態（バージョン計算、CHANGELOG生成、リリース作成）
+- SemVerリリースフロー状態（バージョン計算、CHANGELOG生成、リリース作成）
 
 ### 2. 契約（API/インターフェース）
 
@@ -188,13 +188,13 @@ CLAUDE.md                     # 古いnpm version記述削除 ✅
 
 #### B. GitHub Actions契約
 
-**semantic-release.yml**
+**release.yml**
 ```yaml
 # トリガー:
 #   - push: [main, develop]
 # 前提条件:
 #   - Conventional Commitsでコミット
-#   - .releaserc.json設定済み
+#   - .github/workflows/release.yml設定済み
 #   - package.json依存関係インストール済み
 # 出力:
 #   - main: v1.2.3形式のタグ・リリース作成、バイナリ添付
@@ -230,8 +230,8 @@ CLAUDE.md                     # 古いnpm version記述削除 ✅
 
 - ✅ PR作成 → quality-checks自動実行
 - ✅ 品質チェック合格 → auto-merge自動実行
-- ✅ mainマージ → semantic-release自動実行（正式版）
-- ✅ developマージ → semantic-release自動実行（alpha版）
+- ✅ mainマージ → SemVerリリースフロー自動実行（正式版）
+- ✅ developマージ → SemVerリリースフロー自動実行（alpha版）
 
 ### 4. ユーザーストーリーからテストシナリオ
 
@@ -281,8 +281,8 @@ CLAUDE.md は既に更新済み（npm version記述削除）
 ### Setup タスク
 
 1. [✅] developブランチ作成準備（メンテナ依頼）
-2. [✅] .releaserc.json にdevelopブランチ追加
-3. [✅] semantic-release.yml にdevelop対応追加
+2. [✅] .github/workflows/release.yml にdevelopブランチ追加
+3. [✅] release.yml にdevelop対応追加
 
 ### Core タスク
 
@@ -293,7 +293,7 @@ CLAUDE.md は既に更新済み（npm version記述削除）
 5. [✅] Codex `release` / `hotfix` スキル作成
 6. [✅] quality-checks.yml を develop/hotfix対応に更新
 7. [✅] release-binaries.yml を workflow_call 対応に更新
-8. [✅] semantic-release.yml にバイナリダウンロード追加
+8. [✅] release.yml にバイナリダウンロード追加
 
 ### Integration タスク
 
@@ -324,11 +324,11 @@ CLAUDE.md は既に更新済み（npm version記述削除）
 | 違反 | 必要な理由 | より単純な代替案が却下された理由 |
 |------|-----------|--------------------------------|
 | TDD未適用 | インフラストラクチャコード | GitHub Actions環境でのみ検証可能。ローカルでのユニットテストは困難 |
-| 3言語混在 (Rust/Bash/Node.js) | 既存プロジェクト構成 | Rust=本体、Bash=リリーススクリプト、Node.js=semantic-releaseツール |
+| 3言語混在 (Rust/Bash/Node.js) | 既存プロジェクト構成 | Rust=本体、Bash=リリーススクリプト、Node.js=SemVerリリースフローツール |
 
 **正当化**:
 - Bashスクリプトは単純で、GitHub CLI (gh) との統合が容易
-- semantic-releaseはNode.jsエコシステムの標準ツール
+- SemVerリリースフローはNode.jsエコシステムの標準ツール
 - 実GitHub Actions環境での統合テストがTDDの代替として機能
 
 ## 進捗トラッキング
@@ -352,7 +352,7 @@ CLAUDE.md は既に更新済み（npm version記述削除）
 - [x] リリーススクリプト作成
 - [x] スラッシュコマンド作成
 - [x] Codexスキル作成（release/hotfix）
-- [x] semantic-release設定更新
+- [x] SemVerリリースフロー設定更新
 - [x] GitHub Actionsワークフロー更新
 - [x] CLAUDE.md修正
 - [x] ローカル検証（markdownlint）

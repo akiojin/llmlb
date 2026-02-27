@@ -53,7 +53,7 @@ pub struct RunInstallerArgs {
     /// Current executable path (used for restart)
     #[arg(long)]
     pub target: std::path::PathBuf,
-    /// Installer payload path (.pkg/.msi)
+    /// Installer payload path (.pkg/.exe)
     #[arg(long)]
     pub installer: std::path::PathBuf,
     /// Installer kind
@@ -70,9 +70,9 @@ pub enum InstallerKindArg {
     /// macOS `.pkg` installer.
     #[value(name = "mac_pkg")]
     MacPkg,
-    /// Windows `.msi` installer.
-    #[value(name = "windows_msi")]
-    WindowsMsi,
+    /// Windows setup `.exe` installer.
+    #[value(name = "windows_setup")]
+    WindowsSetup,
 }
 
 /// Arguments for `__internal rollback`.
@@ -96,7 +96,7 @@ impl From<InstallerKindArg> for crate::update::InstallerKind {
     fn from(value: InstallerKindArg) -> Self {
         match value {
             InstallerKindArg::MacPkg => crate::update::InstallerKind::MacPkg,
-            InstallerKindArg::WindowsMsi => crate::update::InstallerKind::WindowsMsi,
+            InstallerKindArg::WindowsSetup => crate::update::InstallerKind::WindowsSetup,
         }
     }
 }

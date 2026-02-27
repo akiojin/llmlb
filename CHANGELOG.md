@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [5.2.2](https://github.com/akiojin/llmlb/compare/v5.2.1...v5.2.2) (2026-02-27)
+
+### Documentation
+
+- 仕様書・履歴ドキュメント内の legacy `semantic-release` / `release-please` 文言を整理
+
 ## [5.2.1](https://github.com/akiojin/llmlb/compare/v5.2.0...v5.2.1) (2026-02-27)
 
 ### Bug Fixes

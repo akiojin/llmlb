@@ -314,7 +314,7 @@
 12. **プロキシ環境での動作**（✅ 実装済み）: 環境変数`HTTP_PROXY`/`HTTPS_PROXY`が設定されている環境で、プロキシ経由でLLM runtimeバイナリとモデルが正常にダウンロードされる（FR-016g、reqwestのプロキシサポート）
 13. **リリース配布形式の整合性**: GitHubリリースに添付される配布物は、Unix系プラットフォーム向けを`.tar.gz`、Windows向けを`.zip`で提供し、それぞれにLoad Balancer/Nodeバイナリと最低限 `README.md` / `README.ja.md` / `LICENSE` が同梱されている（追加ドキュメントを含める場合はリリースノートで明示する）
 14. **リリースタイミングの統制**: バイナリ配布用ワークフローは`main`ブランチにマージ済みのコミットだけを対象とし、その他のブランチでトリガーされた場合はエラーとして停止する
-15. **プラットフォームインストーラー**: macOS `.pkg` と Windows `.msi` で Load Balancer インストーラーを提供し、`or-router-*` の命名規則に従うこと（Node は C++ 実装 `node/` ディレクトリに配置、llama.cpp統合実装完了）
+15. **プラットフォームインストーラー**: macOS `.pkg` と Windows `-setup.exe` で Load Balancer インストーラーを提供し、`llmlb-*` の命名規則に従うこと（Node は C++ 実装 `node/` ディレクトリに配置、llama.cpp統合実装完了）
 
 ---
 

@@ -41,7 +41,7 @@ enum PayloadState {
 enum ApplyMethod {
   PortableReplace,
   MacPkg,
-  WindowsMsi,
+  WindowsSetup,
 }
 ```
 
@@ -60,4 +60,3 @@ enum ApplyMethod {
   }
 }
 ```
-

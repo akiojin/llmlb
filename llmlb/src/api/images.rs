@@ -1050,14 +1050,15 @@ mod tests {
 
     #[test]
     fn test_n_boundary_values() {
+        let is_valid_n = |n: u8| (1..=10).contains(&n);
         // n=0 is invalid
-        assert!(0_u8 == 0 || 0_u8 > 10);
+        assert!(!is_valid_n(0));
         // n=1 is valid
-        assert!(1_u8 >= 1 && 1_u8 <= 10);
+        assert!(is_valid_n(1));
         // n=10 is valid
-        assert!(10_u8 >= 1 && 10_u8 <= 10);
+        assert!(is_valid_n(10));
         // n=11 is invalid
-        assert!(11_u8 > 10);
+        assert!(!is_valid_n(11));
     }
 
     #[test]

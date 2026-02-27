@@ -3454,8 +3454,8 @@ mod tests {
                 },
                 GitHubAsset {
                     name: "llmlb-windows-x86_64-setup.exe".to_string(),
-                    browser_download_url:
-                        "https://dl.example.com/llmlb-windows-x86_64-setup.exe".to_string(),
+                    browser_download_url: "https://dl.example.com/llmlb-windows-x86_64-setup.exe"
+                        .to_string(),
                 },
             ],
         };

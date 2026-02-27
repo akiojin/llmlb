@@ -68,6 +68,10 @@ pub async fn detect_xllm(client: &Client, base_url: &str, api_key: Option<&str>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{
+        matchers::{header, method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[test]
     fn test_xllm_system_info_deserialize() {
@@ -88,5 +92,52 @@ mod tests {
         let json = r#"{"server_name": "other"}"#;
         let info: XllmSystemInfo = serde_json::from_str(json).unwrap();
         assert_eq!(info.xllm_version, None);
+    }
+
+    #[tokio::test]
+    async fn detect_xllm_returns_reason_on_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/system"))
+            .and(header("authorization", "Bearer sk-test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "xllm_version": "1.2.3",
+                "server_name": "test-xllm"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let detected = detect_xllm(&client, &server.uri(), Some("sk-test")).await;
+        assert_eq!(
+            detected,
+            Some("xLLM: /api/system xllm_version=1.2.3".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn detect_xllm_returns_none_on_non_success_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/system"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        assert_eq!(detect_xllm(&client, &server.uri(), None).await, None);
+    }
+
+    #[tokio::test]
+    async fn detect_xllm_returns_none_on_invalid_json() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/system"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{"))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        assert_eq!(detect_xllm(&client, &server.uri(), None).await, None);
     }
 }

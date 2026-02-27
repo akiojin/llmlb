@@ -68,3 +68,56 @@ pub async fn execute(args: &StopArgs) -> Result<(), anyhow::Error> {
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn unique_test_port() -> u16 {
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("failed to reserve test port");
+        let port = listener
+            .local_addr()
+            .expect("failed to read test port")
+            .port();
+        drop(listener);
+        port
+    }
+
+    #[tokio::test]
+    async fn execute_succeeds_when_lock_file_is_missing() {
+        let args = StopArgs {
+            port: unique_test_port(),
+            timeout: 1,
+        };
+        execute(&args)
+            .await
+            .expect("stop should succeed when no lock exists");
+    }
+
+    #[tokio::test]
+    async fn execute_removes_stale_lock_file() {
+        let port = unique_test_port();
+        let path = crate::lock::lock_path(port);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("failed to create lock dir");
+        }
+        let stale = crate::lock::LockInfo {
+            pid: u32::MAX,
+            started_at: Utc::now(),
+            port,
+        };
+        std::fs::write(
+            &path,
+            serde_json::to_string(&stale).expect("failed to serialize lock info"),
+        )
+        .expect("failed to write lock file");
+
+        let args = StopArgs { port, timeout: 1 };
+        execute(&args)
+            .await
+            .expect("stop should clean stale lock and return Ok");
+        assert!(!path.exists(), "stale lock file should be removed");
+    }
+}

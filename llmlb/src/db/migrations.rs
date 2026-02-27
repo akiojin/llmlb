@@ -139,4 +139,153 @@ mod tests {
         let result = import_nodes_from_json("/nonexistent/nodes.json").await;
         assert!(result.is_ok());
     }
+
+    // --- 追加テスト ---
+
+    #[tokio::test]
+    async fn test_migrations_create_endpoints_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='endpoints'")
+                .fetch_one(&pool)
+                .await;
+        assert!(result.is_ok(), "endpoints table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_settings_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
+                .fetch_one(&pool)
+                .await;
+        assert!(result.is_ok(), "settings table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_audit_log_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log_entries'",
+        )
+        .fetch_one(&pool)
+        .await;
+        assert!(result.is_ok(), "audit_log_entries table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_idempotent() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        // Running twice should not error
+        run_migrations(&pool).await.unwrap();
+
+        let result =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                .fetch_one(&pool)
+                .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_invitation_codes_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='invitation_codes'",
+        )
+        .fetch_one(&pool)
+        .await;
+        assert!(result.is_ok(), "invitation_codes table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_endpoint_models_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='endpoint_models'",
+        )
+        .fetch_one(&pool)
+        .await;
+        assert!(result.is_ok(), "endpoint_models table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_endpoint_health_checks_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='endpoint_health_checks'",
+        )
+        .fetch_one(&pool)
+        .await;
+        assert!(result.is_ok(), "endpoint_health_checks table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_model_download_tasks_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='model_download_tasks'",
+        )
+        .fetch_one(&pool)
+        .await;
+        assert!(result.is_ok(), "model_download_tasks table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_endpoint_daily_stats_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='endpoint_daily_stats'",
+        )
+        .fetch_one(&pool)
+        .await;
+        assert!(result.is_ok(), "endpoint_daily_stats table should exist");
+    }
+
+    #[tokio::test]
+    async fn test_import_nodes_from_json_with_temp_file() {
+        // Create a temporary file to test actual rename behavior
+        let tmp_dir = std::env::temp_dir();
+        let tmp_file = tmp_dir.join("test_nodes_import.json");
+        std::fs::write(&tmp_file, "{}").expect("Failed to create temp file");
+
+        let result = import_nodes_from_json(tmp_file.to_str().unwrap()).await;
+        assert!(result.is_ok());
+
+        // The original file should be renamed to .migrated
+        assert!(!tmp_file.exists());
+        let migrated = format!("{}.migrated", tmp_file.display());
+        assert!(std::path::Path::new(&migrated).exists());
+
+        // Cleanup
+        let _ = std::fs::remove_file(&migrated);
+    }
+
+    #[tokio::test]
+    async fn test_migrations_create_models_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let result =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='models'")
+                .fetch_one(&pool)
+                .await;
+        assert!(result.is_ok(), "models table should exist");
+    }
 }

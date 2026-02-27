@@ -38,5 +38,9 @@ mod openai_error_format_test;
 #[path = "unit/ip_normalize_test.rs"]
 mod ip_normalize_test;
 
+// Property-based tests (proptest)
+#[path = "unit/proptest_tests.rs"]
+mod proptest_tests;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

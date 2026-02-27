@@ -122,3 +122,82 @@ pub fn execute(command: InternalCommand) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installer_kind_conversion_matches_update_kind() {
+        assert!(matches!(
+            crate::update::InstallerKind::from(InstallerKindArg::MacPkg),
+            crate::update::InstallerKind::MacPkg
+        ));
+        assert!(matches!(
+            crate::update::InstallerKind::from(InstallerKindArg::WindowsMsi),
+            crate::update::InstallerKind::WindowsMsi
+        ));
+    }
+
+    #[test]
+    fn execute_apply_update_returns_error_when_new_binary_missing() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let target = dir.path().join("llmlb-target");
+        let new_binary = dir.path().join("missing-new-binary");
+        let args_file = dir.path().join("args.json");
+        std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
+
+        let err = execute(InternalCommand::ApplyUpdate(ApplyUpdateArgs {
+            old_pid: 0,
+            target,
+            new_binary,
+            args_file,
+        }))
+        .expect_err("apply-update should fail when new binary is missing");
+
+        assert!(err
+            .to_string()
+            .contains("Failed to replace target executable"));
+    }
+
+    #[test]
+    fn execute_rollback_returns_error_when_backup_missing() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let target = dir.path().join("llmlb-target");
+        let backup = dir.path().join("missing.bak");
+        let args_file = dir.path().join("args.json");
+        std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
+
+        let err = execute(InternalCommand::Rollback(RollbackArgs {
+            old_pid: 0,
+            target,
+            backup,
+            args_file,
+        }))
+        .expect_err("rollback should fail when backup does not exist");
+
+        assert!(err.to_string().contains("Backup file does not exist"));
+    }
+
+    #[test]
+    fn execute_run_installer_returns_error_on_unsupported_flow() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let target = dir.path().join("llmlb-target");
+        let installer = dir.path().join("installer.msi");
+        let args_file = dir.path().join("args.json");
+        std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
+
+        let result = execute(InternalCommand::RunInstaller(RunInstallerArgs {
+            old_pid: 0,
+            target,
+            installer,
+            installer_kind: InstallerKindArg::WindowsMsi,
+            args_file,
+        }));
+
+        assert!(
+            result.is_err(),
+            "run-installer should fail on this test path"
+        );
+    }
+}

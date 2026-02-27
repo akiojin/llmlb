@@ -778,4 +778,386 @@ mod tests {
             "/dashboard/index.html (HTML) should be recorded"
         );
     }
+
+    // =========================================================================
+    // should_exclude additional edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_should_exclude_ws_root() {
+        assert!(should_exclude("/ws"));
+    }
+
+    #[test]
+    fn test_should_exclude_ws_with_trailing_slash() {
+        assert!(should_exclude("/ws/"));
+    }
+
+    #[test]
+    fn test_should_not_exclude_ws_like_path() {
+        // Path containing "ws" but not starting with /ws/
+        assert!(!should_exclude("/api/websocket"));
+    }
+
+    #[test]
+    fn test_should_exclude_dashboard_png() {
+        assert!(should_exclude("/dashboard/images/logo.png"));
+    }
+
+    #[test]
+    fn test_should_exclude_dashboard_jpg() {
+        assert!(should_exclude("/dashboard/images/bg.jpg"));
+    }
+
+    #[test]
+    fn test_should_exclude_dashboard_svg() {
+        assert!(should_exclude("/dashboard/icons/icon.svg"));
+    }
+
+    #[test]
+    fn test_should_exclude_dashboard_woff() {
+        assert!(should_exclude("/dashboard/fonts/roboto.woff"));
+    }
+
+    #[test]
+    fn test_should_not_exclude_dashboard_html() {
+        assert!(!should_exclude("/dashboard/index.html"));
+    }
+
+    #[test]
+    fn test_should_not_exclude_dashboard_json() {
+        assert!(!should_exclude("/dashboard/manifest.json"));
+    }
+
+    #[test]
+    fn test_should_not_exclude_root() {
+        assert!(!should_exclude("/"));
+    }
+
+    #[test]
+    fn test_should_not_exclude_v1_endpoints() {
+        assert!(!should_exclude("/v1/embeddings"));
+        assert!(!should_exclude("/v1/audio/transcriptions"));
+    }
+
+    // =========================================================================
+    // extract_actor_info tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_actor_info_anonymous_without_extensions() {
+        let response = axum::response::Response::new(Body::empty());
+        let (actor_type, actor_id, actor_username, api_key_owner_id) =
+            extract_actor_info(&response);
+        assert_eq!(actor_type, ActorType::Anonymous);
+        assert!(actor_id.is_none());
+        assert!(actor_username.is_none());
+        assert!(api_key_owner_id.is_none());
+    }
+
+    #[test]
+    fn test_extract_actor_info_jwt_user() {
+        let mut response = axum::response::Response::new(Body::empty());
+        response.extensions_mut().insert(Claims {
+            sub: "user-uuid-123".to_string(),
+            role: crate::common::auth::UserRole::Admin,
+            exp: 9999999999,
+            must_change_password: false,
+        });
+        let (actor_type, actor_id, _actor_username, api_key_owner_id) =
+            extract_actor_info(&response);
+        assert_eq!(actor_type, ActorType::User);
+        assert_eq!(actor_id, Some("user-uuid-123".to_string()));
+        assert!(api_key_owner_id.is_none());
+    }
+
+    #[test]
+    fn test_extract_actor_info_api_key_only() {
+        let mut response = axum::response::Response::new(Body::empty());
+        let key_id = uuid::Uuid::new_v4();
+        let owner_id = uuid::Uuid::new_v4();
+        response.extensions_mut().insert(ApiKeyAuthContext {
+            id: key_id,
+            created_by: owner_id,
+            permissions: vec![],
+            expires_at: None,
+        });
+        let (actor_type, actor_id, _actor_username, api_key_owner_id) =
+            extract_actor_info(&response);
+        assert_eq!(actor_type, ActorType::ApiKey);
+        assert_eq!(actor_id, Some(key_id.to_string()));
+        assert_eq!(api_key_owner_id, Some(owner_id.to_string()));
+    }
+
+    #[test]
+    fn test_extract_actor_info_jwt_plus_api_key() {
+        let mut response = axum::response::Response::new(Body::empty());
+        let key_id = uuid::Uuid::new_v4();
+        let owner_id = uuid::Uuid::new_v4();
+        response.extensions_mut().insert(Claims {
+            sub: owner_id.to_string(),
+            role: crate::common::auth::UserRole::Admin,
+            exp: 9999999999,
+            must_change_password: false,
+        });
+        response.extensions_mut().insert(ApiKeyAuthContext {
+            id: key_id,
+            created_by: owner_id,
+            permissions: vec![],
+            expires_at: None,
+        });
+        // When both Claims and ApiKeyAuthContext are present, actor_type should be ApiKey
+        let (actor_type, actor_id, _actor_username, api_key_owner_id) =
+            extract_actor_info(&response);
+        assert_eq!(actor_type, ActorType::ApiKey);
+        assert_eq!(actor_id, Some(key_id.to_string()));
+        assert_eq!(api_key_owner_id, Some(owner_id.to_string()));
+    }
+
+    // =========================================================================
+    // audit middleware captures client IP
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_audit_captures_x_forwarded_for_ip() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool.clone()).await;
+        let app = build_test_app(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/test")
+                    .header("x-forwarded-for", "192.168.1.100, 10.0.0.1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 200);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let row: (Option<String>,) = sqlx::query_as(
+            "SELECT client_ip FROM audit_log_entries WHERE request_path = '/api/test'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            row.0.as_deref(),
+            Some("192.168.1.100"),
+            "Should extract first IP from x-forwarded-for"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_audit_captures_x_real_ip() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool.clone()).await;
+        let app = build_test_app(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/test")
+                    .header("x-real-ip", "10.0.0.42")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 200);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let row: (Option<String>,) = sqlx::query_as(
+            "SELECT client_ip FROM audit_log_entries WHERE request_path = '/api/test'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            row.0.as_deref(),
+            Some("10.0.0.42"),
+            "Should extract IP from x-real-ip"
+        );
+    }
+
+    // =========================================================================
+    // audit middleware records status codes
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_audit_records_404_status() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool.clone()).await;
+
+        let app = Router::new()
+            .route(
+                "/api/missing",
+                get(|| async { (axum::http::StatusCode::NOT_FOUND, "not found") }),
+            )
+            .layer(axum_middleware::from_fn_with_state(state, audit_middleware));
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/missing")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 404);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let row: (i64,) = sqlx::query_as(
+            "SELECT status_code FROM audit_log_entries WHERE request_path = '/api/missing'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.0, 404, "status_code should be 404");
+    }
+
+    // =========================================================================
+    // audit middleware excludes SSE events
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_audit_excludes_dashboard_events() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool.clone()).await;
+        let app = build_test_app(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/dashboard/events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 200);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM audit_log_entries WHERE request_path = '/api/dashboard/events'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.0, 0, "/api/dashboard/events should be excluded");
+    }
+
+    // =========================================================================
+    // audit middleware records auth failure details
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_audit_records_auth_failure_detail() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool.clone()).await;
+
+        let app = Router::new()
+            .route(
+                "/api/auth/login",
+                axum::routing::post(|| async {
+                    let mut response = axum::response::Response::new(Body::from("unauthorized"));
+                    *response.status_mut() = axum::http::StatusCode::UNAUTHORIZED;
+                    response.extensions_mut().insert(AuthFailureInfo {
+                        attempted_username: Some("baduser".to_string()),
+                        reason: "Invalid password".to_string(),
+                    });
+                    response
+                }),
+            )
+            .layer(axum_middleware::from_fn_with_state(state, audit_middleware));
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/auth/login")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 401);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let row: (Option<String>,) = sqlx::query_as(
+            "SELECT detail FROM audit_log_entries WHERE request_path = '/api/auth/login'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let detail = row.0.expect("detail should be present for auth failure");
+        assert!(
+            detail.contains("Invalid password"),
+            "detail should contain failure reason"
+        );
+        assert!(
+            detail.contains("baduser"),
+            "detail should contain attempted username"
+        );
+    }
+
+    // =========================================================================
+    // audit middleware with no token usage records nulls
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_audit_records_null_token_usage_for_non_inference() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool.clone()).await;
+        let app = build_test_app(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 200);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let row: TokenUsageRow = sqlx::query_as(
+            "SELECT input_tokens, output_tokens, total_tokens, model_name, endpoint_id \
+             FROM audit_log_entries WHERE request_path = '/api/test'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert!(row.0.is_none(), "input_tokens should be null");
+        assert!(row.1.is_none(), "output_tokens should be null");
+        assert!(row.2.is_none(), "total_tokens should be null");
+        assert!(row.3.is_none(), "model_name should be null");
+        assert!(row.4.is_none(), "endpoint_id should be null");
+    }
 }

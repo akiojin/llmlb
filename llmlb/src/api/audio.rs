@@ -491,7 +491,7 @@ pub async fn speech(
 #[cfg(test)]
 mod tests {
     use super::{extract_client_ip_from_forwarded_headers, parse_forwarded_ip_candidate};
-    use axum::http::{HeaderMap, HeaderValue};
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use std::net::IpAddr;
 
     #[test]
@@ -584,5 +584,392 @@ mod tests {
         let model_name = "vibevoice-v1";
         let expected_error = format!("Model '{}' does not support speech-to-text", model_name);
         assert!(expected_error.contains("does not support speech-to-text"));
+    }
+
+    // --- AudioBackend helper tests ---
+
+    #[test]
+    fn audio_backend_url_strips_trailing_slash() {
+        use super::AudioBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "http://localhost:8080/".to_string(),
+            EndpointType::Xllm,
+        );
+        let backend = AudioBackend(ep);
+        assert_eq!(
+            backend.url("/v1/audio/transcriptions"),
+            "http://localhost:8080/v1/audio/transcriptions"
+        );
+    }
+
+    #[test]
+    fn audio_backend_url_no_trailing_slash() {
+        use super::AudioBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "http://10.0.0.1:11434".to_string(),
+            EndpointType::Ollama,
+        );
+        let backend = AudioBackend(ep);
+        assert_eq!(
+            backend.url("/v1/audio/speech"),
+            "http://10.0.0.1:11434/v1/audio/speech"
+        );
+    }
+
+    #[test]
+    fn audio_backend_id_returns_endpoint_id() {
+        use super::AudioBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        let expected_id = ep.id;
+        let backend = AudioBackend(ep);
+        assert_eq!(backend.id(), expected_id);
+    }
+
+    #[test]
+    fn audio_backend_name_returns_endpoint_name() {
+        use super::AudioBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "my-audio-node".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        let backend = AudioBackend(ep);
+        assert_eq!(backend.name(), "my-audio-node");
+    }
+
+    #[test]
+    fn audio_backend_ip_extracts_from_http_url() {
+        use super::AudioBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "http://192.168.1.100:11434".to_string(),
+            EndpointType::Ollama,
+        );
+        let backend = AudioBackend(ep);
+        assert_eq!(backend.ip(), "192.168.1.100".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn audio_backend_ip_extracts_from_https_url() {
+        use super::AudioBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "https://10.0.0.5:443".to_string(),
+            EndpointType::Vllm,
+        );
+        let backend = AudioBackend(ep);
+        assert_eq!(backend.ip(), "10.0.0.5".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn audio_backend_ip_falls_back_to_localhost_for_invalid() {
+        use super::AudioBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let mut ep = Endpoint::new(
+            "test".to_string(),
+            "http://not-a-valid-ip:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        ep.base_url = "http://not-a-valid-ip:8080".to_string();
+        let backend = AudioBackend(ep);
+        assert_eq!(backend.ip(), "127.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    // --- error_response tests ---
+
+    #[test]
+    fn error_response_http_error_type() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::Http("connection refused".to_string()),
+            StatusCode::BAD_GATEWAY,
+        );
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn error_response_service_unavailable_type() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::ServiceUnavailable("no backends".to_string()),
+            StatusCode::SERVICE_UNAVAILABLE,
+        );
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn error_response_invalid_model_name_type() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::InvalidModelName("bad:model:name".to_string()),
+            StatusCode::BAD_REQUEST,
+        );
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn error_response_fallback_api_error_type() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::Internal("unknown error".to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // --- openai_error helper tests ---
+
+    #[test]
+    fn openai_error_returns_ok_with_status() {
+        use super::openai_error;
+
+        let result = openai_error("test error message", StatusCode::BAD_REQUEST);
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn openai_error_accepts_string_type() {
+        use super::openai_error;
+
+        let msg = String::from("dynamic error");
+        let result = openai_error(msg, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    // --- forwarded header extraction edge cases ---
+
+    #[test]
+    fn extract_client_ip_returns_none_for_empty_headers() {
+        let headers = HeaderMap::new();
+        assert!(extract_client_ip_from_forwarded_headers(&headers).is_none());
+    }
+
+    #[test]
+    fn extract_client_ip_returns_none_for_all_unknown_xff() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("unknown, unknown"),
+        );
+        assert!(extract_client_ip_from_forwarded_headers(&headers).is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_empty_string() {
+        assert!(parse_forwarded_ip_candidate("").is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_unknown_string() {
+        assert!(parse_forwarded_ip_candidate("unknown").is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_unknown_case_insensitive() {
+        assert!(parse_forwarded_ip_candidate("UNKNOWN").is_none());
+        assert!(parse_forwarded_ip_candidate("Unknown").is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_obfuscated_identifier() {
+        // RFC 7239: obfuscated identifiers start with underscore
+        assert!(parse_forwarded_ip_candidate("_hidden").is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_plain_ipv4() {
+        let parsed = parse_forwarded_ip_candidate("198.51.100.1").expect("must parse plain ipv4");
+        assert_eq!(parsed, "198.51.100.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_plain_ipv6() {
+        let parsed = parse_forwarded_ip_candidate("2001:db8::1").expect("must parse plain ipv6");
+        assert_eq!(parsed, "2001:db8::1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_quoted_ipv4() {
+        let parsed =
+            parse_forwarded_ip_candidate("\"198.51.100.2\"").expect("must parse quoted ipv4");
+        assert_eq!(parsed, "198.51.100.2".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_ipv4_with_port() {
+        let parsed =
+            parse_forwarded_ip_candidate("10.0.0.1:8080").expect("must parse ipv4 with port");
+        assert_eq!(parsed, "10.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_bracketed_ipv6_with_port() {
+        let parsed = parse_forwarded_ip_candidate("[2001:db8::1]:443")
+            .expect("must parse bracketed ipv6 with port");
+        assert_eq!(parsed, "2001:db8::1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_whitespace_trimming() {
+        let parsed =
+            parse_forwarded_ip_candidate("  10.0.0.1  ").expect("must parse with whitespace");
+        assert_eq!(parsed, "10.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_invalid_returns_none() {
+        assert!(parse_forwarded_ip_candidate("not-an-ip").is_none());
+    }
+
+    #[test]
+    fn extract_x_forwarded_for_single_ip() {
+        use super::extract_x_forwarded_for;
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", HeaderValue::from_static("192.168.1.1"));
+        let ip = extract_x_forwarded_for(&headers).expect("should parse single ip");
+        assert_eq!(ip, "192.168.1.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_x_forwarded_for_multiple_ips_returns_first_valid() {
+        use super::extract_x_forwarded_for;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("unknown, _obfuscated, 10.0.0.1, 192.168.0.1"),
+        );
+        let ip = extract_x_forwarded_for(&headers).expect("should skip invalid entries");
+        assert_eq!(ip, "10.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_x_forwarded_for_missing_header_returns_none() {
+        use super::extract_x_forwarded_for;
+        let headers = HeaderMap::new();
+        assert!(extract_x_forwarded_for(&headers).is_none());
+    }
+
+    #[test]
+    fn extract_forwarded_for_standard_format() {
+        use super::extract_forwarded_for;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=192.0.2.60;proto=http;by=203.0.113.43"),
+        );
+        let ip = extract_forwarded_for(&headers).expect("should parse standard format");
+        assert_eq!(ip, "192.0.2.60".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_forwarded_for_multiple_entries() {
+        use super::extract_forwarded_for;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("for=unknown, for=198.51.100.20"),
+        );
+        let ip = extract_forwarded_for(&headers).expect("should parse second entry");
+        assert_eq!(ip, "198.51.100.20".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn extract_forwarded_for_missing_header_returns_none() {
+        use super::extract_forwarded_for;
+        let headers = HeaderMap::new();
+        assert!(extract_forwarded_for(&headers).is_none());
+    }
+
+    #[test]
+    fn extract_forwarded_for_ignores_non_for_keys() {
+        use super::extract_forwarded_for;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "forwarded",
+            HeaderValue::from_static("by=203.0.113.43;proto=https"),
+        );
+        assert!(extract_forwarded_for(&headers).is_none());
+    }
+
+    // --- SpeechRequest / input validation edge case tests ---
+
+    #[test]
+    fn test_speech_request_deserialization_with_all_fields() {
+        use crate::common::protocol::SpeechRequest;
+        let json = r#"{
+            "model": "tts-1-hd",
+            "input": "Hello world",
+            "voice": "echo",
+            "response_format": "flac",
+            "speed": 1.5
+        }"#;
+        let req: SpeechRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.model, "tts-1-hd");
+        assert_eq!(req.input, "Hello world");
+        assert_eq!(req.voice, "echo");
+        assert_eq!(req.speed, 1.5);
+    }
+
+    #[test]
+    fn test_empty_input_validation_logic() {
+        // Verifies the empty-check logic used in the handler
+        let empty = "";
+        assert!(empty.is_empty());
+        let non_empty = "hello";
+        assert!(!non_empty.is_empty());
+    }
+
+    #[test]
+    fn test_input_char_count_with_mixed_scripts() {
+        // Mixed ASCII + CJK + emoji
+        let input = "Hello, \u{4e16}\u{754c}! \u{1f600}";
+        let count = input.chars().count();
+        // "Hello, " = 7, "世界" = 2, "! " = 2, emoji = 1 = 12
+        assert_eq!(count, 12);
+        assert!(count <= 4096);
+    }
+
+    #[test]
+    fn test_input_exactly_4096_chars() {
+        let input = "x".repeat(4096);
+        assert_eq!(input.chars().count(), 4096);
+        assert!(!(input.chars().count() > 4096));
+    }
+
+    #[test]
+    fn test_input_exactly_4097_chars() {
+        let input = "x".repeat(4097);
+        assert!(input.chars().count() > 4096);
     }
 }

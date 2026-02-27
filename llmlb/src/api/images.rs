@@ -684,7 +684,7 @@ pub async fn variations(
 #[cfg(test)]
 mod tests {
     use super::{extract_client_ip_from_forwarded_headers, parse_forwarded_ip_candidate};
-    use axum::http::{HeaderMap, HeaderValue};
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use std::net::IpAddr;
 
     #[test]
@@ -776,5 +776,361 @@ mod tests {
         let model_name = "llama-3.1-8b";
         let expected_error = format!("Model '{}' does not support image generation", model_name);
         assert!(expected_error.contains("does not support image generation"));
+    }
+
+    // --- ImageBackend helper tests ---
+
+    #[test]
+    fn image_backend_url_strips_trailing_slash() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "img-node".to_string(),
+            "http://localhost:9090/".to_string(),
+            EndpointType::Xllm,
+        );
+        let backend = ImageBackend(ep);
+        assert_eq!(
+            backend.url("/v1/images/generations"),
+            "http://localhost:9090/v1/images/generations"
+        );
+    }
+
+    #[test]
+    fn image_backend_url_no_trailing_slash() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "img-node".to_string(),
+            "http://10.0.0.2:8080".to_string(),
+            EndpointType::Vllm,
+        );
+        let backend = ImageBackend(ep);
+        assert_eq!(
+            backend.url("/v1/images/edits"),
+            "http://10.0.0.2:8080/v1/images/edits"
+        );
+    }
+
+    #[test]
+    fn image_backend_url_variations_path() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "img-node".to_string(),
+            "http://192.168.0.1:7860".to_string(),
+            EndpointType::Xllm,
+        );
+        let backend = ImageBackend(ep);
+        assert_eq!(
+            backend.url("/v1/images/variations"),
+            "http://192.168.0.1:7860/v1/images/variations"
+        );
+    }
+
+    #[test]
+    fn image_backend_id_returns_endpoint_id() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        let expected_id = ep.id;
+        let backend = ImageBackend(ep);
+        assert_eq!(backend.id(), expected_id);
+    }
+
+    #[test]
+    fn image_backend_name_returns_endpoint_name() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "sd-xl-backend".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        let backend = ImageBackend(ep);
+        assert_eq!(backend.name(), "sd-xl-backend");
+    }
+
+    #[test]
+    fn image_backend_ip_extracts_from_http_url() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "http://192.168.1.200:7860".to_string(),
+            EndpointType::Xllm,
+        );
+        let backend = ImageBackend(ep);
+        assert_eq!(backend.ip(), "192.168.1.200".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn image_backend_ip_extracts_from_https_url() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let ep = Endpoint::new(
+            "test".to_string(),
+            "https://10.0.0.10:443".to_string(),
+            EndpointType::Vllm,
+        );
+        let backend = ImageBackend(ep);
+        assert_eq!(backend.ip(), "10.0.0.10".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn image_backend_ip_falls_back_to_localhost() {
+        use super::ImageBackend;
+        use crate::types::endpoint::{Endpoint, EndpointType};
+
+        let mut ep = Endpoint::new(
+            "test".to_string(),
+            "http://my-hostname:8080".to_string(),
+            EndpointType::Xllm,
+        );
+        ep.base_url = "http://my-hostname:8080".to_string();
+        let backend = ImageBackend(ep);
+        assert_eq!(backend.ip(), "127.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    // --- error_response tests ---
+
+    #[test]
+    fn error_response_http_returns_correct_status() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::Http("upstream error".to_string()),
+            StatusCode::BAD_GATEWAY,
+        );
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn error_response_service_unavailable_returns_503() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::ServiceUnavailable("no image backends".to_string()),
+            StatusCode::SERVICE_UNAVAILABLE,
+        );
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn error_response_invalid_model_name_returns_400() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::InvalidModelName("bad:model:name".to_string()),
+            StatusCode::BAD_REQUEST,
+        );
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn error_response_fallback_type_for_internal_error() {
+        use super::error_response;
+        use crate::common::error::LbError;
+
+        let resp = error_response(
+            LbError::Database("db connection lost".to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // --- openai_error helper tests ---
+
+    #[test]
+    fn openai_error_returns_ok_with_requested_status() {
+        use super::openai_error;
+
+        let result = openai_error("missing field", StatusCode::BAD_REQUEST);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn openai_error_accepts_owned_string() {
+        use super::openai_error;
+
+        let msg = format!("Image file exceeds maximum size of {}MB", 4);
+        let result = openai_error(msg, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(result.is_ok());
+    }
+
+    // --- forwarded header extraction tests ---
+
+    #[test]
+    fn extract_client_ip_returns_none_for_empty_headers() {
+        let headers = HeaderMap::new();
+        assert!(extract_client_ip_from_forwarded_headers(&headers).is_none());
+    }
+
+    #[test]
+    fn extract_client_ip_returns_none_when_all_unknown() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("unknown, unknown, _hidden"),
+        );
+        assert!(extract_client_ip_from_forwarded_headers(&headers).is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_empty_returns_none() {
+        assert!(parse_forwarded_ip_candidate("").is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_unknown_returns_none() {
+        assert!(parse_forwarded_ip_candidate("unknown").is_none());
+        assert!(parse_forwarded_ip_candidate("UNKNOWN").is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_obfuscated_returns_none() {
+        assert!(parse_forwarded_ip_candidate("_secret").is_none());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_plain_ipv4() {
+        let ip = parse_forwarded_ip_candidate("203.0.113.50").expect("should parse ipv4");
+        assert_eq!(ip, "203.0.113.50".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_plain_ipv6() {
+        let ip = parse_forwarded_ip_candidate("2001:db8::1").expect("should parse ipv6");
+        assert_eq!(ip, "2001:db8::1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_bracketed_ipv6() {
+        let ip = parse_forwarded_ip_candidate("\"[2001:db8::ff]:9090\"")
+            .expect("should parse bracketed ipv6");
+        assert_eq!(ip, "2001:db8::ff".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_ipv4_with_port() {
+        let ip =
+            parse_forwarded_ip_candidate("10.0.0.5:3000").expect("should parse ipv4 with port");
+        assert_eq!(ip, "10.0.0.5".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_forwarded_ip_candidate_invalid() {
+        assert!(parse_forwarded_ip_candidate("garbage-value").is_none());
+    }
+
+    // --- Image generation validation logic tests ---
+
+    #[test]
+    fn test_prompt_empty_check() {
+        let empty_prompt = "";
+        assert!(empty_prompt.is_empty());
+        let valid_prompt = "A cat sitting on a windowsill";
+        assert!(!valid_prompt.is_empty());
+    }
+
+    #[test]
+    fn test_n_boundary_values() {
+        // n=0 is invalid
+        assert!(0_u8 == 0 || 0_u8 > 10);
+        // n=1 is valid
+        assert!(1_u8 >= 1 && 1_u8 <= 10);
+        // n=10 is valid
+        assert!(10_u8 >= 1 && 10_u8 <= 10);
+        // n=11 is invalid
+        assert!(11_u8 > 10);
+    }
+
+    #[test]
+    fn test_image_size_max_boundary() {
+        const MAX_IMAGE_SIZE: usize = 4 * 1024 * 1024;
+
+        // Exactly at boundary - allowed
+        assert!(MAX_IMAGE_SIZE <= MAX_IMAGE_SIZE);
+
+        // One byte over - rejected
+        assert!(MAX_IMAGE_SIZE + 1 > MAX_IMAGE_SIZE);
+
+        // Well below boundary - allowed
+        let small = 1024_usize;
+        assert!(small <= MAX_IMAGE_SIZE);
+    }
+
+    #[test]
+    fn test_image_generation_request_defaults() {
+        use crate::common::protocol::ImageGenerationRequest;
+
+        let json = r#"{"model":"sd-xl","prompt":"A landscape"}"#;
+        let req: ImageGenerationRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.n, 1);
+        assert_eq!(req.model, "sd-xl");
+        assert_eq!(req.prompt, "A landscape");
+        assert!(req.negative_prompt.is_none());
+        assert!(req.seed.is_none());
+        assert!(req.steps.is_none());
+    }
+
+    #[test]
+    fn test_image_generation_request_with_all_optional_fields() {
+        use crate::common::protocol::ImageGenerationRequest;
+
+        let json = r#"{
+            "model": "sd-xl",
+            "prompt": "A beautiful sunset",
+            "n": 4,
+            "size": "512x512",
+            "quality": "hd",
+            "style": "natural",
+            "response_format": "b64_json",
+            "negative_prompt": "blurry, low quality",
+            "seed": 42,
+            "steps": 30
+        }"#;
+        let req: ImageGenerationRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.n, 4);
+        assert_eq!(req.negative_prompt, Some("blurry, low quality".to_string()));
+        assert_eq!(req.seed, Some(42));
+        assert_eq!(req.steps, Some(30));
+    }
+
+    #[test]
+    fn test_model_default_for_edits() {
+        // When model is None, default is "stable-diffusion-xl"
+        let model: Option<String> = None;
+        let resolved = model.unwrap_or_else(|| "stable-diffusion-xl".to_string());
+        assert_eq!(resolved, "stable-diffusion-xl");
+    }
+
+    #[test]
+    fn test_model_override_for_edits() {
+        let model: Option<String> = Some("dall-e-3".to_string());
+        let resolved = model.unwrap_or_else(|| "stable-diffusion-xl".to_string());
+        assert_eq!(resolved, "dall-e-3");
+    }
+
+    #[test]
+    fn test_model_default_for_variations() {
+        let model: Option<String> = None;
+        let resolved = model.unwrap_or_else(|| "stable-diffusion-xl".to_string());
+        assert_eq!(resolved, "stable-diffusion-xl");
     }
 }

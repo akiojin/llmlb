@@ -73,8 +73,9 @@
 
 - すべての操作は LLM（Claude Code / Codex CLI など）が実行する前提で、
   手順はコマンド単位で完結させる
-- リリース開始は `/release` または `./scripts/prepare-release.sh` のみで開始し、
+- リリース開始は Claude `/release`、Codex `release` スキル、または `./scripts/prepare-release.sh` のみで開始し、
   手動のタグ作成やバージョン編集は行わない
+- ホットフィックス開始は Claude `/hotfix`、Codex `hotfix` スキル、または `./scripts/release/create-hotfix.sh` を使用する
 - 進捗確認は `gh` の run / pr / release コマンドで行い、URL・PR番号・タグを必ず記録する
 - 失敗時は再実行より先に原因を特定し、workflow のログを確認してから再試行する
 
@@ -179,12 +180,18 @@ gh release list
 cat CHANGELOG.md
 ```
 
-### 2. リリース準備の開始（/releaseコマンド使用）
+### 2. リリース準備の開始（release開始インターフェース使用）
 
 **Claude Codeを使用する場合**:
 
 ```
 /release
+```
+
+**Codexを使用する場合**:
+
+```text
+release
 ```
 
 **または直接スクリプト実行**:
@@ -259,12 +266,18 @@ cat CHANGELOG.md
 
 **所要時間**: 10分以内（パッチ版リリース）
 
-### 1. ホットフィックスブランチ作成（/hotfixコマンド使用）
+### 1. ホットフィックスブランチ作成（hotfix開始インターフェース使用）
 
 **Claude Codeを使用する場合**:
 
 ```
 /hotfix
+```
+
+**Codexを使用する場合**:
+
+```text
+hotfix
 ```
 
 **または直接スクリプト実行**:
@@ -473,6 +486,24 @@ git stash
 git stash pop
 ```
 
+### Q6. Codexでスキルが起動しない
+
+**原因**: スキルファイル未配置、またはトリガー語の不一致
+
+**解決策**:
+
+```bash
+# スキルファイルの存在確認
+ls -la .codex/skills/release/SKILL.md
+ls -la .codex/skills/hotfix/SKILL.md
+
+# トリガー語の確認
+rg -n "name:|description:|release|hotfix|/release|/hotfix" .codex/skills/release/SKILL.md .codex/skills/hotfix/SKILL.md
+```
+
+不足している場合は、`.claude/commands/release.md` / `.claude/commands/hotfix.md` を元に
+Codexスキルを再生成して配置する。
+
 ## バージョニングルール
 
 semantic-releaseは以下のルールで自動計算します：
@@ -579,6 +610,7 @@ make quality-checks
 1. [GitHub Issues](../../issues) で質問
 2. `.github/workflows/` のActionsログを確認
 3. `scripts/release/` のスクリプトを直接実行してデバッグ
+4. `.codex/skills/release/SKILL.md` と `.codex/skills/hotfix/SKILL.md` の定義を確認
 
 ## 実践例: v1.0.0正式版リリース
 

@@ -26,7 +26,7 @@
 - semantic-release: 自動バージョニング・CHANGELOG・GitHub Release作成
 - GitHub Actions: CI/CD実行環境
 - Bash スクリプト: リリースPR作成・ホットフィックス支援
-- Claude Code スラッシュコマンド: 開発者インターフェース
+- LLMインターフェース: Claudeスラッシュコマンド + Codexスキル
 
 ## 技術コンテキスト
 
@@ -68,7 +68,8 @@
 - CLIツール:
   - `scripts/release/create-release-pr.sh` - develop→main PR作成
   - `scripts/release/create-hotfix.sh` - ホットフィックスブランチ作成
-  - `/release`, `/hotfix` スラッシュコマンド
+  - Claude: `/release`, `/hotfix` スラッシュコマンド
+  - Codex: `.codex/skills/release/SKILL.md`, `.codex/skills/hotfix/SKILL.md`
 - ライブラリドキュメント: spec.md, plan.md, quickstart.md（今後作成）
 
 **テスト (妥協不可)**:
@@ -109,6 +110,10 @@ scripts/release/
 .claude/commands/
 ├── release.md                # /release コマンド ✅
 └── hotfix.md                 # /hotfix コマンド ✅
+
+.codex/skills/
+├── release/SKILL.md          # release スキル ✅
+└── hotfix/SKILL.md           # hotfix スキル ✅
 
 .github/workflows/
 ├── semantic-release.yml      # 自動バージョニング・リリース ✅
@@ -244,7 +249,7 @@ Then:
 **ストーリー2: 正式リリースの開始**
 ```
 Given: developブランチの準備完了
-When: ./scripts/release/create-release-pr.sh 実行
+When: Claude `/release` または Codex `release` スキルまたは ./scripts/prepare-release.sh 実行
 Then:
   - develop → main PRが自動作成
   - 品質チェックが実行される
@@ -256,7 +261,7 @@ Then:
 **ストーリー3: 緊急修正のリリース**
 ```
 Given: 本番環境で問題発見
-When: ./scripts/release/create-hotfix.sh 実行
+When: Claude `/hotfix` または Codex `hotfix` スキルまたは ./scripts/release/create-hotfix.sh 実行
 Then:
   - hotfix/xxxブランチが作成される（mainから）
   - 修正完了後、main へのPR作成
@@ -285,9 +290,10 @@ CLAUDE.md は既に更新済み（npm version記述削除）
 2. [✅] create-hotfix.sh 実装
 3. [✅] /release スラッシュコマンド作成
 4. [✅] /hotfix スラッシュコマンド作成
-5. [✅] quality-checks.yml を develop/hotfix対応に更新
-6. [✅] release-binaries.yml を workflow_call 対応に更新
-7. [✅] semantic-release.yml にバイナリダウンロード追加
+5. [✅] Codex `release` / `hotfix` スキル作成
+6. [✅] quality-checks.yml を develop/hotfix対応に更新
+7. [✅] release-binaries.yml を workflow_call 対応に更新
+8. [✅] semantic-release.yml にバイナリダウンロード追加
 
 ### Integration タスク
 
@@ -304,7 +310,7 @@ CLAUDE.md は既に更新済み（npm version記述削除）
 
 **順序戦略**:
 - Setup → Core → Integration → Polish
-- スクリプトとスラッシュコマンドは並列実行可能 [P]
+- スクリプトとスラッシュコマンドとCodexスキルは並列実行可能 [P]
 - ワークフロー更新も並列実行可能 [P]
 
 ## Phase 3+: 今後の実装
@@ -345,6 +351,7 @@ CLAUDE.md は既に更新済み（npm version記述削除）
 - [x] Spec文書作成（spec.md）
 - [x] リリーススクリプト作成
 - [x] スラッシュコマンド作成
+- [x] Codexスキル作成（release/hotfix）
 - [x] semantic-release設定更新
 - [x] GitHub Actionsワークフロー更新
 - [x] CLAUDE.md修正

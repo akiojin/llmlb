@@ -27,6 +27,7 @@
 - **スクリプト**: `scripts/release/`
 - **ワークフロー**: `.github/workflows/`
 - **コマンド**: `.claude/commands/`
+- **スキル**: `.codex/skills/`
 - **設定**: `.releaserc.json`, `CLAUDE.md`
 - **仕様**: `specs/SPEC-ee2aa3ef/`
 
@@ -47,6 +48,12 @@
 - [x] **T003** [P] .claude/commands/ 確認・準備
   - パス: `.claude/commands/`
   - 説明: スラッシュコマンド配置用ディレクトリ確認
+  - 依存関係: なし
+  - ステータス: ✅ 完了（既存）
+
+- [x] **T003A** [P] .codex/skills/ 確認・準備
+  - パス: `.codex/skills/`
+  - 説明: Codexスキル配置用ディレクトリ確認
   - 依存関係: なし
   - ステータス: ✅ 完了（既存）
 
@@ -133,8 +140,8 @@
 ## Phase 3.4: 開発者インターフェース ✅
 
 - [x] **T011** [P] /release コマンド作成
-  - パス: `.claude/commands/release.md`
-  - 説明: 正式リリースプロセス開始のスラッシュコマンド
+  - パス: `.claude/commands/release.md`, `.codex/skills/release/SKILL.md`
+  - 説明: 正式リリースプロセス開始のインターフェース（Claudeコマンド + Codexスキル）
   - 依存関係: T008
   - ステータス: ✅ 完了
   - 内容:
@@ -144,8 +151,8 @@
     - トラブルシューティング
 
 - [x] **T012** [P] /hotfix コマンド作成
-  - パス: `.claude/commands/hotfix.md`
-  - 説明: ホットフィックスプロセス開始のスラッシュコマンド
+  - パス: `.claude/commands/hotfix.md`, `.codex/skills/hotfix/SKILL.md`
+  - 説明: ホットフィックス開始インターフェース（Claudeコマンド + Codexスキル）
   - 依存関係: T009
   - ステータス: ✅ 完了
   - 内容:
@@ -164,7 +171,7 @@
   - 理由: semantic-releaseによる完全自動化に統一
 
 - [x] **T014** [P] markdownlint 検証
-  - パス: `specs/SPEC-ee2aa3ef/*.md`, `.claude/commands/*.md`
+  - パス: `specs/SPEC-ee2aa3ef/*.md`, `.claude/commands/*.md`, `.codex/skills/*/SKILL.md`
   - 説明: 新規マークダウンファイルのlintチェック実行
   - 依存関係: T001, T011, T012
   - ステータス: ✅ 完了（エラー0）
@@ -347,12 +354,12 @@
 ## 依存関係グラフ
 
 ```
-Setup (T001-T003)
+Setup (T001-T003A)
   ├─→ Infrastructure (T004-T007) [並列]
   │    └─→ Documentation (T013)
   │
   ├─→ Scripts (T008-T010) [並列]
-  │    └─→ Commands (T011-T012) [並列]
+  │    └─→ Commands/Skills (T011-T012) [並列]
   │
   └─→ Validation (T014)
        └─→ Commit (T015-T016)
@@ -381,6 +388,7 @@ Task: "create-hotfix.sh を実装"
 # T011とT012は並列実行可能
 Task: "/release コマンドを作成"
 Task: "/hotfix コマンドを作成"
+Task: "Codex release/hotfix スキルを作成"
 ```
 
 ## 検証チェックリスト
@@ -389,6 +397,7 @@ Task: "/hotfix コマンドを作成"
 - [x] すべてのスクリプトが実装されている
 - [x] すべてのワークフローが更新されている
 - [x] すべてのスラッシュコマンドが作成されている
+- [x] すべてのCodexスキルが作成されている
 - [x] 設定ファイルが正しく更新されている
 - [x] markdownlint チェック合格
 - [x] 実装内容がコミット・プッシュ済み
@@ -412,13 +421,14 @@ Task: "/hotfix コマンドを作成"
 - ✅ **TDD適用困難**: インフラストラクチャコードのため、GitHub Actions環境での統合テストが主体
 - ✅ **developブランチ作成完了**: ブランチ保護設定含め完了（T022）
 - ⚠️ **統合テスト待ち**: T023-T025の動作確認が次のステップ
+- ✅ **LLMインターフェース**: ClaudeコマンドとCodexスキルの両経路を定義
 - ✅ **品質保証**: markdownlint、commitlint検証済み
 
 ## タスク完了サマリ
 
 | Phase           | 完了 | 保留 | 合計 |
 | --------------- | ---- | ---- | ---- |
-| 3.1: Setup      | 3    | 0    | 3    |
+| 3.1: Setup      | 4    | 0    | 4    |
 | 3.2: Infrastructure | 4    | 0    | 4    |
 | 3.3: Scripts    | 3    | 0    | 3    |
 | 3.4: Commands   | 2    | 0    | 2    |
@@ -426,9 +436,9 @@ Task: "/hotfix コマンドを作成"
 | 3.6: Commit     | 2    | 0    | 2    |
 | 3.7: Spec Docs  | 2    | 3    | 5    |
 | 3.8: Testing    | 1    | 3    | 4    |
-| **合計**        | **19** | **6** | **25** |
+| **合計**        | **20** | **6** | **26** |
 
-**進捗率**: 76% (19/25) ✅
+**進捗率**: 77% (20/26) ✅
 
 **次のアクション**:
 1. ✅ T019: quickstart.md 作成 → 完了

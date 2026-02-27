@@ -121,7 +121,7 @@ alpha版が自動リリースされることで、早期フィードバックを
 
 #### リリース
 
-- **FR-013**: コミットメッセージから次のバージョン番号を自動計算する（semantic-release）
+- **FR-013**: コミットメッセージから次のバージョン番号を自動計算する（SemVerリリースフロー）
 - **FR-014**: developブランチへのマージ時にalpha版リリースを自動作成する
 - **FR-015**: mainブランチへのマージ時に正式版リリースとバイナリを自動作成する
 - **FR-016**: リリースごとに変更履歴（CHANGELOG）を自動更新する
@@ -190,7 +190,7 @@ alpha版が自動リリースされることで、早期フィードバックを
 - GitHub Actions環境での実行が前提
 - GitHub Actionsの実行時間制限（デフォルト6時間）内に完了する必要がある
 - Rustプロジェクトのワークスペース構成に対応
-- semantic-releaseを使用したバージョン管理
+- SemVerリリースフローを使用したバージョン管理
 - Conventional Commits形式のコミットメッセージが必須
 - tasks.mdは`- [ ]` / `- [x]`形式を維持する必要がある
 
@@ -212,7 +212,7 @@ alpha版が自動リリースされることで、早期フィードバックを
 - `.specify/scripts/checks/check-commits.sh`: commitlintチェック
 - GitHub Actions: ワークフロー実行プラットフォーム
 - GitHub GraphQL API: 自動マージ有効化API
-- semantic-release: バージョン管理・リリース自動化
+- SemVerリリースフロー: バージョン管理・リリース自動化
 - commitlint: コミットメッセージ検証ツール
 - markdownlint: マークダウンファイルlintツール
 
@@ -259,6 +259,6 @@ SPEC-47c6f44c（自動マージ）とSPEC-ee2aa3ef（自動リリース）を統
 - 自動マージ条件: mergeable=MERGEABLEかつDraftでないPR
 - alpha版リリース: develop→マージ時に自動作成
 - 正式版リリース: main→マージ時に自動作成 + バイナリ公開
-- バージョン計算: コミットメッセージから自動計算（semantic-release）
+- バージョン計算: コミットメッセージから自動計算（SemVerリリースフロー）
 - 対応プラットフォーム: Linux x86_64, Windows x86_64, macOS x86_64/ARM64
 - ビルド時間目標: 品質チェック5分、全バイナリビルド30分

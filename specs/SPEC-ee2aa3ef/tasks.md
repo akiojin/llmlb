@@ -28,7 +28,7 @@
 - **ワークフロー**: `.github/workflows/`
 - **コマンド**: `.claude/commands/`
 - **スキル**: `.codex/skills/`
-- **設定**: `.releaserc.json`, `CLAUDE.md`
+- **設定**: `.github/workflows/release.yml`, `CLAUDE.md`
 - **仕様**: `specs/SPEC-ee2aa3ef/`
 
 ## Phase 3.1: セットアップ ✅
@@ -59,8 +59,8 @@
 
 ## Phase 3.2: インフラ設定 ✅
 
-- [x] **T004** semantic-release 設定更新
-  - パス: `.releaserc.json`
+- [x] **T004** SemVerリリースフロー 設定更新
+  - パス: `.github/workflows/release.yml`
   - 説明: developブランチ対応追加（prerelease: alpha）、バイナリアセット設定追加
   - 依存関係: なし
   - ステータス: ✅ 完了
@@ -72,8 +72,8 @@
     ]
     ```
 
-- [x] **T005** semantic-release.yml 更新
-  - パス: `.github/workflows/semantic-release.yml`
+- [x] **T005** release.yml 更新
+  - パス: `.github/workflows/release.yml`
   - 説明: develop/main両ブランチ対応、バイナリビルドジョブ追加、条件分岐実装
   - 依存関係: T004
   - ステータス: ✅ 完了
@@ -168,7 +168,7 @@
   - 説明: 古い「npm versionコマンドの使用」セクション削除
   - 依存関係: T004, T005
   - ステータス: ✅ 完了
-  - 理由: semantic-releaseによる完全自動化に統一
+  - 理由: SemVerリリースフローによる完全自動化に統一
 
 - [x] **T014** [P] markdownlint 検証
   - パス: `specs/SPEC-ee2aa3ef/*.md`, `.claude/commands/*.md`, `.codex/skills/*/SKILL.md`
@@ -269,7 +269,7 @@
   - **実施内容**:
     - PR #44作成（マージ競合のためクローズ）
     - developブランチをfeature/auto-releaseへ強制更新
-    - semantic-releaseワークフロー自動実行確認
+    - SemVerリリースフローワークフロー自動実行確認
     - alpha版リリース作成確認: v1.0.0-alpha.1
   - **パフォーマンス計測結果**:
     - 開始時刻: 2025-11-06T01:30:10+00:00
@@ -277,7 +277,7 @@
     - 実測値: **2分3秒**
     - 目標: 5分以内 → ✅ **達成** (2分3秒 < 5分)
   - **検証項目**:
-    - ✅ developブランチへプッシュでsemantic-release自動実行
+    - ✅ developブランチへプッシュでSemVerリリースフロー自動実行
     - ✅ alpha版リリース自動作成（v1.0.0-alpha.1）
     - ✅ CHANGELOG自動生成
     - ✅ Cargo.toml自動更新
@@ -314,7 +314,7 @@
     - **解決策**: 該当行のみ pipefail を一時無効化
   - **既知の問題**:
     - packageジョブがアーティファクト名競合で失敗（機能には影響なし）
-    - semantic-releaseワークフローの設計改善が必要
+    - SemVerリリースフローワークフローの設計改善が必要
 
 - [x] **T025** ホットフィックスフロー確認
   - パス: N/A（統合テスト）
@@ -339,7 +339,7 @@
     5. GitHub で hotfix/test-release → main のPR作成
     6. 品質チェック通過確認
     7. PRマージ
-    8. semantic-release が v1.0.1 パッチリリース作成を確認
+    8. SemVerリリースフロー が v1.0.1 パッチリリース作成を確認
     9. バイナリ自動ビルド確認（4プラットフォーム）
     10. ブランチ削除: `git branch -d hotfix/test-release`
   - **検証項目**:

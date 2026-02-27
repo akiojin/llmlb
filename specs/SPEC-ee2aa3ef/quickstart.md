@@ -19,7 +19,7 @@
   git config user.email
   ```
 
-- [x] **Node.js 20+** がインストール済み（semantic-release実行用）
+- [x] **Node.js 20+** がインストール済み（SemVerリリースフロー実行用）
   ```bash
   node --version  # v20.0.0以上
   ```
@@ -142,7 +142,7 @@ gh pr create --base develop --head feature/new-feature \
 ### 4. アルファ版リリース確認
 
 ```bash
-# developへのマージ後、semantic-releaseが自動実行
+# developへのマージ後、SemVerリリースフローが自動実行
 # → v1.2.3-alpha.1 形式のタグ作成
 # → GitHub Releaseページに公開
 
@@ -220,7 +220,7 @@ gh pr merge <PR_NUMBER> --merge --admin
 
 ```bash
 # PRがmainにマージされると release.yml が自動実行
-# 1. semantic-release: バージョン計算、タグ作成、CHANGELOG更新
+# 1. SemVerリリースフロー: バージョン計算、タグ作成、CHANGELOG更新
 # 2. GitHub Release 作成（xllmアセット添付）
 
 # 進捗確認（例）
@@ -378,7 +378,7 @@ Closes #456
 # ✅ 全チェック合格後、auto-mergeが自動実行
 # → mainブランチへマージ
 
-# mainマージ後、semantic-releaseが即座に実行
+# mainマージ後、SemVerリリースフローが即座に実行
 # → v1.2.4 形式のパッチリリース作成
 # → バイナリビルド・添付（20-30分）
 
@@ -412,7 +412,7 @@ git push
 # 自動的に再チェックが実行される
 ```
 
-### Q2. semantic-releaseがバージョンを生成しない
+### Q2. SemVerリリースフローがバージョンを生成しない
 
 **原因**: Conventional Commits形式でないコミットが含まれる
 
@@ -506,7 +506,7 @@ Codexスキルを再生成して配置する。
 
 ## バージョニングルール
 
-semantic-releaseは以下のルールで自動計算します：
+SemVerリリースフローは以下のルールで自動計算します：
 
 | コミットタイプ | バージョン変化 | 例 |
 |---------------|--------------|-----|
@@ -748,7 +748,7 @@ gh pr merge --auto --squash
 
 #### 6. パッチリリース自動作成
 
-mainブランチへのマージ後、semantic-releaseが自動的に：
+mainブランチへのマージ後、SemVerリリースフローが自動的に：
 
 1. コミット履歴を解析（`fix:` → パッチバージョン）
 2. v1.0.0 → v1.0.1 にバージョン上昇

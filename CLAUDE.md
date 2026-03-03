@@ -52,7 +52,6 @@ llmlb/
 - **ダッシュボード**: 管理UI（SPA）の提供
 
 ### xLLM（external repo - C++製、llama.cppベース）
-- NOTE: llama.cpp is pinned to the akiojin/llama.cpp fork until upstream fixes land; once upstream is fixed, switch back to ggerganov/llama.cpp.
 
 実際のLLM推論を担当するコンポーネント。vLLM/Ollamaと同列のエンドポイントタイプ。
 
@@ -60,21 +59,6 @@ llmlb/
 - **推論実行**: テキスト生成、埋め込み計算
 - **GPU管理**: VRAM監視、モデルのロード/アンロード
 - **ストリーミング**: トークン単位のレスポンス
-- **エンジン管理**: Text/Audio/Image のマネージャで推論エンジンを静的に管理（SPEC-d7feaa2c）
-
-### エンジン選択方針（プロジェクトルール）
-
-| モデル正本 | safetensors.cpp | llama.cpp（GGUF） |
-|-----------|-----------------|-------------------|
-| safetensors（OpenAI, NVIDIA公式） | 必須（テスト必須） | 追加サポート（サードパーティGGUF版） |
-| GGUF（Meta公式等） | 不要 | 必須 |
-
-- **正本がsafetensorsのモデル**（gpt-oss, Nemotron 3等）:
-  - safetensors.cppで動作必須（Metal/CUDA対応必須）
-  - GGUF版も動作可能（llama.cpp、サードパーティ変換版）
-- **正本がGGUFのモデル**（Llama, Mistral等）:
-  - llama.cppで対応（Metal/CUDA対応済み）
-  - safetensors.cppでの対応は不要
 
 ### 動作モード
 

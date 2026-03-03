@@ -1,8 +1,5 @@
 //! Unit tests entrypoint for model management
 
-#[path = "unit/gpu_model_selector_test.rs"]
-mod gpu_model_selector_test;
-
 // SPEC-e8e9326e: エンドポイント関連テスト
 #[path = "unit/endpoint_status_test.rs"]
 mod endpoint_status_test;

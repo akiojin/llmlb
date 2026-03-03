@@ -28,7 +28,7 @@ pub mod db;
 /// メトリクス収集・管理
 pub mod metrics;
 
-/// モデル管理（GPU選択ロジック）
+/// モデル管理
 pub mod models;
 
 /// ロギング初期化ユーティリティ

@@ -107,9 +107,8 @@ impl EndpointRegistry {
             .collect()
     }
 
-    /// 指定した機能を持つオンラインエンドポイントを取得（SPEC-e8e9326e移行用）
+    /// 指定した機能を持つオンラインエンドポイントを取得
     ///
-    /// NodeRegistryのRuntimeTypeベースのフィルタリングを置き換える。
     /// 例: ImageGeneration機能を持つエンドポイント → 画像生成リクエストの転送先
     pub async fn list_online_by_capability(&self, capability: EndpointCapability) -> Vec<Endpoint> {
         self.endpoints

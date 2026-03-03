@@ -1342,8 +1342,6 @@ mod tests {
         assert!(validate_model_name("trailing/").is_err());
     }
 
-    // NOTE: compute_gpu_warnings は SPEC-6cd7f960 で廃止されました
-
     // ===== SPEC-6cd7f960: 対応モデルリスト型管理 =====
 
     #[test]

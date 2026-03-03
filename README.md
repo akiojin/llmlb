@@ -16,56 +16,19 @@ LLM Load Balancer is designed to serve three primary use cases:
 2. **Enterprise Gateway** - For organizations requiring centralized management, access control, and monitoring of LLM resources across departments
 3. **Cloud Provider Integration** - Seamlessly route requests to OpenAI, Google, or Anthropic APIs through the same unified endpoint
 
-### Multi-Engine Architecture
+### Supported Endpoints
 
-LLM Load Balancer uses a manager-based multi-engine architecture:
+llmlb routes requests to any OpenAI-compatible inference server:
 
-| Engine | Status | Models | Hardware |
-|--------|--------|--------|----------|
-| **llama.cpp** | Production | GGUF format (LLaMA, Mistral, etc.) | CPU, CUDA, Metal |
-| **GPT-OSS** | Production (Metal/CUDA) | Safetensors (official GPU artifacts) | Apple Silicon, Windows |
-| **Whisper** | Production | Speech-to-Text (ASR) | CPU, CUDA, Metal |
-| **Stable Diffusion** | Production | Image Generation | CUDA, Metal |
-| **Nemotron** | Validation | Safetensors format | CUDA |
+| Endpoint Type | Description |
+|---------------|-------------|
+| **xLLM** | Project-native C++ inference engine ([GitHub](https://github.com/akiojin/xLLM)) |
+| **Ollama** | Popular local inference server |
+| **vLLM** | High-throughput serving engine |
+| **LM Studio** | Desktop inference application |
+| **OpenAI-compatible** | Any server implementing the OpenAI API |
 
-Manager-based runtimes replace the legacy plugin system. See `docs/manager-migration.md`
-for migration steps.
-
-**Engine Selection Policy**:
-
-- **Models with GGUF available** → Use llama.cpp (Metal/CUDA ready)
-- **Models with safetensors only** → Implement built-in engine (Metal/CUDA support required)
-
-### Safetensors Architecture Support (Implementation-Aligned)
-
-| Architecture | Status | Notes |
-|-------------|--------|-------|
-| **gpt-oss (MoE + MXFP4)** | Implemented | Uses `mlp.router.*` and `mlp.experts.*_(blocks\|scales\|bias)` with MoE forward |
-| **nemotron3 (Mamba-Transformer MoE)** | Staged (not wired) | Not connected to the forward pass yet |
-
-See <https://github.com/akiojin/xLLM>/blob/main/specs/SPEC-69549000/spec.md for the authoritative list and updates.
-
-### GGUF Architecture Coverage (llama.cpp, Examples)
-
-These are representative examples of model families supported via GGUF/llama.cpp. This list is
-non-exhaustive and follows upstream llama.cpp compatibility.
-
-| Architecture | Example models | Notes |
-|-------------|----------------|-------|
-| **llama** | Llama 3.1, Llama 3.2, Llama 3.3, DeepSeek-R1-Distill-Llama | Meta Llama family |
-| **mistral** | Mistral, Mistral-Nemo | Mistral AI family |
-| **gemma** | Gemma3, Gemma3n, Gemma3-QAT, FunctionGemma, EmbeddingGemma | Google Gemma family |
-| **qwen** | Qwen2.5, Qwen3, QwQ, Qwen3-VL, Qwen3-Coder, Qwen3-Embedding, Qwen3-Reranker | Alibaba Qwen family |
-| **phi** | Phi-4 | Microsoft Phi family |
-| **nemotron** | Nemotron | NVIDIA Nemotron family |
-| **deepseek** | DeepSeek-V3.2, DeepCoder-Preview | DeepSeek family |
-| **gpt-oss** | GPT-OSS, GPT-OSS-Safeguard | OpenAI GPT-OSS family |
-| **granite** | Granite-4.0-H-Small/Tiny/Micro, Granite-Docling | IBM Granite family |
-| **smollm** | SmolLM2, SmolLM3, SmolVLM | HuggingFace SmolLM family |
-| **kimi** | Kimi-K2 | Moonshot Kimi family |
-| **moondream** | Moondream2 | Moondream family |
-| **devstral** | Devstral-Small | Mistral derivative (coding-focused) |
-| **magistral** | Magistral-Small-3.2 | Mistral derivative (multimodal) |
+For supported model formats and engine details, see [xLLM documentation](https://github.com/akiojin/xLLM).
 
 ### Multimodal Support
 

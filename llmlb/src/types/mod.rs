@@ -17,6 +17,4 @@ pub mod model;
 pub use endpoint::{Endpoint, EndpointHealthCheck, EndpointModel, EndpointStatus, SupportedAPI};
 pub use health::{HealthMetrics, Request, RequestStatus};
 pub use media::{AudioFormat, ImageQuality, ImageResponseFormat, ImageSize, ImageStyle};
-pub use model::{
-    ModelCapabilities, ModelCapability, ModelType, RuntimeType, SyncProgress, SyncState,
-};
+pub use model::{ModelCapabilities, ModelCapability, ModelType, SyncProgress, SyncState};

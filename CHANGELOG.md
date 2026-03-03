@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [5.2.3](https://github.com/akiojin/llmlb/compare/v5.2.2...v5.2.3) (2026-03-03)
+
+### Bug Fixes
+
+- API の `compute_gpu_warnings` 廃止コメントを削除
+
+### Refactoring
+
+- xLLM エンジン概念の削除に伴い `RuntimeType` とデッドな GPU セレクター実装を削除
+
+### Documentation
+
+- README / CLAUDE / specs からマルチエンジン関連の記述を整理
+
 ## [5.2.2](https://github.com/akiojin/llmlb/compare/v5.2.1...v5.2.2) (2026-02-27)
 
 ### Documentation

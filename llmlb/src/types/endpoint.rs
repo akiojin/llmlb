@@ -255,7 +255,7 @@ impl std::fmt::Display for DownloadStatus {
 
 /// エンドポイントの機能タイプ
 ///
-/// NodeのRuntimeTypeに相当する機能分類（SPEC-e8e9326e移行用）
+/// エンドポイントの機能分類
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointCapability {

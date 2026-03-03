@@ -1,6 +1,6 @@
 //! モデル関連型定義
 //!
-//! モデルタイプ、ランタイムタイプ、モデル能力などの定義
+//! モデルタイプ、モデル能力などの定義
 
 use serde::{Deserialize, Serialize};
 
@@ -49,28 +49,6 @@ pub enum ModelType {
     /// 画像生成モデル (Text-to-Image)
     #[serde(rename = "image_generation")]
     ImageGeneration,
-}
-
-/// ランタイムタイプ
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeType {
-    /// llama.cpp (テキスト生成、Embedding)
-    #[default]
-    LlamaCpp,
-    /// safetensors-cpp ベースの Nemotron 直接ロード
-    NemotronCpp,
-    /// OpenAI gpt-oss 公式ランタイム（Metal/CUDA などの最適化アーティファクト）
-    #[serde(rename = "gptoss_cpp")]
-    GptOssCpp,
-    /// safetensors.cpp (safetensors形式モデルの直接ロード)
-    SafetensorsCpp,
-    /// whisper.cpp (音声認識)
-    WhisperCpp,
-    /// ONNX Runtime (TTS、汎用推論)
-    OnnxRuntime,
-    /// stable-diffusion.cpp (画像生成)
-    StableDiffusion,
 }
 
 /// モデルの能力（対応するAPI）
@@ -191,68 +169,6 @@ mod tests {
 
         let image_gen: ModelType = serde_json::from_str("\"image_generation\"").unwrap();
         assert_eq!(image_gen, ModelType::ImageGeneration);
-    }
-
-    #[test]
-    fn test_runtime_type_serialization() {
-        assert_eq!(
-            serde_json::to_string(&RuntimeType::LlamaCpp).unwrap(),
-            "\"llama_cpp\""
-        );
-        assert_eq!(
-            serde_json::to_string(&RuntimeType::NemotronCpp).unwrap(),
-            "\"nemotron_cpp\""
-        );
-        assert_eq!(
-            serde_json::to_string(&RuntimeType::GptOssCpp).unwrap(),
-            "\"gptoss_cpp\""
-        );
-        assert_eq!(
-            serde_json::to_string(&RuntimeType::SafetensorsCpp).unwrap(),
-            "\"safetensors_cpp\""
-        );
-        assert_eq!(
-            serde_json::to_string(&RuntimeType::WhisperCpp).unwrap(),
-            "\"whisper_cpp\""
-        );
-        assert_eq!(
-            serde_json::to_string(&RuntimeType::OnnxRuntime).unwrap(),
-            "\"onnx_runtime\""
-        );
-        assert_eq!(
-            serde_json::to_string(&RuntimeType::StableDiffusion).unwrap(),
-            "\"stable_diffusion\""
-        );
-    }
-
-    #[test]
-    fn test_runtime_type_default() {
-        let default_runtime: RuntimeType = Default::default();
-        assert_eq!(default_runtime, RuntimeType::LlamaCpp);
-    }
-
-    #[test]
-    fn test_runtime_type_deserialization() {
-        let llama: RuntimeType = serde_json::from_str("\"llama_cpp\"").unwrap();
-        assert_eq!(llama, RuntimeType::LlamaCpp);
-
-        let nemotron: RuntimeType = serde_json::from_str("\"nemotron_cpp\"").unwrap();
-        assert_eq!(nemotron, RuntimeType::NemotronCpp);
-
-        let gptoss: RuntimeType = serde_json::from_str("\"gptoss_cpp\"").unwrap();
-        assert_eq!(gptoss, RuntimeType::GptOssCpp);
-
-        let safetensors: RuntimeType = serde_json::from_str("\"safetensors_cpp\"").unwrap();
-        assert_eq!(safetensors, RuntimeType::SafetensorsCpp);
-
-        let whisper: RuntimeType = serde_json::from_str("\"whisper_cpp\"").unwrap();
-        assert_eq!(whisper, RuntimeType::WhisperCpp);
-
-        let onnx: RuntimeType = serde_json::from_str("\"onnx_runtime\"").unwrap();
-        assert_eq!(onnx, RuntimeType::OnnxRuntime);
-
-        let sd: RuntimeType = serde_json::from_str("\"stable_diffusion\"").unwrap();
-        assert_eq!(sd, RuntimeType::StableDiffusion);
     }
 
     #[test]
@@ -399,23 +315,6 @@ mod tests {
             let json = serde_json::to_string(&mt).unwrap();
             let deserialized: ModelType = serde_json::from_str(&json).unwrap();
             assert_eq!(deserialized, mt);
-        }
-    }
-
-    #[test]
-    fn test_runtime_type_serde_roundtrip() {
-        for rt in [
-            RuntimeType::LlamaCpp,
-            RuntimeType::NemotronCpp,
-            RuntimeType::GptOssCpp,
-            RuntimeType::SafetensorsCpp,
-            RuntimeType::WhisperCpp,
-            RuntimeType::OnnxRuntime,
-            RuntimeType::StableDiffusion,
-        ] {
-            let json = serde_json::to_string(&rt).unwrap();
-            let deserialized: RuntimeType = serde_json::from_str(&json).unwrap();
-            assert_eq!(deserialized, rt);
         }
     }
 
@@ -609,40 +508,6 @@ mod tests {
     #[test]
     fn test_model_type_clone() {
         let original = ModelType::Embedding;
-        let cloned = original;
-        assert_eq!(original, cloned);
-    }
-
-    // ========================================================================
-    // 追加テスト: RuntimeType edge cases
-    // ========================================================================
-
-    #[test]
-    fn test_runtime_type_invalid_deserialization_fails() {
-        let result = serde_json::from_str::<RuntimeType>("\"unknown_runtime\"");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_runtime_type_debug_format() {
-        assert_eq!(format!("{:?}", RuntimeType::LlamaCpp), "LlamaCpp");
-        assert_eq!(format!("{:?}", RuntimeType::NemotronCpp), "NemotronCpp");
-        assert_eq!(format!("{:?}", RuntimeType::GptOssCpp), "GptOssCpp");
-        assert_eq!(
-            format!("{:?}", RuntimeType::SafetensorsCpp),
-            "SafetensorsCpp"
-        );
-        assert_eq!(format!("{:?}", RuntimeType::WhisperCpp), "WhisperCpp");
-        assert_eq!(format!("{:?}", RuntimeType::OnnxRuntime), "OnnxRuntime");
-        assert_eq!(
-            format!("{:?}", RuntimeType::StableDiffusion),
-            "StableDiffusion"
-        );
-    }
-
-    #[test]
-    fn test_runtime_type_clone() {
-        let original = RuntimeType::WhisperCpp;
         let cloned = original;
         assert_eq!(original, cloned);
     }

@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { invitationsApi, type Invitation, type CreateInvitationResponse } from '@/lib/api'
-import { copyToClipboard, formatRelativeTime } from '@/lib/utils'
+import {
+  copyToClipboard,
+  formatRelativeTime,
+  selectTextForManualCopy,
+  cleanupManualCopyBuffer,
+} from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -66,6 +71,12 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
   const [createdCode, setCreatedCode] = useState<CreateInvitationResponse | null>(null)
   const [copied, setCopied] = useState(false)
 
+  useEffect(() => {
+    if (!open) {
+      cleanupManualCopyBuffer()
+    }
+  }, [open])
+
   // Fetch invitations
   const { data: invitations, isLoading, refetch } = useQuery({
     queryKey: ['invitations'],
@@ -114,9 +125,20 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
   const handleCopy = async () => {
     if (createdCode?.code) {
       try {
-        await copyToClipboard(createdCode.code)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+        const { method } = await copyToClipboard(createdCode.code)
+        if (method === 'clipboard') {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2000)
+          toast({ title: 'Copied to clipboard' })
+          return
+        }
+
+        setCopied(false)
+        selectTextForManualCopy(createdCode.code)
+        toast({
+          title: 'Auto copy unavailable',
+          description: 'Press Ctrl+C to copy the selected value.',
+        })
       } catch {
         toast({ title: 'Failed to copy', variant: 'destructive' })
       }
@@ -127,6 +149,7 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
     setCreatedCode(null)
     setCreateOpen(false)
     setCopied(false)
+    cleanupManualCopyBuffer()
   }
 
   const getStatusBadge = (status: string) => {

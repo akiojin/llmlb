@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   apiKeysApi,
@@ -7,7 +7,12 @@ import {
   type CreateApiKeyResponse,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
-import { copyToClipboard, formatRelativeTime } from '@/lib/utils'
+import {
+  copyToClipboard,
+  formatRelativeTime,
+  selectTextForManualCopy,
+  cleanupManualCopyBuffer,
+} from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -91,6 +96,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [manualSelectionText, setManualSelectionText] = useState<string | null>(null)
+  const createdKeyCodeRef = useRef<HTMLElement | null>(null)
 
   // Fetch API keys
   const {
@@ -174,6 +181,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
       setCreatedKey(null)
       setShowKey(null)
       setCopiedId(null)
+      setManualSelectionText(null)
+      cleanupManualCopyBuffer()
     }
   }, [open])
 
@@ -186,6 +195,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     setCreatedKey(null)
     setShowKey(null)
     setCopiedId(null)
+    setManualSelectionText(null)
+    cleanupManualCopyBuffer()
   }, [open, createdKey, isFetching])
 
   useEffect(() => {
@@ -201,12 +212,49 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
     setSelectedPermissions(VIEWER_FIXED_PERMISSIONS)
   }, [isAdmin])
 
+  useEffect(() => {
+    if (!manualSelectionText) return
+    if (showKey !== 'created') return
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      setManualSelectionText(null)
+      return
+    }
+
+    const selection = window.getSelection()
+    if (selection && createdKeyCodeRef.current) {
+      const range = document.createRange()
+      range.selectNodeContents(createdKeyCodeRef.current)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      setManualSelectionText(null)
+      return
+    }
+
+    selectTextForManualCopy(manualSelectionText)
+    setManualSelectionText(null)
+  }, [manualSelectionText, showKey])
+
   const handleCopy = async (text: string, id: string) => {
     try {
-      await copyToClipboard(text)
-      setCopiedId(id)
-      setTimeout(() => setCopiedId(null), 2000)
-      toast({ title: 'Copied full API key' })
+      const { method } = await copyToClipboard(text)
+      if (method === 'clipboard') {
+        setCopiedId(id)
+        setTimeout(() => setCopiedId(null), 2000)
+        toast({ title: 'Copied full API key' })
+        return
+      }
+
+      setCopiedId(null)
+      if (id === 'created') {
+        setShowKey('created')
+        setManualSelectionText(text)
+      } else {
+        selectTextForManualCopy(text)
+      }
+      toast({
+        title: 'Auto copy unavailable',
+        description: 'Press Ctrl+C to copy the selected value.',
+      })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
     }
@@ -293,7 +341,10 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   Copy this key now. You won't be able to see it again.
                 </p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded bg-muted px-2 py-1 text-xs font-mono break-all">
+                  <code
+                    ref={createdKeyCodeRef}
+                    className="flex-1 rounded bg-muted px-2 py-1 text-xs font-mono break-all"
+                  >
                     {showKey === 'created' ? createdKey : '•'.repeat(32)}
                   </code>
                   <Button

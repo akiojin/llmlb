@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { copyToClipboard } from '@/lib/utils'
+import {
+  copyToClipboard,
+  selectTextForManualCopy,
+  cleanupManualCopyBuffer,
+} from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import type { Message, MessageAttachment } from '@/components/playground/types'
 import { MAX_ATTACHMENT_BYTES } from '@/components/playground/types'
@@ -33,6 +37,12 @@ export function usePlayground(options: UsePlaygroundOptions = {}) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (!curlOpen) {
+      cleanupManualCopyBuffer()
+    }
+  }, [curlOpen])
 
   const resetChat = useCallback(() => {
     setMessages([])
@@ -83,10 +93,20 @@ export function usePlayground(options: UsePlaygroundOptions = {}) {
 
   const handleCopyCurl = useCallback(async (text: string) => {
     try {
-      await copyToClipboard(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-      toast({ title: 'Copied to clipboard' })
+      const { method } = await copyToClipboard(text)
+      if (method === 'clipboard') {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+        toast({ title: 'Copied to clipboard' })
+        return
+      }
+
+      setCopied(false)
+      selectTextForManualCopy(text)
+      toast({
+        title: 'Auto copy unavailable',
+        description: 'Press Ctrl+C to copy the selected value.',
+      })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
     }

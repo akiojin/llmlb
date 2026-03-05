@@ -231,11 +231,7 @@ pub async fn create_api_key(
     .await
     .map_err(|e| {
         tracing::error!("Failed to create API key: {}", e);
-        AppError(LbError::Database(format!(
-            "Failed to create API key: {}",
-            e
-        )))
-        .into_response()
+        AppError(e).into_response()
     })?;
 
     Ok((
@@ -264,11 +260,7 @@ pub async fn update_api_key(
     .await
     .map_err(|e| {
         tracing::error!("Failed to update API key: {}", e);
-        AppError(LbError::Database(format!(
-            "Failed to update API key: {}",
-            e
-        )))
-        .into_response()
+        AppError(e).into_response()
     })?;
 
     match updated {

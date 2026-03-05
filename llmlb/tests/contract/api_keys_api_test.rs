@@ -314,6 +314,124 @@ async fn test_create_api_key_requires_auth() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// 同一ユーザー内で同名APIキーの重複作成は400
+#[tokio::test]
+#[serial]
+async fn test_create_api_key_duplicate_name_rejected() {
+    let (app, _db_pool) = build_app().await;
+    let jwt = login_as(&app, "admin", "password123").await;
+
+    let first = app
+        .clone()
+        .oneshot(
+            bearer_request(&jwt)
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "duplicate-name",
+                        "permissions": ["openai.inference"]
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::CREATED);
+
+    let duplicate = app
+        .oneshot(
+            bearer_request(&jwt)
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "duplicate-name",
+                        "permissions": ["openai.inference"]
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
+}
+
+/// APIキー更新で他キーと同名へのリネームは400
+#[tokio::test]
+#[serial]
+async fn test_update_api_key_duplicate_name_rejected() {
+    let (app, _db_pool) = build_app().await;
+    let jwt = login_as(&app, "admin", "password123").await;
+
+    let first = app
+        .clone()
+        .oneshot(
+            bearer_request(&jwt)
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "first-key",
+                        "permissions": ["openai.inference"]
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::CREATED);
+
+    let second = app
+        .clone()
+        .oneshot(
+            bearer_request(&jwt)
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "second-key",
+                        "permissions": ["openai.inference"]
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::CREATED);
+
+    let second_body = to_bytes(second.into_body(), usize::MAX).await.unwrap();
+    let second_json: Value = serde_json::from_slice(&second_body).unwrap();
+    let second_id = second_json["id"].as_str().unwrap();
+
+    let update = app
+        .oneshot(
+            bearer_request(&jwt)
+                .method("PUT")
+                .uri(format!("/api/me/api-keys/{}", second_id))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "first-key"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(update.status(), StatusCode::BAD_REQUEST);
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/me/api-keys
 // ---------------------------------------------------------------------------

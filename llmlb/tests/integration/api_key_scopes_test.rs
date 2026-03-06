@@ -83,7 +83,8 @@ async fn create_admin_user(db_pool: &sqlx::SqlitePool) -> uuid::Uuid {
 
 async fn create_api_key(db_pool: &sqlx::SqlitePool, permissions: Vec<ApiKeyPermission>) -> String {
     let admin_id = create_admin_user(db_pool).await;
-    let api_key = llmlb::db::api_keys::create(db_pool, "test-key", admin_id, None, permissions)
+    let key_name = format!("test-key-{}", uuid::Uuid::new_v4());
+    let api_key = llmlb::db::api_keys::create(db_pool, &key_name, admin_id, None, permissions)
         .await
         .expect("create api key");
     api_key.key

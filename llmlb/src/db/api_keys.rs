@@ -1,7 +1,7 @@
 // T053-T054: APIキーCRUD操作とキー生成
 
 use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext};
-use crate::common::error::LbError;
+use crate::common::error::{CommonError, LbError};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use serde_json;
@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use tracing::warn;
 use uuid::Uuid;
+
+const DUPLICATE_NAME_VALIDATION_MSG: &str = "API key with this name already exists";
 
 /// APIキーを生成
 ///
@@ -50,7 +52,7 @@ pub async fn create(
     .bind(permissions_json)
     .execute(pool)
     .await
-    .map_err(|e| LbError::Database(format!("Failed to create API key: {}", e)))?;
+    .map_err(|e| map_write_error(e, name, "create API key"))?;
 
     Ok(ApiKeyWithPlaintext {
         id,
@@ -152,7 +154,7 @@ pub async fn update(
         .bind(id.to_string())
         .execute(pool)
         .await
-        .map_err(|e| LbError::Database(format!("Failed to update API key: {}", e)))?;
+        .map_err(|e| map_write_error(e, name, "update API key"))?;
 
     if result.rows_affected() == 0 {
         return Ok(None);
@@ -201,7 +203,7 @@ pub async fn update_by_creator(
     .bind(created_by.to_string())
     .execute(pool)
     .await
-    .map_err(|e| LbError::Database(format!("Failed to update API key by creator: {}", e)))?;
+    .map_err(|e| map_write_error(e, name, "update API key by creator"))?;
 
     if result.rows_affected() == 0 {
         return Ok(None);
@@ -368,6 +370,23 @@ fn serialize_permissions(permissions: &[ApiKeyPermission]) -> Result<String, LbE
         .map_err(|e| LbError::Database(format!("Failed to serialize permissions: {}", e)))
 }
 
+fn is_duplicate_name_violation(err: &sqlx::Error) -> bool {
+    let message = err.to_string();
+    message.contains("API key name already exists for this user")
+        || message.contains("UNIQUE constraint failed: api_keys.created_by, api_keys.name")
+}
+
+fn map_write_error(err: sqlx::Error, name: &str, operation: &str) -> LbError {
+    if is_duplicate_name_violation(&err) {
+        return LbError::Common(CommonError::Validation(format!(
+            "{}: '{}'",
+            DUPLICATE_NAME_VALIDATION_MSG, name
+        )));
+    }
+
+    LbError::Database(format!("Failed to {}: {}", operation, err))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,6 +491,71 @@ mod tests {
 
         let keys = list(&pool).await.unwrap();
         assert_eq!(keys.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_create_duplicate_name_same_creator_rejected() {
+        let pool = setup_test_db().await;
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+
+        create(
+            &pool,
+            "Duplicate Key",
+            user.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
+
+        let err = create(
+            &pool,
+            "Duplicate Key",
+            user.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .expect_err("duplicate key name should be rejected");
+
+        assert!(matches!(err, LbError::Common(CommonError::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn test_create_same_name_different_creators_allowed() {
+        let pool = setup_test_db().await;
+        let user_a = users::create(&pool, "user_a", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        let user_b = users::create(&pool, "user_b", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+
+        create(
+            &pool,
+            "Shared Name",
+            user_a.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
+
+        let key_b = create(
+            &pool,
+            "Shared Name",
+            user_b.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await;
+
+        assert!(
+            key_b.is_ok(),
+            "different creators should be able to use the same key name"
+        );
     }
 
     #[tokio::test]
@@ -853,6 +937,39 @@ mod tests {
             .await
             .unwrap();
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_by_creator_duplicate_name_rejected() {
+        let pool = setup_test_db().await;
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+
+        create(
+            &pool,
+            "Key-A",
+            user.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
+
+        let key_b = create(
+            &pool,
+            "Key-B",
+            user.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
+
+        let err = update_by_creator(&pool, key_b.id, user.id, "Key-A", None)
+            .await
+            .expect_err("duplicate rename should be rejected");
+        assert!(matches!(err, LbError::Common(CommonError::Validation(_))));
     }
 
     #[tokio::test]

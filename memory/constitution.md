@@ -137,16 +137,13 @@
 - `README.md`: プロジェクト概要、セットアップ、使用法（英語）
 - `README.ja.md`: 日本語版README
 - `CLAUDE.md`: 開発ワークフロー、ガイドライン（日本語）
-- `specs/`: 機能仕様書（Spec Kit準拠）
-  - `SPEC-[UUID8桁]/spec.md`: 機能仕様
-  - `SPEC-[UUID8桁]/plan.md`: 実装計画
-  - `SPEC-[UUID8桁]/tasks.md`: タスク分解
+- GitHub Issue（`gwt-spec`ラベル）: 機能仕様・実装計画・タスク分解
 
 ### ドキュメント原則
-- **設計は `docs/` または `specs/`**: README.md には書かない
+- **設計は `docs/` またはGitHub Issue**: README.md には書かない
 - **日本語優先**: 開発ドキュメントは日本語
 - **リンク活用**: README.md は詳細へのリンクのみ
-- **Spec Kit 準拠**: 新機能は必ず仕様書作成
+- **Issue-first**: 新機能は必ずGitHub Issueで仕様を定義
 
 ## CI/CD要件
 
@@ -156,7 +153,7 @@
 - **フォーマット**: `cargo fmt --check` で統一された書式
 - **commitlint**: コミットメッセージ規約準拠
 - **markdownlint**: マークダウンファイル品質
-- **tasks-check**: tasks.md の全タスク完了チェック
+
 
 ### コミットワークフロー
 1. タスク完了

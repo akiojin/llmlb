@@ -371,7 +371,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     )}
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
-                    <pre className="p-4 text-xs whitespace-pre-wrap break-all">
+                    <pre className="p-4 text-xs whitespace-pre-wrap break-words">
                       {serializeBody(selectedRequest.request_body, 'request')}
                     </pre>
                   </ScrollArea>
@@ -398,7 +398,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     )}
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
-                    <pre className="p-4 text-xs whitespace-pre-wrap break-all">
+                    <pre className="p-4 text-xs whitespace-pre-wrap break-words">
                       {serializeBody(selectedRequest.response_body, 'response')}
                     </pre>
                   </ScrollArea>

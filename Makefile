@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-checks specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-commits
 .PHONY: openai-tests test-hooks e2e-tests
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -30,8 +30,6 @@ specify-commits:
 		echo "Checking commits from origin/main to HEAD"; \
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
-
-specify-checks: specify-commits
 
 quality-checks: fmt clippy test security-checks specify-commits markdownlint openai-tests test-hooks
 

@@ -33,10 +33,10 @@ pnpm install --frozen-lockfile   # for lint tooling; node_modules already vendor
 3. Refactor with tests green.
 
 ## Required model-family tests
-For gpt/nemotron/qwen/glm model families, verification is mandatory before merge.
-Use the model verification suite or explicit E2E coverage and record results in the PR.
 
-- Model verification: `.specify/scripts/model-verification/run-verification.sh --model <path> --format <gguf|safetensors> --capability TextGeneration --platform <platform>`
+For gpt/nemotron/qwen/glm model families, verification is mandatory before merge.
+Use explicit E2E coverage and record results in the PR.
+
 - E2E coverage: `LLM_TEST_MODEL=<model-id> npx bats tests/e2e/test-openai-api.bats`
 
 ## Environment Variables

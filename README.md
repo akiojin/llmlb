@@ -805,14 +805,11 @@ Notes:
 - gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
 - GPU is required. Supported backends: macOS (Metal) and Windows (CUDA). Linux/CUDA is experimental.
 
-### Spec-Driven Development
+### GitHub Issue-first Development
 
-This project follows Spec-Driven Development:
-
-1. `/speckit.specify` - Create feature specification
-2. `/speckit.plan` - Create implementation plan
-3. `/speckit.tasks` - Break down into tasks
-4. Execute tasks (strict TDD cycle)
+This project manages specifications via GitHub Issues (`gwt-spec` label).
+Use `/gwt-issue-spec-ops` to define requirements and task breakdowns on Issues.
+Execute tasks following a strict TDD cycle.
 
 See [CLAUDE.md](./CLAUDE.md) for details.
 

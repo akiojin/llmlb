@@ -49,6 +49,19 @@ PY
 GIT_SUBCOMMAND=""
 GIT_SUBCOMMAND_ARGS=()
 
+emit_block() {
+    local reason="$1"
+    local stop_reason="$2"
+
+    cat <<EOF
+{
+  "decision": "block",
+  "reason": "$reason",
+  "stopReason": "$stop_reason"
+}
+EOF
+}
+
 extract_git_subcommand_and_args() {
     local git_cmd="$1"
     local -a tokens=()
@@ -176,6 +189,12 @@ is_read_only_git_branch() {
 # stdinからJSON入力を読み取り
 json_input=$(cat)
 
+has_json_parser() {
+    command -v jq >/dev/null 2>&1 ||
+        command -v python >/dev/null 2>&1 ||
+        command -v python3 >/dev/null 2>&1
+}
+
 get_json_value() {
     local query="$1"
 
@@ -236,6 +255,14 @@ PY
 
     printf '%s' ""
 }
+
+if ! has_json_parser; then
+    emit_block \
+      "🚫 Hook JSON parser is unavailable" \
+      "Cannot evaluate worktree protection because jq, python, and python3 are unavailable in the shell environment. Install one of them and retry."
+    echo "🚫 Blocked: hook JSON parser is unavailable" >&2
+    exit 2
+fi
 
 # ツール名を確認
 tool_name=$(get_json_value '.tool_name // empty')

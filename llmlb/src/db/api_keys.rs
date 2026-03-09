@@ -973,6 +973,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_update_by_creator_allows_legacy_duplicate_name_when_name_is_unchanged() {
+        let pool = setup_test_db().await;
+        let user = users::create(&pool, "legacy-user", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+
+        let key = create(
+            &pool,
+            "Legacy-Key",
+            user.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
+
+        sqlx::query("DROP TRIGGER IF EXISTS trg_api_keys_reject_duplicate_name_insert")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TRIGGER IF EXISTS trg_api_keys_reject_duplicate_name_update")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let duplicate_permissions =
+            serialize_permissions(&[ApiKeyPermission::OpenaiInference]).unwrap();
+
+        sqlx::query(
+            "INSERT INTO api_keys (id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(hash_with_sha256("sk_legacy_duplicate_key"))
+        .bind("sk_legacy_")
+        .bind("Legacy-Key")
+        .bind(user.id.to_string())
+        .bind(Utc::now().to_rfc3339())
+        .bind(Option::<String>::None)
+        .bind(duplicate_permissions)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "CREATE TRIGGER trg_api_keys_reject_duplicate_name_insert
+             BEFORE INSERT ON api_keys
+             FOR EACH ROW
+             WHEN EXISTS (
+                 SELECT 1
+                 FROM api_keys
+                 WHERE created_by = NEW.created_by
+                   AND name = NEW.name
+             )
+             BEGIN
+                 SELECT RAISE(ABORT, 'API key name already exists for this user');
+             END;",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "CREATE TRIGGER trg_api_keys_reject_duplicate_name_update
+             BEFORE UPDATE OF name, created_by ON api_keys
+             FOR EACH ROW
+             WHEN (
+                 NEW.created_by IS NOT OLD.created_by
+                 OR NEW.name IS NOT OLD.name
+             )
+             AND EXISTS (
+                 SELECT 1
+                 FROM api_keys
+                 WHERE created_by = NEW.created_by
+                   AND name = NEW.name
+                   AND id <> OLD.id
+             )
+             BEGIN
+                 SELECT RAISE(ABORT, 'API key name already exists for this user');
+             END;",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let expiry = Utc::now() + chrono::Duration::days(30);
+        let updated = update_by_creator(&pool, key.id, user.id, "Legacy-Key", Some(expiry))
+            .await
+            .expect("legacy duplicates should still allow unchanged-name updates")
+            .expect("legacy API key should still exist");
+
+        assert_eq!(updated.name, "Legacy-Key");
+        assert_eq!(updated.created_by, user.id);
+        assert!(updated.expires_at.is_some());
+    }
+
+    #[tokio::test]
     async fn test_update_by_creator_nonexistent_key() {
         let pool = setup_test_db().await;
         let user = users::create(&pool, "user", "hash", UserRole::Admin, false)

@@ -161,6 +161,41 @@ export function cleanupManualCopyBuffer() {
   }
 }
 
+function copyToClipboardWithExecCommand(text: string): boolean {
+  if (typeof document === 'undefined' || !document.body) {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+
+  const previousActiveElement =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+  try {
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    textarea.setSelectionRange(0, textarea.value.length)
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    if (textarea.isConnected) {
+      textarea.remove()
+    }
+    previousActiveElement?.focus()
+  }
+}
+
 export async function copyToClipboard(text: string): Promise<ClipboardCopyResult> {
   if (typeof text !== 'string' || text.length === 0) {
     throw new Error('Clipboard value is empty')
@@ -175,8 +210,12 @@ export async function copyToClipboard(text: string): Promise<ClipboardCopyResult
       await navigator.clipboard.writeText(text)
       return { method: 'clipboard' }
     } catch {
-      return { method: 'manual' }
+      // Fall through to the legacy copy path before requiring manual copy.
     }
+  }
+
+  if (copyToClipboardWithExecCommand(text)) {
+    return { method: 'clipboard' }
   }
 
   return { method: 'manual' }

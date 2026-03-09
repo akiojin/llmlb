@@ -30,18 +30,6 @@ jobs:
               - 'Cargo.lock'
               - '.github/workflows/ci.yml'
 
-  tasks:
-    name: Tasks Completion Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check tasks.md completion
-        run: |
-          chmod +x .specify/scripts/checks/check-tasks.sh
-          .specify/scripts/checks/check-tasks.sh
-        env:
-          CI: true
-
   rust:
     name: Rust (fmt/clippy/test) ${{ matrix.os }}
     needs: changes

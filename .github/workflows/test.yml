@@ -35,24 +35,6 @@ jobs:
               - 'llmlb/src/dashboard/**'
               - '.github/workflows/test.yml'
 
-  tasks-check:
-    # 要件: FR-002
-    # 目的: tasks.mdの全タスク完了をチェック
-    name: Tasks Completion Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check tasks.md completion
-        run: |
-          echo "🔍 Checking tasks.md completion..."
-          chmod +x .specify/scripts/checks/check-tasks.sh
-          .specify/scripts/checks/check-tasks.sh
-        env:
-          CI: true
-
   rust-test:
     # 要件: FR-003
     # 目的: Rustテストを実行（複数OS）

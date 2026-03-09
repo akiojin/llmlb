@@ -76,6 +76,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   })
 
   const connect = useCallback(() => {
+    const scheduleReconnect = () => {
+      const delay = getReconnectDelay(reconnectAttemptRef.current)
+      reconnectAttemptRef.current += 1
+      reconnectTimeoutRef.current = setTimeout(connect, delay)
+    }
+
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`
@@ -135,9 +141,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current)
         }
-        const delay = getReconnectDelay(reconnectAttemptRef.current)
-        reconnectAttemptRef.current += 1
-        reconnectTimeoutRef.current = setTimeout(connect, delay)
+        scheduleReconnect()
       }
 
       // Browser fires onclose automatically after onerror; no manual ws.close() needed
@@ -147,9 +151,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     } catch (err) {
       console.error('Failed to create WebSocket:', err)
       // Schedule reconnection with exponential backoff
-      const delay = getReconnectDelay(reconnectAttemptRef.current)
-      reconnectAttemptRef.current += 1
-      reconnectTimeoutRef.current = setTimeout(connect, delay)
+      scheduleReconnect()
     }
   }, [queryClient])
 

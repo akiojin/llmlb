@@ -165,7 +165,7 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 - **offline**: ヘルスチェック失敗
 - **error**: 接続エラー
 
-詳細は [specs/SPEC-e8e9326e/quickstart.md](./specs/SPEC-e8e9326e/quickstart.md) を参照。
+詳細は [CLAUDE.md](./CLAUDE.md) を参照。
 
 ## LLM アシスタント向け Assistant CLI
 
@@ -383,7 +383,7 @@ Windows の `-setup.exe` 更新では
 - macOS `.pkg` / Windows `-setup.exe`: インストーラ実行（Windows はUACなしでサイレント実行）
 - Linux の書き込み不可配置: 自動適用は非対応（GitHub Releases から手動更新）
 
-詳細は [specs/SPEC-a6e55b37/spec.md](./specs/SPEC-a6e55b37/spec.md) を参照。
+詳細は [CLAUDE.md](./CLAUDE.md) を参照。
 
 クラウドAPI:
 

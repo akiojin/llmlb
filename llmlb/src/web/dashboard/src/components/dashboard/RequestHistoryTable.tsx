@@ -290,7 +290,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
           </DialogHeader>
 
           {selectedRequest && (
-            <Tabs defaultValue="overview" className="mt-4">
+            <Tabs defaultValue="overview" className="mt-4 min-w-0">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="request">Request</TabsTrigger>
@@ -371,7 +371,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     )}
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
-                    <pre className="p-4 text-xs">
+                    <pre className="p-4 text-xs whitespace-pre-wrap break-all">
                       {serializeBody(selectedRequest.request_body, 'request')}
                     </pre>
                   </ScrollArea>
@@ -398,7 +398,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     )}
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
-                    <pre className="p-4 text-xs">
+                    <pre className="p-4 text-xs whitespace-pre-wrap break-all">
                       {serializeBody(selectedRequest.response_body, 'response')}
                     </pre>
                   </ScrollArea>

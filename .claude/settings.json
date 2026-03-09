@@ -21,20 +21,29 @@
     "worktree-protection-hooks@gwt-plugins": true
   },
   "hooks": {
-    "PreToolUse": [
+    "Notification": [
       {
         "hooks": [
           {
-            "command": ".claude/hooks/block-git-branch-ops.sh",
-            "type": "command"
-          },
-          {
-            "command": ".claude/hooks/block-cd-command.sh",
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Notification",
             "type": "command"
           }
         ],
-        "matcher": "Bash"
-      },
+        "matcher": "*"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PostToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreToolUse": [
       {
         "hooks": [
           {
@@ -43,6 +52,58 @@
           }
         ],
         "matcher": "Task"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PreToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/block-git-branch-ops.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-cd-command.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-file-ops.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-git-dir-override.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Stop",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
       }
     ]
   }

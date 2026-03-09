@@ -1,12 +1,77 @@
 {
-  "description": "Ralph Wiggum plugin stop hook for self-referential loops",
   "hooks": {
-    "Stop": [
+    "UserPromptSubmit": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh"
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PreToolUse"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/block-git-branch-ops.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/block-cd-command.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/block-file-ops.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/block-git-dir-override.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PostToolUse"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Notification"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Stop"
           }
         ]
       }

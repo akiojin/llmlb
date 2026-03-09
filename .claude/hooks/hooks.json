@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit"
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PreToolUse"
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh PreToolUse"
           }
         ]
       },
@@ -26,19 +26,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/block-git-branch-ops.sh"
+            "command": "bash .claude/hooks/scripts/block-git-branch-ops.sh"
           },
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/block-cd-command.sh"
+            "command": "bash .claude/hooks/scripts/block-cd-command.sh"
           },
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/block-file-ops.sh"
+            "command": "bash .claude/hooks/scripts/block-file-ops.sh"
           },
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/block-git-dir-override.sh"
+            "command": "bash .claude/hooks/scripts/block-git-dir-override.sh"
           }
         ]
       }
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PostToolUse"
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh PostToolUse"
           }
         ]
       }
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Notification"
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh Notification"
           }
         ]
       }
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Stop"
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh Stop"
           }
         ]
       }

@@ -54,8 +54,8 @@ export function UniqueIpTimeline({ data }: UniqueIpTimelineProps) {
             fontSize: '12px',
           }}
           labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
-          formatter={(value: number) => [value, 'Unique IPs']}
-          labelFormatter={(label: string) => formatHour(label)}
+          formatter={(value) => [Number(value ?? 0), 'Unique IPs']}
+          labelFormatter={(label) => formatHour(String(label ?? ''))}
         />
         <Line
           type="monotone"

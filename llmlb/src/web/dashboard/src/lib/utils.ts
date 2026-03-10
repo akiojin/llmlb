@@ -161,10 +161,43 @@ export function cleanupManualCopyBuffer() {
   }
 }
 
+function tryExecCommandCopy(text: string): boolean {
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  textarea.style.zIndex = '-1'
+
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
+}
+
 export async function copyToClipboard(text: string): Promise<ClipboardCopyResult> {
   if (typeof text !== 'string' || text.length === 0) {
     throw new Error('Clipboard value is empty')
   }
+
+  cleanupManualCopyBuffer()
 
   const isClipboardApiAvailable =
     typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
@@ -175,8 +208,12 @@ export async function copyToClipboard(text: string): Promise<ClipboardCopyResult
       await navigator.clipboard.writeText(text)
       return { method: 'clipboard' }
     } catch {
-      return { method: 'manual' }
+      // Keep legacy one-click copy working for HTTP deployments and older browsers.
     }
+  }
+
+  if (tryExecCommandCopy(text)) {
+    return { method: 'clipboard' }
   }
 
   return { method: 'manual' }

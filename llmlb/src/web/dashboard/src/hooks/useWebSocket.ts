@@ -35,8 +35,16 @@ interface UseWebSocketOptions {
   onMessage?: (event: DashboardEvent) => void
   onConnect?: () => void
   onDisconnect?: () => void
+  /** @deprecated Use exponential backoff instead. Kept for interface compatibility. */
   reconnectInterval?: number
   enabled?: boolean
+}
+
+/** Calculate reconnect delay with exponential backoff and jitter */
+function getReconnectDelay(attempt: number): number {
+  const base = Math.min(1000 * Math.pow(2, attempt), 30000)
+  const jitter = base * 0.2 * Math.random()
+  return base + jitter
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
@@ -44,17 +52,36 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onMessage,
     onConnect,
     onDisconnect,
-    reconnectInterval = 3000,
     enabled = true,
   } = options
 
   const queryClient = useQueryClient()
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptRef = useRef(0)
   const [isConnected, setIsConnected] = useState(false)
   const [lastEvent, setLastEvent] = useState<DashboardEvent | null>(null)
 
+  // Stabilize callback references with useRef to prevent infinite reconnection loops.
+  // Without this, inline callbacks passed by callers create new references every render,
+  // which would trigger useCallback/useEffect dependency changes and cause
+  // connect → disconnect → reconnect cycles on every render.
+  const onMessageRef = useRef(onMessage)
+  const onConnectRef = useRef(onConnect)
+  const onDisconnectRef = useRef(onDisconnect)
+  useEffect(() => {
+    onMessageRef.current = onMessage
+    onConnectRef.current = onConnect
+    onDisconnectRef.current = onDisconnect
+  })
+
   const connect = useCallback(() => {
+    const scheduleReconnect = () => {
+      const delay = getReconnectDelay(reconnectAttemptRef.current)
+      reconnectAttemptRef.current += 1
+      reconnectTimeoutRef.current = setTimeout(connect, delay)
+    }
+
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`
@@ -64,15 +91,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       wsRef.current = ws
 
       ws.onopen = () => {
+        reconnectAttemptRef.current = 0
         setIsConnected(true)
-        onConnect?.()
+        onConnectRef.current?.()
       }
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as DashboardEvent
           setLastEvent(data)
-          onMessage?.(data)
+          onMessageRef.current?.(data)
 
           // Invalidate relevant queries based on event type
           // Query keys must match those used in Dashboard.tsx
@@ -106,32 +134,33 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       ws.onclose = () => {
         setIsConnected(false)
-        onDisconnect?.()
+        onDisconnectRef.current?.()
         wsRef.current = null
 
-        // Schedule reconnection
+        // Schedule reconnection with exponential backoff
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current)
         }
-        reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval)
+        scheduleReconnect()
       }
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        ws.close()
+      // Browser fires onclose automatically after onerror; no manual ws.close() needed
+      ws.onerror = () => {
+        console.warn('WebSocket connection error')
       }
     } catch (err) {
       console.error('Failed to create WebSocket:', err)
-      // Schedule reconnection
-      reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval)
+      // Schedule reconnection with exponential backoff
+      scheduleReconnect()
     }
-  }, [onMessage, onConnect, onDisconnect, reconnectInterval, queryClient])
+  }, [queryClient])
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
     }
+    reconnectAttemptRef.current = 0
     if (wsRef.current) {
       wsRef.current.close()
       wsRef.current = null

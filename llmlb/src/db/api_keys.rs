@@ -192,18 +192,48 @@ pub async fn update_by_creator(
     name: &str,
     expires_at: Option<DateTime<Utc>>,
 ) -> Result<Option<ApiKey>, LbError> {
-    let result = sqlx::query(
-        "UPDATE api_keys
-         SET name = ?, expires_at = ?
+    let existing = sqlx::query_as::<_, ApiKeyRow>(
+        "SELECT id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions
+         FROM api_keys
          WHERE id = ? AND created_by = ?",
     )
-    .bind(name)
-    .bind(expires_at.map(|dt| dt.to_rfc3339()))
     .bind(id.to_string())
     .bind(created_by.to_string())
-    .execute(pool)
+    .fetch_optional(pool)
     .await
-    .map_err(|e| map_write_error(e, name, "update API key by creator"))?;
+    .map_err(|e| LbError::Database(format!("Failed to find API key by creator: {}", e)))?;
+
+    let Some(existing) = existing else {
+        return Ok(None);
+    };
+
+    let expires_at = expires_at.map(|dt| dt.to_rfc3339());
+    let result = if existing.name == name {
+        sqlx::query(
+            "UPDATE api_keys
+             SET expires_at = ?
+             WHERE id = ? AND created_by = ?",
+        )
+        .bind(expires_at.clone())
+        .bind(id.to_string())
+        .bind(created_by.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| map_write_error(e, name, "update API key expiry by creator"))?
+    } else {
+        sqlx::query(
+            "UPDATE api_keys
+             SET name = ?, expires_at = ?
+             WHERE id = ? AND created_by = ?",
+        )
+        .bind(name)
+        .bind(expires_at)
+        .bind(id.to_string())
+        .bind(created_by.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| map_write_error(e, name, "update API key by creator"))?
+    };
 
     if result.rows_affected() == 0 {
         return Ok(None);
@@ -973,15 +1003,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_by_creator_allows_legacy_duplicate_name_when_name_is_unchanged() {
+    async fn test_update_by_creator_allows_expiry_change_for_legacy_duplicate_name() {
         let pool = setup_test_db().await;
-        let user = users::create(&pool, "legacy-user", "hash", UserRole::Admin, false)
+        let user = users::create(&pool, "testuser", "hash", UserRole::Admin, false)
             .await
             .unwrap();
 
-        let key = create(
+        create(
             &pool,
-            "Legacy-Key",
+            "Legacy Name",
             user.id,
             None,
             vec![ApiKeyPermission::OpenaiInference],
@@ -989,43 +1019,38 @@ mod tests {
         .await
         .unwrap();
 
-        sqlx::query("DROP TRIGGER IF EXISTS trg_api_keys_reject_duplicate_name_insert")
-            .execute(&pool)
-            .await
-            .unwrap();
+        let duplicate = create(
+            &pool,
+            "Temporary Name",
+            user.id,
+            None,
+            vec![ApiKeyPermission::OpenaiInference],
+        )
+        .await
+        .unwrap();
+
         sqlx::query("DROP TRIGGER IF EXISTS trg_api_keys_reject_duplicate_name_update")
             .execute(&pool)
             .await
             .unwrap();
 
-        let duplicate_permissions =
-            serialize_permissions(&[ApiKeyPermission::OpenaiInference]).unwrap();
+        sqlx::query("UPDATE api_keys SET name = ? WHERE id = ?")
+            .bind("Legacy Name")
+            .bind(duplicate.id.to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
 
         sqlx::query(
-            "INSERT INTO api_keys (id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(hash_with_sha256("sk_legacy_duplicate_key"))
-        .bind("sk_legacy_")
-        .bind("Legacy-Key")
-        .bind(user.id.to_string())
-        .bind(Utc::now().to_rfc3339())
-        .bind(Option::<String>::None)
-        .bind(duplicate_permissions)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            "CREATE TRIGGER trg_api_keys_reject_duplicate_name_insert
-             BEFORE INSERT ON api_keys
+            "CREATE TRIGGER IF NOT EXISTS trg_api_keys_reject_duplicate_name_update
+             BEFORE UPDATE OF name, created_by ON api_keys
              FOR EACH ROW
              WHEN EXISTS (
                  SELECT 1
                  FROM api_keys
                  WHERE created_by = NEW.created_by
-                   AND name = NEW.name
+                  AND name = NEW.name
+                  AND id <> OLD.id
              )
              BEGIN
                  SELECT RAISE(ABORT, 'API key name already exists for this user');
@@ -1035,38 +1060,15 @@ mod tests {
         .await
         .unwrap();
 
-        sqlx::query(
-            "CREATE TRIGGER trg_api_keys_reject_duplicate_name_update
-             BEFORE UPDATE OF name, created_by ON api_keys
-             FOR EACH ROW
-             WHEN (
-                 NEW.created_by IS NOT OLD.created_by
-                 OR NEW.name IS NOT OLD.name
-             )
-             AND EXISTS (
-                 SELECT 1
-                 FROM api_keys
-                 WHERE created_by = NEW.created_by
-                   AND name = NEW.name
-                   AND id <> OLD.id
-             )
-             BEGIN
-                 SELECT RAISE(ABORT, 'API key name already exists for this user');
-             END;",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let expiry = Utc::now() + chrono::Duration::days(30);
-        let updated = update_by_creator(&pool, key.id, user.id, "Legacy-Key", Some(expiry))
+        let expiry = Utc::now() + chrono::Duration::days(14);
+        let updated = update_by_creator(&pool, duplicate.id, user.id, "Legacy Name", Some(expiry))
             .await
-            .expect("legacy duplicates should still allow unchanged-name updates")
-            .expect("legacy API key should still exist");
+            .expect("expiry-only update should work for legacy duplicates")
+            .expect("legacy duplicate row should still exist");
 
-        assert_eq!(updated.name, "Legacy-Key");
-        assert_eq!(updated.created_by, user.id);
-        assert!(updated.expires_at.is_some());
+        assert_eq!(updated.name, "Legacy Name");
+        assert_eq!(updated.id, duplicate.id);
+        assert_eq!(updated.expires_at, Some(expiry));
     }
 
     #[tokio::test]

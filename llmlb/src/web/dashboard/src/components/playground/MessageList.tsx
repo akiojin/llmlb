@@ -7,7 +7,7 @@ import { extractMediaFromContent } from './types'
 
 interface MessageListProps {
   messages: Message[]
-  messagesEndRef: RefObject<HTMLDivElement>
+  messagesEndRef: RefObject<HTMLDivElement | null>
   emptyTitle: string
   emptyDescription: string
   maxWidth?: string

@@ -161,8 +161,12 @@ export function cleanupManualCopyBuffer() {
   }
 }
 
-function copyToClipboardWithExecCommand(text: string): boolean {
-  if (typeof document === 'undefined' || !document.body) {
+function tryExecCommandCopy(text: string): boolean {
+  if (
+    typeof document === 'undefined' ||
+    !document.body ||
+    typeof document.execCommand !== 'function'
+  ) {
     return false
   }
 
@@ -176,15 +180,17 @@ function copyToClipboardWithExecCommand(text: string): boolean {
   textarea.style.height = '1px'
   textarea.style.opacity = '0'
   textarea.style.pointerEvents = 'none'
+  textarea.style.zIndex = '-1'
 
   const previousActiveElement =
     document.activeElement instanceof HTMLElement ? document.activeElement : null
 
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
   try {
-    document.body.appendChild(textarea)
-    textarea.focus()
-    textarea.select()
-    textarea.setSelectionRange(0, textarea.value.length)
     return document.execCommand('copy')
   } catch {
     return false
@@ -201,6 +207,8 @@ export async function copyToClipboard(text: string): Promise<ClipboardCopyResult
     throw new Error('Clipboard value is empty')
   }
 
+  cleanupManualCopyBuffer()
+
   const isClipboardApiAvailable =
     typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
   const isSecureContext = typeof window !== 'undefined' ? window.isSecureContext : true
@@ -210,11 +218,11 @@ export async function copyToClipboard(text: string): Promise<ClipboardCopyResult
       await navigator.clipboard.writeText(text)
       return { method: 'clipboard' }
     } catch {
-      // Fall through to the legacy copy path before requiring manual copy.
+      // Keep legacy one-click copy working for HTTP deployments and older browsers.
     }
   }
 
-  if (copyToClipboardWithExecCommand(text)) {
+  if (tryExecCommandCopy(text)) {
     return { method: 'clipboard' }
   }
 

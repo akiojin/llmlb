@@ -1,6 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { type RequestHistoryItem } from '@/lib/api'
-import { copyToClipboard, formatDuration, formatRelativeTime, cn } from '@/lib/utils'
+import {
+  copyToClipboard,
+  formatDuration,
+  formatRelativeTime,
+  cn,
+  selectTextForManualCopy,
+  cleanupManualCopyBuffer,
+} from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -53,6 +60,10 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
   const [selectedRequest, setSelectedRequest] = useState<RequestHistoryItem | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
+  useEffect(() => {
+    return () => cleanupManualCopyBuffer()
+  }, [])
+
   const totalPages = Math.ceil(history.length / pageSize)
   const paginatedHistory = history.slice(
     (currentPage - 1) * pageSize,
@@ -61,10 +72,20 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
 
   const handleCopy = async (text: string, field: string) => {
     try {
-      await copyToClipboard(text)
-      setCopiedField(field)
-      setTimeout(() => setCopiedField(null), 2000)
-      toast({ title: 'Copied to clipboard' })
+      const { method } = await copyToClipboard(text)
+      if (method === 'clipboard') {
+        setCopiedField(field)
+        setTimeout(() => setCopiedField(null), 2000)
+        toast({ title: 'Copied to clipboard' })
+        return
+      }
+
+      setCopiedField(null)
+      selectTextForManualCopy(text)
+      toast({
+        title: 'Auto copy unavailable',
+        description: 'Press Ctrl+C to copy the selected value.',
+      })
     } catch {
       toast({ title: 'Failed to copy', variant: 'destructive' })
     }
@@ -250,7 +271,12 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
       {/* Request Detail Modal */}
       <Dialog
         open={!!selectedRequest}
-        onOpenChange={(open) => !open && setSelectedRequest(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedRequest(null)
+            cleanupManualCopyBuffer()
+          }
+        }}
       >
         <DialogContent id="request-modal" className="max-w-2xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
@@ -264,7 +290,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
           </DialogHeader>
 
           {selectedRequest && (
-            <Tabs defaultValue="overview" className="mt-4">
+            <Tabs defaultValue="overview" className="mt-4 min-w-0">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="request">Request</TabsTrigger>
@@ -345,7 +371,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     )}
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
-                    <pre className="p-4 text-xs">
+                    <pre className="p-4 text-xs whitespace-pre-wrap break-words">
                       {serializeBody(selectedRequest.request_body, 'request')}
                     </pre>
                   </ScrollArea>
@@ -372,7 +398,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                     )}
                   </Button>
                   <ScrollArea className="h-64 rounded-md border">
-                    <pre className="p-4 text-xs">
+                    <pre className="p-4 text-xs whitespace-pre-wrap break-words">
                       {serializeBody(selectedRequest.response_body, 'response')}
                     </pre>
                   </ScrollArea>

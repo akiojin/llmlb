@@ -38,8 +38,8 @@ export function ModelDistributionPie({ data }: ModelDistributionPieProps) {
           cy="50%"
           outerRadius={100}
           innerRadius={60}
-          label={({ model, percentage }: ModelDistribution) =>
-            `${model} (${percentage.toFixed(1)}%)`
+          label={({ name, percent }) =>
+            `${String(name ?? '')} (${((percent ?? 0) * 100).toFixed(1)}%)`
           }
         >
           {data.map((_entry, index) => (

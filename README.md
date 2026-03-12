@@ -172,7 +172,7 @@ Auto-apply method depends on the platform/install:
 - macOS `.pkg` / Windows `-setup.exe`: run the installer (Windows runs silently without UAC)
 - Linux non-writable installs: auto-apply is not supported; reinstall manually from GitHub Releases
 
-For full details, see [specs/SPEC-a6e55b37/spec.md](./specs/SPEC-a6e55b37/spec.md).
+For full details, see [CLAUDE.md](./CLAUDE.md).
 
 ### CLI Reference
 
@@ -465,7 +465,7 @@ curl -X POST http://localhost:32768/api/endpoints/{id}/sync \
 - **offline**: Health check failed
 - **error**: Connection error
 
-For details, see [specs/SPEC-e8e9326e/quickstart.md](./specs/SPEC-e8e9326e/quickstart.md).
+For details, see [CLAUDE.md](./CLAUDE.md).
 
 ## Hugging Face registration (safetensors / GGUF)
 
@@ -805,14 +805,11 @@ Notes:
 - gpt-oss-20b uses safetensors (index + shards + config/tokenizer) as the source of truth.
 - GPU is required. Supported backends: macOS (Metal) and Windows (CUDA). Linux/CUDA is experimental.
 
-### Spec-Driven Development
+### GitHub Issue-first Development
 
-This project follows Spec-Driven Development:
-
-1. `/speckit.specify` - Create feature specification
-2. `/speckit.plan` - Create implementation plan
-3. `/speckit.tasks` - Break down into tasks
-4. Execute tasks (strict TDD cycle)
+This project manages specifications via GitHub Issues (`gwt-spec` label).
+Use `/gwt-issue-spec-ops` to define requirements and task breakdowns on Issues.
+Execute tasks following a strict TDD cycle.
 
 See [CLAUDE.md](./CLAUDE.md) for details.
 
@@ -832,15 +829,7 @@ the Worktree boundary
 
 **Installation & Configuration:**
 
-For detailed setup instructions, manual testing examples, and troubleshooting, see:
-
-- [Quickstart Guide](./specs/SPEC-dc648675/quickstart.md) - Step-by-step setup
-and verification
-- [Feature Specification](./specs/SPEC-dc648675/spec.md) - Requirements and
-acceptance criteria
-- [Implementation Plan](./specs/SPEC-dc648675/plan.md) - Technical design and
-architecture
-- [Performance Report](./specs/SPEC-dc648675/performance.md) - Benchmark results
+For detailed setup instructions, see [CLAUDE.md](./CLAUDE.md).
 
 **Running Hook Tests:**
 

@@ -99,77 +99,177 @@ export function generateId(): string {
   return Math.random().toString(36).substring(2, 9)
 }
 
-export function copyToClipboard(text: string): Promise<void> {
-  if (typeof text !== 'string' || text.length === 0) {
-    return Promise.reject(new Error('Clipboard value is empty'))
-  }
+export type ClipboardCopyMethod = 'clipboard' | 'manual'
 
-  const fallbackCopy = async (): Promise<void> => {
-    return fallbackCopyToClipboard(text)
-  }
-
-  if (
-    typeof navigator === 'undefined' ||
-    !navigator.clipboard?.writeText ||
-    (typeof window !== 'undefined' && !window.isSecureContext)
-  ) {
-    return fallbackCopy()
-  }
-
-  return navigator.clipboard.writeText(text).catch(() => fallbackCopy())
+export interface ClipboardCopyResult {
+  method: ClipboardCopyMethod
 }
 
-function fallbackCopyToClipboard(text: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const textarea = document.createElement('textarea')
-    const activeElement = document.activeElement as HTMLElement | null
-    const selection = window.getSelection()
-    const activeRange = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null
+let manualSelectionElement: HTMLTextAreaElement | null = null
+let manualCleanupTimer: ReturnType<typeof setTimeout> | null = null
+const MANUAL_COPY_BUFFER_TTL_MS = 15_000
 
-    textarea.value = text
-    textarea.setAttribute('readonly', '')
-    textarea.style.position = 'fixed'
-    textarea.style.top = '0'
-    textarea.style.left = '0'
-    textarea.style.width = '1px'
-    textarea.style.height = '1px'
-    textarea.style.opacity = '0'
-    textarea.style.pointerEvents = 'none'
-    textarea.style.zIndex = '-1'
+function clearManualCleanupTimer() {
+  if (manualCleanupTimer != null) {
+    clearTimeout(manualCleanupTimer)
+    manualCleanupTimer = null
+  }
+}
 
-    const cleanup = () => {
-      if (textarea.parentElement) {
-        document.body.removeChild(textarea)
-      }
-
-      if (selection) {
-        selection.removeAllRanges()
-        if (activeRange) {
-          selection.addRange(activeRange)
-        }
-      }
-
-      if (activeElement?.isConnected) {
-        activeElement.focus()
-      }
+function handleManualCopyKeydown(event: KeyboardEvent) {
+  const key = event.key.toLowerCase()
+  if ((event.ctrlKey || event.metaKey) && key === 'c') {
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => cleanupManualCopyBuffer(), 0)
+      return
     }
+    cleanupManualCopyBuffer()
+  }
+}
 
-    document.body.appendChild(textarea)
+function handleManualCopyVisibilityChange() {
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+    cleanupManualCopyBuffer()
+  }
+}
+
+function handleManualCopyPageHide() {
+  cleanupManualCopyBuffer()
+}
+
+function handleManualCopyBlur() {
+  cleanupManualCopyBuffer()
+}
+
+export function cleanupManualCopyBuffer() {
+  clearManualCleanupTimer()
+
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('keydown', handleManualCopyKeydown, true)
+    document.removeEventListener('visibilitychange', handleManualCopyVisibilityChange)
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pagehide', handleManualCopyPageHide)
+  }
+
+  if (manualSelectionElement) {
+    manualSelectionElement.removeEventListener('blur', handleManualCopyBlur)
+    if (manualSelectionElement.isConnected) {
+      manualSelectionElement.remove()
+    }
+    manualSelectionElement = null
+  }
+}
+
+function tryExecCommandCopy(text: string): boolean {
+  if (
+    typeof document === 'undefined' ||
+    !document.body ||
+    typeof document.execCommand !== 'function'
+  ) {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  textarea.style.zIndex = '-1'
+
+  const previousActiveElement =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    if (textarea.isConnected) {
+      textarea.remove()
+    }
+    previousActiveElement?.focus()
+  }
+}
+
+export async function copyToClipboard(text: string): Promise<ClipboardCopyResult> {
+  if (typeof text !== 'string' || text.length === 0) {
+    throw new Error('Clipboard value is empty')
+  }
+
+  cleanupManualCopyBuffer()
+
+  const isClipboardApiAvailable =
+    typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
+  const isSecureContext = typeof window !== 'undefined' ? window.isSecureContext : true
+
+  if (isClipboardApiAvailable && isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return { method: 'clipboard' }
+    } catch {
+      // Keep legacy one-click copy working for HTTP deployments and older browsers.
+    }
+  }
+
+  if (tryExecCommandCopy(text)) {
+    return { method: 'clipboard' }
+  }
+
+  return { method: 'manual' }
+}
+
+export function selectTextForManualCopy(text: string): boolean {
+  if (typeof text !== 'string' || text.length === 0 || typeof document === 'undefined') {
+    return false
+  }
+
+  cleanupManualCopyBuffer()
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  textarea.style.zIndex = '-1'
+
+  document.body.appendChild(textarea)
+  const applySelection = () => {
     textarea.focus()
     textarea.select()
     textarea.setSelectionRange(0, textarea.value.length)
+  }
 
-    try {
-      const success = document.execCommand('copy')
-      cleanup()
-      if (success) {
-        resolve()
-      } else {
-        reject(new Error('Fallback copy failed'))
-      }
-    } catch (error) {
-      cleanup()
-      reject(error)
+  applySelection()
+  if (typeof window !== 'undefined') {
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(applySelection)
     }
-  })
+    window.setTimeout(applySelection, 0)
+  }
+
+  manualSelectionElement = textarea
+  textarea.addEventListener('blur', handleManualCopyBlur)
+  document.addEventListener('keydown', handleManualCopyKeydown, true)
+  document.addEventListener('visibilitychange', handleManualCopyVisibilityChange)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', handleManualCopyPageHide)
+  }
+  manualCleanupTimer = setTimeout(() => cleanupManualCopyBuffer(), MANUAL_COPY_BUFFER_TTL_MS)
+  return true
 }

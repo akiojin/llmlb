@@ -89,6 +89,9 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+audit_archive.db
+audit_archive.db-shm
+audit_archive.db-wal
 
 # Local model artifacts
 poc/nemotron-cuda-cpp/models/

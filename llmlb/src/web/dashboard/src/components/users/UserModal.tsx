@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi, type User, type CreateUserResponse } from '@/lib/api'
-import { formatRelativeTime } from '@/lib/utils'
+import {
+  copyToClipboard,
+  formatRelativeTime,
+  selectTextForManualCopy,
+  cleanupManualCopyBuffer,
+} from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -157,6 +162,12 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     }
   }, [editUser])
 
+  useEffect(() => {
+    if (!open) {
+      cleanupManualCopyBuffer()
+    }
+  }, [open])
+
   const handleCreate = () => {
     createMutation.mutate({
       username: formUsername,
@@ -175,9 +186,24 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
 
   const handleCopyPassword = async () => {
     if (!generatedPassword) return
-    await navigator.clipboard.writeText(generatedPassword)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      const { method } = await copyToClipboard(generatedPassword)
+      if (method === 'clipboard') {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+        toast({ title: 'Copied to clipboard' })
+        return
+      }
+
+      setCopied(false)
+      selectTextForManualCopy(generatedPassword)
+      toast({
+        title: 'Auto copy unavailable',
+        description: 'Press Ctrl+C to copy the selected value.',
+      })
+    } catch {
+      toast({ title: 'Failed to copy', variant: 'destructive' })
+    }
   }
 
   const getRoleBadge = (role: string) => {
@@ -340,6 +366,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           if (!open) {
             setGeneratedPassword(null)
             setCopied(false)
+            cleanupManualCopyBuffer()
           }
         }}
       >
@@ -374,6 +401,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
               onClick={() => {
                 setGeneratedPassword(null)
                 setCopied(false)
+                cleanupManualCopyBuffer()
               }}
             >
               I have saved the password

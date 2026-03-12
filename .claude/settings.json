@@ -17,19 +17,84 @@
     "rust-analyzer-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": false,
     "serena@claude-plugins-official": true,
-    "speckit@akiojin-skills": true,
     "worktree-protection-hooks@gwt-plugins": true
   },
   "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh Notification",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Notification",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh PostToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PostToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
     "PreToolUse": [
       {
         "hooks": [
           {
-            "command": ".claude/hooks/block-git-branch-ops.sh",
+            "command": "bash .claude/hooks/block-quality-checks-in-task.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Task"
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh PreToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/scripts/block-git-branch-ops.sh",
             "type": "command"
           },
           {
-            "command": ".claude/hooks/block-cd-command.sh",
+            "command": "bash .claude/hooks/scripts/block-cd-command.sh",
+            "type": "command"
+          },
+          {
+            "command": "bash .claude/hooks/scripts/block-file-ops.sh",
+            "type": "command"
+          },
+          {
+            "command": "bash .claude/hooks/scripts/block-git-dir-override.sh",
             "type": "command"
           }
         ],
@@ -38,11 +103,72 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/block-quality-checks-in-task.sh",
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PreToolUse",
             "type": "command"
           }
         ],
-        "matcher": "Task"
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/block-git-branch-ops.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-cd-command.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-file-ops.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-git-dir-override.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh Stop",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Stop",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
       }
     ]
   }

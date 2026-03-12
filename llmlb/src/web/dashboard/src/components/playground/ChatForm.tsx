@@ -14,9 +14,9 @@ interface ChatFormProps {
   attachments: MessageAttachment[]
   onRemoveAttachment: (index: number) => void
   onPaste: (e: React.ClipboardEvent<HTMLInputElement>) => void
-  inputRef: RefObject<HTMLInputElement>
-  imageInputRef: RefObject<HTMLInputElement>
-  audioInputRef: RefObject<HTMLInputElement>
+  inputRef: RefObject<HTMLInputElement | null>
+  imageInputRef: RefObject<HTMLInputElement | null>
+  audioInputRef: RefObject<HTMLInputElement | null>
   onImageAttach: (file: File) => void
   onAudioAttach: (file: File) => void
   sendDisabled?: boolean

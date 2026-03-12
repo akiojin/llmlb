@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-checks specify-tasks specify-tests specify-compile specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-commits
 .PHONY: openai-tests test-hooks e2e-tests
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -20,36 +20,18 @@ test:
 markdownlint:
 	pnpm dlx markdownlint-cli2 "**/*.md" "!**/node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md" "!build" "!**/build/**" "!node/third_party" "!actions-runner"
 
-specify-tasks:
-	@bash -lc 'TASKS_LIST="$${TASKS:-}"; \
-	if [ -z "$$TASKS_LIST" ]; then \
-		TASKS_LIST="$$( $(FIND) specs -name tasks.md 2>/dev/null )"; \
-	fi; \
-	for file in $$TASKS_LIST; do \
-		echo "🔍 Checking tasks in $$file"; \
-		bash .specify/scripts/checks/check-tasks.sh $$file; \
-	done'
-
-specify-tests:
-	bash .specify/scripts/checks/check-tests.sh
-
-specify-compile:
-	bash .specify/scripts/checks/check-compile.sh
-
 specify-commits:
 	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
 	tracking=$$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo ""); \
 	if [ -n "$$tracking" ]; then \
 		echo "Checking commits from $$tracking to HEAD (feature branch)"; \
-		bash .specify/scripts/checks/check-commits.sh --from "$$tracking" --to HEAD; \
+		bash scripts/checks/check-commits.sh --from "$$tracking" --to HEAD; \
 	else \
 		echo "Checking commits from origin/main to HEAD"; \
-		bash .specify/scripts/checks/check-commits.sh --from origin/main --to HEAD; \
+		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-specify-checks: specify-tasks specify-tests specify-compile specify-commits
-
-quality-checks: fmt clippy test security-checks specify-checks markdownlint openai-tests test-hooks
+quality-checks: fmt clippy test security-checks specify-commits markdownlint openai-tests test-hooks
 
 quality-checks-pre-commit: fmt clippy
 

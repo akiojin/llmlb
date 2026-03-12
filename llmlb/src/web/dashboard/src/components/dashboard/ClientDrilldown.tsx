@@ -133,8 +133,8 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
                       borderRadius: '6px',
                       fontSize: '11px',
                     }}
-                    formatter={(value: number) => [value, 'Requests']}
-                    labelFormatter={(label: number) => `${label}:00`}
+                    formatter={(value) => [Number(value ?? 0), 'Requests']}
+                    labelFormatter={(label) => `${String(label ?? '')}:00`}
                   />
                   <Bar dataKey="count" fill="hsl(var(--chart-3))" radius={[2, 2, 0, 0]} />
                 </BarChart>

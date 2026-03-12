@@ -7,16 +7,10 @@
       { "context": "Commit Message Lint" },
       { "context": "Markdown Lint" },
       { "context": "Rust Format & Clippy" },
-      { "context": "Rust (fmt/clippy/test) ubuntu-latest" },
-      { "context": "Rust (fmt/clippy/test) macos-latest" },
-      { "context": "Rust (fmt/clippy/test) windows-latest" },
       { "context": "Rust Tests (ubuntu-latest)" },
       { "context": "Rust Tests (windows-latest)" },
       { "context": "OpenAI API Compatibility Tests" },
-      { "context": "C++ Node (build & test)" },
-      { "context": "C++ Tests (Ubuntu)" },
-      { "context": "Coverage (Rust)" },
-      { "context": "Coverage (C++)" }
+      { "context": "Playwright E2E Tests" }
     ]
   },
   "enforce_admins": false,

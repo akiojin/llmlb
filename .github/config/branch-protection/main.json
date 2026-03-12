@@ -4,13 +4,11 @@
   "required_status_checks": {
     "strict": true,
     "checks": [
+      { "context": "Check PR Source (release/* only)" },
       { "context": "Markdown Lint" },
       { "context": "Rust (fmt/clippy/test) ubuntu-latest" },
       { "context": "Rust (fmt/clippy/test) macos-latest" },
-      { "context": "Rust (fmt/clippy/test) windows-latest" },
-      { "context": "C++ Node (build & test)" },
-      { "context": "Coverage (Rust)" },
-      { "context": "Coverage (C++)" }
+      { "context": "Rust (fmt/clippy/test) windows-latest" }
     ]
   },
   "enforce_admins": false,

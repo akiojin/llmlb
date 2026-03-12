@@ -40,7 +40,6 @@ jobs:
     # 目的: Rustテストを実行（複数OS）
     name: Rust Tests (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -49,17 +48,24 @@ jobs:
         rust: [stable]
 
     steps:
+      - name: No Rust-relevant changes
+        if: needs.changes.outputs.rust != 'true'
+        run: echo "No Rust-relevant changes; skipping Rust tests."
+
       - name: Checkout code
+        if: needs.changes.outputs.rust == 'true'
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Setup Rust
+        if: needs.changes.outputs.rust == 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
 
       - name: Bootstrap pest_generator
+        if: needs.changes.outputs.rust == 'true'
         run: |
           if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
             cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
@@ -69,6 +75,7 @@ jobs:
         shell: bash
 
       - name: Run Rust tests
+        if: needs.changes.outputs.rust == 'true'
         run: |
           echo "🧪 Running Rust tests on ${{ matrix.os }}..."
           cargo test --all-features --workspace -- --test-threads=1
@@ -78,21 +85,27 @@ jobs:
     # 目的: OpenAI APIとの互換性を確認
     name: OpenAI API Compatibility Tests
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
 
     steps:
+      - name: No Rust-relevant changes
+        if: needs.changes.outputs.rust != 'true'
+        run: echo "No Rust-relevant changes; skipping OpenAI compatibility tests."
+
       - name: Checkout code
+        if: needs.changes.outputs.rust == 'true'
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Setup Rust
+        if: needs.changes.outputs.rust == 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
       - name: Bootstrap pest_generator
+        if: needs.changes.outputs.rust == 'true'
         run: |
           if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
             cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
@@ -101,6 +114,7 @@ jobs:
           fi
 
       - name: Run OpenAI proxy tests
+        if: needs.changes.outputs.rust == 'true'
         run: |
           echo "🤖 Running OpenAI-compatible API tests..."
           make openai-tests
@@ -110,22 +124,28 @@ jobs:
     # 目的: Playwright によるブラウザE2Eテスト
     name: Playwright E2E Tests
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
+      - name: No dashboard/E2E-relevant changes
+        if: needs.changes.outputs.e2e != 'true'
+        run: echo "No dashboard or Playwright-relevant changes; skipping browser E2E tests."
+
       - name: Checkout code
+        if: needs.changes.outputs.e2e == 'true'
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Setup Rust
+        if: needs.changes.outputs.e2e == 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
       - name: Bootstrap pest_generator
+        if: needs.changes.outputs.e2e == 'true'
         run: |
           if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
             cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
@@ -134,26 +154,31 @@ jobs:
           fi
 
       - name: Build llmlb
+        if: needs.changes.outputs.e2e == 'true'
         # Use debug build to enable sk_debug API key for E2E tests
         run: cargo build -p llmlb
 
       - name: Setup Node.js
+        if: needs.changes.outputs.e2e == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Setup pnpm
+        if: needs.changes.outputs.e2e == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
 
       - name: Install Playwright dependencies
+        if: needs.changes.outputs.e2e == 'true'
         working-directory: llmlb/tests/e2e-playwright
         run: |
           pnpm install
           pnpm exec playwright install --with-deps chromium
 
       - name: Start llmlb server
+        if: needs.changes.outputs.e2e == 'true'
         run: |
           mkdir -p llmlb/tests/e2e-playwright/.llmlb/logs
           LLMLB_DATABASE_URL=sqlite:llmlb/tests/e2e-playwright/.llmlb/router.db \
@@ -172,6 +197,7 @@ jobs:
           done
 
       - name: Run Playwright tests
+        if: needs.changes.outputs.e2e == 'true'
         working-directory: llmlb/tests/e2e-playwright
         run: pnpm exec playwright test --reporter=list
         env:
@@ -180,7 +206,7 @@ jobs:
           CI: 'true'
 
       - name: Upload test results
-        if: failure()
+        if: failure() && needs.changes.outputs.e2e == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

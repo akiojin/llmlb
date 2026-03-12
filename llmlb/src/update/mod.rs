@@ -359,6 +359,17 @@ impl UpdateManager {
         shutdown: ShutdownController,
         data_dir: &Path,
     ) -> Result<Self> {
+        Self::new_with_data_dir_and_config(http_client, gate, shutdown, data_dir, None)
+    }
+
+    #[cfg(test)]
+    fn new_with_data_dir_and_config(
+        http_client: reqwest::Client,
+        gate: InferenceGate,
+        shutdown: ShutdownController,
+        data_dir: &Path,
+        github_api_base_url: Option<String>,
+    ) -> Result<Self> {
         let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
             .context("Failed to parse CARGO_PKG_VERSION as semver")?;
 
@@ -377,7 +388,7 @@ impl UpdateManager {
                 owner: DEFAULT_OWNER.to_string(),
                 repo: DEFAULT_REPO.to_string(),
                 ttl: DEFAULT_TTL,
-                github_api_base_url: None,
+                github_api_base_url,
                 cache_path,
                 updates_dir,
                 state: RwLock::new(UpdateState::UpToDate { checked_at: None }),
@@ -4527,17 +4538,12 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        // 単一テスト内で env var を設定してテスト間の競合を回避
         let tmp = tempfile::tempdir().expect("create temp dir");
-        unsafe {
-            std::env::set_var("LLMLB_DATA_DIR", tmp.path());
-        }
-        let manager = UpdateManager::new_with_config(
+        let manager = UpdateManager::new_with_data_dir_and_config(
             reqwest::Client::new(),
             InferenceGate::default(),
             ShutdownController::default(),
-            "test-owner".to_string(),
-            "test-repo".to_string(),
+            tmp.path(),
             Some(mock_server.uri()),
         )
         .expect("create update manager");

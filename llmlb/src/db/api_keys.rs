@@ -1049,8 +1049,8 @@ mod tests {
                  SELECT 1
                  FROM api_keys
                  WHERE created_by = NEW.created_by
-                   AND name = NEW.name
-                   AND id <> OLD.id
+                  AND name = NEW.name
+                  AND id <> OLD.id
              )
              BEGIN
                  SELECT RAISE(ABORT, 'API key name already exists for this user');

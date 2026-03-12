@@ -14,12 +14,12 @@ changes small, well-documented, and fully verified before pushing.
 - Do not modify submodule contents directly; use a fork if changes are required.
 
 ## Workflow
-1. Read relevant specs under `specs/` and `.assistant/PLANS.md`.
+1. Read relevant GitHub Issues (`gwt-spec` label) and `PLANS.md`.
 2. List the task in your TODOs, then start with a test (RED).
 3. Implement the minimum to turn tests green, refactor if needed.
 4. Verify locally:
    - `make quality-checks`
-   - `.specify/scripts/checks/check-commits.sh --from origin/main --to HEAD`
+   - `scripts/checks/check-commits.sh --from origin/main --to HEAD`
 5. Commit with Japanese summary and conventional format.
 6. Push after tests pass.
 

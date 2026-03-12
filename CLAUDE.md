@@ -7,7 +7,7 @@
 ## まず読む 90秒版
 
 - 何を作る: Rust製ロードバランサー（`llmlb/`）＋ llama.cppベースのC++推論エンジン（xLLM: <https://github.com/akiojin/xLLM>）。Ollamaは一切使わない／復活させない。
-- どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ `specs/`（要件とタスク）。
+- どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ GitHub Issue（`gwt-spec`ラベル、要件とタスク）。
 - 守る: ブランチ／worktree作成・切替禁止、作業ディレクトリ移動禁止、必ずローカルで全テスト実行。
 - HFカタログ利用時は`HF_TOKEN`（任意）と必要に応じ`HF_BASE_URL`を環境にセットしておく。
 - まず実行: `make quality-checks`（時間がない場合でも個別コマンドを全て回すこと）。
@@ -21,13 +21,12 @@
 llmlb/
 ├── llmlb/          # Rust製ロードバランサー（APIサーバー・管理UI・共通型定義）
 ├── xLLM (external)  # <https://github.com/akiojin/xLLM>
-├── specs/           # 機能仕様書（SPEC-XXXXXXXX/）
+├── scripts/         # プロジェクトスクリプト（checks等）
 ├── memory/          # プロジェクト憲章・メモリファイル
 ├── docs/            # ドキュメント
 ├── .claude-plugin/   # Claude Codeプラグイン定義（skills含む）
 ├── poc/             # 概念実証・実験コード
-├── vendor/          # サードパーティ依存（サブモジュール）
-└── .specify/        # Spec Kit設定・スクリプト
+└── vendor/          # サードパーティ依存（サブモジュール）
 ```
 
 ## 用語定義
@@ -113,21 +112,21 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 
 > **要件・仕様がない状態での実装は絶対にNG**
 >
-> 仕様書（`specs/SPEC-XXXXXXXX/`）が完成するまで、TDD RED（テスト作成）に進んではならない。
+> GitHub Issue（`gwt-spec`ラベル）で仕様が完成するまで、TDD RED（テスト作成）に進んではならない。
 > **修正（バグ修正・挙動変更・UI調整）でも例外なし**
 >
-> 1. 既存仕様（`specs/SPEC-XXXXXXXX/` の `spec.md` / `plan.md` / `tasks.md`）を必ず先に確認する  
-> 2. 実装内容に対して仕様が不足・不整合なら、先に仕様を更新する  
-> 3. 仕様更新後にTDD RED（失敗するテスト作成）を行う  
+> 1. 既存仕様（GitHub Issueの`gwt-spec`ラベル付きIssue）を必ず先に確認する
+> 2. 実装内容に対して仕様が不足・不整合なら、先にIssueを更新する
+> 3. 仕様更新後にTDD RED（失敗するテスト作成）を行う
 > 4. その後に実装（GREEN/REFACTOR）へ進む
 
 ## 参照リンク（詳細はここで確認）
 
 - プロジェクト概要とセットアップ: `README.md`, `README.ja.md`, `DEVELOPMENT.md`
-- 仕様とタスク: `specs/` 配下の `spec.md` / `plan.md` / `tasks.md`
+- 仕様とタスク: GitHub Issue（`gwt-spec`ラベル）
 - 品質基準と憲章: `memory/constitution.md`
 - CLI とモデル管理: `llmlb/src/cli/`
-- テスト＆CIワークフロー: `.specify/scripts/checks/`, `make quality-checks`, `make openai-tests`
+- テスト＆CIワークフロー: `scripts/checks/`, `make quality-checks`, `make openai-tests`
 
 ## よくあるNG（必ず回避）
 - サブモジュールの修正は基本的にNG（必要時は事前に明示的な承認を取る）
@@ -135,7 +134,7 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 - Ollama を再導入する変更
 - ブランチ／worktree操作・`cd` での作業ディレクトリ移動
 - テストをスキップしたコミット／プッシュ
-- Spec を書かずに新機能を実装すること
+- GitHub Issue（`gwt-spec`ラベル）で仕様を定義せずに新機能を実装すること
 - OSS をベンダー取り込みして編集すること（原則サブモジュール運用）
 - 廃止機能を「後方互換」名目でコードやテストに残すこと（廃止が決まったら完全削除する）
 - ダミー/フェイク/モック実装を本番コードに含めること（テスト専用コードは例外）
@@ -144,8 +143,8 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 
 ## 現在の目的
 
-- `specs/` 配下で定義された要件・タスクの未完了項目を洗い出し、順次完了させることを最優先とする
-- 作業中は最新のSpecと整合するようにテスト・ドキュメント・実装を更新し、完了後は必ずチェックリストを更新する
+- GitHub Issue（`gwt-spec`ラベル）で定義された要件・タスクの未完了項目を洗い出し、順次完了させることを最優先とする
+- 作業中は最新のIssue仕様と整合するようにテスト・ドキュメント・実装を更新し、完了後は必ずチェックリストを更新する
 
 ## 開発指針
 
@@ -216,18 +215,13 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 
 #### Step 0: 作業確認（必須）
 1. `PLANS.md` を確認し、このブランチで対応すべき内容を把握する（差分があれば更新）
-2. `specs/SPEC-XXXXXXXX/` を確認し、仕様書・計画・タスクの現状を確認する
+2. GitHub Issue（`gwt-spec`ラベル）を確認し、仕様・計画・タスクの現状を確認する
 
 #### Step 1: 仕様策定（TDD RED の前に必須）
 
-| 順序 | コマンド | 生成物 |
-|------|----------|--------|
-| 1 | `/speckit.specify <機能説明>` | `spec.md` |
-| 2 | `/speckit.clarify SPEC-XXX` | 不明点解消 |
-| 3 | `/speckit.plan SPEC-XXX` | `plan.md`, `data-model.md`, `research.md`, `quickstart.md` |
-| 4 | `/speckit.tasks SPEC-XXX` | `tasks.md` |
+`/gwt-issue-spec-ops` を使用してGitHub Issue上で仕様を定義する。
 
-**ここまで完了して初めて Step 2 に進める。**
+**仕様Issueが完成して初めて Step 2 に進める。**
 
 #### Step 2: 実装（TDD）
 1. Worktree/ブランチの作成・切替は行わない（この環境は既に準備済み）
@@ -332,9 +326,8 @@ GitHub Actions が実行する検証を**全てローカルで事前に成功さ
   - `cargo fmt --check`
   - `cargo clippy -- -D warnings`
   - `cargo test`
-  - `.specify/scripts/checks/check-tasks.sh`
   - `pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees"`
-- コミット対象に応じて `.specify/scripts/checks/check-commits.sh` やその他ワークフロー相当のスクリプト
+- コミット対象に応じて `scripts/checks/check-commits.sh` やその他ワークフロー相当のスクリプト
 - まとめて実行する場合は `make quality-checks`（OpenAI互換APIテスト `make openai-tests` を内包）を推奨。
 - OpenAI互換APIのみを個別に確認したい場合は `make openai-tests` を実行すること。
 - いずれかが失敗した状態でコミットすることを固く禁止する。失敗原因を解消し、再実行→合格を確認してからコミットせよ。
@@ -450,7 +443,7 @@ type(scope): summary
 **コミット前に必ず実行**:
 
 ```bash
-.specify/scripts/checks/check-commits.sh --from origin/main --to HEAD
+scripts/checks/check-commits.sh --from origin/main --to HEAD
 ```
 
 このスクリプトは `npx commitlint` を呼び出し、違反コミットを明示的に列挙します。
@@ -470,7 +463,7 @@ git commit --amend
 git rebase -i HEAD~3
 
 # 再検証
-.specify/scripts/checks/check-commits.sh --from origin/main --to HEAD
+scripts/checks/check-commits.sh --from origin/main --to HEAD
 ```
 
 #### 禁止事項（厳格）
@@ -498,49 +491,24 @@ git rebase -i HEAD~3
 - lint で検出された警告を放置した状態でのコミット・プッシュは禁止。修正が困難な場合は lint ルール変更の提案を issue に記録し、承認なしでローカル例外を入れない。
 - CI の Quality Checks でも markdownlint が実行されるため、ローカルで合格しない限り PR がブロックされる。CLI での改善結果を再チェックし、ゼロ警告を確認してからレビューを依頼する。
 
-### Spec駆動開発ライフサイクル
+### GitHub Issue-first 仕様管理
 
-新機能の開発は、以下の3ステップで進めます：
+新機能の開発は、GitHub Issue（`gwt-spec`ラベル）で仕様を管理します：
 
-1. **`/speckit.specify`**: 機能仕様書を作成 (`specs/SPEC-[UUID8桁]/spec.md`)
+1. **`/gwt-issue-spec-ops`**: GitHub Issue上で仕様を定義・管理
    - ビジネス要件とユーザーストーリーを定義
    - 「何を」「なぜ」に焦点を当てる（「どのように」は含めない）
-   - SPECディレクトリを生成し、仕様を文書化
-   - 本リポジトリではfeatureブランチ／Worktreeの自動作成機能は無効化されているため、現在のブランチ・作業ディレクトリのまま進める
+   - Issue番号で仕様を一意に識別
 
-2. **`/speckit.plan`**: 実装計画を作成 (`specs/SPEC-[UUID8桁]/plan.md`)
-   - 技術スタック、アーキテクチャ、データモデルを設計
-   - 憲章チェック（TDD/LLM最適化/シンプルさの原則）
-   - Phase 0: 技術リサーチ (`research.md`)
-   - Phase 1: 設計とコントラクト (`data-model.md`, `contracts/`, `quickstart.md`)
-   - Phase 2: タスク計画 (`tasks.md`)
+2. 実装計画・タスク分解もIssue上で管理
 
-3. **`/speckit.tasks`**: 実行可能なタスクに分解 (`specs/SPEC-[UUID8桁]/tasks.md`)
-   - Setup/Test/Core/Integration/Polishに分類
-   - 並列実行可能なタスクに`[P]`マーク付与
-   - 依存関係を明確化
+#### 環境固定ルール（プロジェクトカスタム）
 
-#### Spec命名規則
+本リポジトリではfeatureブランチやWorktreeを自動的に作成する機能は無効化しています。
 
-- **形式**: `SPEC-[UUID8桁]`
-- **UUID生成**: ランダムな英数字（小文字）8桁
-  - ✅ 正しい例: `SPEC-a1b2c3d4`, `SPEC-3f8e9d2a`, `SPEC-7c4b1e5f`
-  - ❌ 間違い例: `SPEC-001`, `SPEC-gameobj`, `SPEC-core-001`
-- **禁止事項**:
-  - 連番の使用（001, 002...）
-  - 意味のある名前（gameobj, core, ui...）
-  - 大文字の使用（UUID部分は小文字のみ）
-- **生成方法**: `uuidgen | tr '[:upper:]' '[:lower:]' | cut -c1-8` またはオンラインUUID生成ツール
-
-#### Worktree＆ブランチ運用（プロジェクトカスタム）
-
-本リポジトリでは GitHub Spec Kit を導入していますが、featureブランチや Worktree を自動的に作成する機能はプロジェクト要件により無効化しています。運用方針は以下のとおりです。
-
-- 現在割り当てられている作業環境（Codex CLI が示すカレントディレクトリ・ブランチ）のみを使用する。
-- `git branch`, `git checkout`, `git switch`, `git worktree` など環境を変更するコマンドは実行しない。
-- Spec Kit コマンドはドキュメント生成・更新にのみ利用し、Git ブランチや Worktree を変更しない前提で扱う。
-- ブランチ／Worktree の新規作成・削除・切り替えが必要になった場合は、必ずメンテナに相談し指示を受ける。
-- CI やリポジトリ管理スクリプトが環境を制御しているため、手動での操作は重大な不整合を引き起こす可能性がある。
+- 現在割り当てられている作業環境のみを使用する
+- `git branch`, `git checkout`, `git switch`, `git worktree` など環境を変更するコマンドは実行しない
+- ブランチ／Worktreeの新規作成・削除・切り替えが必要な場合は、必ずメンテナに相談する
 
 **自動保護機構（Claude Code PreToolUse Hooks）**:
 
@@ -557,7 +525,6 @@ git rebase -i HEAD~3
   - Worktree内のcd（`cd .`, `cd src`等）は許可
 
 これらのHookは、コマンド実行前に自動的にチェックし、違反操作を即座にブロックします。
-詳細は [specs/SPEC-dc648675/](specs/SPEC-dc648675/) を参照してください。
 
 ### TDD遵守（妥協不可）
 
@@ -585,31 +552,19 @@ git rebase -i HEAD~3
 
 **詳細は [`memory/constitution.md`](memory/constitution.md) を参照**
 
-### SDD (Spec-Driven Development) 規約
+### Issue-first 開発規約
 
-**すべての機能開発・要件追加は `/speckit.specify` から開始**
+**すべての機能開発・要件追加は GitHub Issue（`gwt-spec`ラベル）から開始**
 
 **新規機能開発フロー**:
 
-1. `/speckit.specify` - ビジネス要件を定義（技術詳細なし）
-   - 本リポジトリではfeatureブランチ／Worktree自動生成を停止しているため、現在のブランチと作業ディレクトリのまま仕様ファイルを生成・更新する。
-2. `/speckit.plan` - 技術設計を作成（憲章チェック必須）
-   - 現在の作業ディレクトリで実行し、Gitの状態を変えない。
-3. `/speckit.tasks` - 実行可能タスクに分解
-   - 実装実行は `/speckit.implement` で補助的に利用可能
-   - 環境を移動せずタスクを細分化する。
-4. タスク実行（TDDサイクル厳守）
+1. `/gwt-issue-spec-ops` - GitHub Issueでビジネス要件を定義（技術詳細なし）
+2. Issue上で技術設計・タスク分解を実施
+3. タスク実行（TDDサイクル厳守）
    - 割り当て済みブランチ上で実装し、コミットを積む。ブランチ操作は禁止。
-5. 完了時はメンテナまたはCIが用意した手順に従う。`finish-feature.sh` を含むブランチ／Worktree操作系スクリプトを自己判断で実行しない。
+4. 完了時はメンテナの指示に従う
 
-**既存機能のSpec化フロー**:
-
-1. 作業ディレクトリを移動せず、現在の環境で `/speckit.specify` を実行して実装済み機能のビジネス要件を文書化する。
-2. `/speckit.plan` で必要に応じて技術設計を追記する。
-3. 既存実装とSpecの整合性を確認する。
-4. 完了報告やGit操作が必要な場合はメンテナの指示を待つ。自己判断でブランチやWorktreeを操作しない。
-
-**Spec作成原則**:
+**仕様作成原則**:
 
 - ビジネス価値とユーザーストーリーに焦点
 - 「何を」「なぜ」のみ記述（「どのように」は禁止）

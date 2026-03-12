@@ -17,7 +17,6 @@
     "rust-analyzer-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": false,
     "serena@claude-plugins-official": true,
-    "speckit@akiojin-skills": true,
     "worktree-protection-hooks@gwt-plugins": true
   },
   "hooks": {
@@ -30,6 +29,15 @@
           }
         ],
         "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Notification",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
       }
     ],
     "PostToolUse": [
@@ -37,6 +45,15 @@
         "hooks": [
           {
             "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh PostToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PostToolUse",
             "type": "command"
           }
         ],
@@ -82,6 +99,36 @@
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PreToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/block-git-branch-ops.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-cd-command.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-file-ops.sh",
+            "type": "command"
+          },
+          {
+            "command": ".claude/hooks/scripts/block-git-dir-override.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
       }
     ],
     "Stop": [
@@ -93,6 +140,15 @@
           }
         ],
         "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Stop",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
       }
     ],
     "UserPromptSubmit": [
@@ -100,6 +156,15 @@
         "hooks": [
           {
             "command": "bash .claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit",
             "type": "command"
           }
         ],

@@ -1,55 +1,77 @@
 #!/bin/bash
 
-# Claude Code PreToolUse Hook: Block git branch operations.
-# Blocks branch switching and branch/worktree mutation commands while allowing
-# read-only `git branch` queries.
+# Claude Code PreToolUse Hook: Block git branch operations
+# このスクリプトは git checkout, git switch, git branch, git worktree コマンドをブロックします
 
-is_read_only_git_branch() {
-    local branch_args="$1"
-
-    # Trim
-    branch_args=$(echo "$branch_args" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-
-    # Empty means `git branch` list output
-    if [ -z "$branch_args" ]; then
-        return 0
-    fi
-
-    local -a tokens
-    read -r -a tokens <<< "$branch_args"
-
-    local i=0
-    local token_count=${#tokens[@]}
-
-    while [ $i -lt $token_count ]; do
-        local token="${tokens[$i]}"
-        case "$token" in
-            --list|--show-current|--all|-a|--remotes|-r|-v|-vv|--verbose)
-                i=$((i + 1))
-                ;;
-            --contains|--merged|--no-merged|--points-at|--format|--sort|--abbrev)
-                # Option may be followed by a value
-                if [ $((i + 1)) -lt $token_count ] && [[ ! "${tokens[$((i + 1))]}" =~ ^- ]]; then
-                    i=$((i + 2))
-                else
-                    i=$((i + 1))
-                fi
-                ;;
-            *)
-                return 1
-                ;;
-        esac
+contains_element() {
+    local needle="$1"
+    shift
+    for element in "$@"; do
+        if [ "$element" = "$needle" ]; then
+            return 0
+        fi
     done
-
-    return 0
+    return 1
 }
 
-# Parse a `git` command segment and extract `<subcommand> [args...]`.
-# Handles global options such as `-C <path>` and `--work-tree=<path>`.
+split_shell_words() {
+    local input="$1"
+    local python_bin=""
+
+    if command -v python >/dev/null 2>&1; then
+        python_bin="python"
+    elif command -v python3 >/dev/null 2>&1; then
+        python_bin="python3"
+    fi
+
+    if [ -n "$python_bin" ]; then
+        SHELL_WORDS_INPUT="$input" "$python_bin" - <<'PY' 2>/dev/null
+import os
+import shlex
+
+text = os.environ.get("SHELL_WORDS_INPUT", "")
+try:
+    tokens = shlex.split(text)
+except ValueError:
+    tokens = []
+
+for token in tokens:
+    print(token)
+PY
+        return
+    fi
+
+    local -a fallback_tokens=()
+    read -r -a fallback_tokens <<< "$input"
+    printf '%s\n' "${fallback_tokens[@]}"
+}
+
+GIT_SUBCOMMAND=""
+GIT_SUBCOMMAND_ARGS=()
+
+emit_block() {
+    local reason="$1"
+    local stop_reason="$2"
+
+    cat <<EOF
+{
+  "decision": "block",
+  "reason": "$reason",
+  "stopReason": "$stop_reason"
+}
+EOF
+}
+
 extract_git_subcommand_and_args() {
     local git_cmd="$1"
-    local -a tokens
-    read -r -a tokens <<< "$git_cmd"
+    local -a tokens=()
+
+    while IFS= read -r token; do
+        tokens+=("$token")
+    done < <(split_shell_words "$git_cmd")
+
+    GIT_SUBCOMMAND=""
+    GIT_SUBCOMMAND_ARGS=()
 
     local i=1
     local token_count=${#tokens[@]}
@@ -78,12 +100,9 @@ extract_git_subcommand_and_args() {
                 continue
                 ;;
             *)
-                local subcommand="${tokens[$i]}"
-                local args="${tokens[*]:$((i + 1))}"
-                if [ -n "$args" ]; then
-                    echo "$subcommand $args"
-                else
-                    echo "$subcommand"
+                GIT_SUBCOMMAND="${tokens[$i]}"
+                if [ $((i + 1)) -lt $token_count ]; then
+                    GIT_SUBCOMMAND_ARGS=("${tokens[@]:$((i + 1))}")
                 fi
                 return 0
                 ;;
@@ -93,110 +112,263 @@ extract_git_subcommand_and_args() {
     return 1
 }
 
-emit_block() {
-    local reason="$1"
-    local stop_reason="$2"
+# git branch コマンドが参照系かどうかを判定
+# 許可リスト方式：参照系フラグのみ許可、それ以外はブロック
+is_read_only_git_branch() {
+    if [ $# -eq 0 ]; then
+        return 0
+    fi
 
-    cat <<EOF
-{
-  "decision": "block",
-  "reason": "$reason",
-  "stopReason": "$stop_reason"
-}
-EOF
+    local dangerous_flags=(-d -D --delete -m -M --move -c -C --copy --create-reflog --set-upstream-to --unset-upstream --track --no-track --edit-description -f --force)
+    local expect_value_flags=(--list -l --contains --merged --no-merged --points-at --format --sort --abbrev)
+    local expect_value=""
+
+    local token
+    for token in "$@"; do
+        if [ -z "$token" ]; then
+            continue
+        fi
+
+        if [ -n "$expect_value" ]; then
+            if [[ "$token" == -* ]]; then
+                expect_value=""
+            else
+                expect_value=""
+                continue
+            fi
+        fi
+
+        if [ "$token" = "--" ]; then
+            return 1
+        fi
+
+        if [[ "$token" == -* ]]; then
+            local option_name="$token"
+            local inline_value=""
+
+            if [[ "$token" == *=* ]]; then
+                option_name="${token%%=*}"
+                inline_value="${token#*=}"
+            fi
+
+            if [[ "$option_name" == -* && "$option_name" != --* && ${#option_name} -gt 2 && "$option_name" != -*=* ]]; then
+                local short_flags="${option_name#-}"
+                local i
+                for ((i = 0; i < ${#short_flags}; i++)); do
+                    local short_flag="-${short_flags:i:1}"
+                    if contains_element "$short_flag" "${dangerous_flags[@]}"; then
+                        return 1
+                    fi
+                    if contains_element "$short_flag" "${expect_value_flags[@]}"; then
+                        expect_value="$short_flag"
+                    fi
+                done
+                continue
+            fi
+
+            if contains_element "$option_name" "${dangerous_flags[@]}"; then
+                return 1
+            fi
+
+            if contains_element "$option_name" "${expect_value_flags[@]}"; then
+                if [ -z "$inline_value" ]; then
+                    expect_value="$option_name"
+                fi
+                continue
+            fi
+
+            continue
+        fi
+
+        return 1
+    done
+
+    return 0
 }
 
-# Prefer jq, fallback to jq.exe on Windows Git Bash.
-if command -v jq >/dev/null 2>&1; then
-    JQ_BIN="jq"
-elif command -v jq.exe >/dev/null 2>&1; then
-    JQ_BIN="jq.exe"
-else
+# stdinからJSON入力を読み取り
+json_input=$(cat)
+
+has_json_parser() {
+    command -v jq >/dev/null 2>&1 ||
+        command -v python >/dev/null 2>&1 ||
+        command -v python3 >/dev/null 2>&1
+}
+
+get_json_value() {
+    local query="$1"
+
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$json_input" | jq -r "$query" 2>/dev/null
+        return
+    fi
+
+    if command -v python >/dev/null 2>&1; then
+        JSON_INPUT="$json_input" QUERY="$query" python - <<'PY' 2>/dev/null
+import json
+import os
+
+data = os.environ.get("JSON_INPUT", "").lstrip("\ufeff").strip()
+query = os.environ.get("QUERY", "")
+try:
+    obj = json.loads(data)
+except Exception:
+    print("")
+    raise SystemExit
+
+if query.startswith(".tool_name"):
+    value = obj.get("tool_name", "")
+elif query.startswith(".tool_input.command"):
+    value = (obj.get("tool_input") or {}).get("command", "")
+else:
+    value = ""
+
+print("" if value is None else value)
+PY
+        return
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        JSON_INPUT="$json_input" QUERY="$query" python3 - <<'PY' 2>/dev/null
+import json
+import os
+
+data = os.environ.get("JSON_INPUT", "").lstrip("\ufeff").strip()
+query = os.environ.get("QUERY", "")
+try:
+    obj = json.loads(data)
+except Exception:
+    print("")
+    raise SystemExit
+
+if query.startswith(".tool_name"):
+    value = obj.get("tool_name", "")
+elif query.startswith(".tool_input.command"):
+    value = (obj.get("tool_input") or {}).get("command", "")
+else:
+    value = ""
+
+print("" if value is None else value)
+PY
+        return
+    fi
+
+    printf '%s' ""
+}
+
+if ! has_json_parser; then
     emit_block \
-      "[blocked] jq command is required" \
-      "Cannot evaluate hook policy because jq is not available in the shell environment. Install jq and retry."
+      "🚫 Hook JSON parser is unavailable" \
+      "Cannot evaluate worktree protection because jq, python, and python3 are unavailable in the shell environment. Install one of them and retry."
+    echo "🚫 Blocked: hook JSON parser is unavailable" >&2
     exit 2
 fi
 
-# Read JSON input from stdin
-json_input=$(cat)
+# ツール名を確認
+tool_name=$(get_json_value '.tool_name // empty')
 
-# Tool name
-tool_name=$(echo "$json_input" | "$JQ_BIN" -r '.tool_name // empty' | tr -d '\r')
-
-# Only enforce for Bash tool
+# Bashツール以外は許可
 if [ "$tool_name" != "Bash" ]; then
     exit 0
 fi
 
-# Command text
-command=$(echo "$json_input" | "$JQ_BIN" -r '.tool_input.command // empty' | tr -d '\r')
+# コマンドを取得
+command=$(get_json_value '.tool_input.command // empty')
 
-# Split compound commands for independent checks
+# 演算子で連結された各コマンドを個別にチェックするために分割
+# &&, ||, ;, |, |&, &, 改行などで区切って先頭トークンを判定する
 command_segments=$(printf '%s\n' "$command" | sed -E 's/\|&/\n/g; s/\|\|/\n/g; s/&&/\n/g; s/[;|&]/\n/g')
 
 while IFS= read -r segment; do
-    trimmed_segment=$(echo "$segment" | sed 's/[<>].*//; s/<<.*//' | xargs)
+    # リダイレクトやheredoc以降を落として、引用符は維持したまま前後の空白だけ削る
+    trimmed_segment=$(printf '%s' "$segment" | sed -E 's/[<>].*//; s/<<.*//; s/^[[:space:]]+//; s/[[:space:]]+$//')
 
+    # 空行はスキップ
     if [ -z "$trimmed_segment" ]; then
         continue
     fi
 
-    # Block interactive rebase against origin/main
-    if printf '%s' "$trimmed_segment" | grep -qE '^git[[:space:]]+rebase\b'; then
-        if printf '%s' "$trimmed_segment" | grep -qE '(^|[[:space:]])(-i|--interactive)([[:space:]]|$)' &&
-           printf '%s' "$trimmed_segment" | grep -qE '(^|[[:space:]])origin/main([[:space:]]|$)'; then
-            emit_block \
-              "[blocked] Interactive rebase against origin/main is not allowed" \
-              "Interactive rebase against origin/main initiated by LLMs is blocked because it frequently fails and disrupts sessions.\n\nBlocked command: $command"
-            echo "[blocked] $command" >&2
+    if ! printf '%s' "$trimmed_segment" | grep -qE '^git\b'; then
+        continue
+    fi
+
+    if ! extract_git_subcommand_and_args "$trimmed_segment"; then
+        continue
+    fi
+
+    # インタラクティブrebase禁止 (git rebase -i origin/main)
+    if [ "$GIT_SUBCOMMAND" = "rebase" ]; then
+        has_interactive_flag=0
+        has_origin_main=0
+        for git_arg in "${GIT_SUBCOMMAND_ARGS[@]}"; do
+            if [ "$git_arg" = "-i" ] || [ "$git_arg" = "--interactive" ]; then
+                has_interactive_flag=1
+            fi
+            if [ "$git_arg" = "origin/main" ]; then
+                has_origin_main=1
+            fi
+        done
+
+        if [ $has_interactive_flag -eq 1 ] && [ $has_origin_main -eq 1 ]; then
+            cat <<EOF
+{
+  "decision": "block",
+  "reason": "🚫 Interactive rebase against origin/main is not allowed",
+  "stopReason": "Interactive rebase against origin/main initiated by LLMs is blocked because it frequently fails and disrupts sessions.\n\nBlocked command: $command"
+}
+EOF
+            echo "🚫 Blocked: $command" >&2
+            echo "Reason: Interactive rebase against origin/main is not allowed in Worktree." >&2
             exit 2
         fi
     fi
 
-    if echo "$trimmed_segment" | grep -qE '^git\b'; then
-        git_parsed=$(extract_git_subcommand_and_args "$trimmed_segment")
-        if [ -z "$git_parsed" ]; then
+    # checkout/switchは無条件ブロック
+    if [ "$GIT_SUBCOMMAND" = "checkout" ] || [ "$GIT_SUBCOMMAND" = "switch" ]; then
+        cat <<EOF
+{
+  "decision": "block",
+  "reason": "🚫 Branch switching commands (checkout/switch) are not allowed",
+  "stopReason": "Worktree is designed to complete work on the launched branch. Branch operations such as git checkout and git switch cannot be executed.\n\nBlocked command: $command"
+}
+EOF
+        echo "🚫 Blocked: $command" >&2
+        echo "Reason: Branch switching (checkout/switch) is not allowed in Worktree." >&2
+        exit 2
+    fi
+
+    # branchサブコマンドは参照系のみ許可
+    if [ "$GIT_SUBCOMMAND" = "branch" ]; then
+        if is_read_only_git_branch "${GIT_SUBCOMMAND_ARGS[@]}"; then
             continue
         fi
 
-        git_subcommand=$(printf '%s' "$git_parsed" | awk '{print $1}')
-        git_subcommand_args=$(printf '%s' "$git_parsed" | cut -d' ' -f2-)
-        if [ "$git_subcommand_args" = "$git_parsed" ]; then
-            git_subcommand_args=""
-        fi
+        cat <<EOF
+{
+  "decision": "block",
+  "reason": "🚫 Branch modification commands are not allowed",
+  "stopReason": "Worktree is designed to complete work on the launched branch. Destructive branch operations such as git branch -d, git branch -m cannot be executed.\n\nBlocked command: $command"
+}
+EOF
+        echo "🚫 Blocked: $command" >&2
+        echo "Reason: Branch modification is not allowed in Worktree." >&2
+        exit 2
+    fi
 
-        # Block checkout/switch
-        if [ "$git_subcommand" = "checkout" ] || [ "$git_subcommand" = "switch" ]; then
-            emit_block \
-              "[blocked] Branch switching commands (checkout/switch) are not allowed" \
-              "Worktree is designed to complete work on the launched branch. Branch operations such as git checkout and git switch cannot be executed.\n\nBlocked command: $command"
-            echo "[blocked] $command" >&2
-            exit 2
-        fi
-
-        # Block destructive branch operations (allow read-only list/query flags)
-        if [ "$git_subcommand" = "branch" ]; then
-            if is_read_only_git_branch "$git_subcommand_args"; then
-                continue
-            fi
-
-            emit_block \
-              "[blocked] Branch modification commands are not allowed" \
-              "Worktree is designed to complete work on the launched branch. Destructive branch operations such as git branch -d, git branch -m cannot be executed.\n\nBlocked command: $command"
-            echo "[blocked] $command" >&2
-            exit 2
-        fi
-
-        # Block worktree commands
-        if [ "$git_subcommand" = "worktree" ]; then
-            emit_block \
-              "[blocked] Worktree commands are not allowed" \
-              "Worktree management operations such as git worktree add/remove cannot be executed from within a worktree.\n\nBlocked command: $command"
-            echo "[blocked] $command" >&2
-            exit 2
-        fi
+    # worktreeサブコマンドをブロック（git worktree add/remove等）
+    if [ "$GIT_SUBCOMMAND" = "worktree" ]; then
+        cat <<EOF
+{
+  "decision": "block",
+  "reason": "🚫 Worktree commands are not allowed",
+  "stopReason": "Worktree management operations such as git worktree add/remove cannot be executed from within a worktree.\n\nBlocked command: $command"
+}
+EOF
+        echo "🚫 Blocked: $command" >&2
+        echo "Reason: Worktree management is not allowed in Worktree." >&2
+        exit 2
     fi
 done <<< "$command_segments"
 
+# 許可
 exit 0

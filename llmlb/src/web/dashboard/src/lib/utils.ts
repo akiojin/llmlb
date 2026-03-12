@@ -162,7 +162,11 @@ export function cleanupManualCopyBuffer() {
 }
 
 function tryExecCommandCopy(text: string): boolean {
-  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+  if (
+    typeof document === 'undefined' ||
+    !document.body ||
+    typeof document.execCommand !== 'function'
+  ) {
     return false
   }
 
@@ -178,6 +182,9 @@ function tryExecCommandCopy(text: string): boolean {
   textarea.style.pointerEvents = 'none'
   textarea.style.zIndex = '-1'
 
+  const previousActiveElement =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null
+
   document.body.appendChild(textarea)
   textarea.focus()
   textarea.select()
@@ -188,7 +195,10 @@ function tryExecCommandCopy(text: string): boolean {
   } catch {
     return false
   } finally {
-    textarea.remove()
+    if (textarea.isConnected) {
+      textarea.remove()
+    }
+    previousActiveElement?.focus()
   }
 }
 

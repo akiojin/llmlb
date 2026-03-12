@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [5.2.5](https://github.com/akiojin/llmlb/compare/v5.2.4...v5.2.5) (2026-03-12)
+
+### Refactor
+
+- UpdateManager テストで環境変数依存を排除し、明示的な data_dir パラメータに移行
+
+### Chore
+
+- gwt スキルの統合とレガシーフックスクリプトの削除
+
 ## [5.2.4](https://github.com/akiojin/llmlb/compare/v5.2.3...v5.2.4) (2026-03-12)
 
 ### Bug Fixes

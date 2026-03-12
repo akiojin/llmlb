@@ -33,7 +33,7 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Notification",
+            "command": ".claude/hooks/scripts/gwt-forward-hook.sh Notification",
             "type": "command"
           }
         ],
@@ -53,7 +53,7 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PostToolUse",
+            "command": ".claude/hooks/scripts/gwt-forward-hook.sh PostToolUse",
             "type": "command"
           }
         ],
@@ -103,7 +103,7 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh PreToolUse",
+            "command": ".claude/hooks/scripts/gwt-forward-hook.sh PreToolUse",
             "type": "command"
           }
         ],
@@ -112,19 +112,19 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/scripts/block-git-branch-ops.sh",
+            "command": ".claude/hooks/scripts/gwt-block-git-branch-ops.sh",
             "type": "command"
           },
           {
-            "command": ".claude/hooks/scripts/block-cd-command.sh",
+            "command": ".claude/hooks/scripts/gwt-block-cd-command.sh",
             "type": "command"
           },
           {
-            "command": ".claude/hooks/scripts/block-file-ops.sh",
+            "command": ".claude/hooks/scripts/gwt-block-file-ops.sh",
             "type": "command"
           },
           {
-            "command": ".claude/hooks/scripts/block-git-dir-override.sh",
+            "command": ".claude/hooks/scripts/gwt-block-git-dir-override.sh",
             "type": "command"
           }
         ],
@@ -144,7 +144,7 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh Stop",
+            "command": ".claude/hooks/scripts/gwt-forward-hook.sh Stop",
             "type": "command"
           }
         ],
@@ -164,7 +164,7 @@
       {
         "hooks": [
           {
-            "command": ".claude/hooks/scripts/forward-gwt-hook.sh UserPromptSubmit",
+            "command": ".claude/hooks/scripts/gwt-forward-hook.sh UserPromptSubmit",
             "type": "command"
           }
         ],

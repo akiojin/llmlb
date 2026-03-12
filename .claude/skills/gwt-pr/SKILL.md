@@ -1,6 +1,6 @@
 ---
 name: gwt-pr
-description: "Create or update GitHub Pull Requests with the gh CLI, including deciding whether to create a new PR or only push based on existing PR merge status. Use when the user asks to open/create/edit a PR, generate a PR body/template, or says 'PRを出して/PR作成/gh pr'. Defaults: base=develop, head=current branch (same-branch only; never create/switch branches)."
+description: "Create or update GitHub Pull Requests with the gh CLI, including deciding whether to create a new PR or only push based on existing PR merge status. Use when the user asks to open/create/edit a PR, generate a PR body/template, or says 'open a PR/create a PR/gh pr'. Defaults: base=develop, head=current branch (same-branch only; never create/switch branches)."
 ---
 
 # GH PR
@@ -31,10 +31,17 @@ Create or update GitHub Pull Requests with the gh CLI using a detailed body temp
 When all PRs for the head branch are merged, you **must** check whether there are new commits after the merge:
 
 1. **Get the merge commit SHA** of the most recent merged PR.
-2. **Count commits after the merge**: `git rev-list --count <merge_commit>..HEAD`
-3. **Decision**:
-   - If new commits exist → create a new PR (these changes are not in the base branch)
-   - If no new commits → report "No changes since last merge" and finish (do **not** create an empty PR)
+2. **Validate merge commit ancestry first**: `git merge-base --is-ancestor <merge_commit> HEAD`
+3. **If the merge commit is an ancestor of `HEAD`**, count commits after the merge:
+   - `git rev-list --count <merge_commit>..HEAD`
+4. **If the merge commit is missing or not an ancestor of `HEAD`**, fallback to the branch upstream first:
+   - `git rev-list --count origin/<head>..HEAD`
+5. **If the upstream comparison fails**, fallback to the base branch comparison:
+   - `git rev-list --count origin/<base>..HEAD`
+6. **Decision**:
+   - If the selected count is greater than 0 → create a new PR
+   - If the selected count is 0 → report "No new changes since merge" and finish
+   - If both fallback comparisons fail → stop and report `MANUAL CHECK`
 
 ### Why this matters
 
@@ -45,11 +52,11 @@ When all PRs for the head branch are merged, you **must** check whether there ar
 
 ## PR title rules (must follow)
 
-1. **Format**: `<type>(<scope>): <subject>` — Conventional Commits 形式に準拠する。
-2. **type**: `feat` / `fix` / `docs` / `chore` / `refactor` / `test` / `ci` / `perf` のいずれか。
-3. **scope**: 省略可。変更の影響範囲を端的に示す（例: `gui`, `core`, `pty`）。
-4. **subject**: 70文字以内。命令形（imperative mood）で書く（例: "add …" / "fix …"）。先頭大文字禁止、末尾ピリオド禁止。
-5. ブランチ名にプレフィックス（`feat/`, `fix/` など）がある場合、**タイトルの type と一致させる**。
+1. **Format**: `<type>(<scope>): <subject>` — follow Conventional Commits.
+2. **type**: must be one of `feat` / `fix` / `docs` / `chore` / `refactor` / `test` / `ci` / `perf`.
+3. **scope**: optional. Use a short scope that clearly identifies the affected area (for example: `gui`, `core`, `pty`).
+4. **subject**: keep it within 70 characters. Use the imperative mood (for example: "add ..." / "fix ..."). Do not capitalize the first letter or end with a period.
+5. If the branch name has a prefix such as `feat/` or `fix/`, **the title type must match that prefix**.
 
 ## PR body rules (must follow)
 
@@ -57,26 +64,26 @@ When all PRs for the head branch are merged, you **must** check whether there ar
 
 | Section | Required | Notes |
 |---------|----------|-------|
-| Summary | **YES** | 1-3 bullet points。"what" と "why" を両方含める |
-| Changes | **YES** | ファイル/モジュール単位で変更内容を列挙 |
-| Testing | **YES** | 実行したコマンドまたは手動テスト手順を具体的に記載 |
-| Related Issues / Links | **YES** | Issue番号、spec、または "None" を明記 |
-| Checklist | **YES** | 全項目を確認してチェック/N-A を付ける |
-| Context | Conditional | 3ファイル以上の変更、または非自明な変更理由がある場合は必須 |
-| Risk / Impact | Conditional | 破壊的変更・パフォーマンス影響・ロールバック手順がある場合は必須 |
-| Screenshots | Conditional | UI 変更がある場合のみ必須 |
-| Deployment | Optional | デプロイ手順がある場合のみ記載 |
-| Notes | Optional | レビュアーへの補足がある場合のみ記載 |
+| Summary | **YES** | 1-3 bullet points. Include both the what and the why. |
+| Changes | **YES** | Enumerate changes by file or module. |
+| Testing | **YES** | List the commands run or the exact manual test steps. |
+| Related Issues / Links | **YES** | Specify issue numbers, spec links, or "None". |
+| Checklist | **YES** | Review every item and mark it checked or N/A. |
+| Context | Conditional | Required when 3 or more files changed or the rationale is non-trivial. |
+| Risk / Impact | Conditional | Required when the change is breaking, performance-sensitive, or needs rollback steps. |
+| Screenshots | Conditional | Required only for UI changes. |
+| Deployment | Optional | Include only when deployment steps exist. |
+| Notes | Optional | Include only when reviewers need extra context. |
 
 ### Validation (agent must check before creating PR)
 
-1. **Required セクションに `TODO` が残っていたら PR を作成してはならない。**
-2. Conditional セクションが該当しない場合は、セクション自体を削除する（空の TODO を残さない）。
-3. Summary の各 bullet は **1文で完結** させる。曖昧な表現（"いくつかの変更", "various fixes"）を禁止する。
-4. Changes は **変更ファイルまたはモジュール名を含む** 具体的な記述にする。
-5. Testing は **再現可能な手順** を書く（"テスト済み" のような曖昧な記述を禁止）。
-6. Checklist の未チェック項目には理由コメントを付ける（例: `- [ ] Docs updated — N/A: no user-facing change`）。
-7. Related Issues は `#123` 形式または URL で記載する。該当なしの場合は "None" と明記する。
+1. **Do not create a PR if any required section still contains `TODO`.**
+2. If a conditional section does not apply, remove the entire section instead of leaving an empty TODO.
+3. Each Summary bullet must be a **single sentence**. Do not use vague wording such as "several changes" or "various fixes."
+4. Changes must be specific and include the changed file or module names.
+5. Testing must be reproducible. Do not use vague wording such as "tested."
+6. Add a reason comment to every unchecked checklist item (for example: `- [ ] Docs updated — N/A: no user-facing change`).
+7. Related Issues must be written as `#123` or as a URL. If nothing applies, explicitly write "None".
 
 ## Issue/PR Comment Formatting (must follow)
 
@@ -122,40 +129,50 @@ Next
 3. **Fetch latest remote state**
    - `git fetch origin` to ensure accurate comparison
 
-4. **Check existing PR for head branch**
+4. **Check branch sync against base (critical)**
+   - Run `git rev-list --left-right --count "HEAD...origin/$base"`.
+   - Parse the result as `ahead behind`.
+   - If `behind > 0` and `ahead == 0` → stop and report `Branch update required before creating a PR.`
+   - If `behind > 0` and `ahead > 0` → stop and report `Branch has diverged from base. Sync it before creating a PR.`
+   - Continue only when `behind == 0`.
+
+5. **Check existing PR for head branch**
    - Use decision rules above to pick action.
    - Treat `mergedAt` as the source of truth for "merged".
 
-5. **If all PRs are merged, perform post-merge commit check**
+6. **If all PRs are merged, perform post-merge commit check**
    - Get merge commit: `gh pr list --head <head> --state merged --json mergeCommit -q '.[0].mergeCommit.oid'`
-   - Count new commits: `git rev-list --count <merge_commit>..HEAD`
-   - If 0 → finish with message "No new changes since merge"
-   - If >0 → proceed to create new PR
+   - If the merge commit is an ancestor of `HEAD`, count `git rev-list --count <merge_commit>..HEAD`
+   - If the merge commit is missing or not an ancestor, count `git rev-list --count origin/<head>..HEAD` first
+   - Only if the upstream comparison fails, count `git rev-list --count origin/<base>..HEAD`
+   - If the selected count is 0 → finish with message "No new changes since merge"
+   - If the selected count is >0 → proceed to create new PR
+   - If neither comparison is usable → stop with `MANUAL CHECK`
 
-6. **Ensure the head branch is pushed**
+7. **Ensure the head branch is pushed**
    - If no upstream: `git push -u origin <head>`
    - Otherwise: `git push`
 
-7. **Collect PR inputs (for new PR or explicit update)**
+8. **Collect PR inputs (for new PR or explicit update)**
    - Title, Summary, Context, Changes, Testing, Risk/Impact, Deployment, Screenshots, Related Links, Notes
    - Optional: labels, reviewers, assignees, draft
 
-8. **Build PR body from template**
+9. **Build PR body from template**
    - Read the template from the gwt-pr skill path (not the current project path):
      - `PR_BODY_TEMPLATE=".claude/skills/gwt-pr/references/pr-body-template.md"`
    - Read `${PR_BODY_TEMPLATE}` and fill all required placeholders.
-   - **Conditional セクションが該当しない場合はセクションごと削除する。**
-   - **テンプレート内の `<!-- GUIDE: ... -->` コメントは最終出力から削除する。**
-   - **Required セクションに TODO が残っている場合は PR を作成せず、ユーザーに不足情報を確認する。**
+   - **If a conditional section does not apply, remove the entire section.**
+   - **Remove any `<!-- GUIDE: ... -->` comments from the final output.**
+   - **If any required section still contains TODO, do not create the PR and ask the user for the missing information.**
 
-9. **Create or update the PR**
-   - Create: `gh pr create -B <base> -H <head> --title "<title>" --body-file <file>`
-   - Update (only if user asked): `gh pr edit <number> --title "<title>" --body-file <file>`
+10. **Create or update the PR**
+    - Create: `gh pr create -B <base> -H <head> --title "<title>" --body-file <file>`
+    - Update (only if user asked): `gh pr edit <number> --title "<title>" --body-file <file>`
 
-10. **Return PR URL**
+11. **Return PR URL**
     - `gh pr view <number> --json url -q .url`
 
-11. **Post-PR CI/merge check (automatic).**
+12. **Post-PR CI/merge check (automatic).**
     - After PR creation or push, load `.claude/skills/gwt-fix-pr/SKILL.md` and follow its workflow to inspect CI status, merge state, and review feedback.
     - If all CI checks are still pending, poll (30s interval) until complete.
     - If conflicts, review issues, or CI failures are detected, proceed with the gwt-fix-pr workflow to diagnose and fix.
@@ -185,6 +202,24 @@ fi
 # Fetch latest remote state
 git fetch origin
 
+# Check branch sync against base before PR creation
+divergence=$(git rev-list --left-right --count "HEAD...origin/$base" 2>/dev/null) || {
+  echo "Failed to compare HEAD with origin/$base" >&2
+  exit 1
+}
+ahead_count=$(echo "$divergence" | awk '{print $1}')
+behind_count=$(echo "$divergence" | awk '{print $2}')
+
+if [ "${behind_count:-0}" -gt 0 ] && [ "${ahead_count:-0}" -gt 0 ]; then
+  echo "Branch has diverged from base. Sync it before creating a PR." >&2
+  exit 1
+fi
+
+if [ "${behind_count:-0}" -gt 0 ]; then
+  echo "Branch update required before creating a PR." >&2
+  exit 1
+fi
+
 # Check existing PRs for the head branch
 pr_json=$(gh pr list --head "$head" --state all --json number,state,mergedAt,mergeCommit)
 pr_count=$(echo "$pr_json" | jq 'length')
@@ -197,10 +232,14 @@ elif [ "$unmerged_count" -gt 0 ]; then
 else
   # All PRs are merged - check for post-merge commits
   merge_commit=$(echo "$pr_json" | jq -r 'sort_by(.mergedAt) | last | .mergeCommit.oid')
+  new_commits=""
 
-  if [ -n "$merge_commit" ] && [ "$merge_commit" != "null" ]; then
-    new_commits=$(git rev-list --count "$merge_commit"..HEAD 2>/dev/null || echo "0")
+  if [ -n "$merge_commit" ] && [ "$merge_commit" != "null" ] && \
+     git merge-base --is-ancestor "$merge_commit" HEAD 2>/dev/null; then
+    new_commits=$(git rev-list --count "$merge_commit"..HEAD 2>/dev/null || echo "")
+  fi
 
+  if [ -n "$new_commits" ]; then
     if [ "$new_commits" -gt 0 ]; then
       echo "Found $new_commits commit(s) after merge - creating new PR"
       action=create
@@ -209,13 +248,31 @@ else
       action=none
     fi
   else
-    # Fallback: check against base branch
-    new_commits=$(git rev-list --count "origin/$base"..HEAD 2>/dev/null || echo "0")
+    upstream_commits=$(git rev-list --count "origin/$head"..HEAD 2>/dev/null || echo "")
 
-    if [ "$new_commits" -gt 0 ]; then
-      action=create
+    if [ -n "$upstream_commits" ]; then
+      if [ "$upstream_commits" -gt 0 ]; then
+        echo "Found $upstream_commits commit(s) ahead of origin/$head - creating new PR"
+        action=create
+      else
+        echo "No new commits ahead of origin/$head - nothing to do"
+        action=none
+      fi
     else
-      action=none
+      fallback_commits=$(git rev-list --count "origin/$base"..HEAD 2>/dev/null || echo "")
+
+      if [ -n "$fallback_commits" ]; then
+        if [ "$fallback_commits" -gt 0 ]; then
+          echo "Upstream comparison unavailable; found $fallback_commits commit(s) ahead of origin/$base - creating new PR"
+          action=create
+        else
+          echo "Upstream comparison unavailable and no commits ahead of origin/$base - nothing to do"
+          action=none
+        fi
+      else
+        echo "Manual check required: could not determine whether new commits exist after the last merge" >&2
+        action=manual_check
+      fi
     fi
   fi
 fi
@@ -235,6 +292,10 @@ case "$action" in
     ;;
   none)
     echo "No action needed - no new changes since last merge"
+    ;;
+  manual_check)
+    echo "Manual check required - post-merge commit status could not be determined" >&2
+    exit 1
     ;;
 esac
 ```

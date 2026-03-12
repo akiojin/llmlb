@@ -1,11 +1,41 @@
 ---
 name: gwt-project-index
-description: Semantic search over project files and GitHub Issues using vector embeddings.
+description: Semantic search over project files and GitHub Issues using vector embeddings. Use first when you need to find an existing SPEC or related Issue before creating/updating one.
 ---
 
 # Project Structure Index
 
 gwt maintains a vector search index of all project files and GitHub Issues using ChromaDB embeddings.
+
+## Issues search first for spec integration
+
+When the user asks any of the following, use GitHub Issues search **before** manual `gh issue list`,
+title grep, or file search:
+
+- "既存仕様を探して"
+- "どの SPEC に統合するべきか"
+- "関連 Issue / spec を探して"
+- "Project Index の統合仕様を確認して"
+- "bug / feature の過去設計を見たい"
+
+For spec integration work, the first question is not "which file should I edit?" but
+"which existing `gwt-spec` Issue is the canonical destination?".
+
+Minimum workflow:
+
+1. Update the Issues index with `index-issues`
+2. Run `search-issues` with 2-3 semantic queries derived from the request
+3. Pick the canonical existing spec if found
+4. Only fall back to creating a new spec when no suitable canonical spec exists
+
+Suggested query patterns:
+
+- subsystem + purpose
+  - `project index issue search spec`
+- user-facing problem + architecture term
+  - `chroma persisted db recovery project index`
+- workflow / discoverability requirement
+  - `LLM should use gwt-project-index before spec creation`
 
 ## File search command
 
@@ -62,6 +92,7 @@ Then search Issues semantically:
 
 ## When to use
 
+- Spec integration: find the canonical `gwt-spec` Issue before creating or updating a spec
 - Task start: search for files and Issues related to the assigned feature
 - Bug investigation: find files and spec Issues that might relate to the bug
 - Feature addition: locate existing similar implementations and relevant specs
@@ -77,3 +108,4 @@ Then search Issues semantically:
 - Issue index must be updated manually (via GUI "Update Index" button or `index-issues` action)
 - Both use semantic similarity (not just keyword matching)
 - Lower distance values indicate higher relevance
+- For spec work, prefer `search-issues` first and use file search second

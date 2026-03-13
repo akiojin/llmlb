@@ -11,4 +11,9 @@
 
 ## 教訓一覧
 
-（ユーザーからの修正指示に基づき、随時追記する）
+### tokio RwLock の write guard を .await をまたいで保持しない
+
+- **事象**: `check_and_maybe_download` で `state.write().await` の write guard を名前付き変数として保持したまま `ensure_payload_ready().await` を呼び出し、内部で `state.read().await` を試みてデッドロック
+- **原因**: tokio の `RwLock` はリエントラントではないため、同一タスクが write lock を保持したまま read lock を取得しようとすると永久にブロックされる。Rust の NLL はボローチェッカーの分析にのみ影響し、Drop のタイミング（スコープ末尾）は変えない
+- **再発防止ルール**: `RwLockWriteGuard` / `RwLockReadGuard` は必ずスコープブロック `{ }` で囲み、`.await` をまたがせない。名前付きガード変数がある場合は `.await` の前に `drop()` するかブロックで囲む
+- **次回チェック方法**: `state.write().await` を名前付き変数に束縛している箇所で、同一スコープ内に `.await` がないか grep で確認

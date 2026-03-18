@@ -1,9 +1,9 @@
-//! Integration Test: US8 - 非xLLMダウンロード拒否
+//! Integration Test: US8 - ダウンロード対応/非対応エンドポイント
 //!
 //! SPEC-e8e9326e: エンドポイントタイプ自動判別機能
 //!
-//! 管理者として、非xLLMエンドポイント（Ollama/vLLM/OpenAI互換）で
-//! モデルダウンロードがリクエストされた場合、エラーを返してほしい。
+//! ダウンロード対応: xLLM, Ollama, LM Studio
+//! ダウンロード非対応: vLLM, OpenAI互換 → エラーを返す
 
 use llmlb::common::auth::{ApiKeyPermission, UserRole};
 use reqwest::Client;
@@ -86,7 +86,7 @@ async fn create_vllm_mock() -> MockServer {
     mock
 }
 
-/// US8-拒否シナリオ1: 非xLLMタイプのエンドポイントでダウンロード拒否
+/// US8-拒否シナリオ1: ダウンロード非対応エンドポイント（OpenAI互換）
 /// エンドポイントはOpenAI互換として自動検出される
 #[tokio::test]
 async fn test_download_reject_non_xllm_type() {
@@ -127,20 +127,31 @@ async fn test_download_reject_non_xllm_type() {
         .await
         .unwrap();
 
-    // 400 Bad Requestを期待
+    // 400 Bad Requestを期待（OpenAI互換はダウンロード非対応）
     assert_eq!(download_response.status().as_u16(), 400);
 
     let error_body: Value = download_response.json().await.unwrap();
+    let error_msg = error_body["error"].as_str().unwrap_or("");
     assert!(
-        error_body["error"].as_str().unwrap_or("").contains("xLLM"),
-        "Error message should mention xLLM requirement"
+        error_msg.contains("not supported") || error_msg.contains("download"),
+        "Error message should indicate download is not supported: {}",
+        error_msg
     );
 }
 
-/// US8-拒否シナリオ2: Ollamaタイプのエンドポイントでダウンロード拒否
+/// US8-受理シナリオ: Ollamaタイプのエンドポイントでダウンロード受理
 #[tokio::test]
-async fn test_download_reject_ollama_type() {
+async fn test_download_accept_ollama_type() {
     let mock = create_ollama_mock().await;
+
+    // Ollama pull APIのモックを追加
+    Mock::given(method("POST"))
+        .and(path("/api/pull"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success"
+        })))
+        .mount(&mock)
+        .await;
 
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
@@ -177,8 +188,8 @@ async fn test_download_reject_ollama_type() {
         .await
         .unwrap();
 
-    // 400 Bad Requestを期待
-    assert_eq!(download_response.status().as_u16(), 400);
+    // 202 Accepted を期待（Ollamaはダウンロード対応）
+    assert_eq!(download_response.status().as_u16(), 202);
 }
 
 /// US8-拒否シナリオ3: vLLMタイプのエンドポイントでダウンロード拒否
@@ -314,11 +325,10 @@ async fn test_download_reject_error_message() {
     let error_body: Value = download_response.json().await.unwrap();
 
     // エラーメッセージの内容を検証
-    // "Model download is only supported for xLLM endpoints"
     let error_msg = error_body["error"].as_str().unwrap_or("");
     assert!(
-        error_msg.contains("xLLM") || error_msg.contains("download"),
-        "Error message should explain download is xLLM-only: {}",
+        error_msg.contains("not supported") || error_msg.contains("download"),
+        "Error message should explain download is not supported: {}",
         error_msg
     );
 }

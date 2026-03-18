@@ -76,6 +76,7 @@ async fn add_endpoint_model(db_pool: &SqlitePool, endpoint_id: Uuid, model_id: &
         max_tokens: None,
         last_checked: None,
         supported_apis: vec![llmlb::types::endpoint::SupportedAPI::ChatCompletions],
+        canonical_name: None,
     };
     llmlb::db::endpoints::add_endpoint_model(db_pool, &model)
         .await

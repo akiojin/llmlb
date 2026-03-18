@@ -32,13 +32,28 @@ fn test_xllm_supports_model_download() {
     assert!(EndpointType::Xllm.supports_model_download());
 }
 
-/// 非xLLMエンドポイントはモデルダウンロードをサポートしない
+/// ダウンロード対応: xLLM, Ollama, LM Studio
 #[test]
-fn test_non_xllm_does_not_support_model_download() {
-    assert!(!EndpointType::Ollama.supports_model_download());
+fn test_download_supported_endpoints() {
+    assert!(EndpointType::Ollama.supports_model_download());
+    assert!(EndpointType::LmStudio.supports_model_download());
+}
+
+/// ダウンロード非対応: vLLM, OpenAI互換
+#[test]
+fn test_download_unsupported_endpoints() {
     assert!(!EndpointType::Vllm.supports_model_download());
-    assert!(!EndpointType::LmStudio.supports_model_download());
     assert!(!EndpointType::OpenaiCompatible.supports_model_download());
+}
+
+/// 削除対応: xLLM, Ollama のみ
+#[test]
+fn test_delete_supported_endpoints() {
+    assert!(EndpointType::Xllm.supports_model_delete());
+    assert!(EndpointType::Ollama.supports_model_delete());
+    assert!(!EndpointType::LmStudio.supports_model_delete());
+    assert!(!EndpointType::Vllm.supports_model_delete());
+    assert!(!EndpointType::OpenaiCompatible.supports_model_delete());
 }
 
 /// xLLM、Ollama、LmStudioはモデルメタデータ取得をサポート

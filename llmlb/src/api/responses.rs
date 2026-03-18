@@ -449,6 +449,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::Responses],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");

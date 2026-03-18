@@ -60,7 +60,11 @@ import {
   Settings2,
   Play,
   Filter,
+  Plus,
+  Trash2,
 } from 'lucide-react'
+import { ModelAddWizard } from './ModelAddWizard'
+import { ModelDeleteDialog } from './ModelDeleteDialog'
 
 /**
  * SPEC-8795f98f: Models Tab
@@ -221,9 +225,11 @@ function formatTps(tps: number | null): string {
 function EndpointStatsRow({
   endpoint,
   modelId,
+  onDelete,
 }: {
   endpoint: DashboardEndpoint
   modelId: string
+  onDelete?: () => void
 }) {
   const { data: stats } = useQuery({
     queryKey: ['endpoint-model-stats', endpoint.id],
@@ -271,6 +277,18 @@ function EndpointStatsRow({
         >
           <Play className="h-3 w-3" />
         </a>
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+            className="text-muted-foreground hover:text-destructive transition-colors"
+            title="Delete model from endpoint"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -289,6 +307,14 @@ export function ModelsTable({
   const [sortField, setSortField] = useState<SortField>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set())
+  const [addWizardOpen, setAddWizardOpen] = useState(false)
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean
+    modelId: string
+    endpointId: string
+    endpointName: string
+    endpointType: string
+  }>({ open: false, modelId: '', endpointId: '', endpointName: '', endpointType: '' })
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({
     id: true,
     bestStatus: true,
@@ -702,12 +728,18 @@ export function ModelsTable({
               {aggregatedWithStatsFallback.length}
             </Badge>
           </CardTitle>
-          {onRefresh && (
-            <Button variant="outline" size="sm" onClick={onRefresh}>
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Refresh
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAddWizardOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add Model
             </Button>
-          )}
+            {onRefresh && (
+              <Button variant="outline" size="sm" onClick={onRefresh}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Refresh
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -833,6 +865,15 @@ export function ModelsTable({
                       isExpanded={isExpanded}
                       onToggleExpand={() => toggleExpand(model.id)}
                       endpoints={endpoints}
+                      onDeleteModel={(endpointId, endpointName, endpointType) =>
+                        setDeleteDialog({
+                          open: true,
+                          modelId: model.id,
+                          endpointId,
+                          endpointName,
+                          endpointType,
+                        })
+                      }
                     />
                   )
                 })
@@ -840,10 +881,22 @@ export function ModelsTable({
             </TableBody>
           </Table>
         </div>
+
+        <ModelAddWizard open={addWizardOpen} onOpenChange={setAddWizardOpen} />
+        <ModelDeleteDialog
+          open={deleteDialog.open}
+          onOpenChange={(open) => setDeleteDialog((prev) => ({ ...prev, open }))}
+          modelId={deleteDialog.modelId}
+          endpointId={deleteDialog.endpointId}
+          endpointName={deleteDialog.endpointName}
+          endpointType={deleteDialog.endpointType}
+        />
       </CardContent>
     </Card>
   )
 }
+
+const DELETABLE_ENDPOINT_TYPES = new Set(['xllm', 'ollama'])
 
 function ModelRow({
   model,
@@ -851,12 +904,14 @@ function ModelRow({
   isExpanded,
   onToggleExpand,
   endpoints,
+  onDeleteModel,
 }: {
   model: AggregatedModel
   visibleColumns: ColumnDef[]
   isExpanded: boolean
   onToggleExpand: () => void
   endpoints: DashboardEndpoint[]
+  onDeleteModel: (endpointId: string, endpointName: string, endpointType: string) => void
 }) {
   const modelEndpointIdSet = new Set(model.endpointIds)
   const modelEndpoints = endpoints.filter((ep) => modelEndpointIdSet.has(ep.id))
@@ -916,6 +971,11 @@ function ModelRow({
                       key={ep.id}
                       endpoint={ep}
                       modelId={model.id}
+                      onDelete={
+                        DELETABLE_ENDPOINT_TYPES.has(ep.endpoint_type)
+                          ? () => onDeleteModel(ep.id, ep.name, ep.endpoint_type)
+                          : undefined
+                      }
                     />
                   ))
                 ) : (

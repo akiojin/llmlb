@@ -77,6 +77,10 @@ pub struct ModelMetadata {
     /// Quantization bits per weight (e.g., 4.0, 8.0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantization_bits: Option<f32>,
+
+    /// HuggingFaceリポジトリ名（メタデータAPIから取得）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hf_repo: Option<String>,
 }
 
 /// Fetch model metadata from an endpoint
@@ -148,6 +152,7 @@ mod tests {
             supports_vision: None,
             supports_tool_use: None,
             quantization_bits: None,
+            hf_repo: None,
         };
 
         let json = serde_json::to_string(&metadata).unwrap();
@@ -214,6 +219,7 @@ mod tests {
             supports_vision: Some(true),
             supports_tool_use: Some(false),
             quantization_bits: Some(4.5),
+            hf_repo: None,
         };
 
         let json = serde_json::to_string(&metadata).unwrap();

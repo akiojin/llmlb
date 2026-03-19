@@ -18,11 +18,11 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.4.3",
-    "@commitlint/config-conventional": "^20.4.3",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@playwright/test": "^1.58.2",
     "bats": "^1.13.0",
-    "bun": "^1.3.10",
+    "bun": "^1.3.11",
     "husky": "^9.1.0",
     "markdownlint-cli2": "^0.21.0"
   },

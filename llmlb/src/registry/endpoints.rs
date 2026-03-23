@@ -18,8 +18,7 @@ fn model_lookup_keys<'a>(model: &'a EndpointModel) -> impl Iterator<Item = &'a s
         model
             .canonical_name
             .as_deref()
-            .filter(|canonical| *canonical != model.model_id.as_str())
-            .into_iter(),
+            .filter(|canonical| *canonical != model.model_id.as_str()),
     )
 }
 

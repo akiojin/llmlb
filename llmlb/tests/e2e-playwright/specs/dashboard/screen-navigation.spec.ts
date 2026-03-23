@@ -85,6 +85,7 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
   });
 
   test('NAV-08: Audit Log button is hidden for non-admin user', async ({ page, request }) => {
+    test.setTimeout(60000);
     const { createUser, deleteUser, listUsers } = await import('../../helpers/api-helpers');
     const viewerUsername = `viewer_nav_${Date.now()}`;
     const result = await createUser(request, viewerUsername, '', 'viewer');
@@ -104,26 +105,29 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
 
       // Handle password change if required (must_change_password)
       // After changing password, the app redirects back to login page
-      if (page.url().includes('change-password')) {
-        const newPassword = 'ViewerPass123!';
+      const isChangePassword = await page.waitForURL(/change-password/, { timeout: 5000 }).then(() => true).catch(() => false);
+      const newPassword = 'ViewerPass123!';
+
+      if (isChangePassword) {
         await page.waitForSelector('#new-password', { timeout: 5000 });
         await page.fill('#new-password', newPassword);
         await page.fill('#confirm-password', newPassword);
         await page.click('button[type="submit"]');
 
-        // Password change redirects to login page after 1.5s
-        await page.waitForURL(/login/, { timeout: 10000 });
+        // Password change redirects to login page after 1.5s delay
+        await page.waitForURL(/login/, { timeout: 15000 });
 
         // Re-login with the new password
         await page.fill('#username', viewerUsername);
         await page.fill('#password', newPassword);
         await page.click('button[type="submit"]');
-        await page.waitForFunction(() => !window.location.href.includes('login'), {
-          timeout: 10000,
-        });
       }
 
-      // Wait for dashboard to fully load
+      // Wait for dashboard to fully load (whether password change happened or not)
+      await page.waitForFunction(
+        () => !window.location.href.includes('login') && !window.location.href.includes('change-password'),
+        { timeout: 15000 },
+      );
       await page.waitForSelector('#theme-toggle', { timeout: 15000 });
 
       // Audit Log button should NOT be visible

@@ -518,7 +518,7 @@ function EndpointCheckRow({
           <Badge variant="outline" className="text-xs">
             {endpoint.endpoint_type}
           </Badge>
-          {endpoint.already_has_model && (
+          {endpoint.has_model && (
             <Badge variant="secondary" className="text-xs">
               Already has model
             </Badge>

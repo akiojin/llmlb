@@ -31,7 +31,7 @@ export interface RecommendedEndpoint {
   name: string
   endpoint_type: string
   can_download: boolean
-  already_has_model: boolean
+  has_model: boolean
 }
 
 export const catalogApi = {

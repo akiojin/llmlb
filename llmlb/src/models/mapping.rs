@@ -157,17 +157,24 @@ pub fn resolve_canonical(model_id: &str, endpoint_type: &EndpointType) -> Option
 ///
 /// 指定されたエンドポイントタイプに対応するエンジン固有名を返す。
 pub fn resolve_engine_name(canonical: &str, endpoint_type: &EndpointType) -> Option<&'static str> {
+    resolve_engine_names(canonical, endpoint_type)
+        .into_iter()
+        .next()
+}
+
+/// Resolve all engine-specific aliases for a canonical model on a given endpoint type.
+pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Vec<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
         if mapping.canonical == canonical {
-            for alias in mapping.aliases {
-                if alias.engine == *endpoint_type {
-                    return Some(alias.name);
-                }
-            }
-            return None;
+            return mapping
+                .aliases
+                .iter()
+                .filter(|alias| alias.engine == *endpoint_type)
+                .map(|alias| alias.name)
+                .collect();
         }
     }
-    None
+    Vec::new()
 }
 
 /// モデルIDから全エイリアス情報を検索する
@@ -279,6 +286,21 @@ mod tests {
     fn test_resolve_engine_name_unknown_canonical() {
         let result = resolve_engine_name("unknown/model", &EndpointType::Ollama);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_engine_names_lm_studio_returns_all_aliases() {
+        let result = resolve_engine_names("Qwen/Qwen3.5-35B-A3B", &EndpointType::LmStudio);
+        assert_eq!(
+            result,
+            vec!["qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-35b-a3b:2"]
+        );
+    }
+
+    #[test]
+    fn test_resolve_engine_names_unknown_canonical_returns_empty() {
+        let result = resolve_engine_names("unknown/model", &EndpointType::LmStudio);
+        assert!(result.is_empty());
     }
 
     #[test]

@@ -1,6 +1,8 @@
 //! モデル名の解析ユーティリティ（量子化サフィックス対応）
 
 use crate::common::error::{CommonError, LbError};
+use crate::types::endpoint::EndpointType;
+use serde_json::Value;
 
 /// 量子化サフィックスを含むモデル名の解析結果
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,9 +39,38 @@ pub fn parse_quantized_model_name(model: &str) -> Result<ParsedModelName, LbErro
     })
 }
 
+/// Resolve the engine-specific runtime model name for a selected endpoint.
+pub fn resolve_runtime_model_name(model: &str, endpoint_type: &EndpointType) -> String {
+    crate::models::mapping::resolve_engine_name(model, endpoint_type)
+        .map(|resolved| resolved.to_string())
+        .unwrap_or_else(|| model.to_string())
+}
+
+/// Rewrite the request payload's `model` field for the selected endpoint when needed.
+pub fn rewrite_payload_model_for_endpoint(
+    mut payload: Value,
+    endpoint_type: &EndpointType,
+) -> Value {
+    let Some(model) = payload.get("model").and_then(Value::as_str) else {
+        return payload;
+    };
+
+    let runtime_model = resolve_runtime_model_name(model, endpoint_type);
+    if runtime_model == model {
+        return payload;
+    }
+
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("model".to_string(), Value::String(runtime_model));
+    }
+
+    payload
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn no_colon_returns_base_only() {
@@ -131,5 +162,33 @@ mod tests {
             quantization: None,
         };
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn resolve_runtime_model_name_uses_engine_alias_for_canonical_input() {
+        let resolved = resolve_runtime_model_name("openai/gpt-oss-20b", &EndpointType::Ollama);
+        assert_eq!(resolved, "gpt-oss:20b");
+    }
+
+    #[test]
+    fn rewrite_payload_model_for_endpoint_replaces_canonical_model() {
+        let payload = json!({
+            "model": "openai/gpt-oss-20b",
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+
+        let rewritten = rewrite_payload_model_for_endpoint(payload, &EndpointType::Ollama);
+        assert_eq!(rewritten["model"], "gpt-oss:20b");
+    }
+
+    #[test]
+    fn rewrite_payload_model_for_endpoint_leaves_alias_input_unchanged() {
+        let payload = json!({
+            "model": "gpt-oss:20b",
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+
+        let rewritten = rewrite_payload_model_for_endpoint(payload.clone(), &EndpointType::Ollama);
+        assert_eq!(rewritten, payload);
     }
 }

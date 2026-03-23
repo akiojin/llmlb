@@ -103,15 +103,24 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
       await page.waitForTimeout(1000);
 
       // Handle password change if required (must_change_password)
+      // After changing password, the app redirects back to login page
       if (page.url().includes('change-password')) {
         const newPassword = 'ViewerPass123!';
-        // Wait for the change-password form to load
-        await page.waitForSelector('button[type="submit"]', { timeout: 5000 });
-        await page.fill('input[type="password"]:nth-of-type(1), #new-password, input[name="new_password"]', newPassword);
-        await page.fill('input[type="password"]:nth-of-type(2), #confirm-password, input[name="confirm_password"]', newPassword);
+        await page.waitForSelector('#new-password', { timeout: 5000 });
+        await page.fill('#new-password', newPassword);
+        await page.fill('#confirm-password', newPassword);
         await page.click('button[type="submit"]');
-        // Wait for redirect to dashboard
-        await page.waitForURL(/\/dashboard(?!.*(?:login|change-password))/, { timeout: 15000 });
+
+        // Password change redirects to login page after 1.5s
+        await page.waitForURL(/login/, { timeout: 10000 });
+
+        // Re-login with the new password
+        await page.fill('#username', viewerUsername);
+        await page.fill('#password', newPassword);
+        await page.click('button[type="submit"]');
+        await page.waitForFunction(() => !window.location.href.includes('login'), {
+          timeout: 10000,
+        });
       }
 
       // Wait for dashboard to fully load

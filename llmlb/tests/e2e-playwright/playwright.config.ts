@@ -49,7 +49,19 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        headless: process.env.HEADED !== '1',
+      },
+    },
+    {
+      name: 'screenshots',
+      use: {
+        ...devices['Desktop Chrome'],
+        screenshot: 'on',
+        headless: false,
+      },
+      testMatch: '**/navigation-screenshots.spec.ts',
     },
     // Uncomment for multi-browser testing
     // {

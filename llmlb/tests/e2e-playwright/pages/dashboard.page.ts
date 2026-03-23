@@ -11,9 +11,11 @@ export class DashboardPage {
   readonly themeToggle: Locator;
   readonly playgroundButton: Locator;
   readonly apiKeysButton: Locator;
+  readonly auditLogButton: Locator;
   readonly refreshButton: Locator;
   readonly connectionStatus: Locator;
   readonly currentVersion: Locator;
+  readonly userDropdownTrigger: Locator;
 
   // Stats
   readonly totalEndpoints: Locator;
@@ -44,6 +46,8 @@ export class DashboardPage {
   readonly chatModal: Locator;
   readonly chatClose: Locator;
   readonly apiKeysModal: Locator;
+  readonly userModal: Locator;
+  readonly invitationModal: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -52,9 +56,11 @@ export class DashboardPage {
     this.themeToggle = page.locator(DashboardSelectors.header.themeToggle);
     this.playgroundButton = page.locator(DashboardSelectors.header.playgroundButton);
     this.apiKeysButton = page.locator(DashboardSelectors.header.apiKeysButton);
+    this.auditLogButton = page.locator(DashboardSelectors.header.auditLogButton);
     this.refreshButton = page.locator(DashboardSelectors.header.refreshButton);
     this.connectionStatus = page.locator(DashboardSelectors.header.connectionStatus);
     this.currentVersion = page.locator(DashboardSelectors.header.currentVersion);
+    this.userDropdownTrigger = page.locator(DashboardSelectors.header.userDropdownTrigger);
 
     // Stats
     this.totalEndpoints = page.locator(DashboardSelectors.stats.totalEndpoints);
@@ -85,6 +91,8 @@ export class DashboardPage {
     this.chatModal = page.locator(DashboardSelectors.modals.chatModal);
     this.chatClose = page.locator(DashboardSelectors.modals.chatClose);
     this.apiKeysModal = page.locator(DashboardSelectors.modals.apiKeysModal);
+    this.userModal = page.locator(DashboardSelectors.modals.userModal);
+    this.invitationModal = page.locator(DashboardSelectors.modals.invitationModal);
   }
 
   async goto() {
@@ -174,6 +182,67 @@ export class DashboardPage {
   async openApiKeys() {
     await this.apiKeysButton.click();
     await expect(this.apiKeysModal).toBeVisible();
+  }
+
+  /**
+   * Opens the audit log page (admin only).
+   */
+  async openAuditLog() {
+    await this.auditLogButton.click();
+    await this.page.waitForURL('**/dashboard/#audit-log');
+  }
+
+  /**
+   * Opens the user dropdown menu.
+   */
+  async openUserDropdown() {
+    await this.userDropdownTrigger.click();
+    await this.page.waitForTimeout(200);
+  }
+
+  /**
+   * Signs out via the user dropdown menu.
+   */
+  async signOut() {
+    await this.openUserDropdown();
+    await this.page.locator(DashboardSelectors.userDropdown.signOut).click();
+    await this.page.waitForURL('**/login**');
+  }
+
+  /**
+   * Opens Manage Users modal via the user dropdown (admin only).
+   */
+  async openManageUsersModal() {
+    await this.openUserDropdown();
+    await this.page.locator(DashboardSelectors.userDropdown.manageUsers).click();
+    await expect(this.userModal).toBeVisible();
+  }
+
+  /**
+   * Opens Invitation Codes modal via the user dropdown (admin only).
+   */
+  async openInvitationModal() {
+    await this.openUserDropdown();
+    await this.page.locator(DashboardSelectors.userDropdown.invitationCodes).click();
+    await expect(this.invitationModal).toBeVisible();
+  }
+
+  /**
+   * Navigates to a specific tab by name.
+   */
+  async goToTab(tabName: string) {
+    await this.page.click(`button[role="tab"]:has-text("${tabName}")`);
+    await this.page.waitForTimeout(300);
+  }
+
+  /**
+   * Takes a screenshot and saves it to reports/screenshots/.
+   */
+  async takeScreenshot(name: string) {
+    await this.page.screenshot({
+      path: `reports/screenshots/${name}.png`,
+      fullPage: true,
+    });
   }
 
   async refresh() {

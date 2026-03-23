@@ -76,6 +76,58 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             name: "gemma3:27b",
         }],
     },
+    ModelMapping {
+        canonical: "Qwen/Qwen3.5-35B-A3B",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3.5-35b-a3b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3.5-35b-a3b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3.5-35b-a3b:2",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "nvidia/nemotron-3-super-120b-a12b",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "nvidia-nemotron-3-super-120b-a12b",
+        }],
+    },
+    ModelMapping {
+        canonical: "nvidia/Nemotron-3-Nano",
+        aliases: &[EngineAlias {
+            engine: EndpointType::LmStudio,
+            name: "nvidia/nemotron-3-nano",
+        }],
+    },
+    ModelMapping {
+        canonical: "Qwen/Qwen2.5-14B-Instruct-AWQ",
+        aliases: &[EngineAlias {
+            engine: EndpointType::LmStudio,
+            name: "Qwen/Qwen2.5-14B-Instruct-AWQ",
+        }],
+    },
+    ModelMapping {
+        canonical: "nomic-ai/nomic-embed-text-v1.5",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "text-embedding-nomic-embed-text-v1.5",
+        }],
+    },
+    ModelMapping {
+        canonical: "THUDM/glm-4.7-flash",
+        aliases: &[EngineAlias {
+            engine: EndpointType::LmStudio,
+            name: "zai-org/glm-4.7-flash",
+        }],
+    },
 ];
 
 /// モデルIDとエンドポイントタイプから正規名を解決する
@@ -322,5 +374,66 @@ mod tests {
     fn test_llama33_mapping() {
         let result = resolve_canonical("llama3.3:70b", &EndpointType::Ollama);
         assert_eq!(result, Some("meta-llama/Llama-3.3-70B-Instruct"));
+    }
+
+    #[test]
+    fn test_qwen35_ollama_mapping() {
+        let result = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::Ollama);
+        assert_eq!(result, Some("Qwen/Qwen3.5-35B-A3B"));
+    }
+
+    #[test]
+    fn test_qwen35_lm_studio_mapping() {
+        let result = resolve_canonical("qwen/qwen3.5-35b-a3b", &EndpointType::LmStudio);
+        assert_eq!(result, Some("Qwen/Qwen3.5-35B-A3B"));
+    }
+
+    #[test]
+    fn test_qwen35_lm_studio_versioned_mapping() {
+        let result = resolve_canonical("qwen/qwen3.5-35b-a3b:2", &EndpointType::LmStudio);
+        assert_eq!(result, Some("Qwen/Qwen3.5-35B-A3B"));
+    }
+
+    #[test]
+    fn test_nvidia_nemotron_super_mapping() {
+        let result = resolve_canonical("nvidia-nemotron-3-super-120b-a12b", &EndpointType::Ollama);
+        assert_eq!(result, Some("nvidia/nemotron-3-super-120b-a12b"));
+    }
+
+    #[test]
+    fn test_nvidia_nemotron_nano_mapping() {
+        let result = resolve_canonical("nvidia/nemotron-3-nano", &EndpointType::LmStudio);
+        assert_eq!(result, Some("nvidia/Nemotron-3-Nano"));
+    }
+
+    #[test]
+    fn test_nomic_embed_mapping() {
+        let result = resolve_canonical(
+            "text-embedding-nomic-embed-text-v1.5",
+            &EndpointType::Ollama,
+        );
+        assert_eq!(result, Some("nomic-ai/nomic-embed-text-v1.5"));
+    }
+
+    #[test]
+    fn test_glm_flash_mapping() {
+        let result = resolve_canonical("zai-org/glm-4.7-flash", &EndpointType::LmStudio);
+        assert_eq!(result, Some("THUDM/glm-4.7-flash"));
+    }
+
+    #[test]
+    fn test_qwen25_awq_mapping() {
+        let result = resolve_canonical("Qwen/Qwen2.5-14B-Instruct-AWQ", &EndpointType::LmStudio);
+        assert_eq!(result, Some("Qwen/Qwen2.5-14B-Instruct-AWQ"));
+    }
+
+    #[test]
+    fn test_qwen35_all_variants_resolve_to_same_canonical() {
+        let ollama = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::Ollama);
+        let lms = resolve_canonical("qwen/qwen3.5-35b-a3b", &EndpointType::LmStudio);
+        let lms_v2 = resolve_canonical("qwen/qwen3.5-35b-a3b:2", &EndpointType::LmStudio);
+        assert_eq!(ollama, lms);
+        assert_eq!(lms, lms_v2);
+        assert_eq!(ollama, Some("Qwen/Qwen3.5-35B-A3B"));
     }
 }

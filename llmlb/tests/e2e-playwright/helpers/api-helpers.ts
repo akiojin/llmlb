@@ -486,7 +486,8 @@ export async function registerModelViaUI(
  */
 export async function ensureDashboardLogin(page: Page): Promise<void> {
   await page.goto(`${API_BASE}/dashboard`);
-  await page.waitForLoadState('networkidle');
+  // Use 'load' instead of 'networkidle' due to WebSocket connections that keep the network active
+  await page.waitForLoadState('load');
 
   // Check if login form is present
   const loginForm = page.locator('form').filter({ hasText: 'Sign in' });
@@ -504,8 +505,8 @@ export async function ensureDashboardLogin(page: Page): Promise<void> {
       // Ignore timeout, continue if we're on dashboard
     });
 
-    // Verify we're on dashboard
-    await page.waitForLoadState('networkidle');
+    // Verify we're on dashboard (use 'load' instead of 'networkidle' due to WebSocket connections)
+    await page.waitForLoadState('load');
   }
 }
 

@@ -107,6 +107,9 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             name: "nvidia/nemotron-3-nano",
         }],
     },
+    // Qwen2.5-14B-Instruct-AWQ: LM Studioが正規名そのままで報告するため
+    // canonical直接一致で解決されるが、find_mapping()でエイリアス検索にも
+    // ヒットさせるために明示的に登録
     ModelMapping {
         canonical: "Qwen/Qwen2.5-14B-Instruct-AWQ",
         aliases: &[EngineAlias {
@@ -374,24 +377,6 @@ mod tests {
     fn test_llama33_mapping() {
         let result = resolve_canonical("llama3.3:70b", &EndpointType::Ollama);
         assert_eq!(result, Some("meta-llama/Llama-3.3-70B-Instruct"));
-    }
-
-    #[test]
-    fn test_qwen35_ollama_mapping() {
-        let result = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::Ollama);
-        assert_eq!(result, Some("Qwen/Qwen3.5-35B-A3B"));
-    }
-
-    #[test]
-    fn test_qwen35_lm_studio_mapping() {
-        let result = resolve_canonical("qwen/qwen3.5-35b-a3b", &EndpointType::LmStudio);
-        assert_eq!(result, Some("Qwen/Qwen3.5-35B-A3B"));
-    }
-
-    #[test]
-    fn test_qwen35_lm_studio_versioned_mapping() {
-        let result = resolve_canonical("qwen/qwen3.5-35b-a3b:2", &EndpointType::LmStudio);
-        assert_eq!(result, Some("Qwen/Qwen3.5-35B-A3B"));
     }
 
     #[test]

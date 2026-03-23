@@ -21,6 +21,14 @@ test.describe('Endpoint Edit @dashboard', () => {
       headers: AUTH_HEADER,
       data: { name: endpointName, base_url: mock.baseUrl },
     })
+
+    // Wait for endpoint to be visible in API before tests start
+    const deadline = Date.now() + 10000
+    while (Date.now() < deadline) {
+      const endpoints = await listEndpoints(request)
+      if (endpoints.some((e) => e.name === endpointName)) break
+      await new Promise((r) => setTimeout(r, 200))
+    }
   })
 
   test.afterAll(async ({ request }) => {

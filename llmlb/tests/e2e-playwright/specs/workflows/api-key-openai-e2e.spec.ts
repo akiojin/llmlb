@@ -68,18 +68,21 @@ test.describe('API Key Create + OpenAI API Calls @api-keys', () => {
     await page.fill('#endpoint-url', mock.baseUrl)
     await page.getByRole('button', { name: 'Create Endpoint' }).click()
 
-    const row = page.getByRole('row').filter({ hasText: endpointName })
-    await expect(row).toBeVisible({ timeout: 20000 })
+    // Re-query row each time to avoid stale references from dashboard auto-refresh
+    const rowLocator = () => page.getByRole('row').filter({ hasText: endpointName })
+    await expect(rowLocator()).toBeVisible({ timeout: 20000 })
 
     // Deterministically bring it online.
-    await row.locator('button[title="Test Connection"]').click()
-    await expect(row.getByText('Online')).toBeVisible({ timeout: 20000 })
+    await rowLocator().locator('button[title="Test Connection"]').click()
+    await expect(rowLocator().getByText('Online')).toBeVisible({ timeout: 20000 })
 
     // Sync models so /v1/models and routing work.
-    await row.locator('button[title="Sync Models"]').click()
+    await rowLocator().locator('button[title="Sync Models"]').click()
 
     // Confirm at least one model is visible in the endpoint detail modal.
-    await row.locator('button[title="Details"]').click()
+    // Wait briefly for table to settle after sync
+    await page.waitForTimeout(500)
+    await rowLocator().locator('button[title="Details"]').click()
     const detailsDialog = page.getByRole('dialog').filter({ hasText: endpointName })
     await expect(detailsDialog).toBeVisible({ timeout: 20000 })
     await expect(detailsDialog.getByText(mock.models[0])).toBeVisible({ timeout: 20000 })

@@ -68,6 +68,12 @@ test.describe('API Key Create + OpenAI API Calls @api-keys', () => {
     await page.fill('#endpoint-url', mock.baseUrl)
     await page.getByRole('button', { name: 'Create Endpoint' }).click()
 
+    // Wait for the endpoint to appear in the table (refresh if needed)
+    await page.waitForTimeout(1000)
+    await page.locator('#refresh-button').click()
+    await page.waitForLoadState('load')
+    await page.waitForTimeout(1000)
+
     // Re-query row each time to avoid stale references from dashboard auto-refresh
     const rowLocator = () => page.getByRole('row').filter({ hasText: endpointName })
     await expect(rowLocator()).toBeVisible({ timeout: 20000 })

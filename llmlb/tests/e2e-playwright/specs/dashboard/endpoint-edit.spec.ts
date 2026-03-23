@@ -130,8 +130,13 @@ test.describe('Endpoint Edit @dashboard', () => {
       return
     }
 
+    // Force refresh dashboard table to reflect any previous test changes
+    await page.locator('#refresh-button').click()
+    await page.waitForLoadState('load')
+    await page.waitForTimeout(1000)
+
     const row = page.locator('tbody tr').filter({ hasText: ep.name })
-    await expect(row).toBeVisible({ timeout: 10000 })
+    await expect(row).toBeVisible({ timeout: 15000 })
     await row.locator('button[title="Details"]').click()
 
     const modal = page.locator('[role="dialog"]')

@@ -2,6 +2,7 @@
 //!
 //! ノード登録、ヘルスチェック、プロキシAPI
 
+pub mod anthropic;
 pub mod api_keys;
 pub mod audio;
 /// 監査ログAPI (SPEC-8301d106)
@@ -510,6 +511,22 @@ pub fn create_app(state: AppState) -> Router {
         crate::inference_gate::inference_gate_middleware,
     ));
 
+    let anthropic_inference_routes = Router::new()
+        .route("/v1/messages", post(anthropic::messages))
+        .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            ApiKeyPermission::OpenaiInference,
+            crate::auth::middleware::require_anthropic_api_key_permission_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.db_pool.clone(),
+            crate::auth::middleware::anthropic_api_key_auth_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.inference_gate.clone(),
+            crate::inference_gate::inference_gate_middleware,
+        ));
+
     // `/v1/models*` は外部クライアント(APIキー)からのみ参照される
     // SPEC-e8e9326e: ノードトークン認証は廃止されました
     let models_routes = Router::new()
@@ -563,6 +580,7 @@ pub fn create_app(state: AppState) -> Router {
         .nest("/api", api_routes)
         // OpenAI互換API
         .merge(inference_routes)
+        .merge(anthropic_inference_routes)
         .merge(models_protected_routes)
         .merge(dashboard_routes)
         // NOTE: Playground機能は廃止され、ダッシュボード内のエンドポイント別Playgroundに移行

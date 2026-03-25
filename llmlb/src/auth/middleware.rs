@@ -7,9 +7,11 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
+    Json,
 };
 use chrono::{DateTime, Utc};
 use jsonwebtoken::decode_header;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -503,6 +505,71 @@ pub async fn api_key_auth_middleware(
     Ok(response)
 }
 
+fn anthropic_error_response(
+    status: StatusCode,
+    error_type: impl Into<String>,
+    message: impl Into<String>,
+) -> Response {
+    (
+        status,
+        Json(json!({
+            "type": "error",
+            "error": {
+                "type": error_type.into(),
+                "message": message.into()
+            }
+        })),
+    )
+        .into_response()
+}
+
+#[allow(clippy::result_large_err)]
+fn require_anthropic_version_header(request: &Request) -> Result<(), Response> {
+    let value = request
+        .headers()
+        .get("anthropic-version")
+        .and_then(|header| header.to_str().ok())
+        .map(str::trim);
+    match value {
+        Some(value) if !value.is_empty() => Ok(()),
+        _ => Err(anthropic_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "Missing required header: anthropic-version",
+        )),
+    }
+}
+
+/// Authenticate Anthropic-native `/v1/messages` requests and preserve Anthropic error shape.
+pub async fn anthropic_api_key_auth_middleware(
+    State(pool): State<sqlx::SqlitePool>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    require_anthropic_version_header(&request)?;
+
+    let api_key = extract_api_key(&request).map_err(|_| {
+        anthropic_error_response(
+            StatusCode::UNAUTHORIZED,
+            "authentication_error",
+            "Invalid or missing x-api-key",
+        )
+    })?;
+    let auth_context = authenticate_api_key(&pool, &api_key).await.map_err(|_| {
+        anthropic_error_response(
+            StatusCode::UNAUTHORIZED,
+            "authentication_error",
+            "Invalid or expired x-api-key",
+        )
+    })?;
+    let auth_context_for_response = auth_context.clone();
+    request.extensions_mut().insert(auth_context);
+
+    let mut response = next.run(request).await;
+    response.extensions_mut().insert(auth_context_for_response);
+    Ok(response)
+}
+
 /// APIキーの権限を要求するミドルウェア
 pub async fn require_api_key_permission_middleware(
     State(required_permission): State<ApiKeyPermission>,
@@ -526,6 +593,34 @@ pub async fn require_api_key_permission_middleware(
             "Insufficient API key permission".to_string(),
         )
             .into_response());
+    }
+
+    Ok(next.run(request).await)
+}
+
+/// Require an API-key permission for Anthropic-native `/v1/messages` requests.
+pub async fn require_anthropic_api_key_permission_middleware(
+    State(required_permission): State<ApiKeyPermission>,
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let auth_context = request
+        .extensions()
+        .get::<ApiKeyAuthContext>()
+        .ok_or_else(|| {
+            anthropic_error_response(
+                StatusCode::UNAUTHORIZED,
+                "authentication_error",
+                "Missing API key authentication",
+            )
+        })?;
+
+    if !has_permission(&auth_context.permissions, required_permission) {
+        return Err(anthropic_error_response(
+            StatusCode::FORBIDDEN,
+            "permission_error",
+            "Insufficient API key permission",
+        ));
     }
 
     Ok(next.run(request).await)

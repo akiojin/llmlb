@@ -11,6 +11,20 @@ const basePort = (() => {
   }
 })();
 const e2eDataDir = `llmlb/tests/e2e-playwright/.llmlb-${basePort}`;
+const screenshotProjects =
+  process.env.PLAYWRIGHT_SCREENSHOTS === '1'
+    ? [
+        {
+          name: 'screenshots',
+          use: {
+            ...devices['Desktop Chrome'],
+            screenshot: 'on',
+            headless: false,
+          },
+          testMatch: '**/navigation-screenshots.spec.ts',
+        },
+      ]
+    : [];
 
 /**
  * Playwright E2E Test Configuration for LLM Load Balancer
@@ -53,16 +67,9 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         headless: process.env.HEADED !== '1',
       },
+      testIgnore: '**/navigation-screenshots.spec.ts',
     },
-    {
-      name: 'screenshots',
-      use: {
-        ...devices['Desktop Chrome'],
-        screenshot: 'on',
-        headless: false,
-      },
-      testMatch: '**/navigation-screenshots.spec.ts',
-    },
+    ...screenshotProjects,
     // Uncomment for multi-browser testing
     // {
     //   name: 'firefox',

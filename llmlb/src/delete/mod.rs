@@ -106,8 +106,8 @@ mod tests {
     fn test_supported_types() {
         // Ollama supports delete
         assert!(EndpointType::Ollama.supports_model_delete());
-        // xLLM supports delete (even though our implementation returns unsupported for now)
-        assert!(EndpointType::Xllm.supports_model_delete());
+        // xLLM delete API is not implemented yet
+        assert!(!EndpointType::Xllm.supports_model_delete());
         // Others don't
         assert!(!EndpointType::LmStudio.supports_model_delete());
         assert!(!EndpointType::Vllm.supports_model_delete());

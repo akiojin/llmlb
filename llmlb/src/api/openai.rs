@@ -28,7 +28,9 @@ use crate::{
     api::{
         cloud_proxy::{proxy_cloud_provider, resolve_provider},
         error::AppError,
-        model_name::{parse_quantized_model_name, ParsedModelName},
+        model_name::{
+            parse_quantized_model_name, rewrite_payload_model_for_endpoint, ParsedModelName,
+        },
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         openai_util::{
             model_unavailable_response, openai_error_response, queue_error_response,
@@ -927,8 +929,9 @@ async fn proxy_openai_post(
     let client = state.http_client.clone();
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
+    let outbound_payload = rewrite_payload_model_for_endpoint(payload, &endpoint_type);
 
-    let mut request_builder = client.post(&runtime_url).json(&payload);
+    let mut request_builder = client.post(&runtime_url).json(&outbound_payload);
     if let Some(api_key) = &endpoint.api_key {
         request_builder = request_builder.bearer_auth(api_key);
     }
@@ -1321,7 +1324,7 @@ mod tests {
     use std::net::IpAddr;
     use tempfile::tempdir;
     use tokio::time::{sleep, Duration};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{body_partial_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn create_local_state() -> AppState {
@@ -1896,6 +1899,83 @@ mod tests {
             snapshot.active_requests, 0,
             "active request count must be released on body read error"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn canonical_model_routes_to_alias_backed_endpoint_and_rewrites_payload() {
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(json!({"model": "gpt-oss:20b"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-alias",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "ollama-alias".to_string(),
+            server.uri(),
+            EndpointType::Ollama,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "gpt-oss:20b".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("openai/gpt-oss-20b".to_string()),
+            })
+            .await
+            .expect("add endpoint model");
+
+        let payload = json!({
+            "model": "openai/gpt-oss-20b",
+            "messages": [{"role":"user","content":"hello"}]
+        });
+        let response = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "openai/gpt-oss-20b".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("canonical request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

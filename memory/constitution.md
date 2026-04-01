@@ -1,204 +1,39 @@
-# LLM Load Balancer 開発憲章
+# gwt Constitution
 
-## 基本原則
+## Core Rules
 
-### I. シンプルなアーキテクチャ
-- **最小限の抽象化**: 複雑なデザインパターンを避け、直接的な実装を優先
-- **明確な責任分離**:
-  - **Registry**: ノード情報の保存・管理
-  - **API**: HTTP エンドポイント処理
-  - **Proxy**: リクエストのルーティング
-  - **Monitor**: ヘルスチェックとメトリクス収集
-- **SQLiteストレージ**: `~/.llmlb/router.db` を使用
-- **新しい機能は必ず独立したモジュールとして実装**
+### 1. Spec Before Implementation
 
-### II. Rust エコシステムの活用
-- **非同期処理**: すべての I/O 操作は Tokio ランタイムで実行
-- **型安全性**: Rust の型システムを最大限活用し、実行時エラーを最小化
-- **エラーハンドリング**: `Result<T, E>` と `thiserror` を使用した明確なエラー処理
-- **並行性**: `Arc<RwLock<T>>` または `Arc<Mutex<T>>` による安全な状態共有
-- **ゼロコスト抽象化**: パフォーマンスを犠牲にしない抽象化のみ使用
+- `feat`, `fix`, and `refactor` work must not enter implementation until the relevant
+  `gwt-spec` container has a usable `spec.md`, `plan.md`, `tasks.md`, and an analysis pass.
+- If critical ambiguity remains, record it as `[NEEDS CLARIFICATION: ...]` and stop before code.
 
-### III. テストファースト（妥協不可）
-**絶対遵守事項:**
-- **TDD必須**: テスト作成 → テスト失敗(RED) → 実装 → テスト成功(GREEN) → リファクタリング
-- **Red-Green-Refactorサイクルを厳格に遵守**
-- **Git commits はテストが実装より先に表示される必要がある**
-- **順序**: Contract → Integration → E2E → Unit
-- **Integration test は実際の依存関係を使用**（モック禁止、実ファイルシステム・実HTTP通信）
-- **禁止事項**:
-  - テストなしでの実装
-  - REDフェーズのスキップ（テストが失敗することを確認せずに実装）
-  - 実装後のテスト作成（テストが実装より後のコミットになる）
+### 2. Test-First Delivery
 
-### IV. API設計原則
-- **RESTful API**: リソース指向の明確なエンドポイント設計
-- **JSON通信**: すべてのリクエスト・レスポンスはJSON形式
-- **明確なステータスコード**:
-  - 200: 成功
-  - 201: 作成成功
-  - 400: クライアントエラー（バリデーションエラー）
-  - 404: リソース未発見
-  - 500: サーバーエラー
-- **エラーレスポンスの構造化**:
-  ```json
-  {
-    "error": "エラーメッセージ",
-    "details": "詳細な説明",
-    "timestamp": "2025-10-31T12:00:00Z"
-  }
-  ```
+- Every user story must map to verification work before or alongside implementation.
+- Prefer contract, integration, and end-to-end checks that prove the acceptance scenarios.
 
-### V. シンプルさと開発者体験
-**開発者体験の原則:**
-- **CLI操作は直感的でなければならない**
-- **エラーメッセージは解決策を明示**
-- **ログは構造化され、トレース可能**
-- **ドキュメントは README/CLAUDE.md に集約**
-- **実装はシンプルさを最優先**:
-  - 複雑な抽象化を避ける
-  - YAGNI（You Aren't Gonna Need It）の原則
-  - 必要性が証明されるまで機能追加しない
+### 3. No Workaround-First Changes
 
-### VI. ロードバランシングとヘルスチェック
-**ロードバランシング戦略:**
-- **Phase 1: Round-robin**（最初の実装）
-  - `AtomicUsize` でインデックス管理
-  - オンラインノードのみ対象
-  - シンプルで予測可能
-- **Phase 2: Metrics-based**（将来の拡張）
-  - CPU使用率、メモリ使用率、アクティブリクエスト数を考慮
-  - スコアベースの選択アルゴリズム
-  - カスタマイズ可能な重み付け
+- Do not accept speculative fixes or hand-wavy plans.
+- Root cause, tradeoffs, and impacted surfaces must be explicit in the spec or plan artifacts.
 
-**ヘルスチェック:**
-- **Heartbeat-based**: ノードが定期的にハートビート送信
-- **パッシブモニタリング**: llmlbからのポーリングなし
-- **タイムアウト処理**: 設定可能なタイムアウト（デフォルト60秒）
-- **自動ステータス更新**: タイムアウト時に自動的にオフライン化
+### 4. Minimal Complexity
 
-### VII. 可観測性とロギング
-- **構造化ロギング必須**（`tracing` クレート使用）
-- **ログレベル**: trace, debug, info, warn, error
-- **エラーコンテキストは十分に提供**:
-  - スタックトレース（development mode）
-  - リクエストID（トレーサビリティ）
-  - タイムスタンプ
-- **メトリクス収集**:
-  - リクエスト数
-  - レスポンスタイム
-  - エラー率
-  - ノード数（オンライン/オフライン）
+- Choose the simplest approach that satisfies the accepted requirements.
+- If the design introduces extra components, abstractions, or migrations, record the reason in
+  `Complexity Tracking`.
 
-### VIII. バージョニング
-- **MAJOR.MINOR.PATCH 形式**（Semantic Versioning）
-- **PATCH は変更ごとにインクリメント**
-- **`cargo` コマンド使用**:
-  - バグ修正: PATCH バージョンアップ
-  - 新機能: MINOR バージョンアップ
-  - 破壊的変更: MAJOR バージョンアップ
-- **Cargo.toml の workspace バージョン管理**
+### 5. Verifiable Completion
 
-## テスト要件
+- A task is not complete until the relevant checks have run successfully or an explicit exception
+  is documented with reason, fallback verification, and residual risk.
 
-### カバレッジ目標
-- **Unit tests**: 80%以上のコードカバレッジ
-- **Integration tests**: すべてのクリティカルパス100%
-- **E2E tests**: 主要なユーザーワークフロー100%
-- **Performance tests**: レスポンスタイムベンチマーク
+## Required Plan Gates
 
-### テストカテゴリ
-1. **Contract tests** (`tests/contract/`):
-   - APIエンドポイントの契約定義
-   - リクエスト/レスポンススキーマ検証
-   - OpenAPI仕様との整合性
+Every `plan.md` must answer these questions:
 
-2. **Integration tests** (`tests/integration/`):
-   - ノード登録フロー
-   - ハートビート処理
-   - ロードバランシング動作
-   - ヘルスチェックメカニズム
-   - ファイルシステム I/O
-   - HTTP通信
-
-3. **E2E tests** (`tests/e2e/`):
-   - エンドツーエンドワークフロー
-   - 実LLM runtimeノード接続（可能な場合）
-   - マルチノードシナリオ
-
-4. **Unit tests** (`tests/unit/` またはモジュール内):
-   - データモデル検証
-   - ユーティリティ関数
-   - ビジネスロジック
-
-## ドキュメント要件
-
-### 必須ドキュメント
-- `README.md`: プロジェクト概要、セットアップ、使用法（英語）
-- `README.ja.md`: 日本語版README
-- `CLAUDE.md`: 開発ワークフロー、ガイドライン（日本語）
-- GitHub Issue（`gwt-spec`ラベル）: 機能仕様・実装計画・タスク分解
-
-### ドキュメント原則
-- **設計は `docs/` またはGitHub Issue**: README.md には書かない
-- **日本語優先**: 開発ドキュメントは日本語
-- **リンク活用**: README.md は詳細へのリンクのみ
-- **Issue-first**: 新機能は必ずGitHub Issueで仕様を定義
-
-## CI/CD要件
-
-### 必須チェック
-- **テスト実行**: `cargo test`（ubuntu-latest + windows-latest）
-- **リンティング**: `cargo clippy` でエラー/警告ゼロ
-- **フォーマット**: `cargo fmt --check` で統一された書式
-- **commitlint**: コミットメッセージ規約準拠
-- **markdownlint**: マークダウンファイル品質
-
-
-### コミットワークフロー
-1. タスク完了
-2. テスト実行・合格確認（`cargo test`）
-3. Lintチェック（`cargo clippy`）
-4. フォーマット確認（`cargo fmt`）
-5. 日本語コミットメッセージ作成（Conventional Commits準拠）
-6. `git commit && git push`
-
-### 自動マージワークフロー
-- **Quality Checks** ワークフローで品質チェック実行
-- 全チェック成功時、**Auto Merge** ワークフローが起動
-- PRがドラフトでない場合、自動的にmainへマージ（MERGEメソッド）
-
-## ガバナンス
-
-### 憲章遵守
-- 本憲章はすべての開発プラクティスに優先
-- すべてのPR/レビューで憲章準拠を確認
-- 複雑さは正当化必須（Complexity Tracking）
-- 違反は文書化し、代替案却下理由を記載
-
-### 改定プロセス
-- 改定には文書化、承認、移行計画が必要
-- バージョン番号でトラッキング
-- 変更履歴を保持
-
-## プロジェクト固有の原則
-
-### ノード管理
-- **自己登録**: ノードは起動時に自動登録
-- **Heartbeat**: 定期的なハートビート送信でオンライン状態を維持
-- **自動クリーンアップ**: タイムアウトしたノードは自動的にオフライン化
-
-### APIプロキシ
-- **透過的**: クライアントは単一エンドポイントにアクセス
-- **ステートレス**: プロキシ自体は状態を持たない
-- **フェイルオーバー**: ノード障害時は別のノードにリトライ
-
-### パフォーマンス目標
-- **レスポンスタイム**: p95 < 100ms（プロキシオーバーヘッド）
-- **スループット**: 1000 req/s（単一llmlb）
-- **メモリ使用量**: < 50MB（アイドル時）
-- **起動時間**: < 1秒
-
-**バージョン**: 1.0.0
-**制定日**: 2025-10-31
-**最終改定**: 2025-10-31
+1. What files/modules are affected?
+2. What constraints from this constitution apply?
+3. Which risks or complexity additions are accepted, and why?
+4. How will the acceptance scenarios be verified?

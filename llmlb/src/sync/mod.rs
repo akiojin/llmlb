@@ -172,6 +172,11 @@ pub async fn sync_models_with_type(
         let caps = detect_capabilities(model_id);
         let caps_vec = Some(capabilities_to_strings(&caps));
 
+        // マッピングテーブルからcanonical_nameを解決
+        let canonical_name = endpoint_type
+            .and_then(|et| crate::models::mapping::resolve_canonical(model_id, &et))
+            .map(|s| s.to_string());
+
         let model = EndpointModel {
             endpoint_id,
             model_id: (*model_id).clone(),
@@ -179,6 +184,7 @@ pub async fn sync_models_with_type(
             max_tokens: None,
             last_checked: Some(now),
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name,
         };
 
         let _ = db::add_endpoint_model(pool, &model).await;
@@ -190,6 +196,10 @@ pub async fn sync_models_with_type(
         let caps = detect_capabilities(model_id);
         let caps_vec = Some(capabilities_to_strings(&caps));
 
+        let canonical_name = endpoint_type
+            .and_then(|et| crate::models::mapping::resolve_canonical(model_id, &et))
+            .map(|s| s.to_string());
+
         let model = EndpointModel {
             endpoint_id,
             model_id: (*model_id).clone(),
@@ -197,6 +207,7 @@ pub async fn sync_models_with_type(
             max_tokens: None,
             last_checked: Some(now),
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name,
         };
 
         let _ = db::update_endpoint_model(pool, &model).await;

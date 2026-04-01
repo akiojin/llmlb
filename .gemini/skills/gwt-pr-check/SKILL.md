@@ -193,6 +193,19 @@ Append the following line **only** when the worktree is dirty:
 7. Print human-readable result using the default template.
 8. Append JSON only if the user explicitly asks for machine-readable output.
 
+## Quick start
+
+```bash
+# Human-readable output
+python3 ".gemini/skills/gwt-pr-check/scripts/check_pr_status.py" --repo "."
+
+# Explicit base branch
+python3 ".gemini/skills/gwt-pr-check/scripts/check_pr_status.py" --repo "." --base develop
+
+# Append machine-readable JSON after the summary
+python3 ".gemini/skills/gwt-pr-check/scripts/check_pr_status.py" --repo "." --json
+```
+
 ## Command snippet (bash)
 
 ```bash
@@ -322,4 +335,4 @@ fi
 ## Related skill
 
 - `gwt-pr`: creates/updates PRs
-- `gwt-fix-pr`: diagnoses and fixes failing PRs
+- `gwt-pr-fix`: diagnoses and fixes failing PRs

@@ -343,6 +343,12 @@ pub struct TestConnectionResponse {
 pub struct DownloadModelRequest {
     /// ダウンロードするモデル名
     pub model: String,
+    /// HuggingFaceリポジトリ（LM Studio用、任意）
+    #[serde(default)]
+    pub hf_repo: Option<String>,
+    /// 量子化タイプ（LM Studio用、任意。デフォルト: "Q4_K_M"）
+    #[serde(default)]
+    pub quantization: Option<String>,
 }
 
 /// ダウンロードタスクレスポンス（SPEC-e8e9326e）
@@ -1195,7 +1201,13 @@ pub async fn proxy_chat_completions(
 
 // --- SPEC-e8e9326e: ダウンロード・メタデータ関連ハンドラー ---
 
-/// POST /api/endpoints/:id/download - モデルダウンロードリクエスト（xLLMのみ）
+/// POST /api/endpoints/:id/download - モデルダウンロードリクエスト（マルチエンジン対応）
+///
+/// 対応エンドポイントタイプ:
+/// - xLLM: タスク作成のみ（xLLM側がダウンロードを管理）
+/// - Ollama: POST /api/pull でバックグラウンドダウンロード
+/// - LM Studio: POST /api/v1/models/download でファイアアンドフォーゲット
+/// - vLLM/OpenaiCompatible: 非対応
 pub async fn download_model(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -1218,24 +1230,108 @@ pub async fn download_model(
         }
     };
 
-    // SPEC-e8e9326e: xLLMタイプのみダウンロード許可
+    // ダウンロード対応チェック
     if !endpoint.endpoint_type.supports_model_download() {
-        return AppError(LbError::Common(CommonError::Validation(
-            "Model download is only supported for xLLM endpoints".to_string(),
-        )))
+        return AppError(LbError::Common(CommonError::Validation(format!(
+            "Model download is not supported for {} endpoints",
+            endpoint.endpoint_type.as_str()
+        ))))
         .into_response();
     }
 
-    // ダウンロードタスク作成
-    let task = ModelDownloadTask::new(id, req.model);
-    match tasks_db::create_download_task(&state.db_pool, &task).await {
-        Ok(()) => (StatusCode::ACCEPTED, Json(DownloadTaskResponse::from(task))).into_response(),
+    // ダウンロードディスパッチャーへ委譲
+    let download_req = crate::download::DownloadRequest {
+        model: req.model,
+        hf_repo: req.hf_repo,
+        quantization: req.quantization,
+    };
+
+    match crate::download::download_model(
+        &state.http_client,
+        &endpoint.base_url,
+        endpoint.api_key.as_deref(),
+        &endpoint.endpoint_type,
+        &download_req,
+        &state.db_pool,
+        id,
+    )
+    .await
+    {
+        Ok(task) => (StatusCode::ACCEPTED, Json(DownloadTaskResponse::from(task))).into_response(),
         Err(e) => {
-            tracing::error!("Failed to create download task: {}", e);
-            AppError(LbError::Database(
-                "Failed to create download task".to_string(),
-            ))
-            .into_response()
+            tracing::error!("Download failed for endpoint {}: {}", id, e);
+            AppError(LbError::Common(CommonError::Validation(e.to_string()))).into_response()
+        }
+    }
+}
+
+/// DELETE /api/endpoints/:id/models/:model - モデル削除
+///
+/// 対応エンドポイントタイプ:
+/// - Ollama: DELETE /api/delete で削除
+/// - xLLM: 未対応（APIなし）
+/// - LM Studio: 未対応（0.4.6時点でAPIなし）
+/// - vLLM/OpenaiCompatible: 未対応
+pub async fn delete_endpoint_model_handler(
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<DeleteModelRequest>,
+) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
+    let model = req.model;
+
+    // エンドポイント取得
+    let endpoint = match db::get_endpoint(&state.db_pool, id).await {
+        Ok(Some(ep)) => ep,
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to get endpoint: {}", e);
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
+                .into_response();
+        }
+    };
+
+    // 削除対応チェック
+    if !endpoint.endpoint_type.supports_model_delete() {
+        return AppError(LbError::Common(CommonError::Validation(format!(
+            "Model delete is not supported for {} endpoints",
+            endpoint.endpoint_type.as_str()
+        ))))
+        .into_response();
+    }
+
+    // 削除ディスパッチャーへ委譲
+    match crate::delete::delete_model(
+        &state.http_client,
+        &endpoint.base_url,
+        endpoint.api_key.as_deref(),
+        &endpoint.endpoint_type,
+        &model,
+    )
+    .await
+    {
+        Ok(()) => {
+            tracing::info!(
+                "Model '{}' deleted from endpoint {} ({})",
+                model,
+                id,
+                endpoint.endpoint_type.as_str()
+            );
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(e) => {
+            tracing::error!(
+                "Model delete failed for '{}' on endpoint {}: {}",
+                model,
+                id,
+                e
+            );
+            AppError(LbError::Common(CommonError::Validation(e.to_string()))).into_response()
         }
     }
 }
@@ -1274,6 +1370,13 @@ pub async fn download_progress(
             .into_response()
         }
     }
+}
+
+/// モデル削除リクエストボディ
+#[derive(Debug, Deserialize)]
+pub struct DeleteModelRequest {
+    /// 削除するモデル名
+    pub model: String,
 }
 
 /// モデル情報取得のパスパラメータ
@@ -1567,6 +1670,7 @@ mod tests {
             max_tokens: Some(8192),
             last_checked: Some(Utc::now()),
             supported_apis: vec![],
+            canonical_name: None,
         };
         let resp = EndpointModelResponse::from(model);
         assert_eq!(resp.model_id, "llama3");
@@ -1584,6 +1688,7 @@ mod tests {
             max_tokens: None,
             last_checked: None,
             supported_apis: vec![],
+            canonical_name: None,
         };
         let resp = EndpointModelResponse::from(model);
         assert_eq!(resp.model_id, "embed-v1");

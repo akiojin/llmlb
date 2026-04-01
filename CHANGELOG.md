@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [5.2.5](https://github.com/akiojin/llmlb/compare/v5.2.4...v5.2.5) (2026-03-12)
+
+### Refactor
+
+- UpdateManager テストで環境変数依存を排除し、明示的な data_dir パラメータに移行
+
+### Chore
+
+- gwt スキルの統合とレガシーフックスクリプトの削除
+
+## [5.2.4](https://github.com/akiojin/llmlb/compare/v5.2.3...v5.2.4) (2026-03-12)
+
+### Bug Fixes
+
+- quinn-proto を 0.11.14 に更新（RUSTSEC-2026-0037 対応）
+- ダッシュボードのクリップボードフォールバックと recharts 型定義を強化
+- API キー更新時に名前未変更の場合の重複チェックをスキップ
+- ダッシュボードの WebSocket 無限再接続ループを解消
+- リクエスト詳細モーダルのタブ切れ表示を修正
+- API キーのユーザー単位での重複名を禁止
+- ダッシュボードの手動コピーフォールバックのクリーンアップを強化
+
+### CI
+
+- 必須チェックをアクティブなワークフローに整合
+- 廃止されたタスク完了チェックを削除
+
+### Chore
+
+- ローカル仕様ファイルと GitHub Spec Kit を削除し、Issue ベースの仕様管理に移行
+- gwt スキルパックの追加とレガシー codex gh スキルファイルの削除
+
 ## [5.2.3](https://github.com/akiojin/llmlb/compare/v5.2.2...v5.2.3) (2026-03-03)
 
 ### Bug Fixes

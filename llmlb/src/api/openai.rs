@@ -270,19 +270,45 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
     let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
+    // モデル名統一化: canonical_name → エイリアス（エンジン固有名）のマッピング
+    let mut canonical_to_aliases: HashMap<String, HashSet<String>> = HashMap::new();
+    // model_id → canonical_name の逆引き
+    let mut model_to_canonical: HashMap<String, String> = HashMap::new();
     {
         let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
                 for model in models {
+                    // canonical_nameが設定されている場合、エイリアス情報を収集
+                    if let Some(canonical) = &model.canonical_name {
+                        if canonical != &model.model_id {
+                            canonical_to_aliases
+                                .entry(canonical.clone())
+                                .or_default()
+                                .insert(model.model_id.clone());
+                        }
+                        model_to_canonical.insert(model.model_id.clone(), canonical.clone());
+                    }
+
+                    // 表示用キーの決定: canonical_nameがあればそれを使用
+                    let display_key = model
+                        .canonical_name
+                        .clone()
+                        .unwrap_or_else(|| model.model_id.clone());
+
                     endpoint_model_ids
-                        .entry(model.model_id.clone())
+                        .entry(display_key.clone())
                         .or_default()
                         .insert(ep.id.to_string());
-                    let apis = endpoint_model_apis
-                        .entry(model.model_id.clone())
-                        .or_default();
+                    // エイリアス名でもエンドポイントIDを登録（ルーティング用）
+                    if display_key != model.model_id {
+                        endpoint_model_ids
+                            .entry(model.model_id.clone())
+                            .or_default()
+                            .insert(ep.id.to_string());
+                    }
+                    let apis = endpoint_model_apis.entry(display_key.clone()).or_default();
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
@@ -290,9 +316,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                     apis.insert(SupportedAPI::Responses);
 
                     // max_tokens を集約（複数エンドポイントにある場合は最大値を採用）
-                    let entry = endpoint_model_max_tokens
-                        .entry(model.model_id.clone())
-                        .or_insert(None);
+                    let entry = endpoint_model_max_tokens.entry(display_key).or_insert(None);
                     if let Some(mt) = model.max_tokens {
                         *entry = Some(entry.map_or(mt, |existing| existing.max(mt)));
                     }
@@ -332,6 +356,18 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             })
             .unwrap_or_default();
 
+        // エイリアス情報を取得
+        let aliases: Vec<String> = canonical_to_aliases
+            .get(model_id)
+            .map(|a| {
+                let mut v: Vec<String> = a.iter().cloned().collect();
+                v.sort();
+                v
+            })
+            .unwrap_or_default();
+        // canonical_nameを取得（表示用）
+        let canonical_name = model_to_canonical.get(model_id).cloned();
+
         if let Some(m) = registered_map.get(model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();
             let obj = json!({
@@ -354,6 +390,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
                 "endpoint_ids": endpoint_ids,
+                "canonical_name": canonical_name,
+                "aliases": aliases,
             });
             data.push(obj);
         } else {
@@ -368,6 +406,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
                 "endpoint_ids": endpoint_ids,
+                "canonical_name": canonical_name,
+                "aliases": aliases,
             });
             data.push(obj);
         }
@@ -744,14 +784,34 @@ async fn proxy_openai_post(
         .await;
     }
 
+    // モデル名統一化: エイリアス名が渡された場合、正規名に変換して検索
+    let resolved_model = {
+        let found = state.endpoint_registry.find_by_model(&model).await;
+        if found.is_empty() {
+            // エイリアス名で見つからない場合、マッピングテーブルで正規名を解決
+            if let Some(canonical) = crate::models::mapping::resolve_canonical_any(&model) {
+                let canonical_found = state.endpoint_registry.find_by_model(canonical).await;
+                if !canonical_found.is_empty() {
+                    canonical.to_string()
+                } else {
+                    model.clone()
+                }
+            } else {
+                model.clone()
+            }
+        } else {
+            model.clone()
+        }
+    };
+
     // Check if any endpoint has this model
     if state
         .endpoint_registry
-        .find_by_model(&model)
+        .find_by_model(&resolved_model)
         .await
         .is_empty()
     {
-        let is_registered = load_registered_model(&state.db_pool, &model).await?;
+        let is_registered = load_registered_model(&state.db_pool, &resolved_model).await?;
         if is_registered.is_none() {
             let message = format!("The model '{}' does not exist", model);
             return Ok(openai_error_response(message, StatusCode::NOT_FOUND));
@@ -765,7 +825,9 @@ async fn proxy_openai_post(
 
     // FR-004: エンドポイント選択失敗時もリクエスト履歴に記録する
     let endpoint =
-        match select_available_endpoint_with_queue_for_model(state, queue_config, &model).await {
+        match select_available_endpoint_with_queue_for_model(state, queue_config, &resolved_model)
+            .await
+        {
             Ok(QueueSelection::Ready {
                 endpoint,
                 queued_wait_ms: wait_ms,
@@ -1799,6 +1861,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");
@@ -1881,6 +1944,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");
@@ -1969,6 +2033,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");
@@ -2064,6 +2129,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");

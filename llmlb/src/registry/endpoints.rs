@@ -633,6 +633,7 @@ mod tests {
             max_tokens: None,
             last_checked: Some(chrono::Utc::now()),
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         };
 
         registry.add_model(&model).await.unwrap();
@@ -1258,6 +1259,7 @@ mod tests {
             max_tokens: None,
             last_checked: None,
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         };
         registry.add_model(&model).await.unwrap();
 
@@ -1298,6 +1300,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             },
             EndpointModel {
                 endpoint_id: ep_id,
@@ -1306,6 +1309,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             },
         ];
 
@@ -1339,6 +1343,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1351,6 +1356,7 @@ mod tests {
             max_tokens: None,
             last_checked: None,
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         }];
 
         let result = registry.sync_models(ep_id, new_models).await.unwrap();
@@ -1405,6 +1411,7 @@ mod tests {
                 max_tokens: Some(4096),
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1448,6 +1455,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1460,6 +1468,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1495,6 +1504,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1540,6 +1550,7 @@ mod tests {
                     max_tokens: None,
                     last_checked: None,
                     supported_apis: vec![SupportedAPI::ChatCompletions],
+                    canonical_name: None,
                 })
                 .await
                 .unwrap();
@@ -1648,6 +1659,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();

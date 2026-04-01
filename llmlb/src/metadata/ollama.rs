@@ -33,6 +33,11 @@ struct OllamaShowResponse {
     /// Some servers expose context length here with keys like `*.context_length`.
     #[serde(default)]
     model_info: Option<Value>,
+
+    /// Model source/origin information (HF repo etc.)
+    #[serde(default)]
+    #[allow(dead_code)]
+    modelfile: Option<String>,
 }
 
 /// Ollama model details
@@ -139,6 +144,53 @@ fn extract_context_from_parameters(parameters: &Value) -> Option<u32> {
     }
 }
 
+/// model_infoからHuggingFaceリポジトリ情報を抽出
+///
+/// Ollamaのmodel_infoには `general.base_model.repo_url` や類似のキーで
+/// HFリポジトリURLが含まれることがある。
+fn extract_hf_repo(info: &OllamaShowResponse) -> Option<String> {
+    // model_infoからHF関連キーを探す
+    if let Some(model_info) = &info.model_info {
+        if let Some(obj) = model_info.as_object() {
+            for (key, value) in obj {
+                let key_lower = key.to_ascii_lowercase();
+                if key_lower.contains("repo_url")
+                    || key_lower.contains("base_model.repo")
+                    || key_lower == "general.base_model.repo_url"
+                {
+                    if let Some(url) = value.as_str() {
+                        let repo = crate::registry::models::extract_repo_id(url);
+                        if repo.contains('/') {
+                            return Some(repo);
+                        }
+                    }
+                }
+            }
+            // general.name + general.author パターン
+            let author = obj
+                .iter()
+                .find(|(k, _)| {
+                    let kl = k.to_ascii_lowercase();
+                    kl == "general.author" || kl.ends_with(".author")
+                })
+                .and_then(|(_, v)| v.as_str());
+            let name = obj
+                .iter()
+                .find(|(k, _)| {
+                    let kl = k.to_ascii_lowercase();
+                    kl == "general.name" || kl == "general.basename"
+                })
+                .and_then(|(_, v)| v.as_str());
+            if let (Some(author), Some(name)) = (author, name) {
+                if !author.is_empty() && !name.is_empty() {
+                    return Some(format!("{}/{}", author, name));
+                }
+            }
+        }
+    }
+    None
+}
+
 fn extract_context_length(info: &OllamaShowResponse) -> Option<u32> {
     if let Some(model_info) = &info.model_info {
         if let Some(ctx) = extract_context_from_model_info(model_info) {
@@ -204,9 +256,13 @@ pub async fn get_ollama_model_metadata(
     // Extract context length before moving fields out of `info`.
     let context_length = extract_context_length(&info);
 
+    // HFリポ情報をmodel_infoから抽出
+    let hf_repo = extract_hf_repo(&info);
+
     let mut metadata = ModelMetadata {
         model: info.model.unwrap_or_else(|| model.to_string()),
         context_length,
+        hf_repo,
         ..Default::default()
     };
 
@@ -333,5 +389,44 @@ mod tests {
 
         let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
         assert_eq!(extract_context_length(&response), Some(262144));
+    }
+
+    #[test]
+    fn test_extract_hf_repo_from_model_info_repo_url() {
+        let json = r#"{
+            "model_info": {
+                "general.base_model.repo_url": "https://huggingface.co/openai/gpt-oss-20b"
+            }
+        }"#;
+
+        let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            extract_hf_repo(&response),
+            Some("openai/gpt-oss-20b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_hf_repo_from_author_and_name() {
+        let json = r#"{
+            "model_info": {
+                "general.author": "Qwen",
+                "general.name": "Qwen3-30B"
+            }
+        }"#;
+
+        let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            extract_hf_repo(&response),
+            Some("Qwen/Qwen3-30B".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_hf_repo_none_when_no_info() {
+        let json = r#"{}"#;
+
+        let response: OllamaShowResponse = serde_json::from_str(json).unwrap();
+        assert!(extract_hf_repo(&response).is_none());
     }
 }

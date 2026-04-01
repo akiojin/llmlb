@@ -11,13 +11,31 @@
 #   --label LABEL   Additional label to apply (can be repeated; gwt-spec is always applied)
 
 set -euo pipefail
+shopt -s nullglob
 
 DRY_RUN=false
 SPECS_DIR=""
 REPORT_FILE="migration-report.json"
 RATE_LIMIT_BATCH=10
 RATE_LIMIT_SLEEP=3
-EXTRA_LABELS=()
+declare -a EXTRA_LABELS=()
+REPO_ROOT=""
+declare -a SPEC_DIRS=()
+declare -a CLEANUP_TARGETS=()
+declare -a LEGACY_CLEANUP_ALLOWLIST_RELATIVE=(
+  ".specify"
+  ".github/spec-kit"
+  ".github/spec-kit.yml"
+  ".github/spec-kit.yaml"
+  ".github/prompts/specify.md"
+  ".github/prompts/specify-system.md"
+  "scripts/spec-kit.sh"
+  "scripts/specify.sh"
+  "templates/spec-kit"
+  "templates/spec-kit.md"
+  "templates/specify"
+  "templates/specify.md"
+)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,6 +65,69 @@ resolve_repo_root() {
   fi
 
   git rev-parse --show-toplevel 2>/dev/null || true
+}
+
+append_cleanup_target() {
+  local target="$1"
+  [[ -e "$target" ]] || return 0
+  for existing in "${CLEANUP_TARGETS[@]-}"; do
+    [[ -n "$existing" ]] || continue
+    [[ "$existing" == "$target" ]] && return 0
+  done
+  CLEANUP_TARGETS+=("$target")
+}
+
+collect_cleanup_targets() {
+  CLEANUP_TARGETS=()
+
+  for dir in "${SPEC_DIRS[@]}"; do
+    append_cleanup_target "$dir"
+  done
+
+  append_cleanup_target "$SPECS_DIR/specs.md"
+  append_cleanup_target "$SPECS_DIR/archive"
+
+  for relative_path in "${LEGACY_CLEANUP_ALLOWLIST_RELATIVE[@]}"; do
+    append_cleanup_target "$REPO_ROOT/$relative_path"
+  done
+}
+
+preview_cleanup_targets() {
+  collect_cleanup_targets
+  echo ""
+  echo "Legacy cleanup plan:"
+  if [[ ${#CLEANUP_TARGETS[@]:-0} -eq 0 ]]; then
+    echo "  (no legacy paths detected beyond migration report handling)"
+  else
+    for path in "${CLEANUP_TARGETS[@]-}"; do
+      [[ -n "$path" ]] || continue
+      echo "  - $path"
+    done
+  fi
+  echo "  - $REPORT_FILE (delete after successful cleanup)"
+}
+
+cleanup_legacy_sources() {
+  collect_cleanup_targets
+
+  echo ""
+  echo "Cleaning up legacy local spec artifacts..."
+  for path in "${CLEANUP_TARGETS[@]-}"; do
+    [[ -n "$path" ]] || continue
+    [[ -e "$path" ]] || continue
+    echo "  Removing $path"
+    rm -rf "$path"
+  done
+
+  if [[ -d "$SPECS_DIR" ]] && [[ -z "$(ls -A "$SPECS_DIR" 2>/dev/null)" ]]; then
+    echo "  Removing empty $SPECS_DIR"
+    rmdir "$SPECS_DIR"
+  fi
+
+  if [[ -f "$REPORT_FILE" ]]; then
+    echo "  Removing $REPORT_FILE"
+    rm -f "$REPORT_FILE"
+  fi
 }
 
 write_empty_report_and_exit() {
@@ -80,11 +161,14 @@ elif [[ ! -d "$SPECS_DIR" ]]; then
   exit 1
 fi
 
+if [[ -z "$REPO_ROOT" ]]; then
+  REPO_ROOT=$(cd "$SPECS_DIR/.." && pwd -P)
+fi
+
 echo "Specs directory: $SPECS_DIR"
 echo "Dry run: $DRY_RUN"
 
 # Collect SPEC directories (exclude archive/)
-SPEC_DIRS=()
 for dir in "$SPECS_DIR"/SPEC-*/; do
   [[ -d "$dir" ]] || continue
   SPEC_DIRS+=("$dir")
@@ -204,6 +288,7 @@ BODY
 create_artifact_comments() {
   local dir="$1"
   local issue_number="$2"
+  local had_error=0
 
   for subdir in contracts checklists; do
     local artifact_dir="$dir/$subdir"
@@ -228,11 +313,15 @@ ${kind}:${name}
 ${content}
 ARTIFACT
 )
-        gh issue comment "$issue_number" --body "$comment_body" > /dev/null 2>&1 || \
-          echo "  Warning: Failed to create $kind artifact: $name"
+        if ! gh issue comment "$issue_number" --body "$comment_body" > /dev/null 2>&1; then
+          echo "  Warning: Failed to create $kind artifact: $name" >&2
+          had_error=1
+        fi
       fi
     done
   done
+
+  return "$had_error"
 }
 
 add_report_entry() {
@@ -281,16 +370,27 @@ for dir in "${SPEC_DIRS[@]}"; do
   done
 
   if issue_url=$(gh issue create --title "$title" --body "$issue_body" "${label_args[@]}" 2>/dev/null); then
+    migration_ok=true
     issue_number=$(echo "$issue_url" | sed 's#.*/##')
     echo "  Created issue #$issue_number"
 
     updated_body=$(build_issue_body "$dir" "#${issue_number}")
-    gh issue edit "$issue_number" --body "$updated_body" > /dev/null
+    if ! gh issue edit "$issue_number" --body "$updated_body" > /dev/null 2>&1; then
+      echo "  Warning: Failed to update issue body for $spec_name" >&2
+      migration_ok=false
+    fi
 
-    create_artifact_comments "$dir" "$issue_number"
+    if ! create_artifact_comments "$dir" "$issue_number"; then
+      migration_ok=false
+    fi
 
-    add_report_entry "$spec_name" "$issue_number" "$title" "success"
-    SUCCESS=$((SUCCESS + 1))
+    if [[ "$migration_ok" == "true" ]]; then
+      add_report_entry "$spec_name" "$issue_number" "$title" "success"
+      SUCCESS=$((SUCCESS + 1))
+    else
+      add_report_entry "$spec_name" "$issue_number" "$title" "failed"
+      FAILED=$((FAILED + 1))
+    fi
   else
     echo "  Failed to create issue for $spec_name" >&2
     add_report_entry "$spec_name" 0 "$title" "failed"
@@ -308,4 +408,14 @@ echo "]" >> "$REPORT_FILE"
 
 echo ""
 echo "Migration complete: $SUCCESS succeeded, $FAILED failed out of $COUNT total"
-echo "Report: $REPORT_FILE"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "Report: $REPORT_FILE"
+  preview_cleanup_targets
+elif (( FAILED > 0 )); then
+  echo "Report: $REPORT_FILE"
+  echo "Cleanup skipped because some migrations failed."
+else
+  cleanup_legacy_sources
+  echo "Legacy cleanup complete. Report removed: $REPORT_FILE"
+fi

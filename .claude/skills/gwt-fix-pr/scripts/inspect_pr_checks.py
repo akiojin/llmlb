@@ -71,6 +71,7 @@ def run_gh_command(args: Sequence[str], cwd: Path) -> GhResult:
         cwd=cwd,
         text=True,
         capture_output=True,
+        encoding="utf-8",
     )
     return GhResult(process.returncode, process.stdout, process.stderr)
 
@@ -365,6 +366,7 @@ def find_git_root(start: Path) -> Path | None:
         cwd=start,
         text=True,
         capture_output=True,
+        encoding="utf-8",
     )
     if result.returncode != 0:
         return None

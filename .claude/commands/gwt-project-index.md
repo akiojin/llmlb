@@ -1,5 +1,5 @@
 ---
-description: Semantic search over project files and GitHub Issues using the gwt-project-index skill
+description: Semantic search over project source files using the gwt-project-index skill
 author: akiojin
 allowed-tools: Read, Glob, Grep, Bash
 ---
@@ -23,6 +23,7 @@ Use this command to run semantic search against the project structure index.
    - relevance summary
    - next file(s) to inspect
 4. If index is missing/outdated, explain that and provide the shortest recovery action.
+5. For Issue search, use `/gwt:gwt-issue-search` instead.
 
 ## Examples
 

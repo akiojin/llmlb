@@ -407,8 +407,8 @@ pub async fn add_endpoint_model(
 
     sqlx::query(
         r#"
-        INSERT OR REPLACE INTO endpoint_models (endpoint_id, model_id, capabilities, max_tokens, last_checked)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO endpoint_models (endpoint_id, model_id, capabilities, max_tokens, last_checked, canonical_name)
+        VALUES (?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(model.endpoint_id.to_string())
@@ -416,6 +416,7 @@ pub async fn add_endpoint_model(
     .bind(&capabilities_json)
     .bind(model.max_tokens.map(|v| v as i32))
     .bind(&last_checked)
+    .bind(&model.canonical_name)
     .execute(pool)
     .await?;
 
@@ -435,13 +436,14 @@ pub async fn update_endpoint_model(
     let result = sqlx::query(
         r#"
         UPDATE endpoint_models
-        SET capabilities = ?, max_tokens = ?, last_checked = ?
+        SET capabilities = ?, max_tokens = ?, last_checked = ?, canonical_name = ?
         WHERE endpoint_id = ? AND model_id = ?
         "#,
     )
     .bind(&capabilities_json)
     .bind(model.max_tokens.map(|v| v as i32))
     .bind(model.last_checked.map(|dt| dt.to_rfc3339()))
+    .bind(&model.canonical_name)
     .bind(model.endpoint_id.to_string())
     .bind(&model.model_id)
     .execute(pool)
@@ -482,7 +484,7 @@ pub async fn list_endpoint_models(
 ) -> Result<Vec<EndpointModel>, sqlx::Error> {
     let rows = sqlx::query_as::<_, EndpointModelRow>(
         r#"
-        SELECT endpoint_id, model_id, capabilities, max_tokens, last_checked, supported_apis
+        SELECT endpoint_id, model_id, capabilities, max_tokens, last_checked, supported_apis, canonical_name
         FROM endpoint_models
         WHERE endpoint_id = ?
         "#,
@@ -698,6 +700,7 @@ struct EndpointModelRow {
     max_tokens: Option<i32>,
     last_checked: Option<String>,
     supported_apis: Option<String>,
+    canonical_name: Option<String>,
 }
 
 impl From<EndpointModelRow> for EndpointModel {
@@ -715,6 +718,7 @@ impl From<EndpointModelRow> for EndpointModel {
                 .supported_apis
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_else(|| vec![SupportedAPI::ChatCompletions]),
+            canonical_name: row.canonical_name,
         }
     }
 }
@@ -819,6 +823,7 @@ mod tests {
             max_tokens: None,
             last_checked: Some(chrono::Utc::now()),
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         };
         add_endpoint_model(&pool, &model).await.unwrap();
 
@@ -1267,6 +1272,7 @@ mod tests {
             max_tokens: Some(2048),
             last_checked: None,
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         };
         add_endpoint_model(&pool, &model).await.unwrap();
 
@@ -1300,6 +1306,7 @@ mod tests {
             max_tokens: None,
             last_checked: None,
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         };
         add_endpoint_model(&pool, &model).await.unwrap();
 
@@ -1332,6 +1339,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             };
             add_endpoint_model(&pool, &m).await.unwrap();
         }

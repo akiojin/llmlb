@@ -35,21 +35,27 @@ jobs:
     # 目的: Rust lintチェック（fmt, clippy）
     name: Rust Format & Clippy
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
 
     steps:
+      - name: No Rust-relevant changes
+        if: needs.changes.outputs.rust != 'true'
+        run: echo "No Rust-relevant changes; skipping Rust format/clippy."
+
       - name: Checkout code
+        if: needs.changes.outputs.rust == 'true'
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Setup Rust
+        if: needs.changes.outputs.rust == 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
 
       - name: Bootstrap pest_generator
+        if: needs.changes.outputs.rust == 'true'
         run: |
           if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
             cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
@@ -58,11 +64,13 @@ jobs:
           fi
 
       - name: Run cargo fmt
+        if: needs.changes.outputs.rust == 'true'
         run: |
           echo "🎨 Checking Rust formatting..."
           cargo fmt --all -- --check
 
       - name: Run cargo clippy
+        if: needs.changes.outputs.rust == 'true'
         run: |
           echo "🔍 Running Rust linter..."
           cargo clippy --all-targets --all-features -- -D warnings
@@ -124,5 +132,5 @@ jobs:
         run: |
           echo "📝 Checking commit messages..."
           echo "Base ref: ${{ github.base_ref }}"
-          chmod +x .specify/scripts/checks/check-commits.sh
-          .specify/scripts/checks/check-commits.sh --from "origin/${{ github.base_ref }}" --to HEAD
+          chmod +x scripts/checks/check-commits.sh
+          scripts/checks/check-commits.sh --from "origin/${{ github.base_ref }}" --to HEAD

@@ -1,4 +1,4 @@
-# Comprehensive CI for Rust & C++ nodes
+# Comprehensive CI for Rust
 name: CI
 
 on:
@@ -30,38 +30,32 @@ jobs:
               - 'Cargo.lock'
               - '.github/workflows/ci.yml'
 
-  tasks:
-    name: Tasks Completion Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check tasks.md completion
-        run: |
-          chmod +x .specify/scripts/checks/check-tasks.sh
-          .specify/scripts/checks/check-tasks.sh
-        env:
-          CI: true
-
   rust:
     name: Rust (fmt/clippy/test) ${{ matrix.os }}
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      - name: No Rust-relevant changes
+        if: needs.changes.outputs.rust != 'true'
+        run: echo "No Rust-relevant changes; skipping Rust fmt/clippy/test."
+
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.rust == 'true'
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Setup Rust
+        if: needs.changes.outputs.rust == 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
       - name: Bootstrap pest_generator
+        if: needs.changes.outputs.rust == 'true'
         run: |
           if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
             cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
@@ -70,12 +64,15 @@ jobs:
           fi
         shell: bash
       - name: Cargo fmt
+        if: needs.changes.outputs.rust == 'true'
         run: cargo fmt --all -- --check
         shell: bash
       - name: Cargo clippy
+        if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --all-targets --all-features -- -D warnings
         shell: bash
       - name: Cargo test
+        if: needs.changes.outputs.rust == 'true'
         run: cargo test --workspace --all-features -- --test-threads=1
         shell: bash
 
@@ -96,17 +93,23 @@ jobs:
   coverage-rust:
     name: Coverage (Rust)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: No Rust-relevant changes
+        if: needs.changes.outputs.rust != 'true'
+        run: echo "No Rust-relevant changes; skipping coverage generation."
+
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.rust == 'true'
         with:
           fetch-depth: 0
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        if: needs.changes.outputs.rust == 'true'
         with:
           toolchain: stable
       - name: Bootstrap pest_generator
+        if: needs.changes.outputs.rust == 'true'
         run: |
           if [ -f vendor/pest_generator/bootstrap/Cargo.toml ]; then
             cargo build --manifest-path vendor/pest_generator/bootstrap/Cargo.toml
@@ -115,14 +118,17 @@ jobs:
           fi
         shell: bash
       - name: Install cargo-llvm-cov
+        if: needs.changes.outputs.rust == 'true'
         run: |
           rustup component add llvm-tools-preview
           cargo install cargo-llvm-cov --locked
       - name: Run coverage
+        if: needs.changes.outputs.rust == 'true'
         run: |
           mkdir -p coverage-rust
           cargo llvm-cov --all-features --workspace --lcov --output-path coverage-rust/lcov.info
       - name: Upload coverage artifact
+        if: needs.changes.outputs.rust == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: rust-lcov

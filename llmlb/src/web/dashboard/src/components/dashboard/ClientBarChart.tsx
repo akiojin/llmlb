@@ -56,9 +56,9 @@ export function ClientBarChart({ rankings }: ClientBarChartProps) {
             fontSize: '12px',
           }}
           labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
-          formatter={(value: number) => [value, 'Requests']}
-          labelFormatter={(_label: string, payload: Array<{ payload?: { fullIp?: string } }>) =>
-            payload?.[0]?.payload?.fullIp ?? _label
+          formatter={(value) => [Number(value ?? 0), 'Requests']}
+          labelFormatter={(label, payload) =>
+            payload?.[0]?.payload?.fullIp ?? String(label ?? '')
           }
         />
         <Bar

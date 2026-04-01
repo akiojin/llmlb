@@ -148,4 +148,33 @@ test.describe('History Tab @dashboard', () => {
       expect(await perPage.isEnabled()).toBe(true)
     }
   })
+
+  test('HT-06: Tab buttons remain visible within modal on Request/Response tabs', async ({ page }) => {
+    await ensureDashboardLogin(page)
+    await page.click('button[role="tab"]:has-text("History")')
+    await page.waitForTimeout(1000)
+
+    await page.locator(DashboardSelectors.history.historyTbody).locator('tr').first().click()
+    const modal = page.locator(DashboardSelectors.modals.requestModal)
+    await expect(modal).toBeVisible({ timeout: 10000 })
+
+    for (const tabName of ['Request', 'Response']) {
+      const tab = modal.locator('button[role="tab"]').filter({ hasText: new RegExp(tabName, 'i') })
+      if (!(await tab.isVisible().catch(() => false))) continue
+      await tab.click()
+      await page.waitForTimeout(500)
+
+      const modalBox = await modal.boundingBox()
+      expect(modalBox).toBeTruthy()
+
+      const allTabs = modal.locator('button[role="tab"]')
+      const tabCount = await allTabs.count()
+      for (let i = 0; i < tabCount; i++) {
+        const tabBox = await allTabs.nth(i).boundingBox()
+        expect(tabBox).toBeTruthy()
+        expect(tabBox!.x).toBeGreaterThanOrEqual(modalBox!.x)
+        expect(tabBox!.x + tabBox!.width).toBeLessThanOrEqual(modalBox!.x + modalBox!.width)
+      }
+    }
+  })
 })

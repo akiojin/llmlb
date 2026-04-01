@@ -188,7 +188,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     if (!generatedPassword) return
     try {
       const { method } = await copyToClipboard(generatedPassword)
-      if (method === 'clipboard') {
+      if (method !== 'manual') {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
         toast({ title: 'Copied to clipboard' })

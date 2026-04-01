@@ -52,7 +52,7 @@ base64 = "0.22"
 sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "uuid"] }
 bcrypt = "0.19"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
-sha2 = "0.10"
+sha2 = "0.11"
 async-trait = "0.1"
 rand = "0.10"
 rpassword = "7.3"

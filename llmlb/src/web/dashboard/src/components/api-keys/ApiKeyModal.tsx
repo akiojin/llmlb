@@ -237,7 +237,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const handleCopy = async (text: string, id: string) => {
     try {
       const { method } = await copyToClipboard(text)
-      if (method === 'clipboard') {
+      if (method !== 'manual') {
         setCopiedId(id)
         setTimeout(() => setCopiedId(null), 2000)
         toast({ title: 'Copied full API key' })

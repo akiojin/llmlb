@@ -4,7 +4,7 @@
 
 use super::error::AppError;
 use crate::common::error::LbError;
-use crate::models::mapping::resolve_engine_names;
+use crate::models::mapping::{resolve_engine_names, supports_canonical_on_endpoint};
 use crate::types::endpoint::EndpointType;
 use crate::AppState;
 use axum::{
@@ -210,7 +210,7 @@ fn hf_auth_header() -> Option<String> {
 pub fn to_catalog_model(hf: &HfModelInfo) -> CatalogModel {
     let repo_id = hf.model_id.clone().unwrap_or_default();
     let engine_names = build_engine_names(&repo_id);
-    let supports_download = build_supports_download();
+    let supports_download = build_supports_download(&repo_id);
 
     CatalogModel {
         repo_id,
@@ -241,19 +241,20 @@ pub fn build_engine_names(repo_id: &str) -> EngineNames {
 }
 
 /// ダウンロードをサポートするエンジン一覧を構築
-pub fn build_supports_download() -> Vec<String> {
-    let all_types = [
-        EndpointType::Xllm,
-        EndpointType::Ollama,
-        EndpointType::Vllm,
-        EndpointType::LmStudio,
-        EndpointType::OpenaiCompatible,
-    ];
-    all_types
-        .iter()
-        .filter(|t| t.supports_model_download())
-        .map(|t| t.as_str().to_string())
-        .collect()
+pub fn build_supports_download(repo_id: &str) -> Vec<String> {
+    let mut supported = Vec::new();
+
+    if EndpointType::Xllm.supports_model_download() {
+        supported.push(EndpointType::Xllm.as_str().to_string());
+    }
+
+    for endpoint_type in [EndpointType::Ollama, EndpointType::LmStudio] {
+        if supports_canonical_on_endpoint(repo_id, &endpoint_type) {
+            supported.push(endpoint_type.as_str().to_string());
+        }
+    }
+
+    supported
 }
 
 fn can_recommend_download(endpoint_type: EndpointType, engine_name: Option<&str>) -> bool {
@@ -263,7 +264,8 @@ fn can_recommend_download(endpoint_type: EndpointType, engine_name: Option<&str>
 
     match endpoint_type {
         EndpointType::Ollama => engine_name.is_some(),
-        EndpointType::Xllm | EndpointType::LmStudio => true,
+        EndpointType::LmStudio => engine_name.is_some(),
+        EndpointType::Xllm => true,
         EndpointType::Vllm | EndpointType::OpenaiCompatible => false,
     }
 }
@@ -416,7 +418,7 @@ pub async fn get_catalog_model(
     })?;
 
     let engine_names = build_engine_names(&repo_id);
-    let supports_download = build_supports_download();
+    let supports_download = build_supports_download(&repo_id);
 
     let detail = ModelDetailResponse {
         repo_id,
@@ -499,10 +501,25 @@ mod tests {
 
     #[test]
     fn test_build_supports_download() {
-        let download = build_supports_download();
+        let download = build_supports_download("openai/gpt-oss-20b");
         assert!(download.contains(&"xllm".to_string()));
-        // Check that non-download types are excluded
+        assert!(download.contains(&"ollama".to_string()));
+        assert!(download.contains(&"lm_studio".to_string()));
         assert!(!download.contains(&"openai_compatible".to_string()));
+    }
+
+    #[test]
+    fn test_build_supports_download_omits_unmapped_engine() {
+        let download = build_supports_download("google/gemma-3-27b-it");
+        assert!(download.contains(&"xllm".to_string()));
+        assert!(download.contains(&"ollama".to_string()));
+        assert!(!download.contains(&"lm_studio".to_string()));
+    }
+
+    #[test]
+    fn test_build_supports_download_unknown_model_only_lists_xllm() {
+        let download = build_supports_download("unknown/model-123");
+        assert_eq!(download, vec!["xllm".to_string()]);
     }
 
     #[test]
@@ -517,6 +534,15 @@ mod tests {
     #[test]
     fn test_can_recommend_download_allows_xllm_without_alias() {
         assert!(can_recommend_download(EndpointType::Xllm, None));
+    }
+
+    #[test]
+    fn test_can_recommend_download_requires_lm_studio_alias() {
+        assert!(can_recommend_download(
+            EndpointType::LmStudio,
+            Some("openai/gpt-oss-20b")
+        ));
+        assert!(!can_recommend_download(EndpointType::LmStudio, None));
     }
 
     #[test]
@@ -559,7 +585,14 @@ mod tests {
         assert_eq!(model.description, Some("A test model".to_string()));
         assert_eq!(model.tags.len(), 2);
         assert_eq!(model.engine_names.ollama, Some("gpt-oss:20b".to_string()));
-        assert!(!model.supports_download.is_empty());
+        assert_eq!(
+            model.supports_download,
+            vec![
+                "xllm".to_string(),
+                "ollama".to_string(),
+                "lm_studio".to_string()
+            ]
+        );
     }
 
     #[test]

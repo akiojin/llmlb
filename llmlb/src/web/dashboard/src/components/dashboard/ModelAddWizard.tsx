@@ -186,6 +186,11 @@ export function ModelAddWizard({ open, onOpenChange }: ModelAddWizardProps) {
   }
 
   const downloadableEndpoints = recommendations?.endpoints.filter((ep) => ep.can_download) ?? []
+  const compatibleEngineEntries = modelDetail
+    ? Object.entries(modelDetail.engine_names).filter(
+        (entry): entry is [string, string] => entry[1] != null && entry[1] !== ''
+      )
+    : []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -331,15 +336,13 @@ export function ModelAddWizard({ open, onOpenChange }: ModelAddWizardProps) {
                   )}
 
                   {/* Engine compatibility */}
-                  {Object.keys(modelDetail.engine_names).length > 0 && (
+                  {compatibleEngineEntries.length > 0 && (
                     <div className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Engine Compatibility
-                      </p>
+                      <p className="text-xs font-medium text-muted-foreground">Mapped Engine Names</p>
                       <div className="flex gap-1 flex-wrap">
-                        {Object.entries(modelDetail.engine_names).map(([engine, name]) => (
+                        {compatibleEngineEntries.map(([engine, name]) => (
                           <Badge key={engine} variant="secondary" className="text-xs">
-                            {engine}{name ? `: ${name}` : ''}
+                            {engine}: {name}
                           </Badge>
                         ))}
                       </div>

@@ -1,32 +1,41 @@
-//! モデル名マッピングモジュール
+//! Built-in canonical-to-engine model mappings.
 //!
-//! 同一モデルがエンジンごとに異なるmodel_idで登録される問題を解決するため、
-//! 正規名（HFリポ名）とエンジン固有名のマッピングテーブルを提供する。
+//! The canonical identifier is always the Hugging Face repo ID. The aliases in
+//! this file describe the engine-specific runtime names that llmlb knows how to
+//! translate to and from.
+//!
+//! This table is llmlb's source of truth for built-in support across
+//! engine-specific runtimes. A model can be absent from every endpoint's
+//! current `/v1/models` inventory and still be considered supported when it
+//! appears here.
+//!
+//! Inventory and support are intentionally separate:
+//! - endpoint sync stores `canonical_name` only for runtime model IDs that
+//!   resolve through this table
+//! - `/v1/models` returns only models currently reported by online endpoints
+//! - the `/v1/models` response prefers `canonical_name` for the returned `id`
 
 use crate::types::endpoint::EndpointType;
 
-/// エンジン固有のモデル名エイリアス
+/// Engine-specific runtime model name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineAlias {
-    /// エンドポイントタイプ
+    /// Endpoint type that reports or accepts this alias.
     pub engine: EndpointType,
-    /// エンジン固有のモデル名
+    /// Runtime model identifier used by that endpoint type.
     pub name: &'static str,
 }
 
-/// モデルマッピング定義
+/// Canonical model mapping entry.
 #[derive(Debug, Clone)]
 pub struct ModelMapping {
-    /// 正規名（HFリポ名）
+    /// Canonical Hugging Face repo ID.
     pub canonical: &'static str,
-    /// エンジン固有のエイリアス一覧
+    /// Known runtime aliases for supported endpoint types.
     pub aliases: &'static [EngineAlias],
 }
 
-/// 組み込みマッピングテーブル
-///
-/// 実環境で確認されたモデル名の対応関係を定義。
-/// リリース時にのみ更新する。
+/// Built-in compatibility table keyed by canonical Hugging Face repo ID.
 pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     ModelMapping {
         canonical: "openai/gpt-oss-20b",
@@ -107,9 +116,9 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             name: "nvidia/nemotron-3-nano",
         }],
     },
-    // Qwen2.5-14B-Instruct-AWQ: LM Studioが正規名そのままで報告するため
-    // canonical直接一致で解決されるが、find_mapping()でエイリアス検索にも
-    // ヒットさせるために明示的に登録
+    // LM Studio reports this model as the canonical Hugging Face repo ID.
+    // Keeping the alias explicit makes `find_mapping()` and runtime lookups
+    // treat it the same way as other engine-specific aliases.
     ModelMapping {
         canonical: "Qwen/Qwen2.5-14B-Instruct-AWQ",
         aliases: &[EngineAlias {
@@ -133,36 +142,31 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
 ];
 
-/// モデルIDとエンドポイントタイプから正規名を解決する
-///
-/// マッピングテーブルを検索し、エンジン固有名から正規名を返す。
-/// 正規名がそのまま渡された場合もマッチする。
+/// Resolve a runtime model ID to its canonical Hugging Face repo ID.
 pub fn resolve_canonical(model_id: &str, endpoint_type: &EndpointType) -> Option<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
-        // 正規名が直接渡された場合
         if mapping.canonical == model_id {
             return Some(mapping.canonical);
         }
-        // エンジン固有名から正規名を解決
+
         for alias in mapping.aliases {
             if alias.engine == *endpoint_type && alias.name == model_id {
                 return Some(mapping.canonical);
             }
         }
     }
+
     None
 }
 
-/// 正規名からエンジン固有名を解決する
-///
-/// 指定されたエンドポイントタイプに対応するエンジン固有名を返す。
+/// Resolve the first engine-specific alias for a canonical model.
 pub fn resolve_engine_name(canonical: &str, endpoint_type: &EndpointType) -> Option<&'static str> {
     resolve_engine_names(canonical, endpoint_type)
         .into_iter()
         .next()
 }
 
-/// Resolve all engine-specific aliases for a canonical model on a given endpoint type.
+/// Resolve all engine-specific aliases for a canonical model.
 pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Vec<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
         if mapping.canonical == canonical {
@@ -174,35 +178,40 @@ pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Ve
                 .collect();
         }
     }
+
     Vec::new()
 }
 
-/// モデルIDから全エイリアス情報を検索する
-///
-/// 正規名またはエンジン固有名のいずれかにマッチするマッピングを返す。
+/// Returns whether llmlb has a built-in mapping for this canonical model on
+/// the given endpoint type.
+pub fn supports_canonical_on_endpoint(canonical: &str, endpoint_type: &EndpointType) -> bool {
+    !resolve_engine_names(canonical, endpoint_type).is_empty()
+}
+
+/// Find the built-in mapping by canonical ID or by any known alias.
 pub fn find_mapping(model_id: &str) -> Option<&'static ModelMapping> {
     for mapping in BUILTIN_MAPPINGS {
         if mapping.canonical == model_id {
             return Some(mapping);
         }
+
         for alias in mapping.aliases {
             if alias.name == model_id {
                 return Some(mapping);
             }
         }
     }
+
     None
 }
 
-/// モデルIDからHFリポ名を推測する（マッピングテーブル外のフォールバック）
+/// Best-effort fallback from an engine model ID to a likely HF repo ID.
 ///
-/// LM StudioのモデルIDは `publisher/model-name` 形式が多いため、
-/// そのまま HFリポ名として扱える場合がある。
-/// Ollamaのモデルは `model:tag` 形式のため推測が困難。
+/// Today this is only reliable for LM Studio when the runtime model ID already
+/// looks like `publisher/model-name` and does not include a `:variant` suffix.
 pub fn guess_hf_repo(model_id: &str, endpoint_type: &EndpointType) -> Option<String> {
     match endpoint_type {
         EndpointType::LmStudio => {
-            // LM Studio: "publisher/model-name" 形式ならそのままHFリポ名候補
             if model_id.contains('/') && !model_id.contains(':') {
                 Some(model_id.to_string())
             } else {
@@ -213,19 +222,21 @@ pub fn guess_hf_repo(model_id: &str, endpoint_type: &EndpointType) -> Option<Str
     }
 }
 
-/// モデルIDが任意のエイリアスとしてマッピングに存在するか確認し、
-/// 存在する場合は正規名を返す（エンドポイントタイプ不問）
+/// Resolve a canonical ID by matching against any known alias regardless of
+/// endpoint type.
 pub fn resolve_canonical_any(model_id: &str) -> Option<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
         if mapping.canonical == model_id {
             return Some(mapping.canonical);
         }
+
         for alias in mapping.aliases {
             if alias.name == model_id {
                 return Some(mapping.canonical);
             }
         }
     }
+
     None
 }
 
@@ -259,7 +270,6 @@ mod tests {
 
     #[test]
     fn test_resolve_canonical_wrong_engine() {
-        // gpt-oss:20b はOllamaのエイリアスなのでvLLMでは解決できない
         let result = resolve_canonical("gpt-oss:20b", &EndpointType::Vllm);
         assert!(result.is_none());
     }
@@ -301,6 +311,30 @@ mod tests {
     fn test_resolve_engine_names_unknown_canonical_returns_empty() {
         let result = resolve_engine_names("unknown/model", &EndpointType::LmStudio);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_supports_canonical_on_endpoint_true_when_alias_exists() {
+        assert!(supports_canonical_on_endpoint(
+            "openai/gpt-oss-20b",
+            &EndpointType::Ollama
+        ));
+        assert!(supports_canonical_on_endpoint(
+            "openai/gpt-oss-20b",
+            &EndpointType::LmStudio
+        ));
+    }
+
+    #[test]
+    fn test_supports_canonical_on_endpoint_false_when_alias_missing() {
+        assert!(!supports_canonical_on_endpoint(
+            "openai/gpt-oss-120b",
+            &EndpointType::LmStudio
+        ));
+        assert!(!supports_canonical_on_endpoint(
+            "unknown/model",
+            &EndpointType::Ollama
+        ));
     }
 
     #[test]

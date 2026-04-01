@@ -94,7 +94,7 @@ export function usePlayground(options: UsePlaygroundOptions = {}) {
   const handleCopyCurl = useCallback(async (text: string) => {
     try {
       const { method } = await copyToClipboard(text)
-      if (method === 'clipboard') {
+      if (method !== 'manual') {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
         toast({ title: 'Copied to clipboard' })

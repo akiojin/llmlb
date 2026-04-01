@@ -99,7 +99,7 @@ export function generateId(): string {
   return Math.random().toString(36).substring(2, 9)
 }
 
-export type ClipboardCopyMethod = 'clipboard' | 'manual'
+export type ClipboardCopyMethod = 'exec-command' | 'clipboard' | 'manual'
 
 export interface ClipboardCopyResult {
   method: ClipboardCopyMethod
@@ -113,6 +113,69 @@ function clearManualCleanupTimer() {
   if (manualCleanupTimer != null) {
     clearTimeout(manualCleanupTimer)
     manualCleanupTimer = null
+  }
+}
+
+function createHiddenCopyTextarea(text: string): HTMLTextAreaElement | null {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.setAttribute('aria-hidden', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  textarea.style.zIndex = '-1'
+
+  document.body.appendChild(textarea)
+  return textarea
+}
+
+function applyTextareaSelection(textarea: HTMLTextAreaElement) {
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+}
+
+function restoreFocusedElement(element: HTMLElement | null) {
+  if (!element || typeof element.focus !== 'function') {
+    return
+  }
+
+  try {
+    element.focus()
+  } catch {
+    // Ignore focus restoration failures for detached or unfocusable elements.
+  }
+}
+
+function attemptExecCommandCopy(text: string): boolean {
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+    return false
+  }
+
+  const textarea = createHiddenCopyTextarea(text)
+  if (!textarea) {
+    return false
+  }
+
+  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+
+  try {
+    applyTextareaSelection(textarea)
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+    restoreFocusedElement(activeElement)
   }
 }
 
@@ -166,6 +229,12 @@ export async function copyToClipboard(text: string): Promise<ClipboardCopyResult
     throw new Error('Clipboard value is empty')
   }
 
+  cleanupManualCopyBuffer()
+
+  if (attemptExecCommandCopy(text)) {
+    return { method: 'exec-command' }
+  }
+
   const isClipboardApiAvailable =
     typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
   const isSecureContext = typeof window !== 'undefined' ? window.isSecureContext : true
@@ -189,24 +258,12 @@ export function selectTextForManualCopy(text: string): boolean {
 
   cleanupManualCopyBuffer()
 
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.top = '0'
-  textarea.style.left = '0'
-  textarea.style.width = '1px'
-  textarea.style.height = '1px'
-  textarea.style.opacity = '0'
-  textarea.style.pointerEvents = 'none'
-  textarea.style.zIndex = '-1'
-
-  document.body.appendChild(textarea)
-  const applySelection = () => {
-    textarea.focus()
-    textarea.select()
-    textarea.setSelectionRange(0, textarea.value.length)
+  const textarea = createHiddenCopyTextarea(text)
+  if (!textarea) {
+    return false
   }
+
+  const applySelection = () => applyTextareaSelection(textarea)
 
   applySelection()
   if (typeof window !== 'undefined') {

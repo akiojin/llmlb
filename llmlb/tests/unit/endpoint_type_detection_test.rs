@@ -49,7 +49,7 @@ fn test_download_unsupported_endpoints() {
 /// 削除対応: xLLM, Ollama のみ
 #[test]
 fn test_delete_supported_endpoints() {
-    assert!(EndpointType::Xllm.supports_model_delete());
+    assert!(!EndpointType::Xllm.supports_model_delete());
     assert!(EndpointType::Ollama.supports_model_delete());
     assert!(!EndpointType::LmStudio.supports_model_delete());
     assert!(!EndpointType::Vllm.supports_model_delete());

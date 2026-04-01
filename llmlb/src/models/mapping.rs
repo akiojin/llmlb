@@ -52,44 +52,82 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "openai/gpt-oss-120b",
-        aliases: &[EngineAlias {
-            engine: EndpointType::Ollama,
-            name: "gpt-oss:120b",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "gpt-oss:120b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "openai/gpt-oss-120b",
+            },
+        ],
     },
     ModelMapping {
         canonical: "Qwen/qwen3-coder-30b",
-        aliases: &[EngineAlias {
-            engine: EndpointType::Ollama,
-            name: "qwen3-coder:30b",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3-coder:30b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3-coder-30b",
+            },
+        ],
     },
     ModelMapping {
         canonical: "Qwen/Qwen3-30B",
-        aliases: &[EngineAlias {
-            engine: EndpointType::Ollama,
-            name: "qwen3:30b",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3:30b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3-30b-a3b",
+            },
+        ],
     },
     ModelMapping {
         canonical: "meta-llama/Llama-3.3-70B-Instruct",
-        aliases: &[EngineAlias {
-            engine: EndpointType::Ollama,
-            name: "llama3.3:70b",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "llama3.3:70b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "meta/llama-3.3-70b",
+            },
+        ],
     },
     ModelMapping {
         canonical: "google/gemma-3-27b-it",
-        aliases: &[EngineAlias {
-            engine: EndpointType::Ollama,
-            name: "gemma3:27b",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "gemma3:27b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "google/gemma-3-27b",
+            },
+        ],
     },
     ModelMapping {
         canonical: "Qwen/Qwen3.5-35B-A3B",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
+                name: "qwen3.5:35b-a3b",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3.5-35b-a3b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
                 name: "qwen3.5-35b-a3b",
             },
             EngineAlias {
@@ -104,41 +142,91 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "nvidia/nemotron-3-super-120b-a12b",
-        aliases: &[EngineAlias {
-            engine: EndpointType::Ollama,
-            name: "nvidia-nemotron-3-super-120b-a12b",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nemotron-3-super:120b-a12b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nvidia-nemotron-3-super-120b-a12b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nvidia/nemotron-3-super",
+            },
+        ],
     },
     ModelMapping {
         canonical: "nvidia/Nemotron-3-Nano",
-        aliases: &[EngineAlias {
-            engine: EndpointType::LmStudio,
-            name: "nvidia/nemotron-3-nano",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nemotron-3-nano:30b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nvidia/nemotron-3-nano",
+            },
+        ],
     },
     // LM Studio reports this model as the canonical Hugging Face repo ID.
     // Keeping the alias explicit makes `find_mapping()` and runtime lookups
     // treat it the same way as other engine-specific aliases.
     ModelMapping {
         canonical: "Qwen/Qwen2.5-14B-Instruct-AWQ",
-        aliases: &[EngineAlias {
-            engine: EndpointType::LmStudio,
-            name: "Qwen/Qwen2.5-14B-Instruct-AWQ",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen2.5:14b-instruct",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "Qwen/Qwen2.5-14B-Instruct-AWQ",
+            },
+        ],
     },
     ModelMapping {
         canonical: "nomic-ai/nomic-embed-text-v1.5",
-        aliases: &[EngineAlias {
-            engine: EndpointType::Ollama,
-            name: "text-embedding-nomic-embed-text-v1.5",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nomic-embed-text:latest",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nomic-embed-text",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nomic-embed-text:v1.5",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "text-embedding-nomic-embed-text-v1.5",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nomic-ai/nomic-embed-text-v1.5",
+            },
+        ],
     },
     ModelMapping {
         canonical: "THUDM/glm-4.7-flash",
-        aliases: &[EngineAlias {
-            engine: EndpointType::LmStudio,
-            name: "zai-org/glm-4.7-flash",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "glm-4.7-flash:latest",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "glm-4.7-flash",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "zai-org/glm-4.7-flash",
+            },
+        ],
     },
 ];
 
@@ -303,7 +391,11 @@ mod tests {
         let result = resolve_engine_names("Qwen/Qwen3.5-35B-A3B", &EndpointType::LmStudio);
         assert_eq!(
             result,
-            vec!["qwen/qwen3.5-35b-a3b", "qwen/qwen3.5-35b-a3b:2"]
+            vec![
+                "qwen3.5-35b-a3b",
+                "qwen/qwen3.5-35b-a3b",
+                "qwen/qwen3.5-35b-a3b:2"
+            ]
         );
     }
 
@@ -328,8 +420,8 @@ mod tests {
     #[test]
     fn test_supports_canonical_on_endpoint_false_when_alias_missing() {
         assert!(!supports_canonical_on_endpoint(
-            "openai/gpt-oss-120b",
-            &EndpointType::LmStudio
+            "openai/gpt-oss-20b",
+            &EndpointType::Vllm
         ));
         assert!(!supports_canonical_on_endpoint(
             "unknown/model",
@@ -437,44 +529,80 @@ mod tests {
 
     #[test]
     fn test_nvidia_nemotron_super_mapping() {
-        let result = resolve_canonical("nvidia-nemotron-3-super-120b-a12b", &EndpointType::Ollama);
+        let result = resolve_canonical("nemotron-3-super:120b-a12b", &EndpointType::Ollama);
         assert_eq!(result, Some("nvidia/nemotron-3-super-120b-a12b"));
     }
 
     #[test]
     fn test_nvidia_nemotron_nano_mapping() {
+        let ollama = resolve_canonical("nemotron-3-nano:30b", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("nvidia/Nemotron-3-Nano"));
+
         let result = resolve_canonical("nvidia/nemotron-3-nano", &EndpointType::LmStudio);
         assert_eq!(result, Some("nvidia/Nemotron-3-Nano"));
     }
 
     #[test]
     fn test_nomic_embed_mapping() {
+        let ollama = resolve_canonical("nomic-embed-text:latest", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("nomic-ai/nomic-embed-text-v1.5"));
+
         let result = resolve_canonical(
             "text-embedding-nomic-embed-text-v1.5",
-            &EndpointType::Ollama,
+            &EndpointType::LmStudio,
         );
         assert_eq!(result, Some("nomic-ai/nomic-embed-text-v1.5"));
     }
 
     #[test]
     fn test_glm_flash_mapping() {
+        let ollama = resolve_canonical("glm-4.7-flash:latest", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("THUDM/glm-4.7-flash"));
+
         let result = resolve_canonical("zai-org/glm-4.7-flash", &EndpointType::LmStudio);
         assert_eq!(result, Some("THUDM/glm-4.7-flash"));
     }
 
     #[test]
     fn test_qwen25_awq_mapping() {
+        let ollama = resolve_canonical("qwen2.5:14b-instruct", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("Qwen/Qwen2.5-14B-Instruct-AWQ"));
+
         let result = resolve_canonical("Qwen/Qwen2.5-14B-Instruct-AWQ", &EndpointType::LmStudio);
         assert_eq!(result, Some("Qwen/Qwen2.5-14B-Instruct-AWQ"));
     }
 
     #[test]
     fn test_qwen35_all_variants_resolve_to_same_canonical() {
-        let ollama = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::Ollama);
+        let ollama = resolve_canonical("qwen3.5:35b-a3b", &EndpointType::Ollama);
+        let ollama_legacy = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::Ollama);
+        let lms_short = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::LmStudio);
         let lms = resolve_canonical("qwen/qwen3.5-35b-a3b", &EndpointType::LmStudio);
         let lms_v2 = resolve_canonical("qwen/qwen3.5-35b-a3b:2", &EndpointType::LmStudio);
-        assert_eq!(ollama, lms);
+        assert_eq!(ollama, ollama_legacy);
+        assert_eq!(ollama, lms_short);
+        assert_eq!(lms_short, lms);
         assert_eq!(lms, lms_v2);
         assert_eq!(ollama, Some("Qwen/Qwen3.5-35B-A3B"));
+    }
+
+    #[test]
+    fn test_recently_added_lm_studio_aliases_resolve() {
+        let cases = [
+            ("openai/gpt-oss-120b", "openai/gpt-oss-120b"),
+            ("Qwen/qwen3-coder-30b", "qwen/qwen3-coder-30b"),
+            ("Qwen/Qwen3-30B", "qwen/qwen3-30b-a3b"),
+            ("meta-llama/Llama-3.3-70B-Instruct", "meta/llama-3.3-70b"),
+            ("google/gemma-3-27b-it", "google/gemma-3-27b"),
+            (
+                "nvidia/nemotron-3-super-120b-a12b",
+                "nvidia-nemotron-3-super-120b-a12b",
+            ),
+        ];
+
+        for (canonical, alias) in cases {
+            let result = resolve_canonical(alias, &EndpointType::LmStudio);
+            assert_eq!(result, Some(canonical), "failed for {}", alias);
+        }
     }
 }

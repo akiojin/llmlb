@@ -509,11 +509,11 @@ mod tests {
     }
 
     #[test]
-    fn test_build_supports_download_omits_unmapped_engine() {
+    fn test_build_supports_download_includes_new_lm_studio_aliases() {
         let download = build_supports_download("google/gemma-3-27b-it");
         assert!(download.contains(&"xllm".to_string()));
         assert!(download.contains(&"ollama".to_string()));
-        assert!(!download.contains(&"lm_studio".to_string()));
+        assert!(download.contains(&"lm_studio".to_string()));
     }
 
     #[test]
@@ -551,6 +551,7 @@ mod tests {
         assert_eq!(
             ids,
             vec![
+                "qwen3.5-35b-a3b".to_string(),
                 "qwen/qwen3.5-35b-a3b".to_string(),
                 "qwen/qwen3.5-35b-a3b:2".to_string()
             ]
@@ -585,6 +586,10 @@ mod tests {
         assert_eq!(model.description, Some("A test model".to_string()));
         assert_eq!(model.tags.len(), 2);
         assert_eq!(model.engine_names.ollama, Some("gpt-oss:20b".to_string()));
+        assert_eq!(
+            model.engine_names.lm_studio,
+            Some("openai/gpt-oss-20b".to_string())
+        );
         assert_eq!(
             model.supports_download,
             vec![
@@ -777,11 +782,13 @@ mod tests {
     fn test_build_engine_names_qwen3() {
         let names = build_engine_names("Qwen/Qwen3-30B");
         assert_eq!(names.ollama, Some("qwen3:30b".to_string()));
+        assert_eq!(names.lm_studio, Some("qwen/qwen3-30b-a3b".to_string()));
     }
 
     #[test]
     fn test_build_engine_names_gemma3() {
         let names = build_engine_names("google/gemma-3-27b-it");
         assert_eq!(names.ollama, Some("gemma3:27b".to_string()));
+        assert_eq!(names.lm_studio, Some("google/gemma-3-27b".to_string()));
     }
 }

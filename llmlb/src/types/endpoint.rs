@@ -159,7 +159,7 @@ impl EndpointType {
     ///
     /// LM Studio: 削除APIなし（0.4.6時点）
     pub fn supports_model_delete(&self) -> bool {
-        matches!(self, Self::Xllm | Self::Ollama)
+        matches!(self, Self::Ollama)
     }
 
     /// モデルメタデータ取得をサポートするか

@@ -4,7 +4,7 @@
 
 use super::error::AppError;
 use crate::common::error::LbError;
-use crate::models::mapping::resolve_engine_name;
+use crate::models::mapping::{resolve_engine_names, supports_canonical_on_endpoint};
 use crate::types::endpoint::EndpointType;
 use crate::AppState;
 use axum::{
@@ -210,7 +210,7 @@ fn hf_auth_header() -> Option<String> {
 pub fn to_catalog_model(hf: &HfModelInfo) -> CatalogModel {
     let repo_id = hf.model_id.clone().unwrap_or_default();
     let engine_names = build_engine_names(&repo_id);
-    let supports_download = build_supports_download();
+    let supports_download = build_supports_download(&repo_id);
 
     CatalogModel {
         repo_id,
@@ -225,27 +225,60 @@ pub fn to_catalog_model(hf: &HfModelInfo) -> CatalogModel {
 /// 正規名（repo_id）からエンジン別名を構築
 pub fn build_engine_names(repo_id: &str) -> EngineNames {
     EngineNames {
-        ollama: resolve_engine_name(repo_id, &EndpointType::Ollama).map(|s| s.to_string()),
-        lm_studio: resolve_engine_name(repo_id, &EndpointType::LmStudio).map(|s| s.to_string()),
-        xllm: resolve_engine_name(repo_id, &EndpointType::Xllm).map(|s| s.to_string()),
-        vllm: resolve_engine_name(repo_id, &EndpointType::Vllm).map(|s| s.to_string()),
+        ollama: resolve_engine_model_ids(repo_id, EndpointType::Ollama)
+            .into_iter()
+            .next(),
+        lm_studio: resolve_engine_model_ids(repo_id, EndpointType::LmStudio)
+            .into_iter()
+            .next(),
+        xllm: resolve_engine_model_ids(repo_id, EndpointType::Xllm)
+            .into_iter()
+            .next(),
+        vllm: resolve_engine_model_ids(repo_id, EndpointType::Vllm)
+            .into_iter()
+            .next(),
     }
 }
 
 /// ダウンロードをサポートするエンジン一覧を構築
-pub fn build_supports_download() -> Vec<String> {
-    let all_types = [
-        EndpointType::Xllm,
-        EndpointType::Ollama,
-        EndpointType::Vllm,
-        EndpointType::LmStudio,
-        EndpointType::OpenaiCompatible,
-    ];
-    all_types
-        .iter()
-        .filter(|t| t.supports_model_download())
-        .map(|t| t.as_str().to_string())
+pub fn build_supports_download(repo_id: &str) -> Vec<String> {
+    let mut supported = Vec::new();
+
+    if EndpointType::Xllm.supports_model_download() {
+        supported.push(EndpointType::Xllm.as_str().to_string());
+    }
+
+    for endpoint_type in [EndpointType::Ollama, EndpointType::LmStudio] {
+        if supports_canonical_on_endpoint(repo_id, &endpoint_type) {
+            supported.push(endpoint_type.as_str().to_string());
+        }
+    }
+
+    supported
+}
+
+fn can_recommend_download(endpoint_type: EndpointType, engine_name: Option<&str>) -> bool {
+    if !endpoint_type.supports_model_download() {
+        return false;
+    }
+
+    match endpoint_type {
+        EndpointType::Ollama => engine_name.is_some(),
+        EndpointType::LmStudio => true,
+        EndpointType::Xllm => true,
+        EndpointType::Vllm | EndpointType::OpenaiCompatible => false,
+    }
+}
+
+fn resolve_engine_model_ids(repo_id: &str, endpoint_type: EndpointType) -> Vec<String> {
+    resolve_engine_names(repo_id, &endpoint_type)
+        .into_iter()
+        .map(|name| name.to_string())
         .collect()
+}
+
+fn endpoint_has_model(model_id: &str, repo_id: &str, engine_model_ids: &[String]) -> bool {
+    model_id == repo_id || engine_model_ids.iter().any(|name| model_id == name)
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +418,7 @@ pub async fn get_catalog_model(
     })?;
 
     let engine_names = build_engine_names(&repo_id);
-    let supports_download = build_supports_download();
+    let supports_download = build_supports_download(&repo_id);
 
     let detail = ModelDetailResponse {
         repo_id,
@@ -409,21 +442,14 @@ pub async fn recommend_endpoints(
     Path(repo_id): Path<String>,
 ) -> Result<Json<RecommendEndpointsResponse>, AppError> {
     let online = state.endpoint_registry.list_online().await;
-    let engine_names = build_engine_names(&repo_id);
 
     let mut recommendations = Vec::new();
 
     for ep in &online {
-        let can_download = ep.endpoint_type.supports_model_download();
-
+        let engine_model_ids = resolve_engine_model_ids(&repo_id, ep.endpoint_type);
         // エンドポイントのモデル一覧からこのモデルを持っているか確認
-        let engine_name = match ep.endpoint_type {
-            EndpointType::Ollama => engine_names.ollama.as_deref(),
-            EndpointType::LmStudio => engine_names.lm_studio.as_deref(),
-            EndpointType::Xllm => engine_names.xllm.as_deref(),
-            EndpointType::Vllm => engine_names.vllm.as_deref(),
-            EndpointType::OpenaiCompatible => None,
-        };
+        let engine_name = engine_model_ids.first().map(String::as_str);
+        let can_download = can_recommend_download(ep.endpoint_type, engine_name);
 
         // モデル保有チェック: repo_id自体またはエンジン固有名で確認
         let models = crate::db::endpoints::list_endpoint_models(&state.db_pool, ep.id)
@@ -431,7 +457,7 @@ pub async fn recommend_endpoints(
             .unwrap_or_default();
         let has_model = models
             .iter()
-            .any(|m| m.model_id == repo_id || engine_name.is_some_and(|name| m.model_id == name));
+            .any(|m| endpoint_has_model(&m.model_id, &repo_id, &engine_model_ids));
 
         recommendations.push(RecommendedEndpoint {
             id: ep.id.to_string(),
@@ -475,10 +501,72 @@ mod tests {
 
     #[test]
     fn test_build_supports_download() {
-        let download = build_supports_download();
+        let download = build_supports_download("openai/gpt-oss-20b");
         assert!(download.contains(&"xllm".to_string()));
-        // Check that non-download types are excluded
+        assert!(download.contains(&"ollama".to_string()));
+        assert!(download.contains(&"lm_studio".to_string()));
         assert!(!download.contains(&"openai_compatible".to_string()));
+    }
+
+    #[test]
+    fn test_build_supports_download_includes_new_lm_studio_aliases() {
+        let download = build_supports_download("google/gemma-3-27b-it");
+        assert!(download.contains(&"xllm".to_string()));
+        assert!(download.contains(&"ollama".to_string()));
+        assert!(download.contains(&"lm_studio".to_string()));
+    }
+
+    #[test]
+    fn test_build_supports_download_unknown_model_only_lists_xllm() {
+        let download = build_supports_download("unknown/model-123");
+        assert_eq!(download, vec!["xllm".to_string()]);
+    }
+
+    #[test]
+    fn test_can_recommend_download_requires_ollama_alias() {
+        assert!(can_recommend_download(
+            EndpointType::Ollama,
+            Some("gpt-oss:20b")
+        ));
+        assert!(!can_recommend_download(EndpointType::Ollama, None));
+    }
+
+    #[test]
+    fn test_can_recommend_download_allows_xllm_without_alias() {
+        assert!(can_recommend_download(EndpointType::Xllm, None));
+    }
+
+    #[test]
+    fn test_can_recommend_download_allows_lm_studio_without_alias() {
+        assert!(can_recommend_download(
+            EndpointType::LmStudio,
+            Some("openai/gpt-oss-20b")
+        ));
+        assert!(can_recommend_download(EndpointType::LmStudio, None));
+    }
+
+    #[test]
+    fn test_resolve_engine_model_ids_includes_all_lm_studio_aliases() {
+        let ids = resolve_engine_model_ids("Qwen/Qwen3.5-35B-A3B", EndpointType::LmStudio);
+        assert_eq!(
+            ids,
+            vec![
+                "qwen3.5-35b-a3b".to_string(),
+                "qwen/qwen3.5-35b-a3b".to_string(),
+                "qwen/qwen3.5-35b-a3b:2".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_endpoint_has_model_matches_secondary_alias() {
+        let engine_model_ids =
+            resolve_engine_model_ids("Qwen/Qwen3.5-35B-A3B", EndpointType::LmStudio);
+        assert!(endpoint_has_model(
+            "qwen/qwen3.5-35b-a3b:2",
+            "Qwen/Qwen3.5-35B-A3B",
+            &engine_model_ids
+        ));
     }
 
     #[test]
@@ -498,7 +586,18 @@ mod tests {
         assert_eq!(model.description, Some("A test model".to_string()));
         assert_eq!(model.tags.len(), 2);
         assert_eq!(model.engine_names.ollama, Some("gpt-oss:20b".to_string()));
-        assert!(!model.supports_download.is_empty());
+        assert_eq!(
+            model.engine_names.lm_studio,
+            Some("openai/gpt-oss-20b".to_string())
+        );
+        assert_eq!(
+            model.supports_download,
+            vec![
+                "xllm".to_string(),
+                "ollama".to_string(),
+                "lm_studio".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -683,11 +782,13 @@ mod tests {
     fn test_build_engine_names_qwen3() {
         let names = build_engine_names("Qwen/Qwen3-30B");
         assert_eq!(names.ollama, Some("qwen3:30b".to_string()));
+        assert_eq!(names.lm_studio, Some("qwen/qwen3-30b-a3b".to_string()));
     }
 
     #[test]
     fn test_build_engine_names_gemma3() {
         let names = build_engine_names("google/gemma-3-27b-it");
         assert_eq!(names.ollama, Some("gemma3:27b".to_string()));
+        assert_eq!(names.lm_studio, Some("google/gemma-3-27b".to_string()));
     }
 }

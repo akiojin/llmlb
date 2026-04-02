@@ -20,13 +20,11 @@ llmlb は OpenAI 互換の推論サーバーにリクエストをルーティン
 
 | エンドポイントタイプ | 説明 |
 |-------------------|------|
-| **xLLM** | プロジェクト独自の C++ 推論エンジン ([GitHub](https://github.com/akiojin/xLLM)) |
+| **xLLM** | xLLM エンドポイント |
 | **Ollama** | ローカル推論サーバー |
 | **vLLM** | 高スループット推論エンジン |
 | **LM Studio** | デスクトップ推論アプリケーション |
 | **OpenAI互換** | OpenAI API を実装する任意のサーバー |
-
-対応モデル形式やエンジンの詳細は [xLLM ドキュメント](https://github.com/akiojin/xLLM) を参照してください。
 
 ### マルチモーダル対応
 
@@ -43,7 +41,7 @@ llmlb は OpenAI 互換の推論サーバーにリクエストをルーティン
 - OpenAI 互換 API: `/v1/responses`（推奨）, `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
 - ロードバランシング: 利用可能なエンドポイントへレイテンシベースで自動ルーティング
 - ダッシュボード: `/dashboard` でエンドポイント、リクエスト履歴、ログ、モデルを管理
-- エンドポイント管理: Ollama、vLLM、xLLM等の外部推論サーバーをロードバランサーから一元管理
+- エンドポイント管理: LM Studio、Ollama、vLLM、xLLM等の外部推論サーバーをロードバランサーから一元管理
 - モデル同期: 登録エンドポイントから `GET /v1/models` でモデル一覧を自動同期
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ
 - 自動アップデート: GitHub Releases検知→承認後にドレイン→再起動。スケジューリング（即時/アイドル/時刻指定）、自動＋手動ロールバック、DL進捗表示に対応
@@ -65,14 +63,15 @@ http://localhost:32768/dashboard
 
 ## エンドポイント管理
 
-ロードバランサーは外部の推論サーバー（Ollama、vLLM、xLLM等）を「エンドポイント」として一元管理します。
+ロードバランサーは外部の推論サーバー（LM Studio、Ollama、vLLM、xLLM等）を「エンドポイント」として一元管理します。
 
 ### 対応エンドポイント
 
 | タイプ | 説明 | ヘルスチェック |
 |-------|------|---------------|
-| **xLLM** | 自社推論サーバー（llama.cpp/whisper.cpp等） | `GET /v1/models` |
+| **xLLM** | xLLM エンドポイント | `GET /v1/models` |
 | **Ollama** | Ollamaサーバー | `GET /v1/models` |
+| **LM Studio** | LM Studio サーバー | `GET /v1/models` |
 | **vLLM** | vLLM推論サーバー | `GET /v1/models` |
 | **OpenAI互換** | その他のOpenAI互換API | `GET /v1/models` |
 
@@ -83,22 +82,23 @@ http://localhost:32768/dashboard
 **判別優先度:**
 
 1. **xLLM**: `GET /api/system` で `xllm_version` フィールドを検出
-2. **Ollama**: `GET /api/tags` が成功
-3. **vLLM**: Server ヘッダーに "vllm" が含まれる
-4. **OpenAI互換**: `GET /v1/models` が成功
-5. **Unknown**: 判別不能（エンドポイントがオフラインの場合）
+2. **LM Studio**: `GET /api/v1/models` と LM Studio 固有のメタデータを検出
+3. **Ollama**: `GET /api/tags` が成功
+4. **vLLM**: Server ヘッダーに "vllm" が含まれる
+5. **OpenAI互換**: `GET /v1/models` が成功
+6. **Unknown**: 判別不能（エンドポイントがオフラインの場合）
 
 **タイプ別機能:**
 
-| 機能 | xLLM | Ollama | vLLM | OpenAI互換 |
-|------|------|--------|------|-----------|
-| モデルダウンロード | ✓ | - | - | - |
-| モデルメタデータ取得 | ✓ | ✓ | - | - |
-| max_tokens自動取得 | ✓ | ✓ | - | - |
+| 機能 | xLLM | Ollama | LM Studio | vLLM | OpenAI互換 |
+|------|------|--------|-----------|------|-----------|
+| モデルダウンロード | ✓ | ✓ | ✓ | - | - |
+| モデルメタデータ取得 | ✓ | ✓ | ✓ | - | - |
+| max_tokens自動取得 | ✓ | ✓ | ✓ | - | - |
 
-### xLLM連携（モデルダウンロード）
+### モデル操作
 
-xLLMタイプのエンドポイントでは、ロードバランサーからモデルのダウンロードを指示できます。
+xLLM / Ollama / LM Studio エンドポイントでは、ロードバランサーからモデル操作を実行できます。
 
 ```bash
 # ダウンロード開始
@@ -114,9 +114,7 @@ curl "http://localhost:32768/api/endpoints/{id}/download/progress?model=llama-3.
 
 ダッシュボードからも「Download Model」ボタンでダウンロードを開始できます。
 
-### モデルメタデータ取得
-
-xLLMおよびOllamaエンドポイントでは、モデルのコンテキスト長などのメタデータを取得できます。
+xLLM / Ollama / LM Studio エンドポイントでは、モデルのコンテキスト長などのメタデータを取得できます。
 
 ```bash
 curl http://localhost:32768/api/endpoints/{id}/models/{model_id}/info \
@@ -305,13 +303,11 @@ docker run --rm -p 32768:32768 --gpus all \
 ```
 GPUを使わない場合は `--gpus all` を外すか、`CUDA_VISIBLE_DEVICES=""` を設定。
 
-### 3) xLLM（C++ Runtime）
+### 3) 外部推論サーバー
 
-C++ Runtime（xLLM）は別リポジトリに分離しました。
-
-- <https://github.com/akiojin/xLLM>
-
-ビルド/実行/環境変数は上記リポジトリを参照してください。
+llmlb 自体は推論サーバーを内包せず、外部 endpoint に接続します。利用したい
+LM Studio / Ollama / vLLM / xLLM / OpenAI 互換サーバー側のセットアップは、それぞれの
+製品ドキュメントに従ってください。
 
 ### 4) 基本設定
 
@@ -389,11 +385,9 @@ Windows の `-setup.exe` 更新では
 
 - `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 
-#### ランタイム（C++）
+#### 外部推論サーバー
 
-Runtime（xLLM）の環境変数・設定は xLLM リポジトリに移動しました。
-
-- <https://github.com/akiojin/xLLM>
+外部推論サーバー側の環境変数・設定は、登録対象のサーバーごとのドキュメントを参照してください。
 
 ## 利用方法（OpenAI互換エンドポイント）
 
@@ -433,13 +427,14 @@ curl http://localhost:32768/v1/images/generations \
 
 ## アーキテクチャ
 
-LLM Load Balancer は、ローカルの llama.cpp ランタイムを調整し、オプションでモデルのプレフィックスを介してクラウド LLM プロバイダーにプロキシします。
+LLM Load Balancer は、登録済みの推論 endpoint にリクエストを振り分け、必要に応じて
+モデルプレフィックス経由でクラウド LLM プロバイダーにもプロキシします。
 
 ### コンポーネント
 - **LLM Load Balancer (Rust)**: OpenAI 互換のトラフィックを受信し、パスを選択してリクエストをプロキシします。ダッシュボード、メトリクス、管理 API を公開します。
-- **Local Runtimes (C++ / llama.cpp)**: GGUF モデルを提供します。ロードバランサーに登録し、ハートビートを送信します。
+- **Registered Endpoints**: LM Studio、Ollama、vLLM、xLLM、その他の OpenAI 互換サーバーを登録して利用します。
 - **Cloud Proxy**: モデル名が `openai:`, `google:`, `anthropic:` で始まる場合、ロードバランサーは対応するクラウド API に転送します。
-- **Storage**: ロードバランサーのメタデータ用の SQLite。モデルファイルは各ランタイムに存在します。
+- **Storage**: ロードバランサーのメタデータ用の SQLite。モデル実体は各 endpoint または registry source 側に存在します。
 - **Observability**: Prometheus メトリクス、構造化ログ、ダッシュボード統計。
 
 ### システム構成
@@ -455,8 +450,8 @@ Client
   ▼
 LLM Load Balancer (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
-  └─ No prefix → Scheduler → Local Runtime
-                       └─ llama.cpp inference → Response
+  └─ No prefix → Scheduler → Registered Endpoint
+                                 └─ Inference → Response
 ```
 
 ### モデル同期（push配布なし）
@@ -510,7 +505,7 @@ LLM Load Balancer (OpenAI-compatible)
 - オプション環境変数: レートリミット回避に `HF_TOKEN`、社内ミラー利用時は `HF_BASE_URL` を指定します。
 - Web（推奨）:
   - ダッシュボード → **Models** → **Register**
-  - `format` を選択します: `safetensors`（ネイティブエンジン） または `gguf`（llama.cpp フォールバック）
+  - `format` を選択します: `safetensors`（ネイティブエンジン） または `gguf`（GGUF 対応 endpoint 向け）
     - 同一repoに safetensors と GGUF が両方ある場合、`format` は必須です。
     - safetensors のテキスト生成はネイティブエンジンがある場合のみ対応します
       （safetensors.cppはMetal/CUDA対応）。GGUFのみのモデルは `gguf` を選択してください。
@@ -604,9 +599,9 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - DELETE `/api/endpoints/:id`（削除、JWT: admin / APIキー: `endpoints.manage`）
 - POST `/api/endpoints/:id/test`（接続テスト、JWT: admin / APIキー: `endpoints.manage`）
 - POST `/api/endpoints/:id/sync`（モデル同期、JWT: admin / APIキー: `endpoints.manage`）
-- POST `/api/endpoints/:id/download`（モデルダウンロード、xLLMのみ、JWT: admin / APIキー: `endpoints.manage`）
+- POST `/api/endpoints/:id/download`（モデルダウンロード、xLLM / Ollama / LM Studio、JWT: admin / APIキー: `endpoints.manage`）
 - GET `/api/endpoints/:id/download/progress`（ダウンロード進捗、JWT: admin/viewer / APIキー: `endpoints.read`）
-- GET `/api/endpoints/:id/models/:model/info`（モデルメタデータ、xLLM/Ollamaのみ、JWT: admin/viewer / APIキー: `endpoints.read`）
+- GET `/api/endpoints/:id/models/:model/info`（モデルメタデータ、xLLM / Ollama / LM Studio、JWT: admin/viewer / APIキー: `endpoints.read`）
 
 #### モデル管理
 

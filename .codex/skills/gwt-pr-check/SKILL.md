@@ -335,4 +335,4 @@ fi
 ## Related skill
 
 - `gwt-pr`: creates/updates PRs
-- `gwt-fix-pr`: diagnoses and fixes failing PRs
+- `gwt-pr-fix`: diagnoses and fixes failing PRs

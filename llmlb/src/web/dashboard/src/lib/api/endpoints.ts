@@ -1,7 +1,7 @@
 // Endpoints API
 // SPEC-e8e9326e: Router-Driven Endpoint Registration System
 
-import { ApiError, fetchWithAuth, getCsrfToken, API_BASE } from './client'
+import { createApiErrorFromResponse, fetchWithAuth, getCsrfToken, API_BASE } from './client'
 import type { TpsApiKind, TpsSource } from './dashboard'
 
 /**
@@ -299,7 +299,7 @@ export const endpointsApi = {
     })
 
     if (!response.ok) {
-      throw new ApiError(response.status, response.statusText)
+      throw await createApiErrorFromResponse(response)
     }
 
     if (request.stream && onChunk) {

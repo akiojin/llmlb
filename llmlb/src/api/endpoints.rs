@@ -3,6 +3,9 @@
 //! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
 use super::error::AppError;
+use crate::api::openai_util::{
+    classify_upstream_request_error, openai_error_response_with_type, probe_ollama_model_loaded,
+};
 use crate::common::auth::{Claims, UserRole};
 use crate::common::error::{CommonError, LbError};
 use crate::db::{download_tasks as tasks_db, endpoints as db};
@@ -21,7 +24,7 @@ use axum::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// Option<Option<T>>のデシリアライズヘルパー
@@ -920,7 +923,7 @@ pub async fn update_endpoint(
         }
     }
 
-    match db::update_endpoint(&state.db_pool, &updated).await {
+    match state.endpoint_registry.update(updated.clone()).await {
         Ok(true) => (StatusCode::OK, Json(EndpointResponse::from(updated))).into_response(),
         Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
@@ -1131,16 +1134,47 @@ pub async fn proxy_chat_completions(
         "{}/v1/chat/completions",
         endpoint.base_url.trim_end_matches('/')
     );
+    let request_model = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|payload| {
+            payload
+                .get("model")
+                .and_then(|model| model.as_str())
+                .map(str::to_string)
+        });
 
     let mut request = state
         .http_client
         .post(&url)
         .header("Content-Type", "application/json")
         .body(body.to_vec());
+    let started_at = Instant::now();
 
     if let Some(ref api_key) = endpoint.api_key {
         request = request.header("Authorization", format!("Bearer {}", api_key));
     }
+
+    let ollama_loading_model =
+        if endpoint.endpoint_type == crate::types::endpoint::EndpointType::Ollama {
+            match request_model.as_deref() {
+                Some(model) => {
+                    match probe_ollama_model_loaded(
+                        &state.http_client,
+                        &endpoint.base_url,
+                        endpoint.api_key.as_deref(),
+                        model,
+                    )
+                    .await
+                    {
+                        Some(false) => Some(model.to_string()),
+                        _ => None,
+                    }
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
 
     let result = request
         .timeout(Duration::from_secs(endpoint.inference_timeout_secs as u64))
@@ -1152,6 +1186,19 @@ pub async fn proxy_chat_completions(
             // reqwest::StatusCode -> axum::http::StatusCode
             let status_code = StatusCode::from_u16(response.status().as_u16())
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let latency_ms = u32::try_from(started_at.elapsed().as_millis()).unwrap_or(u32::MAX);
+            if status_code.is_success() {
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
+                    .await;
+            } else {
+                let error_msg = format!("HTTP {}", status_code);
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
+                    .await;
+            }
             let content_type = response
                 .headers()
                 .get("content-type")
@@ -1186,15 +1233,26 @@ pub async fn proxy_chat_completions(
             }
         }
         Err(e) => {
-            let error_msg = if e.is_timeout() {
-                "Request timed out".to_string()
-            } else if e.is_connect() {
-                "Failed to connect to endpoint".to_string()
-            } else {
-                format!("Proxy error: {}", e)
-            };
-
-            AppError(LbError::Http(error_msg)).into_response()
+            let classified_error = classify_upstream_request_error(
+                &e,
+                endpoint.inference_timeout_secs,
+                ollama_loading_model.as_deref(),
+            );
+            let _ = state
+                .endpoint_registry
+                .update_status(
+                    endpoint.id,
+                    EndpointStatus::Error,
+                    None,
+                    Some(&classified_error.record_message),
+                )
+                .await;
+            openai_error_response_with_type(
+                classified_error.client_message,
+                classified_error.error_type,
+                classified_error.status_code,
+            )
+            .into_response()
         }
     }
 }
@@ -1446,9 +1504,16 @@ pub async fn get_model_info(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::auth::{Claims, UserRole};
+    use crate::db::test_utils::{TestAppStateBuilder, TEST_LOCK};
     use crate::types::endpoint::{
         DeviceInfo, DeviceType, DownloadStatus, Endpoint, EndpointModel, EndpointStatus,
         EndpointType, GpuDevice, ModelDownloadTask,
+    };
+    use axum::{
+        extract::{Path, State},
+        response::IntoResponse,
+        Extension, Json,
     };
     use chrono::Utc;
     use serde_json::json;
@@ -1544,6 +1609,55 @@ mod tests {
         let json = json!({ "notes": "updated note" });
         let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
         assert_eq!(req.notes, Some(Some("updated note".to_string())));
+    }
+
+    #[tokio::test]
+    async fn update_endpoint_syncs_registry_cache() {
+        let _guard = TEST_LOCK.lock().await;
+        let state = TestAppStateBuilder::new().await.build().await;
+
+        let endpoint = Endpoint::new(
+            "sync-cache".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+
+        let claims = Claims {
+            sub: "admin-user".to_string(),
+            role: UserRole::Admin,
+            exp: 0,
+            must_change_password: false,
+        };
+
+        let response = update_endpoint(
+            Extension(claims),
+            State(state.clone()),
+            Path(endpoint_id),
+            Json(UpdateEndpointRequest {
+                name: None,
+                base_url: None,
+                api_key: None,
+                health_check_interval_secs: None,
+                inference_timeout_secs: Some(1),
+                notes: None,
+            }),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let updated = state
+            .endpoint_registry
+            .get(endpoint_id)
+            .await
+            .expect("endpoint remains in registry");
+        assert_eq!(updated.inference_timeout_secs, 1);
     }
 
     fn sample_endpoint() -> Endpoint {

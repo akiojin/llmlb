@@ -7,7 +7,131 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
+use std::time::Duration;
+
+/// Structured classification for an upstream request failure.
+pub struct UpstreamRequestFailure {
+    /// HTTP status returned to the client.
+    pub status_code: StatusCode,
+    /// Stable error type string used by the OpenAI-compatible error body.
+    pub error_type: &'static str,
+    /// User-facing error message.
+    pub client_message: String,
+    /// Detailed message stored in request history.
+    pub record_message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaPsResponse {
+    #[serde(default)]
+    models: Vec<OllamaPsModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaPsModel {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    model: String,
+}
+
+fn normalize_ollama_model_name(name: &str) -> String {
+    name.trim().to_ascii_lowercase()
+}
+
+fn ollama_model_name_matches(candidate: &str, target: &str) -> bool {
+    let candidate = normalize_ollama_model_name(candidate);
+    let target = normalize_ollama_model_name(target);
+
+    candidate == target
+        || candidate.trim_end_matches(":latest") == target
+        || candidate == target.trim_end_matches(":latest")
+        || candidate.trim_end_matches(":latest") == target.trim_end_matches(":latest")
+}
+
+/// Returns whether the requested Ollama model is currently resident in memory.
+///
+/// `None` means the probe itself was inconclusive.
+pub async fn probe_ollama_model_loaded(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+) -> Option<bool> {
+    if model.trim().is_empty() {
+        return None;
+    }
+
+    let url = format!("{}/api/ps", base_url.trim_end_matches('/'));
+    let mut request = client.get(url).timeout(Duration::from_secs(3));
+    if let Some(api_key) = api_key {
+        request = request.bearer_auth(api_key);
+    }
+
+    let response = request.send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let ps: OllamaPsResponse = response.json().await.ok()?;
+    Some(ps.models.into_iter().any(|entry| {
+        ollama_model_name_matches(&entry.name, model)
+            || ollama_model_name_matches(&entry.model, model)
+    }))
+}
+
+/// Classifies a reqwest upstream failure into a stable client-facing error response.
+pub fn classify_upstream_request_error(
+    error: &reqwest::Error,
+    timeout_secs: u32,
+    ollama_loading_model: Option<&str>,
+) -> UpstreamRequestFailure {
+    if error.is_timeout() {
+        if let Some(model) = ollama_loading_model {
+            let client_message = format!(
+                "Ollama model '{}' is still loading. Retry after the initial load finishes or increase endpoint inference timeout above {} seconds.",
+                model, timeout_secs
+            );
+            return UpstreamRequestFailure {
+                status_code: StatusCode::GATEWAY_TIMEOUT,
+                error_type: "model_loading",
+                record_message: format!("{}: {}", client_message, error),
+                client_message,
+            };
+        }
+
+        let client_message = format!(
+            "Upstream endpoint request timed out after {} seconds",
+            timeout_secs
+        );
+        return UpstreamRequestFailure {
+            status_code: StatusCode::GATEWAY_TIMEOUT,
+            error_type: "timeout",
+            record_message: format!("{}: {}", client_message, error),
+            client_message,
+        };
+    }
+
+    if error.is_connect() {
+        let client_message = "Failed to connect to upstream endpoint".to_string();
+        return UpstreamRequestFailure {
+            status_code: StatusCode::BAD_GATEWAY,
+            error_type: "connection_error",
+            record_message: format!("{}: {}", client_message, error),
+            client_message,
+        };
+    }
+
+    let client_message = "Failed to proxy request to upstream endpoint".to_string();
+    UpstreamRequestFailure {
+        status_code: StatusCode::BAD_GATEWAY,
+        error_type: "endpoint_request_error",
+        record_message: format!("{}: {}", client_message, error),
+        client_message,
+    }
+}
 
 /// 履歴保存用にペイロードをサニタイズ（base64データをリダクト）
 pub fn sanitize_openai_payload_for_history(payload: &Value) -> Value {
@@ -115,16 +239,25 @@ pub fn map_openai_messages_to_anthropic(messages: &[Value]) -> (Option<String>, 
 }
 
 /// OpenAI互換のエラーレスポンスを生成
-pub fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Response {
+pub fn openai_error_response_with_type(
+    message: impl Into<String>,
+    error_type: impl Into<String>,
+    status: StatusCode,
+) -> Response {
     let payload = json!({
         "error": {
             "message": message.into(),
-            "type": "invalid_request_error",
+            "type": error_type.into(),
             "code": status.as_u16(),
         }
     });
 
     (status, Json(payload)).into_response()
+}
+
+/// Default OpenAI-compatible error response using `invalid_request_error`.
+pub fn openai_error_response(message: impl Into<String>, status: StatusCode) -> Response {
+    openai_error_response_with_type(message, "invalid_request_error", status)
 }
 
 /// キューイング関連のエラーレスポンスを生成

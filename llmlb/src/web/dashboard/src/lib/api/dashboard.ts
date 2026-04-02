@@ -1,6 +1,6 @@
 // Dashboard API
 
-import { ApiError, fetchWithAuth, API_BASE } from './client'
+import { createApiErrorFromResponse, fetchWithAuth, API_BASE } from './client'
 import type { DashboardEndpoint } from './endpoints'
 import type { ModelStatEntry } from './endpoints'
 
@@ -186,8 +186,7 @@ export const dashboardApi = {
       }
     )
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new ApiError(response.status, response.statusText, errorText)
+      throw await createApiErrorFromResponse(response)
     }
     return response.blob()
   },

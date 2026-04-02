@@ -31,7 +31,8 @@ use crate::{
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         openai_util::{
-            model_unavailable_response, openai_error_response, queue_error_response,
+            classify_upstream_request_error, model_unavailable_response, openai_error_response,
+            openai_error_response_with_type, probe_ollama_model_loaded, queue_error_response,
             sanitize_openai_payload_for_history,
         },
         proxy::{
@@ -928,15 +929,71 @@ async fn proxy_openai_post(
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
 
-    let mut request_builder = client.post(&runtime_url).json(&payload);
+    let upstream_model = state
+        .endpoint_registry
+        .list_models(endpoint_id)
+        .await
+        .ok()
+        .and_then(|endpoint_models| {
+            endpoint_models
+                .into_iter()
+                .find(|endpoint_model| {
+                    endpoint_model.model_id == model
+                        || endpoint_model.model_id == resolved_model
+                        || endpoint_model.canonical_name.as_deref() == Some(model.as_str())
+                        || endpoint_model.canonical_name.as_deref() == Some(resolved_model.as_str())
+                })
+                .map(|endpoint_model| endpoint_model.model_id)
+        })
+        .or_else(|| {
+            crate::models::mapping::resolve_engine_name(&model, &endpoint_type).map(str::to_string)
+        })
+        .or_else(|| {
+            crate::models::mapping::resolve_engine_name(&resolved_model, &endpoint_type)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| resolved_model.clone());
+
+    let mut upstream_payload = payload.clone();
+    if let Some(payload_object) = upstream_payload.as_object_mut() {
+        payload_object.insert("model".to_string(), Value::String(upstream_model.clone()));
+    }
+
+    let mut request_builder = client
+        .post(&runtime_url)
+        .timeout(std::time::Duration::from_secs(
+            endpoint.inference_timeout_secs as u64,
+        ))
+        .json(&upstream_payload);
     if let Some(api_key) = &endpoint.api_key {
         request_builder = request_builder.bearer_auth(api_key);
     }
+
+    let ollama_loading_model = if endpoint_type == crate::types::endpoint::EndpointType::Ollama {
+        match probe_ollama_model_loaded(
+            &client,
+            &endpoint.base_url,
+            endpoint.api_key.as_deref(),
+            &upstream_model,
+        )
+        .await
+        {
+            Some(false) => Some(upstream_model.clone()),
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     let response = match request_builder.send().await {
         Ok(res) => res,
         Err(e) => {
             let duration = start.elapsed();
+            let classified_error = classify_upstream_request_error(
+                &e,
+                endpoint.inference_timeout_secs,
+                ollama_loading_model.as_deref(),
+            );
             request_lease
                 .complete(RequestOutcome::Error, duration)
                 .await
@@ -965,18 +1022,26 @@ async fn proxy_openai_post(
                     model.clone(),
                     request_type,
                     request_body.clone(),
-                    StatusCode::BAD_GATEWAY,
+                    classified_error.status_code,
                     duration,
                     client_ip,
                     api_key_id,
                 );
                 record.status = RecordStatus::Error {
-                    message: format!("Failed to proxy OpenAI request: {}", e),
+                    message: classified_error.record_message,
                 };
                 save_request_record(state.request_history.clone(), record);
             }
 
-            return Err(LbError::Http(format!("Failed to proxy OpenAI request: {}", e)).into());
+            let mut response = openai_error_response_with_type(
+                classified_error.client_message,
+                classified_error.error_type,
+                classified_error.status_code,
+            );
+            if let Some(wait_ms) = queued_wait_ms {
+                add_queue_headers(&mut response, wait_ms);
+            }
+            return Ok(response);
         }
     };
 
@@ -1124,7 +1189,11 @@ async fn proxy_openai_post(
     let duration = start.elapsed();
 
     match parsed {
-        Ok(body) => {
+        Ok(mut body) => {
+            if let Some(body_object) = body.as_object_mut() {
+                body_object.insert("model".to_string(), Value::String(model.clone()));
+            }
+
             // レスポンスからトークン使用量を抽出
             let token_usage = extract_usage_from_response(&body);
 
@@ -1333,6 +1402,59 @@ mod tests {
         std::env::set_var("LLMLB_DATA_DIR", dir.path());
         let state = create_local_state().await;
         (state, dir)
+    }
+
+    async fn add_online_chat_endpoint(
+        state: &AppState,
+        endpoint_name: &str,
+        base_url: String,
+        model_id: &str,
+        inference_timeout_secs: u32,
+    ) -> uuid::Uuid {
+        add_online_chat_endpoint_with_type(
+            state,
+            endpoint_name,
+            base_url,
+            model_id,
+            inference_timeout_secs,
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        )
+        .await
+    }
+
+    async fn add_online_chat_endpoint_with_type(
+        state: &AppState,
+        endpoint_name: &str,
+        base_url: String,
+        model_id: &str,
+        inference_timeout_secs: u32,
+        endpoint_type: crate::types::endpoint::EndpointType,
+    ) -> uuid::Uuid {
+        use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
+
+        let mut endpoint = Endpoint::new(endpoint_name.to_string(), base_url, endpoint_type);
+        endpoint.status = EndpointStatus::Online;
+        endpoint.inference_timeout_secs = inference_timeout_secs;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: model_id.to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
+            })
+            .await
+            .expect("add endpoint model");
+        endpoint_id
     }
 
     #[test]
@@ -1896,6 +2018,200 @@ mod tests {
             snapshot.active_requests, 0,
             "active request count must be released on body read error"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn upstream_timeout_returns_gateway_timeout_response() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        let delayed_body = json!({
+            "id": "chatcmpl-timeout",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "slow"},
+                "finish_reason": "stop"
+            }]
+        });
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_secs(2))
+                    .set_body_json(delayed_body),
+            )
+            .mount(&server)
+            .await;
+
+        let endpoint_id =
+            add_online_chat_endpoint(&state, "timeout-endpoint", server.uri(), "timeout-model", 1)
+                .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "timeout-model",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "timeout-model".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("timeout should return response");
+
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("timeout body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("timeout json");
+        assert_eq!(
+            json["error"]["message"],
+            "Upstream endpoint request timed out after 1 seconds"
+        );
+        assert_eq!(json["error"]["type"], "timeout");
+        assert_eq!(json["error"]["code"], 504);
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let snapshot = state
+            .load_manager
+            .snapshot(endpoint_id)
+            .await
+            .expect("snapshot");
+        assert_eq!(snapshot.active_requests, 0);
+
+        let records = state.request_history.load_records().await.expect("records");
+        assert_eq!(records.len(), 1);
+        assert!(matches!(records[0].status, RecordStatus::Error { .. }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ollama_cold_start_timeout_returns_model_loading_error() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/ps"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "models": []
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_secs(2))
+                    .set_body_json(json!({
+                        "id": "chatcmpl-cold-start",
+                        "object": "chat.completion",
+                        "choices": [{
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "slow"},
+                            "finish_reason": "stop"
+                        }]
+                    })),
+            )
+            .mount(&server)
+            .await;
+
+        add_online_chat_endpoint_with_type(
+            &state,
+            "ollama-loading-endpoint",
+            server.uri(),
+            "qwen3:30b",
+            1,
+            crate::types::endpoint::EndpointType::Ollama,
+        )
+        .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "qwen3:30b",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "qwen3:30b".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("ollama cold-start timeout should return response");
+
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("model loading body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("model loading json");
+        assert_eq!(json["error"]["type"], "model_loading");
+        assert!(
+            json["error"]["message"]
+                .as_str()
+                .expect("model loading message")
+                .contains("still loading"),
+            "expected model loading hint in response body"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn upstream_connect_failure_returns_bad_gateway_response() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        drop(listener);
+
+        add_online_chat_endpoint(
+            &state,
+            "connect-failure-endpoint",
+            format!("http://{addr}"),
+            "connect-failure-model",
+            5,
+        )
+        .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "connect-failure-model",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "connect-failure-model".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("connect failure should return response");
+
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("connect failure body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("connect failure json");
+        assert_eq!(
+            json["error"]["message"],
+            "Failed to connect to upstream endpoint"
+        );
+        assert_eq!(json["error"]["type"], "connection_error");
+        assert_eq!(json["error"]["code"], 502);
     }
 
     #[tokio::test]

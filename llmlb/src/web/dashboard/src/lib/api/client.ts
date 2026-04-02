@@ -6,15 +6,77 @@ interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>
 }
 
+interface ApiErrorOptions {
+  message?: string
+  errorType?: string
+  errorCode?: string | number
+  rawBody?: string
+}
+
+interface ApiErrorBodyShape {
+  error?: {
+    message?: string
+    type?: string
+    code?: string | number
+  }
+  message?: string
+}
+
 export class ApiError extends Error {
+  public errorType?: string
+  public errorCode?: string | number
+  public rawBody?: string
+
   constructor(
     public status: number,
     public statusText: string,
-    message?: string
+    options: string | ApiErrorOptions = {}
   ) {
-    super(message || `${status} ${statusText}`)
+    const normalized: ApiErrorOptions =
+      typeof options === 'string' ? { message: options } : options
+
+    super(normalized.message || `${status} ${statusText}`)
     this.name = 'ApiError'
+    this.errorType = normalized.errorType
+    this.errorCode = normalized.errorCode
+    this.rawBody = normalized.rawBody
   }
+}
+
+function parseApiErrorBody(bodyText: string): ApiErrorOptions {
+  if (!bodyText) {
+    return {}
+  }
+
+  try {
+    const parsed = JSON.parse(bodyText) as ApiErrorBodyShape
+    if (parsed?.error) {
+      return {
+        message: parsed.error.message,
+        errorType: parsed.error.type,
+        errorCode: parsed.error.code,
+        rawBody: bodyText,
+      }
+    }
+    if (typeof parsed?.message === 'string') {
+      return {
+        message: parsed.message,
+        rawBody: bodyText,
+      }
+    }
+  } catch {
+    // Plain-text error body.
+  }
+
+  return {
+    message: bodyText,
+    rawBody: bodyText,
+  }
+}
+
+export async function createApiErrorFromResponse(response: Response): Promise<ApiError> {
+  const bodyText = await response.text()
+  return new ApiError(response.status, response.statusText, parseApiErrorBody(bodyText))
 }
 
 export async function fetchWithAuth<T>(
@@ -62,8 +124,7 @@ export async function fetchWithAuth<T>(
   }
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new ApiError(response.status, response.statusText, errorText)
+    throw await createApiErrorFromResponse(response)
   }
 
   // Handle empty responses

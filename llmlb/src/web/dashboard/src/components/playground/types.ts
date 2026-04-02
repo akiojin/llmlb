@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@/lib/api'
+import { ApiError, type ChatMessage } from '@/lib/api'
 
 export const API_KEY_STORAGE_KEY = 'lb_playground_api_key'
 export const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
@@ -16,7 +16,29 @@ export interface Message {
   attachments?: MessageAttachment[]
 }
 
-export function getErrorMessage(status: number): string {
+export function getErrorMessage(error: number | ApiError): string {
+  const status = typeof error === 'number' ? error : error.status
+
+  if (error instanceof ApiError) {
+    switch (error.errorType) {
+      case 'model_loading':
+        return (
+          error.message ||
+          'Model is still loading on the Ollama endpoint. Retry after the initial load finishes or increase the endpoint timeout.'
+        )
+      case 'timeout':
+        return error.message || 'Request timed out.'
+      case 'connection_error':
+        return error.message || 'Failed to connect to the upstream endpoint.'
+      case 'endpoint_request_error':
+        return error.message || 'Failed to proxy the request to the upstream endpoint.'
+      default:
+        if (error.message && error.message !== `${error.status} ${error.statusText}`) {
+          return error.message
+        }
+    }
+  }
+
   switch (status) {
     case 401:
       return 'Invalid API key. Please check your settings.'

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
+import { classifyEndpointLastError } from '@/lib/endpoint-errors'
 import { formatRelativeTime, cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -425,35 +426,47 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedEndpoints.map((endpoint) => (
-                    <TableRow key={endpoint.id}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <span>{endpoint.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-muted-foreground font-mono text-sm">
-                          {endpoint.base_url}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={getTypeBadgeVariant(endpoint.endpoint_type)}
-                        >
-                          {getTypeLabel(endpoint.endpoint_type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusBadgeVariant(endpoint.status)}>
-                          {getStatusLabel(endpoint.status)}
-                        </Badge>
-                        {endpoint.last_error && (
-                          <span className="ml-2 text-xs text-destructive">
-                            ({endpoint.error_count} errors)
+                  paginatedEndpoints.map((endpoint) => {
+                    const errorDisplay = classifyEndpointLastError(endpoint.last_error)
+                    return (
+                      <TableRow key={endpoint.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>{endpoint.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-muted-foreground font-mono text-sm">
+                            {endpoint.base_url}
                           </span>
-                        )}
-                      </TableCell>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={getTypeBadgeVariant(endpoint.endpoint_type)}
+                          >
+                            {getTypeLabel(endpoint.endpoint_type)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusBadgeVariant(endpoint.status)}>
+                            {getStatusLabel(endpoint.status)}
+                          </Badge>
+                          {endpoint.last_error && (
+                            <>
+                              <span className="ml-2 text-xs text-destructive">
+                                ({endpoint.error_count} errors)
+                              </span>
+                              {errorDisplay && (
+                                <Badge
+                                  variant="outline"
+                                  className="ml-2 border-destructive/40 text-destructive"
+                                >
+                                  {errorDisplay.label}
+                                </Badge>
+                              )}
+                            </>
+                          )}
+                        </TableCell>
                       <TableCell className="text-right">
                         {endpoint.total_requests > 0 ? (
                           <span
@@ -528,7 +541,8 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    )
+                  })
                 )}
               </TableBody>
             </Table>

@@ -28,6 +28,50 @@ fn model_lookup_keys(model_id: &str) -> Vec<String> {
     keys
 }
 
+fn endpoint_model_lookup_keys(model: &EndpointModel) -> Vec<String> {
+    let mut keys = model_lookup_keys(&model.model_id);
+    if let Some(canonical) = model.canonical_name.as_deref() {
+        for key in model_lookup_keys(canonical) {
+            if !keys.iter().any(|existing| existing == &key) {
+                keys.push(key);
+            }
+        }
+    }
+    keys
+}
+
+fn insert_model_mapping(
+    model_map: &mut HashMap<String, Vec<Uuid>>,
+    model: &EndpointModel,
+    endpoint_id: Uuid,
+) {
+    for key in endpoint_model_lookup_keys(model) {
+        let endpoints = model_map.entry(key).or_default();
+        if !endpoints.contains(&endpoint_id) {
+            endpoints.push(endpoint_id);
+        }
+    }
+}
+
+fn remove_model_mapping(
+    model_map: &mut HashMap<String, Vec<Uuid>>,
+    model: &EndpointModel,
+    endpoint_id: Uuid,
+) {
+    for key in endpoint_model_lookup_keys(model) {
+        let remove_key = if let Some(endpoints) = model_map.get_mut(&key) {
+            endpoints.retain(|id| *id != endpoint_id);
+            endpoints.is_empty()
+        } else {
+            false
+        };
+
+        if remove_key {
+            model_map.remove(&key);
+        }
+    }
+}
+
 /// エンドポイントレジストリ
 ///
 /// エンドポイント情報をメモリにキャッシュし、高速な参照を提供する。
@@ -72,10 +116,7 @@ impl EndpointRegistry {
 
             // モデルマッピングを更新
             for model in &models {
-                model_map
-                    .entry(model.model_id.clone())
-                    .or_default()
-                    .push(endpoint_id);
+                insert_model_mapping(&mut model_map, model, endpoint_id);
             }
 
             endpoints.insert(endpoint_id, endpoint);
@@ -432,12 +473,8 @@ impl EndpointRegistry {
         db::add_endpoint_model(&self.pool, model).await?;
 
         // モデルマッピングを更新
-        self.model_to_endpoints
-            .write()
-            .await
-            .entry(model.model_id.clone())
-            .or_default()
-            .push(model.endpoint_id);
+        let mut model_map = self.model_to_endpoints.write().await;
+        insert_model_mapping(&mut model_map, model, model.endpoint_id);
 
         Ok(())
     }
@@ -484,20 +521,12 @@ impl EndpointRegistry {
 
             // 追加
             for model in &added {
-                model_map
-                    .entry(model.model_id.clone())
-                    .or_default()
-                    .push(endpoint_id);
+                insert_model_mapping(&mut model_map, model, endpoint_id);
             }
 
             // 削除
             for model in &removed {
-                if let Some(endpoints) = model_map.get_mut(&model.model_id) {
-                    endpoints.retain(|id| *id != endpoint_id);
-                    if endpoints.is_empty() {
-                        model_map.remove(&model.model_id);
-                    }
-                }
+                remove_model_mapping(&mut model_map, model, endpoint_id);
             }
         }
 
@@ -535,10 +564,7 @@ impl EndpointRegistry {
 
         // 取得したモデルでマッピングを再構築
         for model in models {
-            model_map
-                .entry(model.model_id.clone())
-                .or_default()
-                .push(endpoint_id);
+            insert_model_mapping(&mut model_map, &model, endpoint_id);
         }
 
         Ok(())
@@ -701,6 +727,39 @@ mod tests {
         // オンラインエンドポイントのみ取得
         let online = registry.list_online().await;
         assert_eq!(online.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_find_by_canonical_name_for_alias_backed_model() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mut endpoint = Endpoint::new(
+            "Alias-backed".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Ollama,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        registry.add(endpoint).await.unwrap();
+
+        registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "gpt-oss:20b".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("openai/gpt-oss-20b".to_string()),
+            })
+            .await
+            .unwrap();
+
+        let found = registry.find_by_model("openai/gpt-oss-20b").await;
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, endpoint_id);
     }
 
     /// T005 [US1]: increment_request_counters がDBとキャッシュの両方の

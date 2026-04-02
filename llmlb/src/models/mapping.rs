@@ -1,20 +1,37 @@
+//! Built-in canonical-to-engine model mappings.
+//!
+//! The canonical identifier is always the Hugging Face repo ID. The aliases in
+//! this file describe the engine-specific runtime names that llmlb knows how to
+//! translate to and from.
+//!
+//! This table is llmlb's source of truth for built-in support across
+//! engine-specific runtimes. A model can be absent from every endpoint's
+//! current `/v1/models` inventory and still be considered supported when it
+//! appears here.
+//!
+//! Inventory and support are intentionally separate:
+//! - endpoint sync stores `canonical_name` only for runtime model IDs that
+//!   resolve through this table
+//! - `/v1/models` returns only models currently reported by online endpoints
+//! - the `/v1/models` response prefers `canonical_name` for the returned `id`
+
 use crate::types::endpoint::EndpointType;
 
-/// Runtime-specific model alias for one endpoint type.
+/// Engine-specific runtime model name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineAlias {
-    /// Endpoint type that exposes this alias.
+    /// Endpoint type that reports or accepts this alias.
     pub engine: EndpointType,
-    /// Runtime-native model identifier.
+    /// Runtime model identifier used by that endpoint type.
     pub name: &'static str,
 }
 
-/// Canonical model identifier and its runtime-specific aliases.
+/// Canonical model mapping entry.
 #[derive(Debug, Clone)]
 pub struct ModelMapping {
-    /// Canonical model identifier exposed by `/v1/models`.
+    /// Canonical Hugging Face repo ID.
     pub canonical: &'static str,
-    /// Runtime aliases that should resolve to the canonical model.
+    /// Known runtime aliases for supported endpoint types.
     pub aliases: &'static [EngineAlias],
 }
 
@@ -22,7 +39,7 @@ fn model_id_eq(left: &str, right: &str) -> bool {
     left == right || left.eq_ignore_ascii_case(right)
 }
 
-/// Built-in canonical model mappings shared by Ollama and LM Studio integration.
+/// Built-in compatibility table keyed by canonical Hugging Face repo ID.
 pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     ModelMapping {
         canonical: "openai/gpt-oss-20b",
@@ -243,52 +260,69 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
 ];
 
-/// Resolve a runtime-native model identifier to its canonical model identifier.
+/// Resolve a runtime model ID to its canonical Hugging Face repo ID.
 pub fn resolve_canonical(model_id: &str, endpoint_type: &EndpointType) -> Option<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
         if model_id_eq(mapping.canonical, model_id) {
             return Some(mapping.canonical);
         }
+
         for alias in mapping.aliases {
             if alias.engine == *endpoint_type && model_id_eq(alias.name, model_id) {
                 return Some(mapping.canonical);
             }
         }
     }
+
     None
 }
 
-/// Resolve a canonical model identifier to the runtime-native alias for one endpoint type.
+/// Resolve the first engine-specific alias for a canonical model.
 pub fn resolve_engine_name(canonical: &str, endpoint_type: &EndpointType) -> Option<&'static str> {
+    resolve_engine_names(canonical, endpoint_type)
+        .into_iter()
+        .next()
+}
+
+/// Resolve all engine-specific aliases for a canonical model.
+pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Vec<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
         if model_id_eq(mapping.canonical, canonical) {
-            for alias in mapping.aliases {
-                if alias.engine == *endpoint_type {
-                    return Some(alias.name);
-                }
-            }
-            return None;
+            return mapping
+                .aliases
+                .iter()
+                .filter(|alias| alias.engine == *endpoint_type)
+                .map(|alias| alias.name)
+                .collect();
         }
     }
-    None
+
+    Vec::new()
 }
 
-/// Find the built-in mapping that matches a canonical model identifier or alias.
+/// Returns whether llmlb has a built-in mapping for this canonical model on the given endpoint type.
+pub fn supports_canonical_on_endpoint(canonical: &str, endpoint_type: &EndpointType) -> bool {
+    !resolve_engine_names(canonical, endpoint_type).is_empty()
+}
+
+/// Find the built-in mapping by canonical ID or by any known alias.
 pub fn find_mapping(model_id: &str) -> Option<&'static ModelMapping> {
     for mapping in BUILTIN_MAPPINGS {
         if model_id_eq(mapping.canonical, model_id) {
             return Some(mapping);
         }
+
         for alias in mapping.aliases {
             if model_id_eq(alias.name, model_id) {
                 return Some(mapping);
             }
         }
     }
+
     None
 }
 
-/// Guess the upstream Hugging Face repository name for a runtime model identifier.
+/// Best-effort fallback from an engine model ID to a likely HF repo ID.
 pub fn guess_hf_repo(model_id: &str, endpoint_type: &EndpointType) -> Option<String> {
     match endpoint_type {
         EndpointType::LmStudio => {
@@ -302,18 +336,20 @@ pub fn guess_hf_repo(model_id: &str, endpoint_type: &EndpointType) -> Option<Str
     }
 }
 
-/// Resolve a canonical model identifier without requiring endpoint type information.
+/// Resolve a canonical ID by matching against any known alias regardless of endpoint type.
 pub fn resolve_canonical_any(model_id: &str) -> Option<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
         if model_id_eq(mapping.canonical, model_id) {
             return Some(mapping.canonical);
         }
+
         for alias in mapping.aliases {
             if model_id_eq(alias.name, model_id) {
                 return Some(mapping.canonical);
             }
         }
     }
+
     None
 }
 
@@ -364,9 +400,58 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_engine_name_no_alias() {
+        let result = resolve_engine_name("openai/gpt-oss-20b", &EndpointType::Vllm);
+        assert!(result.is_none());
+    }
+
+    #[test]
     fn test_resolve_engine_name_unknown_canonical() {
         let result = resolve_engine_name("unknown/model", &EndpointType::Ollama);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_engine_names_lm_studio_returns_all_aliases() {
+        let result = resolve_engine_names("Qwen/Qwen3.5-35B-A3B", &EndpointType::LmStudio);
+        assert_eq!(
+            result,
+            vec![
+                "qwen3.5-35b-a3b",
+                "qwen/qwen3.5-35b-a3b",
+                "qwen/qwen3.5-35b-a3b:2"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_resolve_engine_names_unknown_canonical_returns_empty() {
+        let result = resolve_engine_names("unknown/model", &EndpointType::LmStudio);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_supports_canonical_on_endpoint_true_when_alias_exists() {
+        assert!(supports_canonical_on_endpoint(
+            "openai/gpt-oss-20b",
+            &EndpointType::Ollama
+        ));
+        assert!(supports_canonical_on_endpoint(
+            "openai/gpt-oss-20b",
+            &EndpointType::LmStudio
+        ));
+    }
+
+    #[test]
+    fn test_supports_canonical_on_endpoint_false_when_alias_missing() {
+        assert!(!supports_canonical_on_endpoint(
+            "openai/gpt-oss-20b",
+            &EndpointType::Vllm
+        ));
+        assert!(!supports_canonical_on_endpoint(
+            "unknown/model",
+            &EndpointType::Ollama
+        ));
     }
 
     #[test]
@@ -513,5 +598,84 @@ mod tests {
     fn test_llama33_mapping() {
         let result = resolve_canonical("llama3.3:70b", &EndpointType::Ollama);
         assert_eq!(result, Some("meta-llama/Llama-3.3-70B-Instruct"));
+    }
+
+    #[test]
+    fn test_nvidia_nemotron_super_mapping() {
+        let result = resolve_canonical("nemotron-3-super:120b-a12b", &EndpointType::Ollama);
+        assert_eq!(result, Some("nvidia/nemotron-3-super-120b-a12b"));
+    }
+
+    #[test]
+    fn test_nvidia_nemotron_nano_mapping() {
+        let ollama = resolve_canonical("nemotron-3-nano:30b", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("nvidia/Nemotron-3-Nano"));
+
+        let result = resolve_canonical("nvidia/nemotron-3-nano", &EndpointType::LmStudio);
+        assert_eq!(result, Some("nvidia/Nemotron-3-Nano"));
+    }
+
+    #[test]
+    fn test_nomic_embed_mapping() {
+        let ollama = resolve_canonical("nomic-embed-text:latest", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("nomic-ai/nomic-embed-text-v1.5"));
+
+        let result = resolve_canonical(
+            "text-embedding-nomic-embed-text-v1.5",
+            &EndpointType::LmStudio,
+        );
+        assert_eq!(result, Some("nomic-ai/nomic-embed-text-v1.5"));
+    }
+
+    #[test]
+    fn test_glm_flash_mapping() {
+        let ollama = resolve_canonical("glm-4.7-flash:latest", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("THUDM/glm-4.7-flash"));
+
+        let result = resolve_canonical("zai-org/glm-4.7-flash", &EndpointType::LmStudio);
+        assert_eq!(result, Some("THUDM/glm-4.7-flash"));
+    }
+
+    #[test]
+    fn test_qwen25_awq_mapping() {
+        let ollama = resolve_canonical("qwen2.5:14b-instruct", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("Qwen/Qwen2.5-14B-Instruct-AWQ"));
+
+        let result = resolve_canonical("Qwen/Qwen2.5-14B-Instruct-AWQ", &EndpointType::LmStudio);
+        assert_eq!(result, Some("Qwen/Qwen2.5-14B-Instruct-AWQ"));
+    }
+
+    #[test]
+    fn test_qwen35_all_variants_resolve_to_same_canonical() {
+        let ollama = resolve_canonical("qwen3.5:35b-a3b", &EndpointType::Ollama);
+        let ollama_legacy = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::Ollama);
+        let lms_short = resolve_canonical("qwen3.5-35b-a3b", &EndpointType::LmStudio);
+        let lms = resolve_canonical("qwen/qwen3.5-35b-a3b", &EndpointType::LmStudio);
+        let lms_v2 = resolve_canonical("qwen/qwen3.5-35b-a3b:2", &EndpointType::LmStudio);
+        assert_eq!(ollama, ollama_legacy);
+        assert_eq!(ollama, lms_short);
+        assert_eq!(lms_short, lms);
+        assert_eq!(lms, lms_v2);
+        assert_eq!(ollama, Some("Qwen/Qwen3.5-35B-A3B"));
+    }
+
+    #[test]
+    fn test_recently_added_lm_studio_aliases_resolve() {
+        let cases = [
+            ("openai/gpt-oss-120b", "openai/gpt-oss-120b"),
+            ("Qwen/qwen3-coder-30b", "qwen/qwen3-coder-30b"),
+            ("Qwen/Qwen3-30B", "qwen/qwen3-30b-a3b"),
+            ("meta-llama/Llama-3.3-70B-Instruct", "meta/llama-3.3-70b"),
+            ("google/gemma-3-27b-it", "google/gemma-3-27b"),
+            (
+                "nvidia/nemotron-3-super-120b-a12b",
+                "nvidia-nemotron-3-super-120b-a12b",
+            ),
+        ];
+
+        for (canonical, alias) in cases {
+            let result = resolve_canonical(alias, &EndpointType::LmStudio);
+            assert_eq!(result, Some(canonical), "failed for {}", alias);
+        }
     }
 }

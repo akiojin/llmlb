@@ -16,7 +16,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -210,7 +210,24 @@ pub async fn post_responses(
     );
 
     // リクエストボディをそのままパススルー
-    let outbound_payload = rewrite_payload_model_for_endpoint(payload, &endpoint.endpoint_type);
+    let endpoint_models = match state.endpoint_registry.list_models(endpoint.id).await {
+        Ok(models) => models,
+        Err(error) => {
+            warn!(
+                endpoint_id = %endpoint.id,
+                model = %model,
+                error = %error,
+                "Failed to load endpoint models for Responses request rewrite; falling back to static mapping"
+            );
+            Vec::new()
+        }
+    };
+    let outbound_payload = rewrite_payload_model_for_endpoint(
+        payload,
+        &model,
+        &endpoint.endpoint_type,
+        &endpoint_models,
+    );
     let body = serde_json::to_vec(&outbound_payload).map_err(|e| {
         error!("Failed to serialize request: {}", e);
         AppError::from(LbError::Http(e.to_string()))

@@ -264,7 +264,7 @@ fn can_recommend_download(endpoint_type: EndpointType, engine_name: Option<&str>
 
     match endpoint_type {
         EndpointType::Ollama => engine_name.is_some(),
-        EndpointType::LmStudio => engine_name.is_some(),
+        EndpointType::LmStudio => true,
         EndpointType::Xllm => true,
         EndpointType::Vllm | EndpointType::OpenaiCompatible => false,
     }
@@ -537,12 +537,12 @@ mod tests {
     }
 
     #[test]
-    fn test_can_recommend_download_requires_lm_studio_alias() {
+    fn test_can_recommend_download_allows_lm_studio_without_alias() {
         assert!(can_recommend_download(
             EndpointType::LmStudio,
             Some("openai/gpt-oss-20b")
         ));
-        assert!(!can_recommend_download(EndpointType::LmStudio, None));
+        assert!(can_recommend_download(EndpointType::LmStudio, None));
     }
 
     #[test]

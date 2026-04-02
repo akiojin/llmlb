@@ -1154,28 +1154,6 @@ pub async fn proxy_chat_completions(
         request = request.header("Authorization", format!("Bearer {}", api_key));
     }
 
-    let ollama_loading_model =
-        if endpoint.endpoint_type == crate::types::endpoint::EndpointType::Ollama {
-            match request_model.as_deref() {
-                Some(model) => {
-                    match probe_ollama_model_loaded(
-                        &state.http_client,
-                        &endpoint.base_url,
-                        endpoint.api_key.as_deref(),
-                        model,
-                    )
-                    .await
-                    {
-                        Some(false) => Some(model.to_string()),
-                        _ => None,
-                    }
-                }
-                None => None,
-            }
-        } else {
-            None
-        };
-
     let result = request
         .timeout(Duration::from_secs(endpoint.inference_timeout_secs as u64))
         .send()
@@ -1192,11 +1170,16 @@ pub async fn proxy_chat_completions(
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
                     .await;
-            } else {
+            } else if status_code.is_server_error() {
                 let error_msg = format!("HTTP {}", status_code);
                 let _ = state
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
+                    .await;
+            } else {
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
                     .await;
             }
             let content_type = response
@@ -1233,6 +1216,28 @@ pub async fn proxy_chat_completions(
             }
         }
         Err(e) => {
+            let ollama_loading_model = if e.is_timeout()
+                && endpoint.endpoint_type == crate::types::endpoint::EndpointType::Ollama
+            {
+                match request_model.as_deref() {
+                    Some(model) => {
+                        match probe_ollama_model_loaded(
+                            &state.http_client,
+                            &endpoint.base_url,
+                            endpoint.api_key.as_deref(),
+                            model,
+                        )
+                        .await
+                        {
+                            Some(false) => Some(model.to_string()),
+                            _ => None,
+                        }
+                    }
+                    None => None,
+                }
+            } else {
+                None
+            };
             let classified_error = classify_upstream_request_error(
                 &e,
                 endpoint.inference_timeout_secs,
@@ -1511,12 +1516,16 @@ mod tests {
         EndpointType, GpuDevice, ModelDownloadTask,
     };
     use axum::{
+        body::{to_bytes, Bytes},
         extract::{Path, State},
+        http::StatusCode,
         response::IntoResponse,
         Extension, Json,
     };
     use chrono::Utc;
     use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn test_default_health_check_interval() {
@@ -1658,6 +1667,121 @@ mod tests {
             .await
             .expect("endpoint remains in registry");
         assert_eq!(updated.inference_timeout_secs, 1);
+    }
+
+    #[tokio::test]
+    async fn proxy_chat_completions_keeps_endpoint_online_on_client_error() {
+        let _guard = TEST_LOCK.lock().await;
+        let state = TestAppStateBuilder::new().await.build().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "error": {
+                    "message": "invalid model",
+                    "type": "invalid_request_error",
+                    "code": 400
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "proxy-client-error".to_string(),
+            server.uri(),
+            EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint to registry");
+
+        let response = proxy_chat_completions(
+            State(state.clone()),
+            Path(endpoint_id),
+            Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "bad-model",
+                    "messages": [{"role": "user", "content": "hello"}]
+                }))
+                .expect("serialize request"),
+            ),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("proxy response body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("proxy response json");
+        assert_eq!(json["error"]["message"], "invalid model");
+
+        let updated = state
+            .endpoint_registry
+            .get(endpoint_id)
+            .await
+            .expect("endpoint remains in registry");
+        assert_eq!(updated.status, EndpointStatus::Online);
+        assert_eq!(updated.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn proxy_chat_completions_does_not_probe_ollama_load_state_on_success() {
+        let _guard = TEST_LOCK.lock().await;
+        let state = TestAppStateBuilder::new().await.build().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-123",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "proxy-ollama-success".to_string(),
+            server.uri(),
+            EndpointType::Ollama,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint to registry");
+
+        let response = proxy_chat_completions(
+            State(state.clone()),
+            Path(endpoint_id),
+            Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "qwen3:30b",
+                    "messages": [{"role": "user", "content": "hello"}]
+                }))
+                .expect("serialize request"),
+            ),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = server.received_requests().await.expect("recorded requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.path(), "/v1/chat/completions");
     }
 
     fn sample_endpoint() -> Endpoint {

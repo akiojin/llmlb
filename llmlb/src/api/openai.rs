@@ -972,26 +972,27 @@ async fn proxy_openai_post(
         request_builder = request_builder.bearer_auth(api_key);
     }
 
-    let ollama_loading_model = if endpoint_type == crate::types::endpoint::EndpointType::Ollama {
-        match probe_ollama_model_loaded(
-            &client,
-            &endpoint.base_url,
-            endpoint.api_key.as_deref(),
-            &upstream_model,
-        )
-        .await
-        {
-            Some(false) => Some(upstream_model.clone()),
-            _ => None,
-        }
-    } else {
-        None
-    };
-
     let response = match request_builder.send().await {
         Ok(res) => res,
         Err(e) => {
             let duration = start.elapsed();
+            let ollama_loading_model = if e.is_timeout()
+                && endpoint_type == crate::types::endpoint::EndpointType::Ollama
+            {
+                match probe_ollama_model_loaded(
+                    &client,
+                    &endpoint.base_url,
+                    endpoint.api_key.as_deref(),
+                    &upstream_model,
+                )
+                .await
+                {
+                    Some(false) => Some(upstream_model.clone()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let classified_error = classify_upstream_request_error(
                 &e,
                 endpoint.inference_timeout_secs,
@@ -2242,6 +2243,65 @@ mod tests {
                 .contains("still loading"),
             "expected model loading hint in response body"
         );
+
+        let requests = server.received_requests().await.expect("recorded requests");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].url.path(), "/v1/chat/completions");
+        assert_eq!(requests[1].url.path(), "/api/ps");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ollama_success_does_not_probe_load_state() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-success",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        add_online_chat_endpoint_with_type(
+            &state,
+            "ollama-success-endpoint",
+            server.uri(),
+            "qwen3:30b",
+            5,
+            crate::types::endpoint::EndpointType::Ollama,
+        )
+        .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "qwen3:30b",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "qwen3:30b".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("ollama success should return response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = server.received_requests().await.expect("recorded requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.path(), "/v1/chat/completions");
     }
 
     #[tokio::test]

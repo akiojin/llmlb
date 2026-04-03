@@ -38,7 +38,11 @@ pub fn compute_record_hash(entry: &AuditLogEntry) -> String {
     if let Some(ref actor_id) = entry.actor_id {
         hasher.update(actor_id.as_bytes());
     }
-    format!("{:x}", hasher.finalize())
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// バッチハッシュを計算
@@ -57,7 +61,11 @@ pub fn compute_batch_hash(
     for entry in entries {
         records_hasher.update(compute_record_hash(entry).as_bytes());
     }
-    let records_hash = format!("{:x}", records_hasher.finalize());
+    let records_hash: String = records_hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
 
     let mut hasher = Sha256::new();
     hasher.update(previous_hash.as_bytes());
@@ -66,7 +74,11 @@ pub fn compute_batch_hash(
     hasher.update(end.to_rfc3339().as_bytes());
     hasher.update(count.to_string().as_bytes());
     hasher.update(records_hash.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// 全バッチのハッシュチェーンを検証

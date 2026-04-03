@@ -2795,6 +2795,75 @@ impl LoadManager {
         self.select_endpoint_round_robin_from_endpoints(ready_endpoints)
     }
 
+    /// TPS降順でエンドポイントを選択（モデル指定なし）
+    ///
+    /// 全オンラインエンドポイントの集約TPS（EMA）を参照し、
+    /// 最もTPSの高いエンドポイントを選択する。
+    /// 同一TPS時はラウンドロビンでタイブレークする。
+    /// TPS未計測エンドポイントはTPS=0.0（最低優先）として扱う。
+    pub async fn select_endpoint_by_tps_direct(
+        &self,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(None).await?;
+        self.select_endpoint_by_tps_from_endpoints(endpoints, None)
+            .await
+    }
+
+    /// TPS降順でエンドポイントを選択（モデル指定あり）
+    ///
+    /// 指定モデルに対するTPS EMA値を参照し、
+    /// 最もTPSの高いエンドポイントを選択する。
+    pub async fn select_endpoint_by_tps_for_model(
+        &self,
+        model_id: &str,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        self.select_endpoint_by_tps_from_endpoints(endpoints, Some(model_id))
+            .await
+    }
+
+    /// TPS EMAデータを参照してエンドポイントをTPS降順でソートし、
+    /// 最もTPSの高いエンドポイントを選択する内部メソッド。
+    /// 同一TPS時はラウンドロビンでタイブレークする。
+    async fn select_endpoint_by_tps_from_endpoints(
+        &self,
+        endpoints: Vec<crate::types::endpoint::Endpoint>,
+        model_id: Option<&str>,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        if endpoints.is_empty() {
+            return Err(LbError::NoEndpointsAvailable);
+        }
+
+        let tracker = self.tps_tracker.read().await;
+
+        // 各エンドポイントの最大TPS EMAを取得
+        let mut endpoint_tps: Vec<(crate::types::endpoint::Endpoint, f64)> = endpoints
+            .into_iter()
+            .map(|ep| {
+                let tps = tracker
+                    .iter()
+                    .filter(|((eid, mid, _), _)| *eid == ep.id && model_id.is_none_or(|m| mid == m))
+                    .filter_map(|(_, state)| state.tps_ema)
+                    .fold(0.0_f64, f64::max);
+                (ep, tps)
+            })
+            .collect();
+
+        // TPS降順でソート（高TPS優先）
+        endpoint_tps.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // 最高TPSと同一のエンドポイント群を抽出し、ラウンドロビンでタイブレーク
+        let max_tps = endpoint_tps[0].1;
+        let top_tier: Vec<_> = endpoint_tps
+            .into_iter()
+            .filter(|(_, tps)| (*tps - max_tps).abs() < f64::EPSILON)
+            .map(|(ep, _)| ep)
+            .collect();
+
+        drop(tracker);
+        self.select_endpoint_round_robin_from_endpoints(top_tier)
+    }
+
     fn select_endpoint_round_robin_from_endpoints(
         &self,
         endpoints: Vec<crate::types::endpoint::Endpoint>,

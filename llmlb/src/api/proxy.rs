@@ -20,10 +20,10 @@ use std::{io, pin::Pin, sync::Arc, time::Instant};
 
 /// TPS優先でエンドポイントを選択
 ///
-/// llmlbはゲートウェイとしてエンドポイントをブラックボックスとして扱うため、
-/// 推論の振り分けは観測済みTPSを主指標に使います。
-/// TPS未計測エンドポイントは0.0として最低優先になり、
-/// 同一TPS時はラウンドロビンでタイブレークします。
+/// llmlbはゲートウェイとしてエンドポイントをブラックボックスとして扱い、
+/// TPS（Tokens Per Second）のEMA値が最も高いエンドポイントを優先選択する。
+/// TPS未計測のエンドポイントはTPS=0.0として最低優先で扱う。
+/// 同一TPS時はラウンドロビンでタイブレークする。
 pub(crate) async fn select_available_endpoint(state: &AppState) -> Result<Endpoint, LbError> {
     state.load_manager.select_endpoint_by_tps_direct(None).await
 }
@@ -42,7 +42,7 @@ pub(crate) enum QueueSelection {
     Timeout { waited_ms: u128 },
 }
 
-/// モデル対応のエンドポイントをキュー付きで選択
+/// モデル対応のエンドポイントをTPS優先・キュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
     _queue_config: QueueConfig,

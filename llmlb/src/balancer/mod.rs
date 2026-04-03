@@ -2955,7 +2955,6 @@ impl LoadManager {
         self.select_endpoint_by_tps_from_endpoints(endpoints, Some(model_id), api_kind)
             .await
     }
-
     fn select_endpoint_round_robin_from_endpoints(
         &self,
         endpoints: Vec<crate::types::endpoint::Endpoint>,

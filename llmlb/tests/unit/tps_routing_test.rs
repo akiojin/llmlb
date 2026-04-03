@@ -1,10 +1,12 @@
 //! TPS優先ルーティング選択のUnit Test
 //!
+//! SPEC #494 Phase 3:
 //! - 高TPSエンドポイントの優先選択
 //! - モデル別TPS選択
 //! - TPS未計測エンドポイントの最低優先
 //! - 同一TPS時のラウンドロビン
 //! - offline/error/initializing エンドポイントの除外
+//! - 非TPS対象リクエストでは他API種別のTPSを流用しない
 
 use std::sync::Arc;
 
@@ -158,6 +160,28 @@ async fn tps_routing_treats_unmeasured_endpoint_as_lowest_priority() {
 }
 
 #[tokio::test]
+async fn tps_routing_all_unmeasured_uses_round_robin() {
+    let load_manager = create_test_load_manager().await;
+    let _first = add_online_endpoint(&load_manager, "First", &["shared-model"]).await;
+    let _second = add_online_endpoint(&load_manager, "Second", &["shared-model"]).await;
+    let _third = add_online_endpoint(&load_manager, "Third", &["shared-model"]).await;
+
+    let selected_1 = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("first selection should succeed");
+    let selected_2 = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("second selection should succeed");
+
+    assert_ne!(
+        selected_1.id, selected_2.id,
+        "round-robin should cycle through endpoints when all TPS are equal"
+    );
+}
+
+#[tokio::test]
 async fn tps_routing_uses_round_robin_when_tps_is_tied() {
     let load_manager = create_test_load_manager().await;
     let first = add_online_endpoint(&load_manager, "First", &["shared-model"]).await;
@@ -235,8 +259,8 @@ async fn tps_routing_excludes_offline_error_and_initializing_endpoints() {
 #[tokio::test]
 async fn tps_routing_ignores_other_api_kinds_when_request_kind_is_none() {
     let load_manager = create_test_load_manager().await;
-    let first = add_online_endpoint(&load_manager, "first", &["shared-model"]).await;
-    let second = add_online_endpoint(&load_manager, "second", &["shared-model"]).await;
+    let first = add_online_endpoint(&load_manager, "First", &["shared-model"]).await;
+    let second = add_online_endpoint(&load_manager, "Second", &["shared-model"]).await;
 
     load_manager
         .update_tps(
@@ -263,4 +287,34 @@ async fn tps_routing_ignores_other_api_kinds_when_request_kind_is_none() {
     );
     assert!([first.id, second.id].contains(&first_pick.id));
     assert!([first.id, second.id].contains(&second_pick.id));
+}
+
+#[tokio::test]
+async fn tps_routing_no_endpoints_returns_error() {
+    let load_manager = create_test_load_manager().await;
+    let result = load_manager.select_endpoint_by_tps_direct(None).await;
+    assert!(result.is_err(), "should return error when no endpoints available");
+}
+
+#[tokio::test]
+async fn tps_routing_single_endpoint_is_selected() {
+    let load_manager = create_test_load_manager().await;
+    let only = add_online_endpoint(&load_manager, "Only", &["shared-model"]).await;
+
+    load_manager
+        .update_tps(
+            only.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            500,
+            10_000,
+        )
+        .await;
+
+    let selected = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("selection should succeed");
+
+    assert_eq!(selected.id, only.id);
 }

@@ -42,7 +42,7 @@ available for compatibility.
 ## Key Features
 
 - **Unified API Endpoint**: Access multiple LLM runtime instances through a single URL
-- **Automatic Load Balancing**: Latency-based request distribution across available endpoints
+- **Automatic Load Balancing**: TPS-based (Tokens Per Second) request distribution across available endpoints
 - **Endpoint Management**: Centralized management of LM Studio, Ollama, vLLM, xLLM, and other OpenAI-compatible servers
 - **Model Sync**: Automatic model discovery via `GET /v1/models` from registered endpoints
 - **Automatic Failure Detection**: Detect offline endpoints and exclude them from routing

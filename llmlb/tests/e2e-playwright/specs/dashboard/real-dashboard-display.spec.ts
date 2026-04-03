@@ -38,14 +38,18 @@ test.describe('Real Dashboard Display @dashboard @real-runtimes', () => {
   let endpointNames: string[] = []
 
   test.beforeAll(async ({ request }) => {
-    const runtimeProbe = await probeLocalRuntimes(request)
-    if (!runtimeProbe.ok) {
-      skipReason = runtimeProbe.reason
-      return
+    try {
+      const runtimeProbe = await probeLocalRuntimes(request)
+      if (!runtimeProbe.ok) {
+        skipReason = runtimeProbe.reason
+        return
+      }
+      runtimeSelection = runtimeProbe.selection
+      const runtimeModels = await getLocalRuntimeModels(request)
+      coldStartModel = await findOllamaColdStartSensitiveModel(request, runtimeModels.ollamaModels)
+    } catch (error) {
+      skipReason = error instanceof Error ? error.message : String(error)
     }
-    runtimeSelection = runtimeProbe.selection
-    const runtimeModels = await getLocalRuntimeModels(request)
-    coldStartModel = await findOllamaColdStartSensitiveModel(request, runtimeModels.ollamaModels)
   })
 
   test.afterEach(async ({ request }) => {

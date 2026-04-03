@@ -231,9 +231,6 @@ export async function copyToClipboard(text: string): Promise<ClipboardCopyResult
 
   cleanupManualCopyBuffer()
 
-  if (attemptExecCommandCopy(text)) {
-    return { method: 'exec-command' }
-  }
   const isClipboardApiAvailable =
     typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
   const isSecureContext = typeof window !== 'undefined' ? window.isSecureContext : true
@@ -245,6 +242,10 @@ export async function copyToClipboard(text: string): Promise<ClipboardCopyResult
     } catch {
       // Fall through to manual selection when automatic clipboard writes are unavailable.
     }
+  }
+
+  if (attemptExecCommandCopy(text)) {
+    return { method: 'exec-command' }
   }
 
   return { method: 'manual' }

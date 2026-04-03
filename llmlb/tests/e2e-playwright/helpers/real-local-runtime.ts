@@ -56,6 +56,12 @@ export type RuntimeProbeResult =
   | { ok: true; selection: RuntimeSelection }
   | { ok: false; reason: string }
 
+function formatRuntimePreflightError(runtime: string, error: unknown): string {
+  const message =
+    error instanceof Error ? error.message.replace(/^apiRequestContext\.\w+:\s*/, '') : String(error)
+  return `${runtime} preflight failed: ${message}`
+}
+
 const SUPPORTED_RUNTIME_MODEL_CASES: Array<{
   runtime: 'ollama' | 'lm_studio'
   candidateRuntimeModels: string[]
@@ -218,7 +224,12 @@ function chooseLmStudioModel(
 export async function probeLocalRuntimes(
   request: APIRequestContext
 ): Promise<RuntimeProbeResult> {
-  const runtimeModels = await getLocalRuntimeModels(request)
+  let runtimeModels: LocalRuntimeModels
+  try {
+    runtimeModels = await getLocalRuntimeModels(request)
+  } catch (error) {
+    return { ok: false, reason: formatRuntimePreflightError('Local runtime', error) }
+  }
   const ollamaModels = runtimeModels.ollamaModels
   const ollamaModel = chooseOllamaModel(ollamaModels)
   if (!ollamaModel) {
@@ -244,7 +255,12 @@ export async function probeLocalRuntimes(
 export async function getLocalRuntimeModels(
   request: APIRequestContext
 ): Promise<LocalRuntimeModels> {
-  const ollamaResponse = await request.get(`${OLLAMA_BASE}/api/tags`, { timeout: 5000 })
+  let ollamaResponse
+  try {
+    ollamaResponse = await request.get(`${OLLAMA_BASE}/api/tags`, { timeout: 5000 })
+  } catch (error) {
+    throw new Error(formatRuntimePreflightError('Ollama', error), { cause: error })
+  }
   if (!ollamaResponse.ok()) {
     throw new Error(`Ollama preflight failed: HTTP ${ollamaResponse.status()}`)
   }
@@ -253,9 +269,14 @@ export async function getLocalRuntimeModels(
     .map((model) => model.name?.trim() ?? '')
     .filter((name) => name.length > 0)
 
-  const lmStudioResponse = await request.get(`${LM_STUDIO_BASE}/api/v1/models`, {
-    timeout: 5000,
-  })
+  let lmStudioResponse
+  try {
+    lmStudioResponse = await request.get(`${LM_STUDIO_BASE}/api/v1/models`, {
+      timeout: 5000,
+    })
+  } catch (error) {
+    throw new Error(formatRuntimePreflightError('LM Studio', error), { cause: error })
+  }
   if (!lmStudioResponse.ok()) {
     throw new Error(`LM Studio preflight failed: HTTP ${lmStudioResponse.status()}`)
   }

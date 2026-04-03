@@ -25,6 +25,12 @@ type RuntimeSelection = {
   lmStudioModel: string
 }
 
+function formatRuntimePreflightError(runtime: string, error: unknown): string {
+  const message =
+    error instanceof Error ? error.message.replace(/^apiRequestContext\.\w+:\s*/, '') : String(error)
+  return `${runtime} preflight failed: ${message}`
+}
+
 function chooseOllamaModel(names: string[]): string | null {
   const preferred = ['qwen3.5:latest', 'glm-4.7-flash:latest', 'gpt-oss:20b']
   for (const candidate of preferred) {
@@ -62,7 +68,12 @@ function chooseLmStudioModel(
 async function probeLocalRuntimes(
   request: APIRequestContext
 ): Promise<{ ok: true; selection: RuntimeSelection } | { ok: false; reason: string }> {
-  const ollamaResponse = await request.get(`${OLLAMA_BASE}/api/tags`, { timeout: 5000 })
+  let ollamaResponse
+  try {
+    ollamaResponse = await request.get(`${OLLAMA_BASE}/api/tags`, { timeout: 5000 })
+  } catch (error) {
+    return { ok: false, reason: formatRuntimePreflightError('Ollama', error) }
+  }
   if (!ollamaResponse.ok()) {
     return { ok: false, reason: `Ollama preflight failed: HTTP ${ollamaResponse.status()}` }
   }
@@ -75,9 +86,14 @@ async function probeLocalRuntimes(
     return { ok: false, reason: 'Ollama preflight failed: no local models found' }
   }
 
-  const lmStudioResponse = await request.get(`${LM_STUDIO_BASE}/api/v1/models`, {
-    timeout: 5000,
-  })
+  let lmStudioResponse
+  try {
+    lmStudioResponse = await request.get(`${LM_STUDIO_BASE}/api/v1/models`, {
+      timeout: 5000,
+    })
+  } catch (error) {
+    return { ok: false, reason: formatRuntimePreflightError('LM Studio', error) }
+  }
   if (!lmStudioResponse.ok()) {
     return {
       ok: false,

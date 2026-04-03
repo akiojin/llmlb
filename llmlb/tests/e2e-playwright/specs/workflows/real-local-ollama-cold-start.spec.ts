@@ -29,12 +29,16 @@ test.describe('Real Local Ollama Cold Start @workflows @dashboard @real-runtimes
   let apiKeyId = ''
 
   test.beforeAll(async ({ request }) => {
-    const runtimeModels = await getLocalRuntimeModels(request)
-    coldStartModel = await findOllamaColdStartSensitiveModel(request, runtimeModels.ollamaModels)
-    if (!coldStartModel) {
-      skipReason =
-        'Ollama preflight failed: no installed model exceeded 1 second on a cold-start probe'
-      return
+    try {
+      const runtimeModels = await getLocalRuntimeModels(request)
+      coldStartModel = await findOllamaColdStartSensitiveModel(request, runtimeModels.ollamaModels)
+      if (!coldStartModel) {
+        skipReason =
+          'Ollama preflight failed: no installed model exceeded 1 second on a cold-start probe'
+        return
+      }
+    } catch (error) {
+      skipReason = error instanceof Error ? error.message : String(error)
     }
   })
 

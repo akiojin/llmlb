@@ -18,7 +18,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 use std::{collections::HashMap, net::IpAddr, net::SocketAddr, time::Instant};
-use tracing::error;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::auth::middleware::ApiKeyAuthContext;
@@ -930,7 +930,24 @@ async fn proxy_openai_post(
     let client = state.http_client.clone();
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
-    let outbound_payload = rewrite_payload_model_for_endpoint(payload, &endpoint_type);
+    let endpoint_models = match state.endpoint_registry.list_models(endpoint_id).await {
+        Ok(models) => models,
+        Err(error) => {
+            warn!(
+                endpoint_id = %endpoint_id,
+                model = %resolved_model,
+                error = %error,
+                "Failed to load endpoint models for request rewrite; falling back to static mapping"
+            );
+            Vec::new()
+        }
+    };
+    let outbound_payload = rewrite_payload_model_for_endpoint(
+        payload,
+        &resolved_model,
+        &endpoint_type,
+        &endpoint_models,
+    );
 
     let upstream_model = state
         .endpoint_registry
@@ -2302,6 +2319,85 @@ mod tests {
         let requests = server.received_requests().await.expect("recorded requests");
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].url.path(), "/v1/chat/completions");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn canonical_model_routes_to_secondary_lm_studio_alias_and_rewrites_payload() {
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(
+                json!({"model": "qwen/qwen3.5-35b-a3b:2"}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-lmstudio-alias",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "lmstudio-secondary-alias".to_string(),
+            server.uri(),
+            EndpointType::LmStudio,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "qwen/qwen3.5-35b-a3b:2".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("Qwen/Qwen3.5-35B-A3B".to_string()),
+            })
+            .await
+            .expect("add endpoint model");
+
+        let payload = json!({
+            "model": "Qwen/Qwen3.5-35B-A3B",
+            "messages": [{"role":"user","content":"hello"}]
+        });
+        let response = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "Qwen/Qwen3.5-35B-A3B".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("canonical request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

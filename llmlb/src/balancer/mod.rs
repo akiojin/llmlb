@@ -1,12 +1,12 @@
 //! ロードバランサーモジュール
 //!
 //! エンドポイントのメトリクスとリクエスト統計を集約し、
-//! レイテンシベースのロードバランシングを提供する。
+//! TPS優先のロードバランシングを提供する。
 //!
 //! # EndpointRegistry統合
 //!
 //! このモジュールはEndpointRegistryを使用してエンドポイント情報を管理します。
-//! 負荷分散はレイテンシ優先（EMA α=0.2）で行われます。
+//! 負荷分散はTPS優先、同一TPS時はラウンドロビンで行われます。
 
 pub mod lease;
 pub mod types;
@@ -1784,6 +1784,14 @@ impl LoadManager {
         state.update_tps(output_tokens, duration_ms);
     }
 
+    /// 指定エンドポイントのTPS状態をクリアする。
+    ///
+    /// エンドポイントがoffline/errorへ遷移した際に、復帰後は再計測から始める。
+    pub async fn clear_tps_for_endpoint(&self, endpoint_id: Uuid) {
+        let mut tracker = self.tps_tracker.write().await;
+        tracker.retain(|(eid, _, _), _| *eid != endpoint_id);
+    }
+
     /// エンドポイントのモデル別TPS情報を取得（SPEC-4bb5b55f）
     pub async fn get_model_tps(&self, endpoint_id: Uuid) -> Vec<ModelTpsInfo> {
         let tracker = self.tps_tracker.read().await;
@@ -1859,6 +1867,117 @@ impl LoadManager {
         }
 
         map.into_values().collect()
+    }
+
+    async fn compute_endpoint_tps_scores(
+        &self,
+        endpoints: &[crate::types::endpoint::Endpoint],
+        model_id: Option<&str>,
+        api_kind: Option<TpsApiKind>,
+    ) -> HashMap<Uuid, f64> {
+        let tracker = self.tps_tracker.read().await;
+        let mut scores = HashMap::with_capacity(endpoints.len());
+
+        for endpoint in endpoints {
+            let score = if let Some(model_id) = model_id {
+                tracker
+                    .iter()
+                    .filter(|((eid, mid, kind), _)| {
+                        *eid == endpoint.id
+                            && mid == model_id
+                            && api_kind.is_none_or(|expected| *kind == expected)
+                    })
+                    .filter_map(|(_, state)| state.tps_ema)
+                    .fold(0.0, f64::max)
+            } else {
+                let (total_tokens, total_duration_ms) = tracker
+                    .iter()
+                    .filter(|((eid, _, kind), _)| {
+                        *eid == endpoint.id && api_kind.is_none_or(|expected| *kind == expected)
+                    })
+                    .fold((0u64, 0u64), |(tokens, duration), (_, state)| {
+                        (
+                            tokens.saturating_add(state.total_output_tokens),
+                            duration.saturating_add(state.total_duration_ms),
+                        )
+                    });
+
+                if total_duration_ms > 0 {
+                    total_tokens as f64 / (total_duration_ms as f64 / 1000.0)
+                } else {
+                    0.0
+                }
+            };
+
+            scores.insert(endpoint.id, score);
+        }
+
+        scores
+    }
+
+    async fn select_endpoint_by_tps_from_endpoints(
+        &self,
+        endpoints: Vec<crate::types::endpoint::Endpoint>,
+        model_id: Option<&str>,
+        api_kind: Option<TpsApiKind>,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        if endpoints.is_empty() {
+            return Err(match model_id {
+                Some(model_id) => LbError::NoCapableEndpoints(model_id.to_string()),
+                None => LbError::NoEndpointsAvailable,
+            });
+        }
+
+        let candidates: Vec<_> = {
+            let state = self.state.read().await;
+            endpoints
+                .into_iter()
+                .filter(|ep| {
+                    state
+                        .get(&ep.id)
+                        .map(|load| !load.initializing)
+                        .unwrap_or(true)
+                })
+                .collect()
+        };
+
+        if candidates.is_empty() {
+            return Err(LbError::NoEndpointsAvailable);
+        }
+
+        let scores = self
+            .compute_endpoint_tps_scores(&candidates, model_id, api_kind)
+            .await;
+        let round_robin_cursor = self.round_robin.fetch_add(1, AtomicOrdering::SeqCst);
+        let round_robin_start = round_robin_cursor % candidates.len().max(1);
+        let round_robin_priority =
+            compute_round_robin_priority_for_endpoints(&candidates, round_robin_start);
+
+        let mut ordered = candidates;
+        ordered.sort_by(|a, b| {
+            let a_score = scores.get(&a.id).copied().unwrap_or(0.0);
+            let b_score = scores.get(&b.id).copied().unwrap_or(0.0);
+
+            b_score
+                .partial_cmp(&a_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    let a_rank = round_robin_priority
+                        .get(&a.id)
+                        .copied()
+                        .unwrap_or(usize::MAX);
+                    let b_rank = round_robin_priority
+                        .get(&b.id)
+                        .copied()
+                        .unwrap_or(usize::MAX);
+                    a_rank.cmp(&b_rank)
+                })
+        });
+
+        Ok(ordered
+            .into_iter()
+            .next()
+            .expect("candidates checked as non-empty"))
     }
 
     /// テスト用: 指定エンドポイントがアクティブになるまで待機する
@@ -2635,6 +2754,19 @@ impl LoadManager {
         self.select_endpoint_round_robin_from_endpoints(endpoints)
     }
 
+    /// エンドポイントをTPS優先で直接選択する。
+    ///
+    /// `api_kind` を指定した場合、そのAPI種別の集計TPSを優先度に用いる。
+    /// 未計測エンドポイントはTPS=0.0として最低優先になる。
+    pub async fn select_endpoint_by_tps_direct(
+        &self,
+        api_kind: Option<TpsApiKind>,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(None).await?;
+        self.select_endpoint_by_tps_from_endpoints(endpoints, None, api_kind)
+            .await
+    }
+
     /// 指定モデルに対応するエンドポイントを直接選択（ラウンドロビン）
     pub async fn select_endpoint_direct_for_model(
         &self,
@@ -2642,6 +2774,19 @@ impl LoadManager {
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
         let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
         self.select_endpoint_round_robin_from_endpoints(endpoints)
+    }
+
+    /// 指定モデルに対応するエンドポイントをTPS優先で選択する。
+    ///
+    /// `api_kind` を指定した場合、そのモデル×API種別のTPS EMAを用いる。
+    pub async fn select_endpoint_by_tps_for_model(
+        &self,
+        model_id: &str,
+        api_kind: Option<TpsApiKind>,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        self.select_endpoint_by_tps_from_endpoints(endpoints, Some(model_id), api_kind)
+            .await
     }
 
     /// アイドルエンドポイントを選択
@@ -2792,6 +2937,19 @@ impl LoadManager {
         };
 
         self.select_endpoint_round_robin_from_endpoints(ready_endpoints)
+    }
+
+    /// 指定モデルに対応する初期化完了エンドポイントをTPS優先で選択する。
+    ///
+    /// 実装上は初期化中除外を共通処理で行うため、TPS優先選択の標準経路として使う。
+    pub async fn select_endpoint_by_tps_ready_for_model(
+        &self,
+        model_id: &str,
+        api_kind: Option<TpsApiKind>,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        self.select_endpoint_by_tps_from_endpoints(endpoints, Some(model_id), api_kind)
+            .await
     }
 
     fn select_endpoint_round_robin_from_endpoints(

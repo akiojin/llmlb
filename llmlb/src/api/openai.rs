@@ -764,91 +764,97 @@ async fn proxy_openai_post(
     let mut queued_wait_ms: Option<u128> = None;
 
     // FR-004: エンドポイント選択失敗時もリクエスト履歴に記録する
-    let endpoint =
-        match select_available_endpoint_with_queue_for_model(state, queue_config, &model).await {
-            Ok(QueueSelection::Ready {
-                endpoint,
-                queued_wait_ms: wait_ms,
-            }) => {
-                queued_wait_ms = wait_ms;
-                *endpoint
-            }
-            Ok(QueueSelection::CapacityExceeded) => {
-                let message = "Request queue is full".to_string();
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        0,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                let retry_after = queue_config.timeout.as_secs().max(1);
-                return Ok(queue_error_response(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    &message,
-                    "rate_limit_exceeded",
-                    Some(retry_after),
+    let endpoint = match select_available_endpoint_with_queue_for_model(
+        state,
+        queue_config,
+        &model,
+        tps_api_kind,
+    )
+    .await
+    {
+        Ok(QueueSelection::Ready {
+            endpoint,
+            queued_wait_ms: wait_ms,
+        }) => {
+            queued_wait_ms = wait_ms;
+            *endpoint
+        }
+        Ok(QueueSelection::CapacityExceeded) => {
+            let message = "Request queue is full".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    0,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            let retry_after = queue_config.timeout.as_secs().max(1);
+            return Ok(queue_error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                &message,
+                "rate_limit_exceeded",
+                Some(retry_after),
+            ));
+        }
+        Ok(QueueSelection::Timeout { waited_ms }) => {
+            let message = "Queue wait timeout".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    waited_ms as u64,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            return Ok(queue_error_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                &message,
+                "timeout",
+                None,
+            ));
+        }
+        Err(e) => {
+            let error_message = if matches!(e, LbError::NoCapableEndpoints(_)) {
+                format!("No available nodes support model: {}", model)
+            } else {
+                format!("Node selection failed: {}", e)
+            };
+            error!(
+                endpoint = %target_path,
+                model = %model,
+                error = %e,
+                "Failed to select available node"
+            );
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    error_message.clone(),
+                    queued_wait_ms.unwrap_or(0) as u64,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            if matches!(e, LbError::NoCapableEndpoints(_)) {
+                return Ok(model_unavailable_response(
+                    error_message,
+                    "no_capable_nodes",
                 ));
             }
-            Ok(QueueSelection::Timeout { waited_ms }) => {
-                let message = "Queue wait timeout".to_string();
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        waited_ms as u64,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                return Ok(queue_error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    &message,
-                    "timeout",
-                    None,
-                ));
-            }
-            Err(e) => {
-                let error_message = if matches!(e, LbError::NoCapableEndpoints(_)) {
-                    format!("No available nodes support model: {}", model)
-                } else {
-                    format!("Node selection failed: {}", e)
-                };
-                error!(
-                    endpoint = %target_path,
-                    model = %model,
-                    error = %e,
-                    "Failed to select available node"
-                );
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        error_message.clone(),
-                        queued_wait_ms.unwrap_or(0) as u64,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                if matches!(e, LbError::NoCapableEndpoints(_)) {
-                    return Ok(model_unavailable_response(
-                        error_message,
-                        "no_capable_nodes",
-                    ));
-                }
-                return Err(e.into());
-            }
-        };
+            return Err(e.into());
+        }
+    };
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();
     let endpoint_type = endpoint.endpoint_type;

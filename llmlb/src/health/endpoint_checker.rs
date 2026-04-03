@@ -53,6 +53,8 @@ const CONSECUTIVE_FAILURES_FOR_OFFLINE: u32 = 2;
 pub struct EndpointHealthChecker {
     /// エンドポイントレジストリ
     registry: EndpointRegistry,
+    /// offline/error遷移時のTPSリセット用ロードマネージャー
+    load_manager: Option<crate::balancer::LoadManager>,
     /// HTTPクライアント
     client: Client,
     /// チェック間隔（秒）
@@ -73,11 +75,18 @@ impl EndpointHealthChecker {
 
         Self {
             registry,
+            load_manager: None,
             client,
             check_interval_secs: DEFAULT_CHECK_INTERVAL_SECS,
             auto_sync_models_interval: crate::config::get_auto_sync_models_interval(),
             last_auto_sync_models: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// TPSリセット連携用のLoadManagerを設定する
+    pub fn with_load_manager(mut self, load_manager: crate::balancer::LoadManager) -> Self {
+        self.load_manager = Some(load_manager);
+        self
     }
 
     /// チェック間隔を設定
@@ -299,6 +308,12 @@ impl EndpointHealthChecker {
             self.registry
                 .update_status(endpoint.id, new_status, None, error_message.as_deref())
                 .await?;
+        }
+
+        if new_status != EndpointStatus::Online {
+            if let Some(load_manager) = &self.load_manager {
+                load_manager.clear_tps_for_endpoint(endpoint.id).await;
+            }
         }
 
         // GPU情報更新（/api/healthから取得した場合のみ）
@@ -610,8 +625,9 @@ impl EndpointHealthChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::protocol::TpsApiKind;
     use crate::db::test_utils::TEST_LOCK;
-    use crate::types::endpoint::EndpointType;
+    use crate::types::endpoint::{EndpointModel, EndpointType, SupportedAPI};
     use serde_json::json;
     use sqlx::SqlitePool;
     use std::sync::{
@@ -1209,6 +1225,63 @@ mod tests {
         let updated = registry.get(endpoint.id).await.unwrap();
         // First failure from online goes to Error status
         assert_eq!(updated.status, EndpointStatus::Error);
+    }
+
+    #[tokio::test]
+    async fn test_failure_clears_endpoint_tps_when_load_manager_is_wired() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let load_manager = crate::balancer::LoadManager::new(Arc::new(registry.clone()));
+
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "TPS Reset Target".to_string(),
+            mock.uri(),
+            EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = EndpointStatus::Online;
+        registry.add(endpoint.clone()).await.unwrap();
+        registry
+            .add_model(&EndpointModel {
+                endpoint_id: endpoint.id,
+                model_id: "shared-model".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+            })
+            .await
+            .unwrap();
+
+        load_manager
+            .update_tps(
+                endpoint.id,
+                "shared-model".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                1_000,
+            )
+            .await;
+        assert_eq!(load_manager.get_model_tps(endpoint.id).await.len(), 1);
+
+        let checker =
+            EndpointHealthChecker::new(registry.clone()).with_load_manager(load_manager.clone());
+        let result = checker.check_endpoint(&endpoint).await;
+        assert!(result.is_err());
+
+        let updated = registry.get(endpoint.id).await.unwrap();
+        assert_eq!(updated.status, EndpointStatus::Error);
+        assert!(
+            load_manager.get_model_tps(endpoint.id).await.is_empty(),
+            "TPS state should be cleared after offline/error transition"
+        );
     }
 
     #[tokio::test]

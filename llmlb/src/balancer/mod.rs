@@ -328,6 +328,7 @@ mod tests {
                     max_tokens: None,
                     last_checked: None,
                     supported_apis: vec![SupportedAPI::ChatCompletions],
+                    canonical_name: None,
                 })
                 .await
                 .expect("Failed to add endpoint model");

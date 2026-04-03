@@ -57,6 +57,7 @@ async fn add_online_endpoint(load_manager: &LoadManager, name: &str, models: &[&
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions, SupportedAPI::Responses],
+                canonical_name: None,
             })
             .await
             .expect("Failed to add endpoint model");

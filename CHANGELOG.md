@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [5.3.0](https://github.com/akiojin/llmlb/compare/v5.2.5...v5.3.0) (2026-03-23)
+
+### Added
+
+- モデル名統一化: 正規名（HFリポ名）⇔エンジン固有名のマッピングテーブル
+- マルチエンジン対応のモデルダウンロード・削除機能
+- HuggingFace カタログ検索 API
+- ダッシュボード: モデル追加ウィザード・削除ダイアログ
+- DB migration: endpoint_models に canonical_name カラム追加
+- 実環境モデル7件のマッピング追加（Qwen3.5-35B統合、nvidia、nomic、GLM等）
+
+### Fixed
+
+- UpdateManager の RwLock デッドロックを解消
+
+### Chore
+
+- レガシー hooks と gwt プラグインを削除
+
 ## [5.2.5](https://github.com/akiojin/llmlb/compare/v5.2.4...v5.2.5) (2026-03-12)
 
 ### Refactor

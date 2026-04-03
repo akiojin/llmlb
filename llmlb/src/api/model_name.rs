@@ -1,6 +1,8 @@
 //! モデル名の解析ユーティリティ（量子化サフィックス対応）
 
 use crate::common::error::{CommonError, LbError};
+use crate::types::endpoint::{EndpointModel, EndpointType};
+use serde_json::Value;
 
 /// 量子化サフィックスを含むモデル名の解析結果
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,9 +39,92 @@ pub fn parse_quantized_model_name(model: &str) -> Result<ParsedModelName, LbErro
     })
 }
 
+/// Resolve the engine-specific runtime model name for a selected endpoint.
+pub fn resolve_runtime_model_name(model: &str, endpoint_type: &EndpointType) -> String {
+    crate::models::mapping::resolve_engine_name(model, endpoint_type)
+        .map(|resolved| resolved.to_string())
+        .unwrap_or_else(|| model.to_string())
+}
+
+/// Resolve the runtime model name that the selected endpoint actually advertises.
+pub fn resolve_runtime_model_name_for_endpoint(
+    requested_model: &str,
+    selected_model: &str,
+    endpoint_type: &EndpointType,
+    endpoint_models: &[EndpointModel],
+) -> String {
+    if endpoint_models
+        .iter()
+        .any(|endpoint_model| endpoint_model.model_id == requested_model)
+    {
+        return requested_model.to_string();
+    }
+
+    if let Some(runtime_model) = endpoint_models.iter().find_map(|endpoint_model| {
+        if endpoint_model.model_id == selected_model {
+            return Some(endpoint_model.model_id.as_str());
+        }
+
+        if endpoint_model.canonical_name.as_deref() == Some(selected_model)
+            || endpoint_model.canonical_name.as_deref() == Some(requested_model)
+        {
+            return Some(endpoint_model.model_id.as_str());
+        }
+
+        None
+    }) {
+        return runtime_model.to_string();
+    }
+
+    resolve_runtime_model_name(selected_model, endpoint_type)
+}
+
+/// Rewrite the request payload's `model` field for the selected endpoint when needed.
+pub fn rewrite_payload_model_for_endpoint(
+    mut payload: Value,
+    selected_model: &str,
+    endpoint_type: &EndpointType,
+    endpoint_models: &[EndpointModel],
+) -> Value {
+    let Some(requested_model) = payload.get("model").and_then(Value::as_str) else {
+        return payload;
+    };
+
+    let runtime_model = resolve_runtime_model_name_for_endpoint(
+        requested_model,
+        selected_model,
+        endpoint_type,
+        endpoint_models,
+    );
+    if runtime_model == requested_model {
+        return payload;
+    }
+
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("model".to_string(), Value::String(runtime_model));
+    }
+
+    payload
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::endpoint::SupportedAPI;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    fn endpoint_model(model_id: &str, canonical_name: Option<&str>) -> EndpointModel {
+        EndpointModel {
+            endpoint_id: Uuid::nil(),
+            model_id: model_id.to_string(),
+            capabilities: None,
+            max_tokens: None,
+            last_checked: None,
+            supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: canonical_name.map(str::to_string),
+        }
+    }
 
     #[test]
     fn no_colon_returns_base_only() {
@@ -131,5 +216,87 @@ mod tests {
             quantization: None,
         };
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn resolve_runtime_model_name_uses_engine_alias_for_canonical_input() {
+        let resolved = resolve_runtime_model_name("openai/gpt-oss-20b", &EndpointType::Ollama);
+        assert_eq!(resolved, "gpt-oss:20b");
+    }
+
+    #[test]
+    fn rewrite_payload_model_for_endpoint_replaces_canonical_model() {
+        let payload = json!({
+            "model": "openai/gpt-oss-20b",
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+
+        let endpoint_models = vec![endpoint_model("gpt-oss:20b", Some("openai/gpt-oss-20b"))];
+        let rewritten = rewrite_payload_model_for_endpoint(
+            payload,
+            "openai/gpt-oss-20b",
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+        assert_eq!(rewritten["model"], "gpt-oss:20b");
+    }
+
+    #[test]
+    fn rewrite_payload_model_for_endpoint_leaves_alias_input_unchanged() {
+        let payload = json!({
+            "model": "gpt-oss:20b",
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+
+        let endpoint_models = vec![endpoint_model("gpt-oss:20b", Some("openai/gpt-oss-20b"))];
+        let rewritten = rewrite_payload_model_for_endpoint(
+            payload.clone(),
+            "openai/gpt-oss-20b",
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+        assert_eq!(rewritten, payload);
+    }
+
+    #[test]
+    fn rewrite_payload_model_for_endpoint_prefers_selected_endpoint_alias() {
+        let payload = json!({
+            "model": "Qwen/Qwen3.5-35B-A3B",
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+        let endpoint_models = vec![endpoint_model(
+            "qwen/qwen3.5-35b-a3b:2",
+            Some("Qwen/Qwen3.5-35B-A3B"),
+        )];
+
+        let rewritten = rewrite_payload_model_for_endpoint(
+            payload,
+            "Qwen/Qwen3.5-35B-A3B",
+            &EndpointType::LmStudio,
+            &endpoint_models,
+        );
+
+        assert_eq!(rewritten["model"], "qwen/qwen3.5-35b-a3b:2");
+    }
+
+    #[test]
+    fn rewrite_payload_model_for_endpoint_keeps_requested_alias_if_endpoint_has_it() {
+        let payload = json!({
+            "model": "qwen3.5-35b-a3b",
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+        let endpoint_models = vec![endpoint_model(
+            "qwen3.5-35b-a3b",
+            Some("Qwen/Qwen3.5-35B-A3B"),
+        )];
+
+        let rewritten = rewrite_payload_model_for_endpoint(
+            payload.clone(),
+            "Qwen/Qwen3.5-35B-A3B",
+            &EndpointType::LmStudio,
+            &endpoint_models,
+        );
+
+        assert_eq!(rewritten, payload);
     }
 }

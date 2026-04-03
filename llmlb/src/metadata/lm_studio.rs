@@ -93,6 +93,13 @@ fn parse_lm_studio_response(json: &serde_json::Value, model: &str) -> ModelMetad
 
     let supports_tool_use = json["capabilities"]["trained_for_tool_use"].as_bool();
 
+    // LM StudioのモデルIDは "publisher/model-name" 形式のため、HFリポ名として推測
+    let hf_repo = if model.contains('/') && !model.contains(':') {
+        Some(model.to_string())
+    } else {
+        None
+    };
+
     ModelMetadata {
         model: model_name,
         context_length,
@@ -104,6 +111,7 @@ fn parse_lm_studio_response(json: &serde_json::Value, model: &str) -> ModelMetad
         supports_vision,
         supports_tool_use,
         quantization_bits,
+        hf_repo,
     }
 }
 

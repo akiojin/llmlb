@@ -16,12 +16,13 @@ use axum::{
 };
 use serde_json::{json, Value};
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
     api::{
         error::AppError,
+        model_name::rewrite_payload_model_for_endpoint,
         models::load_registered_model,
         proxy::{
             forward_streaming_response, forward_streaming_response_with_tps_tracking,
@@ -215,7 +216,25 @@ pub async fn post_responses(
     );
 
     // リクエストボディをそのままパススルー
-    let body = serde_json::to_vec(&payload).map_err(|e| {
+    let endpoint_models = match state.endpoint_registry.list_models(endpoint.id).await {
+        Ok(models) => models,
+        Err(error) => {
+            warn!(
+                endpoint_id = %endpoint.id,
+                model = %model,
+                error = %error,
+                "Failed to load endpoint models for Responses request rewrite; falling back to static mapping"
+            );
+            Vec::new()
+        }
+    };
+    let outbound_payload = rewrite_payload_model_for_endpoint(
+        payload,
+        &model,
+        &endpoint.endpoint_type,
+        &endpoint_models,
+    );
+    let body = serde_json::to_vec(&outbound_payload).map_err(|e| {
         error!("Failed to serialize request: {}", e);
         AppError::from(LbError::Http(e.to_string()))
     })?;
@@ -455,6 +474,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::Responses],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");

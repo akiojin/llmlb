@@ -1881,12 +1881,15 @@ impl LoadManager {
 
         for endpoint in endpoints {
             let score = if let Some(model_id) = model_id {
+                let Some(api_kind) = api_kind else {
+                    scores.insert(endpoint.id, 0.0);
+                    continue;
+                };
+
                 tracker
                     .iter()
                     .filter(|((eid, mid, kind), _)| {
-                        *eid == endpoint.id
-                            && mid == model_id
-                            && api_kind.is_none_or(|expected| *kind == expected)
+                        *eid == endpoint.id && mid == model_id && *kind == api_kind
                     })
                     .filter_map(|(_, state)| state.tps_ema)
                     .fold(0.0, f64::max)

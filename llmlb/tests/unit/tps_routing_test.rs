@@ -231,3 +231,36 @@ async fn tps_routing_excludes_offline_error_and_initializing_endpoints() {
 
     assert_eq!(selected.id, ready.id);
 }
+
+#[tokio::test]
+async fn tps_routing_ignores_other_api_kinds_when_request_kind_is_none() {
+    let load_manager = create_test_load_manager().await;
+    let first = add_online_endpoint(&load_manager, "first", &["shared-model"]).await;
+    let second = add_online_endpoint(&load_manager, "second", &["shared-model"]).await;
+
+    load_manager
+        .update_tps(
+            first.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            400,
+            100,
+        )
+        .await;
+
+    let first_pick = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", None::<TpsApiKind>)
+        .await
+        .expect("first selection should succeed");
+    let second_pick = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", None::<TpsApiKind>)
+        .await
+        .expect("second selection should succeed");
+
+    assert_ne!(
+        first_pick.id, second_pick.id,
+        "non-TPS request kinds must not inherit chat/completions TPS bias"
+    );
+    assert!([first.id, second.id].contains(&first_pick.id));
+    assert!([first.id, second.id].contains(&second_pick.id));
+}

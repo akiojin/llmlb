@@ -68,7 +68,7 @@ When all PRs for the head branch are merged, you **must** check whether there ar
 | Summary | **YES** | 1-3 bullet points. Include both the what and the why. |
 | Changes | **YES** | Enumerate changes by file or module. |
 | Testing | **YES** | List the commands run or the exact manual test steps. |
-| Closing Issues | **YES** | `Closes #N` 形式。クローズ対象がなければ "None"。**`gwt-spec`ラベル付きIssueは記載禁止**（SPECはクローズしない）。 |
+| Closing Issues | **YES** | `Closes #N` 形式。クローズ対象がなければ "None"。 |
 | Related Issues / Links | **YES** | 参照のみ（自動クローズしない）。 |
 | Checklist | **YES** | Review every item and mark it checked or N/A. |
 | Context | Conditional | Required when 3 or more files changed or the rationale is non-trivial. |
@@ -87,8 +87,7 @@ When all PRs for the head branch are merged, you **must** check whether there ar
 6. Add a reason comment to every unchecked checklist item (for example: `- [ ] Docs updated — N/A: no user-facing change`).
 7. Related Issues must be written as `#123` or as a URL. If nothing applies, explicitly write "None".
 8. Closing Issues セクションは `Closes #N` または `None` のみ許可。`- #N`（キーワードなし）は不可。
-9. **`gwt-spec`ラベル付きIssueは `Closing Issues` に記載禁止。** SPECは仕様ドキュメントであり、リリースでクローズしない。関連SPECは `Related Issues / Links` に記載する。
-10. `Related Issues / Links` に `#N` があり、その Issue をリリースで閉じたい場合は、同じ番号を `Closing Issues` にも `Closes #N` で必ず記載する。`Related Issues / Links` のみでは auto-close されない。
+9. `Related Issues / Links` に `#N` があり、その Issue をリリースで閉じたい場合は、同じ番号を `Closing Issues` にも `Closes #N` で必ず記載する。`Related Issues / Links` のみでは auto-close されない。
 
 ## Issue/PR Comment Formatting (must follow)
 
@@ -167,7 +166,7 @@ Next
 
 9. **Build PR body from template**
    - Read the template from the gwt-pr skill path (not the current project path):
-     - `PR_BODY_TEMPLATE=".claude/skills/gwt-pr/references/pr-body-template.md"`
+     - `PR_BODY_TEMPLATE=".gemini/skills/gwt-pr/references/pr-body-template.md"`
    - Read `${PR_BODY_TEMPLATE}` and fill all required placeholders.
    - Derive missing sections from the diff, linked Issues/SPECs, and executed tests before asking the user.
    - **If a conditional section does not apply, remove the entire section.**
@@ -189,7 +188,7 @@ Next
     - `gh pr view <number> --json url -q .url`
 
 12. **Post-PR CI/merge check (automatic).**
-    - After PR creation or push, load `.claude/skills/gwt-pr-fix/SKILL.md` and follow its workflow to inspect CI status, merge state, and review feedback.
+    - After PR creation or push, load `.gemini/skills/gwt-pr-fix/SKILL.md` and follow its workflow to inspect CI status, merge state, and review feedback.
     - If all CI checks are still pending, poll (30s interval) until complete.
     - If conflicts, review issues, or CI failures are detected, proceed with the gwt-pr-fix workflow to diagnose and fix.
 
@@ -198,7 +197,7 @@ Next
 ```bash
 head=$(git rev-parse --abbrev-ref HEAD)
 base=develop
-PR_BODY_TEMPLATE=".claude/skills/gwt-pr/references/pr-body-template.md"
+PR_BODY_TEMPLATE=".gemini/skills/gwt-pr/references/pr-body-template.md"
 
 if [ ! -f "$PR_BODY_TEMPLATE" ]; then
   echo "PR template not found: $PR_BODY_TEMPLATE" >&2
@@ -322,4 +321,4 @@ esac
 
 ## References
 
-- `.claude/skills/gwt-pr/references/pr-body-template.md`: PR body template
+- `.gemini/skills/gwt-pr/references/pr-body-template.md`: PR body template

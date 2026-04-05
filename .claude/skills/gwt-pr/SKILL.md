@@ -68,7 +68,7 @@ When all PRs for the head branch are merged, you **must** check whether there ar
 | Summary | **YES** | 1-3 bullet points. Include both the what and the why. |
 | Changes | **YES** | Enumerate changes by file or module. |
 | Testing | **YES** | List the commands run or the exact manual test steps. |
-| Closing Issues | **YES** | `Closes #N` 形式。クローズ対象がなければ "None"。**`gwt-spec`ラベル付きIssueは記載禁止**（SPECはクローズしない）。 |
+| Closing Issues | **YES** | `Closes #N` 形式。クローズ対象がなければ "None"。 |
 | Related Issues / Links | **YES** | 参照のみ（自動クローズしない）。 |
 | Checklist | **YES** | Review every item and mark it checked or N/A. |
 | Context | Conditional | Required when 3 or more files changed or the rationale is non-trivial. |
@@ -87,8 +87,7 @@ When all PRs for the head branch are merged, you **must** check whether there ar
 6. Add a reason comment to every unchecked checklist item (for example: `- [ ] Docs updated — N/A: no user-facing change`).
 7. Related Issues must be written as `#123` or as a URL. If nothing applies, explicitly write "None".
 8. Closing Issues セクションは `Closes #N` または `None` のみ許可。`- #N`（キーワードなし）は不可。
-9. **`gwt-spec`ラベル付きIssueは `Closing Issues` に記載禁止。** SPECは仕様ドキュメントであり、リリースでクローズしない。関連SPECは `Related Issues / Links` に記載する。
-10. `Related Issues / Links` に `#N` があり、その Issue をリリースで閉じたい場合は、同じ番号を `Closing Issues` にも `Closes #N` で必ず記載する。`Related Issues / Links` のみでは auto-close されない。
+9. `Related Issues / Links` に `#N` があり、その Issue をリリースで閉じたい場合は、同じ番号を `Closing Issues` にも `Closes #N` で必ず記載する。`Related Issues / Links` のみでは auto-close されない。
 
 ## Issue/PR Comment Formatting (must follow)
 

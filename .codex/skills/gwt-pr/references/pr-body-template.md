@@ -34,9 +34,7 @@ Rules:
      Use "Closes #N" syntax (one per line). Write "None" if no issues to close.
      Note: develop PRs do NOT auto-close issues directly;
      the release workflow re-collects these into the Release PR.
-     If an issue should close on release, it must appear here even if it is also listed below.
-     IMPORTANT: gwt-spec ラベル付きIssueは記載禁止。SPECは仕様ドキュメントであり
-     リリースでクローズしない。関連SPECは Related Issues / Links に記載する。 -->
+     If an issue should close on release, it must appear here even if it is also listed below. -->
 
 - Closes #{issue number}
 

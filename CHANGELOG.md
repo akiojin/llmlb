@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [5.4.0](https://github.com/akiojin/llmlb/compare/v5.2.5...v5.4.0) (2026-04-05)
+
+### Added
+
+- エンドポイント選択をTPS（Tokens Per Second）優先に変更（EMA α=0.2）
+- Ollama / LM Studio のモデルエイリアスを追加
+
+### Fixed
+
+- sha2 0.11互換のhex変換に修正
+- モデルルーティングのレビュー指摘事項を修正
+- モデルの正規名マッピングサポートメタデータを強化
+- ダッシュボードのAPIキーコピー機能を復旧
+- xLLMのモデル削除サポート期待値を修正
+
+### Chore
+
+- Cargo / npm 依存パッケージの更新
+- gwt-spec フォーマット準拠化・タイトル統一
+- CI: auto-merge で信頼された著者のPRを許可
+
 ## [5.3.0](https://github.com/akiojin/llmlb/compare/v5.2.5...v5.3.0) (2026-03-23)
 
 ### Added

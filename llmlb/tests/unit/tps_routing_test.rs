@@ -1,257 +1,298 @@
 //! TPS優先ルーティング選択のUnit Test
 //!
-//! SPEC #494 Phase 3: TPSベースエンドポイント選択
+//! SPEC #494 Phase 3:
 //! - 高TPSエンドポイントの優先選択
-//! - TPS未計測エンドポイントはTPS=0.0で最低優先
-//! - 同一TPS時のラウンドロビンタイブレーク
-//! - オフライン時TPS=0.0リセット
+//! - モデル別TPS選択
+//! - TPS未計測エンドポイントの最低優先
+//! - 同一TPS時のラウンドロビン
+//! - offline/error/initializing エンドポイントの除外
+//! - 非TPS対象リクエストでは他API種別のTPSを流用しない
 
-use llmlb::balancer::LoadManager;
-use llmlb::common::protocol::TpsApiKind;
-use llmlb::registry::endpoints::EndpointRegistry;
-use llmlb::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI};
-use sqlx::sqlite::SqlitePool;
 use std::sync::Arc;
-use uuid::Uuid;
 
-/// テスト用のLoadManager + エンドポイントをセットアップ
-async fn setup_load_manager_with_endpoints(
-    endpoint_names: &[&str],
-    model_id: &str,
-) -> (LoadManager, Vec<Uuid>, Arc<EndpointRegistry>) {
+use llmlb::{
+    balancer::LoadManager,
+    common::protocol::TpsApiKind,
+    db::migrations::run_migrations,
+    registry::endpoints::EndpointRegistry,
+    types::endpoint::{Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI},
+};
+use sqlx::SqlitePool;
+
+async fn create_test_load_manager() -> LoadManager {
     let pool = SqlitePool::connect("sqlite::memory:")
         .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&pool)
+        .expect("Failed to connect test database");
+    run_migrations(&pool)
         .await
-        .expect("Failed to run migrations");
+        .expect("Failed to run test migrations");
 
     let registry = Arc::new(
         EndpointRegistry::new(pool)
             .await
             .expect("Failed to create endpoint registry"),
     );
+    LoadManager::new(registry)
+}
 
-    let mut ids = Vec::new();
-    for (i, name) in endpoint_names.iter().enumerate() {
-        let mut endpoint = Endpoint::new(
-            name.to_string(),
-            format!("http://localhost:{}", 11080 + i),
-            EndpointType::OpenaiCompatible,
-        );
-        endpoint.status = EndpointStatus::Online;
-        let id = endpoint.id;
-        ids.push(id);
-        registry
-            .add(endpoint)
-            .await
-            .expect("Failed to add endpoint");
+async fn add_online_endpoint(load_manager: &LoadManager, name: &str, models: &[&str]) -> Endpoint {
+    let mut endpoint = Endpoint::new(
+        name.to_string(),
+        format!("http://{}.local:8080", name.to_lowercase()),
+        EndpointType::Xllm,
+    );
+    endpoint.status = EndpointStatus::Online;
 
-        registry
+    load_manager
+        .endpoint_registry()
+        .add(endpoint.clone())
+        .await
+        .expect("Failed to add endpoint");
+
+    for model_id in models {
+        load_manager
+            .endpoint_registry()
             .add_model(&EndpointModel {
-                endpoint_id: id,
-                model_id: model_id.to_string(),
+                endpoint_id: endpoint.id,
+                model_id: (*model_id).to_string(),
                 capabilities: None,
                 max_tokens: None,
                 last_checked: None,
-                supported_apis: vec![SupportedAPI::ChatCompletions],
+                supported_apis: vec![SupportedAPI::ChatCompletions, SupportedAPI::Responses],
                 canonical_name: None,
             })
             .await
             .expect("Failed to add endpoint model");
     }
 
-    let load_manager = LoadManager::new(registry.clone());
-    for &id in &ids {
-        load_manager.upsert_initial_state(id, false, None).await;
-    }
-
-    (load_manager, ids, registry)
+    endpoint
 }
 
 #[tokio::test]
-async fn test_tps_selection_prefers_highest_tps() {
-    let model_id = "test-model";
-    let (lm, ids, _reg) =
-        setup_load_manager_with_endpoints(&["Slow", "Fast", "Medium"], model_id).await;
+async fn tps_routing_prefers_highest_aggregate_tps_without_model() {
+    let load_manager = create_test_load_manager().await;
+    let fast = add_online_endpoint(&load_manager, "Fast", &["model-a"]).await;
+    let slow = add_online_endpoint(&load_manager, "Slow", &["model-b"]).await;
 
-    // TPS値を設定: Slow=20, Fast=100, Medium=50
-    lm.update_tps(
-        ids[0],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        200,
-        10000,
-    )
-    .await; // 20 tok/s
-    lm.update_tps(
-        ids[1],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        1000,
-        10000,
-    )
-    .await; // 100 tok/s
-    lm.update_tps(
-        ids[2],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        500,
-        10000,
-    )
-    .await; // 50 tok/s
+    load_manager
+        .update_tps(
+            fast.id,
+            "model-a".to_string(),
+            TpsApiKind::ChatCompletions,
+            200,
+            1_000,
+        )
+        .await;
+    load_manager
+        .update_tps(
+            slow.id,
+            "model-b".to_string(),
+            TpsApiKind::ChatCompletions,
+            50,
+            1_000,
+        )
+        .await;
 
-    let selected = lm
-        .select_endpoint_by_tps_for_model(model_id)
+    let selected = load_manager
+        .select_endpoint_by_tps_direct(None)
         .await
-        .expect("selection should succeed");
+        .expect("endpoint should be selected");
 
-    assert_eq!(
-        selected.name, "Fast",
-        "highest TPS endpoint should be selected"
-    );
+    assert_eq!(selected.id, fast.id, "highest aggregate TPS should win");
 }
 
 #[tokio::test]
-async fn test_tps_selection_unmeasured_is_lowest_priority() {
-    let model_id = "test-model";
-    let (lm, ids, _reg) =
-        setup_load_manager_with_endpoints(&["Measured", "Unmeasured"], model_id).await;
+async fn tps_routing_prefers_highest_tps_for_model() {
+    let load_manager = create_test_load_manager().await;
+    let fast = add_online_endpoint(&load_manager, "Fast", &["shared-model"]).await;
+    let slow = add_online_endpoint(&load_manager, "Slow", &["shared-model"]).await;
 
-    // MeasuredのみTPS設定、Unmeasuredは未計測
-    lm.update_tps(
-        ids[0],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        100,
-        10000,
-    )
-    .await; // 10 tok/s
+    load_manager
+        .update_tps(
+            fast.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            180,
+            1_000,
+        )
+        .await;
+    load_manager
+        .update_tps(
+            slow.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            60,
+            1_000,
+        )
+        .await;
 
-    let selected = lm
-        .select_endpoint_by_tps_for_model(model_id)
+    let selected = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
         .await
-        .expect("selection should succeed");
+        .expect("endpoint should be selected");
 
-    assert_eq!(
-        selected.name, "Measured",
-        "measured endpoint should be preferred over unmeasured"
-    );
+    assert_eq!(selected.id, fast.id, "highest model TPS should win");
 }
 
 #[tokio::test]
-async fn test_tps_selection_all_unmeasured_uses_round_robin() {
-    let model_id = "test-model";
-    let (lm, _ids, _reg) = setup_load_manager_with_endpoints(&["A", "B", "C"], model_id).await;
+async fn tps_routing_treats_unmeasured_endpoint_as_lowest_priority() {
+    let load_manager = create_test_load_manager().await;
+    let measured = add_online_endpoint(&load_manager, "Measured", &["shared-model"]).await;
+    let unmeasured = add_online_endpoint(&load_manager, "Unmeasured", &["shared-model"]).await;
 
-    // TPS未計測のまま → ラウンドロビンフォールバック
-    let selected1 = lm
-        .select_endpoint_by_tps_for_model(model_id)
-        .await
-        .expect("selection should succeed");
-    let selected2 = lm
-        .select_endpoint_by_tps_for_model(model_id)
-        .await
-        .expect("selection should succeed");
+    load_manager
+        .update_tps(
+            measured.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            40,
+            1_000,
+        )
+        .await;
 
-    // 全て同一TPS(0.0)なのでラウンドロビンにより異なるエンドポイントが選択される
+    let selected = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("endpoint should be selected");
+
+    assert_eq!(selected.id, measured.id);
+    assert_ne!(selected.id, unmeasured.id);
+}
+
+#[tokio::test]
+async fn tps_routing_all_unmeasured_uses_round_robin() {
+    let load_manager = create_test_load_manager().await;
+    let _first = add_online_endpoint(&load_manager, "First", &["shared-model"]).await;
+    let _second = add_online_endpoint(&load_manager, "Second", &["shared-model"]).await;
+    let _third = add_online_endpoint(&load_manager, "Third", &["shared-model"]).await;
+
+    let selected_1 = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("first selection should succeed");
+    let selected_2 = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("second selection should succeed");
+
     assert_ne!(
-        selected1.id, selected2.id,
+        selected_1.id, selected_2.id,
         "round-robin should cycle through endpoints when all TPS are equal"
     );
 }
 
 #[tokio::test]
-async fn test_tps_selection_same_tps_round_robin_tiebreak() {
-    let model_id = "test-model";
-    let (lm, ids, _reg) = setup_load_manager_with_endpoints(&["A", "B"], model_id).await;
+async fn tps_routing_uses_round_robin_when_tps_is_tied() {
+    let load_manager = create_test_load_manager().await;
+    let first = add_online_endpoint(&load_manager, "First", &["shared-model"]).await;
+    let second = add_online_endpoint(&load_manager, "Second", &["shared-model"]).await;
 
-    // 同一TPS: 50 tok/s
-    lm.update_tps(
-        ids[0],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        500,
-        10000,
-    )
-    .await;
-    lm.update_tps(
-        ids[1],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        500,
-        10000,
-    )
-    .await;
-
-    let mut selected_ids = std::collections::HashSet::new();
-    for _ in 0..10 {
-        let selected = lm
-            .select_endpoint_by_tps_for_model(model_id)
-            .await
-            .expect("selection should succeed");
-        selected_ids.insert(selected.id);
+    for endpoint in [&first, &second] {
+        load_manager
+            .update_tps(
+                endpoint.id,
+                "shared-model".to_string(),
+                TpsApiKind::ChatCompletions,
+                100,
+                1_000,
+            )
+            .await;
     }
 
-    assert_eq!(
-        selected_ids.len(),
-        2,
-        "round-robin should distribute between endpoints with same TPS"
+    let selected_1 = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("first selection should succeed");
+    let selected_2 = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("second selection should succeed");
+
+    assert_ne!(
+        selected_1.id, selected_2.id,
+        "same TPS should be tie-broken by round-robin"
     );
 }
 
 #[tokio::test]
-async fn test_tps_selection_direct_without_model() {
-    let model_id = "test-model";
-    let (lm, ids, _reg) = setup_load_manager_with_endpoints(&["Slow", "Fast"], model_id).await;
+async fn tps_routing_excludes_offline_error_and_initializing_endpoints() {
+    let load_manager = create_test_load_manager().await;
+    let ready = add_online_endpoint(&load_manager, "Ready", &["shared-model"]).await;
+    let initializing = add_online_endpoint(&load_manager, "Initializing", &["shared-model"]).await;
+    let offline = add_online_endpoint(&load_manager, "Offline", &["shared-model"]).await;
+    let error = add_online_endpoint(&load_manager, "Error", &["shared-model"]).await;
 
-    lm.update_tps(
-        ids[0],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        100,
-        10000,
-    )
-    .await; // 10 tok/s
-    lm.update_tps(
-        ids[1],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        800,
-        10000,
-    )
-    .await; // 80 tok/s
+    for endpoint in [&ready, &initializing, &offline, &error] {
+        load_manager
+            .update_tps(
+                endpoint.id,
+                "shared-model".to_string(),
+                TpsApiKind::ChatCompletions,
+                200,
+                1_000,
+            )
+            .await;
+    }
 
-    let selected = lm
-        .select_endpoint_by_tps_direct()
+    load_manager
+        .upsert_initial_state(initializing.id, true, Some((0, 1)))
+        .await;
+    load_manager
+        .endpoint_registry()
+        .update_status(offline.id, EndpointStatus::Offline, None, Some("offline"))
         .await
-        .expect("selection should succeed");
+        .expect("offline transition should succeed");
+    load_manager
+        .endpoint_registry()
+        .update_status(error.id, EndpointStatus::Error, None, Some("error"))
+        .await
+        .expect("error transition should succeed");
 
-    assert_eq!(
-        selected.name, "Fast",
-        "highest TPS endpoint should be selected"
-    );
+    let selected = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("ready endpoint should remain selectable");
+
+    assert_eq!(selected.id, ready.id);
 }
 
 #[tokio::test]
-async fn test_tps_selection_no_endpoints_returns_error() {
-    let pool = SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("Failed to create test database");
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Failed to run migrations");
+async fn tps_routing_ignores_other_api_kinds_when_request_kind_is_none() {
+    let load_manager = create_test_load_manager().await;
+    let first = add_online_endpoint(&load_manager, "First", &["shared-model"]).await;
+    let second = add_online_endpoint(&load_manager, "Second", &["shared-model"]).await;
 
-    let registry = Arc::new(
-        EndpointRegistry::new(pool)
-            .await
-            .expect("Failed to create endpoint registry"),
+    load_manager
+        .update_tps(
+            first.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            400,
+            100,
+        )
+        .await;
+
+    let first_pick = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", None::<TpsApiKind>)
+        .await
+        .expect("first selection should succeed");
+    let second_pick = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", None::<TpsApiKind>)
+        .await
+        .expect("second selection should succeed");
+
+    assert_ne!(
+        first_pick.id, second_pick.id,
+        "non-TPS request kinds must not inherit chat/completions TPS bias"
     );
-    let lm = LoadManager::new(registry);
+    assert!([first.id, second.id].contains(&first_pick.id));
+    assert!([first.id, second.id].contains(&second_pick.id));
+}
 
-    let result = lm.select_endpoint_by_tps_direct().await;
+#[tokio::test]
+async fn tps_routing_no_endpoints_returns_error() {
+    let load_manager = create_test_load_manager().await;
+    let result = load_manager.select_endpoint_by_tps_direct(None).await;
     assert!(
         result.is_err(),
         "should return error when no endpoints available"
@@ -259,23 +300,24 @@ async fn test_tps_selection_no_endpoints_returns_error() {
 }
 
 #[tokio::test]
-async fn test_tps_selection_single_endpoint() {
-    let model_id = "test-model";
-    let (lm, ids, _reg) = setup_load_manager_with_endpoints(&["Only"], model_id).await;
+async fn tps_routing_single_endpoint_is_selected() {
+    let load_manager = create_test_load_manager().await;
+    let only = add_online_endpoint(&load_manager, "Only", &["shared-model"]).await;
 
-    lm.update_tps(
-        ids[0],
-        model_id.to_string(),
-        TpsApiKind::ChatCompletions,
-        500,
-        10000,
-    )
-    .await;
+    load_manager
+        .update_tps(
+            only.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            500,
+            10_000,
+        )
+        .await;
 
-    let selected = lm
-        .select_endpoint_by_tps_for_model(model_id)
+    let selected = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
         .await
         .expect("selection should succeed");
 
-    assert_eq!(selected.name, "Only");
+    assert_eq!(selected.id, only.id);
 }

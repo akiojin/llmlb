@@ -25,7 +25,7 @@ use std::{io, pin::Pin, sync::Arc, time::Instant};
 /// TPS未計測のエンドポイントはTPS=0.0として最低優先で扱う。
 /// 同一TPS時はラウンドロビンでタイブレークする。
 pub(crate) async fn select_available_endpoint(state: &AppState) -> Result<Endpoint, LbError> {
-    state.load_manager.select_endpoint_by_tps_direct().await
+    state.load_manager.select_endpoint_by_tps_direct(None).await
 }
 
 /// キュー付きエンドポイント選択の結果
@@ -47,16 +47,18 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
     _queue_config: QueueConfig,
     model_id: &str,
+    api_kind: Option<TpsApiKind>,
 ) -> Result<QueueSelection, LbError> {
     let endpoint = state
         .load_manager
-        .select_endpoint_by_tps_for_model(model_id)
+        .select_endpoint_by_tps_ready_for_model(model_id, api_kind)
         .await?;
 
     tracing::debug!(
         model = %model_id,
         endpoint_id = %endpoint.id,
         endpoint_name = %endpoint.name,
+        ?api_kind,
         "Selected ready endpoint by TPS priority"
     );
 

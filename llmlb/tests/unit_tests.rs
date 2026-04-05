@@ -10,6 +10,9 @@ mod endpoint_validation_test;
 #[path = "unit/latency_routing_test.rs"]
 mod latency_routing_test;
 
+#[path = "unit/tps_routing_test.rs"]
+mod tps_routing_test;
+
 // SPEC-e8e9326e: エンドポイントタイプ関連テスト
 #[path = "unit/endpoint_type_detection_test.rs"]
 mod endpoint_type_detection_test;
@@ -38,10 +41,6 @@ mod ip_normalize_test;
 // Property-based tests (proptest)
 #[path = "unit/proptest_tests.rs"]
 mod proptest_tests;
-
-// SPEC #494 Phase 3: TPS優先ルーティングテスト
-#[path = "unit/tps_routing_test.rs"]
-mod tps_routing_test;
 
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

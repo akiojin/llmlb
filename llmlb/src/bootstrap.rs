@@ -108,6 +108,7 @@ async fn initialize_inner(
 
     // エンドポイントヘルスチェッカーをバックグラウンドで開始
     let endpoint_health_checker = health::EndpointHealthChecker::new(endpoint_registry.clone())
+        .with_load_manager(load_manager.clone())
         .with_interval(health_check_interval_secs);
     endpoint_health_checker.start();
 

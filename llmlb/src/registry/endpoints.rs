@@ -7,19 +7,37 @@ use crate::types::endpoint::{
     Endpoint, EndpointCapability, EndpointModel, EndpointStatus, EndpointType,
 };
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 use uuid::Uuid;
 
-fn model_lookup_keys<'a>(model: &'a EndpointModel) -> impl Iterator<Item = &'a str> + 'a {
-    std::iter::once(model.model_id.as_str()).chain(
-        model
-            .canonical_name
-            .as_deref()
-            .filter(|canonical| *canonical != model.model_id.as_str()),
-    )
+fn model_lookup_keys(model_id: &str) -> Vec<String> {
+    let mut keys = vec![model_id.to_string()];
+    if let Some(mapping) = crate::models::mapping::find_mapping(model_id) {
+        if !keys.iter().any(|key| key == mapping.canonical) {
+            keys.push(mapping.canonical.to_string());
+        }
+        for alias in mapping.aliases {
+            if !keys.iter().any(|key| key == alias.name) {
+                keys.push(alias.name.to_string());
+            }
+        }
+    }
+    keys
+}
+
+fn endpoint_model_lookup_keys(model: &EndpointModel) -> Vec<String> {
+    let mut keys = model_lookup_keys(&model.model_id);
+    if let Some(canonical) = model.canonical_name.as_deref() {
+        for key in model_lookup_keys(canonical) {
+            if !keys.iter().any(|existing| existing == &key) {
+                keys.push(key);
+            }
+        }
+    }
+    keys
 }
 
 fn insert_model_mapping(
@@ -27,8 +45,8 @@ fn insert_model_mapping(
     model: &EndpointModel,
     endpoint_id: Uuid,
 ) {
-    for key in model_lookup_keys(model) {
-        let endpoints = model_map.entry(key.to_string()).or_default();
+    for key in endpoint_model_lookup_keys(model) {
+        let endpoints = model_map.entry(key).or_default();
         if !endpoints.contains(&endpoint_id) {
             endpoints.push(endpoint_id);
         }
@@ -40,8 +58,8 @@ fn remove_model_mapping(
     model: &EndpointModel,
     endpoint_id: Uuid,
 ) {
-    for key in model_lookup_keys(model) {
-        let remove_key = if let Some(endpoints) = model_map.get_mut(key) {
+    for key in endpoint_model_lookup_keys(model) {
+        let remove_key = if let Some(endpoints) = model_map.get_mut(&key) {
             endpoints.retain(|id| *id != endpoint_id);
             endpoints.is_empty()
         } else {
@@ -49,7 +67,7 @@ fn remove_model_mapping(
         };
 
         if remove_key {
-            model_map.remove(key);
+            model_map.remove(&key);
         }
     }
 }
@@ -191,17 +209,25 @@ impl EndpointRegistry {
     pub async fn find_by_model(&self, model_id: &str) -> Vec<Endpoint> {
         let model_map = self.model_to_endpoints.read().await;
         let endpoints = self.endpoints.read().await;
+        let mut seen = HashSet::new();
+        let mut resolved = Vec::new();
 
-        model_map
-            .get(model_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| endpoints.get(id))
-                    .filter(|e| e.status == EndpointStatus::Online)
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default()
+        for lookup_key in model_lookup_keys(model_id) {
+            if let Some(ids) = model_map.get(&lookup_key) {
+                for id in ids {
+                    if !seen.insert(*id) {
+                        continue;
+                    }
+                    if let Some(endpoint) = endpoints.get(id) {
+                        if endpoint.status == EndpointStatus::Online {
+                            resolved.push(endpoint.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        resolved
     }
 
     /// レイテンシ順でエンドポイントをソート（低レイテンシ優先）
@@ -1567,6 +1593,43 @@ mod tests {
 
         let found = registry.find_by_model("offline-model").await;
         assert!(found.is_empty(), "offline endpoints should be excluded");
+    }
+
+    #[tokio::test]
+    async fn test_find_by_model_matches_canonical_and_aliases() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mut ep = Endpoint::new(
+            "AliasBacked".to_string(),
+            "http://localhost:9021".to_string(),
+            EndpointType::LmStudio,
+        );
+        ep.status = EndpointStatus::Online;
+        let ep_id = ep.id;
+        registry.add(ep).await.unwrap();
+
+        registry
+            .add_model(&EndpointModel {
+                endpoint_id: ep_id,
+                model_id: "qwen/qwen3-coder-30b".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("Qwen/qwen3-coder-30b".to_string()),
+            })
+            .await
+            .unwrap();
+
+        let canonical = registry.find_by_model("Qwen/qwen3-coder-30b").await;
+        assert_eq!(canonical.len(), 1);
+        assert_eq!(canonical[0].id, ep_id);
+
+        let alias = registry.find_by_model("qwen/qwen3-coder-30b").await;
+        assert_eq!(alias.len(), 1);
+        assert_eq!(alias[0].id, ep_id);
     }
 
     // ===== find_by_model_sorted_by_latency テスト =====

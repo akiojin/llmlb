@@ -444,6 +444,21 @@ export async function deleteEndpointsByName(
   return targets.length;
 }
 
+/**
+ * Best-effort cleanup helper for E2E: delete endpoints matching exact base URL.
+ */
+export async function deleteEndpointsByBaseUrl(
+  request: APIRequestContext,
+  baseUrl: string
+): Promise<number> {
+  const endpoints = await listEndpoints(request);
+  const targets = endpoints.filter((e) => e.base_url === baseUrl);
+  for (const ep of targets) {
+    await deleteEndpoint(request, ep.id);
+  }
+  return targets.length;
+}
+
 // ============================================================================
 // UI Workflow Helpers
 // ============================================================================

@@ -35,6 +35,10 @@ pub struct ModelMapping {
     pub aliases: &'static [EngineAlias],
 }
 
+fn model_id_eq(left: &str, right: &str) -> bool {
+    left == right || left.eq_ignore_ascii_case(right)
+}
+
 /// Built-in compatibility table keyed by canonical Hugging Face repo ID.
 pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     ModelMapping {
@@ -71,6 +75,10 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 name: "qwen3-coder:30b",
             },
             EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3-coder:latest",
+            },
+            EngineAlias {
                 engine: EndpointType::LmStudio,
                 name: "qwen/qwen3-coder-30b",
             },
@@ -86,6 +94,23 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             EngineAlias {
                 engine: EndpointType::LmStudio,
                 name: "qwen/qwen3-30b-a3b",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "qwen/qwen3-coder-next",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3-coder-next:latest",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3-coder-next",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3-coder-next",
             },
         ],
     },
@@ -127,6 +152,10 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 name: "qwen3.5-35b-a3b",
             },
             EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3.5:latest",
+            },
+            EngineAlias {
                 engine: EndpointType::LmStudio,
                 name: "qwen3.5-35b-a3b",
             },
@@ -155,6 +184,10 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 engine: EndpointType::LmStudio,
                 name: "nvidia/nemotron-3-super",
             },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "unsloth/nvidia-nemotron-3-super-120b-a12b",
+            },
         ],
     },
     ModelMapping {
@@ -170,9 +203,6 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             },
         ],
     },
-    // LM Studio reports this model as the canonical Hugging Face repo ID.
-    // Keeping the alias explicit makes `find_mapping()` and runtime lookups
-    // treat it the same way as other engine-specific aliases.
     ModelMapping {
         canonical: "Qwen/Qwen2.5-14B-Instruct-AWQ",
         aliases: &[
@@ -233,12 +263,12 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
 /// Resolve a runtime model ID to its canonical Hugging Face repo ID.
 pub fn resolve_canonical(model_id: &str, endpoint_type: &EndpointType) -> Option<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
-        if mapping.canonical == model_id {
+        if model_id_eq(mapping.canonical, model_id) {
             return Some(mapping.canonical);
         }
 
         for alias in mapping.aliases {
-            if alias.engine == *endpoint_type && alias.name == model_id {
+            if alias.engine == *endpoint_type && model_id_eq(alias.name, model_id) {
                 return Some(mapping.canonical);
             }
         }
@@ -257,7 +287,7 @@ pub fn resolve_engine_name(canonical: &str, endpoint_type: &EndpointType) -> Opt
 /// Resolve all engine-specific aliases for a canonical model.
 pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Vec<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
-        if mapping.canonical == canonical {
+        if model_id_eq(mapping.canonical, canonical) {
             return mapping
                 .aliases
                 .iter()
@@ -270,8 +300,7 @@ pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Ve
     Vec::new()
 }
 
-/// Returns whether llmlb has a built-in mapping for this canonical model on
-/// the given endpoint type.
+/// Returns whether llmlb has a built-in mapping for this canonical model on the given endpoint type.
 pub fn supports_canonical_on_endpoint(canonical: &str, endpoint_type: &EndpointType) -> bool {
     !resolve_engine_names(canonical, endpoint_type).is_empty()
 }
@@ -279,12 +308,12 @@ pub fn supports_canonical_on_endpoint(canonical: &str, endpoint_type: &EndpointT
 /// Find the built-in mapping by canonical ID or by any known alias.
 pub fn find_mapping(model_id: &str) -> Option<&'static ModelMapping> {
     for mapping in BUILTIN_MAPPINGS {
-        if mapping.canonical == model_id {
+        if model_id_eq(mapping.canonical, model_id) {
             return Some(mapping);
         }
 
         for alias in mapping.aliases {
-            if alias.name == model_id {
+            if model_id_eq(alias.name, model_id) {
                 return Some(mapping);
             }
         }
@@ -294,9 +323,6 @@ pub fn find_mapping(model_id: &str) -> Option<&'static ModelMapping> {
 }
 
 /// Best-effort fallback from an engine model ID to a likely HF repo ID.
-///
-/// Today this is only reliable for LM Studio when the runtime model ID already
-/// looks like `publisher/model-name` and does not include a `:variant` suffix.
 pub fn guess_hf_repo(model_id: &str, endpoint_type: &EndpointType) -> Option<String> {
     match endpoint_type {
         EndpointType::LmStudio => {
@@ -310,16 +336,15 @@ pub fn guess_hf_repo(model_id: &str, endpoint_type: &EndpointType) -> Option<Str
     }
 }
 
-/// Resolve a canonical ID by matching against any known alias regardless of
-/// endpoint type.
+/// Resolve a canonical ID by matching against any known alias regardless of endpoint type.
 pub fn resolve_canonical_any(model_id: &str) -> Option<&'static str> {
     for mapping in BUILTIN_MAPPINGS {
-        if mapping.canonical == model_id {
+        if model_id_eq(mapping.canonical, model_id) {
             return Some(mapping.canonical);
         }
 
         for alias in mapping.aliases {
-            if alias.name == model_id {
+            if model_id_eq(alias.name, model_id) {
                 return Some(mapping.canonical);
             }
         }
@@ -513,6 +538,54 @@ mod tests {
     fn test_qwen3_coder_mapping() {
         let result = resolve_canonical("qwen3-coder:30b", &EndpointType::Ollama);
         assert_eq!(result, Some("Qwen/qwen3-coder-30b"));
+    }
+
+    #[test]
+    fn test_qwen3_coder_lm_studio_lowercase_mapping() {
+        let result = resolve_canonical("qwen/qwen3-coder-30b", &EndpointType::LmStudio);
+        assert_eq!(result, Some("Qwen/qwen3-coder-30b"));
+    }
+
+    #[test]
+    fn test_qwen3_coder_latest_mapping() {
+        let result = resolve_canonical("qwen3-coder:latest", &EndpointType::Ollama);
+        assert_eq!(result, Some("Qwen/qwen3-coder-30b"));
+    }
+
+    #[test]
+    fn test_qwen3_coder_next_mapping() {
+        let result = resolve_canonical("qwen/qwen3-coder-next", &EndpointType::LmStudio);
+        assert_eq!(result, Some("qwen/qwen3-coder-next"));
+    }
+
+    #[test]
+    fn test_qwen35_mapping() {
+        let result = resolve_canonical("qwen3.5:latest", &EndpointType::Ollama);
+        assert_eq!(result, Some("Qwen/Qwen3.5-35B-A3B"));
+    }
+
+    #[test]
+    fn test_glm47_mapping() {
+        let result = resolve_canonical("zai-org/glm-4.7-flash", &EndpointType::LmStudio);
+        assert_eq!(result, Some("THUDM/glm-4.7-flash"));
+    }
+
+    #[test]
+    fn test_nomic_embedding_mapping() {
+        let result = resolve_canonical(
+            "text-embedding-nomic-embed-text-v1.5",
+            &EndpointType::LmStudio,
+        );
+        assert_eq!(result, Some("nomic-ai/nomic-embed-text-v1.5"));
+    }
+
+    #[test]
+    fn test_nemotron_super_unsloth_mapping() {
+        let result = resolve_canonical(
+            "unsloth/nvidia-nemotron-3-super-120b-a12b",
+            &EndpointType::LmStudio,
+        );
+        assert_eq!(result, Some("nvidia/nemotron-3-super-120b-a12b"));
     }
 
     #[test]

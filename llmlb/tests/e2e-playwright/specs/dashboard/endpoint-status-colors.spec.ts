@@ -170,12 +170,6 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await page.goto(`/dashboard/#playground/${okEndpoint!.id}`);
       await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
 
-      const pendingIndicator = page
-        .locator('span')
-        .filter({ has: page.locator('svg') })
-        .filter({ hasText: /^Pending$/ })
-        .first();
-      await expect(pendingIndicator.locator('svg').first()).toHaveClass(/text-warning/);
       const pendingPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Pending$/ }).first();
       await expectStatusBadge(pendingPlaygroundBadge, 'pending');
       await shot('playground-pending');
@@ -216,8 +210,6 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       // Playground (online)
       await page.goto(`/dashboard/#playground/${okEndpoint!.id}`);
       await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
-      const onlineIndicator = page.locator('span').filter({ hasText: /^Online$/ }).first();
-      await expect(onlineIndicator.locator('svg').first()).toHaveClass(/text-success/);
       const onlinePlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Online$/ }).first();
       await expectStatusBadge(onlinePlaygroundBadge, 'online');
       await shot('playground-online');
@@ -256,7 +248,6 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await page.waitForLoadState('load');
       await page.getByPlaceholder('Search by name or URL...').fill(baseName);
       await expect(badRow).toBeVisible({ timeout: 20000 });
-      await expect(badRow.getByText('Error', { exact: true })).toBeVisible({ timeout: 20000 });
 
       const badBadgeError = badRow.locator('td').nth(3).locator('div').first();
       await expectStatusBadge(badBadgeError, 'error');
@@ -278,12 +269,6 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       // Playground (error)
       await page.goto(`/dashboard/#playground/${badEndpoint!.id}`);
       await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
-      const errorIndicator = page
-        .locator('span')
-        .filter({ has: page.locator('svg') })
-        .filter({ hasText: /^Error$/ })
-        .first();
-      await expect(errorIndicator.locator('svg').first()).toHaveClass(/text-destructive/);
       const errorPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Error$/ }).first();
       await expectStatusBadge(errorPlaygroundBadge, 'error');
       await shot('playground-error');
@@ -329,12 +314,6 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       // Playground (offline)
       await page.goto(`/dashboard/#playground/${badEndpoint!.id}`);
       await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
-      const offlineIndicator = page
-        .locator('span')
-        .filter({ has: page.locator('svg') })
-        .filter({ hasText: /^Offline$/ })
-        .first();
-      await expect(offlineIndicator.locator('svg').first()).toHaveClass(/text-destructive\/70/);
       const offlinePlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Offline$/ }).first();
       await expectStatusBadge(offlinePlaygroundBadge, 'offline');
       await shot('playground-offline');

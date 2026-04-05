@@ -18,7 +18,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 use std::{collections::HashMap, net::IpAddr, net::SocketAddr, time::Instant};
-use tracing::error;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::auth::middleware::ApiKeyAuthContext;
@@ -28,10 +28,13 @@ use crate::{
     api::{
         cloud_proxy::{proxy_cloud_provider, resolve_provider},
         error::AppError,
-        model_name::{parse_quantized_model_name, ParsedModelName},
+        model_name::{
+            parse_quantized_model_name, rewrite_payload_model_for_endpoint, ParsedModelName,
+        },
         models::{list_registered_models, load_registered_model, LifecycleStatus},
         openai_util::{
-            model_unavailable_response, openai_error_response, queue_error_response,
+            classify_upstream_request_error, model_unavailable_response, openai_error_response,
+            openai_error_response_with_type, probe_ollama_model_loaded, queue_error_response,
             sanitize_openai_payload_for_history,
         },
         proxy::{
@@ -270,19 +273,45 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
     let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
+    // モデル名統一化: canonical_name → エイリアス（エンジン固有名）のマッピング
+    let mut canonical_to_aliases: HashMap<String, HashSet<String>> = HashMap::new();
+    // model_id → canonical_name の逆引き
+    let mut model_to_canonical: HashMap<String, String> = HashMap::new();
     {
         let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
                 for model in models {
+                    // canonical_nameが設定されている場合、エイリアス情報を収集
+                    if let Some(canonical) = &model.canonical_name {
+                        if canonical != &model.model_id {
+                            canonical_to_aliases
+                                .entry(canonical.clone())
+                                .or_default()
+                                .insert(model.model_id.clone());
+                        }
+                        model_to_canonical.insert(model.model_id.clone(), canonical.clone());
+                    }
+
+                    // 表示用キーの決定: canonical_nameがあればそれを使用
+                    let display_key = model
+                        .canonical_name
+                        .clone()
+                        .unwrap_or_else(|| model.model_id.clone());
+
                     endpoint_model_ids
-                        .entry(model.model_id.clone())
+                        .entry(display_key.clone())
                         .or_default()
                         .insert(ep.id.to_string());
-                    let apis = endpoint_model_apis
-                        .entry(model.model_id.clone())
-                        .or_default();
+                    // エイリアス名でもエンドポイントIDを登録（ルーティング用）
+                    if display_key != model.model_id {
+                        endpoint_model_ids
+                            .entry(model.model_id.clone())
+                            .or_default()
+                            .insert(ep.id.to_string());
+                    }
+                    let apis = endpoint_model_apis.entry(display_key.clone()).or_default();
                     for api in model.supported_apis {
                         apis.insert(api);
                     }
@@ -290,9 +319,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                     apis.insert(SupportedAPI::Responses);
 
                     // max_tokens を集約（複数エンドポイントにある場合は最大値を採用）
-                    let entry = endpoint_model_max_tokens
-                        .entry(model.model_id.clone())
-                        .or_insert(None);
+                    let entry = endpoint_model_max_tokens.entry(display_key).or_insert(None);
                     if let Some(mt) = model.max_tokens {
                         *entry = Some(entry.map_or(mt, |existing| existing.max(mt)));
                     }
@@ -332,6 +359,18 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             })
             .unwrap_or_default();
 
+        // エイリアス情報を取得
+        let aliases: Vec<String> = canonical_to_aliases
+            .get(model_id)
+            .map(|a| {
+                let mut v: Vec<String> = a.iter().cloned().collect();
+                v.sort();
+                v
+            })
+            .unwrap_or_default();
+        // canonical_nameを取得（表示用）
+        let canonical_name = model_to_canonical.get(model_id).cloned();
+
         if let Some(m) = registered_map.get(model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();
             let obj = json!({
@@ -354,6 +393,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
                 "endpoint_ids": endpoint_ids,
+                "canonical_name": canonical_name,
+                "aliases": aliases,
             });
             data.push(obj);
         } else {
@@ -368,6 +409,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
                 "endpoint_ids": endpoint_ids,
+                "canonical_name": canonical_name,
+                "aliases": aliases,
             });
             data.push(obj);
         }
@@ -744,14 +787,34 @@ async fn proxy_openai_post(
         .await;
     }
 
+    // モデル名統一化: エイリアス名が渡された場合、正規名に変換して検索
+    let resolved_model = {
+        let found = state.endpoint_registry.find_by_model(&model).await;
+        if found.is_empty() {
+            // エイリアス名で見つからない場合、マッピングテーブルで正規名を解決
+            if let Some(canonical) = crate::models::mapping::resolve_canonical_any(&model) {
+                let canonical_found = state.endpoint_registry.find_by_model(canonical).await;
+                if !canonical_found.is_empty() {
+                    canonical.to_string()
+                } else {
+                    model.clone()
+                }
+            } else {
+                model.clone()
+            }
+        } else {
+            model.clone()
+        }
+    };
+
     // Check if any endpoint has this model
     if state
         .endpoint_registry
-        .find_by_model(&model)
+        .find_by_model(&resolved_model)
         .await
         .is_empty()
     {
-        let is_registered = load_registered_model(&state.db_pool, &model).await?;
+        let is_registered = load_registered_model(&state.db_pool, &resolved_model).await?;
         if is_registered.is_none() {
             let message = format!("The model '{}' does not exist", model);
             return Ok(openai_error_response(message, StatusCode::NOT_FOUND));
@@ -764,91 +827,97 @@ async fn proxy_openai_post(
     let mut queued_wait_ms: Option<u128> = None;
 
     // FR-004: エンドポイント選択失敗時もリクエスト履歴に記録する
-    let endpoint =
-        match select_available_endpoint_with_queue_for_model(state, queue_config, &model).await {
-            Ok(QueueSelection::Ready {
-                endpoint,
-                queued_wait_ms: wait_ms,
-            }) => {
-                queued_wait_ms = wait_ms;
-                *endpoint
-            }
-            Ok(QueueSelection::CapacityExceeded) => {
-                let message = "Request queue is full".to_string();
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        0,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                let retry_after = queue_config.timeout.as_secs().max(1);
-                return Ok(queue_error_response(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    &message,
-                    "rate_limit_exceeded",
-                    Some(retry_after),
+    let endpoint = match select_available_endpoint_with_queue_for_model(
+        state,
+        queue_config,
+        &resolved_model,
+        tps_api_kind,
+    )
+    .await
+    {
+        Ok(QueueSelection::Ready {
+            endpoint,
+            queued_wait_ms: wait_ms,
+        }) => {
+            queued_wait_ms = wait_ms;
+            *endpoint
+        }
+        Ok(QueueSelection::CapacityExceeded) => {
+            let message = "Request queue is full".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    0,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            let retry_after = queue_config.timeout.as_secs().max(1);
+            return Ok(queue_error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                &message,
+                "rate_limit_exceeded",
+                Some(retry_after),
+            ));
+        }
+        Ok(QueueSelection::Timeout { waited_ms }) => {
+            let message = "Queue wait timeout".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    waited_ms as u64,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            return Ok(queue_error_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                &message,
+                "timeout",
+                None,
+            ));
+        }
+        Err(e) => {
+            let error_message = if matches!(e, LbError::NoCapableEndpoints(_)) {
+                format!("No available nodes support model: {}", model)
+            } else {
+                format!("Node selection failed: {}", e)
+            };
+            error!(
+                endpoint = %target_path,
+                model = %model,
+                error = %e,
+                "Failed to select available node"
+            );
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    error_message.clone(),
+                    queued_wait_ms.unwrap_or(0) as u64,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            if matches!(e, LbError::NoCapableEndpoints(_)) {
+                return Ok(model_unavailable_response(
+                    error_message,
+                    "no_capable_nodes",
                 ));
             }
-            Ok(QueueSelection::Timeout { waited_ms }) => {
-                let message = "Queue wait timeout".to_string();
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        waited_ms as u64,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                return Ok(queue_error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    &message,
-                    "timeout",
-                    None,
-                ));
-            }
-            Err(e) => {
-                let error_message = if matches!(e, LbError::NoCapableEndpoints(_)) {
-                    format!("No available nodes support model: {}", model)
-                } else {
-                    format!("Node selection failed: {}", e)
-                };
-                error!(
-                    endpoint = %target_path,
-                    model = %model,
-                    error = %e,
-                    "Failed to select available node"
-                );
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        error_message.clone(),
-                        queued_wait_ms.unwrap_or(0) as u64,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                if matches!(e, LbError::NoCapableEndpoints(_)) {
-                    return Ok(model_unavailable_response(
-                        error_message,
-                        "no_capable_nodes",
-                    ));
-                }
-                return Err(e.into());
-            }
-        };
+            return Err(e.into());
+        }
+    };
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();
     let endpoint_type = endpoint.endpoint_type;
@@ -865,8 +934,61 @@ async fn proxy_openai_post(
     let client = state.http_client.clone();
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
+    let endpoint_models = match state.endpoint_registry.list_models(endpoint_id).await {
+        Ok(models) => models,
+        Err(error) => {
+            warn!(
+                endpoint_id = %endpoint_id,
+                model = %resolved_model,
+                error = %error,
+                "Failed to load endpoint models for request rewrite; falling back to static mapping"
+            );
+            Vec::new()
+        }
+    };
+    let outbound_payload = rewrite_payload_model_for_endpoint(
+        payload,
+        &resolved_model,
+        &endpoint_type,
+        &endpoint_models,
+    );
 
-    let mut request_builder = client.post(&runtime_url).json(&payload);
+    let upstream_model = state
+        .endpoint_registry
+        .list_models(endpoint_id)
+        .await
+        .ok()
+        .and_then(|endpoint_models| {
+            endpoint_models
+                .into_iter()
+                .find(|endpoint_model| {
+                    endpoint_model.model_id == model
+                        || endpoint_model.model_id == resolved_model
+                        || endpoint_model.canonical_name.as_deref() == Some(model.as_str())
+                        || endpoint_model.canonical_name.as_deref() == Some(resolved_model.as_str())
+                })
+                .map(|endpoint_model| endpoint_model.model_id)
+        })
+        .or_else(|| {
+            crate::models::mapping::resolve_engine_name(&model, &endpoint_type).map(str::to_string)
+        })
+        .or_else(|| {
+            crate::models::mapping::resolve_engine_name(&resolved_model, &endpoint_type)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| resolved_model.clone());
+
+    let mut upstream_payload = outbound_payload;
+    if let Some(payload_object) = upstream_payload.as_object_mut() {
+        payload_object.insert("model".to_string(), Value::String(upstream_model.clone()));
+    }
+
+    let mut request_builder = client
+        .post(&runtime_url)
+        .timeout(std::time::Duration::from_secs(
+            endpoint.inference_timeout_secs as u64,
+        ))
+        .json(&upstream_payload);
     if let Some(api_key) = &endpoint.api_key {
         request_builder = request_builder.bearer_auth(api_key);
     }
@@ -875,6 +997,28 @@ async fn proxy_openai_post(
         Ok(res) => res,
         Err(e) => {
             let duration = start.elapsed();
+            let ollama_loading_model = if e.is_timeout()
+                && endpoint_type == crate::types::endpoint::EndpointType::Ollama
+            {
+                match probe_ollama_model_loaded(
+                    &client,
+                    &endpoint.base_url,
+                    endpoint.api_key.as_deref(),
+                    &upstream_model,
+                )
+                .await
+                {
+                    Some(false) => Some(upstream_model.clone()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let classified_error = classify_upstream_request_error(
+                &e,
+                endpoint.inference_timeout_secs,
+                ollama_loading_model.as_deref(),
+            );
             request_lease
                 .complete(RequestOutcome::Error, duration)
                 .await
@@ -903,18 +1047,26 @@ async fn proxy_openai_post(
                     model.clone(),
                     request_type,
                     request_body.clone(),
-                    StatusCode::BAD_GATEWAY,
+                    classified_error.status_code,
                     duration,
                     client_ip,
                     api_key_id,
                 );
                 record.status = RecordStatus::Error {
-                    message: format!("Failed to proxy OpenAI request: {}", e),
+                    message: classified_error.record_message,
                 };
                 save_request_record(state.request_history.clone(), record);
             }
 
-            return Err(LbError::Http(format!("Failed to proxy OpenAI request: {}", e)).into());
+            let mut response = openai_error_response_with_type(
+                classified_error.client_message,
+                classified_error.error_type,
+                classified_error.status_code,
+            );
+            if let Some(wait_ms) = queued_wait_ms {
+                add_queue_headers(&mut response, wait_ms);
+            }
+            return Ok(response);
         }
     };
 
@@ -1062,7 +1214,11 @@ async fn proxy_openai_post(
     let duration = start.elapsed();
 
     match parsed {
-        Ok(body) => {
+        Ok(mut body) => {
+            if let Some(body_object) = body.as_object_mut() {
+                body_object.insert("model".to_string(), Value::String(model.clone()));
+            }
+
             // レスポンスからトークン使用量を抽出
             let token_usage = extract_usage_from_response(&body);
 
@@ -1259,7 +1415,7 @@ mod tests {
     use std::net::IpAddr;
     use tempfile::tempdir;
     use tokio::time::{sleep, Duration};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{body_partial_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn create_local_state() -> AppState {
@@ -1271,6 +1427,59 @@ mod tests {
         std::env::set_var("LLMLB_DATA_DIR", dir.path());
         let state = create_local_state().await;
         (state, dir)
+    }
+
+    async fn add_online_chat_endpoint(
+        state: &AppState,
+        endpoint_name: &str,
+        base_url: String,
+        model_id: &str,
+        inference_timeout_secs: u32,
+    ) -> uuid::Uuid {
+        add_online_chat_endpoint_with_type(
+            state,
+            endpoint_name,
+            base_url,
+            model_id,
+            inference_timeout_secs,
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        )
+        .await
+    }
+
+    async fn add_online_chat_endpoint_with_type(
+        state: &AppState,
+        endpoint_name: &str,
+        base_url: String,
+        model_id: &str,
+        inference_timeout_secs: u32,
+        endpoint_type: crate::types::endpoint::EndpointType,
+    ) -> uuid::Uuid {
+        use crate::types::endpoint::{Endpoint, EndpointModel, EndpointStatus, SupportedAPI};
+
+        let mut endpoint = Endpoint::new(endpoint_name.to_string(), base_url, endpoint_type);
+        endpoint.status = EndpointStatus::Online;
+        endpoint.inference_timeout_secs = inference_timeout_secs;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: model_id.to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
+            })
+            .await
+            .expect("add endpoint model");
+        endpoint_id
     }
 
     #[test]
@@ -1799,6 +2008,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");
@@ -1833,6 +2043,415 @@ mod tests {
             snapshot.active_requests, 0,
             "active request count must be released on body read error"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn upstream_timeout_returns_gateway_timeout_response() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        let delayed_body = json!({
+            "id": "chatcmpl-timeout",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "slow"},
+                "finish_reason": "stop"
+            }]
+        });
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_secs(2))
+                    .set_body_json(delayed_body),
+            )
+            .mount(&server)
+            .await;
+
+        let endpoint_id =
+            add_online_chat_endpoint(&state, "timeout-endpoint", server.uri(), "timeout-model", 1)
+                .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "timeout-model",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "timeout-model".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("timeout should return response");
+
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("timeout body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("timeout json");
+        assert_eq!(
+            json["error"]["message"],
+            "Upstream endpoint request timed out after 1 seconds"
+        );
+        assert_eq!(json["error"]["type"], "timeout");
+        assert_eq!(json["error"]["code"], 504);
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let snapshot = state
+            .load_manager
+            .snapshot(endpoint_id)
+            .await
+            .expect("snapshot");
+        assert_eq!(snapshot.active_requests, 0);
+
+        let records = state.request_history.load_records().await.expect("records");
+        assert_eq!(records.len(), 1);
+        assert!(matches!(records[0].status, RecordStatus::Error { .. }));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn canonical_model_routes_to_alias_backed_endpoint_and_rewrites_payload() {
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(json!({"model": "gpt-oss:20b"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-alias",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "ollama-alias".to_string(),
+            server.uri(),
+            EndpointType::Ollama,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "gpt-oss:20b".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("openai/gpt-oss-20b".to_string()),
+            })
+            .await
+            .expect("add endpoint model");
+
+        let payload = json!({
+            "model": "openai/gpt-oss-20b",
+            "messages": [{"role":"user","content":"hello"}]
+        });
+        let response = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "openai/gpt-oss-20b".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("canonical request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ollama_cold_start_timeout_returns_model_loading_error() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/ps"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "models": []
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_secs(2))
+                    .set_body_json(json!({
+                        "id": "chatcmpl-cold-start",
+                        "object": "chat.completion",
+                        "choices": [{
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "slow"},
+                            "finish_reason": "stop"
+                        }]
+                    })),
+            )
+            .mount(&server)
+            .await;
+
+        add_online_chat_endpoint_with_type(
+            &state,
+            "ollama-loading-endpoint",
+            server.uri(),
+            "qwen3:30b",
+            1,
+            crate::types::endpoint::EndpointType::Ollama,
+        )
+        .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "qwen3:30b",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "qwen3:30b".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("ollama cold-start timeout should return response");
+
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("model loading body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("model loading json");
+        assert_eq!(json["error"]["type"], "model_loading");
+        assert!(
+            json["error"]["message"]
+                .as_str()
+                .expect("model loading message")
+                .contains("still loading"),
+            "expected model loading hint in response body"
+        );
+
+        let requests = server.received_requests().await.expect("recorded requests");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].url.path(), "/v1/chat/completions");
+        assert_eq!(requests[1].url.path(), "/api/ps");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ollama_success_does_not_probe_load_state() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-success",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        add_online_chat_endpoint_with_type(
+            &state,
+            "ollama-success-endpoint",
+            server.uri(),
+            "qwen3:30b",
+            5,
+            crate::types::endpoint::EndpointType::Ollama,
+        )
+        .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "qwen3:30b",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "qwen3:30b".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("ollama success should return response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = server.received_requests().await.expect("recorded requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.path(), "/v1/chat/completions");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn canonical_model_routes_to_secondary_lm_studio_alias_and_rewrites_payload() {
+        use crate::types::endpoint::{
+            Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+        };
+
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(
+                json!({"model": "qwen/qwen3.5-35b-a3b:2"}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-lmstudio-alias",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "lmstudio-secondary-alias".to_string(),
+            server.uri(),
+            EndpointType::LmStudio,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+        state
+            .endpoint_registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "qwen/qwen3.5-35b-a3b:2".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("Qwen/Qwen3.5-35B-A3B".to_string()),
+            })
+            .await
+            .expect("add endpoint model");
+
+        let payload = json!({
+            "model": "Qwen/Qwen3.5-35B-A3B",
+            "messages": [{"role":"user","content":"hello"}]
+        });
+        let response = proxy_openai_post(
+            &state,
+            payload,
+            "/v1/chat/completions",
+            "Qwen/Qwen3.5-35B-A3B".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("canonical request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn upstream_connect_failure_returns_bad_gateway_response() {
+        let _guard = TEST_LOCK.lock().await;
+        let (state, _dir) = create_state_with_tempdir().await;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        drop(listener);
+
+        add_online_chat_endpoint(
+            &state,
+            "connect-failure-endpoint",
+            format!("http://{addr}"),
+            "connect-failure-model",
+            5,
+        )
+        .await;
+
+        let response = proxy_openai_post(
+            &state,
+            json!({
+                "model": "connect-failure-model",
+                "messages": [{"role":"user","content":"hello"}]
+            }),
+            "/v1/chat/completions",
+            "connect-failure-model".to_string(),
+            false,
+            RequestType::Chat,
+            None,
+            None,
+        )
+        .await
+        .expect("connect failure should return response");
+
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("connect failure body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("connect failure json");
+        assert_eq!(
+            json["error"]["message"],
+            "Failed to connect to upstream endpoint"
+        );
+        assert_eq!(json["error"]["type"], "connection_error");
+        assert_eq!(json["error"]["code"], 502);
     }
 
     #[tokio::test]
@@ -1881,6 +2500,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");
@@ -1969,6 +2589,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");
@@ -2064,6 +2685,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .expect("add endpoint model");

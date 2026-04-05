@@ -1,6 +1,6 @@
 // Auth API
 
-import { ApiError, fetchWithAuth, API_BASE } from './client'
+import { createApiErrorFromResponse, fetchWithAuth, API_BASE } from './client'
 
 export interface RegisterRequest {
   invitation_code: string
@@ -25,7 +25,7 @@ export const authApi = {
     })
 
     if (!response.ok) {
-      throw new ApiError(response.status, response.statusText)
+      throw await createApiErrorFromResponse(response)
     }
 
     return response.json()
@@ -53,8 +53,7 @@ export const authApi = {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new ApiError(response.status, response.statusText, errorText)
+      throw await createApiErrorFromResponse(response)
     }
 
     return response.json()

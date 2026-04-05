@@ -152,7 +152,14 @@ impl EndpointType {
 
     /// モデルダウンロードをサポートするか
     pub fn supports_model_download(&self) -> bool {
-        matches!(self, Self::Xllm)
+        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio)
+    }
+
+    /// モデル削除をサポートするか
+    ///
+    /// LM Studio: 削除APIなし（0.4.6時点）
+    pub fn supports_model_delete(&self) -> bool {
+        matches!(self, Self::Ollama)
     }
 
     /// モデルメタデータ取得をサポートするか
@@ -448,6 +455,9 @@ pub struct EndpointModel {
     /// サポートするAPI一覧（SPEC-0f1de549）
     #[serde(default = "EndpointModel::default_supported_apis")]
     pub supported_apis: Vec<SupportedAPI>,
+    /// 正規名（HFリポ名）- モデル名統一化用
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canonical_name: Option<String>,
 }
 
 impl EndpointModel {
@@ -876,11 +886,11 @@ mod tests {
 
     #[test]
     fn test_endpoint_type_supports_model_download() {
-        // xLLMのみダウンロードをサポート
+        // xLLM, Ollama, LM Studioがダウンロードをサポート
         assert!(EndpointType::Xllm.supports_model_download());
-        assert!(!EndpointType::Ollama.supports_model_download());
+        assert!(EndpointType::Ollama.supports_model_download());
+        assert!(EndpointType::LmStudio.supports_model_download());
         assert!(!EndpointType::Vllm.supports_model_download());
-        assert!(!EndpointType::LmStudio.supports_model_download());
         assert!(!EndpointType::OpenaiCompatible.supports_model_download());
     }
 
@@ -1686,6 +1696,7 @@ mod tests {
             max_tokens: Some(8192),
             last_checked: None,
             supported_apis: vec![SupportedAPI::ChatCompletions, SupportedAPI::Responses],
+            canonical_name: None,
         };
         let json = serde_json::to_string(&model).unwrap();
         let deserialized: EndpointModel = serde_json::from_str(&json).unwrap();

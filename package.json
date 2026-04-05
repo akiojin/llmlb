@@ -11,6 +11,8 @@
     "build:lb:target": "cargo build --release -p llmlb --target",
     "start:lb": "./target/release/llmlb",
     "clean": "rm -rf target",
+    "test:e2e:real-local": "pnpm --dir llmlb/tests/e2e-playwright test:real-local",
+    "test:e2e:real-local:headed": "pnpm --dir llmlb/tests/e2e-playwright test:real-local:headed",
     "lint:commits": "commitlint --from origin/main --to HEAD",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\" \"!.git\" \"!.github\" \"!.worktrees\""
   },
@@ -18,13 +20,13 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.4.3",
-    "@commitlint/config-conventional": "^20.4.3",
-    "@playwright/test": "^1.58.2",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "@playwright/test": "^1.59.1",
     "bats": "^1.13.0",
-    "bun": "^1.3.10",
+    "bun": "^1.3.11",
     "husky": "^9.1.0",
-    "markdownlint-cli2": "^0.21.0"
+    "markdownlint-cli2": "^0.22.0"
   },
   "workspaces": [
     "llmlb/src/web/dashboard"

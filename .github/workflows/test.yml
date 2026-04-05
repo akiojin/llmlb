@@ -199,7 +199,7 @@ jobs:
       - name: Run Playwright tests
         if: needs.changes.outputs.e2e == 'true'
         working-directory: llmlb/tests/e2e-playwright
-        run: pnpm exec playwright test --reporter=list
+        run: pnpm exec playwright test --reporter=list --grep-invert @real-runtimes
         env:
           SKIP_SERVER: '1'
           BASE_URL: 'http://127.0.0.1:32768'

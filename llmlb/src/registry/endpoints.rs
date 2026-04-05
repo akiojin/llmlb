@@ -7,11 +7,70 @@ use crate::types::endpoint::{
     Endpoint, EndpointCapability, EndpointModel, EndpointStatus, EndpointType,
 };
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 use uuid::Uuid;
+
+fn model_lookup_keys(model_id: &str) -> Vec<String> {
+    let mut keys = vec![model_id.to_string()];
+    if let Some(mapping) = crate::models::mapping::find_mapping(model_id) {
+        if !keys.iter().any(|key| key == mapping.canonical) {
+            keys.push(mapping.canonical.to_string());
+        }
+        for alias in mapping.aliases {
+            if !keys.iter().any(|key| key == alias.name) {
+                keys.push(alias.name.to_string());
+            }
+        }
+    }
+    keys
+}
+
+fn endpoint_model_lookup_keys(model: &EndpointModel) -> Vec<String> {
+    let mut keys = model_lookup_keys(&model.model_id);
+    if let Some(canonical) = model.canonical_name.as_deref() {
+        for key in model_lookup_keys(canonical) {
+            if !keys.iter().any(|existing| existing == &key) {
+                keys.push(key);
+            }
+        }
+    }
+    keys
+}
+
+fn insert_model_mapping(
+    model_map: &mut HashMap<String, Vec<Uuid>>,
+    model: &EndpointModel,
+    endpoint_id: Uuid,
+) {
+    for key in endpoint_model_lookup_keys(model) {
+        let endpoints = model_map.entry(key).or_default();
+        if !endpoints.contains(&endpoint_id) {
+            endpoints.push(endpoint_id);
+        }
+    }
+}
+
+fn remove_model_mapping(
+    model_map: &mut HashMap<String, Vec<Uuid>>,
+    model: &EndpointModel,
+    endpoint_id: Uuid,
+) {
+    for key in endpoint_model_lookup_keys(model) {
+        let remove_key = if let Some(endpoints) = model_map.get_mut(&key) {
+            endpoints.retain(|id| *id != endpoint_id);
+            endpoints.is_empty()
+        } else {
+            false
+        };
+
+        if remove_key {
+            model_map.remove(&key);
+        }
+    }
+}
 
 /// エンドポイントレジストリ
 ///
@@ -57,10 +116,7 @@ impl EndpointRegistry {
 
             // モデルマッピングを更新
             for model in &models {
-                model_map
-                    .entry(model.model_id.clone())
-                    .or_default()
-                    .push(endpoint_id);
+                insert_model_mapping(&mut model_map, model, endpoint_id);
             }
 
             endpoints.insert(endpoint_id, endpoint);
@@ -120,7 +176,7 @@ impl EndpointRegistry {
             .collect()
     }
 
-    /// 指定した機能を持つオンラインエンドポイントをレイテンシ順で取得
+    /// 指定した機能を持つオンラインエンドポイントを補助指標用のレイテンシ順で取得
     ///
     /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2）でソート。
     /// 複数エンドポイントがある場合、レイテンシが低いものを優先する。
@@ -153,20 +209,28 @@ impl EndpointRegistry {
     pub async fn find_by_model(&self, model_id: &str) -> Vec<Endpoint> {
         let model_map = self.model_to_endpoints.read().await;
         let endpoints = self.endpoints.read().await;
+        let mut seen = HashSet::new();
+        let mut resolved = Vec::new();
 
-        model_map
-            .get(model_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| endpoints.get(id))
-                    .filter(|e| e.status == EndpointStatus::Online)
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default()
+        for lookup_key in model_lookup_keys(model_id) {
+            if let Some(ids) = model_map.get(&lookup_key) {
+                for id in ids {
+                    if !seen.insert(*id) {
+                        continue;
+                    }
+                    if let Some(endpoint) = endpoints.get(id) {
+                        if endpoint.status == EndpointStatus::Online {
+                            resolved.push(endpoint.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        resolved
     }
 
-    /// レイテンシ順でエンドポイントをソート（低レイテンシ優先）
+    /// 補助指標用にレイテンシ順でエンドポイントをソート（低レイテンシ優先）
     ///
     /// SPEC-f8e3a1b7: 推論レイテンシ（EMA α=0.2）を使用してソート。
     /// レイテンシが同じ場合はラウンドロビンでタイブレーク。
@@ -409,12 +473,8 @@ impl EndpointRegistry {
         db::add_endpoint_model(&self.pool, model).await?;
 
         // モデルマッピングを更新
-        self.model_to_endpoints
-            .write()
-            .await
-            .entry(model.model_id.clone())
-            .or_default()
-            .push(model.endpoint_id);
+        let mut model_map = self.model_to_endpoints.write().await;
+        insert_model_mapping(&mut model_map, model, model.endpoint_id);
 
         Ok(())
     }
@@ -461,20 +521,12 @@ impl EndpointRegistry {
 
             // 追加
             for model in &added {
-                model_map
-                    .entry(model.model_id.clone())
-                    .or_default()
-                    .push(endpoint_id);
+                insert_model_mapping(&mut model_map, model, endpoint_id);
             }
 
             // 削除
             for model in &removed {
-                if let Some(endpoints) = model_map.get_mut(&model.model_id) {
-                    endpoints.retain(|id| *id != endpoint_id);
-                    if endpoints.is_empty() {
-                        model_map.remove(&model.model_id);
-                    }
-                }
+                remove_model_mapping(&mut model_map, model, endpoint_id);
             }
         }
 
@@ -512,10 +564,7 @@ impl EndpointRegistry {
 
         // 取得したモデルでマッピングを再構築
         for model in models {
-            model_map
-                .entry(model.model_id.clone())
-                .or_default()
-                .push(endpoint_id);
+            insert_model_mapping(&mut model_map, &model, endpoint_id);
         }
 
         Ok(())
@@ -633,6 +682,7 @@ mod tests {
             max_tokens: None,
             last_checked: Some(chrono::Utc::now()),
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         };
 
         registry.add_model(&model).await.unwrap();
@@ -677,6 +727,39 @@ mod tests {
         // オンラインエンドポイントのみ取得
         let online = registry.list_online().await;
         assert_eq!(online.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_find_by_canonical_name_for_alias_backed_model() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mut endpoint = Endpoint::new(
+            "Alias-backed".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Ollama,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        registry.add(endpoint).await.unwrap();
+
+        registry
+            .add_model(&EndpointModel {
+                endpoint_id,
+                model_id: "gpt-oss:20b".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("openai/gpt-oss-20b".to_string()),
+            })
+            .await
+            .unwrap();
+
+        let found = registry.find_by_model("openai/gpt-oss-20b").await;
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, endpoint_id);
     }
 
     /// T005 [US1]: increment_request_counters がDBとキャッシュの両方の
@@ -1258,6 +1341,7 @@ mod tests {
             max_tokens: None,
             last_checked: None,
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         };
         registry.add_model(&model).await.unwrap();
 
@@ -1298,6 +1382,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             },
             EndpointModel {
                 endpoint_id: ep_id,
@@ -1306,6 +1391,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             },
         ];
 
@@ -1339,6 +1425,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1351,6 +1438,7 @@ mod tests {
             max_tokens: None,
             last_checked: None,
             supported_apis: vec![SupportedAPI::ChatCompletions],
+            canonical_name: None,
         }];
 
         let result = registry.sync_models(ep_id, new_models).await.unwrap();
@@ -1405,6 +1493,7 @@ mod tests {
                 max_tokens: Some(4096),
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1448,6 +1537,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1460,6 +1550,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
@@ -1495,12 +1586,50 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();
 
         let found = registry.find_by_model("offline-model").await;
         assert!(found.is_empty(), "offline endpoints should be excluded");
+    }
+
+    #[tokio::test]
+    async fn test_find_by_model_matches_canonical_and_aliases() {
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+
+        let mut ep = Endpoint::new(
+            "AliasBacked".to_string(),
+            "http://localhost:9021".to_string(),
+            EndpointType::LmStudio,
+        );
+        ep.status = EndpointStatus::Online;
+        let ep_id = ep.id;
+        registry.add(ep).await.unwrap();
+
+        registry
+            .add_model(&EndpointModel {
+                endpoint_id: ep_id,
+                model_id: "qwen/qwen3-coder-30b".to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: Some("Qwen/qwen3-coder-30b".to_string()),
+            })
+            .await
+            .unwrap();
+
+        let canonical = registry.find_by_model("Qwen/qwen3-coder-30b").await;
+        assert_eq!(canonical.len(), 1);
+        assert_eq!(canonical[0].id, ep_id);
+
+        let alias = registry.find_by_model("qwen/qwen3-coder-30b").await;
+        assert_eq!(alias.len(), 1);
+        assert_eq!(alias[0].id, ep_id);
     }
 
     // ===== find_by_model_sorted_by_latency テスト =====
@@ -1540,6 +1669,7 @@ mod tests {
                     max_tokens: None,
                     last_checked: None,
                     supported_apis: vec![SupportedAPI::ChatCompletions],
+                    canonical_name: None,
                 })
                 .await
                 .unwrap();
@@ -1648,6 +1778,7 @@ mod tests {
                 max_tokens: None,
                 last_checked: None,
                 supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
             })
             .await
             .unwrap();

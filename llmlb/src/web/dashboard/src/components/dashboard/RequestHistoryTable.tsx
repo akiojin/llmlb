@@ -73,7 +73,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
   const handleCopy = async (text: string, field: string) => {
     try {
       const { method } = await copyToClipboard(text)
-      if (method === 'clipboard') {
+      if (method !== 'manual') {
         setCopiedField(field)
         setTimeout(() => setCopiedField(null), 2000)
         toast({ title: 'Copied to clipboard' })

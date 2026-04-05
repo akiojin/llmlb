@@ -18,17 +18,14 @@ use axum::{
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::{io, pin::Pin, sync::Arc, time::Instant};
 
-/// ラウンドロビンでエンドポイントを選択
+/// TPS優先でエンドポイントを選択
 ///
-/// llmlbはゲートウェイとしてエンドポイントをブラックボックスとして扱うため、
-/// 負荷分散は単純なラウンドロビン方式を採用しています。
-/// 標準のOpenAI互換APIにはメトリクスエンドポイントがないため、
-/// エンドポイントの内部状態（VRAM、負荷等）を考慮した選択は行いません。
+/// llmlbはゲートウェイとしてエンドポイントをブラックボックスとして扱い、
+/// TPS（Tokens Per Second）のEMA値が最も高いエンドポイントを優先選択する。
+/// TPS未計測のエンドポイントはTPS=0.0として最低優先で扱う。
+/// 同一TPS時はラウンドロビンでタイブレークする。
 pub(crate) async fn select_available_endpoint(state: &AppState) -> Result<Endpoint, LbError> {
-    state
-        .load_manager
-        .select_endpoint_round_robin_direct()
-        .await
+    state.load_manager.select_endpoint_by_tps_direct(None).await
 }
 
 /// キュー付きエンドポイント選択の結果
@@ -45,22 +42,24 @@ pub(crate) enum QueueSelection {
     Timeout { waited_ms: u128 },
 }
 
-/// モデル対応のエンドポイントをキュー付きで選択
+/// モデル対応のエンドポイントをTPS優先・キュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
     _queue_config: QueueConfig,
     model_id: &str,
+    api_kind: Option<TpsApiKind>,
 ) -> Result<QueueSelection, LbError> {
     let endpoint = state
         .load_manager
-        .select_endpoint_round_robin_ready_for_model(model_id)
+        .select_endpoint_by_tps_ready_for_model(model_id, api_kind)
         .await?;
 
     tracing::debug!(
         model = %model_id,
         endpoint_id = %endpoint.id,
         endpoint_name = %endpoint.name,
-        "Selected ready endpoint by round-robin"
+        ?api_kind,
+        "Selected ready endpoint by TPS priority"
     );
 
     Ok(QueueSelection::Ready {

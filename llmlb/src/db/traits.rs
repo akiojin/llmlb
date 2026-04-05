@@ -1431,6 +1431,7 @@ mod tests {
             max_tokens: None,
             last_checked: Some(Utc::now()),
             supported_apis: vec![],
+            canonical_name: None,
         };
         repo.add_endpoint_model(&model).await.unwrap();
 

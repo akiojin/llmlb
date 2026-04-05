@@ -213,7 +213,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
     if (!modelsError) return
     let description = 'Failed to fetch model list'
     if (modelsError instanceof ApiError) {
-      description = getErrorMessage(modelsError.status)
+      description = getErrorMessage(modelsError)
     } else if (modelsError instanceof Error) {
       description = modelsError.message
     }
@@ -398,7 +398,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
       if ((error as Error).name !== 'AbortError') {
         const description =
           error instanceof ApiError
-            ? getErrorMessage(error.status)
+            ? getErrorMessage(error)
             : error instanceof Error
               ? error.message
               : 'Unknown error'

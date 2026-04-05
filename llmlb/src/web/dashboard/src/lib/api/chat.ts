@@ -1,6 +1,6 @@
 // Chat API (OpenAI compatible)
 
-import { ApiError, API_BASE } from './client'
+import { API_BASE, createApiErrorFromResponse } from './client'
 import type { OpenAIModelsResponse } from './models'
 
 export interface ChatMessage {
@@ -49,7 +49,7 @@ export const chatApi = {
     })
 
     if (!response.ok) {
-      throw new ApiError(response.status, response.statusText)
+      throw await createApiErrorFromResponse(response)
     }
 
     if (request.stream && onChunk) {
@@ -97,7 +97,7 @@ export const chatApi = {
     }
     const response = await fetch(`${API_BASE}/v1/models`, { headers })
     if (!response.ok) {
-      throw new ApiError(response.status, response.statusText)
+      throw await createApiErrorFromResponse(response)
     }
     return response.json()
   },

@@ -293,7 +293,10 @@ async fn tps_routing_ignores_other_api_kinds_when_request_kind_is_none() {
 async fn tps_routing_no_endpoints_returns_error() {
     let load_manager = create_test_load_manager().await;
     let result = load_manager.select_endpoint_by_tps_direct(None).await;
-    assert!(result.is_err(), "should return error when no endpoints available");
+    assert!(
+        result.is_err(),
+        "should return error when no endpoints available"
+    );
 }
 
 #[tokio::test]

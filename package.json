@@ -11,6 +11,8 @@
     "build:lb:target": "cargo build --release -p llmlb --target",
     "start:lb": "./target/release/llmlb",
     "clean": "rm -rf target",
+    "test:e2e:real-local": "pnpm --dir llmlb/tests/e2e-playwright test:real-local",
+    "test:e2e:real-local:headed": "pnpm --dir llmlb/tests/e2e-playwright test:real-local:headed",
     "lint:commits": "commitlint --from origin/main --to HEAD",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\" \"!.git\" \"!.github\" \"!.worktrees\""
   },

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [5.4.1](https://github.com/akiojin/llmlb/compare/v5.4.0...v5.4.1) (2026-04-05)
+
+### Chore
+
+- Cargo 依存パッケージの更新（cargo group 6件、tar 0.4.44→0.4.45）
+- npm/yarn 依存パッケージの更新（12件）
+
 ## [5.4.0](https://github.com/akiojin/llmlb/compare/v5.2.5...v5.4.0) (2026-04-05)
 
 ### Added

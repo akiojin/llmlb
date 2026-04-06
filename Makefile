@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 
 .PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-commits
-.PHONY: openai-tests test-hooks e2e-tests
+.PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 .PHONY: poc-gptoss poc-gptoss-metal poc-gptoss-cuda
@@ -31,7 +31,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy test security-checks specify-commits markdownlint openai-tests test-hooks
+quality-checks: fmt clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy
 
@@ -46,11 +46,23 @@ openai-tests:
 test-hooks:
 	@bash -lc 'if [ -x "./node_modules/bats/bin/bats" ]; then \
 		bash ./node_modules/bats/bin/bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \
-			(echo "⚠️  bats tests failed (Windows Git Bash compatibility issue). Hooks are still active." && exit 0); \
+			(echo "bats tests failed (Windows Git Bash compatibility issue). Hooks are still active." && exit 0); \
 	else \
-		echo "⚠️  bats is not installed. Run '\''pnpm install'\'' first."; \
+		echo "bats is not installed. Run '\''pnpm install'\'' first."; \
 		exit 0; \
 	fi'
+
+# Playwright E2E tests for Dashboard and Playground
+# Automatically starts the server via playwright.config.ts webServer.
+# Set SKIP_SERVER=1 to use an already-running server.
+e2e-playwright:
+	@cd llmlb/tests/e2e-playwright && pnpm exec playwright test --project=chromium || \
+		(echo "⚠️  Some Playwright E2E tests failed. Review the report above." && exit 0)
+
+# Playwright E2E screenshot capture (headed mode)
+# Screenshots are saved to llmlb/tests/e2e-playwright/reports/screenshots/
+e2e-playwright-screenshots:
+	cd llmlb/tests/e2e-playwright && PLAYWRIGHT_SCREENSHOTS=1 pnpm exec playwright test --project=screenshots --headed
 
 # E2E tests for OpenAI-compatible API (requires running llmlb/node)
 # Usage: LLMLB_URL=http://localhost:8081 LLMLB_API_KEY=sk_xxx make e2e-tests
@@ -58,7 +70,7 @@ e2e-tests:
 	@bash -lc 'if [ -x "./node_modules/bats/bin/bats" ]; then \
 		bash ./node_modules/bats/bin/bats tests/e2e/test-openai-api.bats; \
 	else \
-		echo "❌ bats is not installed. Run '\''pnpm install'\'' first." >&2; \
+		echo "bats is not installed. Run '\''pnpm install'\'' first." >&2; \
 		exit 1; \
 	fi'
 

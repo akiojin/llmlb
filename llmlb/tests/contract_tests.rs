@@ -85,6 +85,9 @@ mod request_history_api_test;
 #[path = "contract/responses_api_test.rs"]
 mod responses_api_test;
 
+#[path = "contract/anthropic_messages_api_test.rs"]
+mod anthropic_messages_api_test;
+
 // SPEC-8c32349f: エンドポイント日次統計API契約テスト
 #[path = "contract/endpoint_daily_stats_api_test.rs"]
 mod endpoint_daily_stats_api_test;

@@ -53,6 +53,7 @@ available for compatibility.
 - **Self Update (User-Approved)**: Detect new GitHub Releases, notify via dashboard/tray, drain in-flight inference, then restart into the new version — with update scheduling, automatic rollback, and download progress tracking
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability
 - **Cloud Model Prefixes**: Add `openai:` `google:` or `anthropic:` in the model name to proxy to the corresponding cloud provider while keeping the same OpenAI-compatible endpoint.
+- **Anthropic-Native Messages API**: Accept `POST /v1/messages` with Anthropic-style headers while still routing non-`anthropic:` models to local OpenAI-compatible endpoints.
 
 ## Assistant CLI for LLM Assistants
 
@@ -1025,6 +1026,12 @@ Note: `/api/dashboard/*` is JWT-only (API keys are rejected).
 | POST | `/v1/images/variations` | Image variations API | API key (`openai.inference`) |
 | GET | `/v1/models` | List models (Azure-style capabilities) | API key (`openai.models.read`) |
 | GET | `/v1/models/:model_id` | Get specific model info | API key (`openai.models.read`) |
+
+#### Anthropic-Compatible Endpoint
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/v1/messages` | Anthropic Messages API. `anthropic:` models go to Anthropic Cloud; other models are translated onto local OpenAI-compatible endpoints. | API key (`openai.inference`) + `x-api-key` + `anthropic-version` |
 
 #### Model Management Endpoints
 

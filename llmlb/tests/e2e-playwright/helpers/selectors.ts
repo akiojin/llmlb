@@ -9,11 +9,23 @@ export const DashboardSelectors = {
     themeToggle: '#theme-toggle',
     playgroundButton: '#lb-playground-button',
     apiKeysButton: '#api-keys-button',
+    auditLogButton: '#audit-log-button',
     refreshButton: '#refresh-button',
     connectionStatus: '#connection-status',
     currentVersion: '#current-version',
     lastRefreshed: '#last-refreshed',
     refreshMetrics: '#refresh-metrics',
+    userDropdownTrigger: 'button:has(svg.lucide-user)',
+  },
+
+  // User Dropdown Menu Items
+  userDropdown: {
+    apiKeys: '[role="menuitem"]:has-text("API Keys")',
+    lbPlayground: '[role="menuitem"]:has-text("LB Playground")',
+    manageUsers: '[role="menuitem"]:has-text("Manage Users")',
+    invitationCodes: '[role="menuitem"]:has-text("Invitation Codes")',
+    auditLog: '[role="menuitem"]:has-text("Audit Log")',
+    signOut: '[role="menuitem"]:has-text("Sign out")',
   },
 
   // Stats Grid - These match the actual data-stat attributes in StatsCards.tsx
@@ -104,6 +116,8 @@ export const DashboardSelectors = {
     apiKeyName: '#api-key-name',
     createApiKey: '#create-api-key',
     copyApiKey: '#copy-api-key',
+    userModal: '[role="dialog"]:has-text("Users")',
+    invitationModal: '[role="dialog"]:has-text("Invitation")',
     chatModal: '#chat-modal',
     chatClose: '#chat-close',
   },

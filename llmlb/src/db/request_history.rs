@@ -749,6 +749,7 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             .with_timezone(&Utc);
 
         let request_type = match row.request_type.as_str() {
+            "AnthropicMessages" => RequestType::AnthropicMessages,
             "Chat" => RequestType::Chat,
             "Generate" => RequestType::Generate,
             "Embeddings" => RequestType::Embeddings,

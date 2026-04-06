@@ -201,6 +201,10 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 engine: EndpointType::LmStudio,
                 name: "nvidia/nemotron-3-nano",
             },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nvidia/nemotron-3-nano-4b",
+            },
         ],
     },
     ModelMapping {
@@ -255,6 +259,23 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             EngineAlias {
                 engine: EndpointType::LmStudio,
                 name: "zai-org/glm-4.7-flash",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "google/gemma-4-26b-a4b",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "gemma4:latest",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "gemma4",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "google/gemma-4-26b-a4b",
             },
         ],
     },
@@ -334,6 +355,66 @@ pub fn guess_hf_repo(model_id: &str, endpoint_type: &EndpointType) -> Option<Str
         }
         _ => None,
     }
+}
+
+/// Canonical name resolution result built from a set of endpoint models.
+///
+/// Used by both `/v1/models` and the dashboard API to merge models that share
+/// the same canonical name (HuggingFace repo ID) into a single entry.
+#[derive(Debug, Default)]
+pub struct CanonicalResolution {
+    /// canonical_name → engine-specific aliases that differ from it.
+    pub canonical_to_aliases: std::collections::HashMap<String, std::collections::HashSet<String>>,
+    /// engine model_id → canonical_name (reverse lookup).
+    pub model_to_canonical: std::collections::HashMap<String, String>,
+}
+
+impl CanonicalResolution {
+    /// Resolve the canonical name to display for a given model key.
+    ///
+    /// If the key itself is a known canonical name (present in
+    /// `canonical_to_aliases`), returns it directly. Otherwise falls back to
+    /// the `model_to_canonical` reverse map.
+    pub fn canonical_for(&self, model_key: &str) -> Option<String> {
+        if self.canonical_to_aliases.contains_key(model_key) {
+            Some(model_key.to_string())
+        } else {
+            self.model_to_canonical.get(model_key).cloned()
+        }
+    }
+
+    /// Sorted aliases for a given model key.
+    pub fn aliases_for(&self, model_key: &str) -> Vec<String> {
+        self.canonical_to_aliases
+            .get(model_key)
+            .map(|a| {
+                let mut v: Vec<String> = a.iter().cloned().collect();
+                v.sort();
+                v
+            })
+            .unwrap_or_default()
+    }
+}
+
+/// Build a [`CanonicalResolution`] from an iterator of `(model_id, canonical_name)` pairs.
+pub fn build_canonical_maps<'a>(
+    models: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+) -> CanonicalResolution {
+    let mut res = CanonicalResolution::default();
+    for (model_id, canonical) in models {
+        let Some(canonical) = canonical else {
+            continue;
+        };
+        if canonical != model_id {
+            res.canonical_to_aliases
+                .entry(canonical.to_string())
+                .or_default()
+                .insert(model_id.to_string());
+        }
+        res.model_to_canonical
+            .insert(model_id.to_string(), canonical.to_string());
+    }
+    res
 }
 
 /// Resolve a canonical ID by matching against any known alias regardless of endpoint type.
@@ -660,6 +741,36 @@ mod tests {
     }
 
     #[test]
+    fn test_gemma4_ollama_resolves_to_canonical() {
+        let result = resolve_canonical("gemma4:latest", &EndpointType::Ollama);
+        assert_eq!(result, Some("google/gemma-4-26b-a4b"));
+
+        let result2 = resolve_canonical("gemma4", &EndpointType::Ollama);
+        assert_eq!(result2, Some("google/gemma-4-26b-a4b"));
+    }
+
+    #[test]
+    fn test_gemma4_lm_studio_resolves_to_canonical() {
+        let result = resolve_canonical("google/gemma-4-26b-a4b", &EndpointType::LmStudio);
+        assert_eq!(result, Some("google/gemma-4-26b-a4b"));
+    }
+
+    #[test]
+    fn test_gemma4_engine_name_resolution() {
+        let ollama = resolve_engine_name("google/gemma-4-26b-a4b", &EndpointType::Ollama);
+        assert_eq!(ollama, Some("gemma4:latest"));
+
+        let lms = resolve_engine_name("google/gemma-4-26b-a4b", &EndpointType::LmStudio);
+        assert_eq!(lms, Some("google/gemma-4-26b-a4b"));
+    }
+
+    #[test]
+    fn test_nemotron_nano_4b_alias_resolves() {
+        let result = resolve_canonical("nvidia/nemotron-3-nano-4b", &EndpointType::LmStudio);
+        assert_eq!(result, Some("nvidia/Nemotron-3-Nano"));
+    }
+
+    #[test]
     fn test_recently_added_lm_studio_aliases_resolve() {
         let cases = [
             ("openai/gpt-oss-120b", "openai/gpt-oss-120b"),
@@ -677,5 +788,84 @@ mod tests {
             let result = resolve_canonical(alias, &EndpointType::LmStudio);
             assert_eq!(result, Some(canonical), "failed for {}", alias);
         }
+    }
+
+    #[test]
+    fn test_build_canonical_maps_merges_aliases() {
+        let models = vec![
+            ("gpt-oss:20b", Some("openai/gpt-oss-20b")),
+            ("openai/gpt-oss-20b", Some("openai/gpt-oss-20b")),
+            ("qwen3.5:35b-a3b", Some("Qwen/Qwen3.5-35B-A3B")),
+            ("qwen/qwen3.5-35b-a3b", Some("Qwen/Qwen3.5-35B-A3B")),
+            ("unknown-model", None),
+        ];
+        let res = build_canonical_maps(models.into_iter());
+
+        assert_eq!(res.canonical_to_aliases.len(), 2);
+        assert!(res
+            .canonical_to_aliases
+            .get("openai/gpt-oss-20b")
+            .unwrap()
+            .contains("gpt-oss:20b"));
+        assert!(res
+            .canonical_to_aliases
+            .get("Qwen/Qwen3.5-35B-A3B")
+            .unwrap()
+            .contains("qwen3.5:35b-a3b"));
+        assert!(res
+            .canonical_to_aliases
+            .get("Qwen/Qwen3.5-35B-A3B")
+            .unwrap()
+            .contains("qwen/qwen3.5-35b-a3b"));
+    }
+
+    #[test]
+    fn test_canonical_for_returns_canonical_when_key_is_canonical() {
+        let models = vec![
+            ("gpt-oss:20b", Some("openai/gpt-oss-20b")),
+            ("openai/gpt-oss-20b", Some("openai/gpt-oss-20b")),
+        ];
+        let res = build_canonical_maps(models.into_iter());
+
+        assert_eq!(
+            res.canonical_for("openai/gpt-oss-20b"),
+            Some("openai/gpt-oss-20b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_canonical_for_returns_canonical_when_key_is_alias() {
+        let models = vec![("gpt-oss:20b", Some("openai/gpt-oss-20b"))];
+        let res = build_canonical_maps(models.into_iter());
+
+        assert_eq!(
+            res.canonical_for("gpt-oss:20b"),
+            Some("openai/gpt-oss-20b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_canonical_for_returns_none_for_unknown() {
+        let models = vec![("gpt-oss:20b", Some("openai/gpt-oss-20b"))];
+        let res = build_canonical_maps(models.into_iter());
+
+        assert_eq!(res.canonical_for("unknown-model"), None);
+    }
+
+    #[test]
+    fn test_aliases_for_returns_sorted_aliases() {
+        let models = vec![
+            ("qwen3.5:35b-a3b", Some("Qwen/Qwen3.5-35B-A3B")),
+            ("qwen/qwen3.5-35b-a3b", Some("Qwen/Qwen3.5-35B-A3B")),
+        ];
+        let res = build_canonical_maps(models.into_iter());
+        let aliases = res.aliases_for("Qwen/Qwen3.5-35B-A3B");
+        assert_eq!(aliases, vec!["qwen/qwen3.5-35b-a3b", "qwen3.5:35b-a3b"]);
+    }
+
+    #[test]
+    fn test_aliases_for_returns_empty_for_unknown() {
+        let res = build_canonical_maps(std::iter::empty());
+        assert!(res.aliases_for("anything").is_empty());
     }
 }

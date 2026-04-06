@@ -106,6 +106,9 @@ pub struct RequestResponseRecord {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RequestType {
+    /// /v1/messages エンドポイント (Anthropic Messages API)
+    #[serde(rename = "anthropic_messages")]
+    AnthropicMessages,
     /// /v1/chat/completions エンドポイント
     Chat,
     /// /v1/completions エンドポイント
@@ -144,7 +147,7 @@ impl TpsApiKind {
     /// テキスト生成系以外（embeddings/audio/images）は TPS対象外として None を返す。
     pub fn from_request_type(request_type: RequestType) -> Option<Self> {
         match request_type {
-            RequestType::Chat => Some(Self::ChatCompletions),
+            RequestType::AnthropicMessages | RequestType::Chat => Some(Self::ChatCompletions),
             RequestType::Generate => Some(Self::Completions),
             RequestType::Embeddings
             | RequestType::Transcription
@@ -535,6 +538,10 @@ mod tests {
     #[test]
     fn test_request_type_serialization() {
         assert_eq!(
+            serde_json::to_string(&RequestType::AnthropicMessages).unwrap(),
+            "\"anthropic_messages\""
+        );
+        assert_eq!(
             serde_json::to_string(&RequestType::Chat).unwrap(),
             "\"chat\""
         );
@@ -895,6 +902,10 @@ mod tests {
     #[test]
     fn test_tps_api_kind_from_request_type() {
         assert_eq!(
+            TpsApiKind::from_request_type(RequestType::AnthropicMessages),
+            Some(TpsApiKind::ChatCompletions)
+        );
+        assert_eq!(
             TpsApiKind::from_request_type(RequestType::Chat),
             Some(TpsApiKind::ChatCompletions)
         );
@@ -1113,6 +1124,7 @@ mod tests {
     #[test]
     fn test_request_type_serde_roundtrip() {
         for rt in [
+            RequestType::AnthropicMessages,
             RequestType::Chat,
             RequestType::Generate,
             RequestType::Embeddings,
@@ -1136,6 +1148,10 @@ mod tests {
 
     #[test]
     fn test_request_type_debug_format() {
+        assert_eq!(
+            format!("{:?}", RequestType::AnthropicMessages),
+            "AnthropicMessages"
+        );
         assert_eq!(format!("{:?}", RequestType::Chat), "Chat");
         assert_eq!(format!("{:?}", RequestType::Generate), "Generate");
         assert_eq!(format!("{:?}", RequestType::Embeddings), "Embeddings");

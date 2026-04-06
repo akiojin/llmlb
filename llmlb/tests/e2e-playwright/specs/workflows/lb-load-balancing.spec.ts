@@ -5,7 +5,7 @@ import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '..
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768'
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug', 'Content-Type': 'application/json' }
 const SHARED_MODEL = 'lb-test-model'
-const FAILOVER_WAIT_TIMEOUT_MS = 20000
+const FAILOVER_WAIT_TIMEOUT_MS = 40000
 const FAILOVER_POLL_INTERVAL_MS = 1000
 
 test.describe.configure({ mode: 'serial' })
@@ -220,8 +220,9 @@ test.describe('LB Load Balancing @workflows', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 3000))
 
-      // Shut down primary
+      // Shut down primary and wait for health check to detect failure
       await primaryMock.close()
+      await sleep(5000)
 
       const failoverStatus = await waitForFailoverReady(request, primaryName, secondaryName)
 

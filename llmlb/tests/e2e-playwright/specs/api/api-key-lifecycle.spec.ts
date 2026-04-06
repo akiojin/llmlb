@@ -12,6 +12,7 @@ import {
 } from '../../helpers/mock-openai-endpoint'
 
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768'
+const DASHBOARD_ORIGIN = new URL(API_BASE).origin
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug', 'Content-Type': 'application/json' }
 
 test.describe('API Key Lifecycle @api', () => {
@@ -73,6 +74,9 @@ test.describe('API Key Lifecycle @api', () => {
   }) => {
     test.setTimeout(90_000)
     await page.setViewportSize({ width: 1280, height: 900 })
+    await page
+      .context()
+      .grantPermissions(['clipboard-read', 'clipboard-write'], { origin: DASHBOARD_ORIGIN })
 
     await ensureDashboardLogin(page)
 
@@ -113,48 +117,13 @@ test.describe('API Key Lifecycle @api', () => {
     await expect(createdAlert).toBeVisible({ timeout: 10000 })
     await createdAlert.locator('#copy-api-key').click()
     await expect(page.getByText('Failed to copy')).toHaveCount(0)
-    let copyMode: 'clipboard' | 'manual' | null = null
+    await expect(createdAlert.locator('#copy-api-key')).toHaveAttribute('data-copied', 'true', {
+      timeout: 10000,
+    })
+    await expect(page.getByText('Auto copy unavailable')).toHaveCount(0)
     await expect
-      .poll(
-        async () => {
-          const copied = await createdAlert.locator('#copy-api-key').getAttribute('data-copied')
-          if (copied === 'true') {
-            copyMode = 'clipboard'
-            return true
-          }
-
-          const manualToastVisible = await page
-            .getByText('Auto copy unavailable')
-            .first()
-            .isVisible()
-          if (manualToastVisible) {
-            copyMode = 'manual'
-            return true
-          }
-
-          return false
-        },
-        { timeout: 10000 }
-      )
-      .toBe(true)
-    if (copyMode === 'manual') {
-      const selectedText = await page.evaluate(() => {
-        const selection = window.getSelection()?.toString() ?? ''
-        if (selection.trim().length > 0) {
-          return selection
-        }
-
-        const active = document.activeElement
-        if (active instanceof HTMLTextAreaElement) {
-          const start = active.selectionStart ?? 0
-          const end = active.selectionEnd ?? 0
-          return active.value.slice(start, end)
-        }
-
-        return ''
-      })
-      expect(selectedText.trim()).toBe(apiKey)
-    }
+      .poll(async () => page.evaluate(() => navigator.clipboard.readText()), { timeout: 10000 })
+      .toBe(apiKey)
     await createdAlert.locator('code').waitFor({ state: 'visible', timeout: 10000 })
 
     // Use the key to access /v1/models

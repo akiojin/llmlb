@@ -22,13 +22,11 @@ llmlb routes requests to any OpenAI-compatible inference server:
 
 | Endpoint Type | Description |
 |---------------|-------------|
-| **xLLM** | Project-native C++ inference engine ([GitHub](https://github.com/akiojin/xLLM)) |
+| **xLLM** | xLLM endpoint |
 | **Ollama** | Popular local inference server |
 | **vLLM** | High-throughput serving engine |
 | **LM Studio** | Desktop inference application |
 | **OpenAI-compatible** | Any server implementing the OpenAI API |
-
-For supported model formats and engine details, see [xLLM documentation](https://github.com/akiojin/xLLM).
 
 ### Multimodal Support
 
@@ -44,8 +42,8 @@ available for compatibility.
 ## Key Features
 
 - **Unified API Endpoint**: Access multiple LLM runtime instances through a single URL
-- **Automatic Load Balancing**: Latency-based request distribution across available endpoints
-- **Endpoint Management**: Centralized management of Ollama, vLLM, xLLM and other OpenAI-compatible servers
+- **Automatic Load Balancing**: TPS-based (Tokens Per Second) request distribution across available endpoints
+- **Endpoint Management**: Centralized management of LM Studio, Ollama, vLLM, xLLM, and other OpenAI-compatible servers
 - **Model Sync**: Automatic model discovery via `GET /v1/models` from registered endpoints
 - **Automatic Failure Detection**: Detect offline endpoints and exclude them from routing
 - **Real-time Monitoring**: Comprehensive visualization of endpoint states and performance metrics via web dashboard
@@ -196,15 +194,6 @@ llmlb stop --port 32768
 
 Day-to-day management is still done via the Dashboard UI (`/dashboard`) or the HTTP APIs.
 
-### xLLM (C++)
-
-The xLLM runtime has moved to a separate repository:
-
-- <https://github.com/akiojin/xLLM>
-
-Build/run instructions and environment variables are documented there.
-
-
 ## Load Balancing
 
 LLM Load Balancer supports multiple load balancing strategies to optimize request distribution across runtimes.
@@ -253,13 +242,14 @@ heartbeats to the load balancer (there is no `POST /api/health`).
 
 ## Architecture
 
-LLM Load Balancer coordinates local llama.cpp runtimes and optionally proxies to cloud LLM providers via model prefixes.
+LLM Load Balancer routes requests across registered inference endpoints and optionally proxies to
+cloud LLM providers via model prefixes.
 
 ### Components
 - **LLM Load Balancer (Rust)**: Receives OpenAI-compatible traffic, chooses a path, and proxies requests. Exposes dashboard, metrics, and admin APIs.
-- **Local Runtimes (C++ / llama.cpp)**: Serve GGUF models; register and send heartbeats to the load balancer.
+- **Registered Endpoints**: LM Studio, Ollama, vLLM, xLLM, and other OpenAI-compatible servers registered with the load balancer.
 - **Cloud Proxy**: When a model name starts with `openai:` `google:` or `anthropic:` the load balancer forwards to the corresponding cloud API.
-- **Storage**: SQLite for load balancer metadata; model files live on each runtime.
+- **Storage**: SQLite for load balancer metadata; model artifacts remain on each endpoint or registry source.
 - **Observability**: Prometheus metrics, structured logs, dashboard stats.
 
 ### System Overview
@@ -275,8 +265,8 @@ Client
   ▼
 LLM Load Balancer (OpenAI-compatible)
   ├─ Prefix? → Cloud API (OpenAI / Google / Anthropic)
-  └─ No prefix → Scheduler → Local Runtime
-                       └─ llama.cpp inference → Response
+  └─ No prefix → Scheduler → Registered Endpoint
+                                 └─ Inference → Response
 ```
 
 ### Communication Flow (Proxy Pattern)
@@ -310,20 +300,20 @@ curl http://lb:32768/v1/responses -d '...'
    ```
 
 2. **LLM Load Balancer Internal Processing**
-   - Select optimal runtime (Load Balancing)
-   - Forward request to selected runtime via HTTP client
+   - Select the optimal endpoint (Load Balancing)
+   - Forward the request to the selected endpoint via HTTP client
 
-3. **LLM Load Balancer → Runtime (Internal Communication)**
+3. **LLM Load Balancer → Endpoint (Internal Communication)**
    ```
-   POST http://runtime1:32769/v1/responses
+   POST http://endpoint1:32769/v1/responses
    Content-Type: application/json
 
    {"model": "llama2", "input": "Hello!"}
    ```
 
-4. **Runtime Local Processing**
-   - Runtime loads model on-demand (from local cache or load-balancer-provided source)
-   - Runtime runs llama.cpp inference and returns an OpenAI-compatible response
+4. **Endpoint Processing**
+   - The selected endpoint loads or resolves the model if needed
+   - The endpoint executes inference and returns an OpenAI-compatible response
 
 5. **LLM Load Balancer → Client (Return Response)**
    ```json
@@ -391,7 +381,6 @@ curl http://lb:32768/v1/responses -d '...'
 ```
 llmlb/
 ├── llmlb/              # Rust load balancer (HTTP APIs, dashboard, proxy, common types)
-├── xllm (external)     # <https://github.com/akiojin/xLLM>
 ├── .claude-plugin/      # Claude Code plugin metadata and bundled skills
 ├── .codex/skills/       # Codex skills (source)
 ├── codex-skills/dist/   # Packaged Codex .skill artifacts
@@ -423,16 +412,44 @@ Use it to monitor endpoints, view request history, inspect logs, and manage mode
 
 ## Endpoint Management
 
-the load balancer centrally manages external inference servers (Ollama, vLLM, xLLM, etc.) as "endpoints".
+the load balancer centrally manages external inference servers (LM Studio, Ollama, vLLM, xLLM,
+and other OpenAI-compatible APIs) as "endpoints".
 
 ### Supported Endpoints
 
 | Type | Description | Health Check |
 |------|-------------|--------------|
-| **xLLM** | In-house inference server (llama.cpp/whisper.cpp) | `GET /v1/models` |
+| **xLLM** | xLLM endpoint | `GET /v1/models` |
 | **Ollama** | Ollama server | `GET /v1/models` |
+| **LM Studio** | LM Studio local server | `GET /v1/models` |
 | **vLLM** | vLLM inference server | `GET /v1/models` |
 | **OpenAI-compatible** | Other OpenAI-compatible APIs | `GET /v1/models` |
+
+### Endpoint Type Auto Detection
+
+Endpoints are auto-detected when you register them.
+
+**Detection priority:**
+
+1. **xLLM**: `GET /api/system` with `xllm_version`
+2. **LM Studio**: `GET /api/v1/models` with LM Studio-specific metadata
+3. **Ollama**: `GET /api/tags` succeeds
+4. **vLLM**: `Server` header contains `vllm`
+5. **OpenAI-compatible**: `GET /v1/models` succeeds
+6. **Unknown**: no type matched or the endpoint is offline
+
+**Type-specific features:**
+
+| Feature | xLLM | Ollama | LM Studio | vLLM | OpenAI-compatible |
+|---------|------|--------|-----------|------|-------------------|
+| Model download | ✓ | ✓ | ✓ | - | - |
+| Model metadata | ✓ | ✓ | ✓ | - | - |
+| max_tokens sync | ✓ | ✓ | ✓ | - | - |
+
+### Model Operations
+
+- `POST /api/endpoints/:id/download` is available for xLLM, Ollama, and LM Studio endpoints.
+- `GET /api/endpoints/:id/models/:model/info` is available for xLLM, Ollama, and LM Studio endpoints.
 
 ### Registration via Dashboard
 
@@ -473,7 +490,7 @@ For details, see [CLAUDE.md](./CLAUDE.md).
 - Optional env vars: set `HF_TOKEN` to raise Hugging Face rate limits; set `HF_BASE_URL` when using a mirror/cache.
 - Web (recommended):
   - Dashboard → **Models** → **Register**
-  - Choose `format`: `safetensors` (native engines) or `gguf` (llama.cpp fallback).
+  - Choose `format`: `safetensors` (native engines) or `gguf` (for GGUF-capable endpoints).
     - If the repo contains both `safetensors` and `.gguf`, `format` is required.
     - Safetensors text generation is available only when the safetensors.cpp engine is enabled
       (Metal/CUDA). Use `gguf` for GGUF-only models.
@@ -604,13 +621,14 @@ docker run --rm -p 32768:32768 --gpus all \
 ```
 If not using GPU, remove `--gpus all` or set `CUDA_VISIBLE_DEVICES=""`.
 
-### 3) C++ Runtime Build
-See <https://github.com/akiojin/xLLM> for runtime build/run details.
+### 3) External Endpoint Runtime
+Set up the inference server you want to register separately. llmlb works with LM Studio, Ollama,
+vLLM, xLLM, and other OpenAI-compatible endpoints.
 
 ### Requirements
 
 - **LLM Load Balancer**: Rust toolchain (stable)
-- **Runtime**: CMake + a C++ toolchain, and a supported GPU (NVIDIA / AMD / Apple Silicon)
+- **External endpoint runtime**: Requirements depend on the server you register
 
 ## Usage
 
@@ -750,7 +768,7 @@ Cloud / external services:
 
 **Backward compatibility**: Legacy names are read for fallback but are deprecated—prefer the new names above.
 
-Note: Engine plugins were removed in favor of built-in managers. See <<https://github.com/akiojin/xLLM>/blob/main/docs/migrations/plugin-to-manager.md>.
+Note: Engine plugins were removed in favor of built-in managers.
 
 ## Troubleshooting
 

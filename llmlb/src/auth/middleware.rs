@@ -729,7 +729,7 @@ fn hash_with_sha256(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
     let result = hasher.finalize();
-    format!("{:x}", result)
+    result.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]

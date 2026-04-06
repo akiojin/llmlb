@@ -7,6 +7,7 @@ mod jwt_test;
 mod endpoint_status_test;
 mod endpoint_validation_test;
 mod latency_routing_test;
+mod tps_routing_test;
 
 // SPEC-e8e9326e: エンドポイントタイプ自動判別機能テスト (T138-T140)
 mod endpoint_type_detection_test;

@@ -16,20 +16,7 @@
     "ralph-wiggum@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": false,
-    "serena@claude-plugins-official": true,
-    "worktree-protection-hooks@gwt-plugins": true
+    "serena@claude-plugins-official": true
   },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "bash .claude/hooks/block-quality-checks-in-task.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": "Task"
-      }
-    ]
-  }
+  "hooks": {}
 }

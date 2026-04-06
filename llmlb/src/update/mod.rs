@@ -535,21 +535,22 @@ impl UpdateManager {
         };
         save_cache(&self.inner.cache_path, cache.clone())?;
 
-        let mut st = self.inner.state.write().await;
-        *st = UpdateState::Available {
-            current: self.inner.current_version.to_string(),
-            latest: latest.to_string(),
-            release_url: release.html_url,
-            portable_asset_url: cache.portable_asset_url.clone(),
-            installer_asset_url: cache.installer_asset_url.clone(),
-            payload: PayloadState::NotReady,
-            checked_at: cache.last_checked_at,
-        };
+        {
+            *self.inner.state.write().await = UpdateState::Available {
+                current: self.inner.current_version.to_string(),
+                latest: latest.to_string(),
+                release_url: release.html_url,
+                portable_asset_url: cache.portable_asset_url.clone(),
+                installer_asset_url: cache.installer_asset_url.clone(),
+                payload: PayloadState::NotReady,
+                checked_at: cache.last_checked_at,
+            };
+        }
 
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         notify_tray_available(&self.inner.tray_proxy, latest.to_string()).await;
 
-        Ok(st.clone())
+        Ok(self.state().await)
     }
 
     /// Spawn a background task that downloads the update payload (if available).
@@ -879,21 +880,23 @@ impl UpdateManager {
                         if let Err(err) = mgr.apply_flow(request_mode).await {
                             tracing::warn!("update apply failed: {err}");
                             mgr.inner.gate.stop_rejecting();
-                            let mut st = mgr.inner.state.write().await;
-                            let (latest, release_url) = match &*st {
-                                UpdateState::Available { latest, release_url, .. } => {
-                                    (Some(latest.clone()), Some(release_url.clone()))
-                                }
-                                UpdateState::Draining { latest, .. } => (Some(latest.clone()), None),
-                                UpdateState::Applying { latest, .. } => (Some(latest.clone()), None),
-                                _ => (None, None),
-                            };
-                            *st = UpdateState::Failed {
-                                latest,
-                                release_url,
-                                message: err.to_string(),
-                                failed_at: Utc::now(),
-                            };
+                            {
+                                let mut st = mgr.inner.state.write().await;
+                                let (latest, release_url) = match &*st {
+                                    UpdateState::Available { latest, release_url, .. } => {
+                                        (Some(latest.clone()), Some(release_url.clone()))
+                                    }
+                                    UpdateState::Draining { latest, .. } => (Some(latest.clone()), None),
+                                    UpdateState::Applying { latest, .. } => (Some(latest.clone()), None),
+                                    _ => (None, None),
+                                };
+                                *st = UpdateState::Failed {
+                                    latest,
+                                    release_url,
+                                    message: err.to_string(),
+                                    failed_at: Utc::now(),
+                                };
+                            }
                             #[cfg(any(target_os = "windows", target_os = "macos"))]
                             notify_tray_failed(&mgr.inner.tray_proxy, err.to_string()).await;
                         }
@@ -1041,16 +1044,18 @@ impl UpdateManager {
         };
         save_cache(&self.inner.cache_path, cache.clone())?;
 
-        let mut st = self.inner.state.write().await;
-        *st = UpdateState::Available {
-            current: self.inner.current_version.to_string(),
-            latest: latest.to_string(),
-            release_url: release.html_url,
-            portable_asset_url: cache.portable_asset_url.clone(),
-            installer_asset_url: cache.installer_asset_url.clone(),
-            payload: PayloadState::NotReady,
-            checked_at: cache.last_checked_at,
-        };
+        {
+            let mut st = self.inner.state.write().await;
+            *st = UpdateState::Available {
+                current: self.inner.current_version.to_string(),
+                latest: latest.to_string(),
+                release_url: release.html_url,
+                portable_asset_url: cache.portable_asset_url.clone(),
+                installer_asset_url: cache.installer_asset_url.clone(),
+                payload: PayloadState::NotReady,
+                checked_at: cache.last_checked_at,
+            };
+        }
 
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         notify_tray_available(&self.inner.tray_proxy, latest.to_string()).await;
@@ -1098,30 +1103,32 @@ impl UpdateManager {
     /// Preserves an already-discovered `Available` state even if a subsequent
     /// manual check temporarily fails.
     pub async fn record_check_failure(&self, message: String) {
-        let mut st = self.inner.state.write().await;
-        // Keep an already discovered update actionable even if a subsequent
-        // manual check temporarily fails (e.g., transient GitHub outage).
-        if matches!(&*st, UpdateState::Available { .. }) {
-            return;
-        }
+        {
+            let mut st = self.inner.state.write().await;
+            // Keep an already discovered update actionable even if a subsequent
+            // manual check temporarily fails (e.g., transient GitHub outage).
+            if matches!(&*st, UpdateState::Available { .. }) {
+                return;
+            }
 
-        let (latest, release_url) = match &*st {
-            UpdateState::Draining { latest, .. } => (Some(latest.clone()), None),
-            UpdateState::Applying { latest, .. } => (Some(latest.clone()), None),
-            UpdateState::Failed {
+            let (latest, release_url) = match &*st {
+                UpdateState::Draining { latest, .. } => (Some(latest.clone()), None),
+                UpdateState::Applying { latest, .. } => (Some(latest.clone()), None),
+                UpdateState::Failed {
+                    latest,
+                    release_url,
+                    ..
+                } => (latest.clone(), release_url.clone()),
+                _ => (None, None),
+            };
+
+            *st = UpdateState::Failed {
                 latest,
                 release_url,
-                ..
-            } => (latest.clone(), release_url.clone()),
-            _ => (None, None),
-        };
-
-        *st = UpdateState::Failed {
-            latest,
-            release_url,
-            message: message.clone(),
-            failed_at: Utc::now(),
-        };
+                message: message.clone(),
+                failed_at: Utc::now(),
+            };
+        }
 
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         notify_tray_failed(&self.inner.tray_proxy, message).await;
@@ -4618,6 +4625,67 @@ mod tests {
                 );
             }
             other => panic!("expected Available with Ready payload, got {other:?}"),
+        }
+    }
+
+    /// Regression test: `check_and_maybe_download` must not deadlock by holding
+    /// the state write guard across the `ensure_payload_ready().await` call.
+    ///
+    /// Before the fix, the write guard in `check_and_maybe_download` was not
+    /// dropped before calling `ensure_payload_ready`, which tried to acquire a
+    /// read lock on the same `RwLock` — causing an irrecoverable deadlock.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn check_and_maybe_download_does_not_deadlock() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Return a release with a version higher than current.
+        let release_json = serde_json::json!({
+            "tag_name": "v99.0.0",
+            "html_url": "https://github.com/test-owner/test-repo/releases/tag/v99.0.0",
+            "assets": []
+        });
+        Mock::given(method("GET"))
+            .and(path("/repos/akiojin/llmlb/releases/latest"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&release_json))
+            .mount(&mock_server)
+            .await;
+
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        let manager = UpdateManager::new_with_data_dir_and_config(
+            reqwest::Client::new(),
+            InferenceGate::default(),
+            ShutdownController::default(),
+            tmp.path(),
+            Some(mock_server.uri()),
+        )
+        .expect("create update manager");
+
+        // check_and_maybe_download with force=true triggers the code path
+        // that previously deadlocked. Use a timeout to detect deadlocks.
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            manager.check_and_maybe_download(true),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "check_and_maybe_download should not deadlock (timed out)"
+        );
+
+        // Verify we can still read state (would hang if write lock is held).
+        let state = tokio::time::timeout(Duration::from_secs(2), manager.state())
+            .await
+            .expect("state() should not deadlock");
+
+        match &state {
+            UpdateState::Available { latest, .. } => {
+                assert_eq!(latest, "99.0.0");
+            }
+            other => panic!("expected Available state, got {other:?}"),
         }
     }
 }

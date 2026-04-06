@@ -98,18 +98,31 @@ git push origin develop
    CLOSING_ISSUES=$(echo "$CLOSING_ISSUES" | tr ' ' '\n' | sort -u | grep -v '^$')
    ```
 
-3. PR番号を除外し、真のIssueのみ残す：
+3. PR番号と `gwt-spec` ラベル付きIssueを除外し、クローズ対象のみ残す：
 
    ```bash
    REAL_ISSUES=""
    for num in $CLOSING_ISSUES; do
+     # PRを除外
      IS_PR=$(gh api "repos/{owner}/{repo}/issues/$num" \
        --jq 'has("pull_request") and .pull_request != null' 2>/dev/null || echo "false")
-     if [ "$IS_PR" = "false" ]; then
-       REAL_ISSUES="$REAL_ISSUES $num"
+     if [ "$IS_PR" = "true" ]; then
+       continue
      fi
+     # gwt-specラベル付きIssueを除外（SPECはリリースでクローズしない）
+     HAS_GWT_SPEC=$(gh api "repos/{owner}/{repo}/issues/$num" \
+       --jq '[.labels[].name] | any(. == "gwt-spec")' 2>/dev/null || echo "false")
+     if [ "$HAS_GWT_SPEC" = "true" ]; then
+       echo "⚠ Skip gwt-spec issue #$num (SPECはクローズ対象外)"
+       continue
+     fi
+     REAL_ISSUES="$REAL_ISSUES $num"
    done
    ```
+
+   > **注意**: `gwt-spec` ラベル付きIssueはリリースでクローズしない。
+   > SPECは仕様ドキュメントであり、実装完了後もオープンのまま維持する。
+   > 関連するSPECは `Related Issues / Links` セクションに記載する。
 
 4. 結果を確認し、次のステップのPR本文に使用する：
 

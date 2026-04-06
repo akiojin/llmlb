@@ -50,6 +50,12 @@ pub mod xllm;
 /// モデルメタデータ取得
 pub mod metadata;
 
+/// マルチエンジンモデルダウンロード
+pub mod download;
+
+/// マルチエンジンモデル削除
+pub mod delete;
+
 /// JWT秘密鍵管理
 pub mod jwt_secret;
 

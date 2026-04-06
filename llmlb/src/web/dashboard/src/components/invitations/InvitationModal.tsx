@@ -126,7 +126,7 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
     if (createdCode?.code) {
       try {
         const { method } = await copyToClipboard(createdCode.code)
-        if (method === 'clipboard') {
+        if (method !== 'manual') {
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
           toast({ title: 'Copied to clipboard' })

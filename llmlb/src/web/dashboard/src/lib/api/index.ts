@@ -100,6 +100,14 @@ export type {
   AuditLogFilters,
 } from './audit-log'
 
+export { catalogApi } from './catalog'
+export type {
+  CatalogSearchResult,
+  CatalogSearchResponse,
+  CatalogModelDetail,
+  RecommendedEndpoint,
+} from './catalog'
+
 export { clientsApi } from './clients'
 export type {
   ClientIpRanking,

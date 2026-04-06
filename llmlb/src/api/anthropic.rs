@@ -307,85 +307,91 @@ async fn proxy_local_anthropic_messages(
     let tps_api_kind = Some(TpsApiKind::ChatCompletions);
     let mut queued_wait_ms = None;
 
-    let endpoint =
-        match select_available_endpoint_with_queue_for_model(state, queue_config, &model).await {
-            Ok(QueueSelection::Ready {
-                endpoint,
-                queued_wait_ms: wait_ms,
-            }) => {
-                queued_wait_ms = wait_ms;
-                *endpoint
-            }
-            Ok(QueueSelection::CapacityExceeded) => {
-                let message = "Request queue is full".to_string();
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        0,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                let retry_after = queue_config.timeout.as_secs().max(1);
-                return Ok(anthropic_error_response_with_retry_after(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "rate_limit_error",
-                    &message,
-                    Some(retry_after),
-                ));
-            }
-            Ok(QueueSelection::Timeout { waited_ms }) => {
-                let message = "Queue wait timeout".to_string();
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        waited_ms as u64,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
+    let endpoint = match select_available_endpoint_with_queue_for_model(
+        state,
+        queue_config,
+        &model,
+        tps_api_kind,
+    )
+    .await
+    {
+        Ok(QueueSelection::Ready {
+            endpoint,
+            queued_wait_ms: wait_ms,
+        }) => {
+            queued_wait_ms = wait_ms;
+            *endpoint
+        }
+        Ok(QueueSelection::CapacityExceeded) => {
+            let message = "Request queue is full".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    0,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            let retry_after = queue_config.timeout.as_secs().max(1);
+            return Ok(anthropic_error_response_with_retry_after(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limit_error",
+                &message,
+                Some(retry_after),
+            ));
+        }
+        Ok(QueueSelection::Timeout { waited_ms }) => {
+            let message = "Queue wait timeout".to_string();
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    waited_ms as u64,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            return Ok(anthropic_error_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                "api_error",
+                message,
+            ));
+        }
+        Err(err) => {
+            let message = if matches!(err, LbError::NoCapableEndpoints(_)) {
+                format!("No available endpoints support model: {}", model)
+            } else {
+                format!("Endpoint selection failed: {}", err)
+            };
+            save_request_record(
+                state.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    queued_wait_ms.unwrap_or(0) as u64,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            if matches!(err, LbError::NoCapableEndpoints(_)) {
                 return Ok(anthropic_error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
+                    StatusCode::SERVICE_UNAVAILABLE,
                     "api_error",
                     message,
                 ));
             }
-            Err(err) => {
-                let message = if matches!(err, LbError::NoCapableEndpoints(_)) {
-                    format!("No available endpoints support model: {}", model)
-                } else {
-                    format!("Endpoint selection failed: {}", err)
-                };
-                save_request_record(
-                    state.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        queued_wait_ms.unwrap_or(0) as u64,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                if matches!(err, LbError::NoCapableEndpoints(_)) {
-                    return Ok(anthropic_error_response(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "api_error",
-                        message,
-                    ));
-                }
-                return Err(err.into());
-            }
-        };
+            return Err(err.into());
+        }
+    };
 
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();
@@ -540,8 +546,78 @@ async fn proxy_local_anthropic_messages(
         return Ok(response);
     }
 
+    let upstream_status = upstream.status();
     let upstream_body = upstream.json::<Value>().await;
     let duration = started.elapsed();
+
+    if !upstream_status.is_success() {
+        request_lease
+            .complete(RequestOutcome::Error, duration)
+            .await
+            .map_err(AppError::from)?;
+        record_endpoint_request_stats(
+            state.endpoint_registry.clone(),
+            endpoint_id,
+            model.clone(),
+            false,
+            0,
+            0,
+            tps_api_kind,
+            endpoint_type,
+            state.load_manager.clone(),
+            state.event_bus.clone(),
+        );
+
+        let message = match &upstream_body {
+            Ok(body) => body
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .unwrap_or(&upstream_status.to_string())
+                .to_string(),
+            Err(_) => upstream_status.to_string(),
+        };
+
+        let mut record = RequestResponseRecord::new(
+            endpoint_id,
+            endpoint_name,
+            UNSPECIFIED_IP,
+            model,
+            request_type,
+            request_body,
+            upstream_status,
+            duration,
+            client_ip,
+            api_key_id,
+        );
+        record.status = RecordStatus::Error {
+            message: format!("Upstream returned status {}", upstream_status),
+        };
+        save_request_record(state.request_history.clone(), record);
+
+        let anthropic_status = match upstream_status.as_u16() {
+            400 => StatusCode::BAD_REQUEST,
+            401 => StatusCode::UNAUTHORIZED,
+            403 => StatusCode::FORBIDDEN,
+            404 => StatusCode::NOT_FOUND,
+            429 => StatusCode::TOO_MANY_REQUESTS,
+            _ => StatusCode::BAD_GATEWAY,
+        };
+        let error_type = match upstream_status.as_u16() {
+            400 => "invalid_request_error",
+            401 => "authentication_error",
+            403 => "permission_error",
+            404 => "not_found_error",
+            429 => "rate_limit_error",
+            _ => "api_error",
+        };
+
+        return Ok(anthropic_error_response(
+            anthropic_status,
+            error_type,
+            message,
+        ));
+    }
 
     match upstream_body {
         Ok(body) => {

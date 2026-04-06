@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type DashboardEndpoint, type EndpointType, endpointsApi } from '@/lib/api'
+import { classifyEndpointLastError } from '@/lib/endpoint-errors'
 import { formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -103,6 +104,7 @@ function getTypeBadgeVariant(
 
 export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDetailModalProps) {
   const queryClient = useQueryClient()
+  const errorDisplay = classifyEndpointLastError(endpoint?.last_error)
   const [name, setName] = useState(endpoint?.name || '')
   const [notes, setNotes] = useState(endpoint?.notes || '')
   const [healthCheckInterval, setHealthCheckInterval] = useState(
@@ -379,6 +381,11 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
               <div className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="h-4 w-4" />
                 <span className="font-medium">Last Error</span>
+                {errorDisplay && (
+                  <Badge variant="outline" className="border-destructive/40 text-destructive">
+                    {errorDisplay.label}
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-destructive/80 mt-1">{endpoint.last_error}</p>
             </div>

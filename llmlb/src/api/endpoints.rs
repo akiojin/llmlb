@@ -3,6 +3,9 @@
 //! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
 use super::error::AppError;
+use crate::api::openai_util::{
+    classify_upstream_request_error, openai_error_response_with_type, probe_ollama_model_loaded,
+};
 use crate::common::auth::{Claims, UserRole};
 use crate::common::error::{CommonError, LbError};
 use crate::db::{download_tasks as tasks_db, endpoints as db};
@@ -21,7 +24,7 @@ use axum::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// Option<Option<T>>のデシリアライズヘルパー
@@ -343,6 +346,12 @@ pub struct TestConnectionResponse {
 pub struct DownloadModelRequest {
     /// ダウンロードするモデル名
     pub model: String,
+    /// HuggingFaceリポジトリ（LM Studio用、任意）
+    #[serde(default)]
+    pub hf_repo: Option<String>,
+    /// 量子化タイプ（LM Studio用、任意。デフォルト: "Q4_K_M"）
+    #[serde(default)]
+    pub quantization: Option<String>,
 }
 
 /// ダウンロードタスクレスポンス（SPEC-e8e9326e）
@@ -914,7 +923,7 @@ pub async fn update_endpoint(
         }
     }
 
-    match db::update_endpoint(&state.db_pool, &updated).await {
+    match state.endpoint_registry.update(updated.clone()).await {
         Ok(true) => (StatusCode::OK, Json(EndpointResponse::from(updated))).into_response(),
         Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
@@ -1125,12 +1134,21 @@ pub async fn proxy_chat_completions(
         "{}/v1/chat/completions",
         endpoint.base_url.trim_end_matches('/')
     );
+    let request_model = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|payload| {
+            payload
+                .get("model")
+                .and_then(|model| model.as_str())
+                .map(str::to_string)
+        });
 
     let mut request = state
         .http_client
         .post(&url)
         .header("Content-Type", "application/json")
         .body(body.to_vec());
+    let started_at = Instant::now();
 
     if let Some(ref api_key) = endpoint.api_key {
         request = request.header("Authorization", format!("Bearer {}", api_key));
@@ -1146,6 +1164,24 @@ pub async fn proxy_chat_completions(
             // reqwest::StatusCode -> axum::http::StatusCode
             let status_code = StatusCode::from_u16(response.status().as_u16())
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let latency_ms = u32::try_from(started_at.elapsed().as_millis()).unwrap_or(u32::MAX);
+            if status_code.is_success() {
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
+                    .await;
+            } else if status_code.is_server_error() {
+                let error_msg = format!("HTTP {}", status_code);
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
+                    .await;
+            } else {
+                let _ = state
+                    .endpoint_registry
+                    .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
+                    .await;
+            }
             let content_type = response
                 .headers()
                 .get("content-type")
@@ -1180,22 +1216,61 @@ pub async fn proxy_chat_completions(
             }
         }
         Err(e) => {
-            let error_msg = if e.is_timeout() {
-                "Request timed out".to_string()
-            } else if e.is_connect() {
-                "Failed to connect to endpoint".to_string()
+            let ollama_loading_model = if e.is_timeout()
+                && endpoint.endpoint_type == crate::types::endpoint::EndpointType::Ollama
+            {
+                match request_model.as_deref() {
+                    Some(model) => {
+                        match probe_ollama_model_loaded(
+                            &state.http_client,
+                            &endpoint.base_url,
+                            endpoint.api_key.as_deref(),
+                            model,
+                        )
+                        .await
+                        {
+                            Some(false) => Some(model.to_string()),
+                            _ => None,
+                        }
+                    }
+                    None => None,
+                }
             } else {
-                format!("Proxy error: {}", e)
+                None
             };
-
-            AppError(LbError::Http(error_msg)).into_response()
+            let classified_error = classify_upstream_request_error(
+                &e,
+                endpoint.inference_timeout_secs,
+                ollama_loading_model.as_deref(),
+            );
+            let _ = state
+                .endpoint_registry
+                .update_status(
+                    endpoint.id,
+                    EndpointStatus::Error,
+                    None,
+                    Some(&classified_error.record_message),
+                )
+                .await;
+            openai_error_response_with_type(
+                classified_error.client_message,
+                classified_error.error_type,
+                classified_error.status_code,
+            )
+            .into_response()
         }
     }
 }
 
 // --- SPEC-e8e9326e: ダウンロード・メタデータ関連ハンドラー ---
 
-/// POST /api/endpoints/:id/download - モデルダウンロードリクエスト（xLLMのみ）
+/// POST /api/endpoints/:id/download - モデルダウンロードリクエスト（マルチエンジン対応）
+///
+/// 対応エンドポイントタイプ:
+/// - xLLM: タスク作成のみ（xLLM側がダウンロードを管理）
+/// - Ollama: POST /api/pull でバックグラウンドダウンロード
+/// - LM Studio: POST /api/v1/models/download でファイアアンドフォーゲット
+/// - vLLM/OpenaiCompatible: 非対応
 pub async fn download_model(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -1218,24 +1293,108 @@ pub async fn download_model(
         }
     };
 
-    // SPEC-e8e9326e: xLLMタイプのみダウンロード許可
+    // ダウンロード対応チェック
     if !endpoint.endpoint_type.supports_model_download() {
-        return AppError(LbError::Common(CommonError::Validation(
-            "Model download is only supported for xLLM endpoints".to_string(),
-        )))
+        return AppError(LbError::Common(CommonError::Validation(format!(
+            "Model download is not supported for {} endpoints",
+            endpoint.endpoint_type.as_str()
+        ))))
         .into_response();
     }
 
-    // ダウンロードタスク作成
-    let task = ModelDownloadTask::new(id, req.model);
-    match tasks_db::create_download_task(&state.db_pool, &task).await {
-        Ok(()) => (StatusCode::ACCEPTED, Json(DownloadTaskResponse::from(task))).into_response(),
+    // ダウンロードディスパッチャーへ委譲
+    let download_req = crate::download::DownloadRequest {
+        model: req.model,
+        hf_repo: req.hf_repo,
+        quantization: req.quantization,
+    };
+
+    match crate::download::download_model(
+        &state.http_client,
+        &endpoint.base_url,
+        endpoint.api_key.as_deref(),
+        &endpoint.endpoint_type,
+        &download_req,
+        &state.db_pool,
+        id,
+    )
+    .await
+    {
+        Ok(task) => (StatusCode::ACCEPTED, Json(DownloadTaskResponse::from(task))).into_response(),
         Err(e) => {
-            tracing::error!("Failed to create download task: {}", e);
-            AppError(LbError::Database(
-                "Failed to create download task".to_string(),
-            ))
-            .into_response()
+            tracing::error!("Download failed for endpoint {}: {}", id, e);
+            AppError(LbError::Common(CommonError::Validation(e.to_string()))).into_response()
+        }
+    }
+}
+
+/// DELETE /api/endpoints/:id/models/:model - モデル削除
+///
+/// 対応エンドポイントタイプ:
+/// - Ollama: DELETE /api/delete で削除
+/// - xLLM: 未対応（APIなし）
+/// - LM Studio: 未対応（0.4.6時点でAPIなし）
+/// - vLLM/OpenaiCompatible: 未対応
+pub async fn delete_endpoint_model_handler(
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<DeleteModelRequest>,
+) -> impl IntoResponse {
+    // Admin権限チェック
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
+    let model = req.model;
+
+    // エンドポイント取得
+    let endpoint = match db::get_endpoint(&state.db_pool, id).await {
+        Ok(Some(ep)) => ep,
+        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to get endpoint: {}", e);
+            return AppError(LbError::Database("Failed to get endpoint".to_string()))
+                .into_response();
+        }
+    };
+
+    // 削除対応チェック
+    if !endpoint.endpoint_type.supports_model_delete() {
+        return AppError(LbError::Common(CommonError::Validation(format!(
+            "Model delete is not supported for {} endpoints",
+            endpoint.endpoint_type.as_str()
+        ))))
+        .into_response();
+    }
+
+    // 削除ディスパッチャーへ委譲
+    match crate::delete::delete_model(
+        &state.http_client,
+        &endpoint.base_url,
+        endpoint.api_key.as_deref(),
+        &endpoint.endpoint_type,
+        &model,
+    )
+    .await
+    {
+        Ok(()) => {
+            tracing::info!(
+                "Model '{}' deleted from endpoint {} ({})",
+                model,
+                id,
+                endpoint.endpoint_type.as_str()
+            );
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(e) => {
+            tracing::error!(
+                "Model delete failed for '{}' on endpoint {}: {}",
+                model,
+                id,
+                e
+            );
+            AppError(LbError::Common(CommonError::Validation(e.to_string()))).into_response()
         }
     }
 }
@@ -1274,6 +1433,13 @@ pub async fn download_progress(
             .into_response()
         }
     }
+}
+
+/// モデル削除リクエストボディ
+#[derive(Debug, Deserialize)]
+pub struct DeleteModelRequest {
+    /// 削除するモデル名
+    pub model: String,
 }
 
 /// モデル情報取得のパスパラメータ
@@ -1343,12 +1509,23 @@ pub async fn get_model_info(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::auth::{Claims, UserRole};
+    use crate::db::test_utils::{TestAppStateBuilder, TEST_LOCK};
     use crate::types::endpoint::{
         DeviceInfo, DeviceType, DownloadStatus, Endpoint, EndpointModel, EndpointStatus,
         EndpointType, GpuDevice, ModelDownloadTask,
     };
+    use axum::{
+        body::{to_bytes, Bytes},
+        extract::{Path, State},
+        http::StatusCode,
+        response::IntoResponse,
+        Extension, Json,
+    };
     use chrono::Utc;
     use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn test_default_health_check_interval() {
@@ -1441,6 +1618,170 @@ mod tests {
         let json = json!({ "notes": "updated note" });
         let req: UpdateEndpointRequest = serde_json::from_value(json).unwrap();
         assert_eq!(req.notes, Some(Some("updated note".to_string())));
+    }
+
+    #[tokio::test]
+    async fn update_endpoint_syncs_registry_cache() {
+        let _guard = TEST_LOCK.lock().await;
+        let state = TestAppStateBuilder::new().await.build().await;
+
+        let endpoint = Endpoint::new(
+            "sync-cache".to_string(),
+            "http://localhost:8080".to_string(),
+            EndpointType::OpenaiCompatible,
+        );
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint");
+
+        let claims = Claims {
+            sub: "admin-user".to_string(),
+            role: UserRole::Admin,
+            exp: 0,
+            must_change_password: false,
+        };
+
+        let response = update_endpoint(
+            Extension(claims),
+            State(state.clone()),
+            Path(endpoint_id),
+            Json(UpdateEndpointRequest {
+                name: None,
+                base_url: None,
+                api_key: None,
+                health_check_interval_secs: None,
+                inference_timeout_secs: Some(1),
+                notes: None,
+            }),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let updated = state
+            .endpoint_registry
+            .get(endpoint_id)
+            .await
+            .expect("endpoint remains in registry");
+        assert_eq!(updated.inference_timeout_secs, 1);
+    }
+
+    #[tokio::test]
+    async fn proxy_chat_completions_keeps_endpoint_online_on_client_error() {
+        let _guard = TEST_LOCK.lock().await;
+        let state = TestAppStateBuilder::new().await.build().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "error": {
+                    "message": "invalid model",
+                    "type": "invalid_request_error",
+                    "code": 400
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "proxy-client-error".to_string(),
+            server.uri(),
+            EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint to registry");
+
+        let response = proxy_chat_completions(
+            State(state.clone()),
+            Path(endpoint_id),
+            Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "bad-model",
+                    "messages": [{"role": "user", "content": "hello"}]
+                }))
+                .expect("serialize request"),
+            ),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), 1_000_000)
+            .await
+            .expect("proxy response body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("proxy response json");
+        assert_eq!(json["error"]["message"], "invalid model");
+
+        let updated = state
+            .endpoint_registry
+            .get(endpoint_id)
+            .await
+            .expect("endpoint remains in registry");
+        assert_eq!(updated.status, EndpointStatus::Online);
+        assert_eq!(updated.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn proxy_chat_completions_does_not_probe_ollama_load_state_on_success() {
+        let _guard = TEST_LOCK.lock().await;
+        let state = TestAppStateBuilder::new().await.build().await;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "chatcmpl-123",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut endpoint = Endpoint::new(
+            "proxy-ollama-success".to_string(),
+            server.uri(),
+            EndpointType::Ollama,
+        );
+        endpoint.status = EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .endpoint_registry
+            .add(endpoint)
+            .await
+            .expect("add endpoint to registry");
+
+        let response = proxy_chat_completions(
+            State(state.clone()),
+            Path(endpoint_id),
+            Bytes::from(
+                serde_json::to_vec(&json!({
+                    "model": "qwen3:30b",
+                    "messages": [{"role": "user", "content": "hello"}]
+                }))
+                .expect("serialize request"),
+            ),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = server.received_requests().await.expect("recorded requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url.path(), "/v1/chat/completions");
     }
 
     fn sample_endpoint() -> Endpoint {
@@ -1567,6 +1908,7 @@ mod tests {
             max_tokens: Some(8192),
             last_checked: Some(Utc::now()),
             supported_apis: vec![],
+            canonical_name: None,
         };
         let resp = EndpointModelResponse::from(model);
         assert_eq!(resp.model_id, "llama3");
@@ -1584,6 +1926,7 @@ mod tests {
             max_tokens: None,
             last_checked: None,
             supported_apis: vec![],
+            canonical_name: None,
         };
         let resp = EndpointModelResponse::from(model);
         assert_eq!(resp.model_id, "embed-v1");

@@ -9,6 +9,8 @@ pub mod audio;
 pub mod audit_log;
 pub mod auth;
 pub mod benchmarks;
+/// カタログ検索API（HuggingFaceラッパー）
+pub mod catalog;
 pub mod cloud_models;
 /// クラウドプロバイダプロキシ（CloudProvider trait）
 pub mod cloud_proxy;
@@ -270,7 +272,14 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/dashboard/settings/{key}",
             get(dashboard::get_setting).put(dashboard::update_setting),
-        );
+        )
+        // カタログ検索API（HuggingFaceラッパー）
+        .route("/catalog/search", get(catalog::search_catalog))
+        .route(
+            "/catalog/recommend-endpoints/{*repo_id}",
+            get(catalog::recommend_endpoints),
+        )
+        .route("/catalog/{*repo_id}", get(catalog::get_catalog_model));
 
     // 監査ログAPI (SPEC-8301d106): adminロールのみ
     let dashboard_audit_routes = Router::new()
@@ -398,7 +407,12 @@ pub fn create_app(state: AppState) -> Router {
             post(endpoints::sync_endpoint_models),
         )
         // SPEC-e8e9326e: ダウンロードAPI
-        .route("/endpoints/{id}/download", post(endpoints::download_model));
+        .route("/endpoints/{id}/download", post(endpoints::download_model))
+        // モデル削除API（POST: モデル名にスラッシュが含まれるため）
+        .route(
+            "/endpoints/{id}/models/delete",
+            post(endpoints::delete_endpoint_model_handler),
+        );
     let endpoint_manage_routes = endpoint_manage_routes
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,

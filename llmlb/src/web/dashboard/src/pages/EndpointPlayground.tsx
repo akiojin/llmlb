@@ -4,7 +4,7 @@ import { endpointsApi, ApiError, type DashboardEndpoint } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { usePlayground } from '@/hooks/usePlayground'
-import { PlaygroundBase, transformMessage, type Message } from '@/components/playground'
+import { PlaygroundBase, getErrorMessage, transformMessage, type Message } from '@/components/playground'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -86,7 +86,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
     if (modelsError) {
       let description = 'Failed to fetch model list'
       if (modelsError instanceof ApiError) {
-        description = modelsError.message
+        description = getErrorMessage(modelsError)
       }
       toast({ title: 'Error', description, variant: 'destructive' })
     }
@@ -167,7 +167,12 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
       if ((error as Error).name !== 'AbortError') {
         toast({
           title: 'Failed to send message',
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description:
+            error instanceof ApiError
+              ? getErrorMessage(error)
+              : error instanceof Error
+                ? error.message
+                : 'Unknown error',
           variant: 'destructive',
         })
         pg.setMessages(pg.messages)

@@ -1,7 +1,7 @@
 // Endpoints API
 // SPEC-e8e9326e: Router-Driven Endpoint Registration System
 
-import { ApiError, fetchWithAuth, getCsrfToken, API_BASE } from './client'
+import { createApiErrorFromResponse, fetchWithAuth, getCsrfToken, API_BASE } from './client'
 import type { TpsApiKind, TpsSource } from './dashboard'
 
 /**
@@ -224,14 +224,21 @@ export const endpointsApi = {
       }>
     }>(`/api/endpoints/${id}/models`),
 
-  /** SPEC-e8e9326e: Download model (xLLM only) */
+  /** SPEC-e8e9326e: Download model to endpoint (xLLM, Ollama, LM Studio) */
   downloadModel: (
     id: string,
-    data: { model: string; filename?: string }
+    data: { model: string; filename?: string; hf_repo?: string; quantization?: string }
   ) =>
     fetchWithAuth<{ task_id: string }>(`/api/endpoints/${id}/download`, {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  /** Delete model from endpoint */
+  deleteModel: (endpointId: string, model: string) =>
+    fetchWithAuth<void>(`/api/endpoints/${endpointId}/models/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ model }),
     }),
 
   /** SPEC-e8e9326e: Get download progress (xLLM only) */
@@ -292,7 +299,7 @@ export const endpointsApi = {
     })
 
     if (!response.ok) {
-      throw new ApiError(response.status, response.statusText)
+      throw await createApiErrorFromResponse(response)
     }
 
     if (request.stream && onChunk) {

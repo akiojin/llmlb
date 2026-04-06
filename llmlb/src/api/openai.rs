@@ -273,27 +273,30 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     let mut endpoint_model_max_tokens: HashMap<String, Option<u32>> = HashMap::new();
     let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
-    // モデル名統一化: canonical_name → エイリアス（エンジン固有名）のマッピング
-    let mut canonical_to_aliases: HashMap<String, HashSet<String>> = HashMap::new();
-    // model_id → canonical_name の逆引き
-    let mut model_to_canonical: HashMap<String, String> = HashMap::new();
+    // canonical name解決マップを構築
+    let canonical_resolution;
     {
         let registry = &state.endpoint_registry;
         let online_endpoints = registry.list_online().await;
+
+        // 全エンドポイントモデルを収集してcanonical解決マップを構築
+        let mut all_models: Vec<(String, Option<String>)> = Vec::new();
+        for ep in &online_endpoints {
+            if let Ok(models) = registry.list_models(ep.id).await {
+                for model in &models {
+                    all_models.push((model.model_id.clone(), model.canonical_name.clone()));
+                }
+            }
+        }
+        canonical_resolution = crate::models::mapping::build_canonical_maps(
+            all_models
+                .iter()
+                .map(|(id, cn)| (id.as_str(), cn.as_deref())),
+        );
+
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {
                 for model in models {
-                    // canonical_nameが設定されている場合、エイリアス情報を収集
-                    if let Some(canonical) = &model.canonical_name {
-                        if canonical != &model.model_id {
-                            canonical_to_aliases
-                                .entry(canonical.clone())
-                                .or_default()
-                                .insert(model.model_id.clone());
-                        }
-                        model_to_canonical.insert(model.model_id.clone(), canonical.clone());
-                    }
-
                     // 表示用キーの決定: canonical_nameがあればそれを使用
                     let display_key = model
                         .canonical_name
@@ -360,16 +363,9 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
             .unwrap_or_default();
 
         // エイリアス情報を取得
-        let aliases: Vec<String> = canonical_to_aliases
-            .get(model_id)
-            .map(|a| {
-                let mut v: Vec<String> = a.iter().cloned().collect();
-                v.sort();
-                v
-            })
-            .unwrap_or_default();
+        let aliases = canonical_resolution.aliases_for(model_id);
         // canonical_nameを取得（表示用）
-        let canonical_name = model_to_canonical.get(model_id).cloned();
+        let canonical_name = canonical_resolution.canonical_for(model_id);
 
         if let Some(m) = registered_map.get(model_id) {
             let caps: ModelCapabilities = m.get_capabilities().into();

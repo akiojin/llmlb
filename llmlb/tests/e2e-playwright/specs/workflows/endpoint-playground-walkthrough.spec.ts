@@ -67,8 +67,8 @@ test.describe('Endpoint Playground Walkthrough @playground', () => {
     const detailsDialog = page.getByRole('dialog').filter({ hasText: endpointName })
     await expect(detailsDialog).toBeVisible({ timeout: 20000 })
 
-    // Wait until at least one model is visible in the modal.
-    await expect(detailsDialog.getByText(mock.models[0])).toBeVisible({ timeout: 20000 })
+    // Wait until at least one model is visible in the modal (use first() to avoid strict mode violation).
+    await expect(detailsDialog.getByText(mock.models[0]).first()).toBeVisible({ timeout: 20000 })
 
     await detailsDialog.getByRole('button', { name: 'Open Playground' }).click()
 

@@ -994,6 +994,23 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
     let mut endpoint_model_ids: HashMap<String, HashSet<String>> = HashMap::new();
     let mut ready_models: HashSet<String> = HashSet::new();
 
+    // canonical name解決マップを構築
+    let mut all_models_raw: Vec<(String, Option<String>)> = Vec::new();
+    for endpoint in &endpoints {
+        let endpoint_models =
+            crate::db::endpoints::list_endpoint_models(&state.db_pool, endpoint.id)
+                .await
+                .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+        for model in endpoint_models {
+            all_models_raw.push((model.model_id.clone(), model.canonical_name.clone()));
+        }
+    }
+    let canonical_resolution = crate::models::mapping::build_canonical_maps(
+        all_models_raw
+            .iter()
+            .map(|(id, cn)| (id.as_str(), cn.as_deref())),
+    );
+
     for endpoint in endpoints {
         let endpoint_models =
             crate::db::endpoints::list_endpoint_models(&state.db_pool, endpoint.id)
@@ -1001,28 +1018,39 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
                 .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
 
         for model in endpoint_models {
+            // 表示用キーの決定: canonical_nameがあればそれを使用
+            let display_key = model
+                .canonical_name
+                .clone()
+                .unwrap_or_else(|| model.model_id.clone());
+
             endpoint_model_ids
-                .entry(model.model_id.clone())
+                .entry(display_key.clone())
                 .or_default()
                 .insert(endpoint.id.to_string());
+            // エイリアス名でもエンドポイントIDを登録（ルーティング用）
+            if display_key != model.model_id {
+                endpoint_model_ids
+                    .entry(model.model_id.clone())
+                    .or_default()
+                    .insert(endpoint.id.to_string());
+            }
 
-            let apis = endpoint_model_apis
-                .entry(model.model_id.clone())
-                .or_default();
+            let apis = endpoint_model_apis.entry(display_key.clone()).or_default();
             for api in model.supported_apis {
                 apis.insert(api);
             }
             apis.insert(SupportedAPI::Responses);
 
             let entry = endpoint_model_max_tokens
-                .entry(model.model_id.clone())
+                .entry(display_key.clone())
                 .or_insert(None);
             if let Some(mt) = model.max_tokens {
                 *entry = Some(entry.map_or(mt, |existing| existing.max(mt)));
             }
 
             if endpoint.status == EndpointStatus::Online {
-                ready_models.insert(model.model_id);
+                ready_models.insert(display_key);
             }
         }
     }
@@ -1050,6 +1078,9 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
             })
             .unwrap_or_default();
 
+        let aliases = canonical_resolution.aliases_for(model_id);
+        let canonical_name = canonical_resolution.canonical_for(model_id);
+
         if let Some(m) = registered_map.get(model_id) {
             let caps: crate::types::model::ModelCapabilities = m.get_capabilities().into();
             data.push(json!({
@@ -1072,6 +1103,8 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
                 "endpoint_ids": endpoint_ids,
+                "canonical_name": canonical_name,
+                "aliases": aliases,
             }));
         } else {
             data.push(json!({
@@ -1085,6 +1118,8 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
                 "supported_apis": supported_apis,
                 "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
                 "endpoint_ids": endpoint_ids,
+                "canonical_name": canonical_name,
+                "aliases": aliases,
             }));
         }
     }
@@ -1104,6 +1139,8 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
                 ids
             })
             .unwrap_or_default();
+        let aliases = canonical_resolution.aliases_for(model_id);
+        let canonical_name = canonical_resolution.canonical_for(model_id);
         data.push(json!({
             "id": model_id,
             "object": "model",
@@ -1115,6 +1152,8 @@ pub async fn get_models(State(state): State<AppState>) -> Result<Response, AppEr
             "supported_apis": supported_apis,
             "max_tokens": endpoint_model_max_tokens.get(model_id).copied().flatten(),
             "endpoint_ids": endpoint_ids,
+            "canonical_name": canonical_name,
+            "aliases": aliases,
         }));
     }
 

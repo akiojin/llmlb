@@ -8,6 +8,48 @@ info:
 servers:
   - url: http://localhost:32768
 paths:
+  /v1/messages:
+    post:
+      summary: Anthropic Messages API (local or Anthropic Cloud)
+      parameters:
+        - in: header
+          name: x-api-key
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: anthropic-version
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: anthropic-beta
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnthropicMessageRequest"
+      responses:
+        "200":
+          description: Anthropic message response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicMessageResponse"
+            text/event-stream:
+              schema:
+                type: string
+                description: Anthropic SSE stream
+        "400":
+          description: Invalid Anthropic request
+        "401":
+          description: Missing or invalid Anthropic-compatible auth header
+        "403":
+          description: Insufficient API key permission
   /v1/chat/completions:
     post:
       summary: Chat completion (local or cloud depending on model prefix)
@@ -73,6 +115,86 @@ paths:
 
 components:
   schemas:
+    AnthropicMessageRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          example: anthropic:claude-3-7-sonnet
+        max_tokens:
+          type: integer
+          minimum: 1
+        system:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: "#/components/schemas/AnthropicTextBlock"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicInputMessage"
+        temperature:
+          type: number
+        top_p:
+          type: number
+        stop_sequences:
+          type: array
+          items:
+            type: string
+        stream:
+          type: boolean
+      required: [model, max_tokens, messages]
+    AnthropicInputMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: "#/components/schemas/AnthropicTextBlock"
+      required: [role, content]
+    AnthropicTextBlock:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text]
+        text:
+          type: string
+      required: [type, text]
+    AnthropicMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [message]
+        role:
+          type: string
+          enum: [assistant]
+        model:
+          type: string
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicTextBlock"
+        stop_reason:
+          type: [string, "null"]
+        stop_sequence:
+          type: [string, "null"]
+        usage:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+            output_tokens:
+              type: integer
     ChatRequest:
       type: object
       properties:

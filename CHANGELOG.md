@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [5.5.0](https://github.com/akiojin/llmlb/compare/v5.4.1...v5.5.0) (2026-04-06)
+
+### Added
+
+- Anthropic Messages API (`/v1/messages`) のプロキシサポートを追加
+- ダッシュボードAPIにcanonical name統合を追加
+
+### Fixed
+
+- Anthropic Messages APIの非2xxアップストリーム応答のハンドリングを修正
+
+### Test
+
+- SPEC #533 Web UI全画面遷移E2Eテスト網羅（Playwright）
+
+### CI
+
+- Playwright E2Eテストをquality-checksに統合（非ブロッキング）
+
+### Chore
+
+- TLS依存パッケージのセキュリティ脆弱性を修正
+- gwt hookエントリをsettings.jsonから削除
+
 ## [5.4.1](https://github.com/akiojin/llmlb/compare/v5.4.0...v5.4.1) (2026-04-05)
 
 ### Chore

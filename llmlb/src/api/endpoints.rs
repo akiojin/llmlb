@@ -303,6 +303,9 @@ pub struct EndpointModelResponse {
     pub max_tokens: Option<u32>,
     /// 最終確認時刻
     pub last_checked: Option<String>,
+    /// 正規名（HFリポ名）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canonical_name: Option<String>,
 }
 
 impl From<EndpointModel> for EndpointModelResponse {
@@ -312,6 +315,7 @@ impl From<EndpointModel> for EndpointModelResponse {
             capabilities: m.capabilities,
             max_tokens: m.max_tokens,
             last_checked: m.last_checked.map(|dt| dt.to_rfc3339()),
+            canonical_name: m.canonical_name,
         }
     }
 }
@@ -1915,6 +1919,26 @@ mod tests {
         assert_eq!(resp.capabilities, Some(vec!["chat".to_string()]));
         assert_eq!(resp.max_tokens, Some(8192));
         assert!(resp.last_checked.is_some());
+        assert_eq!(resp.canonical_name, None);
+    }
+
+    #[test]
+    fn test_endpoint_model_response_from_with_canonical_name() {
+        let model = EndpointModel {
+            endpoint_id: Uuid::new_v4(),
+            model_id: "gpt-oss:20b".to_string(),
+            capabilities: Some(vec!["chat".to_string()]),
+            max_tokens: Some(8192),
+            last_checked: None,
+            supported_apis: vec![],
+            canonical_name: Some("openai/gpt-oss-20b".to_string()),
+        };
+        let resp = EndpointModelResponse::from(model);
+        assert_eq!(resp.model_id, "gpt-oss:20b");
+        assert_eq!(resp.canonical_name, Some("openai/gpt-oss-20b".to_string()));
+
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["canonical_name"], "openai/gpt-oss-20b");
     }
 
     #[test]
@@ -1945,6 +1969,7 @@ mod tests {
                 capabilities: Some(vec!["chat".to_string(), "embeddings".to_string()]),
                 max_tokens: Some(128000),
                 last_checked: None,
+                canonical_name: None,
             }],
         };
         let json = serde_json::to_value(&resp).unwrap();

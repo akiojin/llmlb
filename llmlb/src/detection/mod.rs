@@ -4,8 +4,8 @@
 //!
 //! Detection priority: xLLM > LM Studio > Ollama > vLLM > llama.cpp > OpenAI-compatible
 
-mod lm_studio;
 mod llama_cpp;
+mod lm_studio;
 mod ollama;
 mod vllm;
 mod xllm;
@@ -17,8 +17,8 @@ use tracing::{debug, warn};
 
 use crate::types::endpoint::EndpointType;
 
-pub use lm_studio::detect_lm_studio;
 pub use llama_cpp::detect_llamacpp;
+pub use lm_studio::detect_lm_studio;
 pub use ollama::detect_ollama;
 pub use vllm::detect_vllm;
 pub use xllm::detect_xllm;

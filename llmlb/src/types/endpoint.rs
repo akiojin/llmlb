@@ -155,7 +155,7 @@ impl EndpointType {
 
     /// モデルダウンロードをサポートするか
     pub fn supports_model_download(&self) -> bool {
-        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio | Self::Llamacpp)
+        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio)
     }
 
     /// モデル削除をサポートするか
@@ -167,7 +167,7 @@ impl EndpointType {
 
     /// モデルメタデータ取得をサポートするか
     pub fn supports_model_metadata(&self) -> bool {
-        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio | Self::Llamacpp)
+        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio)
     }
 
     /// TPS（tokens per second）計測対象かどうか（SPEC-4bb5b55f）
@@ -895,6 +895,7 @@ mod tests {
         assert!(EndpointType::Ollama.supports_model_download());
         assert!(EndpointType::LmStudio.supports_model_download());
         assert!(!EndpointType::Vllm.supports_model_download());
+        assert!(!EndpointType::Llamacpp.supports_model_download());
         assert!(!EndpointType::OpenaiCompatible.supports_model_download());
     }
 
@@ -916,6 +917,7 @@ mod tests {
         assert!(EndpointType::Ollama.supports_model_metadata());
         assert!(EndpointType::LmStudio.supports_model_metadata());
         assert!(!EndpointType::Vllm.supports_model_metadata());
+        assert!(!EndpointType::Llamacpp.supports_model_metadata());
         assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
     }
 

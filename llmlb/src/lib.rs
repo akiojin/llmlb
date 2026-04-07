@@ -44,6 +44,9 @@ pub mod config;
 /// エンドポイントタイプ自動判別
 pub mod detection;
 
+/// システム情報取得（GPU/デバイス情報）
+pub mod system_info;
+
 /// xLLMクライアント（ダウンロード・メタデータ）
 pub mod xllm;
 

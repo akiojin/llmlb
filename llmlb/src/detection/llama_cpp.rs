@@ -136,23 +136,19 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/v1/models"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": [],
-                    "object": "list"
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [],
+                "object": "list"
+            })))
             .mount(&server)
             .await;
 
         Mock::given(method("GET"))
             .and(path("/v1/version"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "server": "llama.cpp",
-                    "version": "0.3.0"
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "server": "llama.cpp",
+                "version": "0.3.0"
+            })))
             .mount(&server)
             .await;
 
@@ -181,12 +177,10 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/v1/version"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "server": "openai",
-                    "version": "1.0"
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "server": "openai",
+                "version": "1.0"
+            })))
             .mount(&server)
             .await;
 

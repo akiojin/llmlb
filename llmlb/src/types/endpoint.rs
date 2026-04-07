@@ -134,6 +134,8 @@ pub enum EndpointType {
     Vllm,
     /// LM Studioサーバー
     LmStudio,
+    /// llama.cppサーバー
+    Llamacpp,
     /// その他のOpenAI互換API
     OpenaiCompatible,
 }
@@ -146,13 +148,14 @@ impl EndpointType {
             Self::Ollama => "ollama",
             Self::Vllm => "vllm",
             Self::LmStudio => "lm_studio",
+            Self::Llamacpp => "llamacpp",
             Self::OpenaiCompatible => "openai_compatible",
         }
     }
 
     /// モデルダウンロードをサポートするか
     pub fn supports_model_download(&self) -> bool {
-        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio)
+        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio | Self::Llamacpp)
     }
 
     /// モデル削除をサポートするか
@@ -164,7 +167,7 @@ impl EndpointType {
 
     /// モデルメタデータ取得をサポートするか
     pub fn supports_model_metadata(&self) -> bool {
-        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio)
+        matches!(self, Self::Xllm | Self::Ollama | Self::LmStudio | Self::Llamacpp)
     }
 
     /// TPS（tokens per second）計測対象かどうか（SPEC-4bb5b55f）
@@ -197,6 +200,7 @@ impl FromStr for EndpointType {
             "ollama" => Ok(Self::Ollama),
             "vllm" => Ok(Self::Vllm),
             "lm_studio" => Ok(Self::LmStudio),
+            "llamacpp" => Ok(Self::Llamacpp),
             "openai_compatible" => Ok(Self::OpenaiCompatible),
             _ => Err(ParseEndpointTypeError(s.to_string())),
         }

@@ -173,7 +173,7 @@ pub async fn download_model(
                 }
             });
         }
-        EndpointType::Vllm | EndpointType::OpenaiCompatible => {
+        EndpointType::Llamacpp | EndpointType::Vllm | EndpointType::OpenaiCompatible => {
             // Should not reach here due to supports_model_download() check above
             unreachable!()
         }

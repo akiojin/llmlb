@@ -96,6 +96,9 @@ pub fn create_app(state: AppState) -> Router {
             put(users::update_user).delete(users::delete_user),
         )
         .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
+        .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
         .layer(middleware::from_fn_with_state(
@@ -136,6 +139,9 @@ pub fn create_app(state: AppState) -> Router {
         )
         .route("/invitations/{id}", delete(invitations::revoke_invitation))
         .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
+        .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
         .layer(middleware::from_fn_with_state(
@@ -151,6 +157,9 @@ pub fn create_app(state: AppState) -> Router {
     // エンドポイントログ取得（lb→endpoint proxy）
     let node_logs_routes = Router::new()
         .route("/endpoints/{id}/logs", get(logs::get_node_logs))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             crate::auth::middleware::JwtOrApiKeyPermissionConfig {
                 app_state: state.clone(),
@@ -165,6 +174,9 @@ pub fn create_app(state: AppState) -> Router {
     let models_manage_routes = Router::new()
         .route("/models/register", post(models::register_model))
         .route("/models/{*model_name}", delete(models::delete_model))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
@@ -181,6 +193,9 @@ pub fn create_app(state: AppState) -> Router {
     // Prometheus metrics（cloud prefix含む独自メトリクス）
     let metrics_routes = Router::new()
         .route("/metrics/cloud", get(cloud_metrics::export_metrics))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             crate::auth::middleware::JwtOrApiKeyPermissionConfig {
                 app_state: state.clone(),

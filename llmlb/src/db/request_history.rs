@@ -1136,23 +1136,38 @@ impl RequestHistoryStorage {
         hours: u32,
         page: usize,
         per_page: usize,
+        ip_prefix: Option<&str>,
     ) -> RouterResult<ClientIpRankingResult> {
         let cutoff = Utc::now() - Duration::hours(hours as i64);
         let cutoff_str = cutoff.to_rfc3339();
 
         // SQLiteでIPごとの集計を取得（NULLのclient_ipは除外）
-        let rows: Vec<ClientIpRow> = sqlx::query_as(
+        let query_str = if ip_prefix.is_some() {
+            "SELECT client_ip, COUNT(*) as request_count,
+                    MAX(timestamp) as last_seen
+             FROM request_history
+             WHERE client_ip IS NOT NULL AND timestamp >= ? AND client_ip LIKE ? || '%'
+             GROUP BY client_ip
+             ORDER BY request_count DESC"
+        } else {
             "SELECT client_ip, COUNT(*) as request_count,
                     MAX(timestamp) as last_seen
              FROM request_history
              WHERE client_ip IS NOT NULL AND timestamp >= ?
              GROUP BY client_ip
-             ORDER BY request_count DESC",
-        )
-        .bind(&cutoff_str)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(e.to_string()))?;
+             ORDER BY request_count DESC"
+        };
+
+        let mut query = sqlx::query_as::<_, ClientIpRow>(query_str);
+        query = query.bind(&cutoff_str);
+        if let Some(prefix) = ip_prefix {
+            query = query.bind(prefix);
+        }
+
+        let rows: Vec<ClientIpRow> = query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(e.to_string()))?;
 
         // IPv6 /64グルーピング: Rust側で集約
         use std::collections::HashMap;
@@ -1332,22 +1347,40 @@ impl RequestHistoryStorage {
     ///
     /// 指定時間数内のリクエストを曜日(0-6)×時間帯(0-23)で集計。
     /// データがないセルはcount=0で埋める。
-    pub async fn get_request_heatmap(&self, hours: u32) -> RouterResult<Vec<HeatmapCell>> {
+    pub async fn get_request_heatmap(
+        &self,
+        hours: u32,
+        ip_prefix: Option<&str>,
+    ) -> RouterResult<Vec<HeatmapCell>> {
         let cutoff = Utc::now() - Duration::hours(hours as i64);
         let cutoff_str = cutoff.to_rfc3339();
 
-        let rows: Vec<HeatmapRow> = sqlx::query_as(
+        let query_str = if ip_prefix.is_some() {
+            "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                    COUNT(*) as count
+             FROM request_history
+             WHERE client_ip IS NOT NULL AND timestamp >= ? AND client_ip LIKE ? || '%'
+             GROUP BY strftime('%w', timestamp), strftime('%H', timestamp)"
+        } else {
             "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week,
                     CAST(strftime('%H', timestamp) AS INTEGER) as hour,
                     COUNT(*) as count
              FROM request_history
              WHERE client_ip IS NOT NULL AND timestamp >= ?
-             GROUP BY strftime('%w', timestamp), strftime('%H', timestamp)",
-        )
-        .bind(&cutoff_str)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(e.to_string()))?;
+             GROUP BY strftime('%w', timestamp), strftime('%H', timestamp)"
+        };
+
+        let mut query = sqlx::query_as::<_, HeatmapRow>(query_str);
+        query = query.bind(&cutoff_str);
+        if let Some(prefix) = ip_prefix {
+            query = query.bind(prefix);
+        }
+
+        let rows: Vec<HeatmapRow> = query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(e.to_string()))?;
 
         // 7×24 = 168セルの完全マトリックスを生成
         use std::collections::HashMap;
@@ -2910,7 +2943,10 @@ mod tests {
         let pool = create_test_pool().await;
         let storage = RequestHistoryStorage::new(pool);
 
-        let result = storage.get_client_ip_ranking(24, 1, 10).await.unwrap();
+        let result = storage
+            .get_client_ip_ranking(24, 1, 10, None)
+            .await
+            .unwrap();
         assert!(result.rankings.is_empty());
         assert_eq!(result.total_count, 0);
         assert_eq!(result.page, 1);
@@ -2936,7 +2972,10 @@ mod tests {
         r2.client_ip = Some("10.0.0.2".parse().unwrap());
         storage.save_record(&r2).await.unwrap();
 
-        let result = storage.get_client_ip_ranking(24, 1, 10).await.unwrap();
+        let result = storage
+            .get_client_ip_ranking(24, 1, 10, None)
+            .await
+            .unwrap();
         assert_eq!(result.total_count, 2);
         // First should be the one with more requests
         assert_eq!(result.rankings[0].request_count, 3);
@@ -2965,7 +3004,7 @@ mod tests {
         let pool = create_test_pool().await;
         let storage = RequestHistoryStorage::new(pool);
 
-        let cells = storage.get_request_heatmap(168).await.unwrap();
+        let cells = storage.get_request_heatmap(168, None).await.unwrap();
         // Always 7*24 = 168 cells
         assert_eq!(cells.len(), 168);
         // All zero counts

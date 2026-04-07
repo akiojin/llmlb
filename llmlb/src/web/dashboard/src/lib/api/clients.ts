@@ -63,7 +63,7 @@ export interface ClientApiKeyUsage {
 }
 
 export const clientsApi = {
-  getClientRanking: (params?: { page?: number; per_page?: number }) =>
+  getClientRanking: (params?: { page?: number; per_page?: number; ip?: string }) =>
     fetchWithAuth<ClientRankingResponse>('/api/dashboard/clients', {
       params: params as Record<string, string | number | boolean | undefined>,
     }),
@@ -71,8 +71,10 @@ export const clientsApi = {
     fetchWithAuth<UniqueIpTimelinePoint[]>('/api/dashboard/clients/timeline'),
   getModels: () =>
     fetchWithAuth<ModelDistribution[]>('/api/dashboard/clients/models'),
-  getHeatmap: () =>
-    fetchWithAuth<HeatmapCell[]>('/api/dashboard/clients/heatmap'),
+  getHeatmap: (params?: { ip?: string }) =>
+    fetchWithAuth<HeatmapCell[]>('/api/dashboard/clients/heatmap', {
+      params: params as Record<string, string | number | boolean | undefined>,
+    }),
   getClientDetail: (ip: string) =>
     fetchWithAuth<ClientDetailResponse>(`/api/dashboard/clients/${encodeURIComponent(ip)}/detail`),
   getClientApiKeys: (ip: string) =>

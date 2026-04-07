@@ -30,6 +30,8 @@ pub struct AuditLogQueryParams {
     pub time_from: Option<DateTime<Utc>>,
     /// 終了日時
     pub time_to: Option<DateTime<Utc>>,
+    /// クライアントIPアドレス（LIKE前方一致）
+    pub ip: Option<String>,
     /// フリーテキスト検索
     pub search: Option<String>,
     /// ページ番号（1始まり、デフォルト: 1）
@@ -52,6 +54,7 @@ impl From<AuditLogQueryParams> for AuditLogFilter {
             status_code: params.status_code,
             time_from: params.time_from,
             time_to: params.time_to,
+            client_ip: params.ip,
             search_text: params.search,
             page: params.page,
             per_page: params.per_page,
@@ -807,6 +810,7 @@ mod tests {
             status_code: None,
             time_from: None,
             time_to: None,
+            ip: None,
             search: None,
             page: None,
             per_page: None,
@@ -821,6 +825,7 @@ mod tests {
         assert!(filter.status_code.is_none());
         assert!(filter.time_from.is_none());
         assert!(filter.time_to.is_none());
+        assert!(filter.client_ip.is_none());
         assert!(filter.search_text.is_none());
         assert!(filter.page.is_none());
         assert!(filter.per_page.is_none());
@@ -838,6 +843,7 @@ mod tests {
             status_code: Some(200),
             time_from: Some(now),
             time_to: Some(now),
+            ip: Some("192.168.1".to_string()),
             search: Some("query".to_string()),
             page: Some(3),
             per_page: Some(25),
@@ -852,6 +858,7 @@ mod tests {
         assert_eq!(filter.status_code, Some(200));
         assert!(filter.time_from.is_some());
         assert!(filter.time_to.is_some());
+        assert_eq!(filter.client_ip.as_deref(), Some("192.168.1"));
         assert_eq!(filter.search_text.as_deref(), Some("query"));
         assert_eq!(filter.page, Some(3));
         assert_eq!(filter.per_page, Some(25));
@@ -868,6 +875,7 @@ mod tests {
             status_code: None,
             time_from: None,
             time_to: None,
+            ip: None,
             search: Some("findme".to_string()),
             page: None,
             per_page: None,

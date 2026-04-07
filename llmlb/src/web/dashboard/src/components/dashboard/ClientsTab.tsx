@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   clientsApi,
@@ -14,15 +14,22 @@ import { ModelDistributionPie } from './ModelDistributionPie'
 import { RequestHeatmap } from './RequestHeatmap'
 import { AlertThresholdSettings } from './AlertThresholdSettings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, TrendingUp, PieChart, Grid3X3, Loader2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Users, TrendingUp, PieChart, Grid3X3, Loader2, X } from 'lucide-react'
 
 export function ClientsTab() {
   const [page, setPage] = useState(1)
   const perPage = 20
 
+  // URLのクエリパラメーターからIPフィルタを取得
+  const ipFilter = useMemo(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('ip') || undefined
+  }, [])
+
   const { data, isLoading } = useQuery<ClientRankingResponse>({
-    queryKey: ['client-ranking', page, perPage],
-    queryFn: () => clientsApi.getClientRanking({ page, per_page: perPage }),
+    queryKey: ['client-ranking', page, perPage, ipFilter],
+    queryFn: () => clientsApi.getClientRanking({ page, per_page: perPage, ip: ipFilter }),
   })
 
   const { data: timelineData } = useQuery<UniqueIpTimelinePoint[]>({
@@ -36,9 +43,16 @@ export function ClientsTab() {
   })
 
   const { data: heatmapData } = useQuery<HeatmapCell[]>({
-    queryKey: ['client-heatmap'],
-    queryFn: () => clientsApi.getHeatmap(),
+    queryKey: ['client-heatmap', ipFilter],
+    queryFn: () => clientsApi.getHeatmap({ ip: ipFilter }),
   })
+
+  const handleClearFilter = () => {
+    const params = new URLSearchParams(window.location.search)
+    params.delete('ip')
+    const newSearch = params.toString()
+    window.location.search = newSearch
+  }
 
   if (isLoading) {
     return (
@@ -93,11 +107,25 @@ export function ClientsTab() {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
             <Grid3X3 className="h-4 w-4" />
             Request Heatmap (Hour x Day)
           </CardTitle>
+          {ipFilter && (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-xs">
+                Filtered: {ipFilter}
+              </Badge>
+              <button
+                onClick={handleClearFilter}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="Clear IP filter"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <RequestHeatmap data={heatmapData ?? []} />
@@ -105,12 +133,28 @@ export function ClientsTab() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" />
-            Client IP Ranking
-          </CardTitle>
-          <AlertThresholdSettings />
+        <CardHeader className="flex flex-col items-start gap-3">
+          <div className="flex w-full items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="h-4 w-4" />
+              Client IP Ranking
+            </CardTitle>
+            <AlertThresholdSettings />
+          </div>
+          {ipFilter && (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-xs">
+                Filtered: {ipFilter}
+              </Badge>
+              <button
+                onClick={handleClearFilter}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="Clear IP filter"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <ClientRankingTable

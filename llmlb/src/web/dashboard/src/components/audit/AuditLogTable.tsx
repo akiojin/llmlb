@@ -61,6 +61,7 @@ export function AuditLogTable({ entries, loading }: AuditLogTableProps) {
             <TableHead className="w-[60px]">Status</TableHead>
             <TableHead className="w-[80px]">Actor</TableHead>
             <TableHead className="w-[100px]">Actor ID</TableHead>
+            <TableHead className="w-[120px]">Client IP</TableHead>
             <TableHead className="w-[80px]">Duration</TableHead>
             <TableHead className="w-[100px]">Tokens</TableHead>
           </TableRow>
@@ -89,6 +90,18 @@ export function AuditLogTable({ entries, loading }: AuditLogTableProps) {
               </TableCell>
               <TableCell className="text-xs truncate max-w-[100px]">
                 {entry.actor_username || entry.actor_id || '-'}
+              </TableCell>
+              <TableCell className="text-xs">
+                {entry.client_ip ? (
+                  <a
+                    href={`?tab=clients&ip=${encodeURIComponent(entry.client_ip)}`}
+                    className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-mono"
+                  >
+                    {entry.client_ip}
+                  </a>
+                ) : (
+                  '-'
+                )}
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
                 {entry.duration_ms != null ? `${entry.duration_ms}ms` : '-'}

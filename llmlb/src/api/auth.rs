@@ -432,6 +432,90 @@ pub async fn register(
     ))
 }
 
+/// セットアップパスワードリクエスト
+#[derive(Debug, Deserialize)]
+pub struct SetupPasswordRequest {
+    /// セットアップトークン
+    pub setup_token: String,
+    /// パスワード
+    pub password: String,
+}
+
+/// セットアップパスワードレスポンス
+#[derive(Debug, Serialize)]
+pub struct SetupPasswordResponse {
+    /// メッセージ
+    pub message: String,
+}
+
+/// リセットパスワードレスポンス
+#[derive(Debug, Serialize)]
+pub struct ResetPasswordResponse {
+    /// 一時パスワード
+    pub temporary_password: String,
+}
+
+/// POST /api/auth/setup-password - パスワード設定
+///
+/// セットアップトークンを使用してパスワードを設定する。
+/// トークン検証後、パスワード要件チェックを行い、ハッシュ化して保存する。
+///
+/// # Arguments
+/// * `State(app_state)` - アプリケーション状態
+/// * `Json(request)` - セットアップリクエスト
+///
+/// # Returns
+/// * `200 OK` - パスワード設定成功
+/// * `400 Bad Request` - パスワード要件不足
+/// * `401 Unauthorized` - トークン無効/期限切れ
+/// * `500 Internal Server Error` - サーバーエラー
+pub async fn setup_password(
+    State(app_state): State<AppState>,
+    Json(request): Json<SetupPasswordRequest>,
+) -> Result<Json<SetupPasswordResponse>, Response> {
+    // セットアップトークンを検証
+    let claims = crate::auth::jwt::verify_jwt(&request.setup_token, &app_state.jwt_secret)
+        .map_err(|_| {
+            AppError(LbError::Authentication("Invalid setup token".to_string())).into_response()
+        })?;
+
+    // ユーザーIDをパース
+    let user_id = claims.sub.parse::<uuid::Uuid>().map_err(|_| {
+        AppError(LbError::Authentication(
+            "Invalid user ID in token".to_string(),
+        ))
+        .into_response()
+    })?;
+
+    // パスワード要件を検証
+    crate::auth::password::validate_password(&request.password)
+        .map_err(|e| AppError(e).into_response())?;
+
+    // パスワードをハッシュ化
+    let password_hash = crate::auth::password::hash_password(&request.password).map_err(|e| {
+        tracing::error!("Failed to hash password: {}", e);
+        AppError(LbError::PasswordHash(format!(
+            "Failed to hash password: {}",
+            e
+        )))
+        .into_response()
+    })?;
+
+    // パスワードを更新（must_change_passwordフラグをクリア）
+    crate::db::users::update_password_hash(&app_state.db_pool, user_id, &password_hash)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to update password: {}", e);
+            AppError(e).into_response()
+        })?;
+
+    tracing::info!("Password set for user: {}", user_id);
+
+    Ok(Json(SetupPasswordResponse {
+        message: "Password set successfully".to_string(),
+    }))
+}
+
 /// PUT /api/auth/change-password - パスワード変更
 ///
 /// 認証済みユーザーが自身のパスワードを変更する。
@@ -508,6 +592,73 @@ pub async fn change_password(
     tracing::info!("Password changed for user: {}", user_id);
 
     Ok(StatusCode::OK)
+}
+
+/// POST /api/admin/users/{user_id}/password/reset - パスワードリセット
+///
+/// 管理者が指定ユーザーのパスワードをリセットし、一時パスワードを生成する。
+/// リセット後、must_change_passwordフラグがセットされる。
+///
+/// # Arguments
+/// * `Extension(claims)` - JWTクレーム（ミドルウェアで注入）
+/// * `State(app_state)` - アプリケーション状態
+/// * `user_id` - リセット対象のユーザーID
+///
+/// # Returns
+/// * `200 OK` - パスワードリセット成功
+/// * `401 Unauthorized` - 未認証
+/// * `403 Forbidden` - admin権限がない
+/// * `404 Not Found` - ユーザーが見つからない
+/// * `500 Internal Server Error` - サーバーエラー
+pub async fn reset_password(
+    Extension(claims): Extension<Claims>,
+    State(app_state): State<AppState>,
+    axum::extract::Path(user_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<ResetPasswordResponse>, Response> {
+    // admin 権限を確認
+    if claims.role != UserRole::Admin {
+        return Err(
+            AppError(LbError::Authorization("Admin role required".to_string())).into_response(),
+        );
+    }
+
+    // ユーザーが存在するか確認
+    crate::db::users::find_by_id(&app_state.db_pool, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to find user: {}", e);
+            AppError(e).into_response()
+        })?
+        .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
+
+    // 一時パスワードを生成（10文字ランダム）
+    let temporary_password = crate::auth::generate_random_token(10);
+
+    // パスワードをハッシュ化
+    let password_hash = crate::auth::password::hash_password(&temporary_password).map_err(|e| {
+        tracing::error!("Failed to hash password: {}", e);
+        AppError(LbError::PasswordHash(format!(
+            "Failed to hash password: {}",
+            e
+        )))
+        .into_response()
+    })?;
+
+    // パスワードをリセット（must_change_passwordをセット）
+    crate::db::users::reset_user_password(&app_state.db_pool, user_id, &password_hash)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to reset password: {}", e);
+            AppError(e).into_response()
+        })?;
+
+    tracing::info!(
+        "Password reset for user: {} by admin: {}",
+        user_id,
+        claims.sub
+    );
+
+    Ok(Json(ResetPasswordResponse { temporary_password }))
 }
 
 #[cfg(test)]

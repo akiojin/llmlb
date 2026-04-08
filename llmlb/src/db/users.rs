@@ -333,6 +333,86 @@ pub async fn clear_must_change_password(pool: &SqlitePool, id: Uuid) -> Result<(
     Ok(())
 }
 
+/// パスワードハッシュを更新
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+/// * `id` - ユーザーID
+/// * `hash` - 新しいパスワードハッシュ
+///
+/// # Returns
+/// * `Ok(())` - 更新成功
+/// * `Err(LbError)` - 更新失敗
+pub async fn update_password_hash(pool: &SqlitePool, id: Uuid, hash: &str) -> Result<(), LbError> {
+    let now = Utc::now();
+
+    sqlx::query(
+        "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
+    )
+    .bind(hash)
+    .bind(now.to_rfc3339())
+    .bind(id.to_string())
+    .execute(pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to update password hash: {}", e)))?;
+
+    Ok(())
+}
+
+/// ユーザーのパスワードをリセット
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+/// * `id` - ユーザーID
+/// * `hash` - 新しいパスワードハッシュ
+///
+/// # Returns
+/// * `Ok(())` - リセット成功
+/// * `Err(LbError)` - リセット失敗
+pub async fn reset_user_password(pool: &SqlitePool, id: Uuid, hash: &str) -> Result<(), LbError> {
+    let now = Utc::now();
+
+    sqlx::query(
+        "UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?",
+    )
+    .bind(hash)
+    .bind(now.to_rfc3339())
+    .bind(id.to_string())
+    .execute(pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to reset user password: {}", e)))?;
+
+    Ok(())
+}
+
+/// must_change_password フラグを設定
+///
+/// # Arguments
+/// * `pool` - データベース接続プール
+/// * `id` - ユーザーID
+/// * `value` - 設定値（true/false）
+///
+/// # Returns
+/// * `Ok(())` - 設定成功
+/// * `Err(LbError)` - 設定失敗
+pub async fn set_must_change_password(
+    pool: &SqlitePool,
+    id: Uuid,
+    value: bool,
+) -> Result<(), LbError> {
+    let now = Utc::now();
+
+    sqlx::query("UPDATE users SET must_change_password = ?, updated_at = ? WHERE id = ?")
+        .bind(value as i32)
+        .bind(now.to_rfc3339())
+        .bind(id.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to set must_change_password: {}", e)))?;
+
+    Ok(())
+}
+
 // SQLiteからの行取得用の内部型
 #[derive(sqlx::FromRow)]
 struct UserRow {

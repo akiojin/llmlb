@@ -95,6 +95,10 @@ pub fn create_app(state: AppState) -> Router {
             "/users/{id}",
             put(users::update_user).delete(users::delete_user),
         )
+        .route(
+            "/users/{user_id}/password/reset",
+            post(auth::reset_password),
+        )
         .layer(middleware::from_fn(
             crate::auth::middleware::csrf_protect_middleware,
         ))
@@ -571,6 +575,7 @@ pub fn create_app(state: AppState) -> Router {
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
+        .route("/auth/setup-password", post(auth::setup_password))
         .merge(auth_routes)
         .merge(system_mutation_routes)
         .merge(dashboard_api_routes)

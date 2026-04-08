@@ -34,6 +34,38 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, LbError> {
         .map_err(|e| LbError::PasswordHash(format!("Failed to verify password: {}", e)))
 }
 
+/// パスワード要件を検証
+///
+/// 要件:
+/// - 最低 8 文字
+/// - 大文字を最低 1 文字含む
+///
+/// # Arguments
+/// * `password` - 検証するパスワード
+///
+/// # Returns
+/// * `Ok(())` - パスワード要件を満たす
+/// * `Err(LbError)` - パスワード要件不足
+pub fn validate_password(password: &str) -> Result<(), LbError> {
+    if password.len() < 8 {
+        return Err(LbError::Common(
+            crate::common::error::CommonError::Validation(
+                "Password must be at least 8 characters".to_string(),
+            ),
+        ));
+    }
+
+    if !password.chars().any(|c| c.is_uppercase()) {
+        return Err(LbError::Common(
+            crate::common::error::CommonError::Validation(
+                "Password must contain at least one uppercase letter".to_string(),
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

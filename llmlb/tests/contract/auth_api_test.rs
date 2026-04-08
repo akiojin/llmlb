@@ -449,3 +449,331 @@ async fn test_change_password_clears_must_change_flag() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["user"]["must_change_password"], false);
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/setup-password
+// ---------------------------------------------------------------------------
+
+/// 有効な setup_token でパスワード設定成功
+#[tokio::test]
+#[serial]
+async fn test_setup_password_success_with_valid_token() {
+    let (app, db_pool) = crate::support::lb::create_test_lb().await;
+
+    // setup_token を生成（テスト用のsecretを使用）
+    let jwt_secret = crate::support::lb::test_jwt_secret();
+    let user_uuid = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let setup_token =
+        llmlb::auth::jwt::create_jwt(&user_uuid.to_string(), UserRole::Admin, &jwt_secret, false)
+            .unwrap();
+
+    // テストユーザーを作成
+    let password_hash = llmlb::auth::password::hash_password("oldpass123").unwrap();
+    llmlb::db::users::create_with_id(
+        &db_pool,
+        user_uuid,
+        "setupuser",
+        &password_hash,
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/setup-password")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "setup_token": setup_token,
+                        "password": "SecurePass123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    assert!(data["message"].is_string());
+}
+
+/// 無効な setup_token で 401
+#[tokio::test]
+#[serial]
+async fn test_setup_password_invalid_token_returns_401() {
+    let (app, _db_pool) = crate::support::lb::create_test_lb().await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/setup-password")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "setup_token": "invalid-token",
+                        "password": "SecurePass123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// パスワード 8文字未満で 400
+#[tokio::test]
+#[serial]
+async fn test_setup_password_too_short_returns_400() {
+    let (app, db_pool) = crate::support::lb::create_test_lb().await;
+
+    let jwt_secret = crate::support::lb::test_jwt_secret();
+    let user_uuid = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+    let setup_token =
+        llmlb::auth::jwt::create_jwt(&user_uuid.to_string(), UserRole::Admin, &jwt_secret, false)
+            .unwrap();
+
+    // テストユーザーを作成
+    let password_hash = llmlb::auth::password::hash_password("oldpass123").unwrap();
+    llmlb::db::users::create_with_id(
+        &db_pool,
+        user_uuid,
+        "shortpwduser",
+        &password_hash,
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .ok();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/setup-password")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "setup_token": setup_token,
+                        "password": "Short1"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// パスワード大文字なしで 400
+#[tokio::test]
+#[serial]
+async fn test_setup_password_no_uppercase_returns_400() {
+    let (app, db_pool) = crate::support::lb::create_test_lb().await;
+
+    let jwt_secret = crate::support::lb::test_jwt_secret();
+    let user_uuid = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap();
+    let setup_token =
+        llmlb::auth::jwt::create_jwt(&user_uuid.to_string(), UserRole::Admin, &jwt_secret, false)
+            .unwrap();
+
+    // テストユーザーを作成
+    let password_hash = llmlb::auth::password::hash_password("oldpass123").unwrap();
+    llmlb::db::users::create_with_id(
+        &db_pool,
+        user_uuid,
+        "noupperuser",
+        &password_hash,
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .ok();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/setup-password")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "setup_token": setup_token,
+                        "password": "lowercaseonly123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/users/{user_id}/password/reset
+// ---------------------------------------------------------------------------
+
+/// admin がユーザーのパスワードをリセット成功
+#[tokio::test]
+#[serial]
+async fn test_reset_password_success_as_admin() {
+    let (app, db_pool) = crate::support::lb::create_test_lb().await;
+
+    // admin とテストユーザーを作成
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let _admin_user =
+        llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
+            .await
+            .unwrap();
+    let test_user = llmlb::db::users::create(
+        &db_pool,
+        "testuser",
+        &password_hash,
+        UserRole::Viewer,
+        false,
+    )
+    .await
+    .unwrap();
+
+    // admin でログイン
+    let (status, body) = login(&app, "admin", "password123").await;
+    assert_eq!(status, StatusCode::OK);
+    let jwt = body["token"].as_str().unwrap().to_string();
+
+    // テストユーザーのパスワードをリセット
+    let response = app
+        .clone()
+        .oneshot(
+            bearer_request(&jwt)
+                .method("POST")
+                .uri(&format!("/api/admin/users/{}/password/reset", test_user.id))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    assert!(data["temporary_password"].is_string());
+}
+
+/// ユーザーが他ユーザーのパスワードをリセット試行 → 403
+#[tokio::test]
+#[serial]
+async fn test_reset_password_non_admin_returns_403() {
+    let (app, db_pool) = crate::support::lb::create_test_lb().await;
+
+    // admin とテストユーザーを作成
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let _admin =
+        llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
+            .await
+            .ok();
+    let _test_user =
+        llmlb::db::users::create(&db_pool, "viewer", &password_hash, UserRole::Viewer, false)
+            .await
+            .unwrap();
+    let another_user =
+        llmlb::db::users::create(&db_pool, "another", &password_hash, UserRole::Viewer, false)
+            .await
+            .unwrap();
+
+    // viewer でログイン
+    let (status, body) = login(&app, "viewer", "password123").await;
+    assert_eq!(status, StatusCode::OK);
+    let jwt = body["token"].as_str().unwrap().to_string();
+
+    // 他ユーザーのパスワードをリセット試行
+    let response = app
+        .clone()
+        .oneshot(
+            bearer_request(&jwt)
+                .method("POST")
+                .uri(&format!(
+                    "/api/admin/users/{}/password/reset",
+                    another_user.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// 存在しないユーザーで 404
+#[tokio::test]
+#[serial]
+async fn test_reset_password_nonexistent_user_returns_404() {
+    let (app, db_pool) = crate::support::lb::create_test_lb().await;
+
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
+        .await
+        .ok();
+
+    let (status, body) = login(&app, "admin", "password123").await;
+    assert_eq!(status, StatusCode::OK);
+    let jwt = body["token"].as_str().unwrap().to_string();
+
+    // 存在しないユーザーのIDでリセット試行
+    let response = app
+        .clone()
+        .oneshot(
+            bearer_request(&jwt)
+                .method("POST")
+                .uri("/api/admin/users/00000000-0000-0000-0000-000000000000/password/reset")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// 無認証で 401
+#[tokio::test]
+#[serial]
+async fn test_reset_password_unauthenticated_returns_401() {
+    let (app, _db_pool) = crate::support::lb::create_test_lb().await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/admin/users/00000000-0000-0000-0000-000000000000/password/reset")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}

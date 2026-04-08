@@ -191,10 +191,15 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::jwt_or_api_key_permission_middleware,
         ));
 
+    // 新招待キーAPI（T-0009）
+    let new_invitations_routes =
+        Router::new().route("/admin/invitations", post(auth::create_invitation));
+
     let admin_routes = Router::new()
         .merge(users_routes)
         .merge(my_api_keys_routes)
         .merge(invitations_routes)
+        .merge(new_invitations_routes)
         .merge(node_logs_routes)
         .merge(models_manage_routes)
         .merge(metrics_routes);
@@ -571,6 +576,7 @@ pub fn create_app(state: AppState) -> Router {
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
+        .route("/auth/accept-invitation", post(auth::accept_invitation))
         .merge(auth_routes)
         .merge(system_mutation_routes)
         .merge(dashboard_api_routes)

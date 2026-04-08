@@ -192,8 +192,12 @@ pub fn create_app(state: AppState) -> Router {
         ));
 
     // 新招待キーAPI（T-0009）
-    let new_invitations_routes =
-        Router::new().route("/admin/invitations", post(auth::create_invitation));
+    let new_invitations_routes = Router::new()
+        .route("/admin/invitations", post(auth::create_invitation))
+        .layer(middleware::from_fn_with_state(
+            state.jwt_secret.clone(),
+            crate::auth::middleware::jwt_auth_middleware,
+        ));
 
     let admin_routes = Router::new()
         .merge(users_routes)

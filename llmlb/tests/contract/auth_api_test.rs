@@ -499,8 +499,11 @@ async fn test_setup_password_success_with_valid_token() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    let status = response.status();
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body_str = String::from_utf8_lossy(&body);
+    println!("Response status: {}, body: {}", status, body_str);
+    assert_eq!(status, StatusCode::OK);
     let data: Value = serde_json::from_slice(&body).unwrap();
     assert!(data["message"].is_string());
 }

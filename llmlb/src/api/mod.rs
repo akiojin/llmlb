@@ -196,7 +196,7 @@ pub fn create_app(state: AppState) -> Router {
         ));
 
     let admin_routes = Router::new()
-        .merge(users_routes)
+        .nest("/admin", users_routes)
         .merge(my_api_keys_routes)
         .merge(invitations_routes)
         .merge(node_logs_routes)

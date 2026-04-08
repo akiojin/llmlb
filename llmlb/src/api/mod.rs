@@ -571,6 +571,7 @@ pub fn create_app(state: AppState) -> Router {
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
+        .route("/auth/verify-backup-code", post(auth::verify_backup_code))
         .merge(auth_routes)
         .merge(system_mutation_routes)
         .merge(dashboard_api_routes)

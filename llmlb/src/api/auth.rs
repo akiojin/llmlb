@@ -510,6 +510,67 @@ pub async fn change_password(
     Ok(StatusCode::OK)
 }
 
+/// バックアップコード検証リクエスト
+#[derive(Debug, Deserialize)]
+pub struct VerifyBackupCodeRequest {
+    /// バックアップコード（12語のニーモニック）
+    pub code: String,
+}
+
+/// バックアップコード検証レスポンス
+#[derive(Debug, Serialize)]
+pub struct VerifyBackupCodeResponse {
+    /// 一時管理者パスワード
+    pub temporary_admin_password: String,
+}
+
+/// POST /api/auth/verify-backup-code - バックアップコード検証
+///
+/// バックアップコードを検証し、一時管理者パスワードを生成する
+///
+/// # Arguments
+/// * `State(app_state)` - アプリケーション状態（db_pool）
+/// * `Json(request)` - バックアップコード検証リクエスト
+///
+/// # Returns
+/// * `200 OK` - 検証成功（一時管理者パスワード）
+/// * `400 Bad Request` - バックアップコード無効
+/// * `500 Internal Server Error` - サーバーエラー
+pub async fn verify_backup_code(
+    State(_app_state): State<AppState>,
+    Json(request): Json<VerifyBackupCodeRequest>,
+) -> Result<impl IntoResponse, Response> {
+    // バックアップコードを検証
+    let is_valid = crate::auth::backup_code::verify_backup_code(&request.code).map_err(|e| {
+        tracing::error!("Failed to verify backup code: {}", e);
+        AppError(LbError::Common(CommonError::Validation(
+            "Invalid backup code format".to_string(),
+        )))
+        .into_response()
+    })?;
+
+    if !is_valid {
+        return Err(AppError(LbError::Common(CommonError::Validation(
+            "Invalid backup code".to_string(),
+        )))
+        .into_response());
+    }
+
+    // 一時管理者パスワード生成
+    let temporary_admin_password = crate::auth::generate_random_token(10);
+
+    // DB backup_codes テーブルで使用済みフラグを設定
+    // TODO: backup_codes テーブルが実装されたら、使用済みフラグを更新する処理を追加
+    // 現在は一時的な実装のため、パスワード生成のみ
+
+    Ok((
+        StatusCode::OK,
+        Json(VerifyBackupCodeResponse {
+            temporary_admin_password,
+        }),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

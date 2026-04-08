@@ -12,6 +12,9 @@ pub mod middleware;
 /// 初回起動時の管理者アカウント作成
 pub mod bootstrap;
 
+/// BIP39バックアップコード生成・検証
+pub mod backup_code;
+
 /// ダッシュボードJWT Cookie名
 pub const DASHBOARD_JWT_COOKIE: &str = "llmlb_jwt";
 /// ダッシュボードCSRF Cookie名

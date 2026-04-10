@@ -109,8 +109,8 @@ pub async fn get_model_metadata(
         EndpointType::LmStudio => {
             lm_studio::get_lm_studio_model_metadata(client, base_url, api_key, model).await
         }
-        EndpointType::Vllm => {
-            // vLLM doesn't have a standard metadata endpoint
+        EndpointType::Llamacpp | EndpointType::Vllm => {
+            // llama.cpp and vLLM don't have a standard metadata endpoint
             // Return minimal metadata
             Ok(ModelMetadata {
                 model: model.to_string(),

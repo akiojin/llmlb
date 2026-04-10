@@ -134,6 +134,8 @@ pub enum EndpointType {
     Vllm,
     /// LM Studioサーバー
     LmStudio,
+    /// llama.cppサーバー
+    Llamacpp,
     /// その他のOpenAI互換API
     OpenaiCompatible,
 }
@@ -146,6 +148,7 @@ impl EndpointType {
             Self::Ollama => "ollama",
             Self::Vllm => "vllm",
             Self::LmStudio => "lm_studio",
+            Self::Llamacpp => "llamacpp",
             Self::OpenaiCompatible => "openai_compatible",
         }
     }
@@ -197,6 +200,7 @@ impl FromStr for EndpointType {
             "ollama" => Ok(Self::Ollama),
             "vllm" => Ok(Self::Vllm),
             "lm_studio" => Ok(Self::LmStudio),
+            "llamacpp" => Ok(Self::Llamacpp),
             "openai_compatible" => Ok(Self::OpenaiCompatible),
             _ => Err(ParseEndpointTypeError(s.to_string())),
         }
@@ -891,6 +895,7 @@ mod tests {
         assert!(EndpointType::Ollama.supports_model_download());
         assert!(EndpointType::LmStudio.supports_model_download());
         assert!(!EndpointType::Vllm.supports_model_download());
+        assert!(!EndpointType::Llamacpp.supports_model_download());
         assert!(!EndpointType::OpenaiCompatible.supports_model_download());
     }
 
@@ -912,6 +917,7 @@ mod tests {
         assert!(EndpointType::Ollama.supports_model_metadata());
         assert!(EndpointType::LmStudio.supports_model_metadata());
         assert!(!EndpointType::Vllm.supports_model_metadata());
+        assert!(!EndpointType::Llamacpp.supports_model_metadata());
         assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
     }
 

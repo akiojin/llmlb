@@ -34,6 +34,48 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, LbError> {
         .map_err(|e| LbError::PasswordHash(format!("Failed to verify password: {}", e)))
 }
 
+/// パスワード要件を検証
+///
+/// # 要件
+/// - 長さ: 8文字以上
+/// - 大文字: 1文字以上
+/// - 数字: 1文字以上
+///
+/// # Arguments
+/// * `password` - 検証するパスワード
+///
+/// # Returns
+/// * `Ok(())` - パスワード要件を満たす
+/// * `Err(LbError)` - パスワード要件を満たさない（段階的エラーメッセージ付き）
+pub fn validate_password(password: &str) -> Result<(), LbError> {
+    // 長さチェック（8文字以上）
+    if password.len() < 8 {
+        return Err(LbError::Common(
+            crate::common::error::CommonError::Validation("8文字以上必要です".to_string()),
+        ));
+    }
+
+    // 大文字チェック（1文字以上）
+    if !password.chars().any(|c| c.is_uppercase()) {
+        return Err(LbError::Common(
+            crate::common::error::CommonError::Validation(
+                "大文字を1文字以上含めてください".to_string(),
+            ),
+        ));
+    }
+
+    // 数字チェック（1文字以上）
+    if !password.chars().any(|c| c.is_numeric()) {
+        return Err(LbError::Common(
+            crate::common::error::CommonError::Validation(
+                "数字を1文字以上含めてください".to_string(),
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,5 +176,120 @@ mod tests {
         let pw = "pass\0word";
         let h = hash_password(pw).unwrap();
         assert!(verify_password(pw, &h).unwrap());
+    }
+
+    // --- validate_password テストモジュール（TDD RED フェーズ）---
+    // validate_password 関数は未実装（T-0003で実装）
+    // 本セクションはテスト仕様のみを定義
+
+    #[test]
+    fn validate_password_fails_too_short() {
+        // 長さ < 8文字でエラー返却
+        let result = validate_password("Short1");
+        assert!(
+            result.is_err(),
+            "Password shorter than 8 chars should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_fails_no_uppercase() {
+        // 大文字なしでエラー返却
+        let result = validate_password("nouppercase123");
+        assert!(
+            result.is_err(),
+            "Password without uppercase should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_fails_no_digit() {
+        // 数字なしでエラー返却
+        let result = validate_password("NoDigitPassword");
+        assert!(
+            result.is_err(),
+            "Password without digit should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_fails_multiple_conditions() {
+        // 複数条件不満足（短い + 大文字なし + 数字なし）
+        let result = validate_password("short");
+        assert!(
+            result.is_err(),
+            "Password failing multiple conditions should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_fails_too_short_has_upper_and_digit() {
+        // 長さのみ不満足（8文字未満だが大文字と数字を含む）
+        let result = validate_password("Sh1rt");
+        assert!(
+            result.is_err(),
+            "Password shorter than 8 chars should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_fails_no_uppercase_meets_other_conditions() {
+        // 大文字のみ不満足（8文字以上、数字ありだが大文字なし）
+        let result = validate_password("lowercase1234");
+        assert!(
+            result.is_err(),
+            "Password without uppercase should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_fails_no_digit_meets_other_conditions() {
+        // 数字のみ不満足（8文字以上、大文字ありだが数字なし）
+        let result = validate_password("NoDigitPasswordWithUppercase");
+        assert!(
+            result.is_err(),
+            "Password without digit should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_succeeds_basic_valid() {
+        // 有効なパスワード（8文字以上、大文字1以上、数字1以上）
+        let result = validate_password("ValidPass123");
+        assert!(result.is_ok(), "Valid password should pass validation");
+    }
+
+    #[test]
+    fn validate_password_succeeds_strong_password() {
+        // 強いパスワード（複雑な要件を満たす）
+        let result = validate_password("MyP@ssw0rd!Secure");
+        assert!(result.is_ok(), "Strong password should pass validation");
+    }
+
+    #[test]
+    fn validate_password_succeeds_minimum_valid() {
+        // 最小要件を満たすパスワード（8文字, 大文字1, 数字1）
+        let result = validate_password("Minimal01");
+        assert!(
+            result.is_ok(),
+            "Minimum valid password should pass validation"
+        );
+    }
+
+    #[test]
+    fn validate_password_succeeds_long_password() {
+        // 長いパスワード（すべての要件を満たす）
+        let result = validate_password("ThisIsAVeryLongPasswordWith123Numbers");
+        assert!(result.is_ok(), "Long valid password should pass validation");
+    }
+
+    #[test]
+    fn validate_password_succeeds_multiple_uppercase_digits() {
+        // 複数の大文字と数字を含むパスワード
+        let result = validate_password("MULTIPLEUpperCaseAnd123456Digits");
+        assert!(
+            result.is_ok(),
+            "Password with multiple uppercase and digits should pass validation"
+        );
     }
 }

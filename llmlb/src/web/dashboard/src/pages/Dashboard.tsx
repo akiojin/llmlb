@@ -109,6 +109,16 @@ export default function Dashboard() {
   const [isScheduling, setIsScheduling] = useState(false)
   const [drainCountdown, setDrainCountdown] = useState<string | null>(null)
   const [applyTimeoutCountdown, setApplyTimeoutCountdown] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState('endpoints')
+
+  // Read tab parameter from URL search params and set activeTab
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    const tabParam = searchParams.get('tab')
+    if (tabParam && ['endpoints', 'models', 'statistics', 'history', 'clients', 'logs'].includes(tabParam)) {
+      setActiveTab(tabParam)
+    }
+  }, [])
 
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
@@ -862,7 +872,7 @@ export default function Dashboard() {
             />
           </section>
         ) : (
-          <Tabs defaultValue="endpoints" className="space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
               <TabsTrigger value="endpoints" className="gap-2">
                 <Globe className="h-4 w-4" />

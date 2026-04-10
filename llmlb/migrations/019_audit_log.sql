@@ -52,6 +52,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS audit_log_fts USING fts5(
     request_path,
     actor_id,
     actor_username,
+    client_ip,
     detail,
     content=audit_log_entries,
     content_rowid=id
@@ -59,14 +60,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS audit_log_fts USING fts5(
 
 -- FTS同期トリガー（INSERT）
 CREATE TRIGGER IF NOT EXISTS audit_log_fts_insert AFTER INSERT ON audit_log_entries BEGIN
-    INSERT INTO audit_log_fts(rowid, request_path, actor_id, actor_username, detail)
-    VALUES (new.id, new.request_path, new.actor_id, new.actor_username, new.detail);
+    INSERT INTO audit_log_fts(rowid, request_path, actor_id, actor_username, client_ip, detail)
+    VALUES (new.id, new.request_path, new.actor_id, new.actor_username, new.client_ip, new.detail);
 END;
 
 -- FTS同期トリガー（DELETE）
 CREATE TRIGGER IF NOT EXISTS audit_log_fts_delete AFTER DELETE ON audit_log_entries BEGIN
-    INSERT INTO audit_log_fts(audit_log_fts, rowid, request_path, actor_id, actor_username, detail)
-    VALUES ('delete', old.id, old.request_path, old.actor_id, old.actor_username, old.detail);
+    INSERT INTO audit_log_fts(audit_log_fts, rowid, request_path, actor_id, actor_username, client_ip, detail)
+    VALUES ('delete', old.id, old.request_path, old.actor_id, old.actor_username, old.client_ip, old.detail);
 END;
 
 -- request_historyからのデータ移行

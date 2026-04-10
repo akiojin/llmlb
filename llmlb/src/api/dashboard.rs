@@ -1233,10 +1233,19 @@ pub struct ClientsQuery {
     /// ページサイズ（デフォルト: 20）
     #[serde(default = "default_clients_per_page")]
     pub per_page: usize,
+    /// IPアドレスプリフィックス（前方一致フィルタ）
+    pub ip: Option<String>,
 }
 
 fn default_clients_per_page() -> usize {
     20
+}
+
+/// ヒートマップ取得のクエリパラメーター
+#[derive(serde::Deserialize)]
+pub struct HeatmapQuery {
+    /// IPアドレスプリフィックス（前方一致フィルタ）
+    pub ip: Option<String>,
 }
 
 /// GET /api/dashboard/clients - IPランキング
@@ -1248,7 +1257,7 @@ pub async fn get_client_rankings(
 ) -> Result<Json<crate::db::request_history::ClientIpRankingResult>, AppError> {
     let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
     let mut result = storage
-        .get_client_ip_ranking(24, params.page, params.per_page)
+        .get_client_ip_ranking(24, params.page, params.per_page, params.ip.as_deref())
         .await
         .map_err(AppError)?;
 
@@ -1302,11 +1311,12 @@ pub async fn get_client_models(
 ///
 /// SPEC-62ac4b68: 時間帯×曜日ヒートマップ
 pub async fn get_client_heatmap(
+    Query(params): Query<HeatmapQuery>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::request_history::HeatmapCell>>, AppError> {
     let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
     let result = storage
-        .get_request_heatmap(24 * 7)
+        .get_request_heatmap(24 * 7, params.ip.as_deref())
         .await
         .map_err(AppError)?;
     Ok(Json(result))

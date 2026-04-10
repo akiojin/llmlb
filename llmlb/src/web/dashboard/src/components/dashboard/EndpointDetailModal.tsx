@@ -21,8 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { Server, Clock, AlertCircle, Save, Play, RefreshCw, MessageSquare, Box, Loader2, Download, Activity } from 'lucide-react'
 import { ModelDownloadDialog } from './ModelDownloadDialog'
-import { EndpointModelStatsTable } from './EndpointModelStatsTable'
-import { EndpointModelTpsTable } from './EndpointModelTpsTable'
+import { EndpointModelsTable } from './EndpointModelsTable'
 import { EndpointRequestChart } from './EndpointRequestChart'
 
 /**
@@ -124,13 +123,6 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
       setInferenceTimeout(endpoint.inference_timeout_secs?.toString() || '120')
     }
   }, [endpoint])
-
-  // Fetch endpoint models
-  const { data: modelsData, isLoading: isLoadingModels } = useQuery({
-    queryKey: ['endpoint-models', endpoint?.id],
-    queryFn: () => endpointsApi.getModels(endpoint!.id),
-    enabled: !!endpoint?.id && open,
-  })
 
   // SPEC-8c32349f: Fetch today's request statistics
   const { data: todayStats, isLoading: isLoadingTodayStats } = useQuery({
@@ -393,13 +385,11 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
 
           <Separator />
 
-          {/* Models Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-2">
-                <Box className="h-4 w-4" />
-                Models ({modelsData?.models?.length || 0})
-              </Label>
+          {/* SPEC-8c32349f + SPEC-4bb5b55f: Unified Models Table with TPS and Stats */}
+          <EndpointModelsTable
+            endpointId={endpoint.id}
+            enabled={open}
+            headerActions={
               <div className="flex items-center gap-2">
                 {endpoint.endpoint_type === 'xllm' && (
                   <Button
@@ -416,65 +406,14 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
                   variant="default"
                   size="sm"
                   onClick={openPlayground}
-                  disabled={endpoint.status !== 'online' || !modelsData?.models?.length}
+                  disabled={endpoint.status !== 'online'}
                 >
                   <MessageSquare className="h-4 w-4 mr-1" />
                   Open Playground
                 </Button>
               </div>
-            </div>
-            <ScrollArea className="h-32 rounded-md border">
-              <div className="p-3 space-y-2">
-                {isLoadingModels ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-sm text-muted-foreground">Loading models...</span>
-                  </div>
-                ) : modelsData?.models?.length ? (
-                  modelsData.models.map((model) => (
-                    <div
-                      key={model.model_id}
-                      className="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-muted/50"
-                    >
-                      <span className="font-mono text-xs truncate flex-1" title={model.model_id}>
-                        {model.model_id}
-                      </span>
-                      <div className="flex items-center gap-2 ml-2">
-                        {model.max_tokens && (
-                          <span className="text-xs text-muted-foreground">
-                            {(model.max_tokens / 1024).toFixed(0)}K ctx
-                          </span>
-                        )}
-                        {model.capabilities && model.capabilities.length > 0 && (
-                          <div className="flex gap-1">
-                            {model.capabilities.slice(0, 2).map((cap) => (
-                              <Badge key={cap} variant="outline" className="text-xs">
-                                {cap}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No models available
-                  </p>
-                )}
-              </div>
-            </ScrollArea>
-          </div>
-
-          <Separator />
-
-          {/* Model TPS Section - SPEC-4bb5b55f */}
-          <EndpointModelTpsTable endpointId={endpoint.id} enabled={open} />
-
-          <Separator />
-
-          {/* Model Request Stats Section - SPEC-8c32349f */}
-          <EndpointModelStatsTable endpointId={endpoint.id} enabled={open} />
+            }
+          />
 
           <Separator />
 

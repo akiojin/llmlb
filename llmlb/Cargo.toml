@@ -67,7 +67,7 @@ fs2 = "0.4"
 regex = "1.10"
 
 # Token counting
-tiktoken-rs = "0.9.1"
+tiktoken-rs = "0.11.0"
 
 # QRコード生成（T-0009）
 qrcode = "0.14"

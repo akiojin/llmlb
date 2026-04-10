@@ -121,6 +121,8 @@ pub struct AuditLogFilter {
     pub time_from: Option<DateTime<Utc>>,
     /// 終了日時
     pub time_to: Option<DateTime<Utc>>,
+    /// クライアントIPアドレス（LIKE前方一致）
+    pub client_ip: Option<String>,
     /// フリーテキスト検索
     pub search_text: Option<String>,
     /// ページ番号（1始まり）
@@ -277,5 +279,6 @@ mod tests {
         assert!(filter.page.is_none());
         assert!(filter.per_page.is_none());
         assert!(filter.search_text.is_none());
+        assert!(filter.client_ip.is_none());
     }
 }

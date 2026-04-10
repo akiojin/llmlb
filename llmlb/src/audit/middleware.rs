@@ -7,9 +7,15 @@ use crate::audit::types::{ActorType, AuditLogEntry, AuthFailureInfo, TokenUsage}
 use crate::auth::middleware::ApiKeyAuthContext;
 use crate::common::auth::Claims;
 use crate::AppState;
-use axum::{body::Body, extract::State, http::Request, middleware::Next, response::Response};
+use axum::{
+    body::Body,
+    extract::{ConnectInfo, State},
+    http::Request,
+    middleware::Next,
+    response::Response,
+};
 use chrono::Utc;
-use std::time::Instant;
+use std::{net::SocketAddr, time::Instant};
 use tracing::trace;
 
 /// 監査対象から除外すべきパスか判定する
@@ -56,13 +62,20 @@ pub async fn audit_middleware(
         return next.run(request).await;
     }
 
-    // クライアントIP取得（プロキシ対応）
+    // クライアントIP取得（プロキシ対応 + 直接接続対応）
     let client_ip = request
         .headers()
         .get("x-forwarded-for")
         .or_else(|| request.headers().get("x-real-ip"))
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
+        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
+        .or_else(|| {
+            // プロキシヘッダがない場合は、request extensionsからConnectInfoを取得
+            request
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ConnectInfo(addr)| addr.ip().to_string())
+        });
 
     // リクエストを次のハンドラーに渡す
     let response = next.run(request).await;
@@ -987,6 +1000,42 @@ mod tests {
             row.0.as_deref(),
             Some("10.0.0.42"),
             "Should extract IP from x-real-ip"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_audit_captures_direct_connection_ip_from_connect_info() {
+        let pool = create_test_pool().await;
+        let state = create_test_state(pool.clone()).await;
+        let app = build_test_app(state);
+
+        // ConnectInfoをリクエストextensionsに手動注入（実サーバーではmiddlewareが自動で設定）
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let mut request = Request::builder()
+            .method("GET")
+            .uri("/api/test")
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let res = app.oneshot(request).await.unwrap();
+
+        assert_eq!(res.status(), 200);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let row: (Option<String>,) = sqlx::query_as(
+            "SELECT client_ip FROM audit_log_entries WHERE request_path = '/api/test'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // ConnectInfoから127.0.0.1が抽出されるはず
+        assert_eq!(
+            row.0.as_deref(),
+            Some("127.0.0.1"),
+            "Should extract IP from ConnectInfo when proxy headers are absent"
         );
     }
 

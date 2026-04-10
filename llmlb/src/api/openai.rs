@@ -977,6 +977,19 @@ async fn proxy_openai_post(
     let mut upstream_payload = outbound_payload;
     if let Some(payload_object) = upstream_payload.as_object_mut() {
         payload_object.insert("model".to_string(), Value::String(upstream_model.clone()));
+
+        // SPEC-8c32349f: ストリーミングリクエストに stream_options.include_usage を注入
+        // Ollama 等のエンドポイントが最終チャンクに usage を含めるようにする
+        if stream {
+            if let Some(opts) = payload_object
+                .entry("stream_options".to_string())
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+            {
+                opts.entry("include_usage".to_string())
+                    .or_insert(json!(true));
+            }
+        }
     }
 
     let mut request_builder = client

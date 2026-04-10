@@ -212,11 +212,18 @@ pub async fn update(
         UserRole::Admin => "admin",
         UserRole::Viewer => "viewer",
     };
+    // パスワードが変更される場合は must_change_password フラグを有効化
+    let new_must_change_password = if password_hash.is_some() {
+        true
+    } else {
+        current.must_change_password
+    };
 
-    sqlx::query("UPDATE users SET username = ?, password_hash = ?, role = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET username = ?, password_hash = ?, role = ?, must_change_password = ? WHERE id = ?")
         .bind(new_username)
         .bind(new_password_hash)
         .bind(role_str)
+        .bind(new_must_change_password)
         .bind(id.to_string())
         .execute(pool)
         .await
@@ -229,7 +236,7 @@ pub async fn update(
         role: new_role,
         created_at: current.created_at,
         last_login: current.last_login,
-        must_change_password: current.must_change_password,
+        must_change_password: new_must_change_password,
     })
 }
 

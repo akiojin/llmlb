@@ -998,14 +998,6 @@ impl AnthropicStreamTracker {
 
 #[allow(clippy::result_large_err)]
 fn anthropic_request_to_openai(payload: &Value) -> Result<ConvertedAnthropicRequest, Response> {
-    if payload.get("tools").is_some() || payload.get("tool_choice").is_some() {
-        return Err(anthropic_error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_error",
-            "tools are not supported on this Anthropic-compatible endpoint",
-        ));
-    }
-
     let model = extract_model(payload)?;
     let max_tokens = payload
         .get("max_tokens")
@@ -1069,6 +1061,59 @@ fn anthropic_request_to_openai(payload: &Value) -> Result<ConvertedAnthropicRequ
                 format!("messages[{}].content is required", index),
             )
         })?;
+
+        // Handle assistant messages with tool_use content blocks (for future tool use handling)
+        // For now, we skip processing tool_use blocks since OpenAI doesn't have them in messages
+        if role == "assistant" {
+            if let Some(content_array) = content.as_array() {
+                let has_tool_use = content_array
+                    .iter()
+                    .any(|item| item.get("type").and_then(Value::as_str) == Some("tool_use"));
+
+                if has_tool_use {
+                    // Skip processing assistant tool_use messages for now
+                    // They will be handled through tool_calls in the response
+                    continue;
+                }
+            }
+        }
+
+        // Handle tool_result content blocks in user messages
+        if role == "user" {
+            if let Some(content_array) = content.as_array() {
+                let has_tool_result = content_array
+                    .iter()
+                    .any(|item| item.get("type").and_then(Value::as_str) == Some("tool_result"));
+
+                if has_tool_result {
+                    // Convert Anthropic tool_result messages to OpenAI tool messages
+                    for content_item in content_array {
+                        if let Some("tool_result") =
+                            content_item.get("type").and_then(Value::as_str)
+                        {
+                            let tool_use_id = content_item
+                                .get("tool_use_id")
+                                .and_then(Value::as_str)
+                                .unwrap_or("unknown");
+                            let result_content = content_item
+                                .get("content")
+                                .and_then(Value::as_str)
+                                .unwrap_or("");
+
+                            openai_messages.push(json!({
+                                "role": "tool",
+                                "tool_call_id": tool_use_id,
+                                "content": result_content
+                            }));
+                            request_text_parts
+                                .push(format!("tool_result[{}]: {}", tool_use_id, result_content));
+                        }
+                    }
+                    continue; // Skip normal text processing for tool_result messages
+                }
+            }
+        }
+
         let text =
             flatten_anthropic_text_content(content, &format!("messages[{}].content", index))?;
         openai_messages.push(json!({
@@ -1097,11 +1142,110 @@ fn anthropic_request_to_openai(payload: &Value) -> Result<ConvertedAnthropicRequ
         );
     }
 
+    // Convert Anthropic tools to OpenAI functions format
+    if let Some(anthropic_tools) = payload.get("tools").and_then(Value::as_array) {
+        let openai_tools: Result<Vec<_>, _> = anthropic_tools
+            .iter()
+            .map(convert_anthropic_tool_to_openai)
+            .collect();
+        body.insert("tools".to_string(), Value::Array(openai_tools?));
+    }
+
+    // Convert Anthropic tool_choice to OpenAI format
+    if let Some(anthropic_tool_choice) = payload.get("tool_choice") {
+        body.insert(
+            "tool_choice".to_string(),
+            convert_anthropic_tool_choice_to_openai(anthropic_tool_choice)?,
+        );
+    }
+
     Ok(ConvertedAnthropicRequest {
         openai_payload: Value::Object(body),
         request_text: request_text_parts.join("\n"),
         stream,
     })
+}
+
+#[allow(clippy::result_large_err)]
+fn convert_anthropic_tool_to_openai(tool: &Value) -> Result<Value, Response> {
+    let name = tool.get("name").and_then(Value::as_str).ok_or_else(|| {
+        anthropic_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "tool.name is required",
+        )
+    })?;
+    let description = tool
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let input_schema = tool.get("input_schema").ok_or_else(|| {
+        anthropic_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "tool.input_schema is required",
+        )
+    })?;
+
+    // Convert input_schema (Anthropic format) to parameters (OpenAI format)
+    let mut parameters = Map::new();
+    if let Some(schema_type) = input_schema.get("type") {
+        parameters.insert("type".to_string(), schema_type.clone());
+    }
+    if let Some(properties) = input_schema.get("properties") {
+        parameters.insert("properties".to_string(), properties.clone());
+    }
+    if let Some(required) = input_schema.get("required") {
+        parameters.insert("required".to_string(), required.clone());
+    }
+
+    Ok(json!({
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": parameters
+        }
+    }))
+}
+
+#[allow(clippy::result_large_err)]
+fn convert_anthropic_tool_choice_to_openai(tool_choice: &Value) -> Result<Value, Response> {
+    if let Some(tool_choice_type) = tool_choice.get("type").and_then(Value::as_str) {
+        match tool_choice_type {
+            "auto" => Ok(Value::String("auto".to_string())),
+            "any" => Ok(Value::String("required".to_string())),
+            "tool" => {
+                let name = tool_choice
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        anthropic_error_response(
+                            StatusCode::BAD_REQUEST,
+                            "invalid_request_error",
+                            "tool_choice.name is required when type is 'tool'",
+                        )
+                    })?;
+                Ok(json!({
+                    "type": "function",
+                    "function": {
+                        "name": name
+                    }
+                }))
+            }
+            _ => Err(anthropic_error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_request_error",
+                format!("unknown tool_choice type: {}", tool_choice_type),
+            )),
+        }
+    } else {
+        Err(anthropic_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "tool_choice.type is required",
+        ))
+    }
 }
 
 #[allow(clippy::result_large_err)]
@@ -1220,13 +1364,77 @@ fn parse_anthropic_cloud_model(model: &str) -> Option<String> {
 }
 
 fn openai_to_anthropic_message_response(body: &Value, model: &str, usage: &TokenUsage) -> Value {
-    let text = extract_openai_response_text(body);
-    let finish_reason = body
+    let choice = body
         .get("choices")
         .and_then(Value::as_array)
-        .and_then(|choices| choices.first())
+        .and_then(|choices| choices.first());
+
+    let finish_reason = choice
         .and_then(|choice| choice.get("finish_reason"))
         .and_then(Value::as_str);
+
+    let message = choice.and_then(|choice| choice.get("message"));
+
+    let mut content = Vec::new();
+
+    // Add text content if present
+    let text = extract_openai_response_text(body);
+    if !text.is_empty() {
+        content.push(json!({
+            "type": "text",
+            "text": text
+        }));
+    }
+
+    // Add tool_use blocks if tool_calls are present
+    if let Some(tool_calls) = message
+        .and_then(|msg| msg.get("tool_calls"))
+        .and_then(Value::as_array)
+    {
+        for tool_call in tool_calls {
+            if let Some(func) = tool_call.get("function") {
+                let tool_name = func
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let tool_id = tool_call
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let arguments_str = func
+                    .get("arguments")
+                    .and_then(Value::as_str)
+                    .unwrap_or("{}");
+
+                // Parse arguments JSON
+                let input =
+                    serde_json::from_str(arguments_str).unwrap_or(Value::Object(Map::new()));
+
+                content.push(json!({
+                    "type": "tool_use",
+                    "id": tool_id,
+                    "name": tool_name,
+                    "input": input
+                }));
+            }
+        }
+    }
+
+    // If no content was added, add an empty text block
+    if content.is_empty() {
+        content.push(json!({
+            "type": "text",
+            "text": ""
+        }));
+    }
+
+    let stop_reason = if finish_reason == Some("tool_calls") {
+        "tool_use"
+    } else {
+        finish_reason
+            .map(map_finish_reason_to_stop_reason)
+            .unwrap_or("end_turn")
+    };
 
     json!({
         "id": body
@@ -1237,11 +1445,8 @@ fn openai_to_anthropic_message_response(body: &Value, model: &str, usage: &Token
         "type": "message",
         "role": "assistant",
         "model": model,
-        "content": [{
-            "type": "text",
-            "text": text
-        }],
-        "stop_reason": finish_reason.map(map_finish_reason_to_stop_reason),
+        "content": content,
+        "stop_reason": stop_reason,
         "stop_sequence": Value::Null,
         "usage": {
             "input_tokens": usage.input_tokens.unwrap_or(0),

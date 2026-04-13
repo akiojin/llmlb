@@ -1,8 +1,8 @@
 -- SPEC-8301d106: Rebuild audit_log_fts with client_ip support
 --
--- Migration 019 introduced client_ip to audit_log_fts, but existing deployments
--- that have already passed migration 019 will not re-run it. This forward migration
--- rebuilds the FTS index to ensure client_ip terms are indexed for all environments.
+-- Migration 018 added client_ip to audit_log_entries, but migration 019 created
+-- audit_log_fts without client_ip in the FTS index. This forward migration rebuilds
+-- the FTS index to include client_ip for all environments (new and existing).
 
 -- Drop and recreate FTS table to include client_ip in the index
 DROP TABLE IF EXISTS audit_log_fts;

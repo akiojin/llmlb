@@ -45,11 +45,6 @@ pub async fn get_endpoint_system_info(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn test_module_loaded() {
-        // Placeholder test to ensure module compiles
-        assert!(true);
-    }
+    fn test_module_loaded() {}
 }

@@ -1363,6 +1363,27 @@ fn parse_anthropic_cloud_model(model: &str) -> Option<String> {
     None
 }
 
+/// Convert OpenAI tool_call format to Anthropic tool_use content block format
+fn convert_openai_tool_call_to_anthropic_tool_use(tool_call: &Value) -> Option<Value> {
+    let func = tool_call.get("function")?;
+    let tool_name = func.get("name").and_then(Value::as_str)?;
+    let tool_id = tool_call.get("id").and_then(Value::as_str)?;
+    let arguments_str = func
+        .get("arguments")
+        .and_then(Value::as_str)
+        .unwrap_or("{}");
+
+    // Parse arguments JSON - if parsing fails, use empty object as fallback
+    let input = serde_json::from_str(arguments_str).unwrap_or_else(|_| Value::Object(Map::new()));
+
+    Some(json!({
+        "type": "tool_use",
+        "id": tool_id,
+        "name": tool_name,
+        "input": input
+    }))
+}
+
 fn openai_to_anthropic_message_response(body: &Value, model: &str, usage: &TokenUsage) -> Value {
     let choice = body
         .get("choices")
@@ -1392,30 +1413,9 @@ fn openai_to_anthropic_message_response(body: &Value, model: &str, usage: &Token
         .and_then(Value::as_array)
     {
         for tool_call in tool_calls {
-            if let Some(func) = tool_call.get("function") {
-                let tool_name = func
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                let tool_id = tool_call
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                let arguments_str = func
-                    .get("arguments")
-                    .and_then(Value::as_str)
-                    .unwrap_or("{}");
-
-                // Parse arguments JSON
-                let input =
-                    serde_json::from_str(arguments_str).unwrap_or(Value::Object(Map::new()));
-
-                content.push(json!({
-                    "type": "tool_use",
-                    "id": tool_id,
-                    "name": tool_name,
-                    "input": input
-                }));
+            if let Some(tool_use_block) = convert_openai_tool_call_to_anthropic_tool_use(tool_call)
+            {
+                content.push(tool_use_block);
             }
         }
     }

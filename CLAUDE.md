@@ -219,7 +219,9 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 
 #### Step 1: 仕様策定（TDD RED の前に必須）
 
-`/gwt-issue-spec-ops` を使用してGitHub Issue上で仕様を定義する。
+1. `gwt-issue-search` で既存 SPEC を検索し、対象ドメインをカバーするものがあるか確認する
+2. 既存 SPEC に該当する → `/gwt-spec-ops` で既存 SPEC を更新する
+3. どのドメインにも当てはまらない → `/gwt-spec-register` で新規 SPEC を作成し `/gwt-spec-ops` で進める
 
 **仕様Issueが完成して初めて Step 2 に進める。**
 
@@ -495,12 +497,12 @@ scripts/checks/check-commits.sh --from origin/main --to HEAD
 
 新機能の開発は、GitHub Issue（`gwt-spec`ラベル）で仕様を管理します：
 
-1. **`/gwt-issue-spec-ops`**: GitHub Issue上で仕様を定義・管理
-   - ビジネス要件とユーザーストーリーを定義
+1. **`gwt-issue-search`（必須プリフライト）**: 既存 SPEC を検索し、対象ドメインをカバーするものがないか確認する
+2. **既存 SPEC あり** → `/gwt-spec-ops` で既存 SPEC を更新する
+   - ビジネス要件とユーザーストーリーを追記・修正
    - 「何を」「なぜ」に焦点を当てる（「どのように」は含めない）
-   - Issue番号で仕様を一意に識別
-
-2. 実装計画・タスク分解もIssue上で管理
+3. **既存 SPEC なし** → `/gwt-spec-register` で新規 SPEC を作成してから `/gwt-spec-ops` で進める
+4. 実装計画・タスク分解もIssue上で管理
 
 #### 環境固定ルール（プロジェクトカスタム）
 
@@ -556,13 +558,14 @@ scripts/checks/check-commits.sh --from origin/main --to HEAD
 
 **すべての機能開発・要件追加は GitHub Issue（`gwt-spec`ラベル）から開始**
 
-**新規機能開発フロー**:
+**機能開発フロー**:
 
-1. `/gwt-issue-spec-ops` - GitHub Issueでビジネス要件を定義（技術詳細なし）
-2. Issue上で技術設計・タスク分解を実施
-3. タスク実行（TDDサイクル厳守）
+1. `gwt-issue-search` — 既存 SPEC を検索（必須プリフライト）
+2. 既存 SPEC あり → `/gwt-spec-ops` で更新、なし → `/gwt-spec-register` で新規作成してから `/gwt-spec-ops` で進める
+3. Issue上で技術設計・タスク分解を実施
+4. タスク実行（TDDサイクル厳守）
    - 割り当て済みブランチ上で実装し、コミットを積む。ブランチ操作は禁止。
-4. 完了時はメンテナの指示に従う
+5. 完了時はメンテナの指示に従う
 
 **仕様作成原則**:
 

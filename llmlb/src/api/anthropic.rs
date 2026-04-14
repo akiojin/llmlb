@@ -1917,12 +1917,6 @@ mod tests {
     fn test_tool_use_streaming() {
         // Test that streaming tool call events are properly transformed
         // This test is a placeholder for streaming transformation logic
-        // Real implementation would involve SSE event transformation
-
-        // For now, verify the test structure is correct
-        assert!(
-            true,
-            "streaming tool transformation test structure verified"
-        );
+        // TODO: Implement streaming transformation and associated tests
     }
 }

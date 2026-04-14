@@ -68,7 +68,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
         ],
     },
     ModelMapping {
-        canonical: "Qwen/qwen3-coder-30b",
+        canonical: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -98,7 +98,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
         ],
     },
     ModelMapping {
-        canonical: "qwen/qwen3-coder-next",
+        canonical: "Qwen/Qwen3-Coder-Next",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -306,16 +306,17 @@ pub fn resolve_engine_name(canonical: &str, endpoint_type: &EndpointType) -> Opt
 }
 
 /// Resolve all engine-specific aliases for a canonical model.
+/// Supports both canonical IDs and legacy aliases for backward compatibility.
 pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Vec<&'static str> {
-    for mapping in BUILTIN_MAPPINGS {
-        if model_id_eq(mapping.canonical, canonical) {
-            return mapping
-                .aliases
-                .iter()
-                .filter(|alias| alias.engine == *endpoint_type)
-                .map(|alias| alias.name)
-                .collect();
-        }
+    // find_mapping accepts both canonical IDs and aliases, enabling backward compatibility
+    // with legacy canonical IDs that may have been used in external requests.
+    if let Some(mapping) = find_mapping(canonical) {
+        return mapping
+            .aliases
+            .iter()
+            .filter(|alias| alias.engine == *endpoint_type)
+            .map(|alias| alias.name)
+            .collect();
     }
 
     Vec::new()
@@ -618,25 +619,25 @@ mod tests {
     #[test]
     fn test_qwen3_coder_mapping() {
         let result = resolve_canonical("qwen3-coder:30b", &EndpointType::Ollama);
-        assert_eq!(result, Some("Qwen/qwen3-coder-30b"));
+        assert_eq!(result, Some("Qwen/Qwen3-Coder-30B-A3B-Instruct"));
     }
 
     #[test]
     fn test_qwen3_coder_lm_studio_lowercase_mapping() {
         let result = resolve_canonical("qwen/qwen3-coder-30b", &EndpointType::LmStudio);
-        assert_eq!(result, Some("Qwen/qwen3-coder-30b"));
+        assert_eq!(result, Some("Qwen/Qwen3-Coder-30B-A3B-Instruct"));
     }
 
     #[test]
     fn test_qwen3_coder_latest_mapping() {
         let result = resolve_canonical("qwen3-coder:latest", &EndpointType::Ollama);
-        assert_eq!(result, Some("Qwen/qwen3-coder-30b"));
+        assert_eq!(result, Some("Qwen/Qwen3-Coder-30B-A3B-Instruct"));
     }
 
     #[test]
     fn test_qwen3_coder_next_mapping() {
         let result = resolve_canonical("qwen/qwen3-coder-next", &EndpointType::LmStudio);
-        assert_eq!(result, Some("qwen/qwen3-coder-next"));
+        assert_eq!(result, Some("Qwen/Qwen3-Coder-Next"));
     }
 
     #[test]
@@ -774,7 +775,7 @@ mod tests {
     fn test_recently_added_lm_studio_aliases_resolve() {
         let cases = [
             ("openai/gpt-oss-120b", "openai/gpt-oss-120b"),
-            ("Qwen/qwen3-coder-30b", "qwen/qwen3-coder-30b"),
+            ("Qwen/Qwen3-Coder-30B-A3B-Instruct", "qwen/qwen3-coder-30b"),
             ("Qwen/Qwen3-30B", "qwen/qwen3-30b-a3b"),
             ("meta-llama/Llama-3.3-70B-Instruct", "meta/llama-3.3-70b"),
             ("google/gemma-3-27b-it", "google/gemma-3-27b"),

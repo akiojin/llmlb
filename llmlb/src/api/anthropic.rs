@@ -855,8 +855,9 @@ impl AnthropicStreamTracker {
             .and_then(Value::as_array)
             .and_then(|choices| choices.first())
         {
-            if let Some(content) = choice
-                .get("delta")
+            let delta = choice.get("delta");
+
+            if let Some(content) = delta
                 .and_then(|delta| delta.get("content"))
                 .and_then(Value::as_str)
             {
@@ -873,6 +874,53 @@ impl AnthropicStreamTracker {
                             }
                         }),
                     );
+                }
+            }
+
+            if let Some(tool_calls) = delta
+                .and_then(|d| d.get("tool_calls"))
+                .and_then(Value::as_array)
+            {
+                if !tool_calls.is_empty() {
+                    // Close text content block if it was open
+                    if self.sent_content_block_start && !self.sent_content_block_stop {
+                        self.sent_content_block_stop = true;
+                        self.emit_event(
+                            "content_block_stop",
+                            json!({
+                                "type": "content_block_stop",
+                                "index": 0
+                            }),
+                        );
+                    }
+
+                    // Emit tool_use content blocks
+                    for (idx, tool_call) in tool_calls.iter().enumerate() {
+                        if let Some(tool_use) =
+                            convert_openai_tool_call_to_anthropic_tool_use(tool_call)
+                        {
+                            let tool_index = 1 + idx; // Start from index 1 (0 is for text)
+
+                            // Start tool_use content block
+                            self.emit_event(
+                                "content_block_start",
+                                json!({
+                                    "type": "content_block_start",
+                                    "index": tool_index,
+                                    "content_block": tool_use
+                                }),
+                            );
+
+                            // Immediately stop tool_use content block (tools are complete in delta)
+                            self.emit_event(
+                                "content_block_stop",
+                                json!({
+                                    "type": "content_block_stop",
+                                    "index": tool_index
+                                }),
+                            );
+                        }
+                    }
                 }
             }
 
@@ -1479,6 +1527,7 @@ fn map_finish_reason_to_stop_reason(finish_reason: &str) -> &'static str {
     match finish_reason {
         "length" => "max_tokens",
         "stop" => "end_turn",
+        "tool_calls" => "tool_use",
         _ => "end_turn",
     }
 }

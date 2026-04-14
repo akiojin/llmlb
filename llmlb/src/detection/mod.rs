@@ -2,8 +2,9 @@
 //!
 //! SPEC-e8e9326e: Automatic endpoint type detection
 //!
-//! Detection priority: xLLM > LM Studio > Ollama > vLLM > OpenAI-compatible
+//! Detection priority: xLLM > LM Studio > Ollama > vLLM > llama.cpp > OpenAI-compatible
 
+mod llama_cpp;
 mod lm_studio;
 mod ollama;
 mod vllm;
@@ -16,6 +17,7 @@ use tracing::{debug, warn};
 
 use crate::types::endpoint::EndpointType;
 
+pub use llama_cpp::detect_llamacpp;
 pub use lm_studio::detect_lm_studio;
 pub use ollama::detect_ollama;
 pub use vllm::detect_vllm;
@@ -60,7 +62,8 @@ pub struct DetectionResult {
 /// 2. LM Studio (GET /api/v1/models, Server header, owned_by)
 /// 3. Ollama (GET /api/tags)
 /// 4. vLLM (Server header check)
-/// 5. OpenAI-compatible (GET /v1/models)
+/// 5. llama.cpp (Server header, GET /v1/version)
+/// 6. OpenAI-compatible (GET /v1/models)
 ///
 /// Returns:
 /// - `Ok(DetectionResult)` if a supported type is detected
@@ -133,7 +136,16 @@ pub async fn detect_endpoint_type_with_client(
         });
     }
 
-    // Priority 5: OpenAI-compatible detection (also serves as connectivity check)
+    // Priority 5: llama.cpp detection
+    if let Some(reason) = detect_llamacpp(client, base_url).await {
+        debug!(endpoint_type = "llamacpp", "Detected llama.cpp endpoint");
+        return Ok(DetectionResult {
+            endpoint_type: EndpointType::Llamacpp,
+            reason,
+        });
+    }
+
+    // Priority 6: OpenAI-compatible detection (also serves as connectivity check)
     match detect_openai_compatible(client, base_url, api_key).await {
         OpenAiDetectResult::Detected(reason) => {
             debug!(

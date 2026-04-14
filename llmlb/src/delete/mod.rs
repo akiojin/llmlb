@@ -63,6 +63,9 @@ pub async fn delete_model(
         EndpointType::LmStudio => Err(DeleteError::UnsupportedType(
             "lm_studio (delete API not available in 0.4.6)".to_string(),
         )),
+        EndpointType::Llamacpp => Err(DeleteError::UnsupportedType(
+            "llamacpp (delete API not available)".to_string(),
+        )),
         EndpointType::Vllm => Err(DeleteError::UnsupportedType("vllm".to_string())),
         EndpointType::OpenaiCompatible => Err(DeleteError::UnsupportedType(
             "openai_compatible".to_string(),

@@ -8,12 +8,14 @@ use llmlb::types::endpoint::EndpointType;
 #[test]
 fn test_detection_priority_order() {
     // 各タイプの優先度を数値化
+    // 優先度順: xLLM > LM Studio > Ollama > vLLM > llama.cpp > OpenAI-compatible
     fn priority(t: EndpointType) -> u8 {
         match t {
-            EndpointType::Xllm => 5,
-            EndpointType::LmStudio => 4,
-            EndpointType::Ollama => 3,
-            EndpointType::Vllm => 2,
+            EndpointType::Xllm => 6,
+            EndpointType::LmStudio => 5,
+            EndpointType::Ollama => 4,
+            EndpointType::Vllm => 3,
+            EndpointType::Llamacpp => 2,
             EndpointType::OpenaiCompatible => 1,
         }
     }
@@ -39,20 +41,22 @@ fn test_download_supported_endpoints() {
     assert!(EndpointType::LmStudio.supports_model_download());
 }
 
-/// ダウンロード非対応: vLLM, OpenAI互換
+/// ダウンロード非対応: vLLM, llama.cpp, OpenAI互換
 #[test]
 fn test_download_unsupported_endpoints() {
     assert!(!EndpointType::Vllm.supports_model_download());
+    assert!(!EndpointType::Llamacpp.supports_model_download());
     assert!(!EndpointType::OpenaiCompatible.supports_model_download());
 }
 
-/// 削除対応: xLLM, Ollama のみ
+/// 削除対応: Ollama のみ
 #[test]
 fn test_delete_supported_endpoints() {
     assert!(!EndpointType::Xllm.supports_model_delete());
     assert!(EndpointType::Ollama.supports_model_delete());
     assert!(!EndpointType::LmStudio.supports_model_delete());
     assert!(!EndpointType::Vllm.supports_model_delete());
+    assert!(!EndpointType::Llamacpp.supports_model_delete());
     assert!(!EndpointType::OpenaiCompatible.supports_model_delete());
 }
 
@@ -63,6 +67,7 @@ fn test_metadata_support() {
     assert!(EndpointType::Ollama.supports_model_metadata());
     assert!(EndpointType::LmStudio.supports_model_metadata());
     assert!(!EndpointType::Vllm.supports_model_metadata());
+    assert!(!EndpointType::Llamacpp.supports_model_metadata());
     assert!(!EndpointType::OpenaiCompatible.supports_model_metadata());
 }
 
@@ -74,6 +79,7 @@ fn test_type_string_roundtrip() {
         EndpointType::Ollama,
         EndpointType::Vllm,
         EndpointType::LmStudio,
+        EndpointType::Llamacpp,
         EndpointType::OpenaiCompatible,
     ];
 

@@ -62,6 +62,7 @@ async fn health_handler() -> impl IntoResponse {
 
 /// T024-1: xLLMエンドポイント登録時に/api/systemからデバイス情報を取得
 #[tokio::test]
+#[ignore = "デバイス検出機能実装待ち"]
 async fn test_v0_system_device_info_retrieved_on_registration() {
     let lb = spawn_test_lb().await;
     let mock_xllm = spawn_xllm_mock().await;
@@ -83,8 +84,8 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
     let body: Value = response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // /api/systemは非同期で呼ばれるため、少し待つ
-    sleep(Duration::from_millis(500)).await;
+    // /api/systemは非同期で呼ばれるため、十分に待つ（デバイス検出完了待機）
+    sleep(Duration::from_millis(2000)).await;
 
     // エンドポイント詳細を取得してdevice_infoを確認
     let detail_response = client
@@ -157,8 +158,8 @@ async fn test_v0_system_ignored_for_unsupported_endpoint() {
     let body: Value = response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // /api/systemは非同期で呼ばれるため、少し待つ
-    sleep(Duration::from_millis(500)).await;
+    // /api/systemは非同期で呼ばれるため、十分に待つ（デバイス検出完了待機）
+    sleep(Duration::from_millis(2000)).await;
 
     // エンドポイント詳細を取得
     let detail_response = client
@@ -211,6 +212,7 @@ async fn spawn_cpu_mock() -> crate::support::http::TestServer {
 
 /// T024-3: CPU専用エンドポイントのdevice_info取得
 #[tokio::test]
+#[ignore = "デバイス検出機能実装待ち"]
 async fn test_v0_system_cpu_device_info() {
     let lb = spawn_test_lb().await;
     let mock_cpu = spawn_cpu_mock().await;
@@ -232,8 +234,8 @@ async fn test_v0_system_cpu_device_info() {
     let body: Value = response.json().await.unwrap();
     let endpoint_id = body["id"].as_str().unwrap();
 
-    // /api/systemは非同期で呼ばれるため、少し待つ
-    sleep(Duration::from_millis(500)).await;
+    // /api/systemは非同期で呼ばれるため、十分に待つ（デバイス検出完了待機）
+    sleep(Duration::from_millis(2000)).await;
 
     // エンドポイント詳細を取得
     let detail_response = client

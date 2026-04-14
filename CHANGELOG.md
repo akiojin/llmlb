@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [5.7.0](https://github.com/akiojin/llmlb/compare/v5.6.0...v5.7.0) (2026-04-14)
+
+### Added
+
+- Anthropic Messages API (`/v1/messages`) ツール呼び出し機能の実装
+
+### Fixed
+
+- Models: resolve_engine_names 関数でのバックワード互換性保持
+- Anthropic: streaming テスト内の always-true assertion削除
+- Models: Qwen canonical names を HuggingFace 標準に統一
+- Migrations: FTS5 設定エラーの修正
+
+### Refactor
+
+- Anthropic: Tool conversion logic を小さな関数へ分割（可読性向上）
+
 ## [5.6.0](https://github.com/akiojin/llmlb/compare/v5.5.0...v5.6.0) (2026-04-10)
 
 ### Added

@@ -306,16 +306,17 @@ pub fn resolve_engine_name(canonical: &str, endpoint_type: &EndpointType) -> Opt
 }
 
 /// Resolve all engine-specific aliases for a canonical model.
+/// Supports both canonical IDs and legacy aliases for backward compatibility.
 pub fn resolve_engine_names(canonical: &str, endpoint_type: &EndpointType) -> Vec<&'static str> {
-    for mapping in BUILTIN_MAPPINGS {
-        if model_id_eq(mapping.canonical, canonical) {
-            return mapping
-                .aliases
-                .iter()
-                .filter(|alias| alias.engine == *endpoint_type)
-                .map(|alias| alias.name)
-                .collect();
-        }
+    // find_mapping accepts both canonical IDs and aliases, enabling backward compatibility
+    // with legacy canonical IDs that may have been used in external requests.
+    if let Some(mapping) = find_mapping(canonical) {
+        return mapping
+            .aliases
+            .iter()
+            .filter(|alias| alias.engine == *endpoint_type)
+            .map(|alias| alias.name)
+            .collect();
     }
 
     Vec::new()

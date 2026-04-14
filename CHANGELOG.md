@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [5.6.0](https://github.com/akiojin/llmlb/compare/v5.5.0...v5.6.0) (2026-04-10)
+
+### Added
+
+- 認証機能の強化：パスワード検証・招待キー生成・招待キーAPI JWT認証対応
+- GPU情報取得機能（xLLMエンドポイント対応）
+- llama.cpp エンドポイント自動検出
+- 監査ログ機能の大幅改善：クライアントIP自動検出・FTS全文検索・ハッシュチェーン検証
+- ダッシュボード Models セクション統合（EndpointModelStatsTable と EndpointModelTpsTable を統合）
+- TPS計測の改善（stream_options.include_usage 自動注入）
+
+### Fixed
+
+- 招待キー API へのJWT認証ミドルウェア追加
+- マイグレーション：バージョン競合を避けるため 020 → 026 にリネーム
+- 監査ログUI：タブナビゲーション・FTS前方互換マイグレーション
+- 認証：直接接続からのクライアントIP抽出（ConnectInfo）
+- 管理者ルート制御：パスワード変更フローでの must_change_password 再有効化
+
+### Test
+
+- デバイス検出機能テスト追加（T024）
+- 招待キーAPI テスト実装（T-0008, T-0010）
+
+### Chore
+
+- Cargo 依存パッケージ更新（3件）
+
 ## [5.5.0](https://github.com/akiojin/llmlb/compare/v5.4.1...v5.5.0) (2026-04-06)
 
 ### Added

@@ -28,6 +28,8 @@ pub struct ChainVerificationResult {
 }
 
 /// 個別エントリのハッシュを計算
+///
+/// `SHA-256(timestamp || method || path || status || actor_type || actor_id || client_ip)`
 pub fn compute_record_hash(entry: &AuditLogEntry) -> String {
     let mut hasher = Sha256::new();
     hasher.update(entry.timestamp.to_rfc3339().as_bytes());
@@ -37,6 +39,10 @@ pub fn compute_record_hash(entry: &AuditLogEntry) -> String {
     hasher.update(entry.actor_type.as_str().as_bytes());
     if let Some(ref actor_id) = entry.actor_id {
         hasher.update(actor_id.as_bytes());
+    }
+    // client_ip を含める（None の場合は空文字列）
+    if let Some(ref client_ip) = entry.client_ip {
+        hasher.update(client_ip.as_bytes());
     }
     hasher
         .finalize()
@@ -207,6 +213,38 @@ mod tests {
             hash1, hash2,
             "Different entries should produce different hashes"
         );
+    }
+
+    #[test]
+    fn test_compute_record_hash_includes_client_ip() {
+        let mut entry1 = create_test_entry("/api/test");
+        let mut entry2 = create_test_entry("/api/test");
+
+        entry1.client_ip = Some("192.168.1.1".to_string());
+        entry2.client_ip = Some("192.168.1.2".to_string());
+
+        let hash1 = compute_record_hash(&entry1);
+        let hash2 = compute_record_hash(&entry2);
+
+        assert_ne!(
+            hash1, hash2,
+            "Different client_ip should produce different hashes"
+        );
+    }
+
+    #[test]
+    fn test_compute_record_hash_client_ip_null() {
+        let mut entry = create_test_entry("/api/test");
+        entry.client_ip = None;
+
+        let hash1 = compute_record_hash(&entry);
+        let hash2 = compute_record_hash(&entry);
+
+        assert_eq!(
+            hash1, hash2,
+            "NULL client_ip should produce consistent hashes"
+        );
+        assert_eq!(hash1.len(), 64, "SHA-256 hex should be 64 chars");
     }
 
     #[test]

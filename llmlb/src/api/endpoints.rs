@@ -11,8 +11,9 @@ use crate::common::error::{CommonError, LbError};
 use crate::db::{download_tasks as tasks_db, endpoints as db};
 use crate::detection::{detect_endpoint_type_with_client, DetectionError};
 use crate::sync::{self, SyncError};
+use crate::system_info;
 use crate::types::endpoint::{
-    DeviceInfo, DeviceType, Endpoint, EndpointCapability, EndpointModel, EndpointStatus, GpuDevice,
+    DeviceInfo, Endpoint, EndpointCapability, EndpointModel, EndpointStatus, EndpointType,
     ModelDownloadTask,
 };
 use crate::AppState;
@@ -74,6 +75,7 @@ fn default_inference_timeout() -> u32 {
 /// /api/system APIレスポンス（SPEC-f8e3a1b7）
 ///
 /// xLLM固有のシステム情報API。OpenAI互換エンドポイントでは利用不可。
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SystemInfoResponse {
     /// デバイス情報
@@ -82,6 +84,7 @@ struct SystemInfoResponse {
 }
 
 /// /api/system APIのデバイス情報
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SystemDeviceInfo {
     /// デバイスタイプ（"cpu" / "gpu"）
@@ -93,6 +96,7 @@ struct SystemDeviceInfo {
 }
 
 /// /api/system APIのGPUデバイス情報
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SystemGpuDevice {
     /// デバイス名
@@ -106,61 +110,22 @@ struct SystemGpuDevice {
     used_memory_bytes: u64,
 }
 
-/// /api/system APIを呼び出してデバイス情報を取得（SPEC-f8e3a1b7）
+/// エンドポイント固有の情報取得方法でデバイス情報を取得（SPEC-f8e3a1b7, SPEC-e8e9326e）
 ///
 /// エンドポイント登録時に呼び出し、デバイス情報を取得する。
+/// エンドポイントタイプに応じて最適な取得方法を使用する：
+/// - xLLM/Ollama: GET /api/system
+/// - llama.cpp: GET /slots (primary) → GET /metrics (fallback)
+/// - vLLM/OpenAI互換: サポートなし
+///
 /// 応答がない場合（タイムアウト、404等）はNoneを返す。
 async fn fetch_system_info(
     client: &reqwest::Client,
     base_url: &str,
     api_key: Option<&str>,
+    endpoint_type: &EndpointType,
 ) -> Option<DeviceInfo> {
-    let url = format!("{}/api/system", base_url.trim_end_matches('/'));
-
-    let mut request = client.get(&url).timeout(Duration::from_secs(5));
-
-    if let Some(key) = api_key {
-        request = request.bearer_auth(key);
-    }
-
-    match request.send().await {
-        Ok(response) if response.status().is_success() => {
-            match response.json::<SystemInfoResponse>().await {
-                Ok(info) => info.device.map(|d| DeviceInfo {
-                    device_type: if d.device_type.to_lowercase() == "gpu" {
-                        DeviceType::Gpu
-                    } else {
-                        DeviceType::Cpu
-                    },
-                    gpu_devices: d
-                        .gpu_devices
-                        .into_iter()
-                        .map(|g| GpuDevice {
-                            name: g.name,
-                            total_memory_bytes: g.total_memory_bytes,
-                            used_memory_bytes: g.used_memory_bytes,
-                        })
-                        .collect(),
-                }),
-                Err(e) => {
-                    tracing::debug!(url = %url, error = %e, "Failed to parse /api/system response");
-                    None
-                }
-            }
-        }
-        Ok(response) => {
-            tracing::debug!(
-                url = %url,
-                status = %response.status(),
-                "Endpoint does not support /api/system API"
-            );
-            None
-        }
-        Err(e) => {
-            tracing::debug!(url = %url, error = %e, "Failed to call /api/system API");
-            None
-        }
-    }
+    system_info::get_endpoint_system_info(client, base_url, api_key, endpoint_type).await
 }
 
 /// エンドポイント更新リクエスト
@@ -631,23 +596,26 @@ pub async fn create_endpoint(
             // EndpointRegistryキャッシュも更新（DBは既に保存済みなのでキャッシュのみ）
             state.endpoint_registry.add_to_cache(endpoint.clone()).await;
 
-            // SPEC-f8e3a1b7: /api/system APIを呼び出してデバイス情報を取得
+            // SPEC-f8e3a1b7, SPEC-e8e9326e: エンドポイント固有の方法でデバイス情報を取得
             let endpoint_id = endpoint.id;
             let base_url = endpoint.base_url.clone();
             let api_key = endpoint.api_key.clone();
+            let endpoint_type = endpoint.endpoint_type;
             let registry = state.endpoint_registry.clone();
             let http_client = state.http_client.clone();
 
             // Fire-and-forget: デバイス情報取得は非同期で行う（レスポンスをブロックしない）
             tokio::spawn(async move {
                 if let Some(device_info) =
-                    fetch_system_info(&http_client, &base_url, api_key.as_deref()).await
+                    fetch_system_info(&http_client, &base_url, api_key.as_deref(), &endpoint_type)
+                        .await
                 {
                     tracing::info!(
                         endpoint_id = %endpoint_id,
                         device_type = ?device_info.device_type,
                         gpu_count = device_info.gpu_devices.len(),
-                        "Retrieved device info from /api/system"
+                        endpoint_type = ?endpoint_type,
+                        "Retrieved device info via endpoint-specific method"
                     );
                     if let Err(e) = registry
                         .update_device_info(endpoint_id, Some(device_info))

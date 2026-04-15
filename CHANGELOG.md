@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [5.7.1](https://github.com/akiojin/llmlb/compare/v5.7.0...v5.7.1) (2026-04-15)
+
+### Fixed
+
+- Anthropic: `/v1/messages` endpoint のストリーミングレスポンスで tool_calls を正しく tool_use に変換するように修正
+
 ## [5.7.0](https://github.com/akiojin/llmlb/compare/v5.6.0...v5.7.0) (2026-04-14)
 
 ### Added

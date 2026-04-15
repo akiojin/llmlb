@@ -66,8 +66,47 @@ version = "X.Y.Z"  # 新しいバージョン
 ```bash
 git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "chore(release): vX.Y.Z"
+```
+
+⚠️ **git push 実行前に確認**:
+- pre-commit hook が cargo fmt, cargo clippy, cargo test (2799テスト, ~8-10分) を実行
+- タイムアウトのリスク: デフォルト 60秒では不十分
+- **推奨**: timeout 600秒（10分）で実行
+
+```bash
+# 推奨: タイムアウト付きで実行
+timeout 600 git push origin develop
+
+# または標準実行（デフォルトタイムアウトなし）
 git push origin develop
 ```
+
+**⚠️ Push 失敗時の対応**:
+
+If push fails or times out:
+
+1. **Timeout 確認**:
+   ```bash
+   git log origin/develop -1 --oneline
+   git log HEAD -1 --oneline
+   ```
+   - `origin/develop` と `HEAD` が異なる → push 未完了
+
+2. **再試行**:
+   ```bash
+   timeout 600 git push origin develop
+   ```
+
+3. **検証**:
+   ```bash
+   # Push 成功確認
+   git rev-parse origin/develop HEAD
+   ```
+   両者が一致すれば push 成功。ここで step 4 へ進む。
+
+4. **失敗時は LLM に報告**:
+   - Pre-commit hook の詳細ログを確認
+   - 具体的なエラーメッセージを提示して修正
 
 ### 4. Closing Issue の収集
 
@@ -157,8 +196,36 @@ EOF
 
 ### 6. 配布確認
 
-- [GitHub Releases](https://github.com/akiojin/llmlb/releases) でリリースを確認
-- バイナリが自動的にアタッチされることを確認
+release.yml と publish.yml が自動実行されます：
+
+**Timeline**:
+1. PR merge 直後 → release.yml トリガー
+2. release.yml が v5.7.0 タグを作成 → GitHub Release を発行 (~30秒)
+3. publish.yml が自動トリガー → バイナリをビルド・アタッチ (~2-5分)
+
+**確認手順**:
+
+```bash
+# 1. GitHub Release 確認
+gh release view vX.Y.Z
+gh release view vX.Y.Z --json tagName,name,body
+
+# 2. バイナリアタッチ確認
+gh release view vX.Y.Z --json assets
+```
+
+**⚠️ トラブルシューティング**:
+
+- Release が表示されない → release.yml ログを確認
+  ```bash
+  gh run list --workflow=release.yml --limit 1
+  gh run view <run-id> --log
+  ```
+- バイナリがない → publish.yml ログを確認
+  ```bash
+  gh run list --workflow=publish.yml --limit 1
+  gh run view <run-id> --log
+  ```
 
 ## 注意
 

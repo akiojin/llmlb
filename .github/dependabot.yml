@@ -1,4 +1,9 @@
 version: 2
+
+# Dependabot の件名は "<prefix>: bump the <group> group across 1 directory with <N> updates"。
+# commitlint の header-max-length (72) を守るため、group 名は 9 文字以内にし、
+# 1 group に束ねる更新数を用途別の分割で抑える（Issue #727）。
+# 変更時は scripts/checks/check-dependabot-subjects.sh（make dependabot-subjects）で検証する。
 updates:
   - package-ecosystem: "gitsubmodule"
     directory: "/"
@@ -17,8 +22,22 @@ updates:
     labels:
       - "dependencies"
       - "npm"
+    commit-message:
+      prefix: "chore(deps)"
     groups:
-      npm_and_yarn:
+      # 型定義と TypeScript コンパイラ
+      npm-types:
+        patterns:
+          - "@types/*"
+          - "typescript"
+      # ダッシュボードのランタイム依存
+      npm-prod:
+        dependency-type: "production"
+      # ビルド・lint・テストなどの開発ツール
+      npm-dev:
+        dependency-type: "development"
+      npm-sec:
+        applies-to: "security-updates"
         patterns:
           - "*"
 
@@ -30,7 +49,13 @@ updates:
     labels:
       - "dependencies"
       - "cargo"
+    commit-message:
+      prefix: "chore(deps)"
     groups:
       cargo:
+        patterns:
+          - "*"
+      cargo-sec:
+        applies-to: "security-updates"
         patterns:
           - "*"

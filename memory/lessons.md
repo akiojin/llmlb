@@ -36,5 +36,5 @@
 
 - **事象**: `check-migration-versions.sh` の bats テストが pre-push フック（`make quality-checks`）内で実行された際、一時ディレクトリで行ったはずの `git init` / `git commit` / `git config user.*` が実リポジトリに作用し、作業ブランチに全ファイル削除コミットが積まれ、共有 git config に `[user] test` が追記された。その間に別 worktree の agent のコミット author が `test` になった
 - **原因**: git フックは `GIT_DIR` などを export した状態で子プロセスを起動する。`GIT_DIR` が設定されていると、`cd` で別ディレクトリに移っても git は実リポジトリを操作する。直接 `bats` を実行したときは環境変数がないため再現しない
-- **再発防止ルール**: 一時リポジトリを作るテストは、setup の先頭で `unset $(git rev-parse --local-env-vars)` を実行し、`git rev-parse --show-toplevel` が一時ディレクトリであることを assert する。author は `GIT_AUTHOR_*` / `GIT_COMMITTER_*` 環境変数で与え、`git config` への書き込みは行わない
+- **再発防止ルール**: 一時リポジトリを作る bats テストは必ず `tests/checks/helpers/git-sandbox.bash` の `git_sandbox_init` を経由する（`git rev-parse --local-env-vars` の unset、toplevel の assert、author は環境変数で指定し `git config` に書き込まない）。隔離そのものは `tests/checks/test-git-sandbox.bats` が囮リポジトリで回帰検証する
 - **次回チェック方法**: テスト追加後は直接実行だけでなく `git push`（pre-push 経由）でも実行し、終了後に `git log -1`、`git status`、`git config --local --get user.email` が変化していないことを確認する

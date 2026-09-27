@@ -7,17 +7,11 @@ setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../../scripts/checks/check-migration-versions.sh"
     [ -x "$SCRIPT" ]
 
-    # git フック（pre-push 等）から継承した GIT_DIR 等が残っていると、
-    # 一時リポジトリへの操作が実リポジトリに漏れるため必ず解除する。
-    unset $(git rev-parse --local-env-vars)
-    export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
-    export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
-
+    # 一時リポジトリは必ず git_sandbox_init 経由で作る（実リポジトリへの書き込み防止）
+    load helpers/git-sandbox
     REPO="$BATS_TEST_TMPDIR/repo"
-    mkdir -p "$REPO/llmlb/migrations"
-    cd "$REPO"
-    git init -q
-    [ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ]
+    git_sandbox_init "$REPO"
+    mkdir -p llmlb/migrations
     touch llmlb/migrations/001_init.sql
     touch llmlb/migrations/032_add_password_reset_tokens.sql
     commit_all base

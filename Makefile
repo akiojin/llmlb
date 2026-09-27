@@ -17,6 +17,12 @@ clippy:
 clippy-parity:
 	bash scripts/checks/check-clippy-parity.sh
 
+# Rust ユニットテストカバレッジ（SPEC #585 FR-032: 行カバレッジ80%以上）
+# CI (ci.yml coverage-rust) も同一ターゲットを実行する。要 cargo-llvm-cov。
+coverage:
+	mkdir -p coverage-rust
+	cargo llvm-cov --all-features --workspace --fail-under-lines 80 --lcov --output-path coverage-rust/lcov.info
+
 coverage-gate:
 	bash scripts/checks/check-coverage-gate.sh
 

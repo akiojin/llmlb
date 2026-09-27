@@ -170,3 +170,6 @@ cookies.txt
 
 # GitHub Actions self-hosted runner (contains credentials)
 actions-runner/
+
+# Rust coverage output (make coverage)
+coverage-rust/

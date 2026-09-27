@@ -12,7 +12,7 @@ fmt:
 	cargo fmt --check
 
 clippy:
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
 
 clippy-parity:
 	bash scripts/checks/check-clippy-parity.sh
@@ -36,7 +36,7 @@ specify-commits:
 
 quality-checks: fmt clippy-parity clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
 
-quality-checks-pre-commit: fmt clippy
+quality-checks-pre-commit: fmt clippy-parity clippy
 
 security-checks:
 	cargo audit

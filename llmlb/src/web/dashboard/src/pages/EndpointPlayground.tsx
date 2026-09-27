@@ -73,12 +73,13 @@ function getStatusLabel(
 
 export default function EndpointPlayground({ endpointId, onBack }: EndpointPlaygroundProps) {
   const pg = usePlayground()
+  const { abortControllerRef } = pg
   const isMountedRef = useRef(true)
 
   useEffect(() => {
     return () => {
       isMountedRef.current = false
-      pg.abortControllerRef.current?.abort()
+      abortControllerRef.current?.abort()
     }
   }, [])
 
@@ -137,7 +138,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
     pg.setInput('')
     pg.setAttachments([])
     pg.setIsStreaming(true)
-    pg.abortControllerRef.current = new AbortController()
+    abortControllerRef.current = new AbortController()
 
     try {
       const requestMessages = pg.systemPrompt
@@ -172,7 +173,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
               return updated
             })
           },
-          pg.abortControllerRef.current.signal
+          abortControllerRef.current.signal
         )
       } else {
         const data = await endpointsApi.chatCompletions(
@@ -185,7 +186,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             max_tokens: effectiveMaxTokens,
           },
           undefined,
-          pg.abortControllerRef.current.signal
+          abortControllerRef.current.signal
         )
 
         const { content, reasoning } = splitAssistantMessage(data)
@@ -222,7 +223,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
       if (isMountedRef.current) {
         pg.setIsStreaming(false)
       }
-      pg.abortControllerRef.current = null
+      abortControllerRef.current = null
       if (isMountedRef.current) {
         pg.inputRef.current?.focus()
       }

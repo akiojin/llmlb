@@ -24,6 +24,9 @@ pub mod endpoints;
 /// エンドポイント日次統計（SPEC-8c32349f）
 pub mod endpoint_daily_stats;
 
+/// クラウドメトリクス日次集計（SPEC #582 US-005）
+pub mod cloud_metrics;
+
 /// ダウンロードタスク管理（SPEC-e8e9326e）
 pub mod download_tasks;
 

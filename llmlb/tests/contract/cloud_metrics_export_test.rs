@@ -114,6 +114,35 @@ async fn cloud_metrics_export_requires_authentication() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+/// admin 以外（viewer）の JWT は reject される
+#[tokio::test]
+#[serial]
+async fn cloud_metrics_export_rejects_viewer_jwt() {
+    let (app, db_pool, _jwt) = build_app().await;
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let viewer =
+        llmlb::db::users::create(&db_pool, "viewer", &password_hash, UserRole::Viewer, false)
+            .await
+            .expect("create viewer user");
+    let viewer_jwt = llmlb::auth::jwt::create_jwt(
+        &viewer.id.to_string(),
+        UserRole::Viewer,
+        &crate::support::lb::test_jwt_secret(),
+        false,
+        0,
+    )
+    .expect("create viewer jwt");
+
+    let (status, _, _) = get(
+        &app,
+        "/api/metrics/cloud/export?format=json&days=7",
+        Some(&viewer_jwt),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
 /// provider/day 単位で rollup され、全フィールドが返る（p95 は nearest-rank）
 #[tokio::test]
 #[serial]

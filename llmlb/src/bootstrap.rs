@@ -158,6 +158,7 @@ async fn initialize_inner(
 
     crate::db::request_history::start_cleanup_task(request_history.clone());
     crate::db::endpoint_daily_stats::start_daily_stats_task(db_pool.clone());
+    crate::cloud_metrics::start_retention_task(db_pool.clone());
 
     // 管理者が存在しない場合は作成
     auth::bootstrap::ensure_admin_exists(&db_pool)

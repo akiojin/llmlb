@@ -192,6 +192,11 @@ pub fn create_app(state: AppState) -> Router {
     // Prometheus metrics（cloud prefix含む独自メトリクス）
     let metrics_routes = Router::new()
         .route("/metrics/cloud", get(cloud_metrics::export_metrics))
+        // SPEC #582 US-005: provider/日次 rollup の JSON/CSV export
+        .route(
+            "/metrics/cloud/export",
+            get(cloud_metrics::export_daily_metrics),
+        )
         .layer(middleware::from_fn(
             crate::auth::middleware::require_password_changed_middleware,
         ))

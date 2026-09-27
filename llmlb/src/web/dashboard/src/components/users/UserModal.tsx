@@ -287,7 +287,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Username</TableHead>
+                      <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -344,10 +344,11 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="create-username">Username</Label>
+              <Label htmlFor="create-username">Email</Label>
               <Input
                 id="create-username"
-                placeholder="johndoe"
+                type="email"
+                placeholder="user@example.com"
                 value={formUsername}
                 onChange={(e) => setFormUsername(e.target.value)}
               />
@@ -450,9 +451,10 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-username">Username</Label>
+              <Label htmlFor="edit-username">Email</Label>
               <Input
                 id="edit-username"
+                type="email"
                 value={formUsername}
                 onChange={(e) => setFormUsername(e.target.value)}
               />

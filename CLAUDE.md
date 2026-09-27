@@ -320,6 +320,18 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 - Rustサーバーは `llmlb/src/web/static/` を **ビルド時にバイナリへ埋め込む**。
 - ダッシュボード（TS/TSX/CSS）を修正したら必ず `pnpm --filter @llm/dashboard build` を実行し、生成物（`llmlb/src/web/static/`）をコミットしてから `llmlb` を再ビルドすること。
 
+### データベースマイグレーションの採番（重要）
+
+- 新規マイグレーションは `llmlb/migrations/YYYYMMDDHHMMSS_<snake_case>.sql`（UTC タイムスタンプ）で作成する。
+  例: `date -u +%Y%m%d%H%M%S` の出力をそのまま接頭辞に使う。
+- `001`〜`032` の連番は凍結済み。連番の続き（`033_*` 等）は採番しない。既存ファイルのリネームも禁止
+  （適用済み DB の `_sqlx_migrations.version` と不一致になるため）。
+- 理由: 並行する agent がそれぞれ develop を見て「次の連番」を採番すると同じ番号になり、
+  後から着地した側で `_sqlx_migrations.version` の UNIQUE 違反が起きる（Issue #737）。
+- `make migration-versions`（`make quality-checks` と pre-push に含まれる）が、命名規則違反と
+  `origin/develop` に先行着地したマイグレーションとのバージョン衝突を検出する。
+  衝突した場合は新しいタイムスタンプで採番し直す。
+
 ### ローカル検証（絶対厳守）
 
 GitHub Actions が実行する検証を**全てローカルで事前に成功させてから**コミットすること。例外は認めない。

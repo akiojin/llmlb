@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure migration-versions test-checks coverage coverage-gate test security-checks markdownlint specify-commits
 .PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -20,6 +20,10 @@ clippy-parity:
 # SPEC #699 FR-009/FR-010: 1,500 行上限と mod.rs の re-export 化
 module-structure:
 	bash scripts/checks/check-module-structure.sh
+
+# Issue #737: 並行ブランチ間のマイグレーション番号衝突を develop 着地前に検出
+migration-versions:
+	bash scripts/checks/check-migration-versions.sh
 
 # Rust ユニットテストカバレッジ（SPEC #585 FR-032: 行カバレッジ80%以上）
 # CI (ci.yml coverage-rust) も同一ターゲットを実行する。要 cargo-llvm-cov。
@@ -47,7 +51,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
+quality-checks: fmt clippy-parity module-structure migration-versions coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 
@@ -58,6 +62,14 @@ security-checks:
 # OpenAI API tests are now covered by e2e_openai_proxy
 openai-tests:
 	cargo test -p llmlb --test e2e_openai_proxy
+
+test-checks:
+	@if [ -x "./node_modules/bats/bin/bats" ]; then \
+		bash ./node_modules/bats/bin/bats tests/checks; \
+	else \
+		echo "bats is not installed. Run 'pnpm install' first." >&2; \
+		exit 1; \
+	fi
 
 test-hooks:
 	@bash -lc 'if [ -x "./node_modules/bats/bin/bats" ]; then \

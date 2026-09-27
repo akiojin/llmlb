@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure coverage coverage-gate test security-checks markdownlint specify-commits
 .PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -16,6 +16,10 @@ clippy:
 
 clippy-parity:
 	bash scripts/checks/check-clippy-parity.sh
+
+# SPEC #699 FR-009/FR-010: 1,500 行上限と mod.rs の re-export 化
+module-structure:
+	bash scripts/checks/check-module-structure.sh
 
 # Rust ユニットテストカバレッジ（SPEC #585 FR-032: 行カバレッジ80%以上）
 # CI (ci.yml coverage-rust) も同一ターゲットを実行する。要 cargo-llvm-cov。
@@ -43,7 +47,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
+quality-checks: fmt clippy-parity module-structure coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 

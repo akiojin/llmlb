@@ -1,0 +1,36 @@
+# check-module-structure.sh の許可リスト（SPEC #699 の未完了分）
+#
+# 形式: <size|mod> <llmlb/src からの相対パス>
+#   size: 1,500 行超の本体ソース（FR-009）
+#   mod:  実装を含む mod.rs（FR-010）
+#
+# 分割が完了したらエントリを削除すること（残っていると check が失敗する）。
+
+size api/anthropic.rs
+size api/dashboard.rs
+size api/endpoints.rs
+size api/models.rs
+size api/openai.rs
+size auth/middleware.rs
+size balancer/mod.rs
+size common/protocol.rs
+size db/audit_log.rs
+size db/endpoints.rs
+size db/request_history.rs
+size db/traits.rs
+size registry/endpoints.rs
+size types/endpoint.rs
+
+mod api/mod.rs
+mod auth/mod.rs
+mod balancer/mod.rs
+mod cli/mod.rs
+mod delete/mod.rs
+mod detection/mod.rs
+mod download/mod.rs
+mod events/mod.rs
+mod lock/mod.rs
+mod metadata/mod.rs
+mod sync/mod.rs
+mod system_info/mod.rs
+mod token/mod.rs

@@ -1,7 +1,8 @@
 //! 認証API Contract Tests
 //!
 //! POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me,
-//! PUT /api/auth/change-password
+//! PUT /api/auth/change-password,
+//! POST /api/auth/forgot-password, POST /api/auth/reset-password
 
 use axum::{
     body::{to_bytes, Body},
@@ -323,7 +324,8 @@ async fn test_change_password_success() {
                 .uri("/api/auth/change-password")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({ "new_password": "Newpassword123" })).unwrap(),
+                    serde_json::to_vec(&json!({ "current_password": "password123", "new_password": "Newpassword123" }))
+                        .unwrap(),
                 ))
                 .unwrap(),
         )
@@ -348,7 +350,10 @@ async fn test_change_password_too_short() {
                 .uri("/api/auth/change-password")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({ "new_password": "abc" })).unwrap(),
+                    serde_json::to_vec(
+                        &json!({ "current_password": "password123", "new_password": "abc" }),
+                    )
+                    .unwrap(),
                 ))
                 .unwrap(),
         )
@@ -397,7 +402,7 @@ async fn test_change_password_then_login_with_new() {
                 .uri("/api/auth/change-password")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({ "new_password": "Newpassword456" })).unwrap(),
+                    serde_json::to_vec(&json!({ "current_password": "password123", "new_password": "Newpassword456" })).unwrap(),
                 ))
                 .unwrap(),
         )
@@ -436,7 +441,10 @@ async fn test_change_password_clears_must_change_flag() {
                 .uri("/api/auth/change-password")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({ "new_password": "Newpass123" })).unwrap(),
+                    serde_json::to_vec(
+                        &json!({ "current_password": "temppass1", "new_password": "Newpass123" }),
+                    )
+                    .unwrap(),
                 ))
                 .unwrap(),
         )
@@ -484,7 +492,8 @@ async fn test_session_revoked_after_self_password_change() {
                 .uri("/api/auth/change-password")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    json!({ "new_password": "NewAdminPass123" }).to_string(),
+                    json!({ "current_password": "password123", "new_password": "NewAdminPass123" })
+                        .to_string(),
                 ))
                 .unwrap(),
         )
@@ -595,4 +604,369 @@ async fn test_session_revoked_after_admin_password_reset() {
         StatusCode::UNAUTHORIZED,
         "victim token must be revoked after admin password reset"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 現在パスワード検証（SPEC #580 AS-017）
+// ---------------------------------------------------------------------------
+
+async fn send_json(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    jwt: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let builder = match jwt {
+        Some(jwt) => bearer_request(jwt),
+        None => Request::builder(),
+    };
+    let response = app
+        .clone()
+        .oneshot(
+            builder
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
+}
+
+async fn reset_token_count(db_pool: &SqlitePool, user_id: uuid::Uuid) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM password_reset_tokens WHERE user_id = ?")
+        .bind(user_id.to_string())
+        .fetch_one(db_pool)
+        .await
+        .unwrap()
+}
+
+async fn create_email_user(db_pool: &SqlitePool, email: &str, password: &str) -> uuid::Uuid {
+    let hash = llmlb::auth::password::hash_password(password).unwrap();
+    llmlb::db::users::create(db_pool, email, &hash, UserRole::Viewer, false)
+        .await
+        .unwrap()
+        .id
+}
+
+/// 現在のパスワードが誤っている場合は400で、パスワードは変更されない
+#[tokio::test]
+#[serial]
+async fn test_change_password_rejects_wrong_current_password() {
+    let (app, _db_pool) = build_app().await;
+    let jwt = login_admin(&app).await;
+
+    let (status, _) = send_json(
+        &app,
+        "PUT",
+        "/api/auth/change-password",
+        Some(&jwt),
+        json!({ "current_password": "wrongpassword", "new_password": "Newpassword789" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = login(&app, "admin", "password123").await;
+    assert_eq!(status, StatusCode::OK, "old password must still work");
+    let (status, _) = login(&app, "admin", "Newpassword789").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// current_password を省略したリクエストは拒否される（422）
+#[tokio::test]
+#[serial]
+async fn test_change_password_requires_current_password_field() {
+    let (app, _db_pool) = build_app().await;
+    let jwt = login_admin(&app).await;
+
+    let (status, _) = send_json(
+        &app,
+        "PUT",
+        "/api/auth/change-password",
+        Some(&jwt),
+        json!({ "new_password": "Newpassword789" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let (status, _) = login(&app, "admin", "password123").await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/forgot-password（SPEC #580 AS-014）
+// ---------------------------------------------------------------------------
+
+/// 存在するユーザーのメールIDでリセットトークンが発行される（202）
+#[tokio::test]
+#[serial]
+async fn test_forgot_password_issues_reset_token() {
+    let (app, db_pool) = build_app().await;
+    let user_id = create_email_user(&db_pool, "alice@example.com", "Password123").await;
+
+    let (status, body) = send_json(
+        &app,
+        "POST",
+        "/api/auth/forgot-password",
+        None,
+        json!({ "email": "alice@example.com" }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert!(body["message"].is_string());
+    assert!(
+        body.get("token").is_none(),
+        "token must never be returned to an unauthenticated caller"
+    );
+    assert_eq!(reset_token_count(&db_pool, user_id).await, 1);
+
+    // 平文トークンはDBに保存しない（ハッシュのみ）
+    let stored: String =
+        sqlx::query_scalar("SELECT token_hash FROM password_reset_tokens WHERE user_id = ?")
+            .bind(user_id.to_string())
+            .fetch_one(&db_pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.len(), 64, "SHA-256 hex digest expected");
+}
+
+/// 存在しないメールIDでも同じ202応答を返し（アカウント列挙防止）、トークンは作られない
+#[tokio::test]
+#[serial]
+async fn test_forgot_password_unknown_email_is_indistinguishable() {
+    let (app, db_pool) = build_app().await;
+    let user_id = create_email_user(&db_pool, "alice@example.com", "Password123").await;
+
+    let (known_status, known_body) = send_json(
+        &app,
+        "POST",
+        "/api/auth/forgot-password",
+        None,
+        json!({ "email": "alice@example.com" }),
+    )
+    .await;
+    let (unknown_status, unknown_body) = send_json(
+        &app,
+        "POST",
+        "/api/auth/forgot-password",
+        None,
+        json!({ "email": "nobody@example.com" }),
+    )
+    .await;
+
+    assert_eq!(known_status, StatusCode::ACCEPTED);
+    assert_eq!(unknown_status, StatusCode::ACCEPTED);
+    assert_eq!(known_body, unknown_body);
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM password_reset_tokens")
+        .fetch_one(&db_pool)
+        .await
+        .unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(reset_token_count(&db_pool, user_id).await, 1);
+}
+
+/// 再発行すると同ユーザーの以前のトークンは失効する
+#[tokio::test]
+#[serial]
+async fn test_forgot_password_reissue_invalidates_previous_token() {
+    let (app, db_pool) = build_app().await;
+    let user_id = create_email_user(&db_pool, "alice@example.com", "Password123").await;
+
+    let first =
+        llmlb::db::password_reset_tokens::issue(&db_pool, user_id, chrono::Duration::minutes(30))
+            .await
+            .unwrap();
+    let second =
+        llmlb::db::password_reset_tokens::issue(&db_pool, user_id, chrono::Duration::minutes(30))
+            .await
+            .unwrap();
+    assert_ne!(first, second);
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": first, "new_password": "Resetpass123" }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "superseded token must be rejected"
+    );
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": second, "new_password": "Resetpass123" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password（SPEC #580 AS-015 / AS-016）
+// ---------------------------------------------------------------------------
+
+/// 有効なトークンでパスワードが更新され、トークンは無効化される
+#[tokio::test]
+#[serial]
+async fn test_reset_password_with_valid_token() {
+    let (app, db_pool) = build_app().await;
+    let user_id = create_email_user(&db_pool, "alice@example.com", "Password123").await;
+    let token =
+        llmlb::db::password_reset_tokens::issue(&db_pool, user_id, chrono::Duration::minutes(30))
+            .await
+            .unwrap();
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": token, "new_password": "Resetpass123" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = login(&app, "alice@example.com", "Resetpass123").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["user"]["must_change_password"], false);
+    let (status, _) = login(&app, "alice@example.com", "Password123").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // 同じトークンの再利用は拒否（単回使用）
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": token, "new_password": "Another123" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = login(&app, "alice@example.com", "Resetpass123").await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// リセット後はそのユーザーの既存セッションが無効化される
+#[tokio::test]
+#[serial]
+async fn test_reset_password_revokes_existing_sessions() {
+    let (app, db_pool) = build_app().await;
+    let user_id = create_email_user(&db_pool, "alice@example.com", "Password123").await;
+    let (status, body) = login(&app, "alice@example.com", "Password123").await;
+    assert_eq!(status, StatusCode::OK);
+    let old_jwt = body["token"].as_str().unwrap().to_string();
+
+    let token =
+        llmlb::db::password_reset_tokens::issue(&db_pool, user_id, chrono::Duration::minutes(30))
+            .await
+            .unwrap();
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": token, "new_password": "Resetpass123" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let me = app
+        .clone()
+        .oneshot(
+            bearer_request(&old_jwt)
+                .method("GET")
+                .uri("/api/auth/me")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(me.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// 期限切れトークンではエラーになり、パスワードは変更されない
+#[tokio::test]
+#[serial]
+async fn test_reset_password_with_expired_token() {
+    let (app, db_pool) = build_app().await;
+    let user_id = create_email_user(&db_pool, "alice@example.com", "Password123").await;
+    let token =
+        llmlb::db::password_reset_tokens::issue(&db_pool, user_id, chrono::Duration::seconds(-1))
+            .await
+            .unwrap();
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": token, "new_password": "Resetpass123" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = login(&app, "alice@example.com", "Password123").await;
+    assert_eq!(status, StatusCode::OK, "password must stay unchanged");
+}
+
+/// 不明なトークンではエラー
+#[tokio::test]
+#[serial]
+async fn test_reset_password_with_unknown_token() {
+    let (app, _db_pool) = build_app().await;
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": "not-a-real-token", "new_password": "Resetpass123" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// 弱いパスワードは拒否され、トークンは消費されない
+#[tokio::test]
+#[serial]
+async fn test_reset_password_weak_password_keeps_token_usable() {
+    let (app, db_pool) = build_app().await;
+    let user_id = create_email_user(&db_pool, "alice@example.com", "Password123").await;
+    let token =
+        llmlb::db::password_reset_tokens::issue(&db_pool, user_id, chrono::Duration::minutes(30))
+            .await
+            .unwrap();
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": token, "new_password": "weak" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send_json(
+        &app,
+        "POST",
+        "/api/auth/reset-password",
+        None,
+        json!({ "token": token, "new_password": "Resetpass123" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
 }

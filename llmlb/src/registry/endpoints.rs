@@ -3,12 +3,13 @@
 //! エンドポイントの状態をメモリ内で管理し、SQLiteと同期
 
 use crate::db::endpoints as db;
+use crate::events::SharedEventBus;
 use crate::types::endpoint::{
     Endpoint, EndpointCapability, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
 };
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -88,6 +89,8 @@ pub struct EndpointRegistry {
     model_to_endpoints: Arc<RwLock<HashMap<String, Vec<Uuid>>>>,
     /// データベースプール
     pool: SqlitePool,
+    /// 状態遷移を通知するダッシュボードイベントバス（bootstrap で設定）
+    event_bus: Arc<OnceLock<SharedEventBus>>,
 }
 
 impl EndpointRegistry {
@@ -97,12 +100,20 @@ impl EndpointRegistry {
             endpoints: Arc::new(RwLock::new(HashMap::new())),
             model_to_endpoints: Arc::new(RwLock::new(HashMap::new())),
             pool,
+            event_bus: Arc::new(OnceLock::new()),
         };
 
         // DBからエンドポイントを読み込み
         registry.load_from_db().await?;
 
         Ok(registry)
+    }
+
+    /// ダッシュボードイベントバスを設定する（最初の1回のみ有効）
+    ///
+    /// 設定後は `update_status` の状態遷移が `EndpointStatusChanged` として発行される。
+    pub fn set_event_bus(&self, bus: SharedEventBus) {
+        let _ = self.event_bus.set(bus);
     }
 
     /// DBからエンドポイントとモデルマッピングを読み込み
@@ -778,6 +789,71 @@ mod tests {
         // オンラインエンドポイントのみ取得
         let online = registry.list_online().await;
         assert_eq!(online.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_update_status_publishes_endpoint_status_changed_once_per_transition() {
+        use crate::events::{create_shared_event_bus, DashboardEvent};
+        use tokio::sync::broadcast::error::TryRecvError;
+
+        let _lock = TEST_LOCK.lock().await;
+        let pool = setup_test_db().await;
+        let registry = EndpointRegistry::new(pool).await.unwrap();
+        let bus = create_shared_event_bus();
+        registry.set_event_bus(bus.clone());
+        let mut rx = bus.subscribe();
+
+        let endpoint = Endpoint::new(
+            "Transition".to_string(),
+            "http://localhost:11434".to_string(),
+            EndpointType::Xllm,
+        );
+        let endpoint_id = endpoint.id;
+        registry.add(endpoint).await.unwrap();
+
+        // Pending -> Online: 1イベント
+        registry
+            .update_status(endpoint_id, EndpointStatus::Online, Some(10), None)
+            .await
+            .unwrap();
+        match rx.try_recv().expect("transition must publish an event") {
+            DashboardEvent::EndpointStatusChanged {
+                runtime_id,
+                old_status,
+                new_status,
+            } => {
+                assert_eq!(runtime_id, endpoint_id);
+                assert_eq!(old_status, EndpointStatus::Pending);
+                assert_eq!(new_status, EndpointStatus::Online);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+
+        // Online -> Online（同値更新）: イベントなし
+        registry
+            .update_status(endpoint_id, EndpointStatus::Online, Some(20), None)
+            .await
+            .unwrap();
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+
+        // Online -> Error: 1イベント
+        registry
+            .update_status(endpoint_id, EndpointStatus::Error, None, Some("boom"))
+            .await
+            .unwrap();
+        match rx.try_recv().expect("transition must publish an event") {
+            DashboardEvent::EndpointStatusChanged {
+                old_status,
+                new_status,
+                ..
+            } => {
+                assert_eq!(old_status, EndpointStatus::Online);
+                assert_eq!(new_status, EndpointStatus::Error);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
     }
 
     #[tokio::test]

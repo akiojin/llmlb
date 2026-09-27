@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { queryKeysToInvalidate } from './dashboardEventInvalidation'
 
 export type DashboardEventType =
   | 'connected'
@@ -107,29 +108,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           onMessageRef.current?.(data)
 
           // Invalidate relevant queries based on event type
-          // Query keys must match those used in Dashboard.tsx
-          switch (data.type) {
-            case 'NodeRegistered':
-            case 'NodeRemoved':
-            case 'NodeStatusChanged':
-              // Invalidate dashboard overview query (includes endpoints, stats)
-              queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
-              queryClient.invalidateQueries({ queryKey: ['request-responses'] })
-              break
-            case 'MetricsUpdated':
-              // Invalidate dashboard overview for metrics updates
-              queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
-              break
-            case 'TpsUpdated':
-              // SPEC-4bb5b55f: Invalidate TPS data for the affected endpoint
-              if (data.data?.endpoint_id) {
-                queryClient.invalidateQueries({ queryKey: ['endpoint-model-tps', data.data.endpoint_id] })
-              }
-              break
-            case 'UpdateStateChanged':
-              // Invalidate system-info so other clients see update state changes
-              queryClient.invalidateQueries({ queryKey: ['system-info'] })
-              break
+          for (const queryKey of queryKeysToInvalidate(data)) {
+            queryClient.invalidateQueries({ queryKey })
           }
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err)

@@ -68,6 +68,11 @@ async fn build_test_app() -> (AppState, Router) {
         audit_archive_pool: None,
     };
 
+    // bootstrap と同様に、レジストリの状態遷移をダッシュボードイベントバスへ配線する
+    state
+        .endpoint_registry
+        .set_event_bus(state.event_bus.clone());
+
     let app = api::create_app(state.clone());
     (state, app)
 }
@@ -210,15 +215,26 @@ async fn test_dashboard_receives_node_status_change() {
     // Skip the initial "connected" message
     let _ = read.next().await;
 
-    // Act: Publish a node status change event
-    let endpoint_id = uuid::Uuid::new_v4();
+    // Arrange: register an endpoint (Pending)
+    let endpoint = llmlb::types::endpoint::Endpoint::new(
+        "status-change-test".to_string(),
+        "http://127.0.0.1:9".to_string(),
+        llmlb::types::endpoint::EndpointType::OpenaiCompatible,
+    );
+    let endpoint_id = endpoint.id;
+    state.endpoint_registry.add(endpoint).await.unwrap();
+
+    // Act: change status through the production update path (health checker / connection test)
     state
-        .event_bus
-        .publish(llmlb::events::DashboardEvent::EndpointStatusChanged {
-            runtime_id: endpoint_id,
-            old_status: llmlb::types::endpoint::EndpointStatus::Online,
-            new_status: llmlb::types::endpoint::EndpointStatus::Offline,
-        });
+        .endpoint_registry
+        .update_status(
+            endpoint_id,
+            llmlb::types::endpoint::EndpointStatus::Offline,
+            None,
+            Some("connection refused"),
+        )
+        .await
+        .unwrap();
 
     // Assert: WebSocket client should receive status change event
     let msg = tokio::time::timeout(tokio::time::Duration::from_secs(5), read.next())
@@ -231,6 +247,7 @@ async fn test_dashboard_receives_node_status_change() {
         let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
         assert_eq!(json["type"], "EndpointStatusChanged");
         assert_eq!(json["data"]["runtime_id"], endpoint_id.to_string());
+        assert_eq!(json["data"]["old_status"], "pending");
         assert_eq!(json["data"]["new_status"], "offline");
     } else {
         panic!("Expected text message, got {:?}", msg);

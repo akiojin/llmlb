@@ -582,6 +582,14 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
+- ユーザー名はメールIDです（`POST /api/users` / `PUT /api/users/:id` はそれ以外の形式を 400 で拒否）。
+- `PUT /api/auth/change-password` は `current_password` と `new_password` が必須です（JWT必須）。
+- `POST /api/auth/forgot-password`（無認証）はメールIDに対してリセットトークンを発行し、
+  アカウントの有無に関わらず常に 202 を返します。メール送信機能はないため、リセットリンク
+  （`/dashboard/reset-password.html#token=...`）はサーバーログに出力され、運用者が本人に伝えます。
+- `POST /api/auth/reset-password`（無認証）はトークンと新パスワードでパスワードを更新します。
+  トークンは30分で失効し、1回限り有効で、再発行すると古いトークンは無効になります。
+  リセット後は既存セッションが無効化されます。
 - Cookie認証で変更系操作を行う場合は、`llmlb_csrf` Cookieの値を `X-CSRF-Token` ヘッダーで送信します。
 - Cookie認証の変更系操作では Origin/Referer が同一オリジンである必要があります。
 - API認証は常に必須です。無認証（匿名）モードはなく、未認証リクエストは 401 を返します。

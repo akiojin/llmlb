@@ -3,6 +3,9 @@
 /// パスワードハッシュ化・検証（bcrypt）
 pub mod password;
 
+/// メールID形式の検証
+pub mod email;
+
 /// JWT生成・検証（jsonwebtoken）
 pub mod jwt;
 

@@ -638,6 +638,8 @@ pub fn create_app(state: AppState) -> Router {
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
+        .route("/auth/forgot-password", post(auth::forgot_password))
+        .route("/auth/reset-password", post(auth::reset_password))
         .merge(auth_routes)
         .merge(system_mutation_routes)
         .merge(dashboard_api_routes)

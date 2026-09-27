@@ -9,8 +9,12 @@ export function queryKeysToInvalidate(event: DashboardEvent): QueryKey[] {
   switch (event.type) {
     case 'NodeRegistered':
     case 'NodeRemoved':
-    case 'NodeStatusChanged':
-      return [['dashboard-overview'], ['request-responses']]
+    case 'EndpointStatusChanged': {
+      const keys: QueryKey[] = [['dashboard-overview'], ['dashboard-endpoints'], ['request-responses']]
+      // Endpoint detail used by the endpoint playground (EndpointPlayground.tsx)
+      if (event.data?.runtime_id) keys.push(['endpoint', event.data.runtime_id])
+      return keys
+    }
     case 'MetricsUpdated':
       return [['dashboard-overview']]
     case 'TpsUpdated':

@@ -324,6 +324,7 @@ async fn initialize_inner(
         event_bus: {
             let bus = crate::events::create_shared_event_bus();
             update_manager.set_event_bus(bus.clone());
+            endpoint_registry.set_event_bus(bus.clone());
             bus
         },
         endpoint_registry,

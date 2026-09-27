@@ -3,7 +3,7 @@
 //! エンドポイントの状態をメモリ内で管理し、SQLiteと同期
 
 use crate::db::endpoints as db;
-use crate::events::SharedEventBus;
+use crate::events::{DashboardEvent, SharedEventBus};
 use crate::types::endpoint::{
     Endpoint, EndpointCapability, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
 };
@@ -330,6 +330,9 @@ impl EndpointRegistry {
     }
 
     /// エンドポイントのステータスを更新
+    ///
+    /// ステータスが遷移した場合は `EndpointStatusChanged` を1遷移につき1回発行する。
+    /// 同値更新（遷移なし）では発行しない。
     pub async fn update_status(
         &self,
         id: Uuid,
@@ -344,6 +347,7 @@ impl EndpointRegistry {
             // キャッシュを更新
             let mut endpoints = self.endpoints.write().await;
             if let Some(endpoint) = endpoints.get_mut(&id) {
+                let old_status = endpoint.status;
                 endpoint.status = status;
                 if let Some(v) = latency_ms {
                     endpoint.latency_ms = Some(v);
@@ -356,6 +360,17 @@ impl EndpointRegistry {
                     0
                 };
                 endpoint.last_seen = Some(chrono::Utc::now());
+
+                // キャッシュの書き込みロック内で比較・発行し、並行更新でも遷移ごとに1回だけ発行する
+                if old_status != status {
+                    if let Some(bus) = self.event_bus.get() {
+                        bus.publish(DashboardEvent::EndpointStatusChanged {
+                            runtime_id: id,
+                            old_status,
+                            new_status: status,
+                        });
+                    }
+                }
             }
         }
 

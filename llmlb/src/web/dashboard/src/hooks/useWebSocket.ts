@@ -5,7 +5,7 @@ import { queryKeysToInvalidate } from './dashboardEventInvalidation'
 export type DashboardEventType =
   | 'connected'
   | 'NodeRegistered'
-  | 'NodeStatusChanged'
+  | 'EndpointStatusChanged'
   | 'MetricsUpdated'
   | 'NodeRemoved'
   | 'TpsUpdated'

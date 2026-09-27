@@ -326,7 +326,7 @@ GitHub Actions が実行する検証を**全てローカルで事前に成功さ
 
 - 下記コマンド群を現在の作業環境で順番に実行し、すべて成功（終了コード0）を確認すること
   - `cargo fmt --check`
-  - `cargo clippy -- -D warnings`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo test`
   - `pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees"`
 - コミット対象に応じて `scripts/checks/check-commits.sh` やその他ワークフロー相当のスクリプト
@@ -349,7 +349,7 @@ Task toolやバックグラウンドタスクで品質チェックを実行す�
 cargo fmt --check > /dev/null 2>&1 && echo "✓ fmt OK" || echo "✗ fmt FAIL"
 
 # Clippy（最後の20行のみ表示）
-cargo clippy -- -D warnings 2>&1 | tail -20
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
 
 # テスト（サマリのみ表示）
 cargo test 2>&1 | grep -E "(test result|FAILED|passed|failed)" | tail -10

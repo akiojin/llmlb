@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity test security-checks markdownlint specify-commits
 .PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -12,7 +12,10 @@ fmt:
 	cargo fmt --check
 
 clippy:
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
+
+clippy-parity:
+	bash scripts/checks/check-clippy-parity.sh
 
 test:
 	cargo test -- --test-threads=1
@@ -31,9 +34,9 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
+quality-checks: fmt clippy-parity clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
 
-quality-checks-pre-commit: fmt clippy
+quality-checks-pre-commit: fmt clippy-parity clippy
 
 security-checks:
 	cargo audit

@@ -970,7 +970,7 @@ dashboard origin.
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry and lists (`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`) |
 | `logs.read` | Endpoint log proxy (`GET /api/endpoints/:id/logs`) |
-| `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
+| `metrics.read` | Metrics export (`GET /api/metrics/cloud`, `GET /api/metrics/cloud/export`) |
 
 API authentication is always required; there is no anonymous/no-auth mode and unauthenticated
 requests receive `401`. On first boot an admin account is provisioned (`ADMIN_PASSWORD` or an
@@ -1081,6 +1081,7 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 |--------|------|-------------|------|
 | GET | `/api/endpoints/:id/logs` | Endpoint logs proxy | JWT+Admin or API key (`logs.read`) |
 | GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (`metrics.read`) |
+| GET | `/api/metrics/cloud/export` | Cloud daily rollup export (`format=json\|csv`, `days=1..90`) | JWT+Admin or API key (`metrics.read`) |
 
 #### Playground Proxy
 
@@ -1244,3 +1245,6 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
   - `ANTHROPIC_API_KEY` (required), `ANTHROPIC_API_BASE_URL` (optional, default `https://api.anthropic.com`)
 - Behavior: prefix is stripped before forwarding; responses remain OpenAI-compatible. Streaming is passthrough as SSE.
 - Metrics: `/api/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).
+- Daily export: `/api/metrics/cloud/export?format=json|csv&days=1..90` returns UTC daily rollups per provider
+  (`openai`/`google`/`anthropic`) with `date, provider, request_count, success_count, error_count, avg_latency_ms, p95_latency_ms`.
+  `format` defaults to `json` and `days` to `90`; data older than 90 days is not retained.

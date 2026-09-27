@@ -770,6 +770,12 @@ async fn proxy_openai_cloud_post(
         Ok(res) => res,
         Err(e) => {
             let duration = started.elapsed();
+            crate::cloud_metrics::record_daily(
+                &state.db_pool,
+                &provider,
+                StatusCode::BAD_GATEWAY.as_u16(),
+                duration.as_millis(),
+            );
             {
                 let mut record = RequestResponseRecord::new(
                     endpoint_id,
@@ -794,6 +800,12 @@ async fn proxy_openai_cloud_post(
 
     let duration = started.elapsed();
     let status = outcome.status;
+    crate::cloud_metrics::record_daily(
+        &state.db_pool,
+        &provider,
+        status.as_u16(),
+        duration.as_millis(),
+    );
     {
         let mut record = RequestResponseRecord::new(
             endpoint_id,

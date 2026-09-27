@@ -440,6 +440,10 @@ curl http://localhost:32768/v1/images/generations \
 - `GET /api/metrics/cloud` （Prometheus text）
   - `cloud_requests_total{provider,status}`
   - `cloud_request_latency_seconds{provider}`
+- `GET /api/metrics/cloud/export?format=json|csv&days=1..90`（provider × UTC日次の集計 export）
+  - 対象 provider: `openai` / `google` / `anthropic`
+  - フィールド: `date, provider, request_count, success_count, error_count, avg_latency_ms, p95_latency_ms`
+  - `format` 既定は `json`、`days` 既定は `90`。90日を超えるデータは保持しない
 
 ## アーキテクチャ
 
@@ -567,7 +571,7 @@ LLM Load Balancer (OpenAI-compatible)
 | `models.manage` | モデル登録/削除（`POST /api/models/register`, `DELETE /api/models/*`） |
 | `registry.read` | モデルレジストリ/一覧（`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`） |
 | `logs.read` | エンドポイントログ（`GET /api/endpoints/:id/logs`） |
-| `metrics.read` | メトリクス（`GET /api/metrics/cloud`） |
+| `metrics.read` | メトリクス（`GET /api/metrics/cloud`, `GET /api/metrics/cloud/export`） |
 
 APIキー管理はJWTで本人用エンドポイントを利用します:
 - `GET /api/me/api-keys`
@@ -654,6 +658,7 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - GET `/api/dashboard/stats/tokens/monthly`
 - GET `/api/dashboard/logs/lb`
 - GET `/api/metrics/cloud`（JWT: admin / APIキー: `metrics.read`）
+- GET `/api/metrics/cloud/export`（JWT: admin / APIキー: `metrics.read`）
 - GET `/api/endpoints/:id/logs`（JWT: admin / APIキー: `logs.read`）
 - POST `/api/endpoints/:id/chat/completions`（Endpoint Playground 用、JWTのみ）
 - GET `/dashboard/*`

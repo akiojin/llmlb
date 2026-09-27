@@ -210,6 +210,12 @@ async fn proxy_anthropic_cloud_messages(
         Ok(response) => response,
         Err(err) => {
             let duration = started.elapsed();
+            cloud_metrics::record_daily(
+                &state.db_pool,
+                "anthropic",
+                StatusCode::BAD_GATEWAY.as_u16(),
+                duration.as_millis(),
+            );
             let mut record = RequestResponseRecord::new(
                 endpoint_id,
                 "cloud:anthropic".to_string(),
@@ -238,6 +244,12 @@ async fn proxy_anthropic_cloud_messages(
     let status =
         StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     cloud_metrics::record("anthropic", status.as_u16(), started.elapsed().as_millis());
+    cloud_metrics::record_daily(
+        &state.db_pool,
+        "anthropic",
+        status.as_u16(),
+        started.elapsed().as_millis(),
+    );
 
     if stream && status.is_success() {
         let response = forward_streaming_response(upstream).map_err(AppError::from)?;

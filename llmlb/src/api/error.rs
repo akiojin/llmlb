@@ -3,12 +3,40 @@
 //! axum用の共通エラーハンドリング
 
 use crate::common::error::{CommonError, LbError};
-use axum::{response::IntoResponse, Json};
+use axum::{
+    response::{IntoResponse, Response},
+    Json,
+};
 use serde_json::json;
 
 /// Axum用のエラーレスポンス型
 #[derive(Debug)]
 pub struct AppError(pub LbError);
+
+/// ハンドラ/ミドルウェアの `Err` 用に `Response` を Box 化した軽量エラー型
+///
+/// `Result<_, Response>` は `Err` が大きく `clippy::result_large_err` に抵触するため、
+/// ポインタ1個分のサイズで同じレスポンスをそのまま返す。
+#[derive(Debug)]
+pub struct HandlerError(Box<Response>);
+
+impl From<Response> for HandlerError {
+    fn from(response: Response) -> Self {
+        HandlerError(Box::new(response))
+    }
+}
+
+impl From<AppError> for HandlerError {
+    fn from(err: AppError) -> Self {
+        err.into_response().into()
+    }
+}
+
+impl IntoResponse for HandlerError {
+    fn into_response(self) -> Response {
+        *self.0
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -165,8 +193,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_handler_error_from_app_error_matches_app_error_response() {
-        let resp = HandlerError::from(AppError(LbError::Authorization("denied".into())))
-            .into_response();
+        let resp =
+            HandlerError::from(AppError(LbError::Authorization("denied".into()))).into_response();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 }

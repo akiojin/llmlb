@@ -31,3 +31,10 @@
 - **原因**: `llmlb/src/api/anthropic.rs:500-504` で `forward_to_endpoint` の `Err` を固定文字列に差し替えている。`proxy.rs:394-401` の `tracing::error!` には reqwest の実エラーが出ているが、HTTP 応答には反映されない。`/v1/chat/completions` 側の同種パスも同じ構造
 - **再発防止ルール**: 502 受領時はクライアント出力だけで判断せず、`Dashboard → History → Request Details → Error` フィールド、もしくは llmlb の標準エラー出力（tracing）を必ず確認する。中期的にはエラーメッセージの透過化（`LbError` の実メッセージを Anthropic 応答に流す）を別 SPEC で対応する
 - **次回チェック方法**: `GET /api/request_history` または Dashboard の該当レコードの Error フィールド、llmlb プロセスの標準出力で `Failed to forward request to endpoint` の直近ログを確認
+
+### マイグレーション番号は develop 最新と突き合わせてから確定する
+
+- **事象**: PR #735 で `031_add_password_reset_tokens.sql` を追加したが、並行してマージされた #734 も `031_add_cloud_request_metrics.sql` を追加していた。CI（PR とマージした結果で実行）で `UNIQUE constraint failed: _sqlx_migrations.version` になり、DB を使う全テストが落ちた
+- **原因**: ローカル検証を develop 取り込み前の HEAD で実行していたため、番号衝突を検出できなかった。並行 worktree が多い状況では migrations の採番が衝突しやすい
+- **再発防止ルール**: 新規マイグレーションを追加・push する前に `git fetch origin develop` して `git ls-tree --name-only origin/develop llmlb/migrations/` の最大番号を確認し、衝突していれば繰り下げる。PR 作成前に origin/develop を取り込んだ状態で `cargo test` を実行する
+- **次回チェック方法**: `git ls-tree --name-only origin/develop llmlb/migrations/ | tail -1` と自ブランチの新規マイグレーション番号を比較する

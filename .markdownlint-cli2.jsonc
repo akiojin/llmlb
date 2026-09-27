@@ -19,6 +19,12 @@
     "xllm/third_party/**",
     "**/third_party/**",
     "PLANS.md",
+    // ビルド・テスト生成物（gitignore 済み）は lint 対象外。
+    // cargo doc の static.files/*.md や、並列実行中の Playwright が生成・削除する
+    // error-context.md を拾うと make quality-checks が失敗する（Issue #732）
+    "target/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
     // gwt プラグイン runtime のスキル（gitignore 済み・CI 未チェックアウト）は lint 対象外
     ".claude/skills/gwt-verify/**",
     ".codex/skills/gwt-verify/**"

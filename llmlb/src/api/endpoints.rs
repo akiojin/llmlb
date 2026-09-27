@@ -28,7 +28,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
-/// Option<Option<T>>のデシリアライズヘルパー
+/// `Option<Option<T>>`のデシリアライズヘルパー
 /// - フィールドなし → None
 /// - フィールドがnull → Some(None)
 /// - フィールドに値あり → Some(Some(value))

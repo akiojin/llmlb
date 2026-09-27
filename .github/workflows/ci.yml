@@ -122,11 +122,9 @@ jobs:
         run: |
           rustup component add llvm-tools-preview
           cargo install cargo-llvm-cov --locked
-      - name: Run coverage
+      - name: Run coverage (fail under 80% lines)
         if: needs.changes.outputs.rust == 'true'
-        run: |
-          mkdir -p coverage-rust
-          cargo llvm-cov --all-features --workspace --lcov --output-path coverage-rust/lcov.info
+        run: make coverage
       - name: Upload coverage artifact
         if: needs.changes.outputs.rust == 'true'
         uses: actions/upload-artifact@v4

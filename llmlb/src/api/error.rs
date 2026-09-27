@@ -141,6 +141,34 @@ mod tests {
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert_eq!(body["error"], msg);
     }
+
+    #[test]
+    fn test_handler_error_is_pointer_sized() {
+        // clippy::result_large_err の閾値 (128 bytes) を十分下回ること
+        assert_eq!(
+            std::mem::size_of::<HandlerError>(),
+            std::mem::size_of::<usize>()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handler_error_preserves_response() {
+        let original = AppError(LbError::NotFound("missing".into())).into_response();
+        let resp = HandlerError::from(original).into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"], "missing");
+    }
+
+    #[tokio::test]
+    async fn test_handler_error_from_app_error_matches_app_error_response() {
+        let resp = HandlerError::from(AppError(LbError::Authorization("denied".into())))
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
 }
 
 #[allow(clippy::items_after_test_module)]

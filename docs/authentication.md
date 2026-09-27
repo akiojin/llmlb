@@ -57,7 +57,7 @@ rejected by the API.
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry access (`GET /api/models/registry/*`) and model list endpoints (`GET /api/models`, `GET /api/models/hub`) |
 | `logs.read` | Node log proxy (`GET /api/nodes/:node_id/logs`) |
-| `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
+| `metrics.read` | Metrics export (`GET /api/metrics/cloud`, `GET /api/metrics/cloud/export`) |
 
 ### Self-service API key management
 

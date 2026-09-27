@@ -647,6 +647,17 @@ async fn reset_token_count(db_pool: &SqlitePool, user_id: uuid::Uuid) -> i64 {
         .unwrap()
 }
 
+/// forgot-password はトークンを応答後に非同期発行するため、件数が期待値になるまで待つ
+async fn wait_for_reset_token_count(db_pool: &SqlitePool, user_id: uuid::Uuid, expected: i64) {
+    for _ in 0..100 {
+        if reset_token_count(db_pool, user_id).await == expected {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(reset_token_count(db_pool, user_id).await, expected);
+}
+
 async fn create_email_user(db_pool: &SqlitePool, email: &str, password: &str) -> uuid::Uuid {
     let hash = llmlb::auth::password::hash_password(password).unwrap();
     llmlb::db::users::create(db_pool, email, &hash, UserRole::Viewer, false)
@@ -725,7 +736,7 @@ async fn test_forgot_password_issues_reset_token() {
         body.get("token").is_none(),
         "token must never be returned to an unauthenticated caller"
     );
-    assert_eq!(reset_token_count(&db_pool, user_id).await, 1);
+    wait_for_reset_token_count(&db_pool, user_id, 1).await;
 
     // 平文トークンはDBに保存しない（ハッシュのみ）
     let stored: String =
@@ -764,12 +775,12 @@ async fn test_forgot_password_unknown_email_is_indistinguishable() {
     assert_eq!(known_status, StatusCode::ACCEPTED);
     assert_eq!(unknown_status, StatusCode::ACCEPTED);
     assert_eq!(known_body, unknown_body);
+    wait_for_reset_token_count(&db_pool, user_id, 1).await;
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM password_reset_tokens")
         .fetch_one(&db_pool)
         .await
         .unwrap();
     assert_eq!(total, 1);
-    assert_eq!(reset_token_count(&db_pool, user_id).await, 1);
 }
 
 /// 再発行すると同ユーザーの以前のトークンは失効する

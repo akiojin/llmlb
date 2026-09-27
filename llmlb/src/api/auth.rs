@@ -634,11 +634,11 @@ pub async fn change_password(
 /// メールIDに一致するユーザーがいればリセットトークンを発行する（認証不要）。
 /// アカウント列挙を防ぐため、ユーザーの有無に関わらず同じ 202 応答を返し、
 /// トークンはレスポンスに含めない。メール送信基盤を持たないため、リセットリンクは
-/// サーバーログに出力し、運用者が本人へ伝達する。
+/// サーバーログに出力し、運用者が本人へ伝達する。トークン発行は応答後に非同期で行う。
 ///
 /// # Returns
 /// * `202 Accepted` - 受付（ユーザーの有無は明かさない）
-/// * `500 Internal Server Error` - サーバーエラー
+/// * `500 Internal Server Error` - ユーザー検索に失敗
 pub async fn forgot_password(
     State(app_state): State<AppState>,
     Json(request): Json<ForgotPasswordRequest>,
@@ -650,26 +650,35 @@ pub async fn forgot_password(
             AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
         })?;
 
-    if let Some(user) = user {
-        let token = crate::db::password_reset_tokens::issue(
-            &app_state.db_pool,
-            user.id,
-            chrono::Duration::minutes(RESET_TOKEN_TTL_MINUTES),
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to issue password reset token: {}", e);
-            AppError(e).into_response()
-        })?;
-        tracing::info!(
-            user_id = %user.id,
-            username = %user.username,
-            expires_in_minutes = RESET_TOKEN_TTL_MINUTES,
-            "Password reset requested. Share this link with the user: /dashboard/reset-password.html#token={}",
-            token
-        );
-    } else {
-        tracing::info!("Password reset requested for an unknown account");
+    // トークン発行（DB 書き込み）は応答経路から切り離す。ユーザーの有無で処理時間が
+    // 変わると、応答時間差からアカウントを列挙できてしまうため（login のダミーハッシュと同じ趣旨）。
+    match user {
+        Some(user) => {
+            let db_pool = app_state.db_pool.clone();
+            tokio::spawn(async move {
+                match crate::db::password_reset_tokens::issue(
+                    &db_pool,
+                    user.id,
+                    chrono::Duration::minutes(RESET_TOKEN_TTL_MINUTES),
+                )
+                .await
+                {
+                    Ok(token) => tracing::info!(
+                        user_id = %user.id,
+                        username = %user.username,
+                        expires_in_minutes = RESET_TOKEN_TTL_MINUTES,
+                        "Password reset requested. Share this link with the user: /dashboard/reset-password.html#token={}",
+                        token
+                    ),
+                    Err(e) => tracing::error!(
+                        user_id = %user.id,
+                        "Failed to issue password reset token: {}",
+                        e
+                    ),
+                }
+            });
+        }
+        None => tracing::info!("Password reset requested for an unknown account"),
     }
 
     Ok((

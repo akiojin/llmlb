@@ -451,6 +451,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
         let aliases = canonical_resolution.aliases_for(model_id);
         // canonical_nameを取得（self-fallback により null は返らない）
         let canonical_name = canonical_resolution.canonical_for(model_id);
+        let is_canonical = canonical_resolution.is_known(model_id) && canonical_name == *model_id;
         // max_tokens: endpoint 申告 → 既知 canonical テーブルの順で解決
         let max_tokens = crate::models::mapping::resolve_max_tokens(
             &canonical_name,
@@ -488,6 +489,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "quantization": quantization,
                 "endpoint_ids": endpoint_ids,
                 "canonical_name": canonical_name,
+                "is_canonical": is_canonical,
                 "aliases": aliases,
             });
             data.push(obj);
@@ -505,6 +507,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
                 "quantization": quantization,
                 "endpoint_ids": endpoint_ids,
                 "canonical_name": canonical_name,
+                "is_canonical": is_canonical,
                 "aliases": aliases,
             });
             data.push(obj);

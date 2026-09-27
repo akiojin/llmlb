@@ -31,3 +31,10 @@
 - **原因**: `llmlb/src/api/anthropic.rs:500-504` で `forward_to_endpoint` の `Err` を固定文字列に差し替えている。`proxy.rs:394-401` の `tracing::error!` には reqwest の実エラーが出ているが、HTTP 応答には反映されない。`/v1/chat/completions` 側の同種パスも同じ構造
 - **再発防止ルール**: 502 受領時はクライアント出力だけで判断せず、`Dashboard → History → Request Details → Error` フィールド、もしくは llmlb の標準エラー出力（tracing）を必ず確認する。中期的にはエラーメッセージの透過化（`LbError` の実メッセージを Anthropic 応答に流す）を別 SPEC で対応する
 - **次回チェック方法**: `GET /api/request_history` または Dashboard の該当レコードの Error フィールド、llmlb プロセスの標準出力で `Failed to forward request to endpoint` の直近ログを確認
+
+### 一時 git リポジトリを使うテストは git フックの環境変数を必ず解除する
+
+- **事象**: `check-migration-versions.sh` の bats テストが pre-push フック（`make quality-checks`）内で実行された際、一時ディレクトリで行ったはずの `git init` / `git commit` / `git config user.*` が実リポジトリに作用し、作業ブランチに全ファイル削除コミットが積まれ、共有 git config に `[user] test` が追記された。その間に別 worktree の agent のコミット author が `test` になった
+- **原因**: git フックは `GIT_DIR` などを export した状態で子プロセスを起動する。`GIT_DIR` が設定されていると、`cd` で別ディレクトリに移っても git は実リポジトリを操作する。直接 `bats` を実行したときは環境変数がないため再現しない
+- **再発防止ルール**: 一時リポジトリを作るテストは、setup の先頭で `unset $(git rev-parse --local-env-vars)` を実行し、`git rev-parse --show-toplevel` が一時ディレクトリであることを assert する。author は `GIT_AUTHOR_*` / `GIT_COMMITTER_*` 環境変数で与え、`git config` への書き込みは行わない
+- **次回チェック方法**: テスト追加後は直接実行だけでなく `git push`（pre-push 経由）でも実行し、終了後に `git log -1`、`git status`、`git config --local --get user.email` が変化していないことを確認する

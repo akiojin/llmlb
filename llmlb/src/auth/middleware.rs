@@ -1,5 +1,6 @@
 // T047-T049: 認証ミドルウェア実装
 
+use crate::api::error::HandlerError;
 use crate::common::auth::{ApiKeyPermission, Claims, UserRole};
 use crate::AppState;
 use axum::{
@@ -95,11 +96,12 @@ fn extract_jwt_from_headers(headers: &HeaderMap) -> Option<String> {
     extract_jwt_cookie(headers)
 }
 
-#[allow(clippy::result_large_err)]
-fn verify_jwt_claims(token: &str, jwt_secret: &str) -> Result<Claims, Response> {
+fn verify_jwt_claims(token: &str, jwt_secret: &str) -> Result<Claims, HandlerError> {
     crate::auth::jwt::verify_jwt(token, jwt_secret).map_err(|e| {
         tracing::warn!("JWT verification failed: {}", e);
-        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e)).into_response()
+        (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e))
+            .into_response()
+            .into()
     })
 }
 
@@ -262,7 +264,7 @@ fn response_sets_csrf_cookie(response: &Response) -> bool {
 async fn authenticate_api_key(
     pool: &sqlx::SqlitePool,
     api_key: &str,
-) -> Result<ApiKeyAuthContext, Response> {
+) -> Result<ApiKeyAuthContext, HandlerError> {
     if let Some(permissions) = debug_api_key_permissions(api_key) {
         tracing::warn!("Authenticated via debug API key (debug build only)");
         return Ok(ApiKeyAuthContext {
@@ -284,7 +286,9 @@ async fn authenticate_api_key(
 
     if let Some(expires_at) = api_key_record.expires_at {
         if expires_at < chrono::Utc::now() {
-            return Err((StatusCode::UNAUTHORIZED, "API key expired".to_string()).into_response());
+            return Err((StatusCode::UNAUTHORIZED, "API key expired".to_string())
+                .into_response()
+                .into());
         }
     }
 
@@ -296,8 +300,7 @@ async fn authenticate_api_key(
     })
 }
 
-#[allow(clippy::result_large_err)]
-fn extract_api_key(request: &Request) -> Result<String, Response> {
+fn extract_api_key(request: &Request) -> Result<String, HandlerError> {
     if let Some(api_key) = request
         .headers()
         .get("X-API-Key")
@@ -318,19 +321,20 @@ fn extract_api_key(request: &Request) -> Result<String, Response> {
             StatusCode::UNAUTHORIZED,
             "Invalid Authorization header format. Expected 'Bearer <token>'".to_string(),
         )
-            .into_response());
+            .into_response()
+            .into());
     }
 
     Err((
         StatusCode::UNAUTHORIZED,
         "Missing X-API-Key header or Authorization header".to_string(),
     )
-        .into_response())
+        .into_response()
+        .into())
 }
 
 /// Authorization ヘッダー（Bearer）または JWT Cookie からトークンを取り出す。無ければ 401。
-#[allow(clippy::result_large_err)]
-fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, Response> {
+fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, HandlerError> {
     if let Some(auth_header) = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
@@ -344,6 +348,7 @@ fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, Respons
                     "Invalid Authorization header format".to_string(),
                 )
                     .into_response()
+                    .into()
             });
     }
     if let Some(cookie_token) = extract_jwt_cookie(headers) {
@@ -353,7 +358,8 @@ fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, Respons
         StatusCode::UNAUTHORIZED,
         "Missing Authorization header or JWT cookie".to_string(),
     )
-        .into_response())
+        .into_response()
+        .into())
 }
 
 /// パスワード変更/リセット後の旧 JWT セッションを無効化する。
@@ -367,11 +373,10 @@ fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, Respons
 /// DB 障害時に全認証ユーザーをロックアウトすると、ダッシュボードの
 /// グレースフルデグレード（キャッシュ応答）を壊し自己 DoS となるため。
 /// JWT 自体は 24h で失効するので、障害中の無効化遅延は限定的。
-#[allow(clippy::result_large_err)]
 pub(crate) async fn enforce_session_not_revoked(
     pool: &sqlx::SqlitePool,
     claims: &Claims,
-) -> Result<(), Response> {
+) -> Result<(), HandlerError> {
     let Ok(user_id) = uuid::Uuid::parse_str(&claims.sub) else {
         return Ok(());
     };
@@ -383,7 +388,8 @@ pub(crate) async fn enforce_session_not_revoked(
             StatusCode::UNAUTHORIZED,
             "Session revoked: please sign in again".to_string(),
         )
-            .into_response()),
+            .into_response()
+            .into()),
         Ok(_) => Ok(()),
         Err(e) => {
             // fail-open: DB 障害時はセッションを有効扱いにして可用性を優先する。
@@ -400,7 +406,7 @@ pub async fn jwt_auth_middleware(
     State(jwt_secret): State<String>,
     mut request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     // AuthorizationヘッダーまたはCookieからトークンを取得
     let token = extract_bearer_or_cookie_token(request.headers())?;
 
@@ -426,7 +432,7 @@ pub async fn require_jwt_auth_middleware(
     State(app_state): State<AppState>,
     mut request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     let token = extract_bearer_or_cookie_token(request.headers())?;
     let claims = verify_jwt_claims(&token, &app_state.jwt_secret)?;
     // パスワード変更/リセット後の旧セッションを無効化する
@@ -444,7 +450,7 @@ pub async fn require_jwt_auth_middleware(
 pub async fn require_admin_role_middleware(
     request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     let claims = request.extensions().get::<Claims>().ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
@@ -454,7 +460,9 @@ pub async fn require_admin_role_middleware(
     })?;
 
     if claims.role != UserRole::Admin {
-        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response());
+        return Err((StatusCode::FORBIDDEN, "Admin access required".to_string())
+            .into_response()
+            .into());
     }
 
     Ok(next.run(request).await)
@@ -467,7 +475,7 @@ pub async fn require_admin_role_middleware(
 pub async fn require_password_changed_middleware(
     request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     let claims = request.extensions().get::<Claims>().ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
@@ -481,14 +489,18 @@ pub async fn require_password_changed_middleware(
             StatusCode::FORBIDDEN,
             axum::Json(serde_json::json!({"error": "password_change_required"})),
         )
-            .into_response());
+            .into_response()
+            .into());
     }
 
     Ok(next.run(request).await)
 }
 
 /// CookieベースのJWT認証時にCSRFトークンを要求するミドルウェア
-pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Response, Response> {
+pub async fn csrf_protect_middleware(
+    request: Request,
+    next: Next,
+) -> Result<Response, HandlerError> {
     if !method_requires_csrf(request.method()) {
         return Ok(next.run(request).await);
     }
@@ -514,7 +526,9 @@ pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Res
         })?;
 
     if csrf_cookie != csrf_header {
-        return Err((StatusCode::FORBIDDEN, "Invalid CSRF token".to_string()).into_response());
+        return Err((StatusCode::FORBIDDEN, "Invalid CSRF token".to_string())
+            .into_response()
+            .into());
     }
 
     if !origin_matches(request.headers()) {
@@ -522,7 +536,8 @@ pub async fn csrf_protect_middleware(request: Request, next: Next) -> Result<Res
             StatusCode::FORBIDDEN,
             "Origin validation failed".to_string(),
         )
-            .into_response());
+            .into_response()
+            .into());
     }
 
     let mut response = next.run(request).await;
@@ -553,7 +568,7 @@ pub async fn api_key_auth_middleware(
     State(pool): State<sqlx::SqlitePool>,
     mut request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     let api_key = extract_api_key(&request)?;
     let auth_context = authenticate_api_key(&pool, &api_key).await?;
     let auth_context_for_response = auth_context.clone();
@@ -583,8 +598,7 @@ fn anthropic_error_response(
         .into_response()
 }
 
-#[allow(clippy::result_large_err)]
-fn require_anthropic_version_header(request: &Request) -> Result<(), Response> {
+fn require_anthropic_version_header(request: &Request) -> Result<(), HandlerError> {
     let value = request
         .headers()
         .get("anthropic-version")
@@ -596,7 +610,8 @@ fn require_anthropic_version_header(request: &Request) -> Result<(), Response> {
             StatusCode::BAD_REQUEST,
             "invalid_request_error",
             "Missing required header: anthropic-version",
-        )),
+        )
+        .into()),
     }
 }
 
@@ -605,7 +620,7 @@ pub async fn anthropic_api_key_auth_middleware(
     State(pool): State<sqlx::SqlitePool>,
     mut request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     require_anthropic_version_header(&request)?;
 
     let api_key = extract_api_key(&request).map_err(|_| {
@@ -635,7 +650,7 @@ pub async fn require_api_key_permission_middleware(
     State(required_permission): State<ApiKeyPermission>,
     request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     let auth_context = request
         .extensions()
         .get::<ApiKeyAuthContext>()
@@ -652,7 +667,8 @@ pub async fn require_api_key_permission_middleware(
             StatusCode::FORBIDDEN,
             "Insufficient API key permission".to_string(),
         )
-            .into_response());
+            .into_response()
+            .into());
     }
 
     Ok(next.run(request).await)
@@ -663,7 +679,7 @@ pub async fn require_anthropic_api_key_permission_middleware(
     State(required_permission): State<ApiKeyPermission>,
     request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     let auth_context = request
         .extensions()
         .get::<ApiKeyAuthContext>()
@@ -680,7 +696,8 @@ pub async fn require_anthropic_api_key_permission_middleware(
             StatusCode::FORBIDDEN,
             "permission_error",
             "Insufficient API key permission",
-        ));
+        )
+        .into());
     }
 
     Ok(next.run(request).await)
@@ -711,7 +728,7 @@ pub async fn jwt_or_api_key_permission_middleware(
     State(config): State<JwtOrApiKeyPermissionConfig>,
     mut request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, HandlerError> {
     // JWTがあれば優先
     if let Some(token) = extract_jwt_from_headers(request.headers()) {
         let claims = verify_jwt_claims(&token, &config.app_state.jwt_secret)?;
@@ -720,9 +737,9 @@ pub async fn jwt_or_api_key_permission_middleware(
 
         if let Some(required_role) = config.jwt_required_role {
             if claims.role != required_role {
-                return Err(
-                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response()
-                );
+                return Err((StatusCode::FORBIDDEN, "Admin access required".to_string())
+                    .into_response()
+                    .into());
             }
         }
 
@@ -746,7 +763,8 @@ pub async fn jwt_or_api_key_permission_middleware(
             StatusCode::FORBIDDEN,
             format!("Missing required permission: {}", permission_str),
         )
-            .into_response());
+            .into_response()
+            .into());
     }
 
     // APIキーの発行者の情報でClaimsを構築

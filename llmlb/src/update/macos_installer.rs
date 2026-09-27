@@ -1,6 +1,6 @@
 //! macOS 向けインストーラ実行（osascript 経由の権限昇格）
 //!
-//! arch-review [H2]: update の OS プロセス層のうち、macOS の pkg インストーラを
+//! arch-review \[H2\]: update の OS プロセス層のうち、macOS の pkg インストーラを
 //! 管理者権限で起動する処理と AppleScript/シェルのエスケープを submodule へ分離。
 //! モジュール全体が macOS 限定のため `mod macos_installer;` ごと cfg でゲートする。
 

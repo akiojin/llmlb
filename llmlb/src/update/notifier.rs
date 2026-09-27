@@ -4,7 +4,7 @@ use super::schedule;
 
 /// 自己更新の状態を UI 層へ通知する抽象。
 ///
-/// arch-review [M8]: update ドメインが `gui::tray::TrayEventProxy` へ直接依存して
+/// arch-review \[M8\]: update ドメインが `gui::tray::TrayEventProxy` へ直接依存して
 /// いたため、通知先を trait として逆転させた（依存方向は gui → update）。
 /// gui 側が本 trait を `TrayEventProxy` に実装する。
 #[cfg(any(target_os = "windows", target_os = "macos"))]

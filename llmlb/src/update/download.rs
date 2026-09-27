@@ -1,6 +1,6 @@
 //! 更新アーティファクトのダウンロードと展開 IO
 //!
-//! arch-review [H2]: update/mod.rs の IO 層（HTTP ストリーミングダウンロード・
+//! arch-review \[H2\]: update/mod.rs の IO 層（HTTP ストリーミングダウンロード・
 //! アーカイブ展開・展開後バイナリ探索）を submodule として切り出した。
 //! UpdateManager からは pub(super) 経由で従来どおり利用する。
 

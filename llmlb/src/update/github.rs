@@ -1,6 +1,6 @@
 //! GitHub Releases API からの最新リリース取得とタグ→バージョン変換
 //!
-//! arch-review [H2]: update/mod.rs が純ドメイン・IO・OS プロセス・UI を 1 ファイルに
+//! arch-review \[H2\]: update/mod.rs が純ドメイン・IO・OS プロセス・UI を 1 ファイルに
 //! 混載していたため、GitHub Releases API の呼び出しとレスポンス型を submodule へ
 //! 切り出した。UpdateManager 本体からは `pub(super)` 経由で従来どおり呼び出す。
 

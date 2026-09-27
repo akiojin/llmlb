@@ -1,6 +1,6 @@
 //! プラットフォーム/ターゲット検出とリリースアセット・適用プラン選択
 //!
-//! arch-review [H6]: update/mod.rs から、どのポータブル/インストーラアセットを
+//! arch-review \[H6\]: update/mod.rs から、どのポータブル/インストーラアセットを
 //! 取得しどう適用するかの選択ロジックを分離。親は use platform::{...} で参照する。
 
 use super::github::{GitHubAsset, GitHubRelease};

@@ -1,6 +1,6 @@
 //! 自己アップデートの公開シリアライズ状態型（ダッシュボード/トレイ/API 向けデータモデル）
 //!
-//! arch-review [H6]: update/mod.rs の god-object 化に対し、状態機械ロジックから
+//! arch-review \[H6\]: update/mod.rs の god-object 化に対し、状態機械ロジックから
 //! データモデル（状態列挙）を分離。親は `pub use dto::*` で再エクスポートし、
 //! crate::update::UpdateState 等の既存パスとテストの参照を維持する。
 

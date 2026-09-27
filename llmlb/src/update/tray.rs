@@ -1,10 +1,10 @@
 //! 自己更新状態の通知（UI 連携）
 //!
-//! arch-review [H2]: update/mod.rs が純ドメイン・IO・OS プロセス・UI を混載して
+//! arch-review \[H2\]: update/mod.rs が純ドメイン・IO・OS プロセス・UI を混載して
 //! いたため、通知経路を submodule へ分離した。モジュール全体が windows/macos
 //! 限定のため `mod tray;` ごと cfg でゲートする。
 //!
-//! arch-review [M8]: 通知先は具象 `TrayEventProxy` ではなく [`super::UpdateNotifier`]
+//! arch-review \[M8\]: 通知先は具象 `TrayEventProxy` ではなく [`super::UpdateNotifier`]
 //! trait 経由とし、update ドメインから gui への直接依存を排した。
 
 use super::UpdateNotifier;

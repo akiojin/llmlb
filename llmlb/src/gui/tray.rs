@@ -112,7 +112,7 @@ pub struct ScheduleInfo {
 
 /// Convert an update-domain schedule into tray display info.
 ///
-/// arch-review [M8]: この変換は gui 側（表示形式）の関心事のため update から移設。
+/// arch-review \[M8\]: この変換は gui 側（表示形式）の関心事のため update から移設。
 fn schedule_to_tray_info(schedule: &crate::update::schedule::UpdateSchedule) -> ScheduleInfo {
     use crate::update::schedule::ScheduleMode;
     let mode = match schedule.mode {
@@ -128,7 +128,7 @@ fn schedule_to_tray_info(schedule: &crate::update::schedule::UpdateSchedule) -> 
     }
 }
 
-/// arch-review [M8]: update ドメインの [`crate::update::UpdateNotifier`] を実装し、
+/// arch-review \[M8\]: update ドメインの [`crate::update::UpdateNotifier`] を実装し、
 /// gui → update の依存方向で通知を受け取る。各メソッドは既存の inherent メソッドへ委譲。
 impl crate::update::UpdateNotifier for TrayEventProxy {
     fn notify_update_available(&self, latest: String) {

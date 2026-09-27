@@ -38,3 +38,10 @@
 - **原因**: ローカル検証を develop 取り込み前の HEAD で実行していたため、番号衝突を検出できなかった。並行 worktree が多い状況では migrations の採番が衝突しやすい
 - **再発防止ルール**: 新規マイグレーションを追加・push する前に `git fetch origin develop` して `git ls-tree --name-only origin/develop llmlb/migrations/` の最大番号を確認し、衝突していれば繰り下げる。PR 作成前に origin/develop を取り込んだ状態で `cargo test` を実行する
 - **次回チェック方法**: `git ls-tree --name-only origin/develop llmlb/migrations/ | tail -1` と自ブランチの新規マイグレーション番号を比較する
+
+### 一時 git リポジトリを使うテストは git フックの環境変数を必ず解除する
+
+- **事象**: `check-migration-versions.sh` の bats テストが pre-push フック（`make quality-checks`）内で実行された際、一時ディレクトリで行ったはずの `git init` / `git commit` / `git config user.*` が実リポジトリに作用し、作業ブランチに全ファイル削除コミットが積まれ、共有 git config に `[user] test` が追記された。その間に別 worktree の agent のコミット author が `test` になった
+- **原因**: git フックは `GIT_DIR` などを export した状態で子プロセスを起動する。`GIT_DIR` が設定されていると、`cd` で別ディレクトリに移っても git は実リポジトリを操作する。直接 `bats` を実行したときは環境変数がないため再現しない
+- **再発防止ルール**: 一時リポジトリを作る bats テストは必ず `tests/checks/helpers/git-sandbox.bash` の `git_sandbox_init` を経由する（`git rev-parse --local-env-vars` の unset、toplevel の assert、author は環境変数で指定し `git config` に書き込まない）。隔離そのものは `tests/checks/test-git-sandbox.bats` が囮リポジトリで回帰検証する
+- **次回チェック方法**: テスト追加後は直接実行だけでなく `git push`（pre-push 経由）でも実行し、終了後に `git log -1`、`git status`、`git config --local --get user.email` が変化していないことを確認する

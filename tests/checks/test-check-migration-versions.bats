@@ -7,17 +7,26 @@ setup() {
     SCRIPT="$BATS_TEST_DIRNAME/../../scripts/checks/check-migration-versions.sh"
     [ -x "$SCRIPT" ]
 
+    # git フック（pre-push 等）から継承した GIT_DIR 等が残っていると、
+    # 一時リポジトリへの操作が実リポジトリに漏れるため必ず解除する。
+    unset $(git rev-parse --local-env-vars)
+    export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
+    export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
+
     REPO="$BATS_TEST_TMPDIR/repo"
     mkdir -p "$REPO/llmlb/migrations"
     cd "$REPO"
-    git init -q -b develop
-    git config user.email test@example.com
-    git config user.name test
+    git init -q
+    [ "$(git rev-parse --show-toplevel)" = "$(pwd -P)" ]
     touch llmlb/migrations/001_init.sql
     touch llmlb/migrations/032_add_password_reset_tokens.sql
+    commit_all base
+    export BASE_REF=HEAD
+}
+
+commit_all() {
     git add -A
-    git commit -q -m base
-    export BASE_REF=develop
+    git commit -q -m "$1"
 }
 
 add_migration() {
@@ -63,12 +72,10 @@ add_migration() {
 }
 
 @test "ベースに先行着地した同一バージョンとの衝突を検出する" {
-    git checkout -q -b feature
-    git checkout -q develop
+    # ベースに add_a が着地し、作業ツリーは着地前に分岐して add_b を追加した状態
     add_migration 20260928010203_add_a.sql
-    git add -A
-    git commit -q -m landed
-    git checkout -q feature
+    commit_all landed
+    rm llmlb/migrations/20260928010203_add_a.sql
     add_migration 20260928010203_add_b.sql
     run "$SCRIPT"
     [ "$status" -eq 1 ]
@@ -76,13 +83,8 @@ add_migration() {
 }
 
 @test "ベースと同名のファイルは衝突とみなさない" {
-    git checkout -q -b feature
-    git checkout -q develop
     add_migration 20260928010203_add_a.sql
-    git add -A
-    git commit -q -m landed
-    git checkout -q feature
-    git merge -q develop
+    commit_all landed
     add_migration 20260928020000_add_b.sql
     run "$SCRIPT"
     [ "$status" -eq 0 ]

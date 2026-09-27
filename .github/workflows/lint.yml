@@ -168,3 +168,7 @@ jobs:
           echo "Base ref: ${{ github.base_ref }}"
           chmod +x scripts/checks/check-commits.sh
           scripts/checks/check-commits.sh --from "origin/${{ github.base_ref }}" --to HEAD
+
+      - name: Check Dependabot group subjects
+        # Issue #727: Dependabot のグループ更新件名が header-max-length を超えないことを保証する
+        run: make dependabot-subjects

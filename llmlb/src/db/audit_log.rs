@@ -440,23 +440,8 @@ impl AuditLogStorage {
             }
 
             let new_previous = if allow_external_predecessors {
-                // Each archival run re-roots the first remaining main-DB batch at genesis.
-                // A later run can therefore append a genesis-rooted segment even when its
-                // sequence immediately follows the preceding archived segment.
-                let starts_rebased_segment = batch.previous_hash == GENESIS_HASH;
-                let is_contiguous = !starts_rebased_segment
-                    && previous_sequence.is_some_and(|sequence: i64| {
-                        sequence.checked_add(1) == Some(batch.sequence_number)
-                    });
-                if is_contiguous {
-                    if batch.previous_hash != expected_stored_previous {
-                        return Err(LbError::Database(format!(
-                            "Invalid audit hash chain before migration at batch {}: contiguous predecessor mismatch",
-                            batch.sequence_number
-                        )));
-                    }
-                    continuous_new_previous.clone()
-                } else {
+                let is_first_archived_batch = previous_sequence.is_none();
+                if is_first_archived_batch {
                     let valid_external_anchor = batch.previous_hash.len() == 64
                         && batch
                             .previous_hash
@@ -472,6 +457,26 @@ impl AuditLogStorage {
                         )));
                     }
                     batch.previous_hash.clone()
+                } else if batch.previous_hash == GENESIS_HASH {
+                    // Each archival run re-roots the first remaining main-DB batch at genesis.
+                    // A later run can therefore append a genesis-rooted segment even when its
+                    // sequence immediately follows the preceding archived segment.
+                    GENESIS_HASH.to_string()
+                } else if previous_sequence.is_some_and(|sequence: i64| {
+                    sequence.checked_add(1) == Some(batch.sequence_number)
+                }) {
+                    if batch.previous_hash != expected_stored_previous {
+                        return Err(LbError::Database(format!(
+                            "Invalid audit hash chain before migration at batch {}: contiguous predecessor mismatch",
+                            batch.sequence_number
+                        )));
+                    }
+                    continuous_new_previous.clone()
+                } else {
+                    return Err(LbError::Database(format!(
+                        "Invalid audit hash chain before migration at batch {}: invalid external predecessor",
+                        batch.sequence_number
+                    )));
                 }
             } else {
                 continuous_new_previous.clone()
@@ -1770,15 +1775,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_archive_pool_rehashes_disconnected_legacy_batches() {
+    async fn test_create_archive_pool_accepts_external_anchor_for_first_batch() {
         let (_directory, path, pool) = prepare_legacy_archive().await;
-        insert_legacy_archive_batch(
-            &pool,
-            1,
-            GENESIS_HASH,
-            make_entry("GET", "/api/archive-1", 200, ActorType::User),
-        )
-        .await;
         insert_legacy_archive_batch(
             &pool,
             4,
@@ -1791,20 +1789,20 @@ mod tests {
         let migrated_pool = create_archive_pool(&path).await.unwrap();
         let storage = AuditLogStorage::new(migrated_pool);
         let batches = storage.get_all_batch_hashes().await.unwrap();
-        assert_eq!(batches.len(), 2);
-        assert_eq!(batches[1].previous_hash, "a".repeat(64));
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].previous_hash, "a".repeat(64));
         let entries = storage
-            .get_entries_for_batch(batches[1].id.unwrap())
+            .get_entries_for_batch(batches[0].id.unwrap())
             .await
             .unwrap();
         assert_eq!(
-            batches[1].hash,
+            batches[0].hash,
             hash_chain::compute_batch_hash(
-                &batches[1].previous_hash,
-                batches[1].sequence_number,
-                &batches[1].batch_start,
-                &batches[1].batch_end,
-                batches[1].record_count,
+                &batches[0].previous_hash,
+                batches[0].sequence_number,
+                &batches[0].batch_start,
+                &batches[0].batch_end,
+                batches[0].record_count,
                 &entries,
             )
         );
@@ -1847,7 +1845,7 @@ mod tests {
         insert_current_archive_batch(
             &pool,
             4,
-            &"a".repeat(64),
+            GENESIS_HASH,
             make_entry("GET", "/api/archive-current", 200, ActorType::User),
         )
         .await;
@@ -1951,6 +1949,54 @@ mod tests {
             .await
             .expect_err("an invalid external anchor must fail closed");
         assert!(error.to_string().contains("audit hash chain"));
+    }
+
+    #[tokio::test]
+    async fn test_create_archive_pool_rejects_deleted_middle_batch() {
+        let (_directory, path, pool) = prepare_legacy_archive().await;
+        let hash_1 = insert_legacy_archive_batch(
+            &pool,
+            1,
+            GENESIS_HASH,
+            make_entry("GET", "/api/archive-1", 200, ActorType::User),
+        )
+        .await;
+        let hash_2 = insert_legacy_archive_batch(
+            &pool,
+            2,
+            &hash_1,
+            make_entry("GET", "/api/archive-2", 200, ActorType::User),
+        )
+        .await;
+        insert_legacy_archive_batch(
+            &pool,
+            3,
+            &hash_2,
+            make_entry("GET", "/api/archive-3", 200, ActorType::User),
+        )
+        .await;
+
+        let deleted_batch_id: i64 =
+            sqlx::query_scalar("SELECT id FROM audit_batch_hashes WHERE sequence_number = 2")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("DELETE FROM audit_log_entries WHERE batch_id = ?")
+            .bind(deleted_batch_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM audit_batch_hashes WHERE id = ?")
+            .bind(deleted_batch_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let error = create_archive_pool(&path)
+            .await
+            .expect_err("a deleted middle batch must fail closed");
+        assert!(error.to_string().contains("invalid external predecessor"));
     }
 
     #[tokio::test]

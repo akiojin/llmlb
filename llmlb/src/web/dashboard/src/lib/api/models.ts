@@ -49,6 +49,8 @@ export interface OpenAIModel {
   // US-029: Canonical 統一情報
   canonical_name?: string
   aliases?: string[]
+  // #722: この ID 自体が既知の canonical 名か
+  is_canonical?: boolean
   quantization?: string | null
 }
 
@@ -83,6 +85,8 @@ export interface RegisteredModelView {
   // US-029: Canonical 統一情報
   canonical_name?: string
   aliases?: string[]
+  // #722: この ID 自体が既知の canonical 名か
+  is_canonical?: boolean
   quantization?: string | null
 }
 
@@ -113,6 +117,7 @@ function toRegisteredModelView(model: OpenAIModel): RegisteredModelView {
     endpoint_ids: model.endpoint_ids ?? [],
     canonical_name: model.canonical_name,
     aliases: model.aliases,
+    is_canonical: model.is_canonical,
     quantization: model.quantization,
   }
 }

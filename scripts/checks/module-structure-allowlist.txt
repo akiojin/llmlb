@@ -10,7 +10,6 @@ size api/anthropic.rs
 size api/dashboard.rs
 size api/endpoints.rs
 size api/models.rs
-size api/openai.rs
 size auth/middleware.rs
 size balancer/mod.rs
 size common/protocol.rs

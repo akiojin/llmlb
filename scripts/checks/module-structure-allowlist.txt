@@ -13,7 +13,6 @@ size api/models.rs
 size auth/middleware.rs
 size balancer/mod.rs
 size common/protocol.rs
-size db/audit_log.rs
 size db/endpoints.rs
 size db/request_history.rs
 size db/traits.rs

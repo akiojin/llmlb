@@ -158,6 +158,7 @@ async fn initialize_inner(
 
     crate::db::request_history::start_cleanup_task(request_history.clone());
     crate::db::endpoint_daily_stats::start_daily_stats_task(db_pool.clone());
+    crate::cloud_metrics::start_retention_task(db_pool.clone());
 
     // 管理者が存在しない場合は作成
     auth::bootstrap::ensure_admin_exists(&db_pool)
@@ -188,7 +189,9 @@ async fn initialize_inner(
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     if let Some(proxy) = tray_proxy {
-        update_manager.set_tray_proxy(proxy).await;
+        update_manager
+            .set_tray_proxy(std::sync::Arc::new(proxy))
+            .await;
     }
     update_manager.start_background_tasks();
 

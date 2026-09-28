@@ -95,6 +95,10 @@ mod anthropic_messages_api_test;
 #[path = "contract/endpoint_daily_stats_api_test.rs"]
 mod endpoint_daily_stats_api_test;
 
+// SPEC #582 US-005: クラウドメトリクスエクスポートAPI契約テスト
+#[path = "contract/cloud_metrics_export_test.rs"]
+mod cloud_metrics_export_test;
+
 // SPEC-82cd11b7: バージョンAPI契約テスト
 #[path = "contract/version_api_test.rs"]
 mod version_api_test;
@@ -142,6 +146,10 @@ mod api_keys_api_test;
 // SPEC-e8e9326e: エンドポイント管理API拡張契約テスト（不足ケース補完）
 #[path = "contract/endpoints_contract_extended_test.rs"]
 mod endpoints_contract_extended_test;
+
+// SPEC #585 FR-027 / Issue #696: 公開ルートの契約テスト欠落を補完
+#[path = "contract/api_route_coverage_test.rs"]
+mod api_route_coverage_test;
 
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

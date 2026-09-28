@@ -445,6 +445,60 @@ mod tests {
         assert!(result.is_ok(), "api_keys table should exist");
     }
 
+    /// 連番採番を凍結した最終バージョン（Issue #737）。以降はタイムスタンプ採番。
+    const LEGACY_SEQUENTIAL_MAX_VERSION: i64 = 32;
+
+    #[test]
+    fn test_embedded_migration_versions_follow_numbering_rule() {
+        let mut previous = 0;
+        for migration in sqlx::migrate!("./migrations").iter() {
+            let version = migration.version;
+            assert!(
+                version > previous,
+                "migration versions must be unique and ascending: {previous} -> {version}"
+            );
+            previous = version;
+            if version <= LEGACY_SEQUENTIAL_MAX_VERSION {
+                continue;
+            }
+            assert!(
+                chrono::NaiveDateTime::parse_from_str(&version.to_string(), "%Y%m%d%H%M%S").is_ok(),
+                "migration {version} must use YYYYMMDDHHMMSS (UTC) numbering"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_timestamp_migration_applies_on_legacy_sequential_database() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let mut migrations: Vec<_> = sqlx::migrate!("./migrations").iter().cloned().collect();
+        migrations.push(sqlx::migrate::Migration::new(
+            20260928000000,
+            Cow::Borrowed("timestamp numbering probe"),
+            sqlx::migrate::MigrationType::Simple,
+            Cow::Borrowed("CREATE TABLE timestamp_numbering_probe (id INTEGER PRIMARY KEY);"),
+            false,
+        ));
+        let migrator = Migrator {
+            migrations: Cow::Owned(migrations),
+            ..Migrator::DEFAULT
+        };
+        migrator.run(&pool).await.unwrap();
+        // 冪等性: 再実行しても適用済みマイグレーションは再適用されない
+        migrator.run(&pool).await.unwrap();
+
+        let applied: Vec<i64> =
+            sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(applied.last(), Some(&20260928000000));
+        let expected = sqlx::migrate!("./migrations").iter().count() + 1;
+        assert_eq!(applied.len(), expected);
+    }
+
     // --- 追加テスト ---
 
     #[tokio::test]

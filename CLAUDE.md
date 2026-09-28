@@ -10,7 +10,7 @@
 - どこを見る: `README.md`（全体像）→ `DEVELOPMENT.md`（セットアップ）→ GitHub Issue（`gwt-spec`ラベル、要件とタスク）。
 - 守る: ブランチ／worktree作成・切替禁止、作業ディレクトリ移動禁止、必ずローカルで全テスト実行。
 - HFカタログ利用時は`HF_TOKEN`（任意）と必要に応じ`HF_BASE_URL`を環境にセットしておく。
-- まず実行: `make quality-checks`（時間がない場合でも個別コマンドを全て回すこと）。
+- まず実行: `make quality-checks`（CI 相当の検証集合は `Makefile` の `quality-checks` ターゲットが定義する）。
 - 迷ったら: `memory/constitution.md`とこのファイル後半の詳細ルールを再確認。
 - セッション開始時: `memory/lessons.md` を確認し、過去の修正パターンを踏まえて作業する。
 - 回答は日本語で行う。
@@ -150,8 +150,8 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 
 ### 🧱 コア原則（常時適用）
 
-- **Think hard**: 実装に入る前に、目的・制約・完了条件を文章で明確化する
-- **Plan before action**: 変更順序・影響範囲・検証手順を先に `PLANS.md` へ記載する
+- **着手前に要件を言語化**: 実装に入る前に、目的・制約・完了条件を文章で明確化する
+- **Plan before action**: 着手前に計画を `PLANS.md` へ記載する（[PLANS.md 運用手順](#plansmd-運用手順)）
 - **No shortcuts**: 一時しのぎではなく、根本原因を解消する
 - **Proof before done**: テスト・差分確認・挙動確認の証跡なしに完了宣言しない
 - **Self-improve**: 指摘事項を `memory/lessons.md` に反映し、次回のチェック項目へ昇格させる
@@ -219,11 +219,7 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 
 #### Step 1: 仕様策定（TDD RED の前に必須）
 
-1. `gwt-issue-search` で既存 SPEC を検索し、対象ドメインをカバーするものがあるか確認する
-2. 既存 SPEC に該当する → `/gwt-spec-ops` で既存 SPEC を更新する
-3. どのドメインにも当てはまらない → `/gwt-spec-register` で新規 SPEC を作成し `/gwt-spec-ops` で進める
-
-**仕様Issueが完成して初めて Step 2 に進める。**
+[GitHub Issue-first 仕様管理](#github-issue-first-仕様管理) の手順に従い、仕様Issueが完成してから Step 2 に進む。
 
 #### Step 2: 実装（TDD）
 1. Worktree/ブランチの作成・切替は行わない（この環境は既に準備済み）
@@ -258,31 +254,26 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 - 作業（タスク）を完了したら、変更点を日本語でコミットログに追加して、コミット＆プッシュを必ず行う
 - コミットメッセージは commitlint (Conventional Commits) に準拠した形式で記述する（例: `feat(core): add new api`）
 - featureブランチからのPRは必ず`develop`ブランチをベースに作成する（`main`への直接PRは禁止）
-- **作業開始前に `PLANS.md` に今後の対応を書き出し、作業中に変更があれば随時更新する**
-- **`PLANS.md` はブランチ単位のローカル作業メモとして運用し、Git管理対象外（.gitignore）とする**
+- `PLANS.md` の扱いは [PLANS.md 運用手順](#plansmd-運用手順) に従う
 - 作業（タスク）は、最大限の並列化をして進める
 - 作業（タスク）は、最大限の細分化をしてToDoに登録する
 - 作業（タスク）の開始前には、必ずToDoを登録した後に作業を開始する
 - 作業（タスク）は、忖度なしで進める
-- 作業開始前に `PLANS.md` を確認し、差分があれば更新してから着手する
-- `PLANS.md` はGit管理外（ローカル運用）のため、コミット対象に含めない
 
-### PLANS.md 運用手順（作業開始前の必須手順）
+### PLANS.md 運用手順
 
-1. 作業を始める前に `PLANS.md` を開き、当日の日付に「今後の対応」を箇条書きで追記する
-   - 未記入の場合は作業を開始しない
+`PLANS.md` はブランチ単位のローカル作業メモである。Git 管理外（`.gitignore`）のため、コミット対象に含めない。
+
+1. 作業を始める前に `PLANS.md` を開き、当日の日付で「今後の対応」を箇条書きで追記する
+   - 対象Spec・対象ファイル・変更順序・影響範囲・検証コマンドを書く
+   - 「今後の対応」が未記入、または本日の作業と一致しない場合は作業に着手しない
+   - 記載漏れや差分があれば、先に `PLANS.md` を更新してから進める
 2. 着手前にToDoへ分解し、`PLANS.md` の項目と対応関係が分かるように保つ
-3. 作業中に優先度や方針が変わったら、必ず `PLANS.md` を更新する
-4. タスク完了後は、完了済みの更新内容が `PLANS.md` に反映されていることを確認する
-5. `PLANS.md` はブランチ単位のローカルメモとして扱い、コミットしない（.gitignoreで管理外）
-
-#### タスク管理ループ（スパゲティ化防止）
-
-1. タスク開始前に、対象Spec・対象ファイル・検証コマンドを `PLANS.md` に書く
-2. 実装前に「既存コードのどこを変更するか」を確認し、無関係な変更を抑制する
-3. サブタスク完了ごとに `PLANS.md` のチェックボックスを更新し、進捗を可視化する
-4. タスク完了時に `PLANS.md` の `Review` セクションへ「何を変えたか / なぜ変えたか / どう検証したか」を記録する
-5. 途中で方針変更や追加作業が発生した場合は、実装を続ける前に `PLANS.md` を更新する
+3. 実装前に「既存コードのどこを変更するか」を確認し、無関係な変更を抑制する
+4. 優先度・方針の変更や追加作業が発生したら、実装を続ける前に `PLANS.md` を更新する
+5. サブタスク完了ごとに `PLANS.md` のチェックボックスを更新し、進捗を可視化する
+6. タスク完了時に `Review` セクションへ「何を変えたか / なぜ変えたか / どう検証したか」を記録し、
+   完了済みの内容が `PLANS.md` に反映されていることを確認する
 
 #### PLANS.md 推奨テンプレート
 
@@ -300,13 +291,6 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
   - 検証結果:
 ```
 
-### 作業開始前の確認（PLANS徹底）
-
-- `PLANS.md` の「今後の対応」を更新済みでなければ**作業に着手しない**
-- 更新内容は本日の作業と一致していることを確認する
-- 記載漏れがあれば**先にPLANSを更新**してから作業を進める
-- `PLANS.md` はローカル専用で、Git管理対象外であることを確認する
-
 ### 環境固定ルール（プロジェクトカスタム）
 
 - 勝手にブランチ作成やWorktree作成は禁止（`git branch`, `git worktree add` などを実行しない）
@@ -320,19 +304,27 @@ llmlbは**APIゲートウェイ**として機能し、エンドポイントを**
 - Rustサーバーは `llmlb/src/web/static/` を **ビルド時にバイナリへ埋め込む**。
 - ダッシュボード（TS/TSX/CSS）を修正したら必ず `pnpm --filter @llm/dashboard build` を実行し、生成物（`llmlb/src/web/static/`）をコミットしてから `llmlb` を再ビルドすること。
 
-### ローカル検証（絶対厳守）
+### データベースマイグレーションの採番（重要）
+
+- 新規マイグレーションは `llmlb/migrations/YYYYMMDDHHMMSS_<snake_case>.sql`（UTC タイムスタンプ）で作成する。
+  例: `date -u +%Y%m%d%H%M%S` の出力をそのまま接頭辞に使う。
+- `001`〜`032` の連番は凍結済み。連番の続き（`033_*` 等）は採番しない。既存ファイルのリネームも禁止
+  （適用済み DB の `_sqlx_migrations.version` と不一致になるため）。
+- 理由: 並行する agent がそれぞれ develop を見て「次の連番」を採番すると同じ番号になり、
+  後から着地した側で `_sqlx_migrations.version` の UNIQUE 違反が起きる（Issue #737）。
+- `make migration-versions`（`make quality-checks` と pre-push に含まれる）が、命名規則違反と
+  `origin/develop` に先行着地したマイグレーションとのバージョン衝突を検出する。
+  衝突した場合は新しいタイムスタンプで採番し直す。
+
+### ローカル検証
 
 GitHub Actions が実行する検証を**全てローカルで事前に成功させてから**コミットすること。例外は認めない。
 
-- 下記コマンド群を現在の作業環境で順番に実行し、すべて成功（終了コード0）を確認すること
-  - `cargo fmt --check`
-  - `cargo clippy --all-targets --all-features -- -D warnings`
-  - `cargo test`
-  - `pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees"`
-- コミット対象に応じて `scripts/checks/check-commits.sh` やその他ワークフロー相当のスクリプト
-- まとめて実行する場合は `make quality-checks`（OpenAI互換APIテスト `make openai-tests` を内包）を推奨。
+- `make quality-checks` を実行し、成功（終了コード0）を確認すること。
+  CI が回す検証の集合は `Makefile` の `quality-checks` ターゲットが定義する（個別コマンドを手で並べると CI との差分が生まれるため、ここには列挙しない）。
+- コミット対象に応じて `scripts/checks/check-commits.sh` を実行する。
 - OpenAI互換APIのみを個別に確認したい場合は `make openai-tests` を実行すること。
-- いずれかが失敗した状態でコミットすることを固く禁止する。失敗原因を解消し、再実行→合格を確認してからコミットせよ。
+- いずれかが失敗した状態でコミットすることは禁止する。失敗原因を解消し、再実行→合格を確認してからコミットせよ。
 - ローカル検証結果を残すため、必要に応じて実行ログをメモし、レビュー時に提示できるようにすること。
 
 #### ⚠️ コンテキスト消費を抑える実行方法（Claude Code向け）
@@ -344,21 +336,10 @@ Task toolやバックグラウンドタスクで品質チェックを実行す�
 # ❌ NG: 出力制限なしで実行
 
 # ✅ OK: 直接Bashで出力制限付き実行（推奨パターン）
-
-# フォーマットチェック（成功/失敗のみ確認）
-cargo fmt --check > /dev/null 2>&1 && echo "✓ fmt OK" || echo "✗ fmt FAIL"
-
-# Clippy（最後の20行のみ表示）
-cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
-
-# テスト（サマリのみ表示）
-cargo test 2>&1 | grep -E "(test result|FAILED|passed|failed)" | tail -10
-
-# markdownlint（エラー数のみ確認）
-pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" 2>&1 | tail -10
-
-# 全体を一括確認（出力制限付き）
 make quality-checks 2>&1 | tail -50
+
+# ✅ OK: 失敗したターゲットだけを再実行する場合も出力を制限する
+make <target> 2>&1 | tail -20
 ```
 
 #### ⚠️ テスト実行時間の目安（重要）
@@ -367,10 +348,10 @@ make quality-checks 2>&1 | tail -50
 
 | コマンド | 所要時間 | 推奨timeout |
 |----------|----------|-------------|
-| `cargo test -- --test-threads=1` | **約8-10分**（265テスト） | 600000ms |
+| `cargo test -- --test-threads=1` | **約8-10分** | 600000ms |
 | `make quality-checks` | **約10-15分** | 900000ms |
 
-**絶対禁止事項：**
+**禁止事項：**
 
 - ❌ タイムアウトを「ハング」と誤解して `git commit --no-verify` でバイパスする
 - ❌ pre-commitフックの問題を調査せずにスキップする
@@ -380,7 +361,7 @@ make quality-checks 2>&1 | tail -50
 - ✅ タイムアウトした場合は、より長いtimeoutを設定して再実行
 - ✅ 本当にハングしている場合は、どのテストで止まっているか特定してから対処
 
-### commitlint準拠コミットログ（絶対厳守・SemVer運用）
+### commitlint準拠コミットログ（SemVer運用）
 
 **🚨 重要: このプロジェクトは SemVer（X.Y.Z）でバージョニングします**
 
@@ -394,7 +375,7 @@ make quality-checks 2>&1 | tail -50
 | `fix:` | **PATCH** ⬆️ (1.2.0 → 1.2.1) | `fix(auth): ログイン時のタイムアウトを修正` | バグ修正時 |
 | `feat!:` / `fix!:` | **MAJOR** ⬆️ (1.2.0 → 2.0.0) | `feat!: APIエンドポイントを刷新` | 破壊的変更時 |
 | `BREAKING CHANGE:` | **MAJOR** ⬆️ (1.2.0 → 2.0.0) | 本文に記載 | 破壊的変更時 |
-| `docs:`, `chore:`, `test:`, `refactor:`, `ci:`, `build:`, `perf:`, `style:` | **原則変更なし** | `docs: README更新` | ドキュメント・保守変更 |
+| `docs:`, `chore:`, `test:`, `refactor:`, `ci:`, `build:`, `perf:`, `style:`, `revert:` | **原則変更なし** | `docs: README更新` | ドキュメント・保守変更 |
 
 **誤ったtypeを使用した場合の影響例**:
 
@@ -415,7 +396,7 @@ type(scope): summary
 [optional footer(s)]
 ```
 
-**許可されたtype一覧**:
+**許可されたtype一覧**（`commitlint.config.js` の `type-enum`）:
 
 - `feat`: 新機能追加（通常はMINOR）
 - `fix`: バグ修正（通常はPATCH）
@@ -427,6 +408,7 @@ type(scope): summary
 - `build`: ビルドシステム変更（通常はバージョン変更なし）
 - `perf`: パフォーマンス改善（通常はバージョン変更なし）
 - `style`: コードスタイル変更（通常はバージョン変更なし）
+- `revert`: 変更の取り消し（通常はバージョン変更なし）
 
 **破壊的変更の表記**:
 
@@ -435,12 +417,12 @@ type(scope): summary
 
 **ルール**:
 
-- `summary` は50文字以内、語尾に句読点を付けない
+- ヘッダー全体（`type(scope): summary`）は72文字以内（commitlint `header-max-length`）、語尾に句読点を付けない
 - `scope` はオプションだが、推奨（例: `feat(api):`, `fix(auth):`）
 - 本文が必要な場合は空行を挟んで記述
 - フッターには `BREAKING CHANGE:`, `Closes #123` などを記載可能
 
-#### 検証手順（絶対必須）
+#### 検証手順
 
 **コミット前に必ず実行**:
 
@@ -486,23 +468,26 @@ scripts/checks/check-commits.sh --from origin/main --to HEAD
 
 **コミットメッセージの品質とリリースノートの整合性**を保つため、typeは必ず実態に合わせて記述してください。
 
-### markdownlint準拠ドキュメント（強制）
+### markdownlint準拠ドキュメント
 
-- Markdown ファイルは commit 前に `pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees"` を実行して lint を通過させる。対象が限定される場合でもルールに従ったグロブを使用し、必ず全ファイルを検証する。
+- Markdown ファイルは commit 前に `make markdownlint` を実行して lint を通過させる。対象が限定される場合でも全ファイルを検証する。
 - 各ドキュメントは MD013（行長）、MD029（リスト番号）、MD041（見出しタイトル）など既定ルールを満たすよう編集する。必要な場合のみ、`.markdownlint.json` で合意された例外設定を追加する。
 - lint で検出された警告を放置した状態でのコミット・プッシュは禁止。修正が困難な場合は lint ルール変更の提案を issue に記録し、承認なしでローカル例外を入れない。
 - CI の Quality Checks でも markdownlint が実行されるため、ローカルで合格しない限り PR がブロックされる。CLI での改善結果を再チェックし、ゼロ警告を確認してからレビューを依頼する。
 
 ### GitHub Issue-first 仕様管理
 
-新機能の開発は、GitHub Issue（`gwt-spec`ラベル）で仕様を管理します：
+すべての機能開発・要件追加は GitHub Issue（`gwt-spec`ラベル）から開始し、仕様を Issue 上で管理する。
 
 1. **`gwt-issue-search`（必須プリフライト）**: 既存 SPEC を検索し、対象ドメインをカバーするものがないか確認する
-2. **既存 SPEC あり** → `/gwt-spec-ops` で既存 SPEC を更新する
+2. **既存 SPEC あり** → `gwt-spec-ops`（スキル。スラッシュコマンドは無い）で既存 SPEC を更新する
    - ビジネス要件とユーザーストーリーを追記・修正
    - 「何を」「なぜ」に焦点を当てる（「どのように」は含めない）
-3. **既存 SPEC なし** → `/gwt-spec-register` で新規 SPEC を作成してから `/gwt-spec-ops` で進める
-4. 実装計画・タスク分解もIssue上で管理
+3. **既存 SPEC なし** → `/gwt:gwt-spec-register` で新規 SPEC を作成してから `gwt-spec-ops` で進める
+4. 技術設計・実装計画・タスク分解も Issue 上で管理する
+5. 仕様Issueが完成してから TDD RED（テスト作成）に進む
+6. タスクは TDD サイクルで実行し、割り当て済みブランチ上で実装してコミットを積む（ブランチ操作は禁止）
+7. 完了時はメンテナの指示に従う
 
 #### 環境固定ルール（プロジェクトカスタム）
 
@@ -528,9 +513,9 @@ scripts/checks/check-commits.sh --from origin/main --to HEAD
 
 これらのHookは、コマンド実行前に自動的にチェックし、違反操作を即座にブロックします。
 
-### TDD遵守（妥協不可）
+### TDD遵守
 
-**絶対遵守事項:**
+**遵守事項:**
 
 - **Red-Green-Refactorサイクル必須**:
   1. **RED**: テストを書く → テスト失敗を確認
@@ -558,14 +543,7 @@ scripts/checks/check-commits.sh --from origin/main --to HEAD
 
 **すべての機能開発・要件追加は GitHub Issue（`gwt-spec`ラベル）から開始**
 
-**機能開発フロー**:
-
-1. `gwt-issue-search` — 既存 SPEC を検索（必須プリフライト）
-2. 既存 SPEC あり → `/gwt-spec-ops` で更新、なし → `/gwt-spec-register` で新規作成してから `/gwt-spec-ops` で進める
-3. Issue上で技術設計・タスク分解を実施
-4. タスク実行（TDDサイクル厳守）
-   - 割り当て済みブランチ上で実装し、コミットを積む。ブランチ操作は禁止。
-5. 完了時はメンテナの指示に従う
+**機能開発フロー**: [GitHub Issue-first 仕様管理](#github-issue-first-仕様管理) を参照。
 
 **仕様作成原則**:
 
@@ -577,11 +555,10 @@ scripts/checks/check-commits.sh --from origin/main --to HEAD
 **憲章準拠**:
 
 - すべての実装は [`memory/constitution.md`](memory/constitution.md) に準拠
-- TDD、ハンドラーアーキテクチャ、LLM最適化は妥協不可
+- TDD、ハンドラーアーキテクチャ、LLM最適化は必須
 
 ## コミュニケーションガイドライン
 
-- 回答は必ず日本語
 - 完了報告には「実施内容」「主な変更ファイル」「検証結果」「残課題（あれば）」を含める
 
 ## ドキュメント管理

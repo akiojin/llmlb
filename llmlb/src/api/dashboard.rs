@@ -1418,6 +1418,7 @@ pub async fn get_models(
 
         let aliases = canonical_resolution.aliases_for(model_id);
         let canonical_name = canonical_resolution.canonical_for(model_id);
+        let is_canonical = canonical_resolution.is_known(model_id) && canonical_name == *model_id;
         let max_tokens = crate::models::mapping::resolve_max_tokens(
             &canonical_name,
             endpoint_model_max_tokens.get(model_id).copied().flatten(),
@@ -1449,6 +1450,7 @@ pub async fn get_models(
                 "quantization": quantization,
                 "endpoint_ids": endpoint_ids,
                 "canonical_name": canonical_name,
+                "is_canonical": is_canonical,
                 "aliases": aliases,
             }));
         } else {
@@ -1465,6 +1467,7 @@ pub async fn get_models(
                 "quantization": quantization,
                 "endpoint_ids": endpoint_ids,
                 "canonical_name": canonical_name,
+                "is_canonical": is_canonical,
                 "aliases": aliases,
             }));
         }
@@ -1487,6 +1490,7 @@ pub async fn get_models(
             .unwrap_or_default();
         let aliases = canonical_resolution.aliases_for(model_id);
         let canonical_name = canonical_resolution.canonical_for(model_id);
+        let is_canonical = canonical_resolution.is_known(model_id) && canonical_name == *model_id;
         let max_tokens = crate::models::mapping::resolve_max_tokens(
             &canonical_name,
             endpoint_model_max_tokens.get(model_id).copied().flatten(),
@@ -1506,6 +1510,7 @@ pub async fn get_models(
             "quantization": quantization,
             "endpoint_ids": endpoint_ids,
             "canonical_name": canonical_name,
+            "is_canonical": is_canonical,
             "aliases": aliases,
         }));
     }

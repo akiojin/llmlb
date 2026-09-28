@@ -90,6 +90,22 @@ function formatCountdown(targetIso: string): string | null {
   return `${min}:${sec.toString().padStart(2, '0')}`
 }
 
+interface Countdown {
+  timeoutAt: string
+  text: string | null
+}
+
+function countdownFor(state: Countdown | null, timeoutAt: string | null): string | null {
+  return timeoutAt && state?.timeoutAt === timeoutAt ? state.text : null
+}
+
+const DASHBOARD_TABS = ['endpoints', 'models', 'statistics', 'history', 'clients', 'logs']
+
+function readInitialTab(): string {
+  const tabParam = new URLSearchParams(window.location.search).get('tab')
+  return tabParam && DASHBOARD_TABS.includes(tabParam) ? tabParam : 'endpoints'
+}
+
 export default function Dashboard() {
   const { user } = useAuth()
   const isViewer = user?.role === 'viewer'
@@ -103,25 +119,18 @@ export default function Dashboard() {
   const [isApplyingForceUpdate, setIsApplyingForceUpdate] = useState(false)
   const [isForceUpdateDialogOpen, setIsForceUpdateDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
-  const [lastCheckTimestamp, setLastCheckTimestamp] = useState(0)
+  const [isCooldown, setIsCooldown] = useState(false)
   const [isRollbackDialogOpen, setIsRollbackDialogOpen] = useState(false)
   const [isRollingBack, setIsRollingBack] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [scheduleMode, setScheduleMode] = useState<'immediate' | 'idle' | 'scheduled'>('immediate')
   const [scheduledAt, setScheduledAt] = useState('')
   const [isScheduling, setIsScheduling] = useState(false)
-  const [drainCountdown, setDrainCountdown] = useState<string | null>(null)
-  const [applyTimeoutCountdown, setApplyTimeoutCountdown] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('endpoints')
-
-  // Read tab parameter from URL search params and set activeTab
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const tabParam = searchParams.get('tab')
-    if (tabParam && ['endpoints', 'models', 'statistics', 'history', 'clients', 'logs'].includes(tabParam)) {
-      setActiveTab(tabParam)
-    }
-  }, [])
+  // カウントダウン表示は対象の timeout_at と組で保持し、別の timeout_at に対する古い表示を出さない
+  const [drainCountdownState, setDrainCountdownState] = useState<Countdown | null>(null)
+  const [applyTimeoutCountdownState, setApplyTimeoutCountdownState] = useState<Countdown | null>(null)
+  // Read tab parameter from URL search params as the initial activeTab
+  const [activeTab, setActiveTab] = useState(readInitialTab)
 
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
@@ -162,30 +171,36 @@ export default function Dashboard() {
   const systemVersion = systemInfo?.version ?? versionData?.version ?? null
 
   // Drain timeout countdown timer
+  const drainTimeoutAt =
+    systemInfo?.update?.state === 'draining' ? systemInfo.update.timeout_at || null : null
   useEffect(() => {
-    const update = systemInfo?.update
-    if (update?.state !== 'draining' || !update.timeout_at) {
-      setDrainCountdown(null)
-      return
-    }
-    const tick = () => setDrainCountdown(formatCountdown(update.timeout_at))
+    if (!drainTimeoutAt) return
+    const tick = () =>
+      setDrainCountdownState({ timeoutAt: drainTimeoutAt, text: formatCountdown(drainTimeoutAt) })
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [systemInfo?.update])
+  }, [drainTimeoutAt])
+  const drainCountdown = countdownFor(drainCountdownState, drainTimeoutAt)
 
+  const applyTimeoutAt =
+    systemInfo?.update?.state === 'applying' ? systemInfo.update.timeout_at || null : null
   useEffect(() => {
-    const update = systemInfo?.update
-    if (update?.state !== 'applying' || !update.timeout_at) {
-      setApplyTimeoutCountdown(null)
-      return
-    }
-    const timeoutAt = update.timeout_at
-    const tick = () => setApplyTimeoutCountdown(formatCountdown(timeoutAt))
+    if (!applyTimeoutAt) return
+    const tick = () =>
+      setApplyTimeoutCountdownState({ timeoutAt: applyTimeoutAt, text: formatCountdown(applyTimeoutAt) })
     tick()
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [systemInfo?.update])
+  }, [applyTimeoutAt])
+  const applyTimeoutCountdown = countdownFor(applyTimeoutCountdownState, applyTimeoutAt)
+
+  // Update check cooldown: re-enable the check button CHECK_COOLDOWN_MS after the last check
+  useEffect(() => {
+    if (!isCooldown) return
+    const timer = setTimeout(() => setIsCooldown(false), CHECK_COOLDOWN_MS)
+    return () => clearTimeout(timer)
+  }, [isCooldown])
 
   // Fetch request history (individual request details)
   const { data: requestResponsesData, isLoading: isLoadingHistory } =
@@ -247,8 +262,6 @@ export default function Dashboard() {
     const showRestartButton = updateState === 'available' || failedHasUpdateCandidate || applying
     const showForceButton = hasAvailableUpdate
     const canForceApply = isAdmin && isPayloadReady && !applying
-    const cooldownRemaining = Math.max(0, CHECK_COOLDOWN_MS - (Date.now() - lastCheckTimestamp))
-    const isCooldown = cooldownRemaining > 0
     const canCheck = isAdmin && !applying && !isCooldown
     const forceUpdateTitle = !isAdmin
       ? 'Admin role is required'
@@ -315,7 +328,7 @@ export default function Dashboard() {
 
     const onCheck = async () => {
       setIsCheckingUpdate(true)
-      setLastCheckTimestamp(Date.now())
+      setIsCooldown(true)
       try {
         const { update } = await systemApi.checkUpdate()
         const currentSystemInfo = queryClient.getQueryData<SystemInfo>(SYSTEM_INFO_QUERY_KEY)
@@ -813,7 +826,7 @@ export default function Dashboard() {
     isApplyingForceUpdate,
     isForceUpdateDialogOpen,
     isCheckingUpdate,
-    lastCheckTimestamp,
+    isCooldown,
     isRollbackDialogOpen,
     isRollingBack,
     isSettingsOpen,

@@ -142,12 +142,10 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
   const isAdmin = user?.role === 'admin'
   const [mode, setMode] = useState<PlaygroundMode>('chat')
 
-  // 非 admin が Load Test モードに留まらないよう Chat へ矯正する。
-  useEffect(() => {
-    if (!isAdmin && mode === 'load_test') {
-      setMode('chat')
-    }
-  }, [isAdmin, mode])
+  // 非 admin が Load Test モードに留まらないよう Chat へ矯正する（レンダー中の state 調整）。
+  if (!isAdmin && mode === 'load_test') {
+    setMode('chat')
+  }
 
   const [loadTestTotalRequests, setLoadTestTotalRequests] = useState(
     String(DEFAULT_LOAD_TEST_SETTINGS.totalRequests)
@@ -176,6 +174,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
       setDistributionError(null)
     },
   })
+  const { abortControllerRef } = pg
 
   const {
     data: modelsData,
@@ -233,7 +232,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
   useEffect(() => {
     return () => {
       isMountedRef.current = false
-      pg.abortControllerRef.current?.abort()
+      abortControllerRef.current?.abort()
       loadTestStopRef.current = true
       loadTestAbortControllersRef.current.forEach((controller) => controller.abort())
       loadTestAbortControllersRef.current.clear()
@@ -308,7 +307,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
     pg.setAttachments([])
     pg.setIsStreaming(true)
 
-    pg.abortControllerRef.current = new AbortController()
+    abortControllerRef.current = new AbortController()
 
     try {
       const requestMessages = pg.systemPrompt
@@ -345,7 +344,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
               return updated
             })
           },
-          pg.abortControllerRef.current.signal
+          abortControllerRef.current.signal
         )
       } else {
         const response = await chatApi.complete(
@@ -358,7 +357,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
             user: runTag,
           },
           undefined,
-          pg.abortControllerRef.current.signal
+          abortControllerRef.current.signal
         )
 
         const { content, reasoning } = splitAssistantMessage(response)
@@ -395,7 +394,7 @@ export default function LoadBalancerPlayground({ onBack, initialModel }: LoadBal
       if (isMountedRef.current) {
         pg.setIsStreaming(false)
       }
-      pg.abortControllerRef.current = null
+      abortControllerRef.current = null
       if (isMountedRef.current) {
         pg.inputRef.current?.focus()
       }

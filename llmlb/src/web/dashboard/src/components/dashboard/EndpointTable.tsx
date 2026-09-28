@@ -283,7 +283,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
     }
   }
 
-  const SortIcon = ({ field }: { field: SortField }) => {
+  const renderSortIcon = (field: SortField) => {
     if (sortField !== field) return null
     return sortDirection === 'asc' ? (
       <ChevronUp className="ml-1 h-4 w-4 inline" />
@@ -395,7 +395,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     onClick={() => handleSort('name')}
                   >
                     Name
-                    <SortIcon field="name" />
+                    {renderSortIcon('name')}
                   </TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead>Type</TableHead>
@@ -404,28 +404,28 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     onClick={() => handleSort('status')}
                   >
                     Status
-                    <SortIcon field="status" />
+                    {renderSortIcon('status')}
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('total_requests')}
                   >
                     Requests
-                    <SortIcon field="total_requests" />
+                    {renderSortIcon('total_requests')}
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('latency_ms')}
                   >
                     Latency
-                    <SortIcon field="latency_ms" />
+                    {renderSortIcon('latency_ms')}
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('model_count')}
                   >
                     Models
-                    <SortIcon field="model_count" />
+                    {renderSortIcon('model_count')}
                   </TableHead>
                   <TableHead>Last Seen</TableHead>
                   <TableHead className="text-right">Actions</TableHead>

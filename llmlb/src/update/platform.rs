@@ -125,23 +125,28 @@ pub(crate) fn choose_apply_plan(
     None
 }
 
+/// `dir` に実際にファイルを作成できるかを判定する。
+///
+/// プローブ名はプロセス ID と UUID で一意化する。固定名だと並行呼び出しや
+/// 異常終了で残ったプローブと衝突し、書き込み可能なディレクトリを誤判定する (#756)。
 pub(crate) fn is_dir_writable(dir: &Path) -> Result<bool> {
     fs::create_dir_all(dir).ok();
-    let probe = dir.join(".llmlb_write_probe");
-    let result = fs::OpenOptions::new()
+    let probe = dir.join(format!(
+        ".llmlb_write_probe.{}.{}",
+        std::process::id(),
+        uuid::Uuid::new_v4().simple()
+    ));
+    match fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&probe)
-        .map(|_| true)
-        .or_else(|e| {
-            if matches!(e.kind(), io::ErrorKind::PermissionDenied) {
-                Ok(false)
-            } else {
-                Err(e)
-            }
-        })?;
-    if result {
-        let _ = fs::remove_file(&probe);
+    {
+        Ok(file) => {
+            drop(file);
+            let _ = fs::remove_file(&probe);
+            Ok(true)
+        }
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => Ok(false),
+        Err(e) => Err(e.into()),
     }
-    Ok(result)
 }

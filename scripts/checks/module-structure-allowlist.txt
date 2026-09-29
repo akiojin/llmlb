@@ -7,7 +7,6 @@
 # 分割が完了したらエントリを削除すること（残っていると check が失敗する）。
 
 size api/anthropic.rs
-size api/dashboard.rs
 size api/endpoints.rs
 size api/models.rs
 size auth/middleware.rs

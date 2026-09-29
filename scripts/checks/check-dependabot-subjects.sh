@@ -8,7 +8,13 @@
 # 超え、必須チェック Commit Message Lint が必ず失敗する（#715 / #720）。
 #
 # dependabot.yml の各 group について、更新数 99 件の最悪ケースの件名を組み立て、
-# リポジトリの commitlint 設定で検証する。commitlint 設定そのものは変更しない。
+# リポジトリの commitlint 設定で検証する。
+#
+# group 内の更新が 1 件だけの場合、件名は依存名で長さが決まり（#666 で 81 文字）、
+# 設定側で 72 文字以内を保証できない。そのため commitlint.config.js は Dependabot の
+# コミットを除外している（Issue #751）。本スクリプトは dependabot.yml の全エントリが
+# commit-message.prefix を明示し、その prefix の長い件名が Dependabot コミットとして
+# 除外されること（dependabot.yml と commitlint.config.js の整合）も検証する。
 #
 # 環境変数:
 #   DEPENDABOT_CONFIG: 検査する設定ファイル（既定 .github/dependabot.yml）
@@ -25,6 +31,9 @@ DEPENDABOT_CONFIG="${DEPENDABOT_CONFIG:-$ROOT/.github/dependabot.yml}"
 COMMITLINT="$ROOT/node_modules/.bin/commitlint"
 DEFAULT_PREFIX="chore(deps)"
 WORST_CASE_UPDATES=99
+DEPENDABOT_SIGN_OFF="Signed-off-by: dependabot[bot] <support@github.com>"
+# 1 件更新の件名に使う長い依存名とバージョン（prefix を付けると 72 文字を超える）
+LONG_DEPENDENCY="bump @opentelemetry/instrumentation-http from 0.200.0 to 0.201.0"
 
 if [ ! -f "$DEPENDABOT_CONFIG" ]; then
     echo "✗ Dependabot 設定ファイルが見つかりません: $DEPENDABOT_CONFIG" >&2
@@ -68,6 +77,36 @@ extract_groups() {
     ' "$DEPENDABOT_CONFIG"
 }
 
+# updates の各エントリから "<package-ecosystem>\t<prefix>" を列挙する（prefix 未設定は空）。
+extract_prefixes() {
+    awk '
+        function flush() { if (ecosystem != "") printf "%s\t%s\n", ecosystem, prefix }
+        /^[[:space:]]*(#|$)/ { next }
+        /^ *- package-ecosystem:/ {
+            flush()
+            ecosystem = $0; sub(/^ *- package-ecosystem: */, "", ecosystem); gsub(/["\x27]/, "", ecosystem)
+            prefix = ""
+            next
+        }
+        /^ *prefix:/ {
+            prefix = $0; sub(/^ *prefix: */, "", prefix); gsub(/^["\x27]|["\x27] *$/, "", prefix)
+        }
+        END { flush() }
+    ' "$DEPENDABOT_CONFIG"
+}
+
+# 件名と本文を commitlint で検証し、結果を表示する。違反時は violations を加算する。
+lint_subject() {
+    local label="$1" subject="$2" message="$3" result
+    if result="$(printf '%s\n' "$message" | "$COMMITLINT" --cwd "$ROOT" 2>&1)"; then
+        echo "✓ $label: $subject (${#subject} 文字)"
+    else
+        echo "✗ $label: $subject (${#subject} 文字)"
+        echo "$result" | grep '✖' | sed 's/^/    /'
+        violations=$((violations + 1))
+    fi
+}
+
 groups="$(extract_groups)"
 if [ -z "$groups" ]; then
     echo "✗ group が 1 つも定義されていません: $DEPENDABOT_CONFIG" >&2
@@ -77,19 +116,24 @@ fi
 violations=0
 while IFS=$'\t' read -r prefix group; do
     subject="$prefix: bump the $group group across 1 directory with $WORST_CASE_UPDATES updates"
-    if result="$(echo "$subject" | "$COMMITLINT" --cwd "$ROOT" 2>&1)"; then
-        echo "✓ $subject (${#subject} 文字)"
-    else
-        echo "✗ $subject (${#subject} 文字)"
-        echo "$result" | grep '✖' | sed 's/^/    /'
-        violations=$((violations + 1))
-    fi
+    lint_subject "$group" "$subject" "$subject"
 done <<<"$groups"
+
+while IFS=$'\t' read -r ecosystem prefix; do
+    if [ -z "$prefix" ]; then
+        echo "✗ $ecosystem: commit-message の prefix が未設定です（commitlint の Dependabot 除外と整合しません）"
+        violations=$((violations + 1))
+        continue
+    fi
+    subject="$prefix: $LONG_DEPENDENCY"
+    lint_subject "$ecosystem" "$subject" "$(printf '%s\n\n%s' "$subject" "$DEPENDABOT_SIGN_OFF")"
+done <<<"$(extract_prefixes)"
 
 if [ "$violations" -gt 0 ]; then
     echo ""
-    echo "✗ $violations 件の group で Dependabot の件名が commitlint に違反します。"
-    echo "  group 名を短くするか、group を分割してください（commitlint 設定は緩めない）。"
+    echo "✗ $violations 件の Dependabot の件名が commitlint に違反します。"
+    echo "  group 名を短くするか group を分割し、commit-message.prefix を commitlint.config.js の"
+    echo "  Dependabot 除外条件と揃えてください（header-max-length は緩めない）。"
     exit 1
 fi
-echo "✓ 全 group の Dependabot 件名が commitlint を通ります"
+echo "✓ 全エントリの Dependabot 件名が commitlint を通ります"

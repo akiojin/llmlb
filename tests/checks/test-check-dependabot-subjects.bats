@@ -102,7 +102,7 @@ write_config() {
     write_config "build(deps)" npm-dev
     run "$SCRIPT"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"build(deps): bump "*" in the npm-dev group across 1 directory"* ]] || false
+    [[ "$output" == *"npm: build(deps): bump "* ]] || false
     [[ "$output" == *"header-max-length"* ]] || false
 }
 
@@ -110,5 +110,5 @@ write_config() {
     write_config "chore(deps)" npm-dev
     run "$SCRIPT"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"chore(deps): bump "*" in the npm-dev group across 1 directory"* ]] || false
+    [[ "$output" == *"✓ npm: chore(deps): bump "* ]] || false
 }

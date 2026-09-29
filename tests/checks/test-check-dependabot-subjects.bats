@@ -77,3 +77,38 @@ write_config() {
     run "$SCRIPT"
     [ "$status" -eq 2 ]
 }
+
+# --- Issue #751: dependabot.yml の prefix と commitlint.config.js の除外条件の整合 ---
+
+@test "リポジトリの dependabot.yml は全エントリで commit-message の prefix を明示している" {
+    DEPENDABOT_CONFIG="$REPO_CONFIG" run "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"gitsubmodule"* ]] || false
+    [[ "$output" != *"prefix が未設定"* ]] || false
+}
+
+@test "commit-message の prefix が未設定のエントリがあると失敗する" {
+    write_config "chore(deps)" npm-dev
+    {
+        echo '  - package-ecosystem: "gitsubmodule"'
+        echo '    directory: "/"'
+    } >>"$DEPENDABOT_CONFIG"
+    run "$SCRIPT"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"gitsubmodule"*"prefix が未設定"* ]] || false
+}
+
+@test "commitlint の除外対象外の prefix は 1 件更新の長い件名で失敗する" {
+    write_config "build(deps)" npm-dev
+    run "$SCRIPT"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"npm: build(deps): bump "* ]] || false
+    [[ "$output" == *"header-max-length"* ]] || false
+}
+
+@test "除外対象の prefix は 1 件更新の長い件名でも Dependabot コミットとして通る" {
+    write_config "chore(deps)" npm-dev
+    run "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"✓ npm: chore(deps): bump "* ]] || false
+}

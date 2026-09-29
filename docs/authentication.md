@@ -12,6 +12,8 @@ llmlb uses two authentication mechanisms:
    ops automation.
 
 The canonical API list lives in `README.md` / `README.ja.md`.
+Requirements, per-user-story implementation status, and remaining tasks are tracked in
+[SPEC #580](https://github.com/akiojin/llmlb/issues/580).
 
 ## JWT (dashboard + management)
 

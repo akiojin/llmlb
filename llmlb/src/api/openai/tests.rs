@@ -28,6 +28,22 @@ async fn create_state_with_tempdir() -> (AppState, tempfile::TempDir) {
     (state, dir)
 }
 
+/// fire-and-forget の履歴保存（save_request_record）が反映されるまで待つ。
+/// 固定 sleep は高負荷時に保存完了より先に読んでしまうため、条件成立までポーリングする。
+async fn wait_for_history_records(
+    state: &AppState,
+    ready: impl Fn(&[crate::common::protocol::RequestResponseRecord]) -> bool,
+) -> Vec<crate::common::protocol::RequestResponseRecord> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let records = state.request_history.load_records().await.expect("records");
+        if ready(&records) || tokio::time::Instant::now() >= deadline {
+            return records;
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+}
+
 async fn add_online_chat_endpoint(
     state: &AppState,
     endpoint_name: &str,
@@ -625,7 +641,10 @@ async fn cloud_request_is_listed_in_dashboard_history() {
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
 
     // wait for async save_request_record
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_for_history_records(&state, |records| {
+        records.iter().any(|r| r.model == "openai:gpt-4o")
+    })
+    .await;
 
     // login (dashboard is JWT-only; API keys are rejected for /api/dashboard/*)
     let login_resp = client
@@ -833,7 +852,7 @@ async fn upstream_timeout_returns_gateway_timeout_response() {
     assert_eq!(json["error"]["type"], "timeout");
     assert_eq!(json["error"]["code"], 504);
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    let records = wait_for_history_records(&state, |records| !records.is_empty()).await;
     let snapshot = state
         .load_manager
         .snapshot(endpoint_id)
@@ -841,7 +860,6 @@ async fn upstream_timeout_returns_gateway_timeout_response() {
         .expect("snapshot");
     assert_eq!(snapshot.active_requests, 0);
 
-    let records = state.request_history.load_records().await.expect("records");
     assert_eq!(records.len(), 1);
     assert!(matches!(records[0].status, RecordStatus::Error { .. }));
 }

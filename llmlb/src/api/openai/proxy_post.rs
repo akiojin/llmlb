@@ -67,11 +67,15 @@ pub(super) async fn proxy_openai_post(
 
     // モデル名統一化: エイリアス名が渡された場合、正規名に変換して検索
     let resolved_model = {
-        let found = state.endpoint_registry.find_by_model(&model).await;
+        let found = state.balancer.endpoint_registry.find_by_model(&model).await;
         if found.is_empty() {
             // エイリアス名で見つからない場合、マッピングテーブルで正規名を解決
             if let Some(canonical) = crate::models::mapping::resolve_canonical_any(&model) {
-                let canonical_found = state.endpoint_registry.find_by_model(canonical).await;
+                let canonical_found = state
+                    .balancer
+                    .endpoint_registry
+                    .find_by_model(canonical)
+                    .await;
                 if !canonical_found.is_empty() {
                     canonical.to_string()
                 } else {
@@ -87,6 +91,7 @@ pub(super) async fn proxy_openai_post(
 
     // Check if any endpoint has this model
     if state
+        .balancer
         .endpoint_registry
         .find_by_model(&resolved_model)
         .await
@@ -140,7 +145,7 @@ pub(super) async fn proxy_openai_post(
                 "Failed to select available node"
             );
             save_request_record(
-                state.request_history.clone(),
+                state.balancer.request_history.clone(),
                 RequestResponseRecord::error(
                     model.clone(),
                     request_type,
@@ -168,6 +173,7 @@ pub(super) async fn proxy_openai_post(
     let endpoint_host: std::net::IpAddr = UNSPECIFIED_IP;
 
     let request_lease = state
+        .balancer
         .load_manager
         .begin_request(endpoint_id)
         .await
@@ -176,7 +182,12 @@ pub(super) async fn proxy_openai_post(
     let client = state.http_client.clone();
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
     let start = Instant::now();
-    let endpoint_models = match state.endpoint_registry.list_models(endpoint_id).await {
+    let endpoint_models = match state
+        .balancer
+        .endpoint_registry
+        .list_models(endpoint_id)
+        .await
+    {
         Ok(models) => models,
         Err(error) => {
             warn!(
@@ -276,7 +287,7 @@ pub(super) async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -284,7 +295,7 @@ pub(super) async fn proxy_openai_post(
                 0,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -307,7 +318,7 @@ pub(super) async fn proxy_openai_post(
                 record.status = RecordStatus::Error {
                     message: classified_error.record_message,
                 };
-                save_request_record(state.request_history.clone(), record);
+                save_request_record(state.balancer.request_history.clone(), record);
             }
 
             let mut response = openai_error_response_with_type(
@@ -341,7 +352,7 @@ pub(super) async fn proxy_openai_post(
                     client_ip,
                     api_key_id,
                 );
-                save_request_record(state.request_history.clone(), record);
+                save_request_record(state.balancer.request_history.clone(), record);
             }
             // lease と推論レイテンシ更新は forwarder に移譲し、ストリーム完走時に
             // 実時間で確定する（ヘッダー受信時点での早期解放を避ける: lease-ttfb）。
@@ -352,8 +363,8 @@ pub(super) async fn proxy_openai_post(
                 tps_api_kind,
                 endpoint_type,
                 start,
-                state.endpoint_registry.clone(),
-                state.load_manager.clone(),
+                state.balancer.endpoint_registry.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
                 Some(request_lease),
             )
@@ -365,7 +376,7 @@ pub(super) async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -373,7 +384,7 @@ pub(super) async fn proxy_openai_post(
                 0,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -397,7 +408,7 @@ pub(super) async fn proxy_openai_post(
             record.status = RecordStatus::Error {
                 message: message.clone(),
             };
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
 
             let mut response = Response::new(Body::from(body_bytes));
             *response.status_mut() = status;
@@ -436,7 +447,7 @@ pub(super) async fn proxy_openai_post(
             .await
             .map_err(AppError::from)?;
         record_endpoint_request_stats(
-            state.endpoint_registry.clone(),
+            state.balancer.endpoint_registry.clone(),
             endpoint_id,
             model.clone(),
             false,
@@ -444,7 +455,7 @@ pub(super) async fn proxy_openai_post(
             0,
             tps_api_kind,
             endpoint_type,
-            state.load_manager.clone(),
+            state.balancer.load_manager.clone(),
             state.event_bus.clone(),
         );
 
@@ -475,7 +486,7 @@ pub(super) async fn proxy_openai_post(
             record.status = RecordStatus::Error {
                 message: message.clone(),
             };
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
         }
 
         let payload = json!({
@@ -510,7 +521,7 @@ pub(super) async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
             // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
-            update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+            update_inference_latency(&state.balancer.endpoint_registry, endpoint_id, duration);
             // SPEC-4bb5b55f: TPS計測用にoutput_tokensとdurationを渡す
             let tps_output_tokens = token_usage
                 .as_ref()
@@ -522,7 +533,7 @@ pub(super) async fn proxy_openai_post(
                 0
             };
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 true,
@@ -530,7 +541,7 @@ pub(super) async fn proxy_openai_post(
                 tps_duration_ms,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -557,7 +568,7 @@ pub(super) async fn proxy_openai_post(
                 record.input_tokens = input_tokens;
                 record.output_tokens = output_tokens;
                 record.total_tokens = total_tokens;
-                save_request_record(state.request_history.clone(), record);
+                save_request_record(state.balancer.request_history.clone(), record);
             }
 
             let mut response = (StatusCode::OK, Json(body)).into_response();
@@ -572,7 +583,7 @@ pub(super) async fn proxy_openai_post(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -580,7 +591,7 @@ pub(super) async fn proxy_openai_post(
                 0,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -603,7 +614,7 @@ pub(super) async fn proxy_openai_post(
                 record.status = RecordStatus::Error {
                     message: format!("Failed to parse OpenAI response: {}", e),
                 };
-                save_request_record(state.request_history.clone(), record);
+                save_request_record(state.balancer.request_history.clone(), record);
             }
 
             Err(LbError::Http(format!("Failed to parse OpenAI response: {}", e)).into())

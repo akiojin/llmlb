@@ -97,7 +97,7 @@ pub async fn get_endpoint_model_tps(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Json<Vec<ModelTpsEntry>> {
-    let tps_list = state.load_manager.get_model_tps(id).await;
+    let tps_list = state.balancer.load_manager.get_model_tps(id).await;
     Json(
         tps_list
             .into_iter()

@@ -318,7 +318,7 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::require_jwt_auth_middleware,
         ))
         .layer(middleware::from_fn_with_state(
-            state.inference_gate.clone(),
+            state.lifecycle.inference_gate.clone(),
             crate::inference_gate::inference_gate_middleware,
         ));
 
@@ -345,7 +345,7 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::require_jwt_auth_middleware,
         ))
         .layer(middleware::from_fn_with_state(
-            state.inference_gate.clone(),
+            state.lifecycle.inference_gate.clone(),
             crate::inference_gate::inference_gate_middleware,
         ));
 
@@ -526,7 +526,7 @@ pub fn create_app(state: AppState) -> Router {
         ));
     // Treat dashboard playground proxy as inference for drain purposes.
     let playground_proxy_routes = playground_proxy_routes.layer(middleware::from_fn_with_state(
-        state.inference_gate.clone(),
+        state.lifecycle.inference_gate.clone(),
         crate::inference_gate::inference_gate_middleware,
     ));
 
@@ -597,7 +597,7 @@ pub fn create_app(state: AppState) -> Router {
         ));
     // Self-update drain gate: reject new inference requests and track in-flight requests.
     let inference_routes = inference_routes.layer(middleware::from_fn_with_state(
-        state.inference_gate.clone(),
+        state.lifecycle.inference_gate.clone(),
         crate::inference_gate::inference_gate_middleware,
     ));
 
@@ -613,7 +613,7 @@ pub fn create_app(state: AppState) -> Router {
             crate::auth::middleware::anthropic_api_key_auth_middleware,
         ))
         .layer(middleware::from_fn_with_state(
-            state.inference_gate.clone(),
+            state.lifecycle.inference_gate.clone(),
             crate::inference_gate::inference_gate_middleware,
         ));
 
@@ -835,7 +835,7 @@ mod tests {
         let viewer_token = crate::auth::jwt::create_jwt(
             "viewer-user",
             UserRole::Viewer,
-            &state.jwt_secret,
+            &state.auth.jwt_secret,
             false,
             0,
         )
@@ -928,7 +928,7 @@ mod tests {
         let admin_token = crate::auth::jwt::create_jwt(
             "admin-user",
             UserRole::Admin,
-            &state.jwt_secret,
+            &state.auth.jwt_secret,
             false,
             0,
         )

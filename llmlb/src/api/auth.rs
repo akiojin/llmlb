@@ -106,7 +106,7 @@ pub async fn login(
         let token = crate::auth::jwt::create_jwt(
             &dev_user_id,
             crate::common::auth::UserRole::Admin,
-            &app_state.jwt_secret,
+            &app_state.auth.jwt_secret,
             false,
             0,
         )
@@ -198,7 +198,7 @@ pub async fn login(
     let token = crate::auth::jwt::create_jwt(
         &user.id.to_string(),
         user.role,
-        &app_state.jwt_secret,
+        &app_state.auth.jwt_secret,
         user.must_change_password,
         user.password_changed_at,
     )
@@ -554,7 +554,7 @@ pub async fn change_password(
     let token = crate::auth::jwt::create_jwt(
         &user_id.to_string(),
         claims.role,
-        &app_state.jwt_secret,
+        &app_state.auth.jwt_secret,
         false,
         updated_user.password_changed_at,
     )

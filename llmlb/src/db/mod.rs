@@ -101,19 +101,27 @@ pub(crate) mod test_utils {
                 crate::audit::writer::AuditLogWriterConfig::default(),
             );
             crate::AppState {
-                load_manager,
-                request_history,
+                balancer: crate::BalancerState {
+                    load_manager,
+                    endpoint_registry,
+                    request_history,
+                },
                 db_pool: self.db_pool,
-                jwt_secret: "test-secret".into(),
+                auth: crate::AuthState {
+                    jwt_secret: "test-secret".into(),
+                },
                 http_client,
                 event_bus: crate::events::create_shared_event_bus(),
-                endpoint_registry,
-                inference_gate,
-                shutdown,
-                update_manager,
-                audit_log_writer,
-                audit_log_storage,
-                audit_archive_pool: None,
+                lifecycle: crate::LifecycleState {
+                    inference_gate,
+                    shutdown,
+                    update_manager,
+                },
+                audit: crate::AuditState {
+                    writer: audit_log_writer,
+                    storage: audit_log_storage,
+                    archive_pool: None,
+                },
             }
         }
     }

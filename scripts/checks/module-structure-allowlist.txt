@@ -10,7 +10,6 @@ size api/anthropic.rs
 size api/endpoints.rs
 size api/models.rs
 size auth/middleware.rs
-size balancer/mod.rs
 size common/protocol.rs
 size db/endpoints.rs
 size db/traits.rs
@@ -19,7 +18,6 @@ size types/endpoint.rs
 
 mod api/mod.rs
 mod auth/mod.rs
-mod balancer/mod.rs
 mod cli/mod.rs
 mod delete/mod.rs
 mod detection/mod.rs

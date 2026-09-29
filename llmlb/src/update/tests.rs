@@ -553,8 +553,10 @@ async fn ensure_payload_ready_success_sets_payload_ready() {
     let PayloadKind::Portable { binary_path } = &kind else {
         panic!("expected portable payload, got {kind:?}");
     };
+    // 区切り文字は OS で異なるため、文字列ではなくパス要素で比較する。
+    let expected_suffix = std::path::Path::new("llmlb-test").join(&binary_name);
     assert!(
-        binary_path.ends_with(&entry),
+        std::path::Path::new(binary_path).ends_with(&expected_suffix),
         "unexpected binary path {binary_path}"
     );
     match manager.state().await {

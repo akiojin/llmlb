@@ -247,7 +247,7 @@ async fn check_only_does_not_download_payload() {
 
     let mock_server = MockServer::start().await;
     Mock::given(method("GET"))
-            .and(path("/repos/test-owner/test-repo/releases/latest"))
+            .and(path(format!("/repos/{DEFAULT_OWNER}/{DEFAULT_REPO}/releases/latest")))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "tag_name": "v99.0.0",
                 "html_url": "https://github.com/test-owner/test-repo/releases/tag/v99.0.0",
@@ -259,17 +259,28 @@ async fn check_only_does_not_download_payload() {
             .mount(&mock_server)
             .await;
 
-    let manager = UpdateManager::new_with_config(
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let manager = UpdateManager::new_with_data_dir_and_config(
         reqwest::Client::new(),
         InferenceGate::default(),
         ShutdownController::default(),
-        "test-owner".to_string(),
-        "test-repo".to_string(),
+        tmp.path(),
         Some(mock_server.uri()),
     )
     .expect("create update manager");
 
     let state = manager.check_only(true).await.expect("check_only");
+
+    // 並列実行するテストプロセスと競合しないよう、キャッシュは一時データディレクトリにだけ書く (#761)。
+    assert!(
+        manager.inner.cache_path.starts_with(tmp.path()),
+        "cache must be written under the temp data dir: {}",
+        manager.inner.cache_path.display()
+    );
+    assert!(
+        manager.inner.cache_path.exists(),
+        "check_only should save the cache"
+    );
 
     // Should discover the update.
     match &state {
@@ -628,12 +639,7 @@ async fn drain_timeout_cancels_and_transitions_to_failed() {
     time::pause();
 
     let gate = InferenceGate::default();
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        gate.clone(),
-        ShutdownController::default(),
-    )
-    .expect("create update manager");
+    let (manager, _tmp) = test_manager_with_gate(gate.clone());
 
     // Set up available state with ready payload.
     {
@@ -702,12 +708,7 @@ async fn drain_completes_before_timeout() {
     time::pause();
 
     let gate = InferenceGate::default();
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        gate.clone(),
-        ShutdownController::default(),
-    )
-    .expect("create update manager");
+    let (manager, _tmp) = test_manager_with_gate(gate.clone());
 
     // Set up available state with ready payload.
     {
@@ -2321,12 +2322,7 @@ async fn record_check_failure_from_applying_preserves_latest() {
 // =======================================================================
 #[tokio::test]
 async fn start_background_tasks_is_idempotent() {
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        InferenceGate::default(),
-        ShutdownController::default(),
-    )
-    .unwrap();
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
 
     // First call should not panic
     manager.start_background_tasks();

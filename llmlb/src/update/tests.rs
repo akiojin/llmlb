@@ -1234,6 +1234,69 @@ fn is_dir_writable_temp_dir() {
     assert!(is_dir_writable(dir.path()).unwrap());
 }
 
+#[test]
+fn is_dir_writable_concurrent_calls_all_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(16));
+    let handles: Vec<_> = (0..16)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                (0..50)
+                    .map(|_| is_dir_writable(&path).map_err(|e| e.to_string()))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    for handle in handles {
+        for result in handle.join().unwrap() {
+            assert_eq!(result, Ok(true));
+        }
+    }
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn is_dir_writable_ignores_leftover_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".llmlb_write_probe"), b"").unwrap();
+    assert!(is_dir_writable(dir.path()).unwrap());
+    assert!(is_dir_writable(dir.path()).unwrap());
+    // 事前に存在したファイル以外（今回のプローブ）は残さない
+    let names: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![std::ffi::OsString::from(".llmlb_write_probe")]);
+}
+
+#[test]
+fn is_dir_writable_propagates_non_permission_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("not-a-dir");
+    fs::write(&file, b"").unwrap();
+    assert!(is_dir_writable(&file).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn is_dir_writable_read_only_dir_is_false() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    // root は権限ビットを無視して書き込めるため、実際に書き込めない環境でのみ検証する
+    let really_read_only = fs::write(dir.path().join("check"), b"").is_err();
+    let result = is_dir_writable(dir.path());
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    if really_read_only {
+        assert!(!result.unwrap());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+}
+
 // =======================================================================
 // ApplyRequestMode
 // =======================================================================

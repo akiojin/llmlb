@@ -10,7 +10,7 @@ use super::platform::{choose_apply_plan, is_dir_writable, ApplyPlan, Platform};
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 use super::tray::notify_tray_ready;
 use super::{PayloadKind, PayloadState, UpdateManager, UpdateState};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,6 +54,39 @@ impl UpdateManager {
             }
         }
 
+        match self
+            .prepare_payload(&latest, &release_url, portable, installer)
+            .await
+        {
+            Ok(kind) => {
+                {
+                    let mut st = self.inner.state.write().await;
+                    if let UpdateState::Available { payload, .. } = &mut *st {
+                        *payload = PayloadState::Ready { kind: kind.clone() };
+                    }
+                }
+
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                notify_tray_ready(&self.inner.tray_proxy).await;
+
+                Ok(kind)
+            }
+            Err(err) => {
+                // 準備のどこで失敗しても `Downloading` を残さず、失敗理由を表示できるようにする (#760)。
+                self.set_payload_error(format!("{err:#}")).await;
+                Err(err)
+            }
+        }
+    }
+
+    /// 適用プランを選び、アーティファクトをダウンロード・展開して PayloadKind を確定する。
+    async fn prepare_payload(
+        &self,
+        latest: &str,
+        release_url: &str,
+        portable: Option<String>,
+        installer: Option<String>,
+    ) -> Result<PayloadKind> {
         let platform = Platform::detect()?;
         let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("llmlb"));
         let plan = choose_apply_plan(
@@ -78,11 +111,10 @@ impl UpdateManager {
                     release_url
                 )
             };
-            self.set_payload_error(msg.clone()).await;
             return Err(anyhow!(msg));
         };
 
-        let update_dir = self.inner.updates_dir.join(&latest);
+        let update_dir = self.inner.updates_dir.join(latest);
         fs::create_dir_all(&update_dir).ok();
 
         let state_ref = self.inner.clone();
@@ -111,13 +143,15 @@ impl UpdateManager {
                     &archive_path,
                     Some(progress_cb),
                 )
-                .await?;
+                .await
+                .context("Failed to download update payload")?;
                 let extract_dir = update_dir.join("extract");
                 if extract_dir.exists() {
                     fs::remove_dir_all(&extract_dir).ok();
                 }
                 fs::create_dir_all(&extract_dir)?;
-                extract_archive(&archive_path, &extract_dir)?;
+                extract_archive(&archive_path, &extract_dir)
+                    .context("Failed to extract update payload")?;
                 let binary_name = platform.binary_name();
                 let binary_path = find_extracted_binary(&extract_dir, &binary_name)?
                     .ok_or_else(|| anyhow!("Extracted archive did not contain {binary_name}"))?;
@@ -129,23 +163,15 @@ impl UpdateManager {
                 let asset_name =
                     asset_name_from_url(&url).unwrap_or_else(|| "llmlb-installer".to_string());
                 let installer_path = update_dir.join(&asset_name);
-                download_to_path(&self.inner.http_client, &url, &installer_path, None).await?;
+                download_to_path(&self.inner.http_client, &url, &installer_path, None)
+                    .await
+                    .context("Failed to download update installer")?;
                 PayloadKind::Installer {
                     installer_path: installer_path.to_string_lossy().to_string(),
                     kind,
                 }
             }
         };
-
-        {
-            let mut st = self.inner.state.write().await;
-            if let UpdateState::Available { payload, .. } = &mut *st {
-                *payload = PayloadState::Ready { kind: kind.clone() };
-            }
-        }
-
-        #[cfg(any(target_os = "windows", target_os = "macos"))]
-        notify_tray_ready(&self.inner.tray_proxy).await;
 
         Ok(kind)
     }

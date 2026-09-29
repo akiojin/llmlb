@@ -294,13 +294,17 @@ async fn download_background_transitions_to_downloading() {
 
     let mock_server = MockServer::start().await;
 
-    // Serve a tiny payload so download completes.
+    // 実行ファイルを含む小さな tar.gz を返し、ダウンロードから展開まで成功させる。
+    // 展開できない内容を返すと、準備失敗で payload が即座に `Error` になる (#760)。
+    let binary_name = Platform::detect().unwrap().binary_name();
+    let archive = tar_gz_with_files(&[(format!("llmlb-test/{binary_name}").as_str(), b"bin")]);
+    let archive_len = archive.len().to_string();
     Mock::given(method("GET"))
         .and(path("/download/portable.tar.gz"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_bytes(vec![0u8; 100])
-                .insert_header("content-length", "100"),
+                .set_body_bytes(archive)
+                .insert_header("content-length", archive_len.as_str()),
         )
         .mount(&mock_server)
         .await;
@@ -347,6 +351,220 @@ async fn download_background_transitions_to_downloading() {
             "download did not progress in time, last payload: {payload:?}"
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+// =======================================================================
+// #760: ペイロード準備の失敗は payload を Error へ遷移させる
+// =======================================================================
+
+/// 各テスト固有のベースパスに置いた portable アセットで Available 状態を作る。
+/// ベースパスを一意にするのは、別プロセスの要求がモックに届いても照合させないため。
+async fn seed_available_with_portable_url(manager: &UpdateManager, url: String) {
+    let mut st = manager.inner.state.write().await;
+    *st = UpdateState::Available {
+        current: "4.5.0".to_string(),
+        latest: "4.5.1".to_string(),
+        release_url: "https://example.com/release".to_string(),
+        portable_asset_url: Some(url),
+        installer_asset_url: None,
+        payload: PayloadState::NotReady,
+        checked_at: Utc::now(),
+    };
+}
+
+/// `entries` のファイルを格納した tar.gz を作る。
+fn tar_gz_with_files(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    for (name, data) in entries {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder.append_data(&mut header, name, *data).unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
+/// `body` を返す portable アセットをモックし、そのURLを返す。
+async fn mock_portable_asset(
+    mock_server: &wiremock::MockServer,
+    response: wiremock::ResponseTemplate,
+) -> String {
+    use wiremock::matchers::{method, path};
+    use wiremock::Mock;
+
+    let asset_path = format!("/{}/portable.tar.gz", uuid::Uuid::new_v4().simple());
+    Mock::given(method("GET"))
+        .and(path(asset_path.clone()))
+        .respond_with(response)
+        .mount(mock_server)
+        .await;
+    format!("{}{asset_path}", mock_server.uri())
+}
+
+/// `ensure_payload_ready` が失敗し、payload が `Error` に遷移していることを確かめる。
+async fn assert_payload_error(
+    manager: &UpdateManager,
+    result: anyhow::Result<PayloadKind>,
+    expected: &str,
+) {
+    let err = result.expect_err("payload preparation should fail");
+    match manager.state().await {
+        UpdateState::Available {
+            payload: PayloadState::Error { message },
+            ..
+        } => {
+            assert!(
+                message.contains(expected),
+                "error message {message:?} should contain {expected:?} (err: {err:#})"
+            );
+        }
+        other => panic!("expected payload Error, got {other:?} (err: {err:#})"),
+    }
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_http_error_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    let url = mock_portable_asset(&mock_server, wiremock::ResponseTemplate::new(404)).await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "Failed to download update payload").await;
+    // 利用者が原因を判断できるよう、根本原因も残す。
+    let UpdateState::Available {
+        payload: PayloadState::Error { message },
+        ..
+    } = manager.state().await
+    else {
+        unreachable!()
+    };
+    assert!(message.contains("404"), "{message}");
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_stream_error_sets_payload_error() {
+    use tokio::io::AsyncWriteExt;
+
+    // Content-Length より少ないバイト数で接続を閉じ、受信エラーを起こす。
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = [0u8; 4096];
+        let _ = tokio::io::AsyncReadExt::read(&mut socket, &mut buf).await;
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n0123456789")
+            .await
+            .unwrap();
+        socket.shutdown().await.unwrap();
+    });
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, format!("http://{addr}/portable.tar.gz")).await;
+
+    let result = manager.ensure_payload_ready().await;
+    server.await.unwrap();
+
+    assert_payload_error(&manager, result, "Failed to download update payload").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_rename_failure_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(vec![0u8; 100]),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    // rename 先に空でないディレクトリを置き、一時ファイルの rename を失敗させる。
+    let blocker = manager
+        .inner
+        .updates_dir
+        .join("4.5.1")
+        .join("portable.tar.gz");
+    fs::create_dir_all(&blocker).unwrap();
+    fs::write(blocker.join("occupied"), b"x").unwrap();
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "Failed to download update payload").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_extract_failure_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    // tar.gz ではないゼロ列を返し、展開を失敗させる。
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(vec![0u8; 100]),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "Failed to extract update payload").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_missing_binary_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    let archive = tar_gz_with_files(&[("llmlb-test/README.md", b"no binary here")]);
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(archive),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "did not contain").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_success_sets_payload_ready() {
+    let mock_server = wiremock::MockServer::start().await;
+    let binary_name = Platform::detect().unwrap().binary_name();
+    let entry = format!("llmlb-test/{binary_name}");
+    let archive = tar_gz_with_files(&[(entry.as_str(), b"#!/bin/sh\n")]);
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(archive),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let kind = manager
+        .ensure_payload_ready()
+        .await
+        .expect("payload preparation should succeed");
+
+    let PayloadKind::Portable { binary_path } = &kind else {
+        panic!("expected portable payload, got {kind:?}");
+    };
+    // 区切り文字は OS で異なるため、文字列ではなくパス要素で比較する。
+    let expected_suffix = std::path::Path::new("llmlb-test").join(&binary_name);
+    assert!(
+        std::path::Path::new(binary_path).ends_with(&expected_suffix),
+        "unexpected binary path {binary_path}"
+    );
+    match manager.state().await {
+        UpdateState::Available {
+            payload: PayloadState::Ready { kind: ready },
+            ..
+        } => assert_eq!(ready, kind),
+        other => panic!("expected payload Ready, got {other:?}"),
     }
 }
 

@@ -305,12 +305,7 @@ async fn download_background_transitions_to_downloading() {
         .mount(&mock_server)
         .await;
 
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        InferenceGate::default(),
-        ShutdownController::default(),
-    )
-    .expect("create update manager");
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
 
     // Pre-seed available state with a portable asset URL pointing to mock.
     {
@@ -329,22 +324,29 @@ async fn download_background_transitions_to_downloading() {
     // Start background download.
     manager.download_background();
 
-    // Give some time for async task to start and update state.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    let state = manager.state().await;
-    match &state {
-        UpdateState::Available { payload, .. } => {
-            // Should be Downloading or Ready (if completed quickly).
-            assert!(
-                matches!(
-                    payload,
-                    PayloadState::Downloading { .. } | PayloadState::Ready { .. }
-                ),
-                "expected Downloading or Ready, got {payload:?}"
-            );
+    // `Downloading { downloaded_bytes: None }` は適用プラン選定の前に書かれ、直後に `Error` へ
+    // 落ちることがある。受信バイト数は選定を通過して実際に受信したときだけ記録されるので、
+    // それを待ち条件にする (#754)。
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let payload = match manager.state().await {
+            UpdateState::Available { payload, .. } => payload,
+            other => panic!("expected available, got {other:?}"),
+        };
+        match &payload {
+            PayloadState::Downloading {
+                downloaded_bytes: Some(n),
+                ..
+            } if *n > 0 => break,
+            PayloadState::Ready { .. } => break,
+            PayloadState::Error { message } => panic!("download failed: {message}"),
+            _ => {}
         }
-        other => panic!("expected available, got {other:?}"),
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "download did not progress in time, last payload: {payload:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
@@ -551,10 +553,29 @@ fn test_manager_with_gate(gate: InferenceGate) -> (UpdateManager, tempfile::Temp
     (manager, tmp)
 }
 
+// スケジュールループのテストは `start_paused` で仮想時間を使う。仮想時間はすべてのタスクが
+// 待機状態になるまで進まないため、ループの判定はホストの負荷に関係なく待機の満了前に完了する (#754)。
+
+/// スケジュールループが消費するまで待つ。消費された時点で戻り、上限は仮想時間で数える。
+async fn wait_for_schedule_consumed(manager: &UpdateManager) {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while manager.get_schedule().unwrap().is_some() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("schedule should be consumed by the schedule loop");
+}
+
+/// 5 秒間隔のスケジュールループに、起動直後・5 秒後・10 秒後の 3 回判定させる。
+async fn let_schedule_loop_tick_three_times() {
+    tokio::time::sleep(Duration::from_secs(11)).await;
+}
+
 // =======================================================================
 // T232: アイドル時適用トリガー — in_flight=0でスケジュール起動
 // =======================================================================
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn idle_schedule_triggers_when_in_flight_zero() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate.clone());
@@ -582,8 +603,7 @@ async fn idle_schedule_triggers_when_in_flight_zero() {
     // Start schedule loop.
     manager.start_schedule_loop();
 
-    // Give the loop time to detect idle and trigger.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    wait_for_schedule_consumed(&manager).await;
 
     // Schedule should have been removed (triggered).
     assert!(
@@ -600,7 +620,7 @@ async fn idle_schedule_triggers_when_in_flight_zero() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn idle_schedule_does_not_trigger_while_busy() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate.clone());
@@ -625,7 +645,7 @@ async fn idle_schedule_does_not_trigger_while_busy() {
         .expect("schedule should be created");
 
     manager.start_schedule_loop();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     // Schedule should still exist (not triggered).
     assert!(
@@ -668,7 +688,7 @@ fn scheduled_mode_requires_scheduled_at() {
 // =======================================================================
 // T233: 時刻指定適用トリガー — 指定時刻到達でドレイン開始
 // =======================================================================
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn scheduled_time_triggers_when_past_due() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -692,8 +712,7 @@ async fn scheduled_time_triggers_when_past_due() {
 
     manager.start_schedule_loop();
 
-    // Give the loop time to detect and trigger.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    wait_for_schedule_consumed(&manager).await;
 
     assert!(
         manager.get_schedule().unwrap().is_none(),
@@ -708,7 +727,7 @@ async fn scheduled_time_triggers_when_past_due() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -733,7 +752,7 @@ async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
         .expect("schedule should be created");
 
     manager.start_schedule_loop();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     assert!(
         manager.get_schedule().unwrap().is_some(),
@@ -746,7 +765,7 @@ async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn malformed_scheduled_without_time_does_not_trigger() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -766,7 +785,7 @@ async fn malformed_scheduled_without_time_does_not_trigger() {
     manager.inner.schedule_store.save(&malformed).unwrap();
 
     manager.start_schedule_loop();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     assert!(
         manager.get_schedule().unwrap().is_some(),
@@ -889,7 +908,7 @@ fn parse_port_from_args_supports_equals_style() {
     assert_eq!(parse_port_from_args(&args), Some(40124));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn scheduled_time_does_not_trigger_before_time() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -913,8 +932,7 @@ async fn scheduled_time_does_not_trigger_before_time() {
 
     manager.start_schedule_loop();
 
-    // Wait a bit — should NOT trigger (still 60s away).
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     assert!(
         manager.get_schedule().unwrap().is_some(),
@@ -1232,6 +1250,69 @@ fn choose_apply_plan_falls_back_to_installer_when_writable() {
 fn is_dir_writable_temp_dir() {
     let dir = tempfile::tempdir().unwrap();
     assert!(is_dir_writable(dir.path()).unwrap());
+}
+
+#[test]
+fn is_dir_writable_concurrent_calls_all_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(16));
+    let handles: Vec<_> = (0..16)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                (0..50)
+                    .map(|_| is_dir_writable(&path).map_err(|e| e.to_string()))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    for handle in handles {
+        for result in handle.join().unwrap() {
+            assert_eq!(result, Ok(true));
+        }
+    }
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn is_dir_writable_ignores_leftover_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".llmlb_write_probe"), b"").unwrap();
+    assert!(is_dir_writable(dir.path()).unwrap());
+    assert!(is_dir_writable(dir.path()).unwrap());
+    // 事前に存在したファイル以外（今回のプローブ）は残さない
+    let names: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![std::ffi::OsString::from(".llmlb_write_probe")]);
+}
+
+#[test]
+fn is_dir_writable_propagates_non_permission_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("not-a-dir");
+    fs::write(&file, b"").unwrap();
+    assert!(is_dir_writable(&file).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn is_dir_writable_read_only_dir_is_false() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    // root は権限ビットを無視して書き込めるため、実際に書き込めない環境でのみ検証する
+    let really_read_only = fs::write(dir.path().join("check"), b"").is_err();
+    let result = is_dir_writable(dir.path());
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    if really_read_only {
+        assert!(!result.unwrap());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
 }
 
 // =======================================================================

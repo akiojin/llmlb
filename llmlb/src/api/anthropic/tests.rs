@@ -35,11 +35,13 @@ async fn add_online_chat_endpoint_with_model(
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -349,8 +351,8 @@ async fn streaming_tool_use_accumulates_fragmented_arguments() {
         model_id: "test-model".to_string(),
         endpoint_type: EndpointType::OpenaiCompatible,
         request_started_at: Instant::now(),
-        endpoint_registry: state.endpoint_registry.clone(),
-        load_manager: state.load_manager.clone(),
+        endpoint_registry: state.balancer.endpoint_registry.clone(),
+        load_manager: state.balancer.load_manager.clone(),
         event_bus: state.event_bus.clone(),
         sent_message_start: false,
         sent_message_stop: false,
@@ -423,8 +425,8 @@ async fn streaming_text_then_interleaved_parallel_tools() {
         model_id: "test-model".to_string(),
         endpoint_type: EndpointType::OpenaiCompatible,
         request_started_at: Instant::now(),
-        endpoint_registry: state.endpoint_registry.clone(),
-        load_manager: state.load_manager.clone(),
+        endpoint_registry: state.balancer.endpoint_registry.clone(),
+        load_manager: state.balancer.load_manager.clone(),
         event_bus: state.event_bus.clone(),
         sent_message_start: false,
         sent_message_stop: false,
@@ -653,11 +655,13 @@ async fn local_body_read_failure_returns_error_response_and_records_history() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -707,13 +711,19 @@ async fn local_body_read_failure_returns_error_response_and_records_history() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let snapshot = state
+        .balancer
         .load_manager
         .snapshot(endpoint_id)
         .await
         .expect("snapshot");
     assert_eq!(snapshot.active_requests, 0);
 
-    let records = state.request_history.load_records().await.expect("records");
+    let records = state
+        .balancer
+        .request_history
+        .load_records()
+        .await
+        .expect("records");
     assert_eq!(records.len(), 1);
     match &records[0].status {
         RecordStatus::Error {

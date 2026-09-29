@@ -441,7 +441,7 @@ pub async fn recommend_endpoints(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
 ) -> Result<Json<RecommendEndpointsResponse>, AppError> {
-    let online = state.endpoint_registry.list_online().await;
+    let online = state.balancer.endpoint_registry.list_online().await;
 
     let mut recommendations = Vec::new();
 

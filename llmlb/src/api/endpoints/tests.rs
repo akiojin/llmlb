@@ -117,6 +117,7 @@ async fn update_endpoint_syncs_registry_cache() {
     );
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
@@ -148,6 +149,7 @@ async fn update_endpoint_syncs_registry_cache() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let updated = state
+        .balancer
         .endpoint_registry
         .get(endpoint_id)
         .await
@@ -181,6 +183,7 @@ async fn proxy_chat_completions_keeps_endpoint_online_on_client_error() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
@@ -208,6 +211,7 @@ async fn proxy_chat_completions_keeps_endpoint_online_on_client_error() {
     assert_eq!(json["error"]["message"], "invalid model");
 
     let updated = state
+        .balancer
         .endpoint_registry
         .get(endpoint_id)
         .await
@@ -244,6 +248,7 @@ async fn proxy_chat_completions_does_not_probe_ollama_load_state_on_success() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await

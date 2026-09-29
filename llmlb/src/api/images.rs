@@ -167,6 +167,7 @@ impl ImageBackend {
 async fn select_image_backend(state: &AppState) -> Result<ImageBackend, LbError> {
     // EndpointRegistry経由で検索（SPEC-e8e9326e: 新方式のみ）
     let endpoints = state
+        .balancer
         .endpoint_registry
         .list_online_by_capability(EndpointCapability::ImageGeneration)
         .await;
@@ -278,7 +279,7 @@ pub async fn generations(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     // レスポンスを転送
     forward_streaming_response(response)
@@ -510,7 +511,7 @@ pub async fn edits(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     // レスポンスを転送
     forward_streaming_response(response)
@@ -700,7 +701,7 @@ pub async fn variations(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     // レスポンスを転送
     forward_streaming_response(response)

@@ -189,7 +189,7 @@ async fn proxy_anthropic_cloud_messages(
             record.status = RecordStatus::Error {
                 message: format!("Failed to proxy Anthropic cloud request: {}", err),
             };
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
 
             return Ok(anthropic_error_response(
                 StatusCode::BAD_GATEWAY,
@@ -223,7 +223,7 @@ async fn proxy_anthropic_cloud_messages(
             client_ip,
             api_key_id,
         );
-        save_request_record(state.request_history.clone(), record);
+        save_request_record(state.balancer.request_history.clone(), record);
         return Ok(response);
     }
 
@@ -271,7 +271,7 @@ async fn proxy_anthropic_cloud_messages(
             message: String::from_utf8_lossy(&bytes).trim().to_string(),
         };
     }
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     Ok(build_response_from_upstream(status, &headers, bytes))
 }
@@ -285,10 +285,14 @@ async fn proxy_local_anthropic_messages(
     api_key_id: Option<Uuid>,
 ) -> Result<Response, AppError> {
     let resolved_model = {
-        let found = state.endpoint_registry.find_by_model(&model).await;
+        let found = state.balancer.endpoint_registry.find_by_model(&model).await;
         if found.is_empty() {
             if let Some(canonical) = crate::models::mapping::resolve_canonical_any(&model) {
-                let canonical_found = state.endpoint_registry.find_by_model(canonical).await;
+                let canonical_found = state
+                    .balancer
+                    .endpoint_registry
+                    .find_by_model(canonical)
+                    .await;
                 if !canonical_found.is_empty() {
                     canonical.to_string()
                 } else {
@@ -303,6 +307,7 @@ async fn proxy_local_anthropic_messages(
     };
 
     if state
+        .balancer
         .endpoint_registry
         .find_by_model(&resolved_model)
         .await
@@ -340,7 +345,7 @@ async fn proxy_local_anthropic_messages(
                     format!("Endpoint selection failed: {}", err)
                 };
                 save_request_record(
-                    state.request_history.clone(),
+                    state.balancer.request_history.clone(),
                     RequestResponseRecord::error(
                         model.clone(),
                         request_type,
@@ -366,11 +371,17 @@ async fn proxy_local_anthropic_messages(
     let endpoint_name = endpoint.name.clone();
     let endpoint_type = endpoint.endpoint_type;
     let request_lease = state
+        .balancer
         .load_manager
         .begin_request(endpoint_id)
         .await
         .map_err(AppError::from)?;
-    let endpoint_models = match state.endpoint_registry.list_models(endpoint_id).await {
+    let endpoint_models = match state
+        .balancer
+        .endpoint_registry
+        .list_models(endpoint_id)
+        .await
+    {
         Ok(models) => models,
         Err(error) => {
             tracing::warn!(
@@ -418,7 +429,7 @@ async fn proxy_local_anthropic_messages(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -426,7 +437,7 @@ async fn proxy_local_anthropic_messages(
                 0,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -445,7 +456,7 @@ async fn proxy_local_anthropic_messages(
             record.status = RecordStatus::Error {
                 message: message.clone(),
             };
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
 
             return Ok(anthropic_error_response(error_status, error_type, message));
         }
@@ -467,10 +478,10 @@ async fn proxy_local_anthropic_messages(
             .map_err(AppError::from)?;
 
         if succeeded {
-            update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+            update_inference_latency(&state.balancer.endpoint_registry, endpoint_id, duration);
         } else {
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -478,7 +489,7 @@ async fn proxy_local_anthropic_messages(
                 0,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
         }
@@ -503,7 +514,7 @@ async fn proxy_local_anthropic_messages(
             record.status = RecordStatus::Error {
                 message: message.clone(),
             };
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
             return Ok(anthropic_error_response(
                 anthropic_status,
                 error_type,
@@ -523,7 +534,7 @@ async fn proxy_local_anthropic_messages(
             client_ip,
             api_key_id,
         );
-        save_request_record(state.request_history.clone(), record);
+        save_request_record(state.balancer.request_history.clone(), record);
 
         let mut response = transform_openai_streaming_response_to_anthropic(
             upstream,
@@ -532,8 +543,8 @@ async fn proxy_local_anthropic_messages(
             endpoint_type,
             started,
             estimate_tokens(&request_text, &model),
-            state.endpoint_registry.clone(),
-            state.load_manager.clone(),
+            state.balancer.endpoint_registry.clone(),
+            state.balancer.load_manager.clone(),
             state.event_bus.clone(),
         );
         if let Some(wait_ms) = queued_wait_ms {
@@ -558,7 +569,7 @@ async fn proxy_local_anthropic_messages(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -566,7 +577,7 @@ async fn proxy_local_anthropic_messages(
                 0,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -585,7 +596,7 @@ async fn proxy_local_anthropic_messages(
             record.status = RecordStatus::Error {
                 message: message.clone(),
             };
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
 
             return Ok(anthropic_error_response(error_status, error_type, message));
         }
@@ -598,7 +609,7 @@ async fn proxy_local_anthropic_messages(
             .await
             .map_err(AppError::from)?;
         record_endpoint_request_stats(
-            state.endpoint_registry.clone(),
+            state.balancer.endpoint_registry.clone(),
             endpoint_id,
             model.clone(),
             false,
@@ -606,7 +617,7 @@ async fn proxy_local_anthropic_messages(
             0,
             tps_api_kind,
             endpoint_type,
-            state.load_manager.clone(),
+            state.balancer.load_manager.clone(),
             state.event_bus.clone(),
         );
 
@@ -629,7 +640,7 @@ async fn proxy_local_anthropic_messages(
         record.status = RecordStatus::Error {
             message: message.clone(),
         };
-        save_request_record(state.request_history.clone(), record);
+        save_request_record(state.balancer.request_history.clone(), record);
 
         return Ok(anthropic_error_response(
             anthropic_status,
@@ -652,7 +663,7 @@ async fn proxy_local_anthropic_messages(
                 .complete_with_tokens(RequestOutcome::Success, duration, Some(token_usage.clone()))
                 .await
                 .map_err(AppError::from)?;
-            update_inference_latency(&state.endpoint_registry, endpoint_id, duration);
+            update_inference_latency(&state.balancer.endpoint_registry, endpoint_id, duration);
 
             let output_tokens = token_usage.output_tokens.unwrap_or(0) as u64;
             let duration_ms = if output_tokens > 0 {
@@ -661,7 +672,7 @@ async fn proxy_local_anthropic_messages(
                 0
             };
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 true,
@@ -669,7 +680,7 @@ async fn proxy_local_anthropic_messages(
                 duration_ms,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -691,7 +702,7 @@ async fn proxy_local_anthropic_messages(
             record.input_tokens = token_usage.input_tokens;
             record.output_tokens = token_usage.output_tokens;
             record.total_tokens = token_usage.total_tokens;
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
 
             let mut response = (StatusCode::OK, Json(anthropic_body)).into_response();
             if let Some(wait_ms) = queued_wait_ms {
@@ -705,7 +716,7 @@ async fn proxy_local_anthropic_messages(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint_id,
                 model.clone(),
                 false,
@@ -713,7 +724,7 @@ async fn proxy_local_anthropic_messages(
                 0,
                 tps_api_kind,
                 endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
 
@@ -735,7 +746,7 @@ async fn proxy_local_anthropic_messages(
                     err
                 ),
             };
-            save_request_record(state.request_history.clone(), record);
+            save_request_record(state.balancer.request_history.clone(), record);
 
             let message = format!(
                 "Failed to parse OpenAI-compatible upstream response: {}",

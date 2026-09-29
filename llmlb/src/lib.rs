@@ -99,40 +99,65 @@ pub mod bootstrap;
 pub mod server;
 
 /// アプリケーション状態
+///
+/// 横断的に使う基盤（DB・HTTPクライアント・イベントバス）はトップレベルに置き、
+/// ドメイン固有の状態はサブステートにまとめる（FR-011）。
 #[derive(Clone)]
 pub struct AppState {
-    /// ロードマネージャー
-    pub load_manager: balancer::LoadManager,
-    /// リクエスト履歴ストレージ
-    pub request_history: std::sync::Arc<db::request_history::RequestHistoryStorage>,
+    /// ロードバランシング（エンドポイント選択・レジストリ・リクエスト履歴）
+    pub balancer: BalancerState,
     /// データベース接続プール
     pub db_pool: sqlx::SqlitePool,
-    /// JWT秘密鍵
-    pub jwt_secret: String,
+    /// 認証
+    pub auth: AuthState,
     /// 共有HTTPクライアント（接続プーリング有効）
     pub http_client: reqwest::Client,
     /// ダッシュボードイベントバス
     pub event_bus: events::SharedEventBus,
+    /// 推論ゲート・シャットダウン・自己更新
+    pub lifecycle: LifecycleState,
+    /// 監査ログ (SPEC-8301d106)
+    pub audit: AuditState,
+}
+
+/// ロードバランシングの状態
+#[derive(Clone)]
+pub struct BalancerState {
+    /// ロードマネージャー
+    pub load_manager: balancer::LoadManager,
     /// エンドポイントレジストリ
     pub endpoint_registry: registry::endpoints::EndpointRegistry,
+    /// リクエスト履歴ストレージ
+    pub request_history: std::sync::Arc<db::request_history::RequestHistoryStorage>,
+}
 
+/// 認証の状態
+#[derive(Clone)]
+pub struct AuthState {
+    /// JWT秘密鍵
+    pub jwt_secret: String,
+}
+
+/// プロセスのライフサイクル（推論ゲート・シャットダウン・自己更新）の状態
+#[derive(Clone)]
+pub struct LifecycleState {
     /// Inference gate (used for self-update drain)
     pub inference_gate: inference_gate::InferenceGate,
-
     /// Cooperative shutdown controller
     pub shutdown: shutdown::ShutdownController,
-
     /// Self-update manager
     pub update_manager: update::UpdateManager,
+}
 
-    /// 監査ログライター (SPEC-8301d106)
-    pub audit_log_writer: audit::writer::AuditLogWriter,
-
-    /// 監査ログストレージ (SPEC-8301d106)
-    pub audit_log_storage: std::sync::Arc<db::audit_log::AuditLogStorage>,
-
-    /// 監査ログアーカイブDBプール (SPEC-8301d106)
-    pub audit_archive_pool: Option<sqlx::SqlitePool>,
+/// 監査ログの状態 (SPEC-8301d106)
+#[derive(Clone)]
+pub struct AuditState {
+    /// 監査ログライター
+    pub writer: audit::writer::AuditLogWriter,
+    /// 監査ログストレージ
+    pub storage: std::sync::Arc<db::audit_log::AuditLogStorage>,
+    /// 監査ログアーカイブDBプール
+    pub archive_pool: Option<sqlx::SqlitePool>,
 }
 
 #[cfg(test)]
@@ -144,5 +169,24 @@ mod tests {
         // AppStateにhttp_clientフィールドが存在することを確認
         // この時点ではコンパイルエラーになるはず（http_clientフィールドがまだない場合）
         let _client_type: fn(&AppState) -> &reqwest::Client = |state| &state.http_client;
+    }
+
+    #[test]
+    fn test_app_state_groups_domain_substates() {
+        // FR-011: ドメイン固有の状態はサブステート経由で参照する
+        let _: fn(&AppState) -> &balancer::LoadManager = |state| &state.balancer.load_manager;
+        let _: fn(&AppState) -> &registry::endpoints::EndpointRegistry =
+            |state| &state.balancer.endpoint_registry;
+        let _: fn(&AppState) -> &std::sync::Arc<db::request_history::RequestHistoryStorage> =
+            |state| &state.balancer.request_history;
+        let _: fn(&AppState) -> &String = |state| &state.auth.jwt_secret;
+        let _: fn(&AppState) -> &inference_gate::InferenceGate =
+            |state| &state.lifecycle.inference_gate;
+        let _: fn(&AppState) -> &shutdown::ShutdownController = |state| &state.lifecycle.shutdown;
+        let _: fn(&AppState) -> &update::UpdateManager = |state| &state.lifecycle.update_manager;
+        let _: fn(&AppState) -> &audit::writer::AuditLogWriter = |state| &state.audit.writer;
+        let _: fn(&AppState) -> &std::sync::Arc<db::audit_log::AuditLogStorage> =
+            |state| &state.audit.storage;
+        let _: fn(&AppState) -> &Option<sqlx::SqlitePool> = |state| &state.audit.archive_pool;
     }
 }

@@ -36,7 +36,12 @@ async fn wait_for_history_records(
 ) -> Vec<crate::common::protocol::RequestResponseRecord> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
-        let records = state.request_history.load_records().await.expect("records");
+        let records = state
+            .balancer
+            .request_history
+            .load_records()
+            .await
+            .expect("records");
         if ready(&records) || tokio::time::Instant::now() >= deadline {
             return records;
         }
@@ -100,11 +105,13 @@ async fn add_online_chat_endpoint_with_supported_apis(
     endpoint.inference_timeout_secs = inference_timeout_secs;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -565,7 +572,12 @@ async fn cloud_request_is_recorded_in_history() {
     assert_eq!(response.status(), StatusCode::OK);
     sleep(Duration::from_millis(20)).await;
 
-    let records = state.request_history.load_records().await.expect("records");
+    let records = state
+        .balancer
+        .request_history
+        .load_records()
+        .await
+        .expect("records");
     assert_eq!(records.len(), 1, "cloud request should be recorded");
 
     let record = &records[0];
@@ -740,11 +752,13 @@ async fn direct_routing_body_read_failure_releases_active_request() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -780,6 +794,7 @@ async fn direct_routing_body_read_failure_releases_active_request() {
     );
 
     let snapshot = state
+        .balancer
         .load_manager
         .snapshot(endpoint_id)
         .await
@@ -854,6 +869,7 @@ async fn upstream_timeout_returns_gateway_timeout_response() {
 
     let records = wait_for_history_records(&state, |records| !records.is_empty()).await;
     let snapshot = state
+        .balancer
         .load_manager
         .snapshot(endpoint_id)
         .await
@@ -903,11 +919,13 @@ async fn canonical_model_routes_to_alias_backed_endpoint_and_rewrites_payload() 
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -1114,11 +1132,13 @@ async fn canonical_model_routes_to_secondary_lm_studio_alias_and_rewrites_payloa
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -1237,11 +1257,13 @@ async fn local_streaming_request_updates_model_tps_after_stream_completion() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -1280,7 +1302,7 @@ async fn local_streaming_request_updates_model_tps_after_stream_completion() {
 
     sleep(Duration::from_millis(100)).await;
 
-    let tps = state.load_manager.get_model_tps(endpoint_id).await;
+    let tps = state.balancer.load_manager.get_model_tps(endpoint_id).await;
     let entry = tps
         .iter()
         .find(|info| info.model_id == "stream-tps-model")
@@ -1329,11 +1351,13 @@ async fn llamacpp_streaming_request_updates_model_tps_after_stream_completion() 
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -1372,7 +1396,7 @@ async fn llamacpp_streaming_request_updates_model_tps_after_stream_completion() 
 
     sleep(Duration::from_millis(100)).await;
 
-    let tps = state.load_manager.get_model_tps(endpoint_id).await;
+    let tps = state.balancer.load_manager.get_model_tps(endpoint_id).await;
     let entry = tps
         .iter()
         .find(|info| info.model_id == "llamacpp-stream-model")
@@ -1418,11 +1442,13 @@ async fn interrupted_streaming_request_still_records_success_stats() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -1513,11 +1539,13 @@ async fn non_stream_without_usage_does_not_accumulate_tps_duration() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -2572,11 +2600,13 @@ async fn add_endpoint_with_supported_apis_and_canonical_name(
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     state
+        .balancer
         .endpoint_registry
         .add_model(&EndpointModel {
             endpoint_id,
@@ -2971,12 +3001,14 @@ async fn list_models_quantization_suffix_is_emitted_as_separate_field() {
     endpoint.status = EndpointStatus::Online;
     let endpoint_id = endpoint.id;
     state
+        .balancer
         .endpoint_registry
         .add(endpoint)
         .await
         .expect("add endpoint");
     for model_id in ["ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M", "openai/gpt-oss-20b"] {
         state
+            .balancer
             .endpoint_registry
             .add_model(&EndpointModel {
                 endpoint_id,

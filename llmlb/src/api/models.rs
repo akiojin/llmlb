@@ -312,10 +312,15 @@ pub async fn list_models_with_status(
 
     // Build ready model names from endpoint models
     let ready_names: std::collections::HashSet<String> = {
-        let endpoints = state.endpoint_registry.list().await;
+        let endpoints = state.balancer.endpoint_registry.list().await;
         let mut names = std::collections::HashSet::new();
         for endpoint in &endpoints {
-            if let Ok(models) = state.endpoint_registry.list_models(endpoint.id).await {
+            if let Ok(models) = state
+                .balancer
+                .endpoint_registry
+                .list_models(endpoint.id)
+                .await
+            {
                 for model in models {
                     names.insert(model.model_id.clone());
                 }
@@ -1080,7 +1085,7 @@ pub async fn register_model(
                 (total, required)
             }
         };
-        let warnings = compute_gpu_warnings(&state.endpoint_registry, required).await;
+        let warnings = compute_gpu_warnings(&state.balancer.endpoint_registry, required).await;
         (size, required, warnings)
     };
 

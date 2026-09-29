@@ -434,7 +434,7 @@ pub async fn require_jwt_auth_middleware(
     next: Next,
 ) -> Result<Response, HandlerError> {
     let token = extract_bearer_or_cookie_token(request.headers())?;
-    let claims = verify_jwt_claims(&token, &app_state.jwt_secret)?;
+    let claims = verify_jwt_claims(&token, &app_state.auth.jwt_secret)?;
     // パスワード変更/リセット後の旧セッションを無効化する
     enforce_session_not_revoked(&app_state.db_pool, &claims).await?;
 
@@ -731,7 +731,7 @@ pub async fn jwt_or_api_key_permission_middleware(
 ) -> Result<Response, HandlerError> {
     // JWTがあれば優先
     if let Some(token) = extract_jwt_from_headers(request.headers()) {
-        let claims = verify_jwt_claims(&token, &config.app_state.jwt_secret)?;
+        let claims = verify_jwt_claims(&token, &config.app_state.auth.jwt_secret)?;
         // パスワード変更/リセット後の旧セッションを無効化する
         enforce_session_not_revoked(&config.app_state.db_pool, &claims).await?;
 

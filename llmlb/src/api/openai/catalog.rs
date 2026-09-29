@@ -101,7 +101,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
     // canonical name解決マップを構築
     let canonical_resolution;
     {
-        let registry = &state.endpoint_registry;
+        let registry = &state.balancer.endpoint_registry;
         let online_endpoints = registry.list_online().await;
 
         // 全エンドポイントモデルを収集してcanonical解決マップを構築
@@ -307,7 +307,7 @@ pub async fn get_model(
     // SPEC-0f1de549: エンドポイントのモデルとsupported_apisを取得
     let mut endpoint_model_apis: HashMap<String, HashSet<SupportedAPI>> = HashMap::new();
     {
-        let registry = &state.endpoint_registry;
+        let registry = &state.balancer.endpoint_registry;
         let online_endpoints = registry.list_online().await;
         for ep in online_endpoints {
             if let Ok(models) = registry.list_models(ep.id).await {

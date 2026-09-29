@@ -309,7 +309,7 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
     let endpoints = collect_endpoints(&state).await;
     let stats = collect_stats(&state).await;
     let operation_token_totals = collect_operation_token_totals(&state).await;
-    let endpoint_tps = state.load_manager.get_all_endpoint_tps().await;
+    let endpoint_tps = state.balancer.load_manager.get_all_endpoint_tps().await;
     let operations = collect_operations(&stats, &endpoints, operation_token_totals, &endpoint_tps);
     let capacity = collect_capacity(&state, &endpoints).await;
     let action_items = collect_action_items(&operations);
@@ -333,6 +333,10 @@ pub async fn get_node_metrics(
     Path(endpoint_id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<HealthMetrics>>, AppError> {
-    let history = state.load_manager.metrics_history(endpoint_id).await?;
+    let history = state
+        .balancer
+        .load_manager
+        .metrics_history(endpoint_id)
+        .await?;
     Ok(Json(history))
 }

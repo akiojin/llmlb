@@ -319,23 +319,29 @@ async fn initialize_inner(
     }
 
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: crate::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool,
-        jwt_secret,
+        auth: crate::AuthState { jwt_secret },
         http_client,
         event_bus: {
             let bus = crate::events::create_shared_event_bus();
             update_manager.set_event_bus(bus.clone());
             bus
         },
-        endpoint_registry,
-        inference_gate,
-        shutdown: shutdown.clone(),
-        update_manager,
-        audit_log_writer,
-        audit_log_storage,
-        audit_archive_pool,
+        lifecycle: crate::LifecycleState {
+            inference_gate,
+            shutdown: shutdown.clone(),
+            update_manager,
+        },
+        audit: crate::AuditState {
+            writer: audit_log_writer,
+            storage: audit_log_storage,
+            archive_pool: audit_archive_pool,
+        },
     };
 
     InitContext {

@@ -8,14 +8,3 @@
 
 
 mod api/mod.rs
-mod auth/mod.rs
-mod cli/mod.rs
-mod delete/mod.rs
-mod detection/mod.rs
-mod download/mod.rs
-mod events/mod.rs
-mod lock/mod.rs
-mod metadata/mod.rs
-mod sync/mod.rs
-mod system_info/mod.rs
-mod token/mod.rs

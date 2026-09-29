@@ -642,6 +642,20 @@ mod tests {
         crate::db::test_utils::test_db_pool().await
     }
 
+    /// 同一ホストで並走する別プロセス（E2E の `llmlb serve` など）のヘルスチェッカーは、
+    /// 解放済みのエフェメラルポートを再利用した MockServer にも
+    /// `GET /api/health` / `GET /v1/models` を送ってくる（Issue #748）。
+    /// 呼び出し回数を数えるテストは、この迷い込み要求を注入しても結果が変わらないことを保証する。
+    async fn simulate_foreign_health_poll(mock: &MockServer) {
+        let client = reqwest::Client::new();
+        for foreign_path in ["/api/health", "/v1/models"] {
+            let _ = client
+                .get(format!("{}{}", mock.uri(), foreign_path))
+                .send()
+                .await;
+        }
+    }
+
     #[tokio::test]
     async fn test_health_checker_creation() {
         let _lock = TEST_LOCK.lock().await;
@@ -757,6 +771,8 @@ mod tests {
         );
         registry.add(endpoint.clone()).await.unwrap();
 
+        simulate_foreign_health_poll(&mock).await;
+
         let checker = EndpointHealthChecker::new(registry.clone());
         checker.check_endpoint(&endpoint).await.unwrap();
 
@@ -812,6 +828,8 @@ mod tests {
         let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
         registry.add(endpoint.clone()).await.unwrap();
 
+        simulate_foreign_health_poll(&mock).await;
+
         let checker = EndpointHealthChecker::new(registry.clone());
         checker.check_endpoint(&endpoint).await.unwrap();
 
@@ -859,6 +877,8 @@ mod tests {
 
         let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
         registry.add(endpoint.clone()).await.unwrap();
+
+        simulate_foreign_health_poll(&mock).await;
 
         let checker = EndpointHealthChecker::new(registry.clone());
         checker.check_endpoint(&endpoint).await.unwrap();

@@ -656,6 +656,18 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
 
+    /// ヘルスチェック経路の要求だけを数えるテスト向けに、自動モデル同期を直近実行済みとして
+    /// スロットリングさせ、`/v1/models` へのバックグラウンド要求を発生させない。
+    /// 自動モデル同期そのものは `test_health_check_triggers_auto_model_sync` などで検証する。
+    async fn suppress_auto_model_sync(checker: &mut EndpointHealthChecker, endpoint_id: Uuid) {
+        checker.auto_sync_models_interval = Duration::from_secs(60 * 60);
+        checker
+            .last_auto_sync_models
+            .write()
+            .await
+            .insert(endpoint_id, Instant::now());
+    }
+
     /// 同一ホストで並走する別プロセス（E2E の `llmlb serve` など）のヘルスチェッカーは、
     /// 解放済みのエフェメラルポートを再利用した MockServer にも
     /// `GET /api/health` / `GET /v1/models` を送ってくる（Issue #748）。
@@ -788,7 +800,8 @@ mod tests {
 
         simulate_foreign_health_poll(&mock).await;
 
-        let checker = EndpointHealthChecker::new(registry.clone());
+        let mut checker = EndpointHealthChecker::new(registry.clone());
+        suppress_auto_model_sync(&mut checker, endpoint.id).await;
         checker.check_endpoint(&endpoint).await.unwrap();
         wait_for_background_requests().await;
 
@@ -851,7 +864,8 @@ mod tests {
 
         simulate_foreign_health_poll(&mock).await;
 
-        let checker = EndpointHealthChecker::new(registry.clone());
+        let mut checker = EndpointHealthChecker::new(registry.clone());
+        suppress_auto_model_sync(&mut checker, endpoint.id).await;
         checker.check_endpoint(&endpoint).await.unwrap();
         wait_for_background_requests().await;
 
@@ -907,7 +921,8 @@ mod tests {
 
         simulate_foreign_health_poll(&mock).await;
 
-        let checker = EndpointHealthChecker::new(registry.clone());
+        let mut checker = EndpointHealthChecker::new(registry.clone());
+        suppress_auto_model_sync(&mut checker, endpoint.id).await;
         checker.check_endpoint(&endpoint).await.unwrap();
         wait_for_background_requests().await;
 

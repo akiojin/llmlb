@@ -649,6 +649,13 @@ mod tests {
         format!("/{}", Uuid::new_v4())
     }
 
+    /// `check_endpoint` 成功時に spawn される自動モデル同期は `/v1/models` を叩く。
+    /// 高負荷時はアサーションより先に届くことがあるため、呼び出し回数を数えるテストは
+    /// バックグラウンド要求が届き切るのを待ってから検証する（Issue #748）。
+    async fn wait_for_background_requests() {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+
     /// 同一ホストで並走する別プロセス（E2E の `llmlb serve` など）のヘルスチェッカーは、
     /// 解放済みのエフェメラルポートを再利用した MockServer にも
     /// `GET /api/health` / `GET /v1/models` を送ってくる（Issue #748）。
@@ -783,6 +790,7 @@ mod tests {
 
         let checker = EndpointHealthChecker::new(registry.clone());
         checker.check_endpoint(&endpoint).await.unwrap();
+        wait_for_background_requests().await;
 
         assert_eq!(health_call_count.load(Ordering::SeqCst), 0);
         assert_eq!(v1_call_count.load(Ordering::SeqCst), 1);
@@ -845,6 +853,7 @@ mod tests {
 
         let checker = EndpointHealthChecker::new(registry.clone());
         checker.check_endpoint(&endpoint).await.unwrap();
+        wait_for_background_requests().await;
 
         assert_eq!(health_call_count.load(Ordering::SeqCst), 1);
         assert_eq!(v1_call_count.load(Ordering::SeqCst), 0);
@@ -900,6 +909,7 @@ mod tests {
 
         let checker = EndpointHealthChecker::new(registry.clone());
         checker.check_endpoint(&endpoint).await.unwrap();
+        wait_for_background_requests().await;
 
         assert_eq!(health_call_count.load(Ordering::SeqCst), 1);
         assert_eq!(v1_call_count.load(Ordering::SeqCst), 1);

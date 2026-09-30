@@ -206,7 +206,11 @@ export class DashboardPage {
   async signOut() {
     await this.openUserDropdown();
     await this.page.locator(DashboardSelectors.userDropdown.signOut).click();
-    await this.page.waitForURL('**/login**');
+    // Sign out navigates to login.html twice (logout() and the App auth effect);
+    // the later navigation aborts the earlier one and detaches the frame, which
+    // fails a navigation-event wait. Poll for the settled login page instead.
+    await expect(this.page).toHaveURL(/\/login/);
+    await expect(this.page.locator('#username')).toBeVisible();
   }
 
   /**

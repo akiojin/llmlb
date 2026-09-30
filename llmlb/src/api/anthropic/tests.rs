@@ -84,6 +84,37 @@ fn anthropic_request_to_openai_maps_system_and_messages() {
 }
 
 #[test]
+fn anthropic_request_to_openai_forwards_top_k_and_metadata() {
+    let converted = anthropic_request_to_openai(&json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "max_tokens": 128,
+        "top_k": 40,
+        "metadata": {"user_id": "user-775"}
+    }))
+    .expect("conversion should succeed");
+
+    assert_eq!(converted.openai_payload["top_k"], json!(40));
+    assert_eq!(
+        converted.openai_payload["metadata"],
+        json!({"user_id": "user-775"})
+    );
+}
+
+#[test]
+fn anthropic_request_to_openai_omits_absent_top_k_and_metadata() {
+    let converted = anthropic_request_to_openai(&json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "max_tokens": 128
+    }))
+    .expect("conversion should succeed");
+
+    assert!(converted.openai_payload.get("top_k").is_none());
+    assert!(converted.openai_payload.get("metadata").is_none());
+}
+
+#[test]
 fn anthropic_request_to_openai_rejects_non_text_blocks() {
     let response = anthropic_request_to_openai(&json!({
         "model": "test-model",

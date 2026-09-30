@@ -275,6 +275,56 @@ async fn anthropic_messages_local_request_success() {
     assert_eq!(body["usage"]["output_tokens"], 5);
 }
 
+/// Issue #775 AC-4: `top_k` と `metadata` は OpenAI 互換形式への変換後も上流へ届く。
+#[tokio::test]
+#[serial]
+async fn anthropic_messages_forwards_top_k_and_metadata_to_upstream() {
+    let (node, captured) = spawn_chat_node_stub(chat_node_stub_openai_compat(
+        ChatStubResponse::Json(json!({
+            "id": "chatcmpl-775",
+            "object": "chat.completion",
+            "model": "test-model",
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop"
+                }
+            ]
+        })),
+    ))
+    .await;
+    let lb = spawn_test_lb().await;
+    let _ = register_responses_endpoint(lb.addr(), node.addr(), "test-model")
+        .await
+        .expect("endpoint registration should succeed");
+
+    let response = Client::new()
+        .post(format!("http://{}/v1/messages", lb.addr()))
+        .header("x-api-key", "sk_debug")
+        .header("anthropic-version", "2023-06-01")
+        .json(&json!({
+            "model": "test-model",
+            "max_tokens": 128,
+            "top_k": 40,
+            "metadata": {"user_id": "user-775"},
+            "messages": [
+                {"role": "user", "content": "Hello"}
+            ]
+        }))
+        .send()
+        .await
+        .expect("request should succeed");
+
+    assert_eq!(response.status(), ReqStatusCode::OK);
+    let captured_body = captured
+        .lock()
+        .expect("captured_request lock should not be poisoned")
+        .clone()
+        .expect("upstream must receive the converted request");
+    assert_eq!(captured_body["top_k"], json!(40));
+    assert_eq!(captured_body["metadata"], json!({"user_id": "user-775"}));
+}
+
 #[tokio::test]
 #[serial]
 async fn anthropic_messages_streaming_transforms_openai_sse() {

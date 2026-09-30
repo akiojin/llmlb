@@ -38,6 +38,7 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
     api_kind: Option<TpsApiKind>,
 ) -> Result<QueueSelection, LbError> {
     let endpoint = state
+        .balancer
         .load_manager
         .select_endpoint_by_tps_ready_for_model(model_id, api_kind)
         .await?;
@@ -64,6 +65,7 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
     api_kind: Option<TpsApiKind>,
 ) -> Result<QueueSelection, LbError> {
     let endpoints = state
+        .balancer
         .endpoint_registry
         .find_by_model_and_supported_api(model_id, required_api)
         .await;
@@ -72,6 +74,7 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
     }
 
     let endpoint = state
+        .balancer
         .load_manager
         .select_endpoint_by_tps_ready_from_candidates(endpoints, model_id, api_kind)
         .await?;

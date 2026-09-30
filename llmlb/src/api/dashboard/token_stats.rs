@@ -15,6 +15,7 @@ pub async fn get_token_stats(
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
     let stats = state
+        .balancer
         .request_history
         .get_token_statistics()
         .await
@@ -58,6 +59,7 @@ pub async fn get_daily_token_stats(
 ) -> Result<Json<Vec<DailyTokenStats>>, AppError> {
     let days = query.days.unwrap_or(30);
     let stats = state
+        .balancer
         .request_history
         .get_daily_token_statistics(days)
         .await
@@ -112,6 +114,7 @@ pub async fn get_monthly_token_stats(
 ) -> Result<Json<Vec<MonthlyTokenStats>>, AppError> {
     let months = query.months.unwrap_or(12);
     let stats = state
+        .balancer
         .request_history
         .get_monthly_token_statistics(months)
         .await

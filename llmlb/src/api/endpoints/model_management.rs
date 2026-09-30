@@ -196,7 +196,12 @@ pub async fn delete_endpoint_model_handler(
                 .into_response();
             }
 
-            if let Err(error) = state.endpoint_registry.refresh_model_mappings(id).await {
+            if let Err(error) = state
+                .balancer
+                .endpoint_registry
+                .refresh_model_mappings(id)
+                .await
+            {
                 tracing::error!(
                     endpoint_id = %id,
                     model = %model,

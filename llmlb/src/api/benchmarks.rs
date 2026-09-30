@@ -419,6 +419,7 @@ async fn run_single_benchmark_request(
     temperature: f32,
 ) -> Result<BenchmarkSample, LbError> {
     let endpoint = state
+        .balancer
         .load_manager
         .select_endpoint_round_robin_ready_for_model(model)
         .await?;

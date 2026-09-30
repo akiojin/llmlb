@@ -50,26 +50,33 @@ async fn build_test_app() -> (AppState, Router) {
     )
     .expect("Failed to create update manager");
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+            archive_pool: None,
+        },
     };
 
     // bootstrap と同様に、レジストリの状態遷移をダッシュボードイベントバスへ配線する
     state
+        .balancer
         .endpoint_registry
         .set_event_bus(state.event_bus.clone());
 
@@ -115,7 +122,7 @@ async fn test_dashboard_websocket_connection() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Act: WebSocket connection
-    let request = ws_request_with_token(addr, &state.jwt_secret);
+    let request = ws_request_with_token(addr, &state.auth.jwt_secret);
     let (ws_stream, _) = connect_async(request)
         .await
         .expect("Failed to connect to WebSocket");
@@ -152,7 +159,7 @@ async fn test_dashboard_receives_node_registration_event() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Connect WebSocket
-    let request = ws_request_with_token(addr, &state.jwt_secret);
+    let request = ws_request_with_token(addr, &state.auth.jwt_secret);
     let (ws_stream, _) = connect_async(request)
         .await
         .expect("Failed to connect to WebSocket");
@@ -205,7 +212,7 @@ async fn test_dashboard_receives_node_status_change() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Connect WebSocket
-    let request = ws_request_with_token(addr, &state.jwt_secret);
+    let request = ws_request_with_token(addr, &state.auth.jwt_secret);
     let (ws_stream, _) = connect_async(request)
         .await
         .expect("Failed to connect to WebSocket");
@@ -222,10 +229,16 @@ async fn test_dashboard_receives_node_status_change() {
         llmlb::types::endpoint::EndpointType::OpenaiCompatible,
     );
     let endpoint_id = endpoint.id;
-    state.endpoint_registry.add(endpoint).await.unwrap();
+    state
+        .balancer
+        .endpoint_registry
+        .add(endpoint)
+        .await
+        .unwrap();
 
     // Act: change status through the production update path (health checker / connection test)
     state
+        .balancer
         .endpoint_registry
         .update_status(
             endpoint_id,

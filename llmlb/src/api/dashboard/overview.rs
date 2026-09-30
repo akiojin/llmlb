@@ -16,7 +16,7 @@ use tracing::warn;
 ///
 /// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 pub(super) async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint> {
-    let endpoint_registry = &state.endpoint_registry;
+    let endpoint_registry = &state.balancer.endpoint_registry;
     let endpoints = endpoint_registry.list().await;
 
     let mut result = Vec::with_capacity(endpoints.len());
@@ -51,10 +51,10 @@ pub(super) async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint
 }
 
 pub(super) async fn collect_stats(state: &AppState) -> DashboardStats {
-    let load_manager = state.load_manager.clone();
+    let load_manager = state.balancer.load_manager.clone();
 
     let summary = load_manager.summary().await;
-    let endpoints = state.endpoint_registry.list().await;
+    let endpoints = state.balancer.endpoint_registry.list().await;
 
     let last_registered_at = endpoints.iter().map(|e| e.registered_at).max();
     let last_seen_at = endpoints.iter().filter_map(|e| e.last_seen).max();
@@ -86,7 +86,7 @@ pub(super) async fn collect_stats(state: &AppState) -> DashboardStats {
         };
 
     // request_history 廃止完了まで、audit_log/request_history の双方を見て過小計上を避ける
-    let token_totals_from_audit = match state.audit_log_storage.get_token_statistics().await {
+    let token_totals_from_audit = match state.audit.storage.get_token_statistics().await {
         Ok(stats) => Some(PersistedTokenTotals {
             total_input_tokens: to_u64(stats.total_input_tokens),
             total_output_tokens: to_u64(stats.total_output_tokens),
@@ -97,20 +97,21 @@ pub(super) async fn collect_stats(state: &AppState) -> DashboardStats {
             None
         }
     };
-    let token_totals_from_history = match state.request_history.get_token_statistics().await {
-        Ok(stats) => Some(PersistedTokenTotals {
-            total_input_tokens: stats.total_input_tokens,
-            total_output_tokens: stats.total_output_tokens,
-            total_tokens: stats.total_tokens,
-        }),
-        Err(e) => {
-            warn!(
-                "Failed to query token statistics from request history: {}",
-                e
-            );
-            None
-        }
-    };
+    let token_totals_from_history =
+        match state.balancer.request_history.get_token_statistics().await {
+            Ok(stats) => Some(PersistedTokenTotals {
+                total_input_tokens: stats.total_input_tokens,
+                total_output_tokens: stats.total_output_tokens,
+                total_tokens: stats.total_tokens,
+            }),
+            Err(e) => {
+                warn!(
+                    "Failed to query token statistics from request history: {}",
+                    e
+                );
+                None
+            }
+        };
     let token_totals_from_db = match (token_totals_from_audit, token_totals_from_history) {
         (Some(audit), Some(history)) => Some(PersistedTokenTotals {
             total_input_tokens: audit.total_input_tokens.max(history.total_input_tokens),
@@ -288,7 +289,7 @@ pub(super) fn calculate_output_tps(
 }
 
 pub(super) async fn collect_operation_token_totals(state: &AppState) -> PersistedTokenTotals {
-    match state.request_history.get_token_statistics().await {
+    match state.balancer.request_history.get_token_statistics().await {
         Ok(stats) => PersistedTokenTotals {
             total_input_tokens: stats.total_input_tokens,
             total_output_tokens: stats.total_output_tokens,
@@ -308,10 +309,15 @@ pub(super) async fn collect_capacity(
     state: &AppState,
     dashboard_endpoints: &[DashboardEndpoint],
 ) -> DashboardCapacity {
-    let endpoints = state.endpoint_registry.list().await;
+    let endpoints = state.balancer.endpoint_registry.list().await;
     let mut model_ids = Vec::new();
     for endpoint in dashboard_endpoints {
-        match state.endpoint_registry.list_models(endpoint.id).await {
+        match state
+            .balancer
+            .endpoint_registry
+            .list_models(endpoint.id)
+            .await
+        {
             Ok(models) => model_ids.extend(models.into_iter().map(|model| model.model_id)),
             Err(e) => warn!(
                 endpoint_id = %endpoint.id,
@@ -428,5 +434,5 @@ pub(super) fn collect_action_items(operations: &DashboardOperations) -> Vec<Dash
 }
 
 pub(super) async fn collect_history(state: &AppState) -> Vec<RequestHistoryPoint> {
-    state.load_manager.request_history().await
+    state.balancer.load_manager.request_history().await
 }

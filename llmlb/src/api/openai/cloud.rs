@@ -107,7 +107,7 @@ pub(super) async fn proxy_openai_cloud_post(
                 record.status = RecordStatus::Error {
                     message: format!("{e:?}"),
                 };
-                save_request_record(state.request_history.clone(), record);
+                save_request_record(state.balancer.request_history.clone(), record);
             }
             return Err(e);
         }
@@ -145,7 +145,7 @@ pub(super) async fn proxy_openai_cloud_post(
         if status.is_success() {
             record.response_body = outcome.response_body.clone();
         }
-        save_request_record(state.request_history.clone(), record);
+        save_request_record(state.balancer.request_history.clone(), record);
     }
 
     Ok(outcome.response)

@@ -247,7 +247,7 @@ async fn check_only_does_not_download_payload() {
 
     let mock_server = MockServer::start().await;
     Mock::given(method("GET"))
-            .and(path("/repos/test-owner/test-repo/releases/latest"))
+            .and(path(format!("/repos/{DEFAULT_OWNER}/{DEFAULT_REPO}/releases/latest")))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "tag_name": "v99.0.0",
                 "html_url": "https://github.com/test-owner/test-repo/releases/tag/v99.0.0",
@@ -259,17 +259,28 @@ async fn check_only_does_not_download_payload() {
             .mount(&mock_server)
             .await;
 
-    let manager = UpdateManager::new_with_config(
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let manager = UpdateManager::new_with_data_dir_and_config(
         reqwest::Client::new(),
         InferenceGate::default(),
         ShutdownController::default(),
-        "test-owner".to_string(),
-        "test-repo".to_string(),
+        tmp.path(),
         Some(mock_server.uri()),
     )
     .expect("create update manager");
 
     let state = manager.check_only(true).await.expect("check_only");
+
+    // 並列実行するテストプロセスと競合しないよう、キャッシュは一時データディレクトリにだけ書く (#761)。
+    assert!(
+        manager.inner.cache_path.starts_with(tmp.path()),
+        "cache must be written under the temp data dir: {}",
+        manager.inner.cache_path.display()
+    );
+    assert!(
+        manager.inner.cache_path.exists(),
+        "check_only should save the cache"
+    );
 
     // Should discover the update.
     match &state {
@@ -294,23 +305,22 @@ async fn download_background_transitions_to_downloading() {
 
     let mock_server = MockServer::start().await;
 
-    // Serve a tiny payload so download completes.
+    // 実行ファイルを含む小さな tar.gz を返し、ダウンロードから展開まで成功させる。
+    // 展開できない内容を返すと、準備失敗で payload が即座に `Error` になる (#760)。
+    let binary_name = Platform::detect().unwrap().binary_name();
+    let archive = tar_gz_with_files(&[(format!("llmlb-test/{binary_name}").as_str(), b"bin")]);
+    let archive_len = archive.len().to_string();
     Mock::given(method("GET"))
         .and(path("/download/portable.tar.gz"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_bytes(vec![0u8; 100])
-                .insert_header("content-length", "100"),
+                .set_body_bytes(archive)
+                .insert_header("content-length", archive_len.as_str()),
         )
         .mount(&mock_server)
         .await;
 
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        InferenceGate::default(),
-        ShutdownController::default(),
-    )
-    .expect("create update manager");
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
 
     // Pre-seed available state with a portable asset URL pointing to mock.
     {
@@ -329,22 +339,243 @@ async fn download_background_transitions_to_downloading() {
     // Start background download.
     manager.download_background();
 
-    // Give some time for async task to start and update state.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // `Downloading { downloaded_bytes: None }` は適用プラン選定の前に書かれ、直後に `Error` へ
+    // 落ちることがある。受信バイト数は選定を通過して実際に受信したときだけ記録されるので、
+    // それを待ち条件にする (#754)。
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let payload = match manager.state().await {
+            UpdateState::Available { payload, .. } => payload,
+            other => panic!("expected available, got {other:?}"),
+        };
+        match &payload {
+            PayloadState::Downloading {
+                downloaded_bytes: Some(n),
+                ..
+            } if *n > 0 => break,
+            PayloadState::Ready { .. } => break,
+            PayloadState::Error { message } => panic!("download failed: {message}"),
+            _ => {}
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "download did not progress in time, last payload: {payload:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
 
-    let state = manager.state().await;
-    match &state {
-        UpdateState::Available { payload, .. } => {
-            // Should be Downloading or Ready (if completed quickly).
+// =======================================================================
+// #760: ペイロード準備の失敗は payload を Error へ遷移させる
+// =======================================================================
+
+/// 各テスト固有のベースパスに置いた portable アセットで Available 状態を作る。
+/// ベースパスを一意にするのは、別プロセスの要求がモックに届いても照合させないため。
+async fn seed_available_with_portable_url(manager: &UpdateManager, url: String) {
+    let mut st = manager.inner.state.write().await;
+    *st = UpdateState::Available {
+        current: "4.5.0".to_string(),
+        latest: "4.5.1".to_string(),
+        release_url: "https://example.com/release".to_string(),
+        portable_asset_url: Some(url),
+        installer_asset_url: None,
+        payload: PayloadState::NotReady,
+        checked_at: Utc::now(),
+    };
+}
+
+/// `entries` のファイルを格納した tar.gz を作る。
+fn tar_gz_with_files(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    for (name, data) in entries {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder.append_data(&mut header, name, *data).unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
+/// `body` を返す portable アセットをモックし、そのURLを返す。
+async fn mock_portable_asset(
+    mock_server: &wiremock::MockServer,
+    response: wiremock::ResponseTemplate,
+) -> String {
+    use wiremock::matchers::{method, path};
+    use wiremock::Mock;
+
+    let asset_path = format!("/{}/portable.tar.gz", uuid::Uuid::new_v4().simple());
+    Mock::given(method("GET"))
+        .and(path(asset_path.clone()))
+        .respond_with(response)
+        .mount(mock_server)
+        .await;
+    format!("{}{asset_path}", mock_server.uri())
+}
+
+/// `ensure_payload_ready` が失敗し、payload が `Error` に遷移していることを確かめる。
+async fn assert_payload_error(
+    manager: &UpdateManager,
+    result: anyhow::Result<PayloadKind>,
+    expected: &str,
+) {
+    let err = result.expect_err("payload preparation should fail");
+    match manager.state().await {
+        UpdateState::Available {
+            payload: PayloadState::Error { message },
+            ..
+        } => {
             assert!(
-                matches!(
-                    payload,
-                    PayloadState::Downloading { .. } | PayloadState::Ready { .. }
-                ),
-                "expected Downloading or Ready, got {payload:?}"
+                message.contains(expected),
+                "error message {message:?} should contain {expected:?} (err: {err:#})"
             );
         }
-        other => panic!("expected available, got {other:?}"),
+        other => panic!("expected payload Error, got {other:?} (err: {err:#})"),
+    }
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_http_error_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    let url = mock_portable_asset(&mock_server, wiremock::ResponseTemplate::new(404)).await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "Failed to download update payload").await;
+    // 利用者が原因を判断できるよう、根本原因も残す。
+    let UpdateState::Available {
+        payload: PayloadState::Error { message },
+        ..
+    } = manager.state().await
+    else {
+        unreachable!()
+    };
+    assert!(message.contains("404"), "{message}");
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_stream_error_sets_payload_error() {
+    use tokio::io::AsyncWriteExt;
+
+    // Content-Length より少ないバイト数で接続を閉じ、受信エラーを起こす。
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = [0u8; 4096];
+        let _ = tokio::io::AsyncReadExt::read(&mut socket, &mut buf).await;
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n0123456789")
+            .await
+            .unwrap();
+        socket.shutdown().await.unwrap();
+    });
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, format!("http://{addr}/portable.tar.gz")).await;
+
+    let result = manager.ensure_payload_ready().await;
+    server.await.unwrap();
+
+    assert_payload_error(&manager, result, "Failed to download update payload").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_rename_failure_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(vec![0u8; 100]),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    // rename 先に空でないディレクトリを置き、一時ファイルの rename を失敗させる。
+    let blocker = manager
+        .inner
+        .updates_dir
+        .join("4.5.1")
+        .join("portable.tar.gz");
+    fs::create_dir_all(&blocker).unwrap();
+    fs::write(blocker.join("occupied"), b"x").unwrap();
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "Failed to download update payload").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_extract_failure_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    // tar.gz ではないゼロ列を返し、展開を失敗させる。
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(vec![0u8; 100]),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "Failed to extract update payload").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_missing_binary_sets_payload_error() {
+    let mock_server = wiremock::MockServer::start().await;
+    let archive = tar_gz_with_files(&[("llmlb-test/README.md", b"no binary here")]);
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(archive),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let result = manager.ensure_payload_ready().await;
+
+    assert_payload_error(&manager, result, "did not contain").await;
+}
+
+#[tokio::test]
+async fn ensure_payload_ready_success_sets_payload_ready() {
+    let mock_server = wiremock::MockServer::start().await;
+    let binary_name = Platform::detect().unwrap().binary_name();
+    let entry = format!("llmlb-test/{binary_name}");
+    let archive = tar_gz_with_files(&[(entry.as_str(), b"#!/bin/sh\n")]);
+    let url = mock_portable_asset(
+        &mock_server,
+        wiremock::ResponseTemplate::new(200).set_body_bytes(archive),
+    )
+    .await;
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
+    seed_available_with_portable_url(&manager, url).await;
+
+    let kind = manager
+        .ensure_payload_ready()
+        .await
+        .expect("payload preparation should succeed");
+
+    let PayloadKind::Portable { binary_path } = &kind else {
+        panic!("expected portable payload, got {kind:?}");
+    };
+    // 区切り文字は OS で異なるため、文字列ではなくパス要素で比較する。
+    let expected_suffix = std::path::Path::new("llmlb-test").join(&binary_name);
+    assert!(
+        std::path::Path::new(binary_path).ends_with(&expected_suffix),
+        "unexpected binary path {binary_path}"
+    );
+    match manager.state().await {
+        UpdateState::Available {
+            payload: PayloadState::Ready { kind: ready },
+            ..
+        } => assert_eq!(ready, kind),
+        other => panic!("expected payload Ready, got {other:?}"),
     }
 }
 
@@ -408,12 +639,7 @@ async fn drain_timeout_cancels_and_transitions_to_failed() {
     time::pause();
 
     let gate = InferenceGate::default();
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        gate.clone(),
-        ShutdownController::default(),
-    )
-    .expect("create update manager");
+    let (manager, _tmp) = test_manager_with_gate(gate.clone());
 
     // Set up available state with ready payload.
     {
@@ -482,12 +708,7 @@ async fn drain_completes_before_timeout() {
     time::pause();
 
     let gate = InferenceGate::default();
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        gate.clone(),
-        ShutdownController::default(),
-    )
-    .expect("create update manager");
+    let (manager, _tmp) = test_manager_with_gate(gate.clone());
 
     // Set up available state with ready payload.
     {
@@ -551,10 +772,29 @@ fn test_manager_with_gate(gate: InferenceGate) -> (UpdateManager, tempfile::Temp
     (manager, tmp)
 }
 
+// スケジュールループのテストは `start_paused` で仮想時間を使う。仮想時間はすべてのタスクが
+// 待機状態になるまで進まないため、ループの判定はホストの負荷に関係なく待機の満了前に完了する (#754)。
+
+/// スケジュールループが消費するまで待つ。消費された時点で戻り、上限は仮想時間で数える。
+async fn wait_for_schedule_consumed(manager: &UpdateManager) {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while manager.get_schedule().unwrap().is_some() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("schedule should be consumed by the schedule loop");
+}
+
+/// 5 秒間隔のスケジュールループに、起動直後・5 秒後・10 秒後の 3 回判定させる。
+async fn let_schedule_loop_tick_three_times() {
+    tokio::time::sleep(Duration::from_secs(11)).await;
+}
+
 // =======================================================================
 // T232: アイドル時適用トリガー — in_flight=0でスケジュール起動
 // =======================================================================
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn idle_schedule_triggers_when_in_flight_zero() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate.clone());
@@ -582,8 +822,7 @@ async fn idle_schedule_triggers_when_in_flight_zero() {
     // Start schedule loop.
     manager.start_schedule_loop();
 
-    // Give the loop time to detect idle and trigger.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    wait_for_schedule_consumed(&manager).await;
 
     // Schedule should have been removed (triggered).
     assert!(
@@ -600,7 +839,7 @@ async fn idle_schedule_triggers_when_in_flight_zero() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn idle_schedule_does_not_trigger_while_busy() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate.clone());
@@ -625,7 +864,7 @@ async fn idle_schedule_does_not_trigger_while_busy() {
         .expect("schedule should be created");
 
     manager.start_schedule_loop();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     // Schedule should still exist (not triggered).
     assert!(
@@ -668,7 +907,7 @@ fn scheduled_mode_requires_scheduled_at() {
 // =======================================================================
 // T233: 時刻指定適用トリガー — 指定時刻到達でドレイン開始
 // =======================================================================
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn scheduled_time_triggers_when_past_due() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -692,8 +931,7 @@ async fn scheduled_time_triggers_when_past_due() {
 
     manager.start_schedule_loop();
 
-    // Give the loop time to detect and trigger.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    wait_for_schedule_consumed(&manager).await;
 
     assert!(
         manager.get_schedule().unwrap().is_none(),
@@ -708,7 +946,7 @@ async fn scheduled_time_triggers_when_past_due() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -733,7 +971,7 @@ async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
         .expect("schedule should be created");
 
     manager.start_schedule_loop();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     assert!(
         manager.get_schedule().unwrap().is_some(),
@@ -746,7 +984,7 @@ async fn scheduled_time_does_not_trigger_when_target_version_mismatch() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn malformed_scheduled_without_time_does_not_trigger() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -766,7 +1004,7 @@ async fn malformed_scheduled_without_time_does_not_trigger() {
     manager.inner.schedule_store.save(&malformed).unwrap();
 
     manager.start_schedule_loop();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     assert!(
         manager.get_schedule().unwrap().is_some(),
@@ -889,7 +1127,7 @@ fn parse_port_from_args_supports_equals_style() {
     assert_eq!(parse_port_from_args(&args), Some(40124));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn scheduled_time_does_not_trigger_before_time() {
     let gate = InferenceGate::default();
     let (manager, _tmp) = test_manager_with_gate(gate);
@@ -913,8 +1151,7 @@ async fn scheduled_time_does_not_trigger_before_time() {
 
     manager.start_schedule_loop();
 
-    // Wait a bit — should NOT trigger (still 60s away).
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let_schedule_loop_tick_three_times().await;
 
     assert!(
         manager.get_schedule().unwrap().is_some(),
@@ -1232,6 +1469,69 @@ fn choose_apply_plan_falls_back_to_installer_when_writable() {
 fn is_dir_writable_temp_dir() {
     let dir = tempfile::tempdir().unwrap();
     assert!(is_dir_writable(dir.path()).unwrap());
+}
+
+#[test]
+fn is_dir_writable_concurrent_calls_all_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(16));
+    let handles: Vec<_> = (0..16)
+        .map(|_| {
+            let path = path.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                (0..50)
+                    .map(|_| is_dir_writable(&path).map_err(|e| e.to_string()))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    for handle in handles {
+        for result in handle.join().unwrap() {
+            assert_eq!(result, Ok(true));
+        }
+    }
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn is_dir_writable_ignores_leftover_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".llmlb_write_probe"), b"").unwrap();
+    assert!(is_dir_writable(dir.path()).unwrap());
+    assert!(is_dir_writable(dir.path()).unwrap());
+    // 事前に存在したファイル以外（今回のプローブ）は残さない
+    let names: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![std::ffi::OsString::from(".llmlb_write_probe")]);
+}
+
+#[test]
+fn is_dir_writable_propagates_non_permission_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("not-a-dir");
+    fs::write(&file, b"").unwrap();
+    assert!(is_dir_writable(&file).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn is_dir_writable_read_only_dir_is_false() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    // root は権限ビットを無視して書き込めるため、実際に書き込めない環境でのみ検証する
+    let really_read_only = fs::write(dir.path().join("check"), b"").is_err();
+    let result = is_dir_writable(dir.path());
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    if really_read_only {
+        assert!(!result.unwrap());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
 }
 
 // =======================================================================
@@ -2022,12 +2322,7 @@ async fn record_check_failure_from_applying_preserves_latest() {
 // =======================================================================
 #[tokio::test]
 async fn start_background_tasks_is_idempotent() {
-    let manager = UpdateManager::new(
-        reqwest::Client::new(),
-        InferenceGate::default(),
-        ShutdownController::default(),
-    )
-    .unwrap();
+    let (manager, _tmp) = test_manager_with_gate(InferenceGate::default());
 
     // First call should not panic
     manager.start_background_tasks();

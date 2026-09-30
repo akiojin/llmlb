@@ -416,6 +416,7 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
 
                 // ステータスを更新（DB + キャッシュ）
                 let _ = state
+                    .balancer
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
                     .await;
@@ -433,6 +434,7 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
             } else {
                 let error_msg = format!("HTTP {}", response.status());
                 let _ = state
+                    .balancer
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
                     .await;
@@ -449,6 +451,7 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
         Err(e) => {
             let error_msg = e.to_string();
             let _ = state
+                .balancer
                 .endpoint_registry
                 .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
                 .await;
@@ -561,14 +564,18 @@ pub async fn create_endpoint(
     match db::create_endpoint(&state.db_pool, &endpoint).await {
         Ok(()) => {
             // EndpointRegistryキャッシュも更新（DBは既に保存済みなのでキャッシュのみ）
-            state.endpoint_registry.add_to_cache(endpoint.clone()).await;
+            state
+                .balancer
+                .endpoint_registry
+                .add_to_cache(endpoint.clone())
+                .await;
 
             // SPEC-f8e3a1b7, SPEC-e8e9326e: エンドポイント固有の方法でデバイス情報を取得
             let endpoint_id = endpoint.id;
             let base_url = endpoint.base_url.clone();
             let api_key = endpoint.api_key.clone();
             let endpoint_type = endpoint.endpoint_type;
-            let registry = state.endpoint_registry.clone();
+            let registry = state.balancer.endpoint_registry.clone();
             let http_client = state.http_client.clone();
 
             // Fire-and-forget: デバイス情報取得は非同期で行う（レスポンスをブロックしない）
@@ -625,6 +632,7 @@ pub async fn create_endpoint(
                 {
                     Ok(result) => {
                         if let Err(e) = state_clone
+                            .balancer
                             .endpoint_registry
                             .refresh_model_mappings(endpoint_clone.id)
                             .await
@@ -862,7 +870,12 @@ pub async fn update_endpoint(
         }
     }
 
-    match state.endpoint_registry.update(updated.clone()).await {
+    match state
+        .balancer
+        .endpoint_registry
+        .update(updated.clone())
+        .await
+    {
         Ok(true) => (StatusCode::OK, Json(EndpointResponse::from(updated))).into_response(),
         Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
@@ -892,11 +905,11 @@ pub async fn delete_endpoint(
     }
 
     // EndpointRegistry::remove を使用してDBとキャッシュ両方から削除
-    match state.endpoint_registry.remove(id).await {
+    match state.balancer.endpoint_registry.remove(id).await {
         Ok(true) => {
             // EndpointRegistry::remove は LoadManager の状態までは掃除しないため、
             // 負荷状態・TPS状態がリークしないよう明示的に破棄する。
-            state.load_manager.forget_endpoint(id).await;
+            state.balancer.load_manager.forget_endpoint(id).await;
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
@@ -969,7 +982,7 @@ pub async fn sync_endpoint_models(
     match result {
         Ok(result) => {
             // EndpointRegistryキャッシュをリロードしてモデルマッピングを更新
-            let _ = state.endpoint_registry.reload().await;
+            let _ = state.balancer.endpoint_registry.reload().await;
 
             let synced_models = result
                 .models
@@ -1107,17 +1120,20 @@ pub async fn proxy_chat_completions(
             let latency_ms = u32::try_from(started_at.elapsed().as_millis()).unwrap_or(u32::MAX);
             if status_code.is_success() {
                 let _ = state
+                    .balancer
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
                     .await;
             } else if status_code.is_server_error() {
                 let error_msg = format!("HTTP {}", status_code);
                 let _ = state
+                    .balancer
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Error, None, Some(&error_msg))
                     .await;
             } else {
                 let _ = state
+                    .balancer
                     .endpoint_registry
                     .update_status(endpoint.id, EndpointStatus::Online, Some(latency_ms), None)
                     .await;
@@ -1185,6 +1201,7 @@ pub async fn proxy_chat_completions(
                 ollama_loading_model.as_deref(),
             );
             let _ = state
+                .balancer
                 .endpoint_registry
                 .update_status(
                     endpoint.id,

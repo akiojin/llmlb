@@ -175,6 +175,7 @@ pub async fn list_request_responses(
     page = page.min(MAX_PAGE);
 
     let result = state
+        .balancer
         .request_history
         .filter_and_paginate(&filter, page, per_page)
         .await
@@ -188,6 +189,7 @@ pub async fn get_request_response_detail(
     State(state): State<AppState>,
 ) -> Result<Json<crate::common::protocol::RequestResponseRecord>, AppError> {
     let record = state
+        .balancer
         .request_history
         .get_record_by_id(id)
         .await
@@ -207,6 +209,7 @@ pub async fn export_request_responses(
     const EXPORT_PAGE_SIZE: usize = 1000;
 
     let first_page = state
+        .balancer
         .request_history
         .filter_and_paginate(&filter, 1, EXPORT_PAGE_SIZE)
         .await
@@ -214,7 +217,7 @@ pub async fn export_request_responses(
 
     match query.format {
         RequestHistoryExportFormat::Json => {
-            let storage = state.request_history.clone();
+            let storage = state.balancer.request_history.clone();
             let filter = filter.clone();
             let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
@@ -283,7 +286,7 @@ pub async fn export_request_responses(
             Ok(response)
         }
         RequestHistoryExportFormat::Csv => {
-            let storage = state.request_history.clone();
+            let storage = state.balancer.request_history.clone();
             let filter = filter.clone();
             let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;

@@ -8,11 +8,11 @@ use crate::AppState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Extension, Json,
 };
 
-use super::error::AppError;
+use super::error::{AppError, HandlerError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -80,12 +80,9 @@ impl From<User> for UserResponse {
 }
 
 /// Admin権限チェックヘルパー
-#[allow(clippy::result_large_err)]
-fn check_admin(claims: &Claims) -> Result<(), Response> {
+fn check_admin(claims: &Claims) -> Result<(), HandlerError> {
     if claims.role != UserRole::Admin {
-        return Err(
-            AppError(LbError::Authorization("Admin access required".to_string())).into_response(),
-        );
+        return Err(AppError(LbError::Authorization("Admin access required".to_string())).into());
     }
     Ok(())
 }
@@ -105,7 +102,7 @@ fn check_admin(claims: &Claims) -> Result<(), Response> {
 pub async fn list_users(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
-) -> Result<Json<ListUsersResponse>, Response> {
+) -> Result<Json<ListUsersResponse>, HandlerError> {
     check_admin(&claims)?;
 
     let users = crate::db::users::list(&app_state.db_pool)
@@ -138,7 +135,7 @@ pub async fn create_user(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Json(request): Json<CreateUserRequest>,
-) -> Result<(StatusCode, Json<CreateUserResponse>), Response> {
+) -> Result<(StatusCode, Json<CreateUserResponse>), HandlerError> {
     check_admin(&claims)?;
 
     // ユーザー名の重複チェック
@@ -154,9 +151,7 @@ pub async fn create_user(
         })?;
 
     if existing.is_some() {
-        return Err(
-            AppError(LbError::Conflict("Username already exists".to_string())).into_response(),
-        );
+        return Err(AppError(LbError::Conflict("Username already exists".to_string())).into());
     }
 
     // パスワードを自動生成
@@ -216,7 +211,7 @@ pub async fn update_user(
     State(app_state): State<AppState>,
     Path(user_id): Path<Uuid>,
     Json(request): Json<UpdateUserRequest>,
-) -> Result<Json<UserResponse>, Response> {
+) -> Result<Json<UserResponse>, HandlerError> {
     check_admin(&claims)?;
 
     // ユーザーの存在確認
@@ -243,8 +238,7 @@ pub async fn update_user(
         {
             if existing.id != user_id {
                 return Err(
-                    AppError(LbError::Conflict("Username already exists".to_string()))
-                        .into_response(),
+                    AppError(LbError::Conflict("Username already exists".to_string())).into(),
                 );
             }
         }
@@ -302,7 +296,7 @@ pub async fn delete_user(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Path(user_id): Path<Uuid>,
-) -> Result<StatusCode, Response> {
+) -> Result<StatusCode, HandlerError> {
     check_admin(&claims)?;
 
     // ユーザーの存在確認
@@ -332,7 +326,7 @@ pub async fn delete_user(
                 "Cannot delete the last administrator".to_string(),
             ),
         ))
-        .into_response());
+        .into());
     }
 
     // ユーザーを削除

@@ -52,10 +52,10 @@ pub async fn get_version() -> Response {
 
 /// GET /api/system
 pub async fn get_system(State(state): State<AppState>) -> Response {
-    let update = state.update_manager.state().await;
-    let in_flight = state.inference_gate.in_flight();
-    let schedule = state.update_manager.get_schedule().ok().flatten();
-    let rollback_available = state.update_manager.rollback_available();
+    let update = state.lifecycle.update_manager.state().await;
+    let in_flight = state.lifecycle.inference_gate.in_flight();
+    let schedule = state.lifecycle.update_manager.get_schedule().ok().flatten();
+    let rollback_available = state.lifecycle.update_manager.rollback_available();
     Json(SystemInfoResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         pid: std::process::id(),
@@ -83,7 +83,11 @@ pub async fn check_update(
     }
 
     // Rate limit: reject if checked within the last 60 seconds.
-    if state.update_manager.is_manual_check_rate_limited() {
+    if state
+        .lifecycle
+        .update_manager
+        .is_manual_check_rate_limited()
+    {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({
@@ -97,13 +101,13 @@ pub async fn check_update(
             .into_response();
     }
 
-    state.update_manager.record_manual_check();
+    state.lifecycle.update_manager.record_manual_check();
 
-    match state.update_manager.check_only(true).await {
+    match state.lifecycle.update_manager.check_only(true).await {
         Ok(update) => {
             // If an update is available, start background download.
             if matches!(&update, crate::update::UpdateState::Available { .. }) {
-                state.update_manager.download_background();
+                state.lifecycle.update_manager.download_background();
             }
             state
                 .event_bus
@@ -112,6 +116,7 @@ pub async fn check_update(
         }
         Err(err) => {
             state
+                .lifecycle
                 .update_manager
                 .record_check_failure(err.to_string())
                 .await;
@@ -135,7 +140,7 @@ pub async fn apply_update(
             .into_response();
     }
 
-    let queued = state.update_manager.request_apply_normal().await;
+    let queued = state.lifecycle.update_manager.request_apply_normal().await;
     (
         StatusCode::ACCEPTED,
         Json(ApplyUpdateResponse {
@@ -158,7 +163,7 @@ pub async fn apply_force_update(
             .into_response();
     }
 
-    match state.update_manager.request_apply_force().await {
+    match state.lifecycle.update_manager.request_apply_force().await {
         Ok(dropped_in_flight) => (
             StatusCode::ACCEPTED,
             Json(ForceApplyUpdateResponse {
@@ -247,7 +252,7 @@ pub async fn create_schedule(
     };
 
     // Determine the target version from current update state.
-    let target_version = match state.update_manager.state().await {
+    let target_version = match state.lifecycle.update_manager.state().await {
         crate::update::UpdateState::Available { latest, .. } => latest,
         _ => {
             return AppError(LbError::Conflict(
@@ -265,7 +270,7 @@ pub async fn create_schedule(
         created_at: Utc::now(),
     };
 
-    match state.update_manager.create_schedule(schedule) {
+    match state.lifecycle.update_manager.create_schedule(schedule) {
         Ok(sched) => {
             state
                 .event_bus
@@ -292,7 +297,7 @@ pub async fn get_schedule(
             .into_response();
     }
 
-    match state.update_manager.get_schedule() {
+    match state.lifecycle.update_manager.get_schedule() {
         Ok(Some(schedule)) => Json(json!({ "schedule": schedule })).into_response(),
         Ok(None) => Json(json!({ "schedule": null })).into_response(),
         Err(err) => AppError(LbError::Http(err.to_string())).into_response(),
@@ -311,7 +316,7 @@ pub async fn cancel_schedule(
             .into_response();
     }
 
-    match state.update_manager.cancel_schedule() {
+    match state.lifecycle.update_manager.cancel_schedule() {
         Ok(()) => {
             state
                 .event_bus
@@ -338,7 +343,7 @@ pub async fn rollback(
             .into_response();
     }
 
-    match state.update_manager.request_rollback() {
+    match state.lifecycle.update_manager.request_rollback() {
         Ok(()) => {
             state
                 .event_bus

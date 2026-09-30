@@ -36,6 +36,11 @@
 「mapping に登録があるか？」の判定が必要な場合は `CanonicalResolution::is_known()`
 を併用する。`canonical_for` は `String` を必ず返す（`null` を返さない）。
 
+`/v1/models` と `/api/dashboard/models` の `is_canonical` は、その行の `id` 自身が
+canonical テーブルに登録された canonical 名である場合のみ `true` になる。self-fallback
+で `canonical_name` に `id` が入っているだけの未登録モデルは `false` とし、ダッシュボードは
+このフラグで canonical バッジを表示する（Issue #722）。
+
 ## max_tokens フォールバック（B-1 / G-7）
 
 `/v1/models` の `max_tokens` は次の優先順で解決する（`llmlb/src/models/mapping.rs:resolve_max_tokens`）。

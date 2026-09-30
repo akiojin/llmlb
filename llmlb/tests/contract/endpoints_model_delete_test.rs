@@ -97,22 +97,30 @@ async fn build_app(seeds: Vec<(Endpoint, EndpointModel)>) -> TestApp {
     )
     .expect("create update manager");
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry: endpoint_registry.clone(),
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret: "test-secret".to_string(),
+        auth: llmlb::AuthState {
+            jwt_secret: "test-secret".to_string(),
+        },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry: endpoint_registry.clone(),
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone())),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone())),
+            archive_pool: None,
+        },
     };
 
     let password_hash =

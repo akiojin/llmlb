@@ -31,3 +31,19 @@
 - **原因**: `llmlb/src/api/anthropic.rs:500-504` で `forward_to_endpoint` の `Err` を固定文字列に差し替えている。`proxy.rs:394-401` の `tracing::error!` には reqwest の実エラーが出ているが、HTTP 応答には反映されない。`/v1/chat/completions` 側の同種パスも同じ構造
 - **再発防止ルール**: 502 受領時はクライアント出力だけで判断せず、`Dashboard → History → Request Details → Error` フィールド、もしくは llmlb の標準エラー出力（tracing）を必ず確認する。中期的にはエラーメッセージの透過化（`LbError` の実メッセージを Anthropic 応答に流す）を別 SPEC で対応する
 - **次回チェック方法**: `GET /api/request_history` または Dashboard の該当レコードの Error フィールド、llmlb プロセスの標準出力で `Failed to forward request to endpoint` の直近ログを確認
+
+### 一時 git リポジトリを使うテストは git フックの環境変数を必ず解除する
+
+- **事象**: `check-migration-versions.sh` の bats テストが pre-push フック（`make quality-checks`）内で実行された際、一時ディレクトリで行ったはずの `git init` / `git commit` / `git config user.*` が実リポジトリに作用し、作業ブランチに全ファイル削除コミットが積まれ、共有 git config に `[user] test` が追記された。その間に別 worktree の agent のコミット author が `test` になった
+- **原因**: git フックは `GIT_DIR` などを export した状態で子プロセスを起動する。`GIT_DIR` が設定されていると、`cd` で別ディレクトリに移っても git は実リポジトリを操作する。直接 `bats` を実行したときは環境変数がないため再現しない
+- **再発防止ルール**: 一時リポジトリを作る bats テストは必ず `tests/checks/helpers/git-sandbox.bash` の `git_sandbox_init` を経由する（`git rev-parse --local-env-vars` の unset、toplevel の assert、author は環境変数で指定し `git config` に書き込まない）。隔離そのものは `tests/checks/test-git-sandbox.bats` が囮リポジトリで回帰検証する
+- **次回チェック方法**: テスト追加後は直接実行だけでなく `git push`（pre-push 経由）でも実行し、終了後に `git log -1`、`git status`、`git config --local --get user.email` が変化していないことを確認する
+
+### localhost の MockServer は同一ホストの別プロセスからも要求を受ける
+
+- **事象**: `test_health_check_falls_back_to_v1_models_when_api_health_fails_for_xllm` が、`--test-threads=1` の逐次実行にもかかわらず `GET /api/health` の呼び出し回数 2 で失敗した（Issue #748）。同じ時間帯に Playwright E2E の `llmlb serve` が並走していた
+- **原因**: E2E のモックエンドポイントは `127.0.0.1:0` の一時ポートで xLLM として登録され、llmlb のヘルスチェッカーが 30 秒ごとに `GET /api/health` を送る。解放されたポートを wiremock の MockServer（同じく `127.0.0.1:0`）が再利用すると、別プロセスの要求がテストのモックに到達し、パスだけで照合する回数カウントに混入する
+- **再発防止ルール**: 呼び出し回数を厳密に検証するテストでは、エンドポイントの `base_url` とモックのパスをテストごとに一意なベースパス（UUID）配下へ置き、外部からの要求を照合対象から外す。同時に、外部要求を注入しても結果が変わらないことをテストで保証する
+- **追加の原因（同 Issue）**: `check_endpoint` は成功時に自動モデル同期を `tokio::spawn` し、`/v1/models` を叩く。高負荷時はこのバックグラウンド要求がアサーションより先に届き、`/v1/models` の回数が 1 増える
+- **追加の再発防止ルール**: ヘルスチェック経路だけを数えるテストでは自動モデル同期を直近実行済みとしてスロットリングし、`check_endpoint` 後にバックグラウンド要求が届き切るのを待ってから回数を検証する
+- **次回チェック方法**: `path("/api/health")` や `path("/v1/models")` を回数カウントや `.expect(n)` と組み合わせている箇所を grep し、ベースパスで隔離され、かつ spawn されるバックグラウンド要求を抑止しているか確認する

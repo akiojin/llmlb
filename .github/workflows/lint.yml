@@ -100,6 +100,40 @@ jobs:
           echo "📄 Checking Markdown files..."
           pnpm dlx markdownlint-cli2 "**/*.md" "!node_modules" "!.git" "!.github" "!.worktrees" "!CHANGELOG.md"
 
+  migration-versions:
+    # Issue #737
+    # 目的: 並行ブランチ間のマイグレーション番号衝突をマージ前に検出する
+    name: Migration Version Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Install bats
+        run: pnpm install --frozen-lockfile
+
+      - name: Check migration versions
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: make migration-versions
+
+      - name: Test migration version check
+        run: make test-checks
+
   commitlint:
     # 要件: FR-005
     # 目的: コミットメッセージがConventional Commits準拠かチェック
@@ -134,3 +168,7 @@ jobs:
           echo "Base ref: ${{ github.base_ref }}"
           chmod +x scripts/checks/check-commits.sh
           scripts/checks/check-commits.sh --from "origin/${{ github.base_ref }}" --to HEAD
+
+      - name: Check Dependabot group subjects
+        # Issue #727: Dependabot のグループ更新件名が header-max-length を超えないことを保証する
+        run: make dependabot-subjects

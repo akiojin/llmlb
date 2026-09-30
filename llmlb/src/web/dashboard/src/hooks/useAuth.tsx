@@ -19,25 +19,32 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+async function fetchCurrentUser(): Promise<User | null> {
+  try {
+    const data = await authApi.me()
+    return {
+      id: data.user_id,
+      username: data.username,
+      role: data.role,
+      must_change_password: data.must_change_password,
+    }
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  const checkAuth = useCallback(async () => {
-    try {
-      const data = await authApi.me()
-      setUser({
-        id: data.user_id,
-        username: data.username,
-        role: data.role,
-        must_change_password: data.must_change_password,
-      })
-    } catch {
-      setUser(null)
-    } finally {
-      setIsLoading(false)
-    }
+  const applyAuthResult = useCallback((nextUser: User | null) => {
+    setUser(nextUser)
+    setIsLoading(false)
   }, [])
+
+  const checkAuth = useCallback(async () => {
+    applyAuthResult(await fetchCurrentUser())
+  }, [applyAuthResult])
 
   const login = useCallback(async (username: string, password: string) => {
     await authApi.login(username, password)
@@ -51,8 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    checkAuth()
-  }, [checkAuth])
+    // 認証 API の応答（外部システム）を購読し、そのコールバックで state を更新する
+    fetchCurrentUser().then(applyAuthResult)
+  }, [applyAuthResult])
 
   return (
     <AuthContext.Provider

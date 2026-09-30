@@ -1,0 +1,9 @@
+# check-module-structure.sh の許可リスト（SPEC #699 の未完了分）
+#
+# 形式: <size|mod> <llmlb/src からの相対パス>
+#   size: 1,500 行超の本体ソース（FR-009）
+#   mod:  実装を含む mod.rs（FR-010）
+#
+# 分割が完了したらエントリを削除すること（残っていると check が失敗する）。
+
+

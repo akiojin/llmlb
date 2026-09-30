@@ -8,11 +8,11 @@ use crate::AppState;
 use axum::{
     extract::State,
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Extension, Json,
 };
 
-use super::error::AppError;
+use super::error::{AppError, HandlerError};
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
@@ -95,7 +95,7 @@ pub async fn login(
     State(app_state): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<LoginRequest>,
-) -> Result<impl IntoResponse, Response> {
+) -> Result<impl IntoResponse, HandlerError> {
     let is_secure = is_request_secure(&headers);
 
     // 開発モード: admin/test で固定ログイン可能
@@ -106,7 +106,7 @@ pub async fn login(
         let token = crate::auth::jwt::create_jwt(
             &dev_user_id,
             crate::common::auth::UserRole::Admin,
-            &app_state.jwt_secret,
+            &app_state.auth.jwt_secret,
             false,
             0,
         )
@@ -162,7 +162,7 @@ pub async fn login(
             return Err(AppError(LbError::Authentication(
                 "Invalid username or password".to_string(),
             ))
-            .into_response());
+            .into());
         }
     };
 
@@ -181,7 +181,7 @@ pub async fn login(
         return Err(AppError(LbError::Authentication(
             "Invalid username or password".to_string(),
         ))
-        .into_response());
+        .into());
     }
 
     // 最終ログイン時刻を更新
@@ -198,7 +198,7 @@ pub async fn login(
     let token = crate::auth::jwt::create_jwt(
         &user.id.to_string(),
         user.role,
-        &app_state.jwt_secret,
+        &app_state.auth.jwt_secret,
         user.must_change_password,
         user.password_changed_at,
     )
@@ -286,7 +286,7 @@ fn is_request_secure(headers: &HeaderMap) -> bool {
 pub async fn me(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
-) -> Result<Json<MeResponse>, Response> {
+) -> Result<Json<MeResponse>, HandlerError> {
     // ユーザーIDをパース
     let user_id = claims.sub.parse::<uuid::Uuid>().map_err(|e| {
         tracing::error!("Failed to parse user ID: {}", e);
@@ -361,7 +361,7 @@ pub struct RegisterResponse {
 pub async fn register(
     State(app_state): State<AppState>,
     Json(request): Json<RegisterRequest>,
-) -> Result<(StatusCode, Json<RegisterResponse>), Response> {
+) -> Result<(StatusCode, Json<RegisterResponse>), HandlerError> {
     // パスワード要件を検証（8文字以上・大文字・数字）
     crate::auth::password::validate_password(&request.password).map_err(|e| {
         tracing::info!("Password validation failed during registration");
@@ -406,9 +406,7 @@ pub async fn register(
         })?;
 
     if existing.is_some() {
-        return Err(
-            AppError(LbError::Conflict("Username already exists".to_string())).into_response(),
-        );
+        return Err(AppError(LbError::Conflict("Username already exists".to_string())).into());
     }
 
     // パスワードをハッシュ化
@@ -458,7 +456,7 @@ pub async fn register(
         return Err(AppError(LbError::Conflict(
             "Invitation code is no longer valid".to_string(),
         ))
-        .into_response());
+        .into());
     }
 
     tracing::info!(
@@ -498,7 +496,7 @@ pub async fn change_password(
     State(app_state): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<ChangePasswordRequest>,
-) -> Result<impl IntoResponse, Response> {
+) -> Result<impl IntoResponse, HandlerError> {
     let user_id: uuid::Uuid = claims.sub.parse().map_err(|_| {
         AppError(LbError::Authentication("Invalid user ID".to_string())).into_response()
     })?;
@@ -556,7 +554,7 @@ pub async fn change_password(
     let token = crate::auth::jwt::create_jwt(
         &user_id.to_string(),
         claims.role,
-        &app_state.jwt_secret,
+        &app_state.auth.jwt_secret,
         false,
         updated_user.password_changed_at,
     )

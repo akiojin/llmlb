@@ -35,6 +35,7 @@ const DENIED_ENDPOINTS: EndpointUnderTest[] = [
   { method: 'GET', path: '/api/endpoints' },
   { method: 'GET', path: '/api/users' },
   { method: 'GET', path: '/api/metrics/cloud' },
+  { method: 'GET', path: '/api/metrics/cloud/export' },
   { method: 'GET', path: '/api/me/api-keys' },
 ]
 

@@ -34,6 +34,10 @@
 - 指標:
   - `cloud_requests_total{provider,status}`
   - `cloud_request_latency_seconds{provider}`
+- 日次 export: `/api/metrics/cloud/export?format=json|csv&days=1..90`
+  - provider（`openai` / `google` / `anthropic`）× UTC 日次の集計を返す
+  - フィールド: `date, provider, request_count, success_count, error_count, avg_latency_ms, p95_latency_ms`
+  - `days` が 1..90 の範囲外、`format` が json/csv 以外の場合は 400。90日を超えるデータは保持しない
 
 ## エラーハンドリングの方針
 

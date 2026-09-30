@@ -3,7 +3,7 @@
 //! SPEC-e8e9326e: llama.cpp detection via User-Agent and /v1/version
 //!
 //! llama.cpp endpoints can be identified by:
-//! 1. User-Agent header: llama.cpp/[version]
+//! 1. User-Agent header: `llama.cpp/[version]`
 //! 2. GET /v1/version response: server field == "llama.cpp"
 
 use reqwest::Client;
@@ -22,7 +22,7 @@ struct LlamacppVersionResponse {
 /// Detect llama.cpp endpoint
 ///
 /// Detection strategy (in priority order):
-/// 1. User-Agent header: llama.cpp/[version] pattern
+/// 1. User-Agent header: `llama.cpp/[version]` pattern
 /// 2. GET /v1/version response: server field == "llama.cpp"
 ///
 /// Returns a reason string if detection succeeds.

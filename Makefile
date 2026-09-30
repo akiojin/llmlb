@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure migration-versions dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure migration-versions mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
 .PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -24,6 +24,11 @@ module-structure:
 # Issue #737: 並行ブランチ間のマイグレーション番号衝突を develop 着地前に検出
 migration-versions:
 	bash scripts/checks/check-migration-versions.sh
+
+# Issue #776: canonical モデルマッピングの最終確認日が古くなっていないか検査（ネットワーク非依存）
+# CI (lint.yml commitlint) も同一ターゲットを実行する。
+mapping-freshness:
+	bash scripts/checks/check-mapping-freshness.sh
 
 # Issue #727: Dependabot のグループ更新件名が commitlint (header-max-length) を通るか検証
 dependabot-subjects:
@@ -61,7 +66,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure migration-versions dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks test-checks e2e-playwright
+quality-checks: fmt clippy-parity module-structure migration-versions mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 

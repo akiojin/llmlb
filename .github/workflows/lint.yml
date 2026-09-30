@@ -207,3 +207,9 @@ jobs:
       - name: Check Dependabot group subjects
         # Issue #727: Dependabot のグループ更新件名が header-max-length を超えないことを保証する
         run: make dependabot-subjects
+
+      - name: Check canonical mapping freshness
+        # Issue #776: canonical テーブルの最終確認日が閾値（180 日）を超えたら落とす。
+        # 時間経過だけで失効するため、パスフィルタのない必須ジョブ（全 PR で実行）に置く。
+        # ネットワークには依存しない。
+        run: make mapping-freshness

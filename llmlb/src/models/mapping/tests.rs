@@ -862,3 +862,15 @@ fn test_issue_776_lm_studio_reported_ids_resolve() {
         Some("Phr00t/Qwen-Image-Edit-Rapid-AIO")
     );
 }
+
+#[test]
+fn test_issue_776_every_mapping_has_valid_last_verified_date() {
+    for mapping in BUILTIN_MAPPINGS {
+        assert!(
+            chrono::NaiveDate::parse_from_str(mapping.last_verified, "%Y-%m-%d").is_ok(),
+            "{}: last_verified must be YYYY-MM-DD, got {:?}",
+            mapping.canonical,
+            mapping.last_verified
+        );
+    }
+}

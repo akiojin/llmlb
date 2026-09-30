@@ -16,6 +16,8 @@
 - canonical 名は HuggingFace 上で**実在するリポジトリ ID** を採用する（例:
   `zai-org/GLM-4.7-Flash`、`openai/gpt-oss-20b`）。組織名が変わったモデルでは、
   旧 org の表記を alias として残す（例: `THUDM/glm-4.7-flash` → alias）。
+  canonical の ID を差し替えた場合も同様に、旧 ID を alias の**末尾**へ残す（先頭の alias が
+  エンドポイントへ送る名前になるため）。
 - alias 名は **各エンドポイントタイプ固有の命名形式** に従う。
   - Ollama: `family:tag`（例: `gpt-oss:20b`、`gemma4:e4b`）
   - LM Studio: HuggingFace 形式（例: `openai/gpt-oss-20b`）
@@ -100,6 +102,75 @@ Gemma 4 の Ollama runtime 名は、SKU を一意にする固定タグだけを�
 
 `gemma4:latest` は参照先が将来変わり得るため、alias に含めない。
 
+## canonical テーブルの更新手順（Issue #776）
+
+`BUILTIN_MAPPINGS` は人手で編集する静的テーブルで、自動では追従しない。各エントリの
+`last_verified`（Hugging Face 上で canonical の実在を最後に確認した日）を
+`make mapping-freshness` が検査し、**180 日**を超えたエントリが 1 件でもあると失敗する。
+この検査は `make quality-checks` と、CI の必須チェック `Commit Message Lint` ジョブの
+両方で実行される。ネットワークには依存しない（時計だけを見る）。
+
+検査が失敗したとき、またはモデルを追加・是正したいときは次の順で作業する。
+
+### 1. どこを見るか
+
+- 対象は `llmlb/src/models/mapping.rs` の `BUILTIN_MAPPINGS`。`make mapping-freshness`
+  の出力が、期限切れのエントリと経過日数を名指しする。
+- 実在確認は Hugging Face Models API を使う。認証なしの場合、`200` は実在、`401` /
+  `404` は不存在（または非公開）を意味する。
+
+  ```bash
+  curl -s -o /dev/null -w '%{http_code}\n' https://huggingface.co/api/models/<org>/<repo>
+  ```
+
+- 稼働中エンドポイントが報告する ID は、各エンドポイントの `/v1/models`（LM Studio は
+  `/api/v0/models` で publisher も取得可）で確認する。
+
+### 2. 何を根拠にするか
+
+- **追加**: 稼働中エンドポイントが実際に報告し、`resolve_canonical` が解決に失敗した
+  モデル ID に限る。「新しい版が出たはず」という推測では追加しない。
+- **canonical の選定**: Hugging Face 上で実在を確認した一次配布元のリポジトリ ID。
+  エンドポイントの実体が再配布リポジトリ（GGUF / MLX 変換等）の場合は、その
+  `base_model` が指す配布元を canonical にする。
+- **alias**: 実際のエンドポイント応答、または公式リポジトリ名。確認できていないランタイムの
+  alias は登録しない（例: LM Studio でしか確認していないモデルに Ollama alias を付けない）。
+- **改名・廃止**: 実在確認で `401` / `404` になった canonical は、Models API の検索
+  （`/api/models?author=<org>&search=<name>`）で現行の ID を特定して差し替える。
+  後継が特定できない場合はエントリを削除する。
+
+### 3. どう更新するか
+
+- 追加・差し替えは、先に `llmlb/src/models/mapping/tests.rs` へ失敗するテストを書く。
+- canonical を差し替えたら、旧 ID を alias の末尾へ残し、`KNOWN_CONTEXT_LENGTHS` のキーも
+  新しい canonical に合わせる。
+- 根拠（API 応答、エンドポイント応答）を PR 本文に記載する。
+
+### 4. 最終確認日をどう更新するか
+
+- 手順 1 の実在確認で `200` を得たエントリの `last_verified` を、**確認した当日の日付**
+  （UTC, `YYYY-MM-DD`）へ更新する。確認していないエントリの日付は更新しない。
+- 日付だけを機械的に書き換えて検査を通すことは禁止する。`last_verified` は「その日に
+  実在を確認した」という記録である。
+- 更新後に `make mapping-freshness` が成功することを確認する。
+
+### 2026-09-30 の確認結果
+
+Models API で当時の 18 件を確認し、16 件が実在、2 件が不存在だった。不存在の 2 件は
+実在する ID へ差し替え、旧 ID は alias として残した。
+
+| 旧 canonical（不存在） | 現行 canonical |
+|---|---|
+| `Qwen/Qwen3-30B` | `Qwen/Qwen3-30B-A3B` |
+| `nvidia/nemotron-3-super-120b-a12b` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16` |
+
+稼働中の LM Studio が報告し解決に失敗していた 2 件を追加した。
+
+| LM Studio の ID | canonical |
+|---|---|
+| `qwen/qwen3.8-27b` | `Qwen/Qwen3.8-27B` |
+| `qwen-image-edit-rapid-aio` | `Phr00t/Qwen-Image-Edit-Rapid-AIO` |
+
 ## 量子化サフィックス方針（G-3、暫定実装済み）
 
 モデル ID には量子化サフィックス（`:Q4_K_M`、`:Q5_K_M`、`:Q8_0`、`:F16`、
@@ -170,3 +241,5 @@ variant の集約情報を別に提供する互換方針を採用したため、
 - /v1/models 実装: `llmlb/src/api/openai.rs` (`list_models`, `get_model`)
 - 親 SPEC: [#575 OpenAI互換APIゲートウェイ](https://github.com/akiojin/llmlb/issues/575)
 - Follow-up Issue: [#643 /v1/models 品質改善: 残課題](https://github.com/akiojin/llmlb/issues/643)
+- 鮮度検査: [#776 canonical マッピングの鮮度検査](https://github.com/akiojin/llmlb/issues/776)、
+  `scripts/checks/check-mapping-freshness.sh`

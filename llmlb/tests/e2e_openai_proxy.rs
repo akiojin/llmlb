@@ -358,30 +358,52 @@ async fn openai_v1_models_list_with_registered_node() {
     let endpoint_uuid =
         uuid::Uuid::parse_str(&endpoint_id).expect("endpoint id should be a valid UUID");
 
-    // /v1/models の max_tokens が number|null で返ることを検証するため、
-    // 1モデルだけDBに max_tokens を入れておく（他モデルはnullのまま）。
-    let updated =
-        llmlb::db::endpoints::update_model_max_tokens(&db_pool, endpoint_uuid, "gpt-oss-20b", 4096)
-            .await
-            .expect("update_model_max_tokens should succeed");
-    assert!(updated, "endpoint model row should be updated");
-
     // APIキーを取得
     let api_key = create_test_api_key(lb.addr(), &db_pool).await;
 
     let client = Client::new();
 
-    // GET /v1/models
-    let models_response = client
-        .get(format!("http://{}/v1/models", lb.addr()))
-        .header("authorization", format!("Bearer {}", api_key))
-        .send()
+    // /v1/models の max_tokens が number|null で返ることを検証するため、
+    // 1モデルだけDBに max_tokens を入れておく（他モデルはnullのまま）。
+    // エンドポイント登録時のバックグラウンド自動同期は既存モデルの max_tokens を null で
+    // 上書きし、負荷下では書き込み後に完了しうる。自動同期が済み、書き込みが
+    // /v1/models に反映されるまで書き込みと取得を繰り返す。
+    let mut models_payload = Value::Null;
+    for _ in 0..50 {
+        let updated = llmlb::db::endpoints::update_model_max_tokens(
+            &db_pool,
+            endpoint_uuid,
+            "gpt-oss-20b",
+            4096,
+        )
         .await
-        .expect("models request should succeed");
+        .expect("update_model_max_tokens should succeed");
+        assert!(updated, "endpoint model row should be updated");
 
-    assert_eq!(models_response.status(), reqwest::StatusCode::OK);
+        // GET /v1/models
+        let models_response = client
+            .get(format!("http://{}/v1/models", lb.addr()))
+            .header("authorization", format!("Bearer {}", api_key))
+            .send()
+            .await
+            .expect("models request should succeed");
 
-    let models_payload: Value = models_response.json().await.expect("models json response");
+        assert_eq!(models_response.status(), reqwest::StatusCode::OK);
+
+        models_payload = models_response.json().await.expect("models json response");
+        let gpt_max_tokens = models_payload["data"]
+            .as_array()
+            .and_then(|models| {
+                models
+                    .iter()
+                    .find(|model| model["id"].as_str() == Some("gpt-oss-20b"))
+            })
+            .and_then(|model| model["max_tokens"].as_u64());
+        if gpt_max_tokens == Some(4096) {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
 
     assert!(
         models_payload.get("data").is_some(),

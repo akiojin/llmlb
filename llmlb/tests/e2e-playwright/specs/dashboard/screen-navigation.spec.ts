@@ -100,23 +100,23 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
       await page.fill('#password', generatedPassword!);
       await page.click('button[type="submit"]');
 
-      // Wait for navigation after login
-      await page.waitForTimeout(1000);
-
-      // Handle password change if required (must_change_password)
-      // After changing password, the app redirects back to login page
-      const isChangePassword = await page.waitForURL(/change-password/, { timeout: 5000 }).then(() => true).catch(() => false);
+      // Login lands on either the forced password change or the dashboard.
+      // Wait for whichever page renders instead of a navigation event.
+      const newPasswordInput = page.locator('#new-password');
+      const dashboardContent = page.locator('#theme-toggle');
+      await expect(newPasswordInput.or(dashboardContent)).toBeVisible({ timeout: 15000 });
       const newPassword = 'ViewerPass123!';
 
-      if (isChangePassword) {
-        await page.waitForSelector('#new-password', { timeout: 5000 });
+      // Handle password change if required (must_change_password)
+      if (await newPasswordInput.isVisible()) {
         await page.fill('#current-password', generatedPassword!);
-        await page.fill('#new-password', newPassword);
+        await newPasswordInput.fill(newPassword);
         await page.fill('#confirm-password', newPassword);
         await page.click('button[type="submit"]');
 
-        // Password change redirects to login page after 1.5s delay
-        await page.waitForURL(/login/, { timeout: 15000 });
+        // Password change redirects to the login page after a delay
+        await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
+        await expect(page.locator('#username')).toBeVisible();
 
         // Re-login with the new password
         await page.fill('#username', viewerUsername);
@@ -125,11 +125,8 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
       }
 
       // Wait for dashboard to fully load (whether password change happened or not)
-      await page.waitForFunction(
-        () => !window.location.href.includes('login') && !window.location.href.includes('change-password'),
-        { timeout: 15000 },
-      );
-      await page.waitForSelector('#theme-toggle', { timeout: 15000 });
+      await expect(page).not.toHaveURL(/login|change-password/, { timeout: 15000 });
+      await expect(dashboardContent).toBeVisible({ timeout: 15000 });
 
       // Audit Log button should NOT be visible
       const auditLogBtn = page.locator(DashboardSelectors.header.auditLogButton);

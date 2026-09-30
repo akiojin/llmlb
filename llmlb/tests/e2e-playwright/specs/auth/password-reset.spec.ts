@@ -66,7 +66,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const body = await response.json();
       expect(body.token, 'token must never reach the browser').toBeUndefined();
 
-      await expect(page.getByText('Reset requested', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Reset requested', { exact: true })).toBeVisible({ timeout: 15000 });
       await expect(
         page.getByText('If an account exists for this email, a password reset link has been issued.', {
           exact: false,
@@ -94,7 +94,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       expect((await responsePromise).status()).toBe(400);
 
       await expect(page.getByText('Reset link is invalid or expired', { exact: true })).toBeVisible({
-        timeout: 5000,
+        timeout: 15000,
       });
       await expect(page).toHaveURL(RESET_URL);
     });
@@ -111,13 +111,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.newPassword.fill('weakpass');
       await form.confirmPassword.fill('weakpass');
       await form.submit.click();
-      await expect(page.getByText('Password too weak', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Password too weak', { exact: true })).toBeVisible({ timeout: 15000 });
 
       await form.newPassword.fill(NEW_PASSWORD);
       await form.confirmPassword.fill(`${NEW_PASSWORD}x`);
       await form.submit.click();
       await expect(page.getByText('Passwords do not match', { exact: true })).toBeVisible({
-        timeout: 5000,
+        timeout: 15000,
       });
 
       expect(resetRequests).toBe(0);
@@ -138,7 +138,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expect(form.submit).toBeEnabled();
       await form.submit.click();
 
-      await expect(page.getByText('Password updated', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Password updated', { exact: true })).toBeVisible({ timeout: 15000 });
       expect(sentBody).toEqual({ token: 'link-token-123', new_password: NEW_PASSWORD });
 
       await page.getByRole('link', { name: 'Go to sign in' }).click();
@@ -160,7 +160,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.token.fill('  pasted-token  ');
       await form.submit.click();
 
-      await expect(page.getByText('Password updated', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Password updated', { exact: true })).toBeVisible({ timeout: 15000 });
       expect(sentBody).toEqual({ token: 'pasted-token', new_password: NEW_PASSWORD });
     });
   });

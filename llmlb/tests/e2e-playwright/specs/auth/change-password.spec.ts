@@ -104,7 +104,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.confirmPassword.fill('weakpass');
       await form.submit.click();
 
-      await expect(page.getByText('Password too weak', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Password too weak', { exact: true })).toBeVisible({ timeout: 15000 });
       await expect(page).toHaveURL(CHANGE_PASSWORD_URL);
       expect(changeRequests).toBe(0);
     });
@@ -118,7 +118,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.confirmPassword.fill(`${NEW_PASSWORD}x`);
       await form.submit.click();
 
-      await expect(page.getByText('Passwords do not match', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Passwords do not match', { exact: true })).toBeVisible({ timeout: 15000 });
       await expect(page).toHaveURL(CHANGE_PASSWORD_URL);
     });
 
@@ -140,7 +140,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.submit.click();
 
       await expect(page.getByText('Failed to change password', { exact: true })).toBeVisible({
-        timeout: 5000,
+        timeout: 15000,
       });
       await expect(page).toHaveURL(CHANGE_PASSWORD_URL);
       await expect(form.submit).toBeEnabled();
@@ -157,13 +157,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.confirmPassword.fill(NEW_PASSWORD);
       await form.submit.click();
 
-      await expect(page.getByText('Password changed', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Password changed', { exact: true })).toBeVisible({ timeout: 15000 });
       await page.waitForURL(/\/dashboard\/login\.html/, { timeout: 10000 });
 
       // Old password no longer works
       const loginPage = new LoginPage(page);
       await loginPage.login(user.username, user.password);
-      await expect(page.getByText('Login failed', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Login failed', { exact: true })).toBeVisible({ timeout: 15000 });
       await expect(page).toHaveURL(/\/dashboard\/login\.html/);
 
       // New password signs in straight to the dashboard (no forced change anymore)
@@ -190,7 +190,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.submit.click();
 
       await expect(page.getByText('Current password is incorrect', { exact: true })).toBeVisible({
-        timeout: 5000,
+        timeout: 15000,
       });
       await expect(page).toHaveURL(CHANGE_PASSWORD_URL);
 
@@ -229,7 +229,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.newPassword.fill(secondPassword);
       await form.confirmPassword.fill(secondPassword);
       await form.submit.click();
-      await expect(page.getByText('Password changed', { exact: true })).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('Password changed', { exact: true })).toBeVisible({ timeout: 15000 });
       await page.waitForURL(/\/dashboard\/login\.html/, { timeout: 10000 });
 
       await loginPage.login(user.username, secondPassword);

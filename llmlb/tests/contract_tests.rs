@@ -143,6 +143,10 @@ mod users_api_test;
 #[path = "contract/api_keys_api_test.rs"]
 mod api_keys_api_test;
 
+// SPEC #580 US-010: 招待コード管理API契約テスト
+#[path = "contract/invitations_api_test.rs"]
+mod invitations_api_test;
+
 // SPEC-e8e9326e: エンドポイント管理API拡張契約テスト（不足ケース補完）
 #[path = "contract/endpoints_contract_extended_test.rs"]
 mod endpoints_contract_extended_test;

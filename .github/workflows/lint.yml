@@ -75,6 +75,33 @@ jobs:
           echo "🔍 Running Rust linter..."
           cargo clippy --all-targets --all-features -- -D warnings
 
+  dashboard-lint:
+    # Issue #769
+    # 目的: dashboard の typecheck / lint を検出する（依存更新での破損を着地前に止める）
+    # pnpm-lock.yaml 等ルートの変更でも壊れ得るため、パスフィルタを掛けず常に実行する
+    name: Dashboard Typecheck & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck & lint dashboard
+        run: make dashboard-checks
+
   markdownlint:
     # 要件: FR-006
     # 目的: マークダウンファイルのスタイル違反を検出

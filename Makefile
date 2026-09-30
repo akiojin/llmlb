@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure migration-versions dependabot-subjects test-checks coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure migration-versions dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
 .PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -31,6 +31,12 @@ dependabot-subjects:
 
 # Rust ユニットテストカバレッジ（SPEC #585 FR-032: 行カバレッジ80%以上）
 # CI (ci.yml coverage-rust) も同一ターゲットを実行する。要 cargo-llvm-cov。
+# Issue #769: dashboard の typecheck / lint（依存更新で壊れても CI が検出できるようにする）
+# CI (lint.yml dashboard-lint) も同一ターゲットを実行する。
+dashboard-checks:
+	pnpm --filter @llm/dashboard typecheck
+	pnpm --filter @llm/dashboard lint
+
 coverage:
 	mkdir -p coverage-rust
 	cargo llvm-cov --all-features --workspace --fail-under-lines 80 --lcov --output-path coverage-rust/lcov.info
@@ -55,7 +61,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure migration-versions dependabot-subjects coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks test-checks e2e-playwright
+quality-checks: fmt clippy-parity module-structure migration-versions dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 

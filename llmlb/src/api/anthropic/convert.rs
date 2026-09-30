@@ -238,6 +238,12 @@ pub(super) fn anthropic_request_to_openai(
     if let Some(top_p) = payload.get("top_p").and_then(Value::as_f64) {
         body.insert("top_p".to_string(), json!(top_p));
     }
+    // top_k / metadata は OpenAI 互換側でも同名で受理されるため、値を解釈せずそのまま転送する。
+    for key in ["top_k", "metadata"] {
+        if let Some(value) = payload.get(key).filter(|value| !value.is_null()) {
+            body.insert(key.to_string(), value.clone());
+        }
+    }
     if let Some(stop_sequences) = payload.get("stop_sequences") {
         body.insert(
             "stop".to_string(),

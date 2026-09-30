@@ -50,7 +50,7 @@ pub async fn dashboard_ws_handler(
             .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing JWT cookie".to_string()))?
     };
 
-    let claims = crate::auth::jwt::verify_jwt(&token, &state.jwt_secret).map_err(|e| {
+    let claims = crate::auth::jwt::verify_jwt(&token, &state.auth.jwt_secret).map_err(|e| {
         warn!("WebSocket JWT verification failed: {}", e);
         (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e))
     })?;

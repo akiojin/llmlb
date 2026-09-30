@@ -127,6 +127,7 @@ pub async fn post_responses(
 
     // モデルが未登録の場合は404、登録済みなら503（利用可能エンドポイントなし）
     if state
+        .balancer
         .endpoint_registry
         .find_by_model(&model)
         .await
@@ -162,7 +163,12 @@ pub async fn post_responses(
     );
 
     // リクエストボディをそのままパススルー
-    let endpoint_models = match state.endpoint_registry.list_models(endpoint.id).await {
+    let endpoint_models = match state
+        .balancer
+        .endpoint_registry
+        .list_models(endpoint.id)
+        .await
+    {
         Ok(models) => models,
         Err(error) => {
             warn!(
@@ -186,6 +192,7 @@ pub async fn post_responses(
     })?;
 
     let request_lease = state
+        .balancer
         .load_manager
         .begin_request(endpoint.id)
         .await
@@ -209,7 +216,7 @@ pub async fn post_responses(
                     .await
                     .map_err(AppError::from)?;
                 record_endpoint_request_stats(
-                    state.endpoint_registry.clone(),
+                    state.balancer.endpoint_registry.clone(),
                     endpoint.id,
                     model.clone(),
                     false,
@@ -217,7 +224,7 @@ pub async fn post_responses(
                     0,
                     tps_api_kind,
                     endpoint.endpoint_type,
-                    state.load_manager.clone(),
+                    state.balancer.load_manager.clone(),
                     state.event_bus.clone(),
                 );
                 return Err(AppError::from(e));
@@ -241,8 +248,8 @@ pub async fn post_responses(
                 tps_api_kind,
                 endpoint.endpoint_type,
                 start,
-                state.endpoint_registry.clone(),
-                state.load_manager.clone(),
+                state.balancer.endpoint_registry.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
                 Some(request_lease),
             )
@@ -254,7 +261,7 @@ pub async fn post_responses(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint.id,
                 model.clone(),
                 false,
@@ -262,7 +269,7 @@ pub async fn post_responses(
                 0,
                 tps_api_kind,
                 endpoint.endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
             forward_streaming_response(response).map_err(AppError::from)?
@@ -285,7 +292,7 @@ pub async fn post_responses(
                 .await
                 .map_err(AppError::from)?;
             record_endpoint_request_stats(
-                state.endpoint_registry.clone(),
+                state.balancer.endpoint_registry.clone(),
                 endpoint.id,
                 model.clone(),
                 false,
@@ -293,7 +300,7 @@ pub async fn post_responses(
                 0,
                 tps_api_kind,
                 endpoint.endpoint_type,
-                state.load_manager.clone(),
+                state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
             return Err(AppError::from(LbError::Http(e.to_string())));
@@ -329,7 +336,7 @@ pub async fn post_responses(
         (0, 0)
     };
     record_endpoint_request_stats(
-        state.endpoint_registry.clone(),
+        state.balancer.endpoint_registry.clone(),
         endpoint.id,
         model.clone(),
         succeeded,
@@ -337,13 +344,13 @@ pub async fn post_responses(
         tps_duration_ms,
         tps_api_kind,
         endpoint.endpoint_type,
-        state.load_manager.clone(),
+        state.balancer.load_manager.clone(),
         state.event_bus.clone(),
     );
 
     // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
     if status.is_success() {
-        update_inference_latency(&state.endpoint_registry, endpoint.id, duration);
+        update_inference_latency(&state.balancer.endpoint_registry, endpoint.id, duration);
     }
 
     // バックエンドのレスポンス（ステータス/ヘッダ/本文）をパススルー
@@ -399,11 +406,13 @@ mod tests {
         endpoint.status = EndpointStatus::Online;
         let endpoint_id = endpoint.id;
         state
+            .balancer
             .endpoint_registry
             .add(endpoint)
             .await
             .expect("add endpoint");
         state
+            .balancer
             .endpoint_registry
             .add_model(&EndpointModel {
                 endpoint_id,
@@ -456,7 +465,7 @@ mod tests {
 
         sleep(Duration::from_millis(100)).await;
 
-        let tps = state.load_manager.get_model_tps(endpoint_id).await;
+        let tps = state.balancer.load_manager.get_model_tps(endpoint_id).await;
         let entry = tps
             .iter()
             .find(|info| info.model_id == "responses-tps-model")
@@ -507,7 +516,7 @@ mod tests {
 
         sleep(Duration::from_millis(120)).await;
 
-        let tps = state.load_manager.get_model_tps(endpoint_id).await;
+        let tps = state.balancer.load_manager.get_model_tps(endpoint_id).await;
         let entry = tps
             .iter()
             .find(|info| info.model_id == "responses-stream-model")

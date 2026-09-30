@@ -68,6 +68,7 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { ModelAddWizard } from './ModelAddWizard'
 import { ModelDeleteDialog } from './ModelDeleteDialog'
+import { ModelIdentity } from './ModelIdentity'
 
 /**
  * SPEC-8795f98f: Models Tab
@@ -118,6 +119,9 @@ interface AggregatedModel {
   chatTemplate?: string
   endpointIds: string[]
   endpointCount: number
+  canonicalName?: string
+  aliases: string[]
+  isCanonical: boolean
 }
 
 function emptyCapabilities(): ModelCapabilities {
@@ -230,6 +234,9 @@ function aggregateModels(models: RegisteredModelView[]): AggregatedModel[] {
       chatTemplate: model.chat_template,
       endpointIds,
       endpointCount: endpointIds.length,
+      canonicalName: model.canonical_name,
+      aliases: model.aliases ?? [],
+      isCanonical: model.is_canonical ?? false,
     }
   })
 }
@@ -542,6 +549,8 @@ export function ModelsTable({
         tags: [],
         endpointIds: [],
         endpointCount: 0,
+        aliases: [],
+        isCanonical: false,
       }))
 
     return [...aggregated, ...statsOnlyModels]
@@ -554,9 +563,12 @@ export function ModelsTable({
         label: 'Model ID',
         defaultVisible: true,
         render: (m) => (
-          <span className="font-mono text-sm truncate" title={m.id}>
-            {m.id}
-          </span>
+          <ModelIdentity
+            id={m.id}
+            canonicalName={m.canonicalName}
+            aliases={m.aliases}
+            isCanonical={m.isCanonical}
+          />
         ),
       },
       {
@@ -825,9 +837,12 @@ export function ModelsTable({
                   viewerFiltered.map((model) => (
                     <TableRow key={model.id}>
                       <TableCell>
-                        <span className="font-mono text-sm truncate" title={model.id}>
-                          {model.id}
-                        </span>
+                        <ModelIdentity
+                          id={model.id}
+                          canonicalName={model.canonicalName}
+                          aliases={model.aliases}
+                          isCanonical={model.isCanonical}
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">

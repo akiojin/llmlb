@@ -158,6 +158,7 @@ async fn initialize_inner(
 
     crate::db::request_history::start_cleanup_task(request_history.clone());
     crate::db::endpoint_daily_stats::start_daily_stats_task(db_pool.clone());
+    crate::cloud_metrics::start_retention_task(db_pool.clone());
 
     // 管理者が存在しない場合は作成
     auth::bootstrap::ensure_admin_exists(&db_pool)
@@ -188,7 +189,9 @@ async fn initialize_inner(
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     if let Some(proxy) = tray_proxy {
-        update_manager.set_tray_proxy(proxy).await;
+        update_manager
+            .set_tray_proxy(std::sync::Arc::new(proxy))
+            .await;
     }
     update_manager.start_background_tasks();
 
@@ -316,23 +319,29 @@ async fn initialize_inner(
     }
 
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: crate::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool,
-        jwt_secret,
+        auth: crate::AuthState { jwt_secret },
         http_client,
         event_bus: {
             let bus = crate::events::create_shared_event_bus();
             update_manager.set_event_bus(bus.clone());
             bus
         },
-        endpoint_registry,
-        inference_gate,
-        shutdown: shutdown.clone(),
-        update_manager,
-        audit_log_writer,
-        audit_log_storage,
-        audit_archive_pool,
+        lifecycle: crate::LifecycleState {
+            inference_gate,
+            shutdown: shutdown.clone(),
+            update_manager,
+        },
+        audit: crate::AuditState {
+            writer: audit_log_writer,
+            storage: audit_log_storage,
+            archive_pool: audit_archive_pool,
+        },
     };
 
     InitContext {

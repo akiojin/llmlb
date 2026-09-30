@@ -31,10 +31,13 @@ updates:
       prefix: "chore(deps)"
     groups:
       # 型定義と TypeScript コンパイラ
+      # dashboard は typescript を TS 6 API（typescript-eslint 用）に、
+      # @typescript/native を TS 7 の tsc に割り当てている（Issue #769）
       npm-types:
         patterns:
           - "@types/*"
           - "typescript"
+          - "@typescript/native"
       # ダッシュボードのランタイム依存
       npm-prod:
         dependency-type: "production"

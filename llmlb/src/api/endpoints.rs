@@ -467,6 +467,16 @@ async fn run_connection_test(state: &AppState, endpoint: &Endpoint) -> TestConne
     }
 }
 
+/// 接続先 URL のホスト部を返す
+///
+/// `NodeRegistered` の `ip_address` に使う。URL に含まれうる認証情報は購読者へ渡さない。
+fn endpoint_host(base_url: &str) -> String {
+    Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
 // --- Handlers ---
 
 /// POST /api/endpoints - エンドポイント登録
@@ -569,6 +579,16 @@ pub async fn create_endpoint(
                 .endpoint_registry
                 .add_to_cache(endpoint.clone())
                 .await;
+
+            // SPEC #582 FR-048a: 登録の確定（DB 保存とキャッシュ反映）を購読者へ通知する
+            state
+                .event_bus
+                .publish(crate::events::DashboardEvent::NodeRegistered {
+                    runtime_id: endpoint.id,
+                    machine_name: endpoint.name.clone(),
+                    ip_address: endpoint_host(&endpoint.base_url),
+                    status: endpoint.status,
+                });
 
             // SPEC-f8e3a1b7, SPEC-e8e9326e: エンドポイント固有の方法でデバイス情報を取得
             let endpoint_id = endpoint.id;
@@ -910,6 +930,10 @@ pub async fn delete_endpoint(
             // EndpointRegistry::remove は LoadManager の状態までは掃除しないため、
             // 負荷状態・TPS状態がリークしないよう明示的に破棄する。
             state.balancer.load_manager.forget_endpoint(id).await;
+            // SPEC #582 FR-048b: 削除の確定を購読者へ通知する
+            state
+                .event_bus
+                .publish(crate::events::DashboardEvent::NodeRemoved { runtime_id: id });
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),

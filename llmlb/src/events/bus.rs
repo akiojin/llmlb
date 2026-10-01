@@ -2,12 +2,21 @@
 
 use crate::types::endpoint::EndpointStatus;
 use serde::Serialize;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 /// イベントバスのチャネル容量
 const EVENT_CHANNEL_CAPACITY: usize = 1024;
+
+/// `MetricsUpdated` の集約窓（SPEC #582 FR-048d）
+///
+/// リクエスト完了のたびに発生する更新を、エンドポイントごとにこの間隔で 1 回の配信へまとめる。
+/// ダッシュボードのポーリング間隔（5 秒）より短く、負荷時でも配信数がリクエスト数ではなく
+/// エンドポイント数に比例する値として 1 秒を選んでいる。
+const METRICS_UPDATED_COALESCE_WINDOW: Duration = Duration::from_secs(1);
 
 /// ダッシュボードイベント
 ///
@@ -76,6 +85,8 @@ pub enum DashboardEvent {
 #[derive(Clone)]
 pub struct DashboardEventBus {
     sender: broadcast::Sender<DashboardEvent>,
+    /// 集約窓が開いているエンドポイントと、窓の終端で発行する最新の `MetricsUpdated`
+    pending_metrics: Arc<Mutex<HashMap<Uuid, DashboardEvent>>>,
 }
 
 impl Default for DashboardEventBus {
@@ -88,7 +99,10 @@ impl DashboardEventBus {
     /// 新しいイベントバスを作成
     pub fn new() -> Self {
         let (sender, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
-        Self { sender }
+        Self {
+            sender,
+            pending_metrics: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     /// イベントバスを購読
@@ -104,6 +118,48 @@ impl DashboardEventBus {
     pub fn publish(&self, event: DashboardEvent) {
         // 購読者がいない場合は送信に失敗するが、無視する
         let _ = self.sender.send(event);
+    }
+
+    /// 高頻度で発生するイベントを集約して発行する
+    ///
+    /// `MetricsUpdated` はエンドポイントごとに集約する。最初の更新から
+    /// `METRICS_UPDATED_COALESCE_WINDOW` 後に、その時点で最新の更新を 1 回だけ発行する。
+    /// 窓の中で届いた更新は最新の 1 件に置き換わるため、発行はエンドポイントごとに
+    /// 窓 1 つにつき 1 回に収まる。それ以外のイベントは即時に発行する。
+    ///
+    /// 更新の直後ではなく窓の終端で発行するのは、通知を受けたクライアントの再取得が、
+    /// 窓の中で確定したすべての更新を読めるようにするため。
+    ///
+    /// 窓の終端を待つタスクを起動するため、tokio ランタイム上で呼び出すこと。
+    pub fn publish_coalesced(&self, event: DashboardEvent) {
+        let DashboardEvent::MetricsUpdated { runtime_id, .. } = &event else {
+            self.publish(event);
+            return;
+        };
+        let runtime_id = *runtime_id;
+
+        let window_already_open = self
+            .lock_pending_metrics()
+            .insert(runtime_id, event)
+            .is_some();
+        if window_already_open {
+            return;
+        }
+
+        let bus = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(METRICS_UPDATED_COALESCE_WINDOW).await;
+            let latest = bus.lock_pending_metrics().remove(&runtime_id);
+            if let Some(event) = latest {
+                bus.publish(event);
+            }
+        });
+    }
+
+    fn lock_pending_metrics(&self) -> MutexGuard<'_, HashMap<Uuid, DashboardEvent>> {
+        self.pending_metrics
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// 現在の購読者数を取得
@@ -486,6 +542,133 @@ mod tests {
             }
             _ => panic!("Expected MetricsUpdated"),
         }
+    }
+
+    // --- publish_coalesced（SPEC #582 FR-048d）---
+
+    fn metrics_updated(runtime_id: Uuid, cpu_usage: f32) -> DashboardEvent {
+        DashboardEvent::MetricsUpdated {
+            runtime_id,
+            cpu_usage: Some(cpu_usage),
+            memory_usage: None,
+            gpu_usage: None,
+        }
+    }
+
+    /// 集約窓が閉じるまで待ち、それまでに発行されたイベントをすべて取り出す
+    async fn drain_after_window(
+        receiver: &mut broadcast::Receiver<DashboardEvent>,
+    ) -> Vec<DashboardEvent> {
+        tokio::time::sleep(METRICS_UPDATED_COALESCE_WINDOW + Duration::from_millis(1)).await;
+        let mut events = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            events.push(event);
+        }
+        events
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_publish_coalesced_emits_latest_update_once_per_window() {
+        let bus = DashboardEventBus::new();
+        let mut receiver = bus.subscribe();
+        let id = Uuid::new_v4();
+
+        bus.publish_coalesced(metrics_updated(id, 1.0));
+        bus.publish_coalesced(metrics_updated(id, 2.0));
+        bus.publish_coalesced(metrics_updated(id, 3.0));
+
+        // 窓が閉じるまでは発行しない
+        assert!(receiver.try_recv().is_err());
+
+        let events = drain_after_window(&mut receiver).await;
+        assert_eq!(events.len(), 1, "events: {events:?}");
+        match &events[0] {
+            DashboardEvent::MetricsUpdated {
+                runtime_id,
+                cpu_usage,
+                ..
+            } => {
+                assert_eq!(*runtime_id, id);
+                assert_eq!(*cpu_usage, Some(3.0));
+            }
+            other => panic!("Expected MetricsUpdated, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_publish_coalesced_opens_new_window_after_flush() {
+        let bus = DashboardEventBus::new();
+        let mut receiver = bus.subscribe();
+        let id = Uuid::new_v4();
+
+        bus.publish_coalesced(metrics_updated(id, 1.0));
+        assert_eq!(drain_after_window(&mut receiver).await.len(), 1);
+
+        // 窓が閉じた後の更新は取りこぼさず、次の窓で発行する
+        bus.publish_coalesced(metrics_updated(id, 2.0));
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(drain_after_window(&mut receiver).await.len(), 1);
+
+        // 更新が無ければ何も発行しない
+        assert!(drain_after_window(&mut receiver).await.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_publish_coalesced_windows_are_independent_per_endpoint() {
+        let bus = DashboardEventBus::new();
+        let mut receiver = bus.subscribe();
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+
+        bus.publish_coalesced(metrics_updated(id1, 1.0));
+        bus.publish_coalesced(metrics_updated(id2, 2.0));
+        bus.publish_coalesced(metrics_updated(id1, 3.0));
+
+        let mut received: Vec<(Uuid, Option<f32>)> = drain_after_window(&mut receiver)
+            .await
+            .into_iter()
+            .map(|event| match event {
+                DashboardEvent::MetricsUpdated {
+                    runtime_id,
+                    cpu_usage,
+                    ..
+                } => (runtime_id, cpu_usage),
+                other => panic!("Expected MetricsUpdated, got {other:?}"),
+            })
+            .collect();
+        received.sort_by_key(|(runtime_id, _)| *runtime_id);
+        let mut expected = vec![(id1, Some(3.0)), (id2, Some(2.0))];
+        expected.sort_by_key(|(runtime_id, _)| *runtime_id);
+        assert_eq!(received, expected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_publish_coalesced_bounds_sustained_burst_to_one_event_per_window() {
+        let bus = DashboardEventBus::new();
+        let mut receiver = bus.subscribe();
+        let id = Uuid::new_v4();
+
+        // 10 ミリ秒間隔で 5 秒間（500 回）更新し続ける
+        for i in 0..500 {
+            bus.publish_coalesced(metrics_updated(id, i as f32));
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let events = drain_after_window(&mut receiver).await;
+        assert_eq!(events.len(), 5, "500 updates over 5s must yield 5 events");
+    }
+
+    #[test]
+    fn test_publish_coalesced_publishes_other_events_immediately() {
+        let bus = DashboardEventBus::new();
+        let mut receiver = bus.subscribe();
+
+        bus.publish_coalesced(DashboardEvent::UpdateStateChanged);
+
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(DashboardEvent::UpdateStateChanged)
+        ));
     }
 
     // --- TpsUpdated edge cases ---

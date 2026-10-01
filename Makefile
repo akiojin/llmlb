@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure migration-versions mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure event-publishers migration-versions mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
 .PHONY: openai-tests notification-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -20,6 +20,11 @@ clippy-parity:
 # SPEC #699 FR-009/FR-010: 1,500 行上限と mod.rs の re-export 化
 module-structure:
 	bash scripts/checks/check-module-structure.sh
+
+# SPEC #582 FR-048e / Issue #781: canonical ダッシュボードイベントに production の publisher が無い状態を検出
+# CI (lint.yml rust-lint) も同一ターゲットを実行する。
+event-publishers:
+	bash scripts/checks/check-event-publishers.sh
 
 # Issue #737: 並行ブランチ間のマイグレーション番号衝突を develop 着地前に検出
 migration-versions:
@@ -66,7 +71,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure migration-versions mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
+quality-checks: fmt clippy-parity module-structure event-publishers migration-versions mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 

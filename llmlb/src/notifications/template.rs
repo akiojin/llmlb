@@ -95,7 +95,7 @@ pub fn render_daily_digest(language: Language, report: &DigestReport) -> Rendere
                 status_label(endpoint.status),
                 one_line(&endpoint.name),
                 endpoint.endpoint_type,
-                one_line(&endpoint.base_url)
+                without_url_credentials(&one_line(&endpoint.base_url))
             ));
             let last_seen = match endpoint.last_seen {
                 Some(seen) => seen.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -103,7 +103,11 @@ pub fn render_daily_digest(language: Language, report: &DigestReport) -> Rendere
             };
             lines.push(format!("    {}{last_seen}", text.last_seen));
             if let Some(last_error) = &endpoint.last_error {
-                lines.push(format!("    {}{}", text.last_error, one_line(last_error)));
+                lines.push(format!(
+                    "    {}{}",
+                    text.last_error,
+                    without_url_credentials(&one_line(last_error))
+                ));
             }
         }
     }
@@ -180,6 +184,11 @@ fn status_label(status: EndpointStatus) -> &'static str {
 /// 改行や連続する空白を 1 つの空白に畳む
 fn one_line(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// 文中の URL から、埋め込まれた認証情報（`scheme://user:password@host` の `user:password@`）を除く
+fn without_url_credentials(value: &str) -> String {
+    value.to_string()
 }
 
 #[cfg(test)]
@@ -326,6 +335,53 @@ mod tests {
             mail.body.contains("    Last error: line one line two\n"),
             "{}",
             mail.body
+        );
+    }
+
+    /// URL に埋め込まれた認証情報はメールに載せない（メールは外部のメールサーバーを経由する）
+    #[test]
+    fn url_credentials_are_not_included_in_the_mail() {
+        let mut report = report();
+        report.endpoints[0].base_url = "https://ops:s3cr@t@gpu-b.example.com:8443/v1".to_string();
+        report.endpoints[0].last_error = Some(
+            "error sending request for url \
+             (https://ops:s3cr@t@gpu-b.example.com:8443/v1/models): connection refused"
+                .to_string(),
+        );
+
+        let mail = render_daily_digest(Language::En, &report);
+        assert!(!mail.body.contains("s3cr"), "{}", mail.body);
+        assert!(!mail.body.contains("ops:"), "{}", mail.body);
+        assert!(
+            mail.body
+                .contains("- [Offline] gpu-b (ollama) https://gpu-b.example.com:8443/v1\n"),
+            "{}",
+            mail.body
+        );
+        assert!(
+            mail.body.contains(
+                "    Last error: error sending request for url \
+                 (https://gpu-b.example.com:8443/v1/models): connection refused\n"
+            ),
+            "{}",
+            mail.body
+        );
+    }
+
+    #[test]
+    fn only_the_credentials_of_a_url_are_removed() {
+        // 認証情報を含まない URL、パス中の `@`、URL ではない `@` はそのまま残す
+        for value in [
+            "http://10.0.0.2:11434",
+            "http://[::1]:8080/v1",
+            "https://gpu.example.com/users/@me?contact=ops@example.com",
+            "rejected by ops@example.com: quota exceeded",
+        ] {
+            assert_eq!(without_url_credentials(value), value);
+        }
+        assert_eq!(
+            without_url_credentials("http://token@a.example.com then http://u:p@b.example.com/x"),
+            "http://a.example.com then http://b.example.com/x"
         );
     }
 }

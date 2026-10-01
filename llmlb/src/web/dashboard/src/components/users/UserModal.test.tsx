@@ -67,7 +67,7 @@ describe('UserModal notification email', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Create User' })
 
     expect(within(dialog).getByLabelText(EMAIL_LABEL)).toHaveAccessibleDescription(
-      'Operational notifications are sent to this address. It is not a login identifier: users sign in with their username.',
+      'Destination for operational notifications, which are sent to administrators only. It is not a login identifier: users sign in with their username.',
     )
   })
 
@@ -179,6 +179,21 @@ describe('UserModal notification email', () => {
     await user.click(dialog.getByRole('button', { name: 'Update' }))
 
     expect(await screen.findByText('User updated')).toBeInTheDocument()
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['notification-settings'] })
+  })
+
+  it('refreshes the notification recipients after a user was deleted', async () => {
+    const remove = vi.spyOn(usersApi, 'delete').mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    const { queryClient } = await renderModal()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    await user.click(within(rowFor('alice')).getByRole('button', { name: 'Delete alice' }))
+    const dialog = within(await screen.findByRole('alertdialog', { name: 'Delete User' }))
+    await user.click(dialog.getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('User deleted')).toBeInTheDocument()
+    expect(remove).toHaveBeenCalledExactlyOnceWith('user-alice')
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['notification-settings'] })
   })
 })

@@ -60,7 +60,7 @@ import {
 } from 'lucide-react'
 
 const EMAIL_HINT =
-  'Operational notifications are sent to this address. It is not a login identifier: users sign in with their username.'
+  'Destination for operational notifications, which are sent to administrators only. It is not a login identifier: users sign in with their username.'
 
 interface NotificationEmailFieldProps {
   id: string

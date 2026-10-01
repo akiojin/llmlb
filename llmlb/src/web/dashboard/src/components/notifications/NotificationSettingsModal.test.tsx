@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -283,6 +284,127 @@ describe('NotificationSettingsModal', () => {
       expect(update).toHaveBeenCalledExactlyOnceWith({ ...settings, smtp_from: 'not-an-address' })
       expect(screen.getByLabelText('From address')).toHaveValue('not-an-address')
       expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    })
+
+    it('keeps the saved settings when a refresh that started before the save finishes after it', async () => {
+      const get = stubGet()
+      const saved = { ...settings, smtp_host: 'mail.example.org' }
+      vi.spyOn(notificationsApi, 'update').mockResolvedValue(response({ settings: saved }))
+      const user = userEvent.setup()
+      const { queryClient } = await renderModal()
+
+      // A refresh (for example after a user was edited) that is still in flight.
+      const staleRefresh = deferred<NotificationSettingsResponse>()
+      get.mockReturnValue(staleRefresh.promise)
+      void queryClient.invalidateQueries({ queryKey: ['notification-settings'] })
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+
+      await fill(user, 'SMTP host', 'mail.example.org')
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      expect(await screen.findByText('Notification settings saved')).toBeInTheDocument()
+
+      staleRefresh.resolve(response())
+      await waitFor(() => expect(queryClient.isFetching()).toBe(0))
+
+      expect(queryClient.getQueryData<NotificationSettingsResponse>(['notification-settings'])?.settings).toEqual(
+        saved,
+      )
+      expect(screen.getByLabelText('SMTP host')).toHaveValue('mail.example.org')
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    })
+
+    it('locks the fields while a save is pending', async () => {
+      stubGet()
+      const pending = deferred<NotificationSettingsResponse>()
+      vi.spyOn(notificationsApi, 'update').mockReturnValue(pending.promise)
+      const user = userEvent.setup()
+      await renderModal()
+
+      await fill(user, 'SMTP host', 'mail.example.org')
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(screen.getByLabelText('SMTP host')).toBeDisabled())
+      expect(screen.getByRole('switch', { name: 'Enable notifications' })).toBeDisabled()
+      expect(screen.getByLabelText('Daily digest time')).toBeDisabled()
+      expect(screen.getByRole('combobox', { name: 'Email language' })).toBeDisabled()
+      expect(screen.getByLabelText('SMTP port')).toBeDisabled()
+      expect(screen.getByLabelText('From address')).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+      pending.resolve(response({ settings: { ...settings, smtp_host: 'mail.example.org' } }))
+
+      await waitFor(() => expect(screen.getByLabelText('SMTP host')).toBeEnabled())
+      expect(screen.getByLabelText('SMTP host')).toHaveValue('mail.example.org')
+    })
+
+    it('saves the current stored value of a field that was not edited', async () => {
+      const get = stubGet()
+      const update = vi.spyOn(notificationsApi, 'update').mockResolvedValue(response())
+      const user = userEvent.setup()
+      const { queryClient } = await renderModal()
+
+      await fill(user, 'Daily digest time', '18:30')
+
+      // Another administrator turns notifications off while this dialog is open.
+      get.mockResolvedValue(
+        response({
+          settings: { ...settings, enabled: false },
+          status: { state: 'disabled', reason: 'Notifications are turned off' },
+        }),
+      )
+      await queryClient.invalidateQueries({ queryKey: ['notification-settings'] })
+
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: 'Enable notifications' })).not.toBeChecked(),
+      )
+      expect(screen.getByLabelText('Daily digest time')).toHaveValue('18:30')
+
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledExactlyOnceWith({
+          ...settings,
+          enabled: false,
+          daily_digest_time: '18:30',
+        }),
+      )
+    })
+
+    it('discards unsaved edits when the dialog is closed', async () => {
+      stubGet()
+      function Harness() {
+        const [open, setOpen] = useState(true)
+        return (
+          <>
+            <button onClick={() => setOpen(true)}>Open notifications</button>
+            <NotificationSettingsModal open={open} onOpenChange={setOpen} />
+          </>
+        )
+      }
+      const user = userEvent.setup()
+      renderWithProviders(<Harness />)
+      await screen.findByRole('switch', { name: 'Enable notifications' })
+
+      await fill(user, 'SMTP host', 'mail.example.org')
+      await user.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'Open notifications' }))
+
+      expect(await screen.findByLabelText('SMTP host')).toHaveValue('smtp.example.com')
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    })
+
+    it('rejects an empty digest time before saving', async () => {
+      stubGet()
+      const user = userEvent.setup()
+      await renderModal()
+
+      const field = screen.getByLabelText('Daily digest time')
+      await user.clear(field)
+
+      expect(field).toBeInvalid()
+      expect(field).toHaveAccessibleDescription('Enter a time as HH:MM.')
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     })
 
     it.each(['0', '65536', '', '25.5'])('rejects the SMTP port "%s" before saving', async (port) => {

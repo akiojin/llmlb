@@ -59,6 +59,10 @@ function isValidPort(port: string) {
   return /^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535
 }
 
+function isValidTime(time: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
+}
+
 interface NotificationSettingsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -66,8 +70,9 @@ interface NotificationSettingsModalProps {
 
 export function NotificationSettingsModal({ open, onOpenChange }: NotificationSettingsModalProps) {
   const queryClient = useQueryClient()
-  // Unsaved edits. `null` shows the stored settings.
-  const [draft, setDraft] = useState<FormState | null>(null)
+  // Unsaved edits, by field. A field that was not edited keeps following the
+  // stored settings, so saving never writes back a value this dialog only read.
+  const [draft, setDraft] = useState<Partial<FormState>>({})
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: QUERY_KEY,
@@ -77,9 +82,11 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
 
   const saveMutation = useMutation({
     mutationFn: (settings: NotificationSettings) => notificationsApi.update(settings),
-    onSuccess: (saved: NotificationSettingsResponse) => {
+    onSuccess: async (saved: NotificationSettingsResponse) => {
+      // A refresh that started before the save would bring the old settings back.
+      await queryClient.cancelQueries({ queryKey: QUERY_KEY })
       queryClient.setQueryData(QUERY_KEY, saved)
-      setDraft(null)
+      setDraft({})
       // The status panel can be scrolled out of view next to Save, so repeat
       // the reason when the saved settings still cannot send.
       toast({
@@ -100,22 +107,24 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
   })
 
   const stored = data ? toForm(data.settings) : null
-  const form = draft ?? stored
+  const form = stored ? { ...stored, ...draft } : null
   const isDirty =
     form !== null && stored !== null && FORM_FIELDS.some((field) => form[field] !== stored[field])
   const portValid = form !== null && isValidPort(form.smtp_port)
+  const timeValid = form !== null && isValidTime(form.daily_digest_time)
+  const isSaving = saveMutation.isPending
 
   const edit = (changes: Partial<FormState>) => {
-    if (form) setDraft({ ...form, ...changes })
+    setDraft((current) => ({ ...current, ...changes }))
   }
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) setDraft(null)
+    if (!nextOpen) setDraft({})
     onOpenChange(nextOpen)
   }
 
   const handleSave = () => {
-    if (!form || !portValid) return
+    if (!form || !portValid || !timeValid) return
     saveMutation.mutate({
       ...form,
       smtp_host: form.smtp_host.trim(),
@@ -157,11 +166,13 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
           <div className="space-y-5 py-2">
             <NotificationStatusPanel data={data} />
 
-            <div className="space-y-4">
+            {/* Locked while saving: an edit made then would be dropped when the save returns. */}
+            <fieldset disabled={isSaving} className="min-w-0 space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <Label htmlFor="notifications-enabled">Enable notifications</Label>
                 <Switch
                   id="notifications-enabled"
+                  disabled={isSaving}
                   checked={form.enabled}
                   onCheckedChange={(enabled) => edit({ enabled })}
                 />
@@ -179,7 +190,10 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
                   <Input
                     id="notifications-digest-time"
                     type="time"
-                    aria-describedby="notifications-digest-time-hint"
+                    aria-invalid={!timeValid}
+                    aria-describedby={
+                      timeValid ? 'notifications-digest-time-hint' : 'notifications-digest-time-error'
+                    }
                     className="dark:[color-scheme:dark]"
                     value={form.daily_digest_time}
                     onChange={(e) => edit({ daily_digest_time: e.target.value })}
@@ -189,6 +203,7 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
                   <Label htmlFor="notifications-language">Email language</Label>
                   <Select
                     value={form.language}
+                    disabled={isSaving}
                     onValueChange={(language) => edit({ language: language as NotificationLanguage })}
                   >
                     <SelectTrigger id="notifications-language">
@@ -201,6 +216,11 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
                   </Select>
                 </div>
               </div>
+              {!timeValid && (
+                <p id="notifications-digest-time-error" role="alert" className="text-xs text-destructive">
+                  Enter a time as HH:MM.
+                </p>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-[1fr_6rem_1fr]">
                 <div className="space-y-2">
@@ -246,11 +266,11 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
                   TLS is required: port 465 connects with TLS, any other port uses STARTTLS.
                 </p>
               ) : (
-                <p id="notifications-smtp-port-error" className="text-xs text-destructive">
+                <p id="notifications-smtp-port-error" role="alert" className="text-xs text-destructive">
                   Enter a port between 1 and 65535.
                 </p>
               )}
-            </div>
+            </fieldset>
 
             <div role="group" aria-labelledby="notifications-recipients-heading" className="space-y-2">
               <h3 id="notifications-recipients-heading" className="text-sm font-medium">
@@ -288,9 +308,9 @@ export function NotificationSettingsModal({ open, onOpenChange }: NotificationSe
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!isDirty || !portValid || saveMutation.isPending}
+            disabled={!isDirty || !portValid || !timeValid || isSaving}
           >
-            {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save
           </Button>
         </DialogFooter>

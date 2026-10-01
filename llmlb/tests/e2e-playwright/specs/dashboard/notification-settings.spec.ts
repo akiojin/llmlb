@@ -17,7 +17,7 @@ interface NotificationSettingsResponse {
 }
 
 const EMAIL_HINT =
-  'Operational notifications are sent to this address. It is not a login identifier: users sign in with their username.'
+  'Destination for operational notifications, which are sent to administrators only. It is not a login identifier: users sign in with their username.'
 
 // The settings API accepts the dashboard session only (JWT cookie + CSRF token),
 // so the test calls it from the signed-in page.
@@ -175,8 +175,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
 
         expect(pageErrors).toEqual([])
       } finally {
-        if (original) await notificationsApi(page, original).catch(() => {})
-        await deleteUser(request, created.id).catch(() => {})
+        // The settings are server-wide, so a failed restore must not pass silently.
+        const removed = await deleteUser(request, created.id)
+        if (original) await notificationsApi(page, original)
+        expect(removed).toBe(true)
       }
     })
   })

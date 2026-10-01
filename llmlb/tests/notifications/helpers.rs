@@ -22,10 +22,20 @@ use tower::ServiceExt;
 /// テスト用ユーザーのパスワード
 pub const TEST_PASSWORD: &str = "password123";
 
-/// ユーザーを作成し、そのユーザーの JWT を返す
-pub async fn create_user_with_jwt(pool: &SqlitePool, username: &str, role: UserRole) -> String {
+/// ログインしないユーザー用のパスワードハッシュ（bcrypt の計算を省く）
+const UNUSED_PASSWORD_HASH: &str = "unused-password-hash";
+
+/// [`TEST_PASSWORD`] でログインできるユーザーを作成する
+pub async fn create_login_user(pool: &SqlitePool, username: &str, role: UserRole) {
     let password_hash = llmlb::auth::password::hash_password(TEST_PASSWORD).unwrap();
-    let user = llmlb::db::users::create(pool, username, &password_hash, role, false)
+    llmlb::db::users::create(pool, username, &password_hash, role, false)
+        .await
+        .expect("create login user");
+}
+
+/// ユーザーを作成し、そのユーザーの JWT を返す（パスワードではログインできない）
+pub async fn create_user_with_jwt(pool: &SqlitePool, username: &str, role: UserRole) -> String {
+    let user = llmlb::db::users::create(pool, username, UNUSED_PASSWORD_HASH, role, false)
         .await
         .expect("create test user");
     llmlb::auth::jwt::create_jwt(
@@ -151,8 +161,7 @@ pub async fn create_user_with_email(
     role: UserRole,
     email: &str,
 ) {
-    let password_hash = llmlb::auth::password::hash_password(TEST_PASSWORD).unwrap();
-    let user = llmlb::db::users::create(pool, username, &password_hash, role, false)
+    let user = llmlb::db::users::create(pool, username, UNUSED_PASSWORD_HASH, role, false)
         .await
         .expect("create test user");
     llmlb::db::users::set_email(pool, user.id, Some(email))

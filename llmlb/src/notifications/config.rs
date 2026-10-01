@@ -5,12 +5,16 @@
 //!
 //! 設定が未設定・不正でもエラーにはせず、通知を送れない理由を [`NotificationStatus`] として返す。
 
+use super::mailer::parse_address;
+use super::schedule::parse_time_of_day;
 use super::template::Language;
 use crate::common::error::RouterResult;
 use crate::db::settings::SettingsStorage;
 use crate::db::users::NotificationRecipient;
 use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
+use std::net::IpAddr;
 
 /// SMTP ユーザー名の環境変数
 pub const ENV_SMTP_USERNAME: &str = "LLMLB_SMTP_USERNAME";
@@ -51,8 +55,12 @@ pub struct SmtpCredentials {
 impl SmtpCredentials {
     /// 認証情報を作成する（空文字は未設定として扱う）
     pub fn new(username: Option<String>, password: Option<String>) -> Self {
-        let _ = (username, password);
-        todo!("SPEC #777 T-003")
+        Self {
+            username: username
+                .map(|username| username.trim().to_string())
+                .filter(|username| !username.is_empty()),
+            password: password.filter(|password| !password.is_empty()),
+        }
     }
 
     /// プロセスの環境変数から読む
@@ -115,9 +123,35 @@ impl NotificationSettings {
     ///
     /// host / from の空文字は「未設定」として受け付ける（通知が送れない理由は
     /// [`NotificationStatus`] で示す）。形式が不正な値は理由付きで拒否する。
-    pub fn validated(self) -> Result<Self, String> {
-        todo!("SPEC #777 T-008")
+    pub fn validated(mut self) -> Result<Self, String> {
+        self.smtp_host = self.smtp_host.trim().to_string();
+        if !self.smtp_host.is_empty() && !is_valid_host(&self.smtp_host) {
+            return Err(
+                "smtp_host must be a host name or IP address (no scheme, port or spaces)"
+                    .to_string(),
+            );
+        }
+        if self.smtp_port == 0 {
+            return Err("smtp_port must be between 1 and 65535".to_string());
+        }
+        self.smtp_from = self.smtp_from.trim().to_string();
+        if !self.smtp_from.is_empty() {
+            self.smtp_from = parse_address(&self.smtp_from)
+                .map_err(|_| "smtp_from must be a valid mail address".to_string())?;
+        }
+        if parse_time_of_day(&self.daily_digest_time).is_none() {
+            return Err("daily_digest_time must be HH:MM (24-hour clock)".to_string());
+        }
+        Ok(self)
     }
+}
+
+/// ホスト名または IP アドレスとして妥当か（スキームやポートを含む値を弾く）
+fn is_valid_host(host: &str) -> bool {
+    host.parse::<IpAddr>().is_ok()
+        || host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 /// `settings` テーブルに保存されていた、解釈できない値
@@ -139,9 +173,54 @@ pub struct LoadedSettings {
 }
 
 /// `settings` テーブルから通知設定を読む
+///
+/// 保存されていないキーは既定値になる。汎用の設定 API や DB の直接編集で
+/// 解釈できない値が入っていた場合は、既定値に置き換えたうえで `invalid` に記録する。
 pub async fn load_settings(storage: &SettingsStorage) -> RouterResult<LoadedSettings> {
-    let _ = storage;
-    todo!("SPEC #777 T-003")
+    let stored = storage.get_settings_with_prefix(KEY_PREFIX).await?;
+    let mut settings = NotificationSettings::default();
+    let mut invalid = Vec::new();
+    let mut reject = |key: &'static str, message: String| {
+        invalid.push(InvalidSetting { key, message });
+    };
+
+    if let Some(value) = stored.get(KEY_ENABLED) {
+        match value.as_str() {
+            "true" => settings.enabled = true,
+            "false" => settings.enabled = false,
+            other => reject(KEY_ENABLED, format!("'{other}' is not true or false")),
+        }
+    }
+    if let Some(value) = stored.get(KEY_SMTP_HOST) {
+        settings.smtp_host = value.trim().to_string();
+    }
+    if let Some(value) = stored.get(KEY_SMTP_PORT) {
+        match value.parse::<u16>() {
+            Ok(port) if port != 0 => settings.smtp_port = port,
+            _ => reject(KEY_SMTP_PORT, format!("'{value}' is not a valid port")),
+        }
+    }
+    if let Some(value) = stored.get(KEY_SMTP_FROM) {
+        settings.smtp_from = value.trim().to_string();
+    }
+    if let Some(value) = stored.get(KEY_DAILY_DIGEST_TIME) {
+        if parse_time_of_day(value).is_some() {
+            settings.daily_digest_time = value.clone();
+        } else {
+            reject(
+                KEY_DAILY_DIGEST_TIME,
+                format!("'{value}' is not a HH:MM time"),
+            );
+        }
+    }
+    if let Some(value) = stored.get(KEY_LANGUAGE) {
+        match value.parse::<Language>() {
+            Ok(language) => settings.language = language,
+            Err(message) => reject(KEY_LANGUAGE, message),
+        }
+    }
+
+    Ok(LoadedSettings { settings, invalid })
 }
 
 /// 通知設定を `settings` テーブルへ保存する
@@ -149,8 +228,17 @@ pub async fn save_settings(
     storage: &SettingsStorage,
     settings: &NotificationSettings,
 ) -> RouterResult<()> {
-    let _ = (storage, settings);
-    todo!("SPEC #777 T-008")
+    let port = settings.smtp_port.to_string();
+    storage
+        .set_settings(&[
+            (KEY_ENABLED, if settings.enabled { "true" } else { "false" }),
+            (KEY_SMTP_HOST, &settings.smtp_host),
+            (KEY_SMTP_PORT, &port),
+            (KEY_SMTP_FROM, &settings.smtp_from),
+            (KEY_DAILY_DIGEST_TIME, &settings.daily_digest_time),
+            (KEY_LANGUAGE, settings.language.as_str()),
+        ])
+        .await
 }
 
 /// 検証済みの SMTP 接続設定
@@ -185,8 +273,42 @@ pub fn smtp_config(
     loaded: &LoadedSettings,
     credentials: &SmtpCredentials,
 ) -> Result<SmtpConfig, String> {
-    let _ = (loaded, credentials);
-    todo!("SPEC #777 T-003")
+    if let Some(invalid) = loaded
+        .invalid
+        .iter()
+        .find(|invalid| invalid.key == KEY_SMTP_PORT)
+    {
+        return Err(invalid_reason(invalid));
+    }
+    let settings = &loaded.settings;
+    if settings.smtp_host.is_empty() {
+        return Err("SMTP host is not set".to_string());
+    }
+    if !is_valid_host(&settings.smtp_host) {
+        return Err("SMTP host is not a valid host name or IP address".to_string());
+    }
+    if settings.smtp_from.is_empty() {
+        return Err("SMTP from address is not set".to_string());
+    }
+    let from = parse_address(&settings.smtp_from)
+        .map_err(|_| "SMTP from address is not a valid mail address".to_string())?;
+    let (Some(username), Some(password)) = (&credentials.username, &credentials.password) else {
+        return Err(format!(
+            "SMTP credentials are not set ({ENV_SMTP_USERNAME} / {ENV_SMTP_PASSWORD})"
+        ));
+    };
+
+    Ok(SmtpConfig {
+        host: settings.smtp_host.clone(),
+        port: settings.smtp_port,
+        from,
+        username: username.clone(),
+        password: password.clone(),
+    })
+}
+
+fn invalid_reason(invalid: &InvalidSetting) -> String {
+    format!("Invalid setting {}: {}", invalid.key, invalid.message)
 }
 
 /// 通知機能の状態
@@ -210,6 +332,30 @@ pub struct NotificationStatus {
     pub reason: Option<String>,
 }
 
+impl NotificationStatus {
+    /// 送信できる状態
+    pub fn active() -> Self {
+        Self {
+            state: NotificationState::Active,
+            reason: None,
+        }
+    }
+
+    fn disabled() -> Self {
+        Self {
+            state: NotificationState::Disabled,
+            reason: Some("Notifications are turned off".to_string()),
+        }
+    }
+
+    fn unavailable(reason: String) -> Self {
+        Self {
+            state: NotificationState::Unavailable,
+            reason: Some(reason),
+        }
+    }
+}
+
 /// 通知の配送に必要な設定一式
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Delivery {
@@ -229,8 +375,78 @@ pub fn resolve_delivery(
     credentials: &SmtpCredentials,
     recipients: &[NotificationRecipient],
 ) -> Result<Delivery, NotificationStatus> {
-    let _ = (loaded, credentials, recipients);
-    todo!("SPEC #777 T-009")
+    // 有効化フラグ自体が解釈できないときは、黙って無効扱いにせず理由を出す
+    let switch_is_readable = loaded
+        .invalid
+        .iter()
+        .all(|invalid| invalid.key != KEY_ENABLED);
+    if switch_is_readable && !loaded.settings.enabled {
+        return Err(NotificationStatus::disabled());
+    }
+    if let Some(invalid) = loaded.invalid.first() {
+        return Err(NotificationStatus::unavailable(invalid_reason(invalid)));
+    }
+    let smtp = smtp_config(loaded, credentials).map_err(NotificationStatus::unavailable)?;
+    let daily_digest_time =
+        parse_time_of_day(&loaded.settings.daily_digest_time).ok_or_else(|| {
+            NotificationStatus::unavailable(format!(
+                "Invalid setting {KEY_DAILY_DIGEST_TIME}: '{}' is not a HH:MM time",
+                loaded.settings.daily_digest_time
+            ))
+        })?;
+
+    // 同じ通知先を共有する管理者がいても 1 通にまとめる
+    let mut addresses: Vec<String> = Vec::new();
+    for recipient in recipients {
+        if !addresses.contains(&recipient.email) {
+            addresses.push(recipient.email.clone());
+        }
+    }
+    if addresses.is_empty() {
+        return Err(NotificationStatus::unavailable(
+            "No administrator has a notification email address".to_string(),
+        ));
+    }
+
+    Ok(Delivery {
+        smtp,
+        daily_digest_time,
+        language: loaded.settings.language,
+        recipients: addresses,
+    })
+}
+
+/// ある時点の通知設定・宛先・配送可否
+#[derive(Debug, Clone)]
+pub struct NotificationSnapshot {
+    /// `settings` テーブルから読んだ通知設定
+    pub loaded: LoadedSettings,
+    /// 宛先（email 設定済みの管理者）
+    pub recipients: Vec<NotificationRecipient>,
+    /// 配送に必要な設定。送信できない場合は理由付きの状態
+    pub delivery: Result<Delivery, NotificationStatus>,
+}
+
+impl NotificationSnapshot {
+    /// 現在の設定と宛先を DB から読み、配送可否を判定する
+    pub async fn load(pool: &SqlitePool, credentials: &SmtpCredentials) -> RouterResult<Self> {
+        let loaded = load_settings(&SettingsStorage::new(pool.clone())).await?;
+        let recipients = crate::db::users::list_notification_recipients(pool).await?;
+        let delivery = resolve_delivery(&loaded, credentials, &recipients);
+        Ok(Self {
+            loaded,
+            recipients,
+            delivery,
+        })
+    }
+
+    /// 通知機能の状態
+    pub fn status(&self) -> NotificationStatus {
+        match &self.delivery {
+            Ok(_) => NotificationStatus::active(),
+            Err(status) => status.clone(),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -15,8 +15,8 @@ pub mod template;
 
 pub use config::{
     load_settings, resolve_delivery, save_settings, smtp_config, Delivery, InvalidSetting,
-    LoadedSettings, NotificationSettings, NotificationState, NotificationStatus, SmtpConfig,
-    SmtpCredentials,
+    LoadedSettings, NotificationSettings, NotificationSnapshot, NotificationState,
+    NotificationStatus, SmtpConfig, SmtpCredentials,
 };
 pub use daily_digest::{start_daily_digest_task, DailyDigestScheduler, DigestOutcome, DigestTick};
 pub use digest::{DigestReport, EndpointDigestEntry};

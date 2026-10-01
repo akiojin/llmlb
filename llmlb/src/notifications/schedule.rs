@@ -7,8 +7,14 @@ use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 /// `HH:MM`（24 時間表記）を時刻として解釈する
 pub fn parse_time_of_day(value: &str) -> Option<NaiveTime> {
-    let _ = value;
-    todo!("SPEC #777 T-004")
+    let is_hh_mm = matches!(
+        value.as_bytes(),
+        [h1, h2, b':', m1, m2] if [h1, h2, m1, m2].iter().all(|digit| digit.is_ascii_digit())
+    );
+    if !is_hh_mm {
+        return None;
+    }
+    NaiveTime::parse_from_str(value, "%H:%M").ok()
 }
 
 /// 次回の実行時刻を求める
@@ -21,8 +27,13 @@ pub fn next_run(
     time_of_day: NaiveTime,
     last_sent: Option<NaiveDate>,
 ) -> NaiveDateTime {
-    let _ = (now, time_of_day, last_sent);
-    todo!("SPEC #777 T-004")
+    let today = now.date();
+    if last_sent == Some(today) {
+        // 日付の上限（262142 年）を超える場合だけ当日に留まる
+        let next_day = today.succ_opt().unwrap_or(today);
+        return next_day.and_time(time_of_day);
+    }
+    now.max(today.and_time(time_of_day))
 }
 
 #[cfg(test)]

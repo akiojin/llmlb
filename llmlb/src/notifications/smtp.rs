@@ -3,11 +3,19 @@
 //! 接続設定は送信のたびに `settings` テーブルと環境変数由来の認証情報から組み立てる。
 //! TLS は必須で、ポート 465 は接続時から TLS、それ以外は STARTTLS を要求する。
 
-use super::config::SmtpCredentials;
+use super::config::{load_settings, smtp_config, SmtpConfig, SmtpCredentials, IMPLICIT_TLS_PORT};
 use super::mailer::{MailError, MailMessage, MailTransport};
 use crate::db::settings::SettingsStorage;
 use async_trait::async_trait;
+use lettre::message::header::ContentType;
+use lettre::message::Mailbox;
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{Address, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use sqlx::SqlitePool;
+use std::time::Duration;
+
+/// SMTP サーバーとのやり取り 1 回あたりのタイムアウト
+const SMTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// SMTP でメールを送信するトランスポート
 pub struct SmtpMailTransport {
@@ -28,9 +36,55 @@ impl SmtpMailTransport {
 #[async_trait]
 impl MailTransport for SmtpMailTransport {
     async fn send(&self, message: &MailMessage) -> Result<(), MailError> {
-        let _ = (message, &self.settings, &self.credentials);
-        todo!("SPEC #777 T-003")
+        let loaded = load_settings(&self.settings)
+            .await
+            .map_err(|error| MailError::NotConfigured(error.to_string()))?;
+        let config = smtp_config(&loaded, &self.credentials).map_err(MailError::NotConfigured)?;
+        let email = build_message(&config, message)?;
+
+        let builder = if config.port == IMPLICIT_TLS_PORT {
+            AsyncSmtpTransport::<Tokio1Executor>::relay(&config.host)
+        } else {
+            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host)
+        }
+        .map_err(|error| MailError::Delivery(error.to_string()))?;
+        let mailer = builder
+            .port(config.port)
+            .credentials(Credentials::new(config.username, config.password))
+            .timeout(Some(SMTP_TIMEOUT))
+            .build();
+
+        mailer
+            .send(email)
+            .await
+            .map(|_| ())
+            .map_err(|error| MailError::Delivery(error.to_string()))
     }
+}
+
+fn mailbox(address: &str) -> Result<Mailbox, MailError> {
+    address
+        .trim()
+        .parse::<Address>()
+        .map(|address| Mailbox::new(None, address))
+        .map_err(|_| MailError::InvalidAddress(address.trim().to_string()))
+}
+
+/// プレーンテキストのメールを組み立てる
+fn build_message(config: &SmtpConfig, message: &MailMessage) -> Result<Message, MailError> {
+    if message.to.is_empty() {
+        return Err(MailError::Message("no recipients".to_string()));
+    }
+    let mut builder = Message::builder()
+        .from(mailbox(&config.from)?)
+        .subject(message.subject.as_str());
+    for recipient in &message.to {
+        builder = builder.to(mailbox(recipient)?);
+    }
+    builder
+        .header(ContentType::TEXT_PLAIN)
+        .body(message.body.clone())
+        .map_err(|error| MailError::Message(error.to_string()))
 }
 
 #[cfg(test)]
@@ -66,6 +120,50 @@ mod tests {
             smtp_from: "llmlb@example.com".to_string(),
             ..NotificationSettings::default()
         }
+    }
+
+    fn smtp() -> SmtpConfig {
+        SmtpConfig {
+            host: "smtp.example.com".to_string(),
+            port: 587,
+            from: "llmlb@example.com".to_string(),
+            username: "mailer".to_string(),
+            password: "s3cret".to_string(),
+        }
+    }
+
+    #[test]
+    fn build_message_sets_sender_recipients_subject_and_plain_text_body() {
+        let mail = MailMessage {
+            to: vec!["a@example.com".to_string(), "b@example.com".to_string()],
+            subject: "[llmlb] 日次ダイジェスト 2026-10-01".to_string(),
+            body: "状態一覧:\n- [Online] gpu-a\n".to_string(),
+        };
+
+        let email = build_message(&smtp(), &mail).unwrap();
+
+        let envelope = email.envelope();
+        assert_eq!(
+            envelope.from().map(|address| address.to_string()),
+            Some("llmlb@example.com".to_string())
+        );
+        let recipients: Vec<String> = envelope
+            .to()
+            .iter()
+            .map(|address| address.to_string())
+            .collect();
+        assert_eq!(recipients, vec!["a@example.com", "b@example.com"]);
+
+        let raw = String::from_utf8(email.formatted()).unwrap();
+        assert!(raw.contains("From: llmlb@example.com"), "{raw}");
+        assert!(raw.contains("To: a@example.com, b@example.com"), "{raw}");
+        assert!(
+            raw.contains("Content-Type: text/plain; charset=utf-8"),
+            "{raw}"
+        );
+        // 認証情報はメール本体に現れない
+        assert!(!raw.contains("s3cret"), "{raw}");
+        assert!(!raw.contains("mailer"), "{raw}");
     }
 
     #[tokio::test]

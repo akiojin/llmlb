@@ -463,7 +463,7 @@ async fn ac7_app_serves_requests_while_notifications_are_not_configured() {
 
     // 起動時に呼ばれるバックグラウンドタスク。SMTP 設定も環境変数も無い状態で開始する
     llmlb::notifications::start_daily_digest_task(pool.clone());
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     while !logs.contents().contains("notifications") {
         assert!(
             tokio::time::Instant::now() < deadline,

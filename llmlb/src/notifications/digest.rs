@@ -2,7 +2,7 @@
 //!
 //! 登録されている全エンドポイントの現在の状態を DB から読む。
 
-use crate::common::error::RouterResult;
+use crate::common::error::{LbError, RouterResult};
 use crate::types::endpoint::{Endpoint, EndpointStatus};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::SqlitePool;
@@ -36,8 +36,26 @@ pub struct DigestReport {
 impl DigestReport {
     /// エンドポイント一覧からダイジェストを作る
     pub fn from_endpoints(generated_at: NaiveDateTime, endpoints: Vec<Endpoint>) -> Self {
-        let _ = (generated_at, endpoints);
-        todo!("SPEC #777 T-005")
+        let mut endpoints: Vec<EndpointDigestEntry> = endpoints
+            .into_iter()
+            .map(|endpoint| EndpointDigestEntry {
+                name: endpoint.name,
+                base_url: endpoint.base_url,
+                endpoint_type: endpoint.endpoint_type.as_str(),
+                status: endpoint.status,
+                last_seen: endpoint.last_seen,
+                last_error: endpoint.last_error,
+            })
+            .collect();
+        endpoints.sort_by(|a, b| {
+            attention_rank(a.status)
+                .cmp(&attention_rank(b.status))
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        Self {
+            generated_at,
+            endpoints,
+        }
     }
 
     /// 指定した状態のエンドポイント数
@@ -50,8 +68,20 @@ impl DigestReport {
 
     /// 全登録エンドポイントの状態を DB から集約する
     pub async fn collect(pool: &SqlitePool, generated_at: NaiveDateTime) -> RouterResult<Self> {
-        let _ = (pool, generated_at);
-        todo!("SPEC #777 T-005")
+        let endpoints = crate::db::endpoints::list_endpoints(pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to list endpoints: {}", e)))?;
+        Ok(Self::from_endpoints(generated_at, endpoints))
+    }
+}
+
+/// 対応が必要な状態ほど小さい値（一覧の先頭）
+fn attention_rank(status: EndpointStatus) -> u8 {
+    match status {
+        EndpointStatus::Offline => 0,
+        EndpointStatus::Error => 1,
+        EndpointStatus::Pending => 2,
+        EndpointStatus::Online => 3,
     }
 }
 

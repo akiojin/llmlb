@@ -2,7 +2,9 @@
 //!
 //! SPEC #777 FR-001 / T-001 / T-002（API 部分）
 
-use crate::helpers::{build_app_with_admin, create_user_with_jwt, send_json, TEST_PASSWORD};
+use crate::helpers::{
+    build_app_with_admin, create_login_user, create_user_with_jwt, send_json, TEST_PASSWORD,
+};
 use axum::http::{Method, StatusCode};
 use llmlb::common::auth::UserRole;
 use serde_json::{json, Value};
@@ -306,7 +308,7 @@ async fn ac2_invalid_email_is_rejected() {
 #[serial]
 async fn ac2_email_is_not_a_login_identifier() {
     let (app, pool, jwt) = build_app_with_admin().await;
-    create_user_with_jwt(&pool, "alice@example.com", UserRole::Viewer).await;
+    create_login_user(&pool, "alice@example.com", UserRole::Viewer).await;
     create_user_with_jwt(&pool, "bob@example.com", UserRole::Viewer).await;
 
     let (_, users) = send_json(&app, Method::GET, "/api/users", Some(&jwt), None).await;

@@ -1,6 +1,7 @@
 //! メール本文テンプレート（日本語・英語）
 
 use super::digest::DigestReport;
+use crate::types::endpoint::EndpointStatus;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -50,15 +51,141 @@ pub struct RenderedMail {
 
 /// 日次ダイジェストを指定言語で展開する
 pub fn render_daily_digest(language: Language, report: &DigestReport) -> RenderedMail {
-    let _ = (language, report);
-    todo!("SPEC #777 T-007")
+    let text = DigestText::of(language);
+    let date = report.generated_at.format("%Y-%m-%d");
+    let [online, offline, error, pending] = [
+        EndpointStatus::Online,
+        EndpointStatus::Offline,
+        EndpointStatus::Error,
+        EndpointStatus::Pending,
+    ]
+    .map(|status| report.count(status));
+
+    let counts = format!("Online {online} / Offline {offline} / Error {error} / Pending {pending}");
+    let subject = match language {
+        Language::Ja => format!("[llmlb] {} {date}（{counts}）", text.subject),
+        Language::En => format!("[llmlb] {} {date} ({counts})", text.subject),
+    };
+
+    let mut lines = vec![
+        text.title.to_string(),
+        format!(
+            "{}{}{}",
+            text.generated_at,
+            report.generated_at.format("%Y-%m-%d %H:%M"),
+            text.local_time
+        ),
+        String::new(),
+        format!(
+            "{}{}{}",
+            text.registered,
+            report.endpoints.len(),
+            text.registered_unit
+        ),
+        format!("  Online: {online} / Offline: {offline} / Error: {error} / Pending: {pending}"),
+        String::new(),
+    ];
+    if report.endpoints.is_empty() {
+        lines.push(text.no_endpoints.to_string());
+    } else {
+        lines.push(text.status_list.to_string());
+        for endpoint in &report.endpoints {
+            lines.push(format!(
+                "- [{}] {} ({}) {}",
+                status_label(endpoint.status),
+                one_line(&endpoint.name),
+                endpoint.endpoint_type,
+                one_line(&endpoint.base_url)
+            ));
+            let last_seen = match endpoint.last_seen {
+                Some(seen) => seen.format("%Y-%m-%d %H:%M UTC").to_string(),
+                None => text.never.to_string(),
+            };
+            lines.push(format!("    {}{last_seen}", text.last_seen));
+            if let Some(last_error) = &endpoint.last_error {
+                lines.push(format!("    {}{}", text.last_error, one_line(last_error)));
+            }
+        }
+    }
+    lines.push(String::new());
+    lines.push(text.footer.to_string());
+
+    RenderedMail {
+        subject,
+        body: lines.join("\n") + "\n",
+    }
+}
+
+/// 日次ダイジェストの言語別の文言
+struct DigestText {
+    subject: &'static str,
+    title: &'static str,
+    generated_at: &'static str,
+    local_time: &'static str,
+    registered: &'static str,
+    registered_unit: &'static str,
+    status_list: &'static str,
+    no_endpoints: &'static str,
+    last_seen: &'static str,
+    never: &'static str,
+    last_error: &'static str,
+    footer: &'static str,
+}
+
+impl DigestText {
+    fn of(language: Language) -> Self {
+        match language {
+            Language::Ja => Self {
+                subject: "日次ダイジェスト",
+                title: "llmlb 日次ダイジェスト",
+                generated_at: "集計時刻: ",
+                local_time: "（サーバーのローカル時刻）",
+                registered: "登録エンドポイント: ",
+                registered_unit: " 件",
+                status_list: "状態一覧:",
+                no_endpoints: "登録されているエンドポイントはありません。",
+                last_seen: "最終確認: ",
+                never: "なし",
+                last_error: "最後のエラー: ",
+                footer: "このメールは llmlb の運用通知です。送信時刻と宛先は llmlb の通知設定で変更できます。",
+            },
+            Language::En => Self {
+                subject: "Daily digest",
+                title: "llmlb daily digest",
+                generated_at: "Generated at: ",
+                local_time: " (server local time)",
+                registered: "Registered endpoints: ",
+                registered_unit: "",
+                status_list: "Status:",
+                no_endpoints: "No endpoints are registered.",
+                last_seen: "Last seen: ",
+                never: "never",
+                last_error: "Last error: ",
+                footer: "This is an operational notification from llmlb. The send time and recipients can be changed in the llmlb notification settings.",
+            },
+        }
+    }
+}
+
+/// 状態の表示名（ダッシュボードの表記に合わせ、言語によらず同じ）
+fn status_label(status: EndpointStatus) -> &'static str {
+    match status {
+        EndpointStatus::Online => "Online",
+        EndpointStatus::Offline => "Offline",
+        EndpointStatus::Error => "Error",
+        EndpointStatus::Pending => "Pending",
+    }
+}
+
+/// 改行や連続する空白を 1 つの空白に畳む
+fn one_line(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::notifications::digest::EndpointDigestEntry;
-    use crate::types::endpoint::EndpointStatus;
     use chrono::{NaiveDateTime, TimeZone, Utc};
 
     fn report() -> DigestReport {
@@ -182,7 +309,7 @@ mod tests {
         );
     }
 
-    /// 件名ヘッダーを壊さないよう、改行を含む値は 1 行に畳む
+    /// エンドポイント名やエラー文に改行が含まれていても、一覧の体裁を崩さない
     #[test]
     fn multiline_values_are_flattened_into_one_line() {
         let mut report = report();

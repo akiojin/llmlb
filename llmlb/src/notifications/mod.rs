@@ -1,9 +1,9 @@
 //! 運用通知（SPEC #777）
 //!
 //! エンドポイントの稼働状況をメールで運用者へ届ける。送信はトランスポート抽象
-//! （[`MailTransport`]）の背後に置き、SMTP の秘密情報は環境変数、非秘密設定は
-//! `settings` テーブルから読む。設定が未設定・不正な場合は通知だけを無効化し、
-//! アプリ本体の起動は妨げない。
+//! （[`MailTransport`](crate::notifications::MailTransport)）の背後に置き、
+//! SMTP の秘密情報は環境変数、非秘密設定は `settings` テーブルから読む。
+//! 設定が未設定・不正な場合は通知だけを無効化し、アプリ本体の起動は妨げない。
 
 pub mod config;
 pub mod daily_digest;

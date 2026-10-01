@@ -8,7 +8,7 @@ use super::{
     update_inference_latency, UNSPECIFIED_IP,
 };
 use crate::api::error::AppError;
-use crate::api::model_name::rewrite_payload_model_for_endpoint;
+use crate::api::model_name::resolve_runtime_model_name_for_endpoint;
 use crate::api::models::load_registered_model;
 use crate::api::openai_util::{
     classify_upstream_request_error, model_unavailable_response, openai_error_response,
@@ -199,35 +199,16 @@ pub(super) async fn proxy_openai_post(
             Vec::new()
         }
     };
-    let outbound_payload = rewrite_payload_model_for_endpoint(
-        payload,
+    // 取得失敗時は endpoint_models が空 Vec のため、静的マッピングのフォールバックに流れる。
+    let upstream_model = resolve_runtime_model_name_for_endpoint(
+        &model,
         &resolved_model,
         &endpoint_type,
         &endpoint_models,
     );
 
-    // 上の list_models 結果を再利用する（1リクエストあたりの list_models 呼び出しを
-    // 2回から1回に削減）。取得失敗時は endpoint_models が空 Vec のため find は None を
-    // 返し、従来どおり resolve_engine_name のフォールバックに流れる。
-    let upstream_model = endpoint_models
-        .iter()
-        .find(|endpoint_model| {
-            endpoint_model.model_id == model
-                || endpoint_model.model_id == resolved_model
-                || endpoint_model.canonical_name.as_deref() == Some(model.as_str())
-                || endpoint_model.canonical_name.as_deref() == Some(resolved_model.as_str())
-        })
-        .map(|endpoint_model| endpoint_model.model_id.clone())
-        .or_else(|| {
-            crate::models::mapping::resolve_engine_name(&model, &endpoint_type).map(str::to_string)
-        })
-        .or_else(|| {
-            crate::models::mapping::resolve_engine_name(&resolved_model, &endpoint_type)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| resolved_model.clone());
-
-    let mut upstream_payload = outbound_payload;
+    // ペイロードに model が無い場合（embeddings の既定モデル）も、解決結果を上流へ送る。
+    let mut upstream_payload = payload;
     if let Some(payload_object) = upstream_payload.as_object_mut() {
         payload_object.insert("model".to_string(), Value::String(upstream_model.clone()));
 

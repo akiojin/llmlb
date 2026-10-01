@@ -46,37 +46,37 @@ pub fn resolve_runtime_model_name(model: &str, endpoint_type: &EndpointType) -> 
         .unwrap_or_else(|| model.to_string())
 }
 
-/// Resolve the runtime model name that the selected endpoint actually advertises.
+/// Resolve the model name to send to the selected endpoint.
+///
+/// This is the only place that decides the upstream model name (SPEC #575 FR-040/FR-041):
+///
+/// 1. The `model_id` of the first endpoint model, in list order, whose `model_id` or
+///    `canonical_name` equals `requested_model` or `selected_model`.
+/// 2. The static engine alias of `requested_model`, then of `selected_model`.
+/// 3. `selected_model` as is.
+///
+/// Pass an empty `endpoint_models` when the endpoint's model list could not be loaded.
 pub fn resolve_runtime_model_name_for_endpoint(
     requested_model: &str,
     selected_model: &str,
     endpoint_type: &EndpointType,
     endpoint_models: &[EndpointModel],
 ) -> String {
-    if endpoint_models
-        .iter()
-        .any(|endpoint_model| endpoint_model.model_id == requested_model)
-    {
-        return requested_model.to_string();
-    }
+    let is_wanted = |name: &str| name == requested_model || name == selected_model;
 
-    if let Some(runtime_model) = endpoint_models.iter().find_map(|endpoint_model| {
-        if endpoint_model.model_id == selected_model {
-            return Some(endpoint_model.model_id.as_str());
-        }
-
-        if endpoint_model.canonical_name.as_deref() == Some(selected_model)
-            || endpoint_model.canonical_name.as_deref() == Some(requested_model)
-        {
-            return Some(endpoint_model.model_id.as_str());
-        }
-
-        None
+    if let Some(endpoint_model) = endpoint_models.iter().find(|endpoint_model| {
+        is_wanted(&endpoint_model.model_id)
+            || endpoint_model
+                .canonical_name
+                .as_deref()
+                .is_some_and(is_wanted)
     }) {
-        return runtime_model.to_string();
+        return endpoint_model.model_id.clone();
     }
 
-    resolve_runtime_model_name(selected_model, endpoint_type)
+    crate::models::mapping::resolve_engine_name(requested_model, endpoint_type)
+        .map(str::to_string)
+        .unwrap_or_else(|| resolve_runtime_model_name(selected_model, endpoint_type))
 }
 
 /// Rewrite the request payload's `model` field for the selected endpoint when needed.

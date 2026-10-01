@@ -10,7 +10,7 @@ use std::{
     net::SocketAddr,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -270,6 +270,121 @@ async fn test_streaming_proxy_measures_tps_and_updates_ema() {
         expected_ema,
         "EMA after second measurement",
     );
+}
+
+const ENGINE_MODEL: &str = "gpt-oss:20b";
+const CANONICAL_MODEL: &str = "openai/gpt-oss-20b";
+const UNMAPPED_MODEL: &str = "us032-unmapped:latest";
+
+/// 受信した chat completions のボディを記録する上流スタブ
+#[derive(Default)]
+struct RecordingUpstreamState {
+    chat_bodies: Mutex<Vec<Value>>,
+}
+
+/// `/api/tags` に応答するため Ollama として判別される上流スタブを起動する
+async fn spawn_recording_ollama_upstream() -> (TestServer, Arc<RecordingUpstreamState>) {
+    let state = Arc::new(RecordingUpstreamState::default());
+    let app = Router::new()
+        .route("/api/tags", get(recording_tags_handler))
+        .route("/v1/models", get(recording_models_handler))
+        .route("/v1/chat/completions", post(recording_chat_handler))
+        .with_state(state.clone());
+
+    (spawn_lb(app).await, state)
+}
+
+async fn recording_tags_handler() -> impl IntoResponse {
+    Json(json!({
+        "models": [{"name": ENGINE_MODEL}, {"name": UNMAPPED_MODEL}]
+    }))
+}
+
+async fn recording_models_handler() -> impl IntoResponse {
+    Json(json!({
+        "object": "list",
+        "data": [
+            {"id": ENGINE_MODEL, "object": "model"},
+            {"id": UNMAPPED_MODEL, "object": "model"}
+        ]
+    }))
+}
+
+async fn recording_chat_handler(
+    State(state): State<Arc<RecordingUpstreamState>>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    state.chat_bodies.lock().unwrap().push(body);
+    Json(json!({
+        "id": "chatcmpl-us032",
+        "object": "chat.completion",
+        "model": "upstream-reported-model",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "pong"},
+            "finish_reason": "stop"
+        }]
+    }))
+}
+
+/// SPEC #575 US-032 / AS-032-6: `/v1/chat/completions` が上流へ送るボディの `model` は、
+/// エンドポイント向けモデル名の解決規則（FR-041）どおりである
+#[tokio::test]
+async fn test_chat_completions_sends_resolved_model_to_upstream() {
+    let lb = spawn_test_lb().await;
+    let client = Client::new();
+    let (upstream, upstream_state) = spawn_recording_ollama_upstream().await;
+    register_responses_endpoint(lb.addr(), upstream.addr(), "us032")
+        .await
+        .expect("register upstream endpoint");
+
+    // (要求したモデル名, 上流が受け取るべきモデル名)
+    let cases = [
+        // エンドポイントが公開するモデル ID と一致
+        (ENGINE_MODEL, ENGINE_MODEL),
+        // canonical 名はエンジン固有 ID に戻して転送する
+        (CANONICAL_MODEL, ENGINE_MODEL),
+        // 内蔵マッピングに無いモデル ID はそのまま転送する
+        (UNMAPPED_MODEL, UNMAPPED_MODEL),
+    ];
+
+    for (requested, expected_upstream) in cases {
+        // 同一ホストの別プロセスがスタブのポートへ要求を送りうるため、
+        // 回数ではなく本テストが送ったプロンプトで照合する
+        let prompt = format!("us032-ping-{requested}");
+        let resp = client
+            .post(format!("http://{}/v1/chat/completions", lb.addr()))
+            .header("x-api-key", "sk_debug")
+            .json(&json!({
+                "model": requested,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": false
+            }))
+            .send()
+            .await
+            .expect("chat request");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK, "model: {requested}");
+
+        let body: Value = resp.json().await.expect("chat response body");
+        assert_eq!(
+            body["model"], requested,
+            "client must see the model name it requested"
+        );
+
+        let upstream_models: Vec<Value> = upstream_state
+            .chat_bodies
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|body| body["messages"][0]["content"] == prompt.as_str())
+            .map(|body| body["model"].clone())
+            .collect();
+        assert_eq!(
+            upstream_models,
+            vec![json!(expected_upstream)],
+            "upstream model for requested model {requested}"
+        );
+    }
 }
 
 #[tokio::test]

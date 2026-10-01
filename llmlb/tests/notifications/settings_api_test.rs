@@ -9,7 +9,8 @@ use crate::helpers::{
 };
 use axum::http::{Method, StatusCode};
 use llmlb::common::auth::UserRole;
-use llmlb::notifications::{DigestOutcome, NotificationState};
+use llmlb::db::settings::SettingsStorage;
+use llmlb::notifications::{DigestOutcome, NotificationState, SmtpCredentials};
 use llmlb::types::endpoint::EndpointStatus;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -43,7 +44,13 @@ async fn ac5_admin_reads_the_default_notification_settings() {
     assert!(body["status"]["reason"].is_string(), "{body}");
     assert_eq!(body["recipients"], json!([]));
     assert_eq!(body["last_digest_sent_date"], Value::Null);
-    assert!(body["credentials_configured"].is_boolean(), "{body}");
+    assert_eq!(body["last_digest_error"], Value::Null);
+    // 認証情報は環境変数の有無だけを返す（値そのものは返さない）
+    assert_eq!(
+        body["credentials_configured"],
+        json!(SmtpCredentials::from_env().is_complete())
+    );
+    assert_eq!(body.as_object().unwrap().len(), 6, "{body}");
 }
 
 #[tokio::test]
@@ -245,7 +252,7 @@ async fn ac7_enabling_without_smtp_settings_reports_the_reason_and_keeps_the_app
 #[tokio::test]
 #[serial]
 async fn ac7_uninterpretable_stored_values_are_reported_instead_of_failing() {
-    let (app, _pool, jwt) = build_app_with_admin().await;
+    let (app, pool, jwt) = build_app_with_admin().await;
     let (status, _) = send_json(
         &app,
         Method::PUT,
@@ -256,16 +263,11 @@ async fn ac7_uninterpretable_stored_values_are_reported_instead_of_failing() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // 汎用の設定 API からは検証なしで書き込める
-    let (status, _) = send_json(
-        &app,
-        Method::PUT,
-        "/api/dashboard/settings/notifications.smtp_port",
-        Some(&jwt),
-        Some(json!({ "value": "abc" })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
+    // DB の直接編集などで、解釈できない値が保存されている
+    SettingsStorage::new(pool.clone())
+        .set_setting("notifications.smtp_port", "abc")
+        .await
+        .unwrap();
 
     let (status, body) = send_json(&app, Method::GET, URI, Some(&jwt), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -279,4 +281,94 @@ async fn ac7_uninterpretable_stored_values_are_reported_instead_of_failing() {
     );
     // 解釈できない値は既定値として表示される
     assert_eq!(body["settings"]["smtp_port"], 587);
+}
+
+/// 通知設定は検証付きの専用 API だけが扱う。viewer も使える汎用の設定 API からは読み書きできない
+#[tokio::test]
+#[serial]
+async fn ac5_generic_settings_api_cannot_read_or_write_notification_settings() {
+    let (app, pool, admin_jwt) = build_app_with_admin().await;
+    let viewer_jwt = create_user_with_jwt(&pool, "viewer", UserRole::Viewer).await;
+    let (status, _) = send_json(
+        &app,
+        Method::PUT,
+        URI,
+        Some(&admin_jwt),
+        Some(complete_settings_json()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    for key in [
+        "notifications.smtp_host",
+        "notifications.enabled",
+        "notifications.daily_digest_last_sent_date",
+    ] {
+        let uri = format!("/api/dashboard/settings/{key}");
+        for jwt in [&viewer_jwt, &admin_jwt] {
+            let (status, body) = send_json(&app, Method::GET, &uri, Some(jwt), None).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "GET {key}: {body}");
+            assert!(!body.to_string().contains("smtp.example.com"), "{body}");
+        }
+        let (status, body) = send_json(
+            &app,
+            Method::PUT,
+            &uri,
+            Some(&admin_jwt),
+            Some(json!({ "value": "2026-10-01" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "PUT {key}: {body}");
+    }
+
+    // 何も書き換わっていない
+    let (_, body) = send_json(&app, Method::GET, URI, Some(&admin_jwt), None).await;
+    assert_eq!(body["settings"], complete_settings_json());
+    assert_eq!(body["last_digest_sent_date"], Value::Null);
+
+    // 他のキーは従来どおり汎用の設定 API で扱える
+    let (status, body) = send_json(
+        &app,
+        Method::GET,
+        "/api/dashboard/settings/ip_alert_threshold",
+        Some(&viewer_jwt),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+/// 認証情報の誤りなど、送信してみて初めて分かる不備も設定画面から確認できる
+#[tokio::test]
+#[serial]
+async fn ac7_delivery_failure_is_reported_until_the_next_success() {
+    let (app, pool, jwt) = build_app_with_admin().await;
+    create_user_with_email(&pool, "ops", UserRole::Admin, "ops@example.com").await;
+    let (status, _) = send_json(
+        &app,
+        Method::PUT,
+        URI,
+        Some(&jwt),
+        Some(complete_settings_json()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let transport = RecordingTransport::default();
+    transport.fail_next(1);
+    let mut running = scheduler(&pool, &transport);
+    let tick = running.tick(at("2026-10-01 09:00:00")).await;
+    assert!(matches!(tick.outcome, DigestOutcome::Failed(_)), "{tick:?}");
+
+    let (_, body) = send_json(&app, Method::GET, URI, Some(&jwt), None).await;
+    assert_eq!(
+        body["last_digest_error"],
+        "2026-10-01 09:00 mail delivery failed: simulated SMTP outage"
+    );
+    assert_eq!(body["last_digest_sent_date"], Value::Null);
+
+    running.tick(at("2026-10-01 09:15:00")).await;
+    let (_, body) = send_json(&app, Method::GET, URI, Some(&jwt), None).await;
+    assert_eq!(body["last_digest_error"], Value::Null);
+    assert_eq!(body["last_digest_sent_date"], "2026-10-01");
 }

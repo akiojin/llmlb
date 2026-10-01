@@ -18,6 +18,7 @@ use llmlb::types::endpoint::EndpointStatus;
 use std::time::Duration;
 
 const LAST_SENT_KEY: &str = "notifications.daily_digest_last_sent_date";
+const LAST_ERROR_KEY: &str = "notifications.daily_digest_last_error";
 
 fn sent_to(recipients: &[&str]) -> DigestOutcome {
     DigestOutcome::Sent {
@@ -308,11 +309,15 @@ async fn ac4_failed_delivery_is_retried_without_recording_the_day_as_sent() {
         tick.outcome
     );
     assert_eq!(tick.next_wake, at("2026-10-01 09:15:00"));
-    let last_sent = SettingsStorage::new(pool.clone())
-        .get_setting(LAST_SENT_KEY)
-        .await
-        .unwrap();
+    let storage = SettingsStorage::new(pool.clone());
+    let last_sent = storage.get_setting(LAST_SENT_KEY).await.unwrap();
     assert_eq!(last_sent, None, "a failed delivery must not count as sent");
+    // 失敗理由は設定 API から確認できるよう記録される
+    let last_error = storage.get_setting(LAST_ERROR_KEY).await.unwrap();
+    assert_eq!(
+        last_error.as_deref(),
+        Some("2026-10-01 09:00 mail delivery failed: simulated SMTP outage")
+    );
 
     // 再試行までの間は送信を試みない
     let tick = running.tick(at("2026-10-01 09:01:00")).await;
@@ -323,6 +328,9 @@ async fn ac4_failed_delivery_is_retried_without_recording_the_day_as_sent() {
     assert_eq!(tick.outcome, sent_to(&["ops@example.com"]));
     assert_eq!(tick.next_wake, at("2026-10-02 09:00:00"));
     assert_eq!(transport.sent().len(), 1);
+    // 成功すると失敗理由は消える
+    let last_error = storage.get_setting(LAST_ERROR_KEY).await.unwrap();
+    assert_eq!(last_error.as_deref(), Some(""));
 }
 
 // ---------------------------------------------------------------------------
@@ -464,7 +472,10 @@ async fn ac7_app_serves_requests_while_notifications_are_not_configured() {
     // 起動時に呼ばれるバックグラウンドタスク。SMTP 設定も環境変数も無い状態で開始する
     llmlb::notifications::start_daily_digest_task(pool.clone());
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    while !logs.contents().contains("notifications") {
+    while !logs
+        .contents()
+        .contains("Operational notifications are disabled")
+    {
         assert!(
             tokio::time::Instant::now() < deadline,
             "the digest task never reported its state: {}",

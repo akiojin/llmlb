@@ -214,6 +214,7 @@ multipart をフィールド単位で読み取り、新しいフォームを組�
 | `notifications.daily_digest_time` | `09:00` | 送信時刻（サーバーのローカル時刻、`HH:MM`） |
 | `notifications.language` | `ja` | メール本文の言語（`ja` / `en`） |
 | `notifications.daily_digest_last_sent_date` | （未設定） | 最終送信日。スケジューラが更新する |
+| `notifications.daily_digest_last_error` | （未設定） | 直近の送信失敗（日時と理由）。スケジューラが更新し、成功すると空に戻る |
 
 `users.email` は通知先であり、ログイン識別子ではない。`POST /api/users` と `PUT /api/users/:id` の
 `email` で設定し（`PUT` の空文字で解除）、ユーザー一覧のレスポンスに含まれる。
@@ -223,6 +224,7 @@ multipart をフィールド単位で読み取り、新しいフォームを組�
 
 `GET /api/dashboard/notifications` と `PUT /api/dashboard/notifications`（どちらも JWT の admin のみ）。
 `PUT` のボディは `settings` と同じ形で、形式が不正な値は 400 で拒否する。
+`notifications.*` はこの API だけが扱う。汎用の `/api/dashboard/settings/{key}` からは読み書きできない（403）。
 
 ```json
 {
@@ -237,7 +239,8 @@ multipart をフィールド単位で読み取り、新しいフォームを組�
   "status": { "state": "active", "reason": null },
   "credentials_configured": true,
   "recipients": [{ "username": "admin", "email": "ops@example.com" }],
-  "last_digest_sent_date": "2026-10-01"
+  "last_digest_sent_date": "2026-10-01",
+  "last_digest_error": null
 }
 ```
 
@@ -259,5 +262,8 @@ multipart をフィールド単位で読み取り、新しいフォームを組�
 - 送信時刻に停止していた場合は、起動後に当日分を 1 回だけ送る。次回は本来の送信時刻に戻る。
   当日の送信時刻を過ぎてから通知を有効にした場合も同じく、当日分をすぐに送る。
 - 送信に失敗した場合は 15 分後に再試行する。失敗した日は送信済みとして記録しない。
+  直近の失敗理由は `last_digest_error` で確認でき、次に成功すると `null` に戻る。
+- 送信時刻をまたいで翌日の送信時刻より前まで停止していた場合、前日分は送らない
+  （ダイジェストは送信時点の状態一覧であり、過去の日付の分は作れないため）。
 - 設定の変更は再起動なしで 1 分以内に反映される。
 - 単一インスタンスでの運用を前提とする（複数インスタンスでは同じメールが重複する）。

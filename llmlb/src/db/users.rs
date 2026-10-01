@@ -35,6 +35,30 @@ pub async fn create(
     .await
 }
 
+/// 通知先 email 付きでユーザーを作成
+///
+/// email はユーザー本体と同じ INSERT で保存する（作成だけ成功して email の保存に
+/// 失敗する、という中途半端な状態を作らない）。email は通知先であり、ログイン識別子ではない。
+pub async fn create_with_email(
+    pool: &SqlitePool,
+    username: &str,
+    password_hash: &str,
+    role: UserRole,
+    must_change_password: bool,
+    email: Option<&str>,
+) -> Result<User, LbError> {
+    insert(
+        pool,
+        Uuid::new_v4(),
+        username,
+        password_hash,
+        role,
+        must_change_password,
+        email,
+    )
+    .await
+}
+
 /// ユーザーを特定のIDで作成（テスト用）
 ///
 /// # Arguments
@@ -55,6 +79,27 @@ pub async fn create_with_id(
     role: UserRole,
     must_change_password: bool,
 ) -> Result<User, LbError> {
+    insert(
+        pool,
+        id,
+        username,
+        password_hash,
+        role,
+        must_change_password,
+        None,
+    )
+    .await
+}
+
+async fn insert(
+    pool: &SqlitePool,
+    id: Uuid,
+    username: &str,
+    password_hash: &str,
+    role: UserRole,
+    must_change_password: bool,
+    email: Option<&str>,
+) -> Result<User, LbError> {
     let created_at = Utc::now();
 
     let role_str = match role {
@@ -63,8 +108,8 @@ pub async fn create_with_id(
     };
 
     sqlx::query(
-        "INSERT INTO users (id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+        "INSERT INTO users (id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at, email)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(username)
@@ -74,6 +119,7 @@ pub async fn create_with_id(
     .bind(must_change_password as i32)
     // 作成時は 0。最初のパスワード変更で >0 に bump され、それ以降のみセッション無効化が効く
     .bind(0_i64)
+    .bind(email)
     .execute(pool)
     .await
     .map_err(|e| {
@@ -93,7 +139,7 @@ pub async fn create_with_id(
         last_login: None,
         must_change_password,
         password_changed_at: 0,
-        email: None,
+        email: email.map(str::to_string),
     })
 }
 
@@ -182,6 +228,21 @@ pub async fn update(
     password_hash: Option<&str>,
     role: Option<UserRole>,
 ) -> Result<User, LbError> {
+    update_with_email(pool, id, username, password_hash, role, None).await
+}
+
+/// ユーザーを更新（通知先 email も同じ UPDATE で保存する）
+///
+/// `email` は `None` で変更なし、`Some(None)` で解除、`Some(Some(..))` で設定。
+/// それ以外の引数は [`update`] と同じ。
+pub async fn update_with_email(
+    pool: &SqlitePool,
+    id: Uuid,
+    username: Option<&str>,
+    password_hash: Option<&str>,
+    role: Option<UserRole>,
+    email: Option<Option<&str>>,
+) -> Result<User, LbError> {
     // 現在のユーザー情報を取得
     let current = find_by_id(pool, id)
         .await?
@@ -209,13 +270,18 @@ pub async fn update(
     } else {
         current.password_changed_at
     };
+    let new_email = match email {
+        Some(email) => email.map(str::to_string),
+        None => current.email.clone(),
+    };
 
-    sqlx::query("UPDATE users SET username = ?, password_hash = ?, role = ?, must_change_password = ?, password_changed_at = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET username = ?, password_hash = ?, role = ?, must_change_password = ?, password_changed_at = ?, email = ? WHERE id = ?")
         .bind(new_username)
         .bind(new_password_hash)
         .bind(role_str)
         .bind(new_must_change_password)
         .bind(new_password_changed_at)
+        .bind(new_email.as_deref())
         .bind(id.to_string())
         .execute(pool)
         .await
@@ -230,7 +296,7 @@ pub async fn update(
         last_login: current.last_login,
         must_change_password: new_must_change_password,
         password_changed_at: new_password_changed_at,
-        email: current.email,
+        email: new_email,
     })
 }
 
@@ -812,5 +878,65 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn test_create_with_email_stores_the_address_with_the_user() {
+        let pool = setup_test_db().await;
+        let user = create_with_email(
+            &pool,
+            "with_mail",
+            "hash",
+            UserRole::Admin,
+            true,
+            Some("ops@example.com"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(user.email.as_deref(), Some("ops@example.com"));
+        let found = find_by_id(&pool, user.id).await.unwrap().unwrap();
+        assert_eq!(found.email.as_deref(), Some("ops@example.com"));
+        assert!(found.must_change_password);
+
+        let without =
+            create_with_email(&pool, "without_mail", "hash", UserRole::Viewer, false, None)
+                .await
+                .unwrap();
+        assert_eq!(without.email, None);
+    }
+
+    #[tokio::test]
+    async fn test_update_with_email_sets_keeps_and_clears_in_one_update() {
+        let pool = setup_test_db().await;
+        let user = create(&pool, "mail_update", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+
+        let set = update_with_email(
+            &pool,
+            user.id,
+            None,
+            None,
+            Some(UserRole::Admin),
+            Some(Some("ops@example.com")),
+        )
+        .await
+        .unwrap();
+        assert_eq!(set.role, UserRole::Admin);
+        assert_eq!(set.email.as_deref(), Some("ops@example.com"));
+
+        let kept = update_with_email(&pool, user.id, Some("renamed"), None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(kept.email.as_deref(), Some("ops@example.com"));
+
+        let cleared = update_with_email(&pool, user.id, None, None, None, Some(None))
+            .await
+            .unwrap();
+        assert_eq!(cleared.email, None);
+        let found = find_by_id(&pool, user.id).await.unwrap().unwrap();
+        assert_eq!(found.email, None);
+        assert_eq!(found.username, "renamed");
+        assert_eq!(found.role, UserRole::Admin);
     }
 }

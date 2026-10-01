@@ -8,7 +8,7 @@ use crate::api::error::AppError;
 use crate::common::error::{CommonError, LbError};
 use crate::db::settings::SettingsStorage;
 use crate::db::users::NotificationRecipient;
-use crate::notifications::config::KEY_DAILY_DIGEST_LAST_SENT_DATE;
+use crate::notifications::config::{KEY_DAILY_DIGEST_LAST_ERROR, KEY_DAILY_DIGEST_LAST_SENT_DATE};
 use crate::notifications::{
     save_settings, NotificationSettings, NotificationSnapshot, NotificationStatus, SmtpCredentials,
 };
@@ -29,6 +29,8 @@ pub struct NotificationSettingsResponse {
     pub recipients: Vec<NotificationRecipient>,
     /// 日次ダイジェストの最終送信日（`YYYY-MM-DD`、未送信なら `null`）
     pub last_digest_sent_date: Option<String>,
+    /// 日次ダイジェストの直近の送信失敗（`YYYY-MM-DD HH:MM 理由`。直近が成功なら `null`）
+    pub last_digest_error: Option<String>,
 }
 
 async fn current_settings(state: &AppState) -> Result<NotificationSettingsResponse, AppError> {
@@ -36,10 +38,16 @@ async fn current_settings(state: &AppState) -> Result<NotificationSettingsRespon
     let snapshot = NotificationSnapshot::load(&state.db_pool, &credentials)
         .await
         .map_err(AppError)?;
-    let last_digest_sent_date = SettingsStorage::new(state.db_pool.clone())
+    let storage = SettingsStorage::new(state.db_pool.clone());
+    let last_digest_sent_date = storage
         .get_setting(KEY_DAILY_DIGEST_LAST_SENT_DATE)
         .await
         .map_err(AppError)?;
+    let last_digest_error = storage
+        .get_setting(KEY_DAILY_DIGEST_LAST_ERROR)
+        .await
+        .map_err(AppError)?
+        .filter(|error| !error.is_empty());
 
     Ok(NotificationSettingsResponse {
         status: snapshot.status(),
@@ -47,6 +55,7 @@ async fn current_settings(state: &AppState) -> Result<NotificationSettingsRespon
         credentials_configured: credentials.is_complete(),
         recipients: snapshot.recipients,
         last_digest_sent_date,
+        last_digest_error,
     })
 }
 

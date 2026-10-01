@@ -6,7 +6,7 @@
 
 use super::config::{
     Delivery, NotificationSnapshot, NotificationState, NotificationStatus, SmtpCredentials,
-    KEY_DAILY_DIGEST_LAST_SENT_DATE,
+    KEY_DAILY_DIGEST_LAST_ERROR, KEY_DAILY_DIGEST_LAST_SENT_DATE,
 };
 use super::digest::DigestReport;
 use super::mailer::{MailMessage, MailTransport};
@@ -126,6 +126,7 @@ impl DailyDigestScheduler {
             Ok(()) => {
                 self.retry_not_before = None;
                 self.record_sent(now.date()).await;
+                self.record_last_error("").await;
                 info!(
                     recipients = delivery.recipients.len(),
                     "Daily digest notification sent"
@@ -145,6 +146,9 @@ impl DailyDigestScheduler {
                     retry_in_secs = RETRY_INTERVAL_SECS,
                     "Failed to send daily digest notification"
                 );
+                // 設定 API からも直近の失敗理由を確認できるようにする
+                self.record_last_error(&format!("{} {error}", now.format("%Y-%m-%d %H:%M")))
+                    .await;
                 DigestTick {
                     outcome: DigestOutcome::Failed(error),
                     next_wake: retry_at,
@@ -211,6 +215,16 @@ impl DailyDigestScheduler {
         }
     }
 
+    async fn record_last_error(&self, value: &str) {
+        if let Err(error) = self
+            .settings
+            .set_setting(KEY_DAILY_DIGEST_LAST_ERROR, value)
+            .await
+        {
+            warn!(error = %error, "Failed to record the daily digest delivery result");
+        }
+    }
+
     fn log_status_change(&mut self, status: &NotificationStatus) {
         if self.last_status.as_ref() == Some(status) {
             return;
@@ -239,7 +253,7 @@ fn wait_duration(now: NaiveDateTime, next_wake: NaiveDateTime) -> std::time::Dur
 /// 日次ダイジェストのバックグラウンドタスクを開始する
 ///
 /// SMTP の認証情報は環境変数から読む。設定が未設定・不正でもタスクは起動し、
-/// 送信だけを行わない。
+/// 送信だけを行わない。タスクはランタイムの終了まで動き続ける。
 pub fn start_daily_digest_task(pool: SqlitePool) {
     let credentials = SmtpCredentials::from_env();
     let transport = Arc::new(SmtpMailTransport::new(pool.clone(), credentials.clone()));

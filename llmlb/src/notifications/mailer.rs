@@ -43,9 +43,17 @@ pub trait MailTransport: Send + Sync {
     async fn send(&self, message: &MailMessage) -> Result<(), MailError>;
 }
 
+/// メールアドレスの長さの上限（RFC 5321）
+const MAX_ADDRESS_LENGTH: usize = 254;
+
 /// メールアドレスを検証し、前後の空白を除いた形で返す
 pub fn parse_address(input: &str) -> Result<String, MailError> {
     let trimmed = input.trim();
+    if trimmed.len() > MAX_ADDRESS_LENGTH {
+        return Err(MailError::InvalidAddress(format!(
+            "address is longer than {MAX_ADDRESS_LENGTH} characters"
+        )));
+    }
     trimmed
         .parse::<lettre::Address>()
         .map(|address| address.to_string())
@@ -63,6 +71,14 @@ mod tests {
             parse_address("  first.last+tag@sub.example.co.jp ").unwrap(),
             "first.last+tag@sub.example.co.jp"
         );
+    }
+
+    #[test]
+    fn parse_address_rejects_overlong_addresses() {
+        let overlong = format!("{}@example.com", "a".repeat(MAX_ADDRESS_LENGTH));
+        let error = parse_address(&overlong).unwrap_err();
+        assert!(matches!(error, MailError::InvalidAddress(_)), "{error:?}");
+        assert!(!error.to_string().contains(&overlong), "{error}");
     }
 
     #[test]

@@ -38,6 +38,14 @@ pub const KEY_LANGUAGE: &str = "notifications.language";
 /// 日次ダイジェストの最終送信日（`YYYY-MM-DD`、スケジューラが更新する）
 pub const KEY_DAILY_DIGEST_LAST_SENT_DATE: &str = "notifications.daily_digest_last_sent_date";
 
+/// 日次ダイジェストの直近の送信失敗（`YYYY-MM-DD HH:MM 理由`。成功すると空文字に戻る）
+pub const KEY_DAILY_DIGEST_LAST_ERROR: &str = "notifications.daily_digest_last_error";
+
+/// ホスト名全体の長さの上限（RFC 1035）
+const MAX_HOST_NAME_LENGTH: usize = 253;
+/// ホスト名の 1 ラベルの長さの上限（RFC 1035）
+const MAX_HOST_LABEL_LENGTH: usize = 63;
+
 /// SMTP ポートの既定値（STARTTLS の submission ポート）
 pub const DEFAULT_SMTP_PORT: u16 = 587;
 /// 接続時から TLS を張る（implicit TLS）ポート。それ以外は STARTTLS を必須にする
@@ -148,10 +156,21 @@ impl NotificationSettings {
 
 /// ホスト名または IP アドレスとして妥当か（スキームやポートを含む値を弾く）
 fn is_valid_host(host: &str) -> bool {
-    host.parse::<IpAddr>().is_ok()
-        || host
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    if host.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+    // 数字とドットだけの値は IP アドレスの書き損じとして扱う
+    if host.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return false;
+    }
+    host.len() <= MAX_HOST_NAME_LENGTH
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= MAX_HOST_LABEL_LENGTH
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
 }
 
 /// `settings` テーブルに保存されていた、解釈できない値
@@ -601,6 +620,36 @@ mod tests {
         for (settings, field) in cases {
             let error = settings.clone().validated().unwrap_err();
             assert!(error.contains(field), "{settings:?} -> {error}");
+        }
+    }
+
+    #[test]
+    fn host_must_be_a_host_name_or_an_ip_address() {
+        for valid in [
+            "localhost",
+            "smtp.example.com",
+            "smtp-relay.example.co.jp",
+            "192.0.2.10",
+            "::1",
+        ] {
+            assert!(is_valid_host(valid), "{valid:?} should be accepted");
+        }
+        let long_label = "a".repeat(64);
+        for invalid in [
+            "",
+            "-",
+            "a..b",
+            ".example.com",
+            "smtp.example.com.",
+            "-smtp.example.com",
+            "smtp-.example.com",
+            "999.999.999.999",
+            "smtp.example.com:587",
+            "smtps://smtp.example.com",
+            "smtp example.com",
+            long_label.as_str(),
+        ] {
+            assert!(!is_valid_host(invalid), "{invalid:?} should be rejected");
         }
     }
 

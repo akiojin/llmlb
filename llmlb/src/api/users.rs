@@ -103,24 +103,6 @@ fn parse_notification_email(input: &str) -> Result<Option<String>, HandlerError>
         })
 }
 
-/// 通知先 email を保存する
-async fn store_notification_email(
-    app_state: &AppState,
-    user_id: Uuid,
-    email: Option<&str>,
-) -> Result<(), HandlerError> {
-    crate::db::users::set_email(&app_state.db_pool, user_id, email)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to update user email: {}", e);
-            AppError(LbError::Database(format!(
-                "Failed to update user email: {}",
-                e
-            )))
-            .into()
-        })
-}
-
 /// Admin権限チェックヘルパー
 fn check_admin(claims: &Claims) -> Result<(), HandlerError> {
     if claims.role != UserRole::Admin {
@@ -216,23 +198,19 @@ pub async fn create_user(
     })?;
 
     // ユーザーを作成（初回パスワード変更必須）
-    let mut user = crate::db::users::create(
+    let user = crate::db::users::create_with_email(
         &app_state.db_pool,
         &request.username,
         &password_hash,
         request.role,
         true,
+        email.as_deref(),
     )
     .await
     .map_err(|e| {
         tracing::error!("Failed to create user: {}", e);
         AppError(LbError::Database(format!("Failed to create user: {}", e))).into_response()
     })?;
-
-    if email.is_some() {
-        store_notification_email(&app_state, user.id, email.as_deref()).await?;
-        user.email = email;
-    }
 
     Ok((
         StatusCode::CREATED,
@@ -320,23 +298,19 @@ pub async fn update_user(
     };
 
     // ユーザーを更新
-    let mut user = crate::db::users::update(
+    let user = crate::db::users::update_with_email(
         &app_state.db_pool,
         user_id,
         request.username.as_deref(),
         password_hash.as_deref(),
         request.role,
+        email.as_ref().map(|email| email.as_deref()),
     )
     .await
     .map_err(|e| {
         tracing::error!("Failed to update user: {}", e);
         AppError(LbError::Database(format!("Failed to update user: {}", e))).into_response()
     })?;
-
-    if let Some(email) = email {
-        store_notification_email(&app_state, user_id, email.as_deref()).await?;
-        user.email = email;
-    }
 
     Ok(Json(UserResponse::from(user)))
 }

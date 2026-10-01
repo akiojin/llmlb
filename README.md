@@ -730,6 +730,8 @@ vLLM, xLLM, llama.cpp (`llama-server`), and other OpenAI-compatible endpoints.
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | `REQUEST_HISTORY_RETENTION_DAYS` |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | `LLM_DEFAULT_EMBEDDING_MODEL` |
+| `LLMLB_SMTP_USERNAME` | - | SMTP username for operational notification mail | required to send mail; see [docs/API.md](docs/API.md) |
+| `LLMLB_SMTP_PASSWORD` | - | SMTP password for operational notification mail | required to send mail; never stored in the database |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | deprecated (use `LLMLB_DEFAULT_EMBEDDING_MODEL`) |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | deprecated (use `LLMLB_REQUEST_HISTORY_RETENTION_DAYS`) |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | deprecated (use `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`) |
@@ -979,7 +981,7 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 |--------|------|-------------|------|
 | GET | `/api/users` | List users | JWT+Admin or API key (`users.manage`) |
 | POST | `/api/users` | Create user | JWT+Admin or API key (`users.manage`) |
-| PUT | `/api/users/:id` | Update user | JWT+Admin or API key (`users.manage`) |
+| PUT | `/api/users/:id` | Update user (`email` is the notification address, not a login identifier) | JWT+Admin or API key (`users.manage`) |
 | DELETE | `/api/users/:id` | Delete user | JWT+Admin or API key (`users.manage`) |
 
 #### API Key Management Endpoints (Self-service)
@@ -1064,6 +1066,8 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 | GET | `/api/dashboard/stats/tokens/daily` | Daily token stats | JWT only |
 | GET | `/api/dashboard/stats/tokens/monthly` | Monthly token stats | JWT only |
 | GET | `/api/dashboard/logs/lb` | Load balancer logs | JWT only |
+| GET | `/api/dashboard/notifications` | Operational notification settings, status and recipients | JWT+Admin |
+| PUT | `/api/dashboard/notifications` | Update operational notification settings | JWT+Admin |
 
 #### Log & Metrics Endpoints
 

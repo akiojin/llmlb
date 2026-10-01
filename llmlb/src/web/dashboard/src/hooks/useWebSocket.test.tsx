@@ -7,15 +7,13 @@ import { useWebSocket, type DashboardEvent, type DashboardEventType } from './us
 
 const ENDPOINT_ID = '11111111-2222-3333-4444-555555555555'
 
-/**
- * Name under which the client receives endpoint status changes.
- *
- * This is the legacy name that `useWebSocket` handles today. The canonical
- * name is `EndpointStatusChanged` (SPEC #582 FR-048); #692 / PR #728 renames
- * it in the hook. Whichever change lands second updates this constant, and the
- * query keys of its row below, in the same commit.
- */
-const ENDPOINT_STATUS_EVENT = 'NodeStatusChanged'
+// Endpoint list/detail views, including the endpoint playground (['endpoint', id])
+const ENDPOINT_LIFECYCLE_KEYS: QueryKey[] = [
+  ['dashboard-overview'],
+  ['dashboard-endpoints'],
+  ['request-responses'],
+  ['endpoint', ENDPOINT_ID],
+]
 
 /**
  * SPEC #582 FR-049: event type -> invalidated query keys.
@@ -33,18 +31,18 @@ const INVALIDATION_MATRIX: {
   },
   NodeRegistered: {
     event: { type: 'NodeRegistered', data: { runtime_id: ENDPOINT_ID, status: 'pending' } },
-    invalidates: [['dashboard-overview'], ['request-responses']],
+    invalidates: ENDPOINT_LIFECYCLE_KEYS,
   },
-  [ENDPOINT_STATUS_EVENT]: {
+  EndpointStatusChanged: {
     event: {
-      type: ENDPOINT_STATUS_EVENT,
+      type: 'EndpointStatusChanged',
       data: { runtime_id: ENDPOINT_ID, old_status: 'online', new_status: 'offline' },
     },
-    invalidates: [['dashboard-overview'], ['request-responses']],
+    invalidates: ENDPOINT_LIFECYCLE_KEYS,
   },
   NodeRemoved: {
     event: { type: 'NodeRemoved', data: { runtime_id: ENDPOINT_ID } },
-    invalidates: [['dashboard-overview'], ['request-responses']],
+    invalidates: ENDPOINT_LIFECYCLE_KEYS,
   },
   MetricsUpdated: {
     event: { type: 'MetricsUpdated', data: { runtime_id: ENDPOINT_ID, cpu_usage: 12.5 } },

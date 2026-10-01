@@ -354,6 +354,31 @@ pub async fn clear_must_change_password(pool: &SqlitePool, id: Uuid) -> Result<(
     Ok(())
 }
 
+/// 通知先（email を設定済みの管理者）
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NotificationRecipient {
+    /// ユーザー名
+    pub username: String,
+    /// 通知先メールアドレス
+    pub email: String,
+}
+
+/// 通知先メールアドレスを設定する（`None` で解除）
+///
+/// email は通知先であり、ログイン識別子ではない（SPEC #777 FR-001）。
+pub async fn set_email(pool: &SqlitePool, id: Uuid, email: Option<&str>) -> Result<(), LbError> {
+    let _ = (pool, id, email);
+    todo!("SPEC #777 T-001")
+}
+
+/// 運用通知の宛先（email を設定済みの管理者）をユーザー名順で取得する
+pub async fn list_notification_recipients(
+    pool: &SqlitePool,
+) -> Result<Vec<NotificationRecipient>, LbError> {
+    let _ = pool;
+    todo!("SPEC #777 T-001")
+}
+
 // SQLiteからの行取得用の内部型
 #[derive(sqlx::FromRow)]
 struct UserRow {

@@ -57,7 +57,7 @@ that can observe the behaviour; do not write the same check in two layers.
 |-------|----------|---------|-------|
 | Component tests (vitest + React Testing Library) | `llmlb/src/web/dashboard/src/**/*.test.ts(x)` | `pnpm --filter @llm/dashboard test` | Node only |
 | Source and artifact checks (Rust) | `llmlb/tests/ui/*.rs` | `cargo test --test ui_tests` | Rust toolchain |
-| End-to-end tests (Playwright) | `llmlb/tests/e2e-playwright/specs/` | `make e2e-playwright` | Built server and a browser |
+| End-to-end tests (Playwright) | `llmlb/tests/e2e-playwright/specs/` | `make e2e-playwright` | Rust toolchain and a browser (Playwright starts the server) |
 
 `make dashboard-checks` runs typecheck, lint and the component tests. The
 `Dashboard Typecheck, Lint & Test` job in `.github/workflows/lint.yml` runs it

@@ -16,7 +16,6 @@ use llmlb::types::endpoint::{Endpoint, EndpointStatus, EndpointType};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
@@ -94,7 +93,7 @@ pub async fn send_json(
 #[derive(Clone, Default)]
 pub struct RecordingTransport {
     sent: Arc<Mutex<Vec<MailMessage>>>,
-    failures_remaining: Arc<AtomicUsize>,
+    failures_remaining: Arc<Mutex<usize>>,
 }
 
 impl RecordingTransport {
@@ -105,19 +104,23 @@ impl RecordingTransport {
 
     /// 次の `count` 回の送信を失敗させる
     pub fn fail_next(&self, count: usize) {
-        self.failures_remaining.store(count, Ordering::SeqCst);
+        *self.failures_remaining.lock().unwrap() = count;
     }
 }
 
 #[async_trait::async_trait]
 impl MailTransport for RecordingTransport {
     async fn send(&self, message: &MailMessage) -> Result<(), MailError> {
-        let failing = self
-            .failures_remaining
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
-                remaining.checked_sub(1)
-            })
-            .is_ok();
+        let failing = {
+            let mut remaining = self.failures_remaining.lock().unwrap();
+            match remaining.checked_sub(1) {
+                Some(next) => {
+                    *remaining = next;
+                    true
+                }
+                None => false,
+            }
+        };
         if failing {
             return Err(MailError::Delivery("simulated SMTP outage".to_string()));
         }

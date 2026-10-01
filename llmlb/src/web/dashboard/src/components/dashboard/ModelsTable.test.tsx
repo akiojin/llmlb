@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -316,6 +316,25 @@ describe('ModelsTable', () => {
     await user.click(screen.getByRole('button', { name: 'Collapse row' }))
 
     expect(screen.queryByText('xllm-gpu-1')).not.toBeInTheDocument()
+  })
+
+  // useWebSocket invalidates this key on TpsUpdated (see useWebSocket.test.tsx).
+  // The expanded row must run its TPS query under the same key to be refreshed.
+  it('reloads the endpoint TPS when its query key is invalidated', async () => {
+    const getModelTps = vi.spyOn(endpointsApi, 'getModelTps').mockResolvedValue([tps()])
+    const { queryClient } = await renderTable({
+      models: [model({ endpoint_ids: ['ep-1'] })],
+      endpoints: [endpoint()],
+    })
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Expand row' }))
+    expect(await screen.findByText('TPS: chat 42.5 tok/s')).toBeInTheDocument()
+    expect(getModelTps).toHaveBeenCalledExactlyOnceWith('ep-1')
+
+    getModelTps.mockResolvedValue([tps({ tps: 12 })])
+    await act(() => queryClient.invalidateQueries({ queryKey: ['endpoint-model-tps', 'ep-1'] }))
+
+    expect(getModelTps).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('TPS: chat 12.0 tok/s')).toBeInTheDocument()
   })
 
   it('explains when no registered endpoint serves an expanded model', async () => {

@@ -103,10 +103,13 @@ describe('AuditLogPage', () => {
   })
 
   it('searches from the first page after the typing pause', async () => {
-    const list = vi.spyOn(auditLogApi, 'list').mockResolvedValue(page([entry()]))
+    const list = vi.spyOn(auditLogApi, 'list').mockResolvedValue(page([entry()], 120))
+    const user = userEvent.setup()
     renderWithProviders(<AuditLogPage onBack={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: 'Next page' }))
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ page: 2, per_page: 50 }))
 
-    await userEvent.setup().type(await screen.findByPlaceholderText('Search...'), 'login')
+    await user.type(screen.getByPlaceholderText('Search...'), 'login')
 
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith({ page: 1, per_page: 50, search: 'login' }),

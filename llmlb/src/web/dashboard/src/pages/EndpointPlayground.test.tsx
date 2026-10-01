@@ -85,8 +85,10 @@ describe('EndpointPlayground', () => {
 
       expect(await screen.findByText('Loading endpoint...')).toBeInTheDocument()
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-      expect(get).toHaveBeenCalledExactlyOnceWith(ENDPOINT_ID)
-      expect(getModels).toHaveBeenCalledExactlyOnceWith(ENDPOINT_ID)
+      // The loading state is rendered before the effect that starts the
+      // queries has run, so the requests are awaited rather than read at once.
+      await waitFor(() => expect(get).toHaveBeenCalledExactlyOnceWith(ENDPOINT_ID))
+      await waitFor(() => expect(getModels).toHaveBeenCalledExactlyOnceWith(ENDPOINT_ID))
 
       response.resolve(endpoint())
 

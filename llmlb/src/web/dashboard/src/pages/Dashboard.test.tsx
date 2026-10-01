@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -165,8 +165,10 @@ describe('Dashboard', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }))
 
-    expect(await screen.findByText('gpu-box-1')).toBeInTheDocument()
+    // Checked before waiting: the overview also polls every 5s, which would
+    // reload the dashboard on its own.
     expect(api.getOverview).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('gpu-box-1')).toBeInTheDocument()
   })
 
   it('subscribes admins to live dashboard events', async () => {
@@ -176,6 +178,39 @@ describe('Dashboard', () => {
     await waitFor(() =>
       expect(FakeWebSocket.latest().url).toBe(`ws://${window.location.host}/ws/dashboard`),
     )
+  })
+
+  // The hook invalidates query keys by name; these tests tie those names to
+  // the queries this page actually runs. The calls are counted right after
+  // the event, before the 5s polling could refetch on its own.
+  it('reloads the overview and the request history when an endpoint event arrives', async () => {
+    renderPage(<Dashboard />)
+    await screen.findByText('gpu-box-1')
+    await waitFor(() => expect(api.getRequestResponses).toHaveBeenCalledTimes(1))
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      FakeWebSocket.latest().receive(
+        JSON.stringify({ type: 'NodeRegistered', data: { runtime_id: 'ep-2' } }),
+      )
+    })
+
+    expect(api.getOverview).toHaveBeenCalledTimes(2)
+    expect(api.getRequestResponses).toHaveBeenCalledTimes(2)
+    expect(api.getSystem).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloads the system info when the update state changes', async () => {
+    renderPage(<Dashboard />)
+    await screen.findByText('gpu-box-1')
+    await waitFor(() => expect(api.getSystem).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      FakeWebSocket.latest().receive(JSON.stringify({ type: 'UpdateStateChanged' }))
+    })
+
+    expect(api.getSystem).toHaveBeenCalledTimes(2)
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
   })
 
   it('limits viewers to the model list', async () => {

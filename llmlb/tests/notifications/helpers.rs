@@ -15,6 +15,7 @@ use llmlb::notifications::{
 use llmlb::types::endpoint::{Endpoint, EndpointStatus, EndpointType};
 use serde_json::Value;
 use sqlx::SqlitePool;
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
@@ -202,18 +203,23 @@ pub async fn ready_pool() -> SqlitePool {
 
 /// テスト中に出力されたログを溜めるバッファ
 #[derive(Clone, Default)]
-pub struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
-impl LogBuffer {
-    /// これまでに出力されたログ
-    pub fn contents(&self) -> String {
-        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
-    }
+thread_local! {
+    /// このスレッドで捕捉中のログの出力先（捕捉していなければ `None`）
+    static THREAD_LOGS: RefCell<Option<LogBuffer>> = const { RefCell::new(None) };
 }
 
-impl std::io::Write for LogBuffer {
+/// ログを、出力したスレッドが捕捉中のバッファへ書き込む writer
+struct ThreadLogWriter;
+
+impl std::io::Write for ThreadLogWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        THREAD_LOGS.with(|logs| {
+            if let Some(buffer) = logs.borrow().as_ref() {
+                buffer.0.lock().unwrap().extend_from_slice(buf);
+            }
+        });
         Ok(buf.len())
     }
 
@@ -222,20 +228,50 @@ impl std::io::Write for LogBuffer {
     }
 }
 
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogBuffer {
-    type Writer = LogBuffer;
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ThreadLogWriter {
+    type Writer = ThreadLogWriter;
 
     fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
+        ThreadLogWriter
     }
 }
 
-/// 現在のスレッドのログを捕捉する（ガードを保持している間だけ有効）
-pub fn capture_logs() -> (tracing::subscriber::DefaultGuard, LogBuffer) {
+/// 現在のスレッドのログの捕捉（破棄すると捕捉をやめる）
+pub struct LogCapture {
+    buffer: LogBuffer,
+}
+
+impl LogCapture {
+    /// これまでに出力されたログ
+    pub fn contents(&self) -> String {
+        String::from_utf8_lossy(&self.buffer.0.lock().unwrap()).into_owned()
+    }
+}
+
+impl Drop for LogCapture {
+    fn drop(&mut self) {
+        THREAD_LOGS.with(|logs| *logs.borrow_mut() = None);
+    }
+}
+
+/// 現在のスレッドが出力するログを捕捉する
+///
+/// subscriber はプロセス全体に 1 つだけ置き、出力先だけをスレッドごとに分ける。
+/// スレッドローカルな subscriber（`set_default`）は使わない: tracing は callsite の
+/// 有効／無効をキャッシュするため、subscriber を持たない別スレッドのテストが同じ
+/// ログ出力箇所を先に通ると無効として記録され、捕捉側でもログが出なくなる。
+pub fn capture_logs() -> LogCapture {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(ThreadLogWriter)
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("no other global subscriber may be installed in this test binary");
+    });
+
     let buffer = LogBuffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(buffer.clone())
-        .with_ansi(false)
-        .finish();
-    (tracing::subscriber::set_default(subscriber), buffer)
+    THREAD_LOGS.with(|logs| *logs.borrow_mut() = Some(buffer.clone()));
+    LogCapture { buffer }
 }

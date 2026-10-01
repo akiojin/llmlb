@@ -450,7 +450,7 @@ async fn ac7_reason_for_disabled_notifications_is_written_to_the_log() {
     )
     .await;
     let transport = RecordingTransport::default();
-    let (_guard, logs) = capture_logs();
+    let logs = capture_logs();
 
     let mut running = scheduler(&pool, &transport);
     running.tick(at("2026-10-01 09:00:00")).await;
@@ -467,7 +467,7 @@ async fn ac7_reason_for_disabled_notifications_is_written_to_the_log() {
 #[serial_test::serial]
 async fn ac7_app_serves_requests_while_notifications_are_not_configured() {
     let (app, pool, jwt) = crate::helpers::build_app_with_admin().await;
-    let (_guard, logs) = capture_logs();
+    let logs = capture_logs();
 
     // 起動時に呼ばれるバックグラウンドタスク。SMTP 設定も環境変数も無い状態で開始する
     llmlb::notifications::start_daily_digest_task(pool.clone());

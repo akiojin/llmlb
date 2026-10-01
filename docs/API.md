@@ -191,3 +191,73 @@ multipart をフィールド単位で読み取り、新しいフォームを組�
 | `POST /v1/audio/transcriptions` | `file` / `model` / `language` / `response_format` | それ以外のフィールドすべて（読み取り時に無視）。`file` パートの Content-Type は `audio/wav` に固定 | `llmlb/src/api/audio.rs:243-286`, `:327-343` |
 | `POST /v1/images/edits` | `image` / `mask` / `prompt` / `model` / `n` / `size` / `response_format` | それ以外のフィールドすべて。`image` / `mask` パートの Content-Type は `image/png` に固定 | `llmlb/src/api/images.rs:337-410`, `:448-479` |
 | `POST /v1/images/variations` | `image` / `model` / `n` / `size` / `response_format` | それ以外のフィールドすべて。`image` パートの Content-Type は `image/png` に固定 | `llmlb/src/api/images.rs:564-616`, `:649-669` |
+
+## 運用通知（メール）
+
+全登録エンドポイントの状態一覧を 1 日 1 回、メールで管理者へ送る（日次ダイジェスト）。
+エンドポイントが Offline に到達したときの即時通知は未提供（SPEC #777 T-006）。
+
+### 設定の置き場所
+
+| 種別 | 置き場所 | 項目 |
+|------|----------|------|
+| 秘密情報 | 環境変数 | `LLMLB_SMTP_USERNAME` / `LLMLB_SMTP_PASSWORD` |
+| 非秘密設定 | `settings` テーブル | 下表の `notifications.*` |
+| 宛先 | `users.email` | email を設定済みの管理者（admin） |
+
+| キー | 既定値 | 説明 |
+|------|--------|------|
+| `notifications.enabled` | `false` | 通知の有効／無効 |
+| `notifications.smtp_host` | （未設定） | SMTP ホスト名または IP アドレス |
+| `notifications.smtp_port` | `587` | SMTP ポート。`465` は接続時から TLS、それ以外は STARTTLS |
+| `notifications.smtp_from` | （未設定） | 差出人アドレス |
+| `notifications.daily_digest_time` | `09:00` | 送信時刻（サーバーのローカル時刻、`HH:MM`） |
+| `notifications.language` | `ja` | メール本文の言語（`ja` / `en`） |
+| `notifications.daily_digest_last_sent_date` | （未設定） | 最終送信日。スケジューラが更新する |
+
+`users.email` は通知先であり、ログイン識別子ではない。`POST /api/users` と `PUT /api/users/:id` の
+`email` で設定し（`PUT` の空文字で解除）、ユーザー一覧のレスポンスに含まれる。
+複数のユーザーが同じアドレスを共有でき、その場合も送信は 1 通にまとまる。
+
+### 設定 API
+
+`GET /api/dashboard/notifications` と `PUT /api/dashboard/notifications`（どちらも JWT の admin のみ）。
+`PUT` のボディは `settings` と同じ形で、形式が不正な値は 400 で拒否する。
+
+```json
+{
+  "settings": {
+    "enabled": true,
+    "smtp_host": "smtp.example.com",
+    "smtp_port": 587,
+    "smtp_from": "llmlb@example.com",
+    "daily_digest_time": "09:00",
+    "language": "ja"
+  },
+  "status": { "state": "active", "reason": null },
+  "credentials_configured": true,
+  "recipients": [{ "username": "admin", "email": "ops@example.com" }],
+  "last_digest_sent_date": "2026-10-01"
+}
+```
+
+`status.state` は次のいずれか。`active` 以外では `reason` に送信できない理由が入る。
+
+| state | 意味 |
+|-------|------|
+| `active` | 送信できる |
+| `disabled` | 管理者が無効にしている |
+| `unavailable` | 有効だが、SMTP 設定・認証情報・宛先の未設定や不正により送信できない |
+
+### 動作
+
+- SMTP 設定や認証情報が未設定・不正でも llmlb は起動する。通知だけが無効になり、
+  理由はログ（状態が変わったときに 1 回）と上記 API の `status.reason` に出る。
+- TLS は必須。平文の SMTP と認証なしの SMTP には対応しない。
+- 送信時刻は壁時計基準で、再起動しても送信時刻はずれない。最終送信日を `settings` に
+  永続化するため、同じ日に 2 回送ることはない。
+- 送信時刻に停止していた場合は、起動後に当日分を 1 回だけ送る。次回は本来の送信時刻に戻る。
+  当日の送信時刻を過ぎてから通知を有効にした場合も同じく、当日分をすぐに送る。
+- 送信に失敗した場合は 15 分後に再試行する。失敗した日は送信済みとして記録しない。
+- 設定の変更は再起動なしで 1 分以内に反映される。
+- 単一インスタンスでの運用を前提とする（複数インスタンスでは同じメールが重複する）。

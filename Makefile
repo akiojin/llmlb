@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 
 .PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure migration-versions mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
-.PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
+.PHONY: openai-tests notification-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 .PHONY: poc-gptoss poc-gptoss-metal poc-gptoss-cuda
@@ -66,7 +66,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure migration-versions mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests test-hooks test-checks e2e-playwright
+quality-checks: fmt clippy-parity module-structure migration-versions mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 
@@ -77,6 +77,12 @@ security-checks:
 # OpenAI API tests are now covered by e2e_openai_proxy
 openai-tests:
 	cargo test -p llmlb --test e2e_openai_proxy
+
+# SPEC #777 AC-8: 運用通知（users.email・メール送信基盤・日次ダイジェスト・通知設定 API）の受け入れテスト
+# 実際のメール送信は行わない（記録用トランスポートを使う）。
+# CI (test.yml rust-test) も同一ターゲットを実行する。
+notification-tests:
+	cargo test -p llmlb --test notification_tests
 
 test-checks:
 	@if [ -x "./node_modules/bats/bin/bats" ]; then \

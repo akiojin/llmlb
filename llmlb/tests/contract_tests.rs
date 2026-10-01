@@ -155,5 +155,9 @@ mod endpoints_contract_extended_test;
 #[path = "contract/api_route_coverage_test.rs"]
 mod api_route_coverage_test;
 
+// Issue #775: 互換APIの未知フィールド透過を固定する契約テスト
+#[path = "contract/unknown_field_passthrough_test.rs"]
+mod unknown_field_passthrough_test;
+
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

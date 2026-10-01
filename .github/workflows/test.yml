@@ -80,6 +80,13 @@ jobs:
           echo "🧪 Running Rust tests on ${{ matrix.os }}..."
           cargo test --all-features --workspace -- --test-threads=1
 
+      - name: Run operational notification tests
+        # SPEC #777 AC-8: 運用通知の受け入れテスト（AC-1〜AC-7）を必須チェックで実行する。
+        # `make quality-checks` と同じターゲットを使い、テストバイナリが消えたり
+        # 名前が変わったりした場合にここで失敗させる。実際のメール送信は行わない。
+        if: needs.changes.outputs.rust == 'true' && matrix.os == 'ubuntu-latest'
+        run: make notification-tests
+
   openai-proxy-tests:
     # 要件: OpenAI互換APIの回帰テスト
     # 目的: OpenAI APIとの互換性を確認

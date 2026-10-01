@@ -31,6 +31,8 @@ jobs:
               - '.github/workflows/lint.yml'
               - 'scripts/checks/check-module-structure.sh'
               - 'scripts/checks/module-structure-allowlist.txt'
+              - 'scripts/checks/check-event-publishers.sh'
+              - 'scripts/checks/event-publishers-allowlist.txt'
 
   rust-lint:
     # 要件: FR-004
@@ -55,6 +57,12 @@ jobs:
         # 必須チェックで強制する（pre-push のみだと上限超過が CI 緑のまま着地する）
         if: needs.changes.outputs.rust == 'true'
         run: make module-structure
+
+      - name: Check event publishers
+        # SPEC #582 FR-048e, Issue #781: canonical ダッシュボードイベントに production の publisher が
+        # 無い状態を必須チェックで検出する（ポーリングで画面が更新されるため、欠落しても症状が出ない）
+        if: needs.changes.outputs.rust == 'true'
+        run: make event-publishers
 
       - name: Setup Rust
         if: needs.changes.outputs.rust == 'true'
@@ -84,10 +92,10 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
 
   dashboard-lint:
-    # Issue #769
-    # 目的: dashboard の typecheck / lint を検出する（依存更新での破損を着地前に止める）
+    # Issue #769, #782
+    # 目的: dashboard の typecheck / lint / コンポーネントテストの失敗を検出する（依存更新での破損を着地前に止める）
     # pnpm-lock.yaml 等ルートの変更でも壊れ得るため、パスフィルタを掛けず常に実行する
-    name: Dashboard Typecheck & Lint
+    name: Dashboard Typecheck, Lint & Test
     runs-on: ubuntu-latest
 
     steps:
@@ -97,7 +105,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # vitest 5 は Node 22.12 以上を要求する
+          node-version: '22'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -107,7 +116,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck & lint dashboard
+      - name: Typecheck, lint & test dashboard
         run: make dashboard-checks
 
   markdownlint:
@@ -207,3 +216,9 @@ jobs:
       - name: Check Dependabot group subjects
         # Issue #727: Dependabot のグループ更新件名が header-max-length を超えないことを保証する
         run: make dependabot-subjects
+
+      - name: Check canonical mapping freshness
+        # Issue #776: canonical テーブルの最終確認日が閾値（180 日）を超えたら落とす。
+        # 時間経過だけで失効するため、パスフィルタのない必須ジョブ（全 PR で実行）に置く。
+        # ネットワークには依存しない。
+        run: make mapping-freshness

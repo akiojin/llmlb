@@ -71,6 +71,9 @@ pub mod cli;
 /// ダッシュボードイベントバス
 pub mod events;
 
+/// 運用通知（メールによる日次ダイジェスト等、SPEC #777）
+pub mod notifications;
+
 /// トークン抽出・推定
 pub mod token;
 

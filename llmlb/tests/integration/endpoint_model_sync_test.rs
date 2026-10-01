@@ -320,3 +320,195 @@ async fn test_auto_test_and_sync_on_create() {
     let endpoint_body: Value = endpoint_resp.json().await.unwrap();
     assert_eq!(endpoint_body["status"], "online");
 }
+
+/// FR-028 CP-4: エンドポイントが報告したエンジン固有のモデルIDが、
+/// カタログ反映後にcanonical名として解決される
+#[tokio::test]
+async fn test_synced_engine_model_id_resolves_to_canonical_name() {
+    const ENGINE_MODEL_ID: &str = "gpt-oss:20b";
+    const CANONICAL_NAME: &str = "openai/gpt-oss-20b";
+    const UNMAPPED_MODEL_ID: &str = "cp4-unmapped-model:latest";
+    const CHAT_PROMPT: &str = "cp4-canonical-ping";
+
+    let mock = MockServer::start().await;
+
+    // /api/tags に応答するエンドポイントはOllamaとして判別される
+    Mock::given(method("GET"))
+        .and(path("/api/tags"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{"name": ENGINE_MODEL_ID}, {"name": UNMAPPED_MODEL_ID}]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [
+                {"id": ENGINE_MODEL_ID, "object": "model"},
+                {"id": UNMAPPED_MODEL_ID, "object": "model"}
+            ]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-cp4",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "pong"},
+                "finish_reason": "stop"
+            }]
+        })))
+        .mount(&mock)
+        .await;
+
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+
+    let reg_resp = client
+        .post(format!("http://{}/api/endpoints", server.addr()))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "name": "Canonical Sync Test",
+            "base_url": mock.uri()
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reg_resp.status().as_u16(), 201);
+
+    let reg_body: Value = reg_resp.json().await.unwrap();
+    assert_eq!(reg_body["endpoint_type"], "ollama");
+    let endpoint_id = reg_body["id"].as_str().unwrap();
+
+    let test_resp = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/test",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(test_resp.status().as_u16(), 200);
+
+    // 同期: エンジン固有IDがcanonical名へ正規化される（マッピングに無いIDは正規化されない）
+    let sync_resp = client
+        .post(format!(
+            "http://{}/api/endpoints/{}/sync",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sync_resp.status().as_u16(), 200);
+
+    let sync_body: Value = sync_resp.json().await.unwrap();
+    let synced_canonical_of = |model_id: &str| -> Value {
+        sync_body["synced_models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["model_id"] == model_id)
+            .unwrap_or_else(|| panic!("{model_id} missing from sync response: {sync_body}"))
+            ["canonical_name"]
+            .clone()
+    };
+    assert_eq!(synced_canonical_of(ENGINE_MODEL_ID), CANONICAL_NAME);
+    assert!(synced_canonical_of(UNMAPPED_MODEL_ID).is_null());
+
+    // カタログ反映（永続化されたエンドポイントのモデル一覧）
+    let models_resp = client
+        .get(format!(
+            "http://{}/api/endpoints/{}/models",
+            server.addr(),
+            endpoint_id
+        ))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(models_resp.status().as_u16(), 200);
+
+    let models_body: Value = models_resp.json().await.unwrap();
+    let stored = models_body["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["model_id"] == ENGINE_MODEL_ID)
+        .unwrap_or_else(|| panic!("{ENGINE_MODEL_ID} missing from endpoint models: {models_body}"));
+    assert_eq!(stored["canonical_name"], CANONICAL_NAME);
+
+    // カタログ反映（/v1/models）: canonical名で公開され、エンジン固有IDはエイリアスになる
+    let catalog_resp = client
+        .get(format!("http://{}/v1/models", server.addr()))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(catalog_resp.status().as_u16(), 200);
+
+    let catalog: Value = catalog_resp.json().await.unwrap();
+    let canonical_entry = catalog["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == CANONICAL_NAME)
+        .unwrap_or_else(|| panic!("{CANONICAL_NAME} missing from /v1/models: {catalog}"));
+    assert_eq!(canonical_entry["canonical_name"], CANONICAL_NAME);
+    assert_eq!(canonical_entry["is_canonical"], true);
+    assert!(canonical_entry["endpoint_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|id| id == endpoint_id));
+    assert!(
+        canonical_entry["aliases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|alias| alias == ENGINE_MODEL_ID),
+        "engine model id must be listed as an alias: {canonical_entry}"
+    );
+
+    // canonical名を指定した推論は、エンジン固有IDに戻して上流へ転送される
+    let chat_resp = client
+        .post(format!("http://{}/v1/chat/completions", server.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&json!({
+            "model": CANONICAL_NAME,
+            "messages": [{"role": "user", "content": CHAT_PROMPT}],
+            "stream": false
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(chat_resp.status().as_u16(), 200);
+
+    // 同一ホストの別プロセスがモックのポートへ要求を送りうるため、
+    // 回数ではなく本テストが送った要求の内容で検証する
+    let upstream_models: Vec<Value> = mock
+        .received_requests()
+        .await
+        .expect("request recording is enabled")
+        .iter()
+        .filter(|req| req.method.as_str() == "POST" && req.url.path() == "/v1/chat/completions")
+        .filter_map(|req| serde_json::from_slice::<Value>(&req.body).ok())
+        .filter(|body| body["messages"][0]["content"] == CHAT_PROMPT)
+        .map(|body| body["model"].clone())
+        .collect();
+    assert!(
+        !upstream_models.is_empty(),
+        "chat request must reach the upstream endpoint"
+    );
+    assert!(
+        upstream_models.iter().all(|model| model == ENGINE_MODEL_ID),
+        "upstream must receive the engine model id, got {upstream_models:?}"
+    );
+}

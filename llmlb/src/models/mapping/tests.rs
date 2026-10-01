@@ -222,7 +222,10 @@ fn test_nemotron_super_unsloth_mapping() {
         "unsloth/nvidia-nemotron-3-super-120b-a12b",
         &EndpointType::LmStudio,
     );
-    assert_eq!(result, Some("nvidia/nemotron-3-super-120b-a12b"));
+    assert_eq!(
+        result,
+        Some("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16")
+    );
 }
 
 #[test]
@@ -240,7 +243,10 @@ fn test_llama33_mapping() {
 #[test]
 fn test_nvidia_nemotron_super_mapping() {
     let result = resolve_canonical("nemotron-3-super:120b-a12b", &EndpointType::Ollama);
-    assert_eq!(result, Some("nvidia/nemotron-3-super-120b-a12b"));
+    assert_eq!(
+        result,
+        Some("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16")
+    );
 }
 
 #[test]
@@ -416,11 +422,11 @@ fn test_recently_added_lm_studio_aliases_resolve() {
     let cases = [
         ("openai/gpt-oss-120b", "openai/gpt-oss-120b"),
         ("Qwen/Qwen3-Coder-30B-A3B-Instruct", "qwen/qwen3-coder-30b"),
-        ("Qwen/Qwen3-30B", "qwen/qwen3-30b-a3b"),
+        ("Qwen/Qwen3-30B-A3B", "qwen/qwen3-30b-a3b"),
         ("meta-llama/Llama-3.3-70B-Instruct", "meta/llama-3.3-70b"),
         ("google/gemma-3-27b-it", "google/gemma-3-27b"),
         (
-            "nvidia/nemotron-3-super-120b-a12b",
+            "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
             "nvidia-nemotron-3-super-120b-a12b",
         ),
     ];
@@ -800,4 +806,71 @@ fn test_heuristic_no_anchor_when_first_party_is_redistributor_only() {
         res.canonical_for("bartowski/qwen3-99b-it-GGUF"),
         "bartowski/qwen3-99b-it-GGUF"
     );
+}
+
+// Issue #776: 2026-09-30 の Hugging Face 実在確認で不存在だった canonical を実在 ID へ差し替える。
+#[test]
+fn test_issue_776_renamed_canonicals_use_existing_hf_repo_ids() {
+    assert_eq!(
+        resolve_canonical("qwen3:30b", &EndpointType::Ollama),
+        Some("Qwen/Qwen3-30B-A3B")
+    );
+    assert_eq!(
+        resolve_canonical("nvidia/nemotron-3-super", &EndpointType::LmStudio),
+        Some("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16")
+    );
+    assert_eq!(
+        known_max_tokens("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"),
+        Some(131_072)
+    );
+}
+
+#[test]
+fn test_issue_776_legacy_canonical_ids_still_resolve() {
+    // 改名前の ID を指定している既存クライアントを壊さない
+    assert_eq!(
+        resolve_canonical_any("Qwen/Qwen3-30B"),
+        Some("Qwen/Qwen3-30B-A3B")
+    );
+    assert_eq!(
+        resolve_canonical_any("nvidia/nemotron-3-super-120b-a12b"),
+        Some("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16")
+    );
+    // 旧 ID は入力専用。エンドポイントへ送る名前には選ばれない
+    assert_eq!(
+        resolve_engine_name("Qwen/Qwen3-30B-A3B", &EndpointType::LmStudio),
+        Some("qwen/qwen3-30b-a3b")
+    );
+    assert_eq!(
+        resolve_engine_name(
+            "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
+            &EndpointType::LmStudio
+        ),
+        Some("nvidia-nemotron-3-super-120b-a12b")
+    );
+}
+
+// Issue #776 AC-2: 稼働中の LM Studio が報告し、解決に失敗していたモデル ID。
+#[test]
+fn test_issue_776_lm_studio_reported_ids_resolve() {
+    assert_eq!(
+        resolve_canonical("qwen/qwen3.8-27b", &EndpointType::LmStudio),
+        Some("Qwen/Qwen3.8-27B")
+    );
+    assert_eq!(
+        resolve_canonical("qwen-image-edit-rapid-aio", &EndpointType::LmStudio),
+        Some("Phr00t/Qwen-Image-Edit-Rapid-AIO")
+    );
+}
+
+#[test]
+fn test_issue_776_every_mapping_has_valid_last_verified_date() {
+    for mapping in BUILTIN_MAPPINGS {
+        assert!(
+            chrono::NaiveDate::parse_from_str(mapping.last_verified, "%Y-%m-%d").is_ok(),
+            "{}: last_verified must be YYYY-MM-DD, got {:?}",
+            mapping.canonical,
+            mapping.last_verified
+        );
+    }
 }

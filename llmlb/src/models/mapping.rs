@@ -31,6 +31,11 @@ pub struct EngineAlias {
 pub struct ModelMapping {
     /// Canonical Hugging Face repo ID.
     pub canonical: &'static str,
+    /// Hugging Face 上で canonical の実在を最後に確認した日（UTC, `YYYY-MM-DD`）。
+    ///
+    /// `make mapping-freshness` がこの日付からの経過日数を検査する（Issue #776）。
+    /// 更新手順は `docs/model-catalog-policy.md` を参照。
+    pub last_verified: &'static str,
     /// Known runtime aliases for supported endpoint types.
     pub aliases: &'static [EngineAlias],
 }
@@ -43,6 +48,7 @@ fn model_id_eq(left: &str, right: &str) -> bool {
 pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     ModelMapping {
         canonical: "openai/gpt-oss-20b",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -56,6 +62,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "openai/gpt-oss-120b",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -69,6 +76,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -84,8 +92,11 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             },
         ],
     },
+    // Issue #776: 旧 canonical `Qwen/Qwen3-30B` は Hugging Face 上に存在しない。実在する
+    // `Qwen/Qwen3-30B-A3B` を canonical とし、旧 ID は入力専用の alias として末尾に残す。
     ModelMapping {
-        canonical: "Qwen/Qwen3-30B",
+        canonical: "Qwen/Qwen3-30B-A3B",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -95,10 +106,15 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 engine: EndpointType::LmStudio,
                 name: "qwen/qwen3-30b-a3b",
             },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "Qwen/Qwen3-30B",
+            },
         ],
     },
     ModelMapping {
         canonical: "Qwen/Qwen3-Coder-Next",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -116,6 +132,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "meta-llama/Llama-3.3-70B-Instruct",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -129,6 +146,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "google/gemma-3-27b-it",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -142,6 +160,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "Qwen/Qwen3.5-35B-A3B",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -169,8 +188,11 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             },
         ],
     },
+    // Issue #776: 旧 canonical `nvidia/nemotron-3-super-120b-a12b` は Hugging Face 上に存在しない。
+    // 実在する BF16 リポジトリを canonical とし、旧 ID は入力専用の alias として末尾に残す。
     ModelMapping {
-        canonical: "nvidia/nemotron-3-super-120b-a12b",
+        canonical: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -188,10 +210,15 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 engine: EndpointType::LmStudio,
                 name: "unsloth/nvidia-nemotron-3-super-120b-a12b",
             },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nvidia/nemotron-3-super-120b-a12b",
+            },
         ],
     },
     ModelMapping {
         canonical: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -205,6 +232,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+        last_verified: "2026-09-30",
         aliases: &[EngineAlias {
             engine: EndpointType::LmStudio,
             name: "nvidia/nemotron-3-nano-4b",
@@ -212,6 +240,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "Qwen/Qwen2.5-14B-Instruct-AWQ",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -225,6 +254,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "nomic-ai/nomic-embed-text-v1.5",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -252,6 +282,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     // canonical は実在するリポジトリ ID に合わせ、`THUDM/...` は alias として残す。
     ModelMapping {
         canonical: "zai-org/GLM-4.7-Flash",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -273,6 +304,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "google/gemma-4-E2B-it",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -290,6 +322,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "google/gemma-4-E4B-it",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -313,6 +346,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     // base と instruction-tuned は別 canonical とし、固定 Ollama tag は instruction-tuned にだけ割り当てる。
     ModelMapping {
         canonical: "google/gemma-4-26B-A4B",
+        last_verified: "2026-09-30",
         aliases: &[EngineAlias {
             engine: EndpointType::LmStudio,
             name: "google/gemma-4-26b-a4b",
@@ -320,6 +354,7 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     ModelMapping {
         canonical: "google/gemma-4-26B-A4B-it",
+        last_verified: "2026-09-30",
         aliases: &[
             EngineAlias {
                 engine: EndpointType::Ollama,
@@ -334,6 +369,26 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 name: "ggml-org/gemma-4-26B-A4B-it-GGUF",
             },
         ],
+    },
+    // Issue #776 AC-2: 稼働中の LM Studio が報告し、解決に失敗していたモデル ID。
+    // alias は実際の `/v1/models` 応答に基づく。Ollama alias は根拠がないため登録しない。
+    ModelMapping {
+        canonical: "Qwen/Qwen3.8-27B",
+        last_verified: "2026-09-30",
+        aliases: &[EngineAlias {
+            engine: EndpointType::LmStudio,
+            name: "qwen/qwen3.8-27b",
+        }],
+    },
+    // LM Studio の実体は再配布 GGUF（`Phil2Sat/Qwen-Image-Edit-Rapid-AIO-GGUF`）。その
+    // `base_model` が指す配布元リポジトリを canonical とする。
+    ModelMapping {
+        canonical: "Phr00t/Qwen-Image-Edit-Rapid-AIO",
+        last_verified: "2026-09-30",
+        aliases: &[EngineAlias {
+            engine: EndpointType::LmStudio,
+            name: "qwen-image-edit-rapid-aio",
+        }],
     },
 ];
 
@@ -775,7 +830,7 @@ const KNOWN_CONTEXT_LENGTHS: &[(&str, u32)] = &[
     // GLM
     ("zai-org/GLM-4.7-Flash", 202_752),
     // Nvidia Nemotron
-    ("nvidia/nemotron-3-super-120b-a12b", 131_072),
+    ("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16", 131_072),
     ("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", 1_048_576),
     ("nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", 262_144),
     // Meta Llama

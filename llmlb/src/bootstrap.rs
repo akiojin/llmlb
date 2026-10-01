@@ -159,6 +159,8 @@ async fn initialize_inner(
     crate::db::request_history::start_cleanup_task(request_history.clone());
     crate::db::endpoint_daily_stats::start_daily_stats_task(db_pool.clone());
     crate::cloud_metrics::start_retention_task(db_pool.clone());
+    // 運用通知（SPEC #777）。SMTP 設定が未設定・不正でも起動は続け、送信だけを行わない
+    crate::notifications::start_daily_digest_task(db_pool.clone());
 
     // 管理者が存在しない場合は作成
     auth::bootstrap::ensure_admin_exists(&db_pool)

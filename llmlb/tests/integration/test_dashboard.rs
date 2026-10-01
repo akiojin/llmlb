@@ -6,15 +6,24 @@
 //! NOTE: AUTH_DISABLED廃止に伴い、JWT認証を使用するよう更新済み。
 
 use axum::Router;
+use futures::stream::{SplitSink, SplitStream};
 use futures::StreamExt;
 use llmlb::common::auth::UserRole;
 use llmlb::{
     api, auth::jwt::create_jwt, balancer::LoadManager, registry::endpoints::EndpointRegistry,
     AppState,
 };
+use reqwest::Client;
+use serde_json::{json, Value};
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+use crate::support::lb::spawn_test_lb;
 
 async fn build_test_app() -> (AppState, Router) {
     let temp_dir = std::env::temp_dir().join(format!(
@@ -144,57 +153,399 @@ async fn test_dashboard_websocket_connection() {
     }
 }
 
-#[tokio::test]
-async fn test_dashboard_receives_node_registration_event() {
-    // Arrange: Router server startup
-    let (state, app) = build_test_app().await;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+type DashboardWsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
+/// イベント受信の待ち時間上限。高負荷のホストでも届くだけの余裕を持たせる。
+const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
 
-    // Give the server time to start
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+/// `/ws/dashboard` に接続した購読者
+struct DashboardSubscriber {
+    // 送信側を保持して接続を維持する
+    _write: SplitSink<DashboardWsStream, Message>,
+    read: SplitStream<DashboardWsStream>,
+}
 
-    // Connect WebSocket
-    let request = ws_request_with_token(addr, &state.auth.jwt_secret);
-    let (ws_stream, _) = connect_async(request)
-        .await
-        .expect("Failed to connect to WebSocket");
-
-    let (_write, mut read) = ws_stream.split();
-
-    // Skip the initial "connected" message
-    let _ = read.next().await;
-
-    // Act: Register a node by publishing event directly (since we can't go through HTTP in this test)
-    let endpoint_id = uuid::Uuid::new_v4();
-    state
-        .event_bus
-        .publish(llmlb::events::DashboardEvent::NodeRegistered {
-            runtime_id: endpoint_id,
-            machine_name: "test-node".to_string(),
-            ip_address: "127.0.0.1".to_string(),
-            status: llmlb::types::endpoint::EndpointStatus::Online,
-        });
-
-    // Assert: WebSocket client should receive node registration event
-    let msg = tokio::time::timeout(tokio::time::Duration::from_secs(5), read.next())
-        .await
-        .expect("Timeout waiting for message")
-        .expect("No message received")
-        .expect("Message error");
-
-    if let Message::Text(text) = msg {
-        let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
-        assert_eq!(json["type"], "NodeRegistered");
-        assert_eq!(json["data"]["runtime_id"], endpoint_id.to_string());
-        assert_eq!(json["data"]["machine_name"], "test-node");
-    } else {
-        panic!("Expected text message, got {:?}", msg);
+impl DashboardSubscriber {
+    /// 接続し、ハンドシェイクの `connected` メッセージまで読み進める
+    async fn connect(addr: SocketAddr) -> Self {
+        let request = ws_request_with_token(addr, &crate::support::lb::test_jwt_secret());
+        let (ws_stream, _) = connect_async(request)
+            .await
+            .expect("Failed to connect to WebSocket");
+        let (write, read) = ws_stream.split();
+        let mut subscriber = Self {
+            _write: write,
+            read,
+        };
+        let connected = subscriber
+            .next_event(EVENT_TIMEOUT)
+            .await
+            .expect("connected message");
+        assert_eq!(connected["type"], "connected");
+        subscriber
     }
+
+    /// 次のイベントを受信する。`timeout` 内に届かなければ `None`
+    async fn next_event(&mut self, timeout: Duration) -> Option<Value> {
+        loop {
+            let msg = tokio::time::timeout(timeout, self.read.next())
+                .await
+                .ok()?
+                .expect("WebSocket closed")
+                .expect("Message error");
+            if let Message::Text(text) = msg {
+                return Some(serde_json::from_str(&text).expect("Invalid JSON"));
+            }
+        }
+    }
+
+    /// `is_sentinel` に一致するイベントが届くまで受信し、それより前に届いたイベントを返す。
+    ///
+    /// イベントバスは発行順を保つため、番兵より前に発行されたイベントは必ず番兵より前に届く。
+    /// 「届かないこと」「1 回だけ届くこと」を待ち時間に依存せず検証できる。
+    async fn events_before(&mut self, is_sentinel: impl Fn(&Value) -> bool) -> Vec<Value> {
+        let mut events = Vec::new();
+        loop {
+            let event = self
+                .next_event(EVENT_TIMEOUT)
+                .await
+                .expect("Timeout waiting for sentinel event");
+            if is_sentinel(&event) {
+                return events;
+            }
+            events.push(event);
+        }
+    }
+}
+
+fn is_event(event: &Value, event_type: &str, runtime_id: &str) -> bool {
+    event["type"] == event_type && event["data"]["runtime_id"] == runtime_id
+}
+
+/// OpenAI 互換として検出され、`test-model` の chat completions に応答するモック
+async fn spawn_openai_compatible_mock() -> MockServer {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [{"id": "test-model", "object": "model"}]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "ok"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .mount(&mock)
+        .await;
+    mock
+}
+
+async fn post_endpoint(
+    client: &Client,
+    lb_addr: SocketAddr,
+    name: &str,
+    base_url: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("http://{}/api/endpoints", lb_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({ "name": name, "base_url": base_url }))
+        .send()
+        .await
+        .expect("registration request failed")
+}
+
+/// エンドポイントを登録し、ID を返す
+async fn register_endpoint(
+    client: &Client,
+    lb_addr: SocketAddr,
+    name: &str,
+    base_url: &str,
+) -> String {
+    let response = post_endpoint(client, lb_addr, name, base_url).await;
+    assert_eq!(response.status().as_u16(), 201);
+    let body: Value = response.json().await.expect("registration json");
+    body["id"].as_str().expect("endpoint id").to_string()
+}
+
+async fn delete_endpoint(
+    client: &Client,
+    lb_addr: SocketAddr,
+    endpoint_id: &str,
+) -> reqwest::Response {
+    client
+        .delete(format!("http://{}/api/endpoints/{}", lb_addr, endpoint_id))
+        .header("authorization", "Bearer sk_debug")
+        .send()
+        .await
+        .expect("delete request failed")
+}
+
+/// 登録済みエンドポイントを Online にし、モデルを同期して推論可能にする
+async fn make_endpoint_routable(client: &Client, lb_addr: SocketAddr, endpoint_id: &str) {
+    for action in ["test", "sync"] {
+        let response = client
+            .post(format!(
+                "http://{}/api/endpoints/{}/{}",
+                lb_addr, endpoint_id, action
+            ))
+            .header("authorization", "Bearer sk_debug")
+            .send()
+            .await
+            .expect("endpoint action request failed");
+        assert_eq!(response.status().as_u16(), 200, "endpoint {action} failed");
+    }
+}
+
+async fn chat_completion(client: &Client, lb_addr: SocketAddr) -> reqwest::Response {
+    client
+        .post(format!("http://{}/v1/chat/completions", lb_addr))
+        .header("authorization", "Bearer sk_debug")
+        .json(&json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hello"}]
+        }))
+        .send()
+        .await
+        .expect("chat completion request failed")
+}
+
+/// SPEC #582 FR-048a: 登録が確定すると、購読者は `NodeRegistered` をちょうど 1 回受信する
+#[tokio::test]
+async fn test_dashboard_receives_node_registered_once_on_registration() {
+    let mock = spawn_openai_compatible_mock().await;
+    let sentinel_mock = spawn_openai_compatible_mock().await;
+    let server = spawn_test_lb().await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let client = Client::new();
+
+    // Act: 管理 API 経由で登録し、番兵として別のエンドポイントを登録する
+    let endpoint_id =
+        register_endpoint(&client, server.addr(), "registered-node", &mock.uri()).await;
+    let sentinel_id = register_endpoint(
+        &client,
+        server.addr(),
+        "sentinel-node",
+        &sentinel_mock.uri(),
+    )
+    .await;
+
+    // Assert
+    let events = subscriber
+        .events_before(|event| is_event(event, "NodeRegistered", &sentinel_id))
+        .await;
+    let registered: Vec<&Value> = events
+        .iter()
+        .filter(|event| event["type"] == "NodeRegistered")
+        .collect();
+    assert_eq!(registered.len(), 1, "events: {events:?}");
+    let data = &registered[0]["data"];
+    assert_eq!(data["runtime_id"], endpoint_id);
+    assert_eq!(data["machine_name"], "registered-node");
+    assert_eq!(data["ip_address"], "127.0.0.1");
+    assert_eq!(data["status"], "pending");
+}
+
+/// SPEC #582 FR-048a: 失敗した登録では `NodeRegistered` を配信しない
+#[tokio::test]
+async fn test_dashboard_receives_no_node_registered_on_failed_registration() {
+    let mock = spawn_openai_compatible_mock().await;
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+    let existing_id = register_endpoint(&client, server.addr(), "existing-node", &mock.uri()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+
+    // Act: 名前重複・URL 重複（保存失敗）・到達不能・入力不正の登録はいずれも失敗する
+    let other_mock = spawn_openai_compatible_mock().await;
+    let duplicate_name =
+        post_endpoint(&client, server.addr(), "existing-node", &other_mock.uri()).await;
+    assert_eq!(duplicate_name.status().as_u16(), 400);
+    let duplicate_url = post_endpoint(&client, server.addr(), "another-node", &mock.uri()).await;
+    assert!(!duplicate_url.status().is_success());
+    let unreachable = post_endpoint(
+        &client,
+        server.addr(),
+        "unreachable-node",
+        "http://127.0.0.1:9",
+    )
+    .await;
+    assert!(!unreachable.status().is_success());
+    let invalid = post_endpoint(&client, server.addr(), "invalid-node", "not a url").await;
+    assert_eq!(invalid.status().as_u16(), 400);
+
+    // 番兵: 既存エンドポイントの削除
+    let deleted = delete_endpoint(&client, server.addr(), &existing_id).await;
+    assert_eq!(deleted.status().as_u16(), 204);
+
+    // Assert
+    let events = subscriber
+        .events_before(|event| is_event(event, "NodeRemoved", &existing_id))
+        .await;
+    assert!(
+        events.iter().all(|event| event["type"] != "NodeRegistered"),
+        "events: {events:?}"
+    );
+}
+
+/// SPEC #582 FR-048b: 削除が確定すると、購読者は `NodeRemoved` をちょうど 1 回受信する
+#[tokio::test]
+async fn test_dashboard_receives_node_removed_once_on_deletion() {
+    let mock = spawn_openai_compatible_mock().await;
+    let sentinel_mock = spawn_openai_compatible_mock().await;
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+    let endpoint_id = register_endpoint(&client, server.addr(), "removed-node", &mock.uri()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+
+    // Act: 削除し、番兵として別のエンドポイントを登録する
+    let deleted = delete_endpoint(&client, server.addr(), &endpoint_id).await;
+    assert_eq!(deleted.status().as_u16(), 204);
+    let sentinel_id = register_endpoint(
+        &client,
+        server.addr(),
+        "sentinel-node",
+        &sentinel_mock.uri(),
+    )
+    .await;
+
+    // Assert
+    let events = subscriber
+        .events_before(|event| is_event(event, "NodeRegistered", &sentinel_id))
+        .await;
+    let removed: Vec<&Value> = events
+        .iter()
+        .filter(|event| event["type"] == "NodeRemoved")
+        .collect();
+    assert_eq!(removed.len(), 1, "events: {events:?}");
+    assert_eq!(removed[0]["data"]["runtime_id"], endpoint_id);
+}
+
+/// SPEC #582 FR-048b: 失敗した削除（対象なし・削除済み）では `NodeRemoved` を配信しない
+#[tokio::test]
+async fn test_dashboard_receives_no_node_removed_on_failed_deletion() {
+    let mock = spawn_openai_compatible_mock().await;
+    let sentinel_mock = spawn_openai_compatible_mock().await;
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+    let endpoint_id = register_endpoint(&client, server.addr(), "removed-node", &mock.uri()).await;
+    let deleted = delete_endpoint(&client, server.addr(), &endpoint_id).await;
+    assert_eq!(deleted.status().as_u16(), 204);
+    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+
+    // Act: 存在しない ID と、削除済みの ID を削除する
+    let unknown = delete_endpoint(&client, server.addr(), &uuid::Uuid::new_v4().to_string()).await;
+    assert_eq!(unknown.status().as_u16(), 404);
+    let already_deleted = delete_endpoint(&client, server.addr(), &endpoint_id).await;
+    assert_eq!(already_deleted.status().as_u16(), 404);
+
+    // 番兵: 別のエンドポイントの登録
+    let sentinel_id = register_endpoint(
+        &client,
+        server.addr(),
+        "sentinel-node",
+        &sentinel_mock.uri(),
+    )
+    .await;
+
+    // Assert
+    let events = subscriber
+        .events_before(|event| is_event(event, "NodeRegistered", &sentinel_id))
+        .await;
+    assert!(
+        events.iter().all(|event| event["type"] != "NodeRemoved"),
+        "events: {events:?}"
+    );
+}
+
+/// SPEC #582 FR-048c: 推論リクエストが完了すると、購読者は `MetricsUpdated` を受信する
+#[tokio::test]
+async fn test_dashboard_receives_metrics_updated_after_proxied_request() {
+    let mock = spawn_openai_compatible_mock().await;
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+    let endpoint_id = register_endpoint(&client, server.addr(), "metrics-node", &mock.uri()).await;
+    make_endpoint_routable(&client, server.addr(), &endpoint_id).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+
+    // Act
+    let response = chat_completion(&client, server.addr()).await;
+    assert_eq!(response.status().as_u16(), 200);
+
+    // Assert
+    let event = loop {
+        let event = subscriber
+            .next_event(EVENT_TIMEOUT)
+            .await
+            .expect("Timeout waiting for MetricsUpdated");
+        if event["type"] == "MetricsUpdated" {
+            break event;
+        }
+    };
+    assert_eq!(event["data"]["runtime_id"], endpoint_id);
+    // llmlb はエンドポイント内部のリソース使用率を観測しないため、値なしで配信する
+    assert!(event["data"]["cpu_usage"].is_null());
+    assert!(event["data"]["memory_usage"].is_null());
+    assert!(event["data"]["gpu_usage"].is_null());
+}
+
+/// SPEC #582 FR-048d: 高頻度のリクエストでも `MetricsUpdated` はエンドポイントごとに
+/// 1 秒あたり高々 1 回に集約され、リクエスト数には比例しない
+#[tokio::test]
+async fn test_dashboard_metrics_updated_is_coalesced_under_request_burst() {
+    const REQUESTS: usize = 40;
+    // 最後の集約窓（1 秒）が閉じたとみなすまでの無通信時間
+    const QUIET_PERIOD: Duration = Duration::from_secs(3);
+
+    let mock = spawn_openai_compatible_mock().await;
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+    let endpoint_id = register_endpoint(&client, server.addr(), "burst-node", &mock.uri()).await;
+    make_endpoint_routable(&client, server.addr(), &endpoint_id).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+
+    // Act: 同じエンドポイントへ並行にリクエストを送る
+    let burst_started_at = Instant::now();
+    let responses =
+        futures::future::join_all((0..REQUESTS).map(|_| chat_completion(&client, server.addr())))
+            .await;
+    for response in responses {
+        assert_eq!(response.status().as_u16(), 200);
+    }
+
+    // Assert: 無通信になるまで受信し、MetricsUpdated の件数と最後の受信時刻を記録する
+    let mut metrics_updated = 0usize;
+    let mut last_received_at = burst_started_at;
+    let mut timeout = EVENT_TIMEOUT;
+    while let Some(event) = subscriber.next_event(timeout).await {
+        if is_event(&event, "MetricsUpdated", &endpoint_id) {
+            metrics_updated += 1;
+            last_received_at = Instant::now();
+            timeout = QUIET_PERIOD;
+        }
+    }
+
+    assert!(metrics_updated >= 1, "MetricsUpdated was never received");
+    // 集約窓は 1 秒で互いに重ならないため、n 件目の配信は開始から n 秒以降になる。
+    // 受信の遅延は経過時間を伸ばす方向にしか働かないので、負荷に依存せず成り立つ。
+    let elapsed_secs = last_received_at
+        .duration_since(burst_started_at)
+        .as_secs_f64();
+    assert!(
+        metrics_updated as f64 <= elapsed_secs,
+        "{metrics_updated} MetricsUpdated events within {elapsed_secs:.2}s for {REQUESTS} requests"
+    );
 }
 
 #[tokio::test]

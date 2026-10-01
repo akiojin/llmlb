@@ -39,12 +39,34 @@ jobs:
 
 ## 必須チェックリスト（現在の設定）
 
-developブランチで必須にしているチェック:
+developブランチで必須にしているチェック（2026-10-01 に
+`gh api repos/akiojin/llmlb/branches/develop/protection/required_status_checks` で実測）:
 - ✓ `Commit Message Lint`
 - ✓ `Markdown Lint`
 - ✓ `Rust Format & Clippy`
 - ✓ `Rust Tests (ubuntu-latest)`
 - ✓ `Rust Tests (windows-latest)`
+- ✓ `OpenAI API Compatibility Tests`
+- ✓ `Playwright E2E Tests`
+
+### 必須化されていないチェック（要対応）
+
+- ✗ `Dashboard Typecheck, Lint & Test`（`lint.yml` の `dashboard-lint` ジョブ。`make dashboard-checks` を実行する）
+
+このジョブはパスフィルタなしで全 PR に対して実行されるが、必須チェックに登録されていない。
+そのため失敗しても自動マージは止まらない。必須化はリポジトリ設定の変更（管理者権限）であり、
+次のコマンドで既存の必須チェックを残したまま追加できる。
+
+```bash
+gh api \
+  --method POST \
+  repos/akiojin/llmlb/branches/develop/protection/required_status_checks/contexts \
+  -H "Accept: application/vnd.github+json" \
+  --raw-field 'contexts[]=Dashboard Typecheck, Lint & Test'
+```
+
+登録するのは、このジョブ名を持つワークフローが `develop` に着地した後にすること。
+着地前に登録すると、旧名（`Dashboard Typecheck & Lint`）しか報告しない既存 PR がすべて待ち状態になる。
 
 ## 更新手順
 
@@ -96,6 +118,8 @@ gh api \
 jobs:
   rust-lint:
     name: Rust Format & Clippy  # ← Required Checksで使用
+  dashboard-lint:
+    name: Dashboard Typecheck, Lint & Test
   markdownlint:
     name: Markdown Lint
   commitlint:

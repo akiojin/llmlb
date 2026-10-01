@@ -257,6 +257,12 @@ describe('NotificationSettingsModal', () => {
 
       expect(await status().findByText('Unavailable')).toBeInTheDocument()
       expect(status().getByRole('alert')).toHaveTextContent('SMTP host is not configured')
+      // The status panel can be scrolled out of view next to Save, so the
+      // confirmation repeats the reason.
+      expect(screen.getByText('Notification settings saved')).toBeInTheDocument()
+      expect(
+        screen.getByText('Notifications cannot be sent yet: SMTP host is not configured'),
+      ).toBeInTheDocument()
     })
 
     it('keeps the edits and shows the server message when the save is rejected', async () => {

@@ -219,6 +219,8 @@ multipart をフィールド単位で読み取り、新しいフォームを組�
 `users.email` は通知先であり、ログイン識別子ではない。`POST /api/users` と `PUT /api/users/:id` の
 `email` で設定し（`PUT` の空文字で解除）、ユーザー一覧のレスポンスに含まれる。
 複数のユーザーが同じアドレスを共有でき、その場合も送信は 1 通にまとまる。
+ダッシュボードではユーザーメニューの「Manage Users」で email を、「Notifications」で通知設定を変更できる
+（どちらも admin のみ。[dashboard.md](dashboard.md) を参照）。
 
 ### 設定 API
 

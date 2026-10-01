@@ -59,6 +59,36 @@ import {
   Check,
 } from 'lucide-react'
 
+const EMAIL_HINT =
+  'Operational notifications are sent to this address. It is not a login identifier: users sign in with their username.'
+
+interface NotificationEmailFieldProps {
+  id: string
+  value: string
+  onChange: (value: string) => void
+}
+
+function NotificationEmailField({ id, value, onChange }: NotificationEmailFieldProps) {
+  const hintId = `${id}-hint`
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>Notification email (optional)</Label>
+      <Input
+        id={id}
+        type="email"
+        autoComplete="off"
+        placeholder="ops@example.com"
+        aria-describedby={hintId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <p id={hintId} className="text-xs text-muted-foreground">
+        {EMAIL_HINT}
+      </p>
+    </div>
+  )
+}
+
 interface UserModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -76,6 +106,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   const [formUsername, setFormUsername] = useState('')
   const [formPassword, setFormPassword] = useState('')
   const [formRole, setFormRole] = useState<'admin' | 'viewer'>('viewer')
+  const [formEmail, setFormEmail] = useState('')
 
   // Fetch users
   const { data: users, isLoading, refetch } = useQuery({
@@ -84,12 +115,19 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     enabled: open,
   })
 
+  // The notification recipients are the admins that have an email, so every
+  // user change can alter them.
+  const invalidateUsers = () => {
+    queryClient.invalidateQueries({ queryKey: ['users'] })
+    queryClient.invalidateQueries({ queryKey: ['notification-settings'] })
+  }
+
   // Create user mutation
   const createMutation = useMutation({
-    mutationFn: (data: { username: string; role: string }) =>
+    mutationFn: (data: { username: string; role: string; email?: string }) =>
       usersApi.create(data),
     onSuccess: (result: CreateUserResponse) => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
+      invalidateUsers()
       resetForm()
       setCreateOpen(false)
       setGeneratedPassword(result.generated_password)
@@ -111,10 +149,10 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
       data,
     }: {
       id: string
-      data: { username?: string; password?: string; role?: string }
+      data: { username?: string; password?: string; role?: string; email?: string }
     }) => usersApi.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
+      invalidateUsers()
       resetForm()
       setEditUser(null)
       toast({ title: 'User updated' })
@@ -133,7 +171,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => usersApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
+      invalidateUsers()
       setDeleteUser(null)
       toast({ title: 'User deleted' })
     },
@@ -152,6 +190,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     setFormUsername('')
     setFormPassword('')
     setFormRole('viewer')
+    setFormEmail('')
   }
 
   useEffect(() => {
@@ -183,6 +222,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     setFormUsername(user.username)
     setFormPassword('')
     setFormRole(user.role as 'admin' | 'viewer')
+    setFormEmail(user.email ?? '')
     setEditUser(user)
   }
 
@@ -192,18 +232,23 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   }
 
   const handleCreate = () => {
+    const email = formEmail.trim()
     createMutation.mutate({
       username: formUsername,
       role: formRole,
+      ...(email ? { email } : {}),
     })
   }
 
   const handleUpdate = () => {
     if (!editUser) return
-    const data: { username?: string; password?: string; role?: string } = {}
+    const data: { username?: string; password?: string; role?: string; email?: string } = {}
     if (formUsername !== editUser.username) data.username = formUsername
     if (formPassword) data.password = formPassword
     if (formRole !== editUser.role) data.role = formRole
+    // An empty string clears the address.
+    const email = formEmail.trim()
+    if (email !== (editUser.email ?? '')) data.email = email
     updateMutation.mutate({ id: editUser.id, data })
   }
 
@@ -249,7 +294,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={handleMainOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
@@ -260,7 +305,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="min-w-0 space-y-4 py-4">
             {/* Actions */}
             <div className="flex justify-between">
               <Button onClick={handleOpenCreateDialog}>
@@ -289,6 +334,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                     <TableRow>
                       <TableHead>Username</TableHead>
                       <TableHead>Role</TableHead>
+                      <TableHead>Notification email</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -296,11 +342,16 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                   <TableBody>
                     {(users as User[]).map((user) => (
                       <TableRow key={user.id}>
-                        <TableCell className="font-medium">
+                        <TableCell className="break-all font-medium">
                           {user.username}
                         </TableCell>
                         <TableCell>{getRoleBadge(user.role)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="break-all text-sm">
+                          {user.email ?? (
+                            <span className="text-muted-foreground">Not set</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {formatRelativeTime(user.created_at)}
                         </TableCell>
                         <TableCell className="text-right">
@@ -309,6 +360,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
+                              aria-label={`Edit ${user.username}`}
                               onClick={() => handleOpenEditDialog(user)}
                             >
                               <Edit className="h-4 w-4" />
@@ -317,6 +369,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
+                              aria-label={`Delete ${user.username}`}
                               onClick={() => setDeleteUser(user)}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
@@ -364,6 +417,11 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                 </SelectContent>
               </Select>
             </div>
+            <NotificationEmailField
+              id="create-email"
+              value={formEmail}
+              onChange={setFormEmail}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => handleCreateOpenChange(false)}>
@@ -479,6 +537,11 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                 </SelectContent>
               </Select>
             </div>
+            <NotificationEmailField
+              id="edit-email"
+              value={formEmail}
+              onChange={setFormEmail}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={handleCloseEditDialog}>

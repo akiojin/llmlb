@@ -45,8 +45,11 @@ pub trait MailTransport: Send + Sync {
 
 /// メールアドレスを検証し、前後の空白を除いた形で返す
 pub fn parse_address(input: &str) -> Result<String, MailError> {
-    let _ = input;
-    todo!("SPEC #777 T-003")
+    let trimmed = input.trim();
+    trimmed
+        .parse::<lettre::Address>()
+        .map(|address| address.to_string())
+        .map_err(|_| MailError::InvalidAddress(trimmed.to_string()))
 }
 
 #[cfg(test)]

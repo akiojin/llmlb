@@ -93,6 +93,7 @@ pub async fn create_with_id(
         last_login: None,
         must_change_password,
         password_changed_at: 0,
+        email: None,
     })
 }
 
@@ -108,7 +109,7 @@ pub async fn create_with_id(
 /// * `Err(LbError)` - 検索失敗
 pub async fn find_by_username(pool: &SqlitePool, username: &str) -> Result<Option<User>, LbError> {
     let row = sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at FROM users WHERE username = ?"
+        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at, email FROM users WHERE username = ?"
     )
     .bind(username)
     .fetch_optional(pool)
@@ -128,7 +129,7 @@ pub async fn find_by_username(pool: &SqlitePool, username: &str) -> Result<Optio
 /// * `Err(LbError)` - 取得失敗
 pub async fn list(pool: &SqlitePool) -> Result<Vec<User>, LbError> {
     let rows = sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at FROM users ORDER BY created_at DESC"
+        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at, email FROM users ORDER BY created_at DESC"
     )
     .fetch_all(pool)
     .await
@@ -229,6 +230,7 @@ pub async fn update(
         last_login: current.last_login,
         must_change_password: new_must_change_password,
         password_changed_at: new_password_changed_at,
+        email: current.email,
     })
 }
 
@@ -285,7 +287,7 @@ pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<(), LbError> {
 /// * `Err(LbError)` - 検索失敗
 pub async fn find_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<User>, LbError> {
     let row = sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at FROM users WHERE id = ?",
+        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at, email FROM users WHERE id = ?",
     )
     .bind(id.to_string())
     .fetch_optional(pool)
@@ -367,16 +369,36 @@ pub struct NotificationRecipient {
 ///
 /// email は通知先であり、ログイン識別子ではない（SPEC #777 FR-001）。
 pub async fn set_email(pool: &SqlitePool, id: Uuid, email: Option<&str>) -> Result<(), LbError> {
-    let _ = (pool, id, email);
-    todo!("SPEC #777 T-001")
+    let result = sqlx::query("UPDATE users SET email = ? WHERE id = ?")
+        .bind(email)
+        .bind(id.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| LbError::Database(format!("Failed to update user email: {}", e)))?;
+
+    if result.rows_affected() == 0 {
+        return Err(LbError::Database(format!("User not found: {}", id)));
+    }
+    Ok(())
 }
 
 /// 運用通知の宛先（email を設定済みの管理者）をユーザー名順で取得する
 pub async fn list_notification_recipients(
     pool: &SqlitePool,
 ) -> Result<Vec<NotificationRecipient>, LbError> {
-    let _ = pool;
-    todo!("SPEC #777 T-001")
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT username, email FROM users
+         WHERE role = 'admin' AND email IS NOT NULL AND email != ''
+         ORDER BY username ASC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| LbError::Database(format!("Failed to list notification recipients: {}", e)))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(username, email)| NotificationRecipient { username, email })
+        .collect())
 }
 
 // SQLiteからの行取得用の内部型
@@ -391,6 +413,8 @@ struct UserRow {
     must_change_password: i32,
     #[sqlx(default)]
     password_changed_at: i64,
+    #[sqlx(default)]
+    email: Option<String>,
 }
 
 impl UserRow {
@@ -419,6 +443,7 @@ impl UserRow {
             last_login,
             must_change_password: self.must_change_password != 0,
             password_changed_at: self.password_changed_at,
+            email: self.email.filter(|email| !email.is_empty()),
         }
     }
 }
@@ -693,5 +718,99 @@ mod tests {
 
         assert_eq!(updated.created_at, before.created_at);
         assert_eq!(updated.last_login, before.last_login);
+    }
+
+    #[tokio::test]
+    async fn test_email_is_null_until_set_and_can_be_cleared() {
+        let pool = setup_test_db().await;
+        let user = create(&pool, "mail_user", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        assert_eq!(user.email, None);
+        assert_eq!(
+            find_by_id(&pool, user.id).await.unwrap().unwrap().email,
+            None
+        );
+
+        set_email(&pool, user.id, Some("ops@example.com"))
+            .await
+            .unwrap();
+        let found = find_by_username(&pool, "mail_user").await.unwrap().unwrap();
+        assert_eq!(found.email.as_deref(), Some("ops@example.com"));
+        assert_eq!(
+            list(&pool).await.unwrap()[0].email.as_deref(),
+            Some("ops@example.com")
+        );
+
+        set_email(&pool, user.id, None).await.unwrap();
+        assert_eq!(
+            find_by_id(&pool, user.id).await.unwrap().unwrap().email,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_email_on_nonexistent_user_returns_error() {
+        let pool = setup_test_db().await;
+        let result = set_email(&pool, Uuid::new_v4(), Some("ops@example.com")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_update_keeps_email() {
+        let pool = setup_test_db().await;
+        let user = create(&pool, "keeps_mail", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+        set_email(&pool, user.id, Some("keep@example.com"))
+            .await
+            .unwrap();
+
+        let updated = update(&pool, user.id, Some("renamed"), None, Some(UserRole::Admin))
+            .await
+            .unwrap();
+        assert_eq!(updated.email.as_deref(), Some("keep@example.com"));
+        assert_eq!(
+            find_by_id(&pool, user.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .email
+                .as_deref(),
+            Some("keep@example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_notification_recipients_are_admins_with_email_ordered_by_username() {
+        let pool = setup_test_db().await;
+        assert!(list_notification_recipients(&pool)
+            .await
+            .unwrap()
+            .is_empty());
+
+        for (username, role, email) in [
+            ("zoe", UserRole::Admin, Some("zoe@example.com")),
+            ("adam", UserRole::Admin, Some("adam@example.com")),
+            ("no_mail_admin", UserRole::Admin, None),
+            ("viewer", UserRole::Viewer, Some("viewer@example.com")),
+        ] {
+            let user = create(&pool, username, "hash", role, false).await.unwrap();
+            set_email(&pool, user.id, email).await.unwrap();
+        }
+
+        assert_eq!(
+            list_notification_recipients(&pool).await.unwrap(),
+            vec![
+                NotificationRecipient {
+                    username: "adam".to_string(),
+                    email: "adam@example.com".to_string(),
+                },
+                NotificationRecipient {
+                    username: "zoe".to_string(),
+                    email: "zoe@example.com".to_string(),
+                },
+            ]
+        );
     }
 }

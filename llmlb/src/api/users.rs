@@ -3,7 +3,7 @@
 //! Admin専用のユーザーCRUD操作
 
 use crate::common::auth::{Claims, User, UserRole};
-use crate::common::error::LbError;
+use crate::common::error::{CommonError, LbError};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -23,6 +23,9 @@ pub struct CreateUserRequest {
     pub username: String,
     /// ロール
     pub role: UserRole,
+    /// 運用通知の宛先メールアドレス（オプション。ログイン識別子ではない）
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 /// ユーザー作成レスポンス（生成パスワード付き）
@@ -43,6 +46,9 @@ pub struct UpdateUserRequest {
     pub password: Option<String>,
     /// ロール（オプション）
     pub role: Option<UserRole>,
+    /// 運用通知の宛先メールアドレス（オプション。空文字で解除。ログイン識別子ではない）
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 /// ユーザーレスポンス（password_hash除外）
@@ -58,6 +64,8 @@ pub struct UserResponse {
     pub created_at: String,
     /// 最終ログイン日時
     pub last_login: Option<String>,
+    /// 運用通知の宛先メールアドレス（ログイン識別子ではない。未設定は `null`）
+    pub email: Option<String>,
 }
 
 /// ユーザー一覧レスポンス
@@ -75,8 +83,42 @@ impl From<User> for UserResponse {
             role: format!("{:?}", user.role).to_lowercase(),
             created_at: user.created_at.to_rfc3339(),
             last_login: user.last_login.map(|dt| dt.to_rfc3339()),
+            email: user.email,
         }
     }
+}
+
+/// 通知先 email の入力を検証する（前後の空白を除き、空文字は「未設定」として扱う）
+fn parse_notification_email(input: &str) -> Result<Option<String>, HandlerError> {
+    if input.trim().is_empty() {
+        return Ok(None);
+    }
+    crate::notifications::parse_address(input)
+        .map(Some)
+        .map_err(|_| {
+            AppError(LbError::Common(CommonError::Validation(
+                "email must be a valid mail address".to_string(),
+            )))
+            .into()
+        })
+}
+
+/// 通知先 email を保存する
+async fn store_notification_email(
+    app_state: &AppState,
+    user_id: Uuid,
+    email: Option<&str>,
+) -> Result<(), HandlerError> {
+    crate::db::users::set_email(&app_state.db_pool, user_id, email)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to update user email: {}", e);
+            AppError(LbError::Database(format!(
+                "Failed to update user email: {}",
+                e
+            )))
+            .into()
+        })
 }
 
 /// Admin権限チェックヘルパー
@@ -138,6 +180,12 @@ pub async fn create_user(
 ) -> Result<(StatusCode, Json<CreateUserResponse>), HandlerError> {
     check_admin(&claims)?;
 
+    // 通知先 email の検証（不正な値ではユーザーを作成しない）
+    let email = match request.email.as_deref() {
+        Some(email) => parse_notification_email(email)?,
+        None => None,
+    };
+
     // ユーザー名の重複チェック
     let existing = crate::db::users::find_by_username(&app_state.db_pool, &request.username)
         .await
@@ -168,7 +216,7 @@ pub async fn create_user(
     })?;
 
     // ユーザーを作成（初回パスワード変更必須）
-    let user = crate::db::users::create(
+    let mut user = crate::db::users::create(
         &app_state.db_pool,
         &request.username,
         &password_hash,
@@ -180,6 +228,11 @@ pub async fn create_user(
         tracing::error!("Failed to create user: {}", e);
         AppError(LbError::Database(format!("Failed to create user: {}", e))).into_response()
     })?;
+
+    if email.is_some() {
+        store_notification_email(&app_state, user.id, email.as_deref()).await?;
+        user.email = email;
+    }
 
     Ok((
         StatusCode::CREATED,
@@ -213,6 +266,12 @@ pub async fn update_user(
     Json(request): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, HandlerError> {
     check_admin(&claims)?;
+
+    // 通知先 email の検証（`None` は変更なし、`Some(None)` は解除）
+    let email = match request.email.as_deref() {
+        Some(email) => Some(parse_notification_email(email)?),
+        None => None,
+    };
 
     // ユーザーの存在確認
     crate::db::users::find_by_id(&app_state.db_pool, user_id)
@@ -261,7 +320,7 @@ pub async fn update_user(
     };
 
     // ユーザーを更新
-    let user = crate::db::users::update(
+    let mut user = crate::db::users::update(
         &app_state.db_pool,
         user_id,
         request.username.as_deref(),
@@ -273,6 +332,11 @@ pub async fn update_user(
         tracing::error!("Failed to update user: {}", e);
         AppError(LbError::Database(format!("Failed to update user: {}", e))).into_response()
     })?;
+
+    if let Some(email) = email {
+        store_notification_email(&app_state, user_id, email.as_deref()).await?;
+        user.email = email;
+    }
 
     Ok(Json(UserResponse::from(user)))
 }
@@ -456,6 +520,7 @@ mod tests {
             role: "admin".to_string(),
             created_at: "2025-01-01T00:00:00Z".to_string(),
             last_login: Some("2025-06-01T12:00:00Z".to_string()),
+            email: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"id\":\"123\""));
@@ -472,6 +537,7 @@ mod tests {
             role: "viewer".to_string(),
             created_at: "2025-01-01T00:00:00Z".to_string(),
             last_login: None,
+            email: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"last_login\":null"));
@@ -490,6 +556,7 @@ mod tests {
             last_login: Some(Utc::now()),
             must_change_password: false,
             password_changed_at: 0,
+            email: None,
         };
         let resp = UserResponse::from(user.clone());
         assert_eq!(resp.id, user.id.to_string());
@@ -509,6 +576,7 @@ mod tests {
             last_login: None,
             must_change_password: true,
             password_changed_at: 0,
+            email: None,
         };
         let resp = UserResponse::from(user.clone());
         assert_eq!(resp.username, "viewer_user");
@@ -527,6 +595,7 @@ mod tests {
             last_login: None,
             must_change_password: false,
             password_changed_at: 0,
+            email: None,
         };
         let resp = UserResponse::from(user);
         // RFC 3339 timestamps contain "T" and "+" or "Z"
@@ -545,6 +614,7 @@ mod tests {
             last_login: Some(now),
             must_change_password: false,
             password_changed_at: 0,
+            email: None,
         };
         let resp = UserResponse::from(user);
         let ll = resp.last_login.unwrap();
@@ -562,6 +632,7 @@ mod tests {
                 role: "admin".to_string(),
                 created_at: "2025-01-01T00:00:00Z".to_string(),
                 last_login: None,
+                email: None,
             },
             generated_password: "random_password_123".to_string(),
         };
@@ -589,6 +660,7 @@ mod tests {
                     role: "admin".to_string(),
                     created_at: "2025-01-01T00:00:00Z".to_string(),
                     last_login: None,
+                    email: None,
                 },
                 UserResponse {
                     id: "2".to_string(),
@@ -596,6 +668,7 @@ mod tests {
                     role: "viewer".to_string(),
                     created_at: "2025-06-01T00:00:00Z".to_string(),
                     last_login: Some("2025-06-15T00:00:00Z".to_string()),
+                    email: None,
                 },
             ],
         };
@@ -648,5 +721,58 @@ mod tests {
     fn user_role_unknown_value_fails() {
         let result = serde_json::from_str::<UserRole>("\"moderator\"");
         assert!(result.is_err());
+    }
+
+    // --- 通知先 email（SPEC #777 FR-001） ---
+
+    #[test]
+    fn create_user_request_email_is_optional() {
+        let without: CreateUserRequest =
+            serde_json::from_str(r#"{"username":"alice","role":"admin"}"#).unwrap();
+        assert_eq!(without.email, None);
+
+        let with: CreateUserRequest = serde_json::from_str(
+            r#"{"username":"alice","role":"admin","email":"alice@example.com"}"#,
+        )
+        .unwrap();
+        assert_eq!(with.email.as_deref(), Some("alice@example.com"));
+    }
+
+    #[test]
+    fn update_user_request_distinguishes_absent_and_empty_email() {
+        let absent: UpdateUserRequest = serde_json::from_str(r#"{"role":"viewer"}"#).unwrap();
+        assert_eq!(absent.email, None);
+
+        let empty: UpdateUserRequest = serde_json::from_str(r#"{"email":""}"#).unwrap();
+        assert_eq!(empty.email.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn user_response_carries_the_notification_email() {
+        let user = User {
+            id: Uuid::new_v4(),
+            username: "admin_user".to_string(),
+            password_hash: "hash".to_string(),
+            role: UserRole::Admin,
+            created_at: Utc::now(),
+            last_login: None,
+            must_change_password: false,
+            password_changed_at: 0,
+            email: Some("ops@example.com".to_string()),
+        };
+        let json = serde_json::to_value(UserResponse::from(user)).unwrap();
+        assert_eq!(json["email"], "ops@example.com");
+        assert_eq!(json["username"], "admin_user");
+    }
+
+    #[test]
+    fn parse_notification_email_trims_and_treats_blank_as_unset() {
+        assert_eq!(parse_notification_email("").unwrap(), None);
+        assert_eq!(parse_notification_email("   ").unwrap(), None);
+        assert_eq!(
+            parse_notification_email(" ops@example.com ").unwrap(),
+            Some("ops@example.com".to_string())
+        );
+        assert!(parse_notification_email("not-an-address").is_err());
     }
 }

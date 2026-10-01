@@ -36,6 +36,7 @@ impl UserRepository for MockUserRepository {
             last_login: None,
             must_change_password,
             password_changed_at: 0,
+            email: None,
         };
         self.users.lock().unwrap().insert(user.id, user.clone());
         Ok(user)

@@ -172,6 +172,12 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             post(audit_log::verify_hash_chain),
         );
 
+    // 運用通知の設定API (SPEC #777): adminロールのみ
+    let dashboard_notification_routes = Router::new().route(
+        "/dashboard/notifications",
+        get(dashboard::get_notification_settings).put(dashboard::update_notification_settings),
+    );
+
     {
         let dashboard_general_routes = dashboard_general_routes
             .layer(middleware::from_fn(
@@ -197,8 +203,24 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
                 state.clone(),
                 crate::auth::middleware::require_jwt_auth_middleware,
             ));
+        // 設定を変更する PUT を持つため、Cookie 認証時の CSRF からも保護する
+        let dashboard_notification_routes = dashboard_notification_routes
+            .layer(middleware::from_fn(
+                crate::auth::middleware::require_password_changed_middleware,
+            ))
+            .layer(middleware::from_fn(
+                crate::auth::middleware::csrf_protect_middleware,
+            ))
+            .layer(middleware::from_fn(
+                crate::auth::middleware::require_admin_role_middleware,
+            ))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::auth::middleware::require_jwt_auth_middleware,
+            ));
         dashboard_general_routes
             .merge(dashboard_audit_routes)
+            .merge(dashboard_notification_routes)
             .merge(dashboard_playground_routes)
             .merge(dashboard_playground_loadtest_routes)
     }

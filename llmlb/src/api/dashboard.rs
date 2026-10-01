@@ -24,6 +24,7 @@ use uuid::Uuid;
 mod clients;
 mod endpoint_stats;
 mod model_catalog;
+mod notifications;
 mod overview;
 mod request_history;
 mod settings;
@@ -40,6 +41,9 @@ pub use endpoint_stats::{
     get_endpoint_model_tps, get_endpoint_today_stats, EndpointDailyStatsQuery, ModelTpsEntry,
 };
 pub use model_catalog::{get_models, ModelsViewQuery};
+pub use notifications::{
+    get_notification_settings, update_notification_settings, NotificationSettingsResponse,
+};
 pub use request_history::{
     export_request_responses, get_request_response_detail, list_request_responses,
     RequestHistoryExportFormat, RequestHistoryExportQuery, RequestHistoryQuery, ALLOWED_PAGE_SIZES,

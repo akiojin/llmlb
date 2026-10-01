@@ -46,6 +46,7 @@ dependabot-subjects:
 dashboard-checks:
 	pnpm --filter @llm/dashboard typecheck
 	pnpm --filter @llm/dashboard lint
+	pnpm --filter @llm/dashboard test
 
 coverage:
 	mkdir -p coverage-rust

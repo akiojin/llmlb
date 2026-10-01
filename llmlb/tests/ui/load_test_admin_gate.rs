@@ -1,8 +1,9 @@
 // Load Test を admin ロール限定にするフロント実装のソースレベル回帰テスト。
 //
-// 目的: LB Playground の Load Test が UI/API 双方で admin 限定であることを、
-// コンポーネントソースの構造で担保する（viewer には Load Test トグル非表示・
-// startLoadTest ガード・admin 限定エンドポイントへの送信）。
+// viewer に Load Test トグルが表示されないこと、admin が実行すると
+// `chatApi.completeLoadTest` が呼ばれることは、描画して検証する
+// `llmlb/src/web/dashboard/src/pages/LoadBalancerPlayground.test.tsx` が担う。
+// ここには、描画では観測できないソースの性質だけを残す。
 
 fn lb_playground_source() -> String {
     include_str!("../../src/web/dashboard/src/pages/LoadBalancerPlayground.tsx").to_string()
@@ -12,25 +13,8 @@ fn chat_api_source() -> String {
     include_str!("../../src/web/dashboard/src/lib/api/chat.ts").to_string()
 }
 
-#[test]
-fn lb_playground_derives_is_admin_from_auth() {
-    let source = lb_playground_source();
-    assert!(
-        source.contains("useAuth") && source.contains("user?.role === 'admin'"),
-        "LoadBalancerPlayground should derive isAdmin from useAuth"
-    );
-}
-
-#[test]
-fn load_test_mode_toggle_is_admin_gated() {
-    let source = lb_playground_source();
-    // Load Test モードトグルが isAdmin 条件下でのみ描画されること
-    assert!(
-        source.contains("{isAdmin && (") && source.contains("id=\"lb-mode-load-test\""),
-        "Load Test mode toggle must be rendered only when isAdmin"
-    );
-}
-
+// トグルが非表示の viewer は UI から startLoadTest に到達できないため、
+// 多重防御のガードはソースで担保する。
 #[test]
 fn start_load_test_guards_on_admin() {
     let source = lb_playground_source();
@@ -42,12 +26,6 @@ fn start_load_test_guards_on_admin() {
 
 #[test]
 fn load_test_uses_admin_only_endpoint() {
-    let lb = lb_playground_source();
-    assert!(
-        lb.contains("chatApi.completeLoadTest("),
-        "load test worker must call the admin-only completeLoadTest"
-    );
-
     let chat = chat_api_source();
     assert!(
         chat.contains("completeLoadTest")

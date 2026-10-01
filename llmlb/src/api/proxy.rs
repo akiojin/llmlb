@@ -434,6 +434,16 @@ pub(crate) fn record_endpoint_request_stats(
                 duration_ms,
             });
         }
+
+        // SPEC #582 FR-048c: リクエスト数・日次統計・TPS の確定を購読者へ通知する。
+        // リクエストごとに発生するため集約して発行する（FR-048d）。llmlb はエンドポイント内部の
+        // リソース使用率を観測しないので、値なしで配信する。
+        event_bus.publish_coalesced(crate::events::DashboardEvent::MetricsUpdated {
+            runtime_id: endpoint_id,
+            cpu_usage: None,
+            memory_usage: None,
+            gpu_usage: None,
+        });
     });
 }
 /// エンドポイントにリクエストを転送

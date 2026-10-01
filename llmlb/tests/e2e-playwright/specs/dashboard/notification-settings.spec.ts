@@ -158,8 +158,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await expect(status.getByRole('alert')).toHaveText(stored.status.reason as string)
         expect(stored.recipients).toContainEqual({ username, email })
         await expect(save).toBeDisabled()
+        // Exact match: the toast's screen-reader announcement briefly repeats the text.
         await expect(
-          page.getByText(`Notifications cannot be sent yet: ${stored.status.reason}`),
+          page.getByText(`Notifications cannot be sent yet: ${stored.status.reason}`, { exact: true }),
         ).toBeVisible()
         await status.scrollIntoViewIfNeeded()
         await attachScreenshot(page, testInfo, `notifications-${colorScheme}`)

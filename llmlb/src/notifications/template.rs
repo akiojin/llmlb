@@ -2,8 +2,10 @@
 
 use super::digest::DigestReport;
 use crate::types::endpoint::EndpointStatus;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 /// メール本文の言語
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -186,9 +188,13 @@ fn one_line(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// URL の `://` から、authority 内の最後の `@` まで（`user:password@`）
+static URL_CREDENTIALS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"://[^/?#\s]*@").expect("valid regex"));
+
 /// 文中の URL から、埋め込まれた認証情報（`scheme://user:password@host` の `user:password@`）を除く
 fn without_url_credentials(value: &str) -> String {
-    value.to_string()
+    URL_CREDENTIALS.replace_all(value, "://").into_owned()
 }
 
 #[cfg(test)]

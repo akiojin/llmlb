@@ -43,6 +43,19 @@ pub(super) fn effective_ip_alert_threshold(raw_value: Option<&str>) -> i64 {
     }
 }
 
+/// 専用 API が管理するキーを、この汎用 API から読み書きさせない
+///
+/// `notifications.*`（SPEC #777）は admin 専用の `/api/dashboard/notifications` が検証付きで
+/// 管理する。汎用 API は viewer でも読めて検証もしないため、対象外にする。
+fn reject_reserved_key(key: &str) -> Result<(), LbError> {
+    if key.starts_with(crate::notifications::config::KEY_PREFIX) {
+        return Err(LbError::Authorization(
+            "notifications.* settings are managed through /api/dashboard/notifications".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// GET /api/dashboard/settings/{key} - 設定値取得
 ///
 /// SPEC-62ac4b68: 閾値ベースの異常検知
@@ -50,6 +63,7 @@ pub async fn get_setting(
     axum::extract::Path(key): axum::extract::Path<String>,
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    reject_reserved_key(&key).map_err(AppError)?;
     let settings = crate::db::settings::SettingsStorage::new(state.db_pool.clone());
     let value = settings.get_setting(&key).await.map_err(AppError)?;
     let value = if key == "ip_alert_threshold" {
@@ -82,6 +96,7 @@ pub async fn update_setting(
             "Only admin can update settings".to_string(),
         )));
     }
+    reject_reserved_key(&key).map_err(AppError)?;
     let value = if key == "ip_alert_threshold" {
         parse_ip_alert_threshold(&body.value)
             .map_err(AppError)?

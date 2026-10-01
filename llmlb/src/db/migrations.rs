@@ -473,9 +473,12 @@ mod tests {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&pool).await.unwrap();
 
+        // 実在するどのマイグレーションよりも新しいバージョンで検証する
+        const PROBE_VERSION: i64 = 20991231235959;
+
         let mut migrations: Vec<_> = sqlx::migrate!("./migrations").iter().cloned().collect();
         migrations.push(sqlx::migrate::Migration::new(
-            20260928000000,
+            PROBE_VERSION,
             Cow::Borrowed("timestamp numbering probe"),
             sqlx::migrate::MigrationType::Simple,
             Cow::Borrowed("CREATE TABLE timestamp_numbering_probe (id INTEGER PRIMARY KEY);"),
@@ -494,7 +497,7 @@ mod tests {
                 .fetch_all(&pool)
                 .await
                 .unwrap();
-        assert_eq!(applied.last(), Some(&20260928000000));
+        assert_eq!(applied.last(), Some(&PROBE_VERSION));
         let expected = sqlx::migrate!("./migrations").iter().count() + 1;
         assert_eq!(applied.len(), expected);
     }

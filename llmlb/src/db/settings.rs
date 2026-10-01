@@ -4,6 +4,7 @@
 
 use crate::common::error::{LbError, RouterResult};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 /// 設定ストレージ
 #[derive(Clone)]
@@ -38,6 +39,48 @@ impl SettingsStorage {
         .execute(&self.pool)
         .await
         .map_err(|e| LbError::Database(format!("Failed to set setting: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 指定した接頭辞で始まるキーの設定値をまとめて取得
+    pub async fn get_settings_with_prefix(
+        &self,
+        prefix: &str,
+    ) -> RouterResult<HashMap<String, String>> {
+        let rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT key, value FROM settings WHERE substr(key, 1, length(?)) = ?")
+                .bind(prefix)
+                .bind(prefix)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| LbError::Database(format!("Failed to get settings: {}", e)))?;
+
+        Ok(rows.into_iter().collect())
+    }
+
+    /// 複数の設定値を 1 トランザクションで保存（全件成功するか、何も変更しない）
+    pub async fn set_settings(&self, entries: &[(&str, &str)]) -> RouterResult<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to begin transaction: {}", e)))?;
+
+        for (key, value) in entries {
+            sqlx::query(
+                "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+            )
+            .bind(key)
+            .bind(value)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to set setting: {}", e)))?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to commit settings: {}", e)))?;
 
         Ok(())
     }
@@ -156,6 +199,53 @@ mod tests {
         assert_eq!(
             storage.get_setting("key-with-dashes").await.unwrap(),
             Some("dashed".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn get_settings_with_prefix_returns_only_matching_keys() {
+        let _lock = TEST_LOCK.lock().await;
+        let storage = setup().await;
+        storage.set_setting("mail.host", "smtp").await.unwrap();
+        storage.set_setting("mail.port", "587").await.unwrap();
+        storage.set_setting("mailbox", "other").await.unwrap();
+        storage.set_setting("mai_x", "wildcard").await.unwrap();
+
+        let found = storage.get_settings_with_prefix("mail.").await.unwrap();
+        assert_eq!(found.len(), 2);
+        assert_eq!(found.get("mail.host").map(String::as_str), Some("smtp"));
+        assert_eq!(found.get("mail.port").map(String::as_str), Some("587"));
+
+        // 接頭辞は LIKE のワイルドカードとして解釈されない
+        let literal = storage.get_settings_with_prefix("mai_").await.unwrap();
+        assert_eq!(literal.len(), 1);
+        assert!(literal.contains_key("mai_x"));
+
+        assert!(storage
+            .get_settings_with_prefix("absent.")
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn set_settings_writes_and_overwrites_all_entries() {
+        let _lock = TEST_LOCK.lock().await;
+        let storage = setup().await;
+        storage.set_setting("batch.a", "old").await.unwrap();
+
+        storage
+            .set_settings(&[("batch.a", "new"), ("batch.b", "created")])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            storage.get_setting("batch.a").await.unwrap().as_deref(),
+            Some("new")
+        );
+        assert_eq!(
+            storage.get_setting("batch.b").await.unwrap().as_deref(),
+            Some("created")
         );
     }
 }

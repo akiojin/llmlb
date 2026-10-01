@@ -348,6 +348,8 @@ LM Studio / Ollama / vLLM / xLLM / OpenAI 互換サーバー側のセットア�
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（旧: `REQUEST_HISTORY_RETENTION_DAYS`） |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、旧: `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`） |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（旧: `LLM_DEFAULT_EMBEDDING_MODEL`） |
+| `LLMLB_SMTP_USERNAME` | - | 運用通知メールの SMTP ユーザー名（メール送信に必須。詳細は [docs/API.md](docs/API.md)） |
+| `LLMLB_SMTP_PASSWORD` | - | 運用通知メールの SMTP パスワード（メール送信に必須。DB には保存しない） |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（非推奨） |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（非推奨） |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、非推奨） |
@@ -657,6 +659,7 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - GET `/api/dashboard/stats/tokens/daily`
 - GET `/api/dashboard/stats/tokens/monthly`
 - GET `/api/dashboard/logs/lb`
+- GET / PUT `/api/dashboard/notifications`（運用通知の設定・状態・宛先、JWT: admin のみ）
 - GET `/api/metrics/cloud`（JWT: admin / APIキー: `metrics.read`）
 - GET `/api/metrics/cloud/export`（JWT: admin / APIキー: `metrics.read`）
 - GET `/api/endpoints/:id/logs`（JWT: admin / APIキー: `logs.read`）

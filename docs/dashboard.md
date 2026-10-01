@@ -48,11 +48,74 @@ llmlb serves the admin dashboard UI as a React SPA.
 - `GET /api/dashboard/stats/tokens/daily`
 - `GET /api/dashboard/stats/tokens/monthly`
 
+## Tests: which layer verifies what
+
+The dashboard is verified by three layers. Put a check in the cheapest layer
+that can observe the behaviour; do not write the same check in two layers.
+
+| Layer | Location | Command | Needs |
+|-------|----------|---------|-------|
+| Component tests (vitest + React Testing Library) | `llmlb/src/web/dashboard/src/**/*.test.ts(x)` | `pnpm --filter @llm/dashboard test` | Node only |
+| Source and artifact checks (Rust) | `llmlb/tests/ui/*.rs` | `cargo test --test ui_tests` | Rust toolchain |
+| End-to-end tests (Playwright) | `llmlb/tests/e2e-playwright/specs/` | `make e2e-playwright` | Rust toolchain and a browser (Playwright starts the server) |
+
+`make dashboard-checks` runs typecheck, lint and the component tests. The
+`Dashboard Typecheck, Lint & Test` job in `.github/workflows/lint.yml` runs it
+on every pull request to `develop`, without a path filter.
+
+### Component tests
+
+Use them for anything a rendered component decides on its own:
+
+- what is rendered from given data, and the loading / empty / error states
+- which API method a user action calls, and with which arguments
+- role gating inside a page (what an admin sees and a viewer does not)
+- hook logic such as the WebSocket query invalidation matrix
+  (`src/hooks/useWebSocket.test.tsx`; adding a `DashboardEventType` fails
+  typecheck until the matrix lists the query keys that event invalidates)
+
+They run in jsdom without a server. `src/test/setup.ts` replaces `fetch` and
+`WebSocket`; a request that a test did not stub fails that test. Stub the API
+objects from `@/lib/api` with `vi.spyOn`, and render through
+`renderWithProviders` / `renderPage` from `src/test/render.tsx`.
+
+Do not use them for:
+
+- full-page navigation (`window.location.href = ...`): jsdom does not navigate
+- layout, theme and chart rendering: jsdom has no layout engine
+- the contract with the real backend
+
+### Source and artifact checks
+
+`llmlb/tests/ui/*.rs` reads source text (`include_str!`) or the HTML that the
+server returns. Use them only for properties of the source or of the embedded
+bundle that no rendered test can observe:
+
+- a removed feature stays removed (an identifier or string must not exist)
+- the stylesheet defines the theme tokens and the reduced-motion rule
+- the served HTML shell has the mount point and no leftover markup
+- a defensive guard that the UI never reaches (for example the admin check
+  inside `startLoadTest`, whose trigger is hidden from viewers)
+
+Do not add a source-text assertion for behaviour (rendering, events, state
+changes). A string being present in a `.tsx` file does not show that it is
+rendered. When a component test covers what a source-text check asserts,
+delete the source-text check in the same change.
+
+### End-to-end tests
+
+Use Playwright for what only a real browser and server can show:
+
+- flows across pages and redirects (login, forced password change, logout)
+- the real API contract, authentication and CSRF
+- live updates over the real WebSocket
+- themes, layout, charts and screenshots
+
 ## Build (regenerate embedded assets)
 
 ```bash
 pnpm install
-pnpm --filter @llmlb/dashboard build
+pnpm --filter @llm/dashboard build
 ```
 
 This regenerates embedded static assets under `llmlb/src/web/static/`.

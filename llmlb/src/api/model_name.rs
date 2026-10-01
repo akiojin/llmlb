@@ -46,37 +46,37 @@ pub fn resolve_runtime_model_name(model: &str, endpoint_type: &EndpointType) -> 
         .unwrap_or_else(|| model.to_string())
 }
 
-/// Resolve the runtime model name that the selected endpoint actually advertises.
+/// Resolve the model name to send to the selected endpoint.
+///
+/// This is the only place that decides the upstream model name (SPEC #575 FR-040/FR-041):
+///
+/// 1. The `model_id` of the first endpoint model, in list order, whose `model_id` or
+///    `canonical_name` equals `requested_model` or `selected_model`.
+/// 2. The static engine alias of `requested_model`, then of `selected_model`.
+/// 3. `selected_model` as is.
+///
+/// Pass an empty `endpoint_models` when the endpoint's model list could not be loaded.
 pub fn resolve_runtime_model_name_for_endpoint(
     requested_model: &str,
     selected_model: &str,
     endpoint_type: &EndpointType,
     endpoint_models: &[EndpointModel],
 ) -> String {
-    if endpoint_models
-        .iter()
-        .any(|endpoint_model| endpoint_model.model_id == requested_model)
-    {
-        return requested_model.to_string();
-    }
+    let is_wanted = |name: &str| name == requested_model || name == selected_model;
 
-    if let Some(runtime_model) = endpoint_models.iter().find_map(|endpoint_model| {
-        if endpoint_model.model_id == selected_model {
-            return Some(endpoint_model.model_id.as_str());
-        }
-
-        if endpoint_model.canonical_name.as_deref() == Some(selected_model)
-            || endpoint_model.canonical_name.as_deref() == Some(requested_model)
-        {
-            return Some(endpoint_model.model_id.as_str());
-        }
-
-        None
+    if let Some(endpoint_model) = endpoint_models.iter().find(|endpoint_model| {
+        is_wanted(&endpoint_model.model_id)
+            || endpoint_model
+                .canonical_name
+                .as_deref()
+                .is_some_and(is_wanted)
     }) {
-        return runtime_model.to_string();
+        return endpoint_model.model_id.clone();
     }
 
-    resolve_runtime_model_name(selected_model, endpoint_type)
+    crate::models::mapping::resolve_engine_name(requested_model, endpoint_type)
+        .map(str::to_string)
+        .unwrap_or_else(|| resolve_runtime_model_name(selected_model, endpoint_type))
 }
 
 /// Rewrite the request payload's `model` field for the selected endpoint when needed.
@@ -222,6 +222,173 @@ mod tests {
     fn resolve_runtime_model_name_uses_engine_alias_for_canonical_input() {
         let resolved = resolve_runtime_model_name("openai/gpt-oss-20b", &EndpointType::Ollama);
         assert_eq!(resolved, "gpt-oss:20b");
+    }
+
+    // SPEC #575 FR-041: エンドポイント向けモデル名の解決規則（一本化前の proxy_post の挙動が基準）
+
+    const CANONICAL: &str = "openai/gpt-oss-20b";
+    const OLLAMA_ALIAS: &str = "gpt-oss:20b";
+
+    #[test]
+    fn upstream_model_is_endpoint_model_id_matching_requested_model() {
+        let endpoint_models = vec![
+            endpoint_model("llama3:8b", None),
+            endpoint_model(OLLAMA_ALIAS, Some(CANONICAL)),
+        ];
+
+        let resolved = resolve_runtime_model_name_for_endpoint(
+            OLLAMA_ALIAS,
+            OLLAMA_ALIAS,
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+
+        assert_eq!(resolved, OLLAMA_ALIAS);
+    }
+
+    #[test]
+    fn upstream_model_is_endpoint_model_id_matching_selected_model() {
+        let endpoint_models = vec![endpoint_model("org/model", None)];
+
+        let resolved = resolve_runtime_model_name_for_endpoint(
+            "client-alias",
+            "org/model",
+            &EndpointType::Vllm,
+            &endpoint_models,
+        );
+
+        assert_eq!(resolved, "org/model");
+    }
+
+    #[test]
+    fn upstream_model_is_endpoint_model_id_whose_canonical_name_matches() {
+        // vLLM には静的マッピングが無いため、結果はエンドポイントのモデル一覧からしか得られない
+        let endpoint_models = vec![
+            endpoint_model("llama3:8b", None),
+            endpoint_model("gpt-oss-20b-awq", Some(CANONICAL)),
+        ];
+
+        let resolved = resolve_runtime_model_name_for_endpoint(
+            CANONICAL,
+            CANONICAL,
+            &EndpointType::Vllm,
+            &endpoint_models,
+        );
+
+        assert_eq!(resolved, "gpt-oss-20b-awq");
+    }
+
+    #[test]
+    fn upstream_model_falls_back_to_static_mapping_when_endpoint_has_no_match() {
+        let endpoint_models = vec![endpoint_model("llama3:8b", None)];
+
+        let resolved = resolve_runtime_model_name_for_endpoint(
+            CANONICAL,
+            CANONICAL,
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+
+        assert_eq!(resolved, OLLAMA_ALIAS);
+    }
+
+    #[test]
+    fn upstream_model_is_selected_model_when_nothing_matches() {
+        let endpoint_models = vec![endpoint_model("llama3:8b", None)];
+
+        let same = resolve_runtime_model_name_for_endpoint(
+            "unknown/model",
+            "unknown/model",
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+        assert_eq!(same, "unknown/model");
+
+        let differing = resolve_runtime_model_name_for_endpoint(
+            "unknown-alias",
+            "unknown/model",
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+        assert_eq!(differing, "unknown/model");
+    }
+
+    #[test]
+    fn upstream_model_uses_static_mapping_when_endpoint_models_are_empty() {
+        // list_models が失敗した場合、呼び出し側は空の一覧を渡す
+        let mapped = resolve_runtime_model_name_for_endpoint(
+            CANONICAL,
+            CANONICAL,
+            &EndpointType::Ollama,
+            &[],
+        );
+        assert_eq!(mapped, OLLAMA_ALIAS);
+
+        let unmapped = resolve_runtime_model_name_for_endpoint(
+            "unknown/model",
+            "unknown/model",
+            &EndpointType::Ollama,
+            &[],
+        );
+        assert_eq!(unmapped, "unknown/model");
+    }
+
+    #[test]
+    fn upstream_model_follows_endpoint_list_order_over_exact_requested_id() {
+        // EC-014: 要求名と同名の model_id より、一覧で先に現れた canonical 一致のモデルを採用する
+        let endpoint_models = vec![
+            endpoint_model(OLLAMA_ALIAS, Some(CANONICAL)),
+            endpoint_model(CANONICAL, Some(CANONICAL)),
+        ];
+
+        let resolved = resolve_runtime_model_name_for_endpoint(
+            CANONICAL,
+            CANONICAL,
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+
+        assert_eq!(resolved, OLLAMA_ALIAS);
+    }
+
+    #[test]
+    fn upstream_model_static_mapping_tries_requested_before_selected() {
+        let requested_mapped = resolve_runtime_model_name_for_endpoint(
+            CANONICAL,
+            "unknown/model",
+            &EndpointType::Ollama,
+            &[],
+        );
+        assert_eq!(requested_mapped, OLLAMA_ALIAS);
+
+        let selected_mapped = resolve_runtime_model_name_for_endpoint(
+            "unknown-alias",
+            CANONICAL,
+            &EndpointType::Ollama,
+            &[],
+        );
+        assert_eq!(selected_mapped, OLLAMA_ALIAS);
+    }
+
+    #[test]
+    fn rewrite_payload_model_for_endpoint_follows_endpoint_list_order() {
+        let payload = json!({
+            "model": CANONICAL,
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+        let endpoint_models = vec![
+            endpoint_model(OLLAMA_ALIAS, Some(CANONICAL)),
+            endpoint_model(CANONICAL, Some(CANONICAL)),
+        ];
+
+        let rewritten = rewrite_payload_model_for_endpoint(
+            payload,
+            CANONICAL,
+            &EndpointType::Ollama,
+            &endpoint_models,
+        );
+
+        assert_eq!(rewritten["model"], OLLAMA_ALIAS);
     }
 
     #[test]

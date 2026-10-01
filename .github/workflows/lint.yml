@@ -84,10 +84,10 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
 
   dashboard-lint:
-    # Issue #769
-    # 目的: dashboard の typecheck / lint を検出する（依存更新での破損を着地前に止める）
+    # Issue #769, #782
+    # 目的: dashboard の typecheck / lint / コンポーネントテストの失敗を検出する（依存更新での破損を着地前に止める）
     # pnpm-lock.yaml 等ルートの変更でも壊れ得るため、パスフィルタを掛けず常に実行する
-    name: Dashboard Typecheck & Lint
+    name: Dashboard Typecheck, Lint & Test
     runs-on: ubuntu-latest
 
     steps:
@@ -97,7 +97,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # vitest 5 は Node 22.12 以上を要求する
+          node-version: '22'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -107,7 +108,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck & lint dashboard
+      - name: Typecheck, lint & test dashboard
         run: make dashboard-checks
 
   markdownlint:

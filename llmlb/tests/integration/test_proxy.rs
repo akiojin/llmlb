@@ -276,10 +276,20 @@ const ENGINE_MODEL: &str = "gpt-oss:20b";
 const CANONICAL_MODEL: &str = "openai/gpt-oss-20b";
 const UNMAPPED_MODEL: &str = "us032-unmapped:latest";
 
-/// 受信した chat completions のボディを記録する上流スタブ
+/// 受信した推論リクエストのボディを記録する上流スタブ
 #[derive(Default)]
 struct RecordingUpstreamState {
     chat_bodies: Mutex<Vec<Value>>,
+    embedding_bodies: Mutex<Vec<Value>>,
+}
+
+/// 上流スタブが公開するモデル ID
+fn recording_upstream_model_ids() -> [String; 3] {
+    [
+        ENGINE_MODEL.to_string(),
+        UNMAPPED_MODEL.to_string(),
+        llmlb::config::get_default_embedding_model(),
+    ]
 }
 
 /// `/api/tags` に応答するため Ollama として判別される上流スタブを起動する
@@ -289,25 +299,26 @@ async fn spawn_recording_ollama_upstream() -> (TestServer, Arc<RecordingUpstream
         .route("/api/tags", get(recording_tags_handler))
         .route("/v1/models", get(recording_models_handler))
         .route("/v1/chat/completions", post(recording_chat_handler))
+        .route("/v1/embeddings", post(recording_embeddings_handler))
         .with_state(state.clone());
 
     (spawn_lb(app).await, state)
 }
 
 async fn recording_tags_handler() -> impl IntoResponse {
-    Json(json!({
-        "models": [{"name": ENGINE_MODEL}, {"name": UNMAPPED_MODEL}]
-    }))
+    let models: Vec<Value> = recording_upstream_model_ids()
+        .iter()
+        .map(|id| json!({"name": id}))
+        .collect();
+    Json(json!({"models": models}))
 }
 
 async fn recording_models_handler() -> impl IntoResponse {
-    Json(json!({
-        "object": "list",
-        "data": [
-            {"id": ENGINE_MODEL, "object": "model"},
-            {"id": UNMAPPED_MODEL, "object": "model"}
-        ]
-    }))
+    let data: Vec<Value> = recording_upstream_model_ids()
+        .iter()
+        .map(|id| json!({"id": id, "object": "model"}))
+        .collect();
+    Json(json!({"object": "list", "data": data}))
 }
 
 async fn recording_chat_handler(
@@ -324,6 +335,18 @@ async fn recording_chat_handler(
             "message": {"role": "assistant", "content": "pong"},
             "finish_reason": "stop"
         }]
+    }))
+}
+
+async fn recording_embeddings_handler(
+    State(state): State<Arc<RecordingUpstreamState>>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    state.embedding_bodies.lock().unwrap().push(body);
+    Json(json!({
+        "object": "list",
+        "model": "upstream-reported-model",
+        "data": [{"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}]
     }))
 }
 
@@ -385,6 +408,42 @@ async fn test_chat_completions_sends_resolved_model_to_upstream() {
             "upstream model for requested model {requested}"
         );
     }
+}
+
+/// SPEC #575 US-032: `/v1/embeddings` はリクエストに `model` が無くても、
+/// 既定モデルの解決結果を上流のボディへ書き込む
+#[tokio::test]
+async fn test_embeddings_without_model_sends_default_model_to_upstream() {
+    const INPUT: &str = "us032-embedding-without-model";
+
+    let lb = spawn_test_lb().await;
+    let client = Client::new();
+    let (upstream, upstream_state) = spawn_recording_ollama_upstream().await;
+    register_responses_endpoint(lb.addr(), upstream.addr(), "us032-embeddings")
+        .await
+        .expect("register upstream endpoint");
+
+    let resp = client
+        .post(format!("http://{}/v1/embeddings", lb.addr()))
+        .header("x-api-key", "sk_debug")
+        .json(&json!({"input": INPUT}))
+        .send()
+        .await
+        .expect("embeddings request");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+
+    let upstream_models: Vec<Value> = upstream_state
+        .embedding_bodies
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|body| body["input"] == INPUT)
+        .map(|body| body["model"].clone())
+        .collect();
+    assert_eq!(
+        upstream_models,
+        vec![json!(llmlb::config::get_default_embedding_model())]
+    );
 }
 
 #[tokio::test]

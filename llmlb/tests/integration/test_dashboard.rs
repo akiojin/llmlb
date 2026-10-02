@@ -23,9 +23,19 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use crate::support::lb::spawn_test_lb;
+use crate::support::http::spawn_lb;
+use crate::support::lb::{spawn_test_lb, spawn_test_lb_with_db, test_jwt_secret};
+
+/// アップデート確認のテストで GitHub Releases API のモックに使うリポジトリ
+const GITHUB_OWNER: &str = "test-owner";
+const GITHUB_REPO: &str = "test-repo";
 
 async fn build_test_app() -> (AppState, Router) {
+    build_test_app_with_github_api(None).await
+}
+
+/// `github_api_base_url` を渡すと、アップデート確認が呼ぶ GitHub Releases API をその URL へ向ける。
+async fn build_test_app_with_github_api(github_api_base_url: Option<String>) -> (AppState, Router) {
     let temp_dir = std::env::temp_dir().join(format!(
         "dashboard-ws-test-{}-{}",
         std::process::id(),
@@ -52,10 +62,13 @@ async fn build_test_app() -> (AppState, Router) {
     let http_client = reqwest::Client::new();
     let inference_gate = llmlb::inference_gate::InferenceGate::default();
     let shutdown = llmlb::shutdown::ShutdownController::default();
-    let update_manager = llmlb::update::UpdateManager::new(
+    let update_manager = llmlb::update::UpdateManager::new_with_config(
         http_client.clone(),
         inference_gate.clone(),
         shutdown.clone(),
+        GITHUB_OWNER.to_string(),
+        GITHUB_REPO.to_string(),
+        github_api_base_url,
     )
     .expect("Failed to create update manager");
     let state = AppState {
@@ -93,27 +106,39 @@ async fn build_test_app() -> (AppState, Router) {
     (state, app)
 }
 
+type WsRequest = tokio_tungstenite::tungstenite::http::Request<()>;
+
+fn admin_jwt(secret: &str) -> String {
+    create_jwt("test-admin", UserRole::Admin, secret, false, 0).expect("create test jwt")
+}
+
+/// 認証情報を持たない WebSocket 接続リクエストを生成する。`query` は URL の `?` 以降。
+fn ws_request(addr: SocketAddr, query: Option<&str>) -> WsRequest {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let query = query.map(|q| format!("?{q}")).unwrap_or_default();
+    format!("ws://{addr}/ws/dashboard{query}")
+        .into_client_request()
+        .expect("build ws client request")
+}
+
+fn ws_request_with_header(addr: SocketAddr, name: &'static str, value: &str) -> WsRequest {
+    let mut request = ws_request(addr, None);
+    request
+        .headers_mut()
+        .insert(name, value.parse().expect("valid header value"));
+    request
+}
+
 /// WebSocket 接続リクエストを Authorization ヘッダー付きで生成する。
 ///
 /// クエリパラメータ経由のトークン受理は廃止されたため、ダッシュボード WS は
 /// `Authorization: Bearer` ヘッダー（または Cookie）で認証する。
-fn ws_request_with_token(
-    addr: std::net::SocketAddr,
-    secret: &str,
-) -> tokio_tungstenite::tungstenite::http::Request<()> {
-    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-    let token =
-        create_jwt("test-admin", UserRole::Admin, secret, false, 0).expect("create test jwt");
-    let mut request = format!("ws://{}/ws/dashboard", addr)
-        .into_client_request()
-        .expect("build ws client request");
-    request.headers_mut().insert(
+fn ws_request_with_token(addr: SocketAddr, secret: &str) -> WsRequest {
+    ws_request_with_header(
+        addr,
         "Authorization",
-        format!("Bearer {}", token)
-            .parse()
-            .expect("valid authorization header"),
-    );
-    request
+        &format!("Bearer {}", admin_jwt(secret)),
+    )
 }
 
 #[tokio::test]
@@ -169,7 +194,11 @@ struct DashboardSubscriber {
 impl DashboardSubscriber {
     /// 接続し、ハンドシェイクの `connected` メッセージまで読み進める
     async fn connect(addr: SocketAddr) -> Self {
-        let request = ws_request_with_token(addr, &crate::support::lb::test_jwt_secret());
+        Self::connect_with(ws_request_with_token(addr, &test_jwt_secret())).await
+    }
+
+    /// `request` で接続し、ハンドシェイクの `connected` メッセージまで読み進める
+    async fn connect_with(request: WsRequest) -> Self {
         let (ws_stream, _) = connect_async(request)
             .await
             .expect("Failed to connect to WebSocket");
@@ -200,6 +229,19 @@ impl DashboardSubscriber {
         }
     }
 
+    /// `event_type` のイベントが届くまで受信し、そのイベントを返す
+    async fn expect_event(&mut self, event_type: &str) -> Value {
+        loop {
+            let event = self
+                .next_event(EVENT_TIMEOUT)
+                .await
+                .unwrap_or_else(|| panic!("Timeout waiting for {event_type}"));
+            if event["type"] == event_type {
+                return event;
+            }
+        }
+    }
+
     /// `is_sentinel` に一致するイベントが届くまで受信し、それより前に届いたイベントを返す。
     ///
     /// イベントバスは発行順を保つため、番兵より前に発行されたイベントは必ず番兵より前に届く。
@@ -225,6 +267,11 @@ fn is_event(event: &Value, event_type: &str, runtime_id: &str) -> bool {
 
 /// OpenAI 互換として検出され、`test-model` の chat completions に応答するモック
 async fn spawn_openai_compatible_mock() -> MockServer {
+    spawn_openai_compatible_mock_with_delay(Duration::ZERO).await
+}
+
+/// chat completions の応答を `chat_delay` だけ遅らせる OpenAI 互換モック
+async fn spawn_openai_compatible_mock_with_delay(chat_delay: Duration) -> MockServer {
     let mock = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/models"))
@@ -236,17 +283,21 @@ async fn spawn_openai_compatible_mock() -> MockServer {
         .await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-test",
-            "object": "chat.completion",
-            "model": "test-model",
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": "ok"},
-                "finish_reason": "stop"
-            }],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(chat_delay)
+                .set_body_json(json!({
+                    "id": "chatcmpl-test",
+                    "object": "chat.completion",
+                    "model": "test-model",
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+                })),
+        )
         .mount(&mock)
         .await;
     mock
@@ -320,6 +371,70 @@ async fn chat_completion(client: &Client, lb_addr: SocketAddr) -> reqwest::Respo
         .send()
         .await
         .expect("chat completion request failed")
+}
+
+/// SPEC #582 FR-046: ログインが発行した JWT cookie だけで接続できる（ブラウザが使う経路）
+#[tokio::test]
+async fn test_dashboard_websocket_connects_with_login_cookie() {
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    llmlb::db::users::create(
+        &db_pool,
+        "ws_cookie_admin",
+        &password_hash,
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .expect("create ws_cookie_admin");
+
+    // Arrange: ログイン応答の Set-Cookie から JWT cookie の `name=value` を取り出す
+    let login = Client::new()
+        .post(format!("http://{}/api/auth/login", server.addr()))
+        .json(&json!({ "username": "ws_cookie_admin", "password": "password123" }))
+        .send()
+        .await
+        .expect("login request failed");
+    assert_eq!(login.status().as_u16(), 200);
+    let jwt_cookie_prefix = format!("{}=", llmlb::auth::DASHBOARD_JWT_COOKIE);
+    let jwt_cookie = login
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .find(|cookie| cookie.starts_with(&jwt_cookie_prefix))
+        .and_then(|cookie| cookie.split(';').next())
+        .expect("login must set the JWT cookie")
+        .to_string();
+
+    // Act / Assert: Authorization ヘッダーなしで接続し、`connected` を受信する
+    let request = ws_request_with_header(server.addr(), "Cookie", &jwt_cookie);
+    DashboardSubscriber::connect_with(request).await;
+}
+
+/// SPEC #582 FR-046: query string のトークンでは認証しない。
+///
+/// URL はアクセスログ・Referer・ブラウザ履歴に残るため、`?token=` の経路は廃止済み。
+/// 同じトークンが Authorization ヘッダーでは通ることも確認し、拒否の理由が経路であることを固定する。
+#[tokio::test]
+async fn test_dashboard_websocket_rejects_query_token() {
+    use tokio_tungstenite::tungstenite::Error;
+
+    let server = spawn_test_lb().await;
+    let token = admin_jwt(&test_jwt_secret());
+
+    let request = ws_request(server.addr(), Some(&format!("token={token}")));
+    let error = connect_async(request)
+        .await
+        .expect_err("a query string token must not authenticate");
+    match error {
+        Error::Http(response) => assert_eq!(response.status().as_u16(), 401),
+        other => panic!("Expected HTTP 401, got {other:?}"),
+    }
+
+    let request =
+        ws_request_with_header(server.addr(), "Authorization", &format!("Bearer {token}"));
+    DashboardSubscriber::connect_with(request).await;
 }
 
 /// SPEC #582 FR-048a: 登録が確定すると、購読者は `NodeRegistered` をちょうど 1 回受信する
@@ -484,15 +599,7 @@ async fn test_dashboard_receives_metrics_updated_after_proxied_request() {
     assert_eq!(response.status().as_u16(), 200);
 
     // Assert
-    let event = loop {
-        let event = subscriber
-            .next_event(EVENT_TIMEOUT)
-            .await
-            .expect("Timeout waiting for MetricsUpdated");
-        if event["type"] == "MetricsUpdated" {
-            break event;
-        }
-    };
+    let event = subscriber.expect_event("MetricsUpdated").await;
     assert_eq!(event["data"]["runtime_id"], endpoint_id);
     // llmlb はエンドポイント内部のリソース使用率を観測しないため、値なしで配信する
     assert!(event["data"]["cpu_usage"].is_null());
@@ -546,6 +653,73 @@ async fn test_dashboard_metrics_updated_is_coalesced_under_request_burst() {
         metrics_updated as f64 <= elapsed_secs,
         "{metrics_updated} MetricsUpdated events within {elapsed_secs:.2}s for {REQUESTS} requests"
     );
+}
+
+/// SPEC #582 FR-048: 推論リクエストが成功して TPS が計測されると、購読者は `TpsUpdated` を受信する
+#[tokio::test]
+async fn test_dashboard_receives_tps_updated_after_proxied_request() {
+    // TPS は処理時間が 1 ms 以上のリクエストだけが計測対象になるため、応答を遅らせる
+    let mock = spawn_openai_compatible_mock_with_delay(Duration::from_millis(50)).await;
+    let server = spawn_test_lb().await;
+    let client = Client::new();
+    let endpoint_id = register_endpoint(&client, server.addr(), "tps-node", &mock.uri()).await;
+    make_endpoint_routable(&client, server.addr(), &endpoint_id).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+
+    // Act
+    let response = chat_completion(&client, server.addr()).await;
+    assert_eq!(response.status().as_u16(), 200);
+
+    // Assert
+    let event = subscriber.expect_event("TpsUpdated").await;
+    let data = &event["data"];
+    assert_eq!(data["endpoint_id"], endpoint_id);
+    assert_eq!(data["model_id"], "test-model");
+    // モックの usage.completion_tokens
+    assert_eq!(data["output_tokens"], 1);
+    let duration_ms = data["duration_ms"].as_u64().expect("duration_ms");
+    assert!(duration_ms >= 50, "event: {event}");
+    let tps = data["tps"].as_f64().expect("tps");
+    assert!(
+        (tps - 1000.0 / duration_ms as f64).abs() < 1e-9,
+        "event: {event}"
+    );
+}
+
+/// SPEC #582 FR-048: アップデート確認が完了すると、購読者は `UpdateStateChanged` を受信する
+#[tokio::test]
+async fn test_dashboard_receives_update_state_changed_after_update_check() {
+    // 現行より新しくないバージョンを返すので、ダウンロードは始まらない
+    let github = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "tag_name": "v0.0.0",
+            "html_url": "https://example.invalid/releases/tag/v0.0.0",
+            "assets": []
+        })))
+        .mount(&github)
+        .await;
+    let (state, app) = build_test_app_with_github_api(Some(github.uri())).await;
+    let server = spawn_lb(app).await;
+    let secret = &state.auth.jwt_secret;
+    let mut subscriber =
+        DashboardSubscriber::connect_with(ws_request_with_token(server.addr(), secret)).await;
+
+    // Act
+    let response = Client::new()
+        .post(format!("http://{}/api/system/update/check", server.addr()))
+        .bearer_auth(admin_jwt(secret))
+        .send()
+        .await
+        .expect("update check request failed");
+    assert_eq!(response.status().as_u16(), 200);
+
+    // Assert: 再取得を促すだけの通知で、ペイロードを持たない
+    let event = subscriber.expect_event("UpdateStateChanged").await;
+    assert!(event.get("data").is_none(), "event: {event}");
 }
 
 #[tokio::test]

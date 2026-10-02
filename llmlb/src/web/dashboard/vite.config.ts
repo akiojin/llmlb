@@ -47,6 +47,8 @@ export default defineConfig({
     proxy: {
       '/api': devApiProxy,
       '/v1': devApiProxy,
+      // Real-time updates: useWebSocket connects to /ws/dashboard on the page's host.
+      '/ws': { ...devApiProxy, ws: true },
     },
   },
 })

@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
+import type { ProxyOptions } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeWebSocket } from '@/test/fake-websocket'
+import viteConfig from '../../vite.config'
 import { DASHBOARD_EVENT_INVALIDATIONS } from './dashboardEventInvalidation'
 import { useWebSocket, type DashboardEvent, type DashboardEventType } from './useWebSocket'
 
@@ -95,6 +97,20 @@ function receive(payload: unknown) {
   })
 }
 
+/**
+ * The `server.proxy` rule the vite dev server applies to `pathname`.
+ *
+ * Mirrors Vite's own matching: a key starting with `^` is a RegExp, any other
+ * key is a path prefix, and the first matching key wins.
+ */
+function devProxyRule(pathname: string): ProxyOptions | undefined {
+  const rules = Object.entries(viteConfig.server?.proxy ?? {})
+  const rule = rules.find(([context]) =>
+    context.startsWith('^') ? new RegExp(context).test(pathname) : pathname.startsWith(context),
+  )?.[1]
+  return typeof rule === 'string' ? { target: rule } : rule
+}
+
 // Invalidation order carries no meaning; compare as sets.
 const sorted = (keys: unknown[]) => keys.map((key) => JSON.stringify(key)).sort()
 
@@ -164,6 +180,20 @@ describe('useWebSocket connection', () => {
     setup()
 
     expect(FakeWebSocket.latest().url).toBe(`ws://${window.location.host}/ws/dashboard`)
+  })
+
+  // Issue #805: the dev server runs on its own port, so a WebSocket path that
+  // `vite.config.ts` does not relay never reaches the backend and the page
+  // silently stops updating. The path is read from the socket the hook opens,
+  // so changing either side alone fails here.
+  it('the vite dev server relays the WebSocket path to the backend that serves /api', () => {
+    setup()
+    const { pathname } = new URL(FakeWebSocket.latest().url)
+
+    const backend = devProxyRule('/api/dashboard/overview')?.target
+
+    expect(backend).toBeDefined()
+    expect(devProxyRule(pathname)).toMatchObject({ ws: true, target: backend })
   })
 
   it('does not connect while disabled', () => {

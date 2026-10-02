@@ -354,6 +354,72 @@ async fn dashboard_overview_requires_jwt() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+/// 有効期限だけを指定し、テスト用シークレットで署名した管理者 JWT を作る
+fn sign_admin_jwt_expiring_at(
+    admin_id: uuid::Uuid,
+    expires_at: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let claims = llmlb::common::auth::Claims {
+        sub: admin_id.to_string(),
+        role: UserRole::Admin,
+        exp: expires_at.timestamp() as usize,
+        must_change_password: false,
+        password_changed_at: 0,
+    };
+
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(support::lb::test_jwt_secret().as_bytes()),
+    )
+    .expect("sign jwt")
+}
+
+async fn dashboard_overview_status(app: &Router, header: (&str, String)) -> StatusCode {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/overview")
+                .header(header.0, header.1)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+}
+
+/// SPEC #585 FR-028 CP-3: 期限切れ JWT はダッシュボード API で拒否される
+#[tokio::test]
+#[serial]
+async fn dashboard_overview_rejects_expired_jwt() {
+    let (app, db_pool) = build_app().await;
+    let admin_id = create_admin_user(&db_pool).await;
+    let now = chrono::Utc::now();
+    let valid = sign_admin_jwt_expiring_at(admin_id, now + chrono::Duration::hours(1));
+    let expired = sign_admin_jwt_expiring_at(admin_id, now - chrono::Duration::hours(1));
+
+    // 対照: 有効期限以外が同一のトークンは通る（拒否の理由が期限切れだけであることを示す）
+    assert_eq!(
+        dashboard_overview_status(&app, ("authorization", format!("Bearer {valid}"))).await,
+        StatusCode::OK
+    );
+
+    assert_eq!(
+        dashboard_overview_status(&app, ("authorization", format!("Bearer {expired}"))).await,
+        StatusCode::UNAUTHORIZED,
+        "an expired JWT in the Authorization header must be rejected"
+    );
+    // ブラウザが使う経路（ログインが発行する JWT cookie）でも同じく拒否される
+    let cookie = format!("{}={expired}", llmlb::auth::DASHBOARD_JWT_COOKIE);
+    assert_eq!(
+        dashboard_overview_status(&app, ("cookie", cookie)).await,
+        StatusCode::UNAUTHORIZED,
+        "an expired JWT in the dashboard cookie must be rejected"
+    );
+}
+
 #[tokio::test]
 #[serial]
 async fn api_models_requires_registry_read_permission() {

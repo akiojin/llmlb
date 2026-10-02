@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import * as path from 'path';
 import {
@@ -80,7 +80,7 @@ function probeScreen(kind: CanonicalScreen['kind']): CanonicalScreen {
     id: `probe-${kind}`,
     title: `Probe ${kind}`,
     reach: async () => {},
-    landmark: (page: import('@playwright/test').Page) => page.locator('body'),
+    landmark: (page: Page) => page.locator('body'),
   };
   return kind === 'hash-route'
     ? { ...base, kind, backButton: (page) => page.locator('button') }

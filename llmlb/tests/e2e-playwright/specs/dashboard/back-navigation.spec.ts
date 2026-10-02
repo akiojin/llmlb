@@ -1,50 +1,20 @@
-import { test, expect } from '@playwright/test';
-import { DashboardPage } from '../../pages/dashboard.page';
-
-/** Dashboard returns to /dashboard/ or /dashboard/# after back navigation */
-const DASHBOARD_URL_PATTERN = /\/dashboard\/(#?)$/;
+import {
+  DASHBOARD_SCREEN,
+  backNavigationCases,
+  expectScreen,
+  test,
+} from '../../helpers/screen-registry';
 
 test.describe('Back Navigation @dashboard @navigation', () => {
-  let dashboard: DashboardPage;
+  // Cases come from the canonical screen registry (SPEC #582 US-006):
+  // every hash route is left by the browser Back button and by its in-app one.
+  for (const { title, screen, leave } of backNavigationCases()) {
+    test(title, async ({ page, visit }) => {
+      await visit(screen);
 
-  test.beforeEach(async ({ page }) => {
-    dashboard = new DashboardPage(page);
-    await dashboard.goto();
-  });
+      await leave(page);
 
-  test('BB-01: LB Playground → browser Back → Dashboard', async ({ page }) => {
-    await dashboard.openPlayground();
-    await expect(page).toHaveURL(/#lb-playground/);
-
-    await page.goBack();
-    await page.waitForTimeout(500);
-
-    expect(page.url()).toMatch(DASHBOARD_URL_PATTERN);
-    await expect(page.locator('#theme-toggle')).toBeVisible({ timeout: 10000 });
-  });
-
-  test('BB-02: Audit Log → browser Back → Dashboard', async ({ page }) => {
-    await dashboard.openAuditLog();
-    await expect(page).toHaveURL(/#audit-log/);
-
-    await page.goBack();
-    await page.waitForTimeout(500);
-
-    expect(page.url()).toMatch(DASHBOARD_URL_PATTERN);
-    await expect(page.locator('#theme-toggle')).toBeVisible({ timeout: 10000 });
-  });
-
-  test('BB-03: LB Playground → UI Back button → Dashboard', async ({ page }) => {
-    await dashboard.openPlayground();
-    await expect(page).toHaveURL(/#lb-playground/);
-
-    // PlaygroundBase uses "Back to Dashboard" button
-    const backButton = page.getByRole('button', { name: /back to dashboard/i });
-    await expect(backButton).toBeVisible({ timeout: 5000 });
-    await backButton.click();
-    await page.waitForTimeout(500);
-
-    expect(page.url()).toMatch(DASHBOARD_URL_PATTERN);
-    await expect(page.locator('#theme-toggle')).toBeVisible({ timeout: 10000 });
-  });
+      await expectScreen(page, DASHBOARD_SCREEN);
+    });
+  }
 });

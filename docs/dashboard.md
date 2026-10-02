@@ -130,6 +130,14 @@ Use Playwright for what only a real browser and server can show:
 - live updates over the real WebSocket
 - themes, layout, charts and screenshots
 
+Screen coverage has one source: the canonical screen registry in
+`llmlb/tests/e2e-playwright/helpers/screen-registry.ts`. Each entry names a
+screen (page, hash route, dashboard tab or modal) and knows how to reach it.
+The navigation, back-navigation and screenshot suites derive their cases from
+it, so when you add or remove a screen, change the registry entry and nothing
+else. `specs/dashboard/screen-registry.spec.ts` fails if a suite stops
+following the registry.
+
 ## Build (regenerate embedded assets)
 
 ```bash

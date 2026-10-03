@@ -1,6 +1,7 @@
 //! メール本文テンプレート（日本語・英語）
 
 use super::digest::DigestReport;
+use super::offline_alert::OfflineAlert;
 use crate::types::endpoint::EndpointStatus;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -119,6 +120,14 @@ pub fn render_daily_digest(language: Language, report: &DigestReport) -> Rendere
     RenderedMail {
         subject,
         body: lines.join("\n") + "\n",
+    }
+}
+
+/// 即時通知（エンドポイントの Offline 到達）を指定言語で展開する
+pub fn render_offline_alert(_language: Language, _alert: &OfflineAlert) -> RenderedMail {
+    RenderedMail {
+        subject: String::new(),
+        body: String::new(),
     }
 }
 
@@ -388,6 +397,105 @@ mod tests {
         assert_eq!(
             without_url_credentials("http://token@a.example.com then http://u:p@b.example.com/x"),
             "http://a.example.com then http://b.example.com/x"
+        );
+    }
+
+    // --- 即時通知（Offline 到達）---
+
+    fn alert() -> OfflineAlert {
+        OfflineAlert {
+            detected_at: NaiveDateTime::parse_from_str("2026-10-01 03:14:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap(),
+            previous_status: EndpointStatus::Error,
+            endpoint: report().endpoints.remove(0),
+        }
+    }
+
+    #[test]
+    fn renders_the_offline_alert_in_japanese() {
+        let mail = render_offline_alert(Language::Ja, &alert());
+        assert_eq!(
+            mail.subject,
+            "[llmlb] エンドポイントが Offline になりました: gpu-b"
+        );
+        assert_eq!(
+            mail.body,
+            "llmlb 障害通知\n\
+             検知時刻: 2026-10-01 03:14（サーバーのローカル時刻）\n\
+             \n\
+             エンドポイントが Offline になりました。\n\
+             - gpu-b (ollama) http://10.0.0.2:11434\n\
+             \x20\x20\x20\x20直前の状態: Error\n\
+             \x20\x20\x20\x20最終確認: 2026-09-30 22:10 UTC\n\
+             \x20\x20\x20\x20最後のエラー: connection refused\n\
+             \n\
+             このメールは llmlb の運用通知です。通知の有効／無効と宛先は llmlb の通知設定で変更できます。\n"
+        );
+    }
+
+    #[test]
+    fn renders_the_offline_alert_in_english() {
+        let mail = render_offline_alert(Language::En, &alert());
+        assert_eq!(mail.subject, "[llmlb] Endpoint went offline: gpu-b");
+        assert_eq!(
+            mail.body,
+            "llmlb outage alert\n\
+             Detected at: 2026-10-01 03:14 (server local time)\n\
+             \n\
+             An endpoint went offline.\n\
+             - gpu-b (ollama) http://10.0.0.2:11434\n\
+             \x20\x20\x20\x20Previous status: Error\n\
+             \x20\x20\x20\x20Last seen: 2026-09-30 22:10 UTC\n\
+             \x20\x20\x20\x20Last error: connection refused\n\
+             \n\
+             This is an operational notification from llmlb. Notifications and their recipients can be changed in the llmlb notification settings.\n"
+        );
+    }
+
+    #[test]
+    fn offline_alert_omits_details_that_are_unknown() {
+        let mut alert = alert();
+        alert.previous_status = EndpointStatus::Pending;
+        alert.endpoint.last_seen = None;
+        alert.endpoint.last_error = None;
+
+        let mail = render_offline_alert(Language::En, &alert);
+        assert!(
+            mail.body.contains(
+                "    Previous status: Pending\n    Last seen: never\n\nThis is an operational"
+            ),
+            "{}",
+            mail.body
+        );
+    }
+
+    /// 件名に改行が入るとメールヘッダが壊れるので、名前は 1 行に畳む。認証情報も載せない
+    #[test]
+    fn offline_alert_flattens_names_and_removes_url_credentials() {
+        let mut alert = alert();
+        alert.endpoint.name = "gpu\r\nb".to_string();
+        alert.endpoint.base_url = "https://ops:s3cr@t@gpu-b.example.com:8443/v1".to_string();
+        alert.endpoint.last_error = Some(
+            "error sending request for url\n(https://ops:s3cr@t@gpu-b.example.com:8443/v1/models)"
+                .to_string(),
+        );
+
+        let mail = render_offline_alert(Language::En, &alert);
+        assert_eq!(mail.subject, "[llmlb] Endpoint went offline: gpu b");
+        assert!(!mail.body.contains("s3cr"), "{}", mail.body);
+        assert!(
+            mail.body
+                .contains("- gpu b (ollama) https://gpu-b.example.com:8443/v1\n"),
+            "{}",
+            mail.body
+        );
+        assert!(
+            mail.body.contains(
+                "    Last error: error sending request for url \
+                 (https://gpu-b.example.com:8443/v1/models)\n"
+            ),
+            "{}",
+            mail.body
         );
     }
 }

@@ -9,6 +9,7 @@ pub mod config;
 pub mod daily_digest;
 pub mod digest;
 pub mod mailer;
+pub mod offline_alert;
 pub mod schedule;
 pub mod smtp;
 pub mod template;
@@ -21,5 +22,8 @@ pub use config::{
 pub use daily_digest::{start_daily_digest_task, DailyDigestScheduler, DigestOutcome, DigestTick};
 pub use digest::{DigestReport, EndpointDigestEntry};
 pub use mailer::{parse_address, MailError, MailMessage, MailTransport};
+pub use offline_alert::{
+    start_offline_alert_task, AlertOutcome, OfflineAlert, OfflineAlertNotifier,
+};
 pub use smtp::SmtpMailTransport;
-pub use template::{render_daily_digest, Language, RenderedMail};
+pub use template::{render_daily_digest, render_offline_alert, Language, RenderedMail};

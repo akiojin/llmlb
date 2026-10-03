@@ -112,6 +112,71 @@ async fn test_registry_status_update() {
 }
 
 #[tokio::test]
+async fn test_update_status_publishes_endpoint_status_changed_once_per_transition() {
+    use crate::events::{create_shared_event_bus, DashboardEvent};
+    use tokio::sync::broadcast::error::TryRecvError;
+
+    let _lock = TEST_LOCK.lock().await;
+    let pool = setup_test_db().await;
+    let registry = EndpointRegistry::new(pool).await.unwrap();
+    let bus = create_shared_event_bus();
+    registry.set_event_bus(bus.clone());
+    let mut rx = bus.subscribe();
+
+    let endpoint = Endpoint::new(
+        "Transition".to_string(),
+        "http://localhost:11434".to_string(),
+        EndpointType::Xllm,
+    );
+    let endpoint_id = endpoint.id;
+    registry.add(endpoint).await.unwrap();
+
+    // Pending -> Online: 1イベント
+    registry
+        .update_status(endpoint_id, EndpointStatus::Online, Some(10), None)
+        .await
+        .unwrap();
+    match rx.try_recv().expect("transition must publish an event") {
+        DashboardEvent::EndpointStatusChanged {
+            runtime_id,
+            old_status,
+            new_status,
+        } => {
+            assert_eq!(runtime_id, endpoint_id);
+            assert_eq!(old_status, EndpointStatus::Pending);
+            assert_eq!(new_status, EndpointStatus::Online);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+    assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+
+    // Online -> Online（同値更新）: イベントなし
+    registry
+        .update_status(endpoint_id, EndpointStatus::Online, Some(20), None)
+        .await
+        .unwrap();
+    assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+
+    // Online -> Error: 1イベント
+    registry
+        .update_status(endpoint_id, EndpointStatus::Error, None, Some("boom"))
+        .await
+        .unwrap();
+    match rx.try_recv().expect("transition must publish an event") {
+        DashboardEvent::EndpointStatusChanged {
+            old_status,
+            new_status,
+            ..
+        } => {
+            assert_eq!(old_status, EndpointStatus::Online);
+            assert_eq!(new_status, EndpointStatus::Error);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+    assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[tokio::test]
 async fn test_find_by_canonical_name_for_alias_backed_model() {
     let _lock = TEST_LOCK.lock().await;
     let pool = setup_test_db().await;

@@ -320,6 +320,10 @@ async fn initialize_inner(
         });
     }
 
+    let event_bus = crate::events::create_shared_event_bus();
+    update_manager.set_event_bus(event_bus.clone());
+    endpoint_registry.set_event_bus(event_bus.clone());
+
     let state = AppState {
         balancer: crate::BalancerState {
             load_manager,
@@ -329,11 +333,7 @@ async fn initialize_inner(
         db_pool,
         auth: crate::AuthState { jwt_secret },
         http_client,
-        event_bus: {
-            let bus = crate::events::create_shared_event_bus();
-            update_manager.set_event_bus(bus.clone());
-            bus
-        },
+        event_bus,
         lifecycle: crate::LifecycleState {
             inference_gate,
             shutdown: shutdown.clone(),

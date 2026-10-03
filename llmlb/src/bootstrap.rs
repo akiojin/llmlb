@@ -346,6 +346,9 @@ async fn initialize_inner(
         },
     };
 
+    // 即時通知（SPEC #777）。日次ダイジェストと同じく、SMTP 設定が未設定・不正でも起動は続ける
+    crate::notifications::start_offline_alert_task(state.db_pool.clone(), &state.event_bus);
+
     InitContext {
         state,
         _server_lock: server_lock,

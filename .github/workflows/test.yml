@@ -82,6 +82,7 @@ jobs:
 
       - name: Run operational notification tests
         # SPEC #777 AC-8: 運用通知の受け入れテスト（AC-1〜AC-7）を必須チェックで実行する。
+        # Offline 到達の即時通知（AC-3、Issue #809）の検証も同じテストバイナリに含まれる。
         # `make quality-checks` と同じターゲットを使い、テストバイナリが消えたり
         # 名前が変わったりした場合にここで失敗させる。実際のメール送信は行わない。
         if: needs.changes.outputs.rust == 'true' && matrix.os == 'ubuntu-latest'

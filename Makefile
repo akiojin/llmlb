@@ -84,7 +84,7 @@ security-checks:
 openai-tests:
 	cargo test -p llmlb --test e2e_openai_proxy
 
-# SPEC #777 AC-8: 運用通知（users.email・メール送信基盤・日次ダイジェスト・通知設定 API）の受け入れテスト
+# SPEC #777 AC-8: 運用通知（users.email・メール送信基盤・Offline 到達の即時通知・日次ダイジェスト・通知設定 API）の受け入れテスト
 # 実際のメール送信は行わない（記録用トランスポートを使う）。
 # CI (test.yml rust-test) も同一ターゲットを実行する。
 notification-tests:

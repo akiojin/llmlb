@@ -935,6 +935,16 @@ to `.migrated`.
 | POST | `/api/auth/login` | User authentication, JWT issuance (sets HttpOnly cookie) | None |
 | POST | `/api/auth/logout` | Logout | JWT (HttpOnly cookie or Authorization header) |
 | GET | `/api/auth/me` | Get authenticated user info | JWT (HttpOnly cookie or Authorization header) |
+| PUT | `/api/auth/change-password` | Change own password (`current_password` + `new_password`) | JWT (HttpOnly cookie or Authorization header) |
+| POST | `/api/auth/forgot-password` | Issue a password reset token for an email ID (always `202`) | None |
+| POST | `/api/auth/reset-password` | Set a new password with a reset token (`token` + `new_password`) | None |
+
+Usernames are email IDs (`POST /api/users` / `PUT /api/users/:id` reject other formats with
+`400`). There is no mail delivery: `forgot-password` never returns the token and responds
+identically whether or not the account exists. The reset link
+(`/dashboard/reset-password.html#token=...`) is written to the server log for the operator to
+hand to the user. Tokens expire after 30 minutes, are single-use, and a newer request revokes
+older tokens. A successful reset signs out existing sessions.
 
 Note: When using the JWT cookie for mutating dashboard requests, include the CSRF token via
 `X-CSRF-Token` header (token is provided in `llmlb_csrf` cookie). Origin/Referer must match the

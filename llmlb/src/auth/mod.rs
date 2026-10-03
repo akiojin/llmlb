@@ -2,6 +2,8 @@
 
 /// 初回起動時の管理者アカウント作成
 pub mod bootstrap;
+/// メールID形式の検証
+pub mod email;
 /// JWT生成・検証（jsonwebtoken）
 pub mod jwt;
 /// 認証ミドルウェア（JWT, APIキー, ノードトークン）

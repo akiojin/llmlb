@@ -1,6 +1,6 @@
 //! 認証API
 //!
-//! ログイン、ログアウト、認証情報確認、ユーザー登録、パスワード変更
+//! ログイン、ログアウト、認証情報確認、ユーザー登録、パスワード変更・リセット
 
 use crate::common::auth::{Claims, UserRole};
 use crate::common::error::{CommonError, LbError};
@@ -75,6 +75,27 @@ pub struct MeResponse {
 /// パスワード変更リクエスト
 #[derive(Debug, Deserialize)]
 pub struct ChangePasswordRequest {
+    /// 現在のパスワード（本人確認用）
+    pub current_password: String,
+    /// 新しいパスワード
+    pub new_password: String,
+}
+
+/// パスワードリセットトークンの有効期間（分）
+pub const RESET_TOKEN_TTL_MINUTES: i64 = 30;
+
+/// forgot-password リクエスト
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    /// メールID（ユーザー名）
+    pub email: String,
+}
+
+/// reset-password リクエスト
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    /// forgot-password で発行されたリセットトークン
+    pub token: String,
     /// 新しいパスワード
     pub new_password: String,
 }
@@ -488,8 +509,9 @@ pub async fn register(
 ///
 /// # Returns
 /// * `200 OK` - パスワード変更成功
-/// * `400 Bad Request` - バリデーションエラー
+/// * `400 Bad Request` - バリデーションエラー / 現在のパスワードが誤り
 /// * `401 Unauthorized` - 未認証
+/// * `404 Not Found` - ユーザーが見つからない
 /// * `500 Internal Server Error` - サーバーエラー
 pub async fn change_password(
     Extension(claims): Extension<Claims>,
@@ -500,6 +522,32 @@ pub async fn change_password(
     let user_id: uuid::Uuid = claims.sub.parse().map_err(|_| {
         AppError(LbError::Authentication("Invalid user ID".to_string())).into_response()
     })?;
+
+    // 現在のパスワードで本人確認する（SPEC #580 AS-017）。盗まれたセッションだけでは
+    // パスワードを乗っ取れないようにする。
+    let user = crate::db::users::find_by_id(&app_state.db_pool, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to find user: {}", e);
+            AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
+        })?
+        .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
+    let is_current_valid =
+        crate::auth::password::verify_password(&request.current_password, &user.password_hash)
+            .map_err(|e| {
+                tracing::error!("Failed to verify password: {}", e);
+                AppError(LbError::PasswordHash(format!(
+                    "Failed to verify password: {}",
+                    e
+                )))
+                .into_response()
+            })?;
+    if !is_current_valid {
+        return Err(AppError(LbError::Common(CommonError::Validation(
+            "Current password is incorrect".to_string(),
+        )))
+        .into());
+    }
 
     // パスワード要件を検証（register と同一ポリシー: 8文字以上・大文字・数字）
     crate::auth::password::validate_password(&request.new_password)
@@ -579,6 +627,140 @@ pub async fn change_password(
         response_headers,
         Json(serde_json::json!({ "token": token, "expires_in": expires_in })),
     ))
+}
+
+/// POST /api/auth/forgot-password - リセットトークン発行（SPEC #580 AS-014）
+///
+/// メールIDに一致するユーザーがいればリセットトークンを発行する（認証不要）。
+/// アカウント列挙を防ぐため、ユーザーの有無に関わらず同じ 202 応答を返し、
+/// トークンはレスポンスに含めない。メール送信基盤を持たないため、リセットリンクは
+/// サーバーログに出力し、運用者が本人へ伝達する。トークン発行は応答後に非同期で行う。
+///
+/// # Returns
+/// * `202 Accepted` - 受付（ユーザーの有無は明かさない）
+/// * `500 Internal Server Error` - ユーザー検索に失敗
+pub async fn forgot_password(
+    State(app_state): State<AppState>,
+    Json(request): Json<ForgotPasswordRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), HandlerError> {
+    let user = crate::db::users::find_by_username(&app_state.db_pool, &request.email)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to find user: {}", e);
+            AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
+        })?;
+
+    // トークン発行（DB 書き込み）は応答経路から切り離す。ユーザーの有無で処理時間が
+    // 変わると、応答時間差からアカウントを列挙できてしまうため（login のダミーハッシュと同じ趣旨）。
+    match user {
+        Some(user) => {
+            let db_pool = app_state.db_pool.clone();
+            tokio::spawn(async move {
+                match crate::db::password_reset_tokens::issue(
+                    &db_pool,
+                    user.id,
+                    chrono::Duration::minutes(RESET_TOKEN_TTL_MINUTES),
+                )
+                .await
+                {
+                    Ok(token) => tracing::info!(
+                        user_id = %user.id,
+                        username = %user.username,
+                        expires_in_minutes = RESET_TOKEN_TTL_MINUTES,
+                        "Password reset requested. Share this link with the user: /dashboard/reset-password.html#token={}",
+                        token
+                    ),
+                    Err(e) => tracing::error!(
+                        user_id = %user.id,
+                        "Failed to issue password reset token: {}",
+                        e
+                    ),
+                }
+            });
+        }
+        None => tracing::info!("Password reset requested for an unknown account"),
+    }
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({
+            "message": "If an account exists for this email, a password reset link has been issued."
+        })),
+    ))
+}
+
+/// POST /api/auth/reset-password - リセットトークンで新パスワード設定（SPEC #580 AS-015/016）
+///
+/// 有効なトークン（未使用・期限内）を一度だけ消費してパスワードを更新する（認証不要）。
+/// 更新により既存セッションは無効化され、初回パスワード変更フラグも解除される。
+///
+/// # Returns
+/// * `204 No Content` - パスワード更新成功
+/// * `400 Bad Request` - パスワード要件違反 / トークンが無効・期限切れ・使用済み
+/// * `500 Internal Server Error` - サーバーエラー
+pub async fn reset_password(
+    State(app_state): State<AppState>,
+    Json(request): Json<ResetPasswordRequest>,
+) -> Result<StatusCode, HandlerError> {
+    // 要件違反でトークンを無駄に消費しないよう、消費前に検証する
+    crate::auth::password::validate_password(&request.new_password)
+        .map_err(|e| AppError(e).into_response())?;
+
+    let user_id = crate::db::password_reset_tokens::consume(&app_state.db_pool, &request.token)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to consume password reset token: {}", e);
+            AppError(e).into_response()
+        })?
+        .ok_or_else(|| {
+            AppError(LbError::Common(CommonError::Validation(
+                "Invalid or expired reset token".to_string(),
+            )))
+            .into_response()
+        })?;
+
+    let password_hash =
+        crate::auth::password::hash_password(&request.new_password).map_err(|e| {
+            tracing::error!("Failed to hash password: {}", e);
+            AppError(LbError::PasswordHash(format!(
+                "Failed to hash password: {}",
+                e
+            )))
+            .into_response()
+        })?;
+
+    // password_changed_at が bump され、既存セッションは無効化される
+    crate::db::users::update(
+        &app_state.db_pool,
+        user_id,
+        None,
+        Some(&password_hash),
+        None,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to reset password: {}", e);
+        AppError(LbError::Database(format!(
+            "Failed to reset password: {}",
+            e
+        )))
+        .into_response()
+    })?;
+
+    // 本人が選んだパスワードなので初回変更フラグは不要
+    crate::db::users::clear_must_change_password(&app_state.db_pool, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to clear must_change_password: {}", e);
+            AppError(LbError::Database(format!(
+                "Failed to clear must_change_password: {}",
+                e
+            )))
+            .into_response()
+        })?;
+
+    tracing::info!("Password reset completed for user: {}", user_id);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
@@ -787,9 +969,16 @@ mod tests {
 
     #[test]
     fn test_change_password_request_deserialize() {
-        let json = r#"{"new_password": "newpass123"}"#;
+        let json = r#"{"current_password": "oldpass123", "new_password": "newpass123"}"#;
         let request: ChangePasswordRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.current_password, "oldpass123");
         assert_eq!(request.new_password, "newpass123");
+    }
+
+    #[test]
+    fn test_change_password_request_requires_current_password() {
+        let json = r#"{"new_password": "newpass123"}"#;
+        assert!(serde_json::from_str::<ChangePasswordRequest>(json).is_err());
     }
 
     #[test]

@@ -33,6 +33,25 @@ llmlb serves the admin dashboard UI as a React SPA.
   - `GET /api/dashboard/request-responses`
     (JWT only, for distribution aggregation)
 
+## Operational notifications (admin only)
+
+Both dialogs are opened from the user menu in the header.
+
+- **Manage Users**: each user has an optional notification email, shown in
+  the list and editable in the create / edit dialogs. It is the destination
+  for operational notifications, not a login identifier. Clearing the field
+  removes the address.
+- **Notifications**: turns the daily digest on or off and edits the send
+  time, the email language and the non-secret SMTP settings (host, port, from
+  address). It lists the recipients (administrators with a notification
+  email) and shows the status. When notifications are enabled but cannot be
+  sent, the reason is shown in the dialog and repeated when saving. The SMTP
+  credentials are set in the server environment only; the dialog shows
+  whether they are set.
+- APIs: `GET` / `PUT /api/dashboard/notifications` (JWT/session + CSRF + admin
+  role), `POST /api/users`, `PUT /api/users/:id`. See
+  [API.md](API.md) for the settings and the delivery behaviour.
+
 ## Dashboard APIs used by UI
 
 - `GET /api/dashboard/overview`

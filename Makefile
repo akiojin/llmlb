@@ -18,6 +18,8 @@ clippy-parity:
 	bash scripts/checks/check-clippy-parity.sh
 
 # SPEC #699 FR-009/FR-010: 1,500 行上限と mod.rs の re-export 化
+# Issue #811: 上限はテストコード（tests.rs / tests/ 配下）にも適用する。
+# CI (lint.yml rust-lint) も同一ターゲットを実行する。
 module-structure:
 	bash scripts/checks/check-module-structure.sh
 

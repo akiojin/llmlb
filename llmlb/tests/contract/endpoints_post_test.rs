@@ -259,7 +259,7 @@ async fn test_create_endpoint_invalid_url() {
 /// POST /api/endpoints - 異常系: URL重複
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: URL重複チェック未実装"]
+#[ignore = "URL重複の 409 は返る（endpoints.base_url の UNIQUE 制約 → LbError::Conflict）が、llmlb/src/api/error.rs の AppError::into_response が {\"error\": \"<message>\"} だけを返し、body.code / body.error.code のエラーコードを出力しない"]
 async fn test_create_endpoint_duplicate_url() {
     let mock = MockServer::start().await;
     Mock::given(method("GET"))

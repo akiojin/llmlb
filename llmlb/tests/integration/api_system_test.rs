@@ -62,7 +62,7 @@ async fn health_handler() -> impl IntoResponse {
 
 /// T024-1: xLLMエンドポイント登録時に/api/systemからデバイス情報を取得
 #[tokio::test]
-#[ignore = "デバイス検出機能実装待ち"]
+#[ignore = "llmlb/src/system_info/fetch.rs の get_endpoint_system_info に EndpointType::Xllm の分岐が無く（Llamacpp 以外は None を返す）、/api/system の device を DeviceInfo に変換する取得処理が無いため device_info が保存されない。加えてモックの /api/system は xllm_version を返さないので detection::xllm::detect_xllm が xLLM と判定せず openai_compatible で登録される"]
 async fn test_v0_system_device_info_retrieved_on_registration() {
     let lb = spawn_test_lb().await;
     let mock_xllm = spawn_xllm_mock().await;
@@ -212,7 +212,7 @@ async fn spawn_cpu_mock() -> crate::support::http::TestServer {
 
 /// T024-3: CPU専用エンドポイントのdevice_info取得
 #[tokio::test]
-#[ignore = "デバイス検出機能実装待ち"]
+#[ignore = "llmlb/src/system_info/fetch.rs の get_endpoint_system_info に EndpointType::Xllm の分岐が無く（Llamacpp 以外は None を返す）、/api/system の device を DeviceInfo に変換する取得処理が無いため device_info が保存されない。加えてモックの /api/system は xllm_version を返さないので detection::xllm::detect_xllm が xLLM と判定せず openai_compatible で登録される"]
 async fn test_v0_system_cpu_device_info() {
     let lb = spawn_test_lb().await;
     let mock_cpu = spawn_cpu_mock().await;

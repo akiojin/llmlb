@@ -117,6 +117,54 @@ async fn record_metrics_valid_endpoint_succeeds() {
     assert_eq!(snapshot.gpu_usage, Some(70.0));
 }
 
+#[tokio::test]
+async fn record_metrics_replaces_snapshot_and_appends_history() {
+    let _lock = TEST_LOCK.lock().await;
+    let (load_manager, endpoint_id) = setup_test_load_manager().await;
+    let update = |cpu_usage, memory_usage, average_response_time_ms| MetricsUpdate {
+        endpoint_id,
+        cpu_usage,
+        memory_usage,
+        gpu_usage: None,
+        gpu_memory_usage: None,
+        gpu_memory_total_mb: None,
+        gpu_memory_used_mb: None,
+        gpu_temperature: None,
+        gpu_model_name: None,
+        gpu_compute_capability: None,
+        gpu_capability_score: None,
+        active_requests: 0,
+        average_response_time_ms: Some(average_response_time_ms),
+        initializing: false,
+        ready_models: None,
+    };
+
+    load_manager
+        .record_metrics(update(30.0, 40.0, 100.0))
+        .await
+        .expect("first metrics update should succeed");
+    load_manager
+        .record_metrics(update(80.0, 75.0, 500.0))
+        .await
+        .expect("second metrics update should succeed");
+
+    // スナップショットは最新の値に置き換わる
+    let snapshot = load_manager.snapshot(endpoint_id).await.unwrap();
+    assert_eq!(snapshot.cpu_usage, Some(80.0));
+    assert_eq!(snapshot.memory_usage, Some(75.0));
+
+    // 履歴には両方が送信順に残る
+    let history = load_manager.metrics_history(endpoint_id).await.unwrap();
+    let recorded: Vec<_> = history
+        .iter()
+        .map(|m| (m.cpu_usage, m.memory_usage, m.average_response_time_ms))
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![(30.0, 40.0, Some(100.0)), (80.0, 75.0, Some(500.0))]
+    );
+}
+
 // ===== begin_request / finish_request テスト =====
 
 #[tokio::test]

@@ -5,7 +5,7 @@
 
 use super::{validation_error, UNSPECIFIED_IP};
 use crate::api::cloud_proxy::{proxy_cloud_provider, resolve_provider};
-use crate::api::error::AppError;
+use crate::api::error::OpenAIError;
 use crate::api::openai_util::sanitize_openai_payload_for_history;
 use crate::api::proxy::save_request_record;
 use crate::common::protocol::{RecordStatus, RequestResponseRecord, RequestType};
@@ -64,7 +64,7 @@ pub(super) async fn proxy_openai_cloud_post(
     request_type: RequestType,
     client_ip: Option<IpAddr>,
     api_key_id: Option<Uuid>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let (provider, model_name) = parse_cloud_model(model)
         .ok_or_else(|| validation_error("cloud model prefix is invalid"))?;
     let (endpoint_id, endpoint_name, endpoint_ip) = cloud_virtual_node(&provider);
@@ -109,7 +109,7 @@ pub(super) async fn proxy_openai_cloud_post(
                 };
                 save_request_record(state.balancer.request_history.clone(), record);
             }
-            return Err(e);
+            return Err(e.into());
         }
     };
 

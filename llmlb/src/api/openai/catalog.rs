@@ -3,7 +3,7 @@
 //! 登録済みモデルのメタデータとエンドポイント申告の supported_apis 等を
 //! OpenAI 互換のモデル一覧へ集約する。親モジュールは `pub use` でルーター参照を維持する。
 
-use crate::api::error::AppError;
+use crate::api::error::OpenAIError;
 use crate::api::models::{list_registered_models, LifecycleStatus};
 use crate::types::model::{ModelCapabilities, ModelCapability};
 use crate::AppState;
@@ -83,7 +83,7 @@ fn build_supported_apis(
 /// OpenAI API 互換形式に Azure OpenAI 形式の capabilities と
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
-pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppError> {
+pub async fn list_models(State(state): State<AppState>) -> Result<Response, OpenAIError> {
     use crate::types::endpoint::SupportedAPI;
     use std::collections::HashSet;
 
@@ -295,7 +295,7 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, AppE
 pub async fn get_model(
     State(state): State<AppState>,
     Path(model_id): Path<String>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     use crate::types::endpoint::SupportedAPI;
     use std::collections::HashSet;
 

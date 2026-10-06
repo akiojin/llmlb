@@ -33,7 +33,10 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
     let dashboard_general_routes = Router::new()
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))
         .route("/dashboard/models", get(dashboard::get_models))
-        .route("/dashboard/playground/models", get(openai::list_models))
+        .route(
+            "/dashboard/playground/models",
+            get(openai::dashboard_playground_models),
+        )
         .route("/dashboard/stats", get(dashboard::get_stats))
         .route(
             "/dashboard/request-history",

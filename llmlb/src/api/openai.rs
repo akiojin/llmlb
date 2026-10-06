@@ -37,7 +37,7 @@ use crate::common::ip::{normalize_ip, normalize_socket_ip};
 
 use crate::{
     api::{
-        error::AppError,
+        error::{AppError, OpenAIError},
         model_name::{parse_quantized_model_name, ParsedModelName},
         models::list_registered_models,
     },
@@ -153,7 +153,7 @@ pub async fn chat_completions(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<Value>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
     let model = extract_model(&payload)?;
     let parsed = if parse_cloud_model(&model).is_some() {
@@ -163,7 +163,7 @@ pub async fn chat_completions(
             quantization: None,
         }
     } else {
-        parse_quantized_model_name(&model).map_err(AppError::from)?
+        parse_quantized_model_name(&model).map_err(OpenAIError::from)?
     };
     let requires_image_input = payload_requires_image_input(&payload);
 
@@ -171,12 +171,12 @@ pub async fn chat_completions(
     let models = list_registered_models(&state.db_pool).await?;
     if let Some(model_info) = models.iter().find(|m| m.name == model) {
         if !model_info.has_capability(ModelCapability::TextGeneration) {
-            return Err(AppError::from(LbError::Common(CommonError::Validation(
+            return Err(OpenAIError::from(LbError::Common(CommonError::Validation(
                 format!("Model '{}' does not support text generation", parsed.raw),
             ))));
         }
         if requires_image_input && !model_info.has_capability(ModelCapability::ImageInput) {
-            return Err(AppError::from(LbError::Common(CommonError::Validation(
+            return Err(OpenAIError::from(LbError::Common(CommonError::Validation(
                 format!("Model '{}' does not support image input", parsed.raw),
             ))));
         }
@@ -215,6 +215,14 @@ pub async fn dashboard_playground_chat_completions(
         Json(payload),
     )
     .await
+    .map_err(AppError::from)
+}
+
+/// GET /api/dashboard/playground/models keeps the management error exit.
+pub async fn dashboard_playground_models(
+    State(state): State<AppState>,
+) -> Result<Response, AppError> {
+    list_models(State(state)).await.map_err(AppError::from)
 }
 
 /// POST /v1/completions - OpenAI互換テキスト補完API
@@ -224,11 +232,11 @@ pub async fn completions(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<Value>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
     let model = extract_model(&payload)?;
     if parse_cloud_model(&model).is_none() {
-        parse_quantized_model_name(&model).map_err(AppError::from)?;
+        parse_quantized_model_name(&model).map_err(OpenAIError::from)?;
     }
     let stream = extract_stream(&payload);
     proxy_openai_post(
@@ -251,11 +259,11 @@ pub async fn embeddings(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<Value>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
     let model = extract_model_with_default(&payload, crate::config::get_default_embedding_model());
     if parse_cloud_model(&model).is_none() {
-        parse_quantized_model_name(&model).map_err(AppError::from)?;
+        parse_quantized_model_name(&model).map_err(OpenAIError::from)?;
     }
     proxy_openai_post(
         &state,
@@ -270,7 +278,7 @@ pub async fn embeddings(
     .await
 }
 
-fn extract_model(payload: &Value) -> Result<String, AppError> {
+fn extract_model(payload: &Value) -> Result<String, OpenAIError> {
     payload
         .get("model")
         .and_then(|v| v.as_str())
@@ -315,7 +323,7 @@ fn payload_requires_image_input(payload: &Value) -> bool {
     false
 }
 
-fn validation_error(message: impl Into<String>) -> AppError {
+fn validation_error(message: impl Into<String>) -> OpenAIError {
     let err = LbError::Common(CommonError::Validation(message.into()));
     err.into()
 }

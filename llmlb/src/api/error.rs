@@ -13,8 +13,36 @@ use serde_json::json;
 #[derive(Debug)]
 pub struct AppError(pub LbError);
 
+/// OpenAI compatibility handlers use the existing safe, structured converter.
+#[derive(Debug)]
+pub struct OpenAIError(pub LbError);
+
+impl From<LbError> for OpenAIError {
+    fn from(error: LbError) -> Self {
+        Self(error)
+    }
+}
+
+impl From<AppError> for OpenAIError {
+    fn from(error: AppError) -> Self {
+        Self(error.0)
+    }
+}
+
+impl From<OpenAIError> for AppError {
+    fn from(error: OpenAIError) -> Self {
+        Self(error.0)
+    }
+}
+
+impl IntoResponse for OpenAIError {
+    fn into_response(self) -> Response {
+        (self.0.status_code(), Json(self.0.to_openai_error())).into_response()
+    }
+}
+
 /// Management handlers opt in to an additive machine-readable error code.
-/// Compatibility API handlers continue using `AppError`.
+/// Legacy management exits continue using `AppError`.
 #[derive(Debug)]
 pub struct ManagementError(pub LbError);
 

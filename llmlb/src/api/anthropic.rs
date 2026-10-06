@@ -823,7 +823,8 @@ fn anthropic_error_response(
             "type": "error",
             "error": {
                 "type": error_type.into(),
-                "message": message.into()
+                "message": message.into(),
+                "code": status.as_u16().to_string()
             }
         })),
     )

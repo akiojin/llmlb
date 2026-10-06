@@ -150,7 +150,6 @@ async fn node_generate_handler(
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: Mock node server health check issue"]
 async fn openai_proxy_end_to_end_updates_dashboard_history() {
     let node_stub = spawn_node_stub(NodeStubState {
         // OpenAI互換形式のレスポンス
@@ -333,77 +332,68 @@ async fn openai_proxy_end_to_end_updates_dashboard_history() {
     node_stub.stop().await;
 }
 
-/// SPEC-e8e9326e: Endpoints APIを使用してモデルを登録しテストする
+/// SPEC-e8e9326e: 登録済みモデルの max_tokens を実際のHTTP応答で検証する
 #[tokio::test]
 async fn openai_v1_models_list_with_registered_node() {
-    use support::lb::register_responses_endpoint;
+    use llmlb::types::endpoint::{
+        Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
+    };
+    use support::lb::{build_test_router, create_test_db_pool};
 
-    let node_stub = spawn_node_stub(NodeStubState {
-        chat_response: json!({
-            "message": {"role": "assistant", "content": "Hello"},
-            "done": true
-        }),
-        chat_stream_payload: "".to_string(),
-        generate_response: json!({}),
-        generate_stream_payload: "".to_string(),
-    })
-    .await;
-
-    let (lb, db_pool) = spawn_test_lb_with_db().await;
-
-    // SPEC-e8e9326e: Endpoints API経由でエンドポイントを登録＆モデル同期
-    let endpoint_id = register_responses_endpoint(lb.addr(), node_stub.addr(), "gpt-oss-20b")
+    // 自動モデル同期が max_tokens のフィクスチャを上書きしないよう、
+    // Router起動前に登録済みデータを確定する。登録・同期APIは他のE2Eで検証する。
+    let db_pool = create_test_db_pool().await;
+    let mut endpoint = Endpoint::new(
+        "models-list-fixture".to_string(),
+        "http://127.0.0.1:9".to_string(),
+        EndpointType::OpenaiCompatible,
+    );
+    endpoint.status = EndpointStatus::Online;
+    llmlb::db::endpoints::create_endpoint(&db_pool, &endpoint)
         .await
-        .expect("endpoint registration should succeed");
-    let endpoint_uuid =
-        uuid::Uuid::parse_str(&endpoint_id).expect("endpoint id should be a valid UUID");
+        .expect("endpoint fixture should be created");
+    for (model_id, max_tokens) in [("gpt-oss-20b", Some(4096)), ("missing-model", None)] {
+        llmlb::db::endpoints::add_endpoint_model(
+            &db_pool,
+            &EndpointModel {
+                endpoint_id: endpoint.id,
+                model_id: model_id.to_string(),
+                capabilities: None,
+                max_tokens,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
+            },
+        )
+        .await
+        .expect("model fixture should be created");
+    }
+    let lb = spawn_lb(build_test_router(db_pool.clone()).await).await;
+
+    // フィクスチャは Router 起動前に確定済みのため、バックグラウンド同期と競合しない。
+    // ブランチ側で検証していた登録モデル行の更新成功も保持する。
+    let updated =
+        llmlb::db::endpoints::update_model_max_tokens(&db_pool, endpoint.id, "gpt-oss-20b", 4096)
+            .await
+            .expect("update_model_max_tokens should succeed");
+    assert!(updated, "endpoint model row should be updated");
 
     // APIキーを取得
     let api_key = create_test_api_key(lb.addr(), &db_pool).await;
 
     let client = Client::new();
 
-    // /v1/models の max_tokens が number|null で返ることを検証するため、
-    // 1モデルだけDBに max_tokens を入れておく（他モデルはnullのまま）。
-    // エンドポイント登録時のバックグラウンド自動同期は既存モデルの max_tokens を null で
-    // 上書きし、負荷下では書き込み後に完了しうる。自動同期が済み、書き込みが
-    // /v1/models に反映されるまで書き込みと取得を繰り返す。
-    let mut models_payload = Value::Null;
-    for _ in 0..50 {
-        let updated = llmlb::db::endpoints::update_model_max_tokens(
-            &db_pool,
-            endpoint_uuid,
-            "gpt-oss-20b",
-            4096,
-        )
+    // GET /v1/models
+    let models_response = client
+        .get(format!("http://{}/v1/models", lb.addr()))
+        .header("authorization", format!("Bearer {}", api_key))
+        .send()
         .await
-        .expect("update_model_max_tokens should succeed");
-        assert!(updated, "endpoint model row should be updated");
+        .expect("models request should succeed");
 
-        // GET /v1/models
-        let models_response = client
-            .get(format!("http://{}/v1/models", lb.addr()))
-            .header("authorization", format!("Bearer {}", api_key))
-            .send()
-            .await
-            .expect("models request should succeed");
+    assert_eq!(models_response.status(), reqwest::StatusCode::OK);
 
-        assert_eq!(models_response.status(), reqwest::StatusCode::OK);
-
-        models_payload = models_response.json().await.expect("models json response");
-        let gpt_max_tokens = models_payload["data"]
-            .as_array()
-            .and_then(|models| {
-                models
-                    .iter()
-                    .find(|model| model["id"].as_str() == Some("gpt-oss-20b"))
-            })
-            .and_then(|model| model["max_tokens"].as_u64());
-        if gpt_max_tokens == Some(4096) {
-            break;
-        }
-        sleep(Duration::from_millis(100)).await;
-    }
+    let models_payload: Value = models_response.json().await.expect("models json response");
 
     assert!(
         models_payload.get("data").is_some(),
@@ -451,7 +441,6 @@ async fn openai_v1_models_list_with_registered_node() {
     );
 
     lb.stop().await;
-    node_stub.stop().await;
 }
 
 /// SPEC-e8e9326e: Endpoints APIを使用してモデルを登録しテストする

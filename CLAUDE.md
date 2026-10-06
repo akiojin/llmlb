@@ -466,6 +466,12 @@ scripts/checks/check-commits.sh --from origin/main --to HEAD
 4. `chore(release): vX.Y.Z` を作成して `develop -> main` のPRを作成する
 5. `main` マージ後に `release.yml` がタグ作成とGitHub Releaseを実行し、`publish.yml` が配布物を公開する
 
+`make release-version`（`make quality-checks` と pre-push に含まれる）が、`origin/main` に無い変更があるのに
+`[workspace.package] version` が `origin/main` と同じままの状態を検出して失敗する（Issue #813）。
+同じバージョンのままリリースすると `release.yml` が既存タグを見つけ、タグ・Release・配布をすべて skip するため。
+したがってリリース後に `develop` へ最初に着地する変更は、`Cargo.toml` と `Cargo.lock` の `version` を
+次のバージョンへ上げる必要がある（リリース時に SemVer に合わせて最終値へ更新し直してよい）。
+
 **コミットメッセージの品質とリリースノートの整合性**を保つため、typeは必ず実態に合わせて記述してください。
 
 ### markdownlint準拠ドキュメント

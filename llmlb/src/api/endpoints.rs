@@ -2,7 +2,7 @@
 //!
 //! SPEC-e8e9326e: llmlb主導エンドポイント登録システム
 
-use super::error::AppError;
+use super::error::{AppError, ManagementError};
 use crate::api::openai_util::{
     classify_upstream_request_error, openai_error_response_with_type, probe_ollama_model_loaded,
 };
@@ -358,9 +358,9 @@ pub struct ErrorResponse {
 }
 
 /// Admin権限を確認
-fn ensure_admin(claims: &Claims) -> Result<(), AppError> {
+fn ensure_admin(claims: &Claims) -> Result<(), ManagementError> {
     if claims.role != UserRole::Admin {
-        return Err(AppError(LbError::Authorization(
+        return Err(ManagementError(LbError::Authorization(
             "Admin permission required".to_string(),
         )));
     }
@@ -477,6 +477,41 @@ fn endpoint_host(base_url: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Classify a failed write without inferring an error code from SQL text.
+async fn endpoint_write_error(
+    pool: &sqlx::SqlitePool,
+    endpoint: &Endpoint,
+    error: sqlx::Error,
+    operation: &str,
+) -> ManagementError {
+    if error
+        .as_database_error()
+        .is_some_and(|err| err.is_unique_violation())
+    {
+        // SQLite does not expose the violated constraint's name. Check the
+        // persisted URL and exclude this endpoint (including unchanged updates).
+        let duplicate_url = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM endpoints WHERE base_url = ? AND id <> ?)",
+        )
+        .bind(&endpoint.base_url)
+        .bind(endpoint.id.to_string())
+        .fetch_one(pool)
+        .await;
+        let message = "Endpoint with this name or URL already exists".to_string();
+        match duplicate_url {
+            Ok(true) => ManagementError(LbError::DuplicateUrl(message)),
+            Ok(false) => ManagementError(LbError::Conflict(message)),
+            Err(err) => {
+                tracing::error!("Failed to classify endpoint uniqueness: {}", err);
+                ManagementError(LbError::Database(operation.to_string()))
+            }
+        }
+    } else {
+        tracing::error!("{}: {}", operation, error);
+        ManagementError(LbError::Database(operation.to_string()))
+    }
+}
+
 // --- Handlers ---
 
 /// POST /api/endpoints - エンドポイント登録
@@ -492,14 +527,14 @@ pub async fn create_endpoint(
 
     // バリデーション
     if req.name.trim().is_empty() {
-        return AppError(LbError::Common(CommonError::Validation(
+        return ManagementError(LbError::Common(CommonError::Validation(
             "Name is required".to_string(),
         )))
         .into_response();
     }
 
     if req.base_url.trim().is_empty() {
-        return AppError(LbError::Common(CommonError::Validation(
+        return ManagementError(LbError::Common(CommonError::Validation(
             "Base URL is required".to_string(),
         )))
         .into_response();
@@ -507,7 +542,7 @@ pub async fn create_endpoint(
 
     // URL形式チェック
     if Url::parse(&req.base_url).is_err() {
-        return AppError(LbError::Common(CommonError::Validation(
+        return ManagementError(LbError::Common(CommonError::Validation(
             "Invalid URL format".to_string(),
         )))
         .into_response();
@@ -515,7 +550,7 @@ pub async fn create_endpoint(
 
     // ヘルスチェック間隔のバリデーション（10-300秒）
     if req.health_check_interval_secs < 10 || req.health_check_interval_secs > 300 {
-        return AppError(LbError::Common(CommonError::Validation(
+        return ManagementError(LbError::Common(CommonError::Validation(
             "Health check interval must be between 10 and 300 seconds".to_string(),
         )))
         .into_response();
@@ -524,7 +559,7 @@ pub async fn create_endpoint(
     // 名前の重複チェック
     match db::find_by_name(&state.db_pool, &req.name).await {
         Ok(Some(_)) => {
-            return AppError(LbError::Common(CommonError::Validation(format!(
+            return ManagementError(LbError::Common(CommonError::Validation(format!(
                 "Endpoint with name '{}' already exists",
                 req.name
             ))))
@@ -532,7 +567,7 @@ pub async fn create_endpoint(
         }
         Err(e) => {
             tracing::error!("Failed to check name uniqueness: {}", e);
-            return AppError(LbError::Database(
+            return ManagementError(LbError::Database(
                 "Failed to check name uniqueness".to_string(),
             ))
             .into_response();
@@ -548,11 +583,11 @@ pub async fn create_endpoint(
     let detected_type = match detection_result {
         Ok(result) => result.endpoint_type,
         Err(DetectionError::Unreachable(msg)) => {
-            return AppError(LbError::Http(format!("Endpoint unreachable: {}", msg)))
+            return ManagementError(LbError::Http(format!("Endpoint unreachable: {}", msg)))
                 .into_response();
         }
         Err(DetectionError::UnsupportedType(msg)) => {
-            return AppError(LbError::Common(CommonError::Validation(format!(
+            return ManagementError(LbError::Common(CommonError::Validation(format!(
                 "Unsupported endpoint type: {}",
                 msg
             ))))
@@ -683,18 +718,9 @@ pub async fn create_endpoint(
 
             (StatusCode::CREATED, Json(EndpointResponse::from(endpoint))).into_response()
         }
-        Err(e) => {
-            let error_str = e.to_string();
-            if error_str.contains("UNIQUE constraint failed") {
-                AppError(LbError::Conflict(
-                    "Endpoint with this name or URL already exists".to_string(),
-                ))
-                .into_response()
-            } else {
-                tracing::error!("Failed to create endpoint: {}", e);
-                AppError(LbError::Database("Failed to create endpoint".to_string())).into_response()
-            }
-        }
+        Err(e) => endpoint_write_error(&state.db_pool, &endpoint, e, "Failed to create endpoint")
+            .await
+            .into_response(),
     }
 }
 
@@ -745,7 +771,8 @@ pub async fn list_endpoints(
         }
         Err(e) => {
             tracing::error!("Failed to list endpoints: {}", e);
-            AppError(LbError::Database("Failed to list endpoints".to_string())).into_response()
+            ManagementError(LbError::Database("Failed to list endpoints".to_string()))
+                .into_response()
         }
     }
 }
@@ -766,10 +793,10 @@ pub async fn get_endpoint(
             response.models = models;
             (StatusCode::OK, Json(response)).into_response()
         }
-        Ok(None) => AppError(LbError::EndpointNotFound(id)).into_response(),
+        Ok(None) => ManagementError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
-            AppError(LbError::Database("Failed to get endpoint".to_string())).into_response()
+            ManagementError(LbError::Database("Failed to get endpoint".to_string())).into_response()
         }
     }
 }
@@ -789,10 +816,10 @@ pub async fn update_endpoint(
     // 既存のエンドポイントを取得
     let existing = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
+        Ok(None) => return ManagementError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint for update: {}", e);
-            return AppError(LbError::Database("Failed to get endpoint".to_string()))
+            return ManagementError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
@@ -800,7 +827,7 @@ pub async fn update_endpoint(
     // 名前のバリデーション（空文字列は不許可）
     if let Some(ref name) = req.name {
         if name.trim().is_empty() {
-            return AppError(LbError::Common(CommonError::Validation(
+            return ManagementError(LbError::Common(CommonError::Validation(
                 "Name cannot be empty".to_string(),
             )))
             .into_response();
@@ -810,7 +837,7 @@ pub async fn update_endpoint(
     // URL形式チェック
     if let Some(ref url) = req.base_url {
         if Url::parse(url).is_err() {
-            return AppError(LbError::Common(CommonError::Validation(
+            return ManagementError(LbError::Common(CommonError::Validation(
                 "Invalid URL format".to_string(),
             )))
             .into_response();
@@ -822,7 +849,7 @@ pub async fn update_endpoint(
         if new_name != &existing.name {
             match db::find_by_name(&state.db_pool, new_name).await {
                 Ok(Some(_)) => {
-                    return AppError(LbError::Common(CommonError::Validation(format!(
+                    return ManagementError(LbError::Common(CommonError::Validation(format!(
                         "Endpoint with name '{}' already exists",
                         new_name
                     ))))
@@ -830,7 +857,7 @@ pub async fn update_endpoint(
                 }
                 Err(e) => {
                     tracing::error!("Failed to check name uniqueness: {}", e);
-                    return AppError(LbError::Database(
+                    return ManagementError(LbError::Database(
                         "Failed to check name uniqueness".to_string(),
                     ))
                     .into_response();
@@ -877,11 +904,11 @@ pub async fn update_endpoint(
                 updated.endpoint_type = result.endpoint_type;
             }
             Err(DetectionError::Unreachable(msg)) => {
-                return AppError(LbError::Http(format!("Endpoint unreachable: {}", msg)))
+                return ManagementError(LbError::Http(format!("Endpoint unreachable: {}", msg)))
                     .into_response();
             }
             Err(DetectionError::UnsupportedType(msg)) => {
-                return AppError(LbError::Common(CommonError::Validation(format!(
+                return ManagementError(LbError::Common(CommonError::Validation(format!(
                     "Unsupported endpoint type: {}",
                     msg
                 ))))
@@ -897,19 +924,10 @@ pub async fn update_endpoint(
         .await
     {
         Ok(true) => (StatusCode::OK, Json(EndpointResponse::from(updated))).into_response(),
-        Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
-        Err(e) => {
-            let error_str = e.to_string();
-            if error_str.contains("UNIQUE constraint failed") {
-                AppError(LbError::Conflict(
-                    "Endpoint with this name or URL already exists".to_string(),
-                ))
-                .into_response()
-            } else {
-                tracing::error!("Failed to update endpoint: {}", e);
-                AppError(LbError::Database("Failed to update endpoint".to_string())).into_response()
-            }
-        }
+        Ok(false) => ManagementError(LbError::EndpointNotFound(id)).into_response(),
+        Err(e) => endpoint_write_error(&state.db_pool, &updated, e, "Failed to update endpoint")
+            .await
+            .into_response(),
     }
 }
 
@@ -936,10 +954,11 @@ pub async fn delete_endpoint(
                 .publish(crate::events::DashboardEvent::NodeRemoved { runtime_id: id });
             StatusCode::NO_CONTENT.into_response()
         }
-        Ok(false) => AppError(LbError::EndpointNotFound(id)).into_response(),
+        Ok(false) => ManagementError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to delete endpoint: {}", e);
-            AppError(LbError::Database("Failed to delete endpoint".to_string())).into_response()
+            ManagementError(LbError::Database("Failed to delete endpoint".to_string()))
+                .into_response()
         }
     }
 }
@@ -958,10 +977,10 @@ pub async fn test_endpoint(
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
+        Ok(None) => return ManagementError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint for test: {}", e);
-            return AppError(LbError::Database("Failed to get endpoint".to_string()))
+            return ManagementError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
@@ -984,10 +1003,10 @@ pub async fn sync_endpoint_models(
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
-        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
+        Ok(None) => return ManagementError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint for sync: {}", e);
-            return AppError(LbError::Database("Failed to get endpoint".to_string()))
+            return ManagementError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
     };
@@ -1025,7 +1044,7 @@ pub async fn sync_endpoint_models(
             )
                 .into_response()
         }
-        Err(err) => AppError(sync_error_to_lb_error(err)).into_response(),
+        Err(err) => ManagementError(sync_error_to_lb_error(err)).into_response(),
     }
 }
 
@@ -1049,10 +1068,10 @@ pub async fn list_endpoint_models(
 ) -> impl IntoResponse {
     // エンドポイント存在確認
     match db::get_endpoint(&state.db_pool, id).await {
-        Ok(None) => return AppError(LbError::EndpointNotFound(id)).into_response(),
+        Ok(None) => return ManagementError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
-            return AppError(LbError::Database("Failed to get endpoint".to_string()))
+            return ManagementError(LbError::Database("Failed to get endpoint".to_string()))
                 .into_response();
         }
         Ok(Some(_)) => {}
@@ -1072,7 +1091,7 @@ pub async fn list_endpoint_models(
             .into_response(),
         Err(e) => {
             tracing::error!("Failed to list endpoint models: {}", e);
-            AppError(LbError::Database("Failed to list models".to_string())).into_response()
+            ManagementError(LbError::Database("Failed to list models".to_string())).into_response()
         }
     }
 }

@@ -7,7 +7,7 @@
 # （ラチェット）。検査が新規の直接呼び出しを検出し、許可リストが単調に縮むことを保証する。
 
 setup() {
-    REPO_ROOT="$BATS_TEST_DIRNAME/../.."
+    REPO_ROOT="$BATS_TEST_DIRNAME/../../.."
     MAKEFILE="$REPO_ROOT/Makefile"
     SCRIPT="$REPO_ROOT/scripts/checks/check-dashboard-data-hooks.sh"
     [ -f "$MAKEFILE" ]

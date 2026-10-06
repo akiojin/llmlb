@@ -103,7 +103,7 @@ notification-tests:
 
 test-checks:
 	@if [ -x "./node_modules/bats/bin/bats" ]; then \
-		bash ./node_modules/bats/bin/bats tests/checks; \
+		bash ./node_modules/bats/bin/bats tests/checks scripts/checks/tests; \
 	else \
 		echo "bats is not installed. Run 'pnpm install' first." >&2; \
 		exit 1; \

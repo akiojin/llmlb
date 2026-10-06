@@ -10,6 +10,7 @@
 //! - OpenAI-compatible: Not supported
 
 pub mod llamacpp;
+pub mod xllm;
 
 mod fetch;
 

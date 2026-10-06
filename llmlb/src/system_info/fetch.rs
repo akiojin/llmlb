@@ -1,6 +1,6 @@
 //! エンドポイント種別に応じたシステム情報取得の振り分け
 
-use super::llamacpp;
+use super::{llamacpp, xllm};
 use crate::types::endpoint::{DeviceInfo, EndpointType};
 use reqwest::Client;
 
@@ -26,8 +26,8 @@ pub async fn get_endpoint_system_info(
 ) -> Option<DeviceInfo> {
     match endpoint_type {
         EndpointType::Llamacpp => llamacpp::get_system_info(client, base_url, api_key).await,
+        EndpointType::Xllm => xllm::get_system_info(client, base_url, api_key).await,
         // Other endpoint types will be added as needed
-        // EndpointType::Xllm => xllm::get_system_info(...).await,
         // EndpointType::Ollama => ollama::get_system_info(...).await,
         _ => None,
     }

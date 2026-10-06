@@ -28,6 +28,7 @@ async fn system_handler() -> impl IntoResponse {
     (
         StatusCode::OK,
         Json(json!({
+            "xllm_version": "0.1.0",
             "device": {
                 "device_type": "gpu",
                 "gpu_devices": [
@@ -62,7 +63,6 @@ async fn health_handler() -> impl IntoResponse {
 
 /// T024-1: xLLMエンドポイント登録時に/api/systemからデバイス情報を取得
 #[tokio::test]
-#[ignore = "llmlb/src/system_info/fetch.rs の get_endpoint_system_info に EndpointType::Xllm の分岐が無く（Llamacpp 以外は None を返す）、/api/system の device を DeviceInfo に変換する取得処理が無いため device_info が保存されない。加えてモックの /api/system は xllm_version を返さないので detection::xllm::detect_xllm が xLLM と判定せず openai_compatible で登録される"]
 async fn test_v0_system_device_info_retrieved_on_registration() {
     let lb = spawn_test_lb().await;
     let mock_xllm = spawn_xllm_mock().await;
@@ -82,6 +82,7 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
 
     assert_eq!(response.status().as_u16(), 201);
     let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "xllm");
     let endpoint_id = body["id"].as_str().unwrap();
 
     // /api/systemは非同期で呼ばれるため、十分に待つ（デバイス検出完了待機）
@@ -122,6 +123,8 @@ async fn test_v0_system_device_info_retrieved_on_registration() {
     let gpu_devices = device_info["gpu_devices"].as_array().unwrap();
     assert_eq!(gpu_devices.len(), 1, "should have 1 GPU device");
     assert_eq!(gpu_devices[0]["name"], "Apple M1 Max");
+    assert_eq!(gpu_devices[0]["total_memory_bytes"], 34359738368_u64);
+    assert_eq!(gpu_devices[0]["used_memory_bytes"], 8589934592_u64);
 
     mock_xllm.stop().await;
 }
@@ -193,6 +196,7 @@ async fn cpu_system_handler() -> impl IntoResponse {
     (
         StatusCode::OK,
         Json(json!({
+            "xllm_version": "0.1.0",
             "device": {
                 "device_type": "cpu",
                 "gpu_devices": []
@@ -212,7 +216,6 @@ async fn spawn_cpu_mock() -> crate::support::http::TestServer {
 
 /// T024-3: CPU専用エンドポイントのdevice_info取得
 #[tokio::test]
-#[ignore = "llmlb/src/system_info/fetch.rs の get_endpoint_system_info に EndpointType::Xllm の分岐が無く（Llamacpp 以外は None を返す）、/api/system の device を DeviceInfo に変換する取得処理が無いため device_info が保存されない。加えてモックの /api/system は xllm_version を返さないので detection::xllm::detect_xllm が xLLM と判定せず openai_compatible で登録される"]
 async fn test_v0_system_cpu_device_info() {
     let lb = spawn_test_lb().await;
     let mock_cpu = spawn_cpu_mock().await;
@@ -232,6 +235,7 @@ async fn test_v0_system_cpu_device_info() {
 
     assert_eq!(response.status().as_u16(), 201);
     let body: Value = response.json().await.unwrap();
+    assert_eq!(body["endpoint_type"], "xllm");
     let endpoint_id = body["id"].as_str().unwrap();
 
     // /api/systemは非同期で呼ばれるため、十分に待つ（デバイス検出完了待機）

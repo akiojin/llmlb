@@ -370,6 +370,14 @@ async fn openai_v1_models_list_with_registered_node() {
     }
     let lb = spawn_lb(build_test_router(db_pool.clone()).await).await;
 
+    // フィクスチャは Router 起動前に確定済みのため、バックグラウンド同期と競合しない。
+    // ブランチ側で検証していた登録モデル行の更新成功も保持する。
+    let updated =
+        llmlb::db::endpoints::update_model_max_tokens(&db_pool, endpoint.id, "gpt-oss-20b", 4096)
+            .await
+            .expect("update_model_max_tokens should succeed");
+    assert!(updated, "endpoint model row should be updated");
+
     // APIキーを取得
     let api_key = create_test_api_key(lb.addr(), &db_pool).await;
 

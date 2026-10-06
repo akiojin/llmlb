@@ -110,9 +110,42 @@ pub enum LbError {
     /// Conflict error (e.g., duplicate resource)
     #[error("Conflict: {0}")]
     Conflict(String),
+
+    /// Endpoint URL already registered (kept distinct from other conflicts).
+    #[error("Conflict: {0}")]
+    DuplicateUrl(String),
 }
 
 impl LbError {
+    /// Stable management API identifiers derived only from the error variant.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Common(CommonError::Config(_)) => "config_error",
+            Self::Common(CommonError::Serialization(_)) => "serialization_error",
+            Self::Common(CommonError::UuidParse(_)) => "uuid_parse_error",
+            Self::Common(CommonError::IpAddrParse(_)) => "ip_addr_parse_error",
+            Self::Common(CommonError::Validation(_)) => "validation_error",
+            Self::EndpointNotFound(_) => "endpoint_not_found",
+            Self::NotFound(_) => "not_found",
+            Self::NoEndpointsAvailable => "no_endpoints_available",
+            Self::NoCapableEndpoints(_) => "no_capable_endpoints",
+            Self::Database(_) => "database_error",
+            Self::Http(_) => "http_error",
+            Self::Timeout(_) => "timeout",
+            Self::ServiceUnavailable(_) => "service_unavailable",
+            Self::Internal(_) => "internal_error",
+            Self::EndpointOffline(_) => "endpoint_offline",
+            Self::InvalidModelName(_) => "invalid_model_name",
+            Self::InsufficientStorage(_) => "insufficient_storage",
+            Self::PasswordHash(_) => "password_hash_error",
+            Self::Jwt(_) => "jwt_error",
+            Self::Authentication(_) => "authentication_error",
+            Self::Authorization(_) => "authorization_error",
+            Self::Conflict(_) => "conflict",
+            Self::DuplicateUrl(_) => "duplicate_url",
+        }
+    }
+
     /// Returns a safe error message for external clients.
     ///
     /// This method returns a generic error message that does not expose
@@ -141,6 +174,7 @@ impl LbError {
             Self::Authentication(_) => "Authentication failed",
             Self::Authorization(_) => "Access denied",
             Self::Conflict(_) => "Resource conflict",
+            Self::DuplicateUrl(_) => "Resource conflict",
         }
     }
 
@@ -176,6 +210,7 @@ impl LbError {
             Self::Authentication(_) => "authentication_error",
             Self::Authorization(_) => "permission_error",
             Self::Conflict(_) => "invalid_request_error",
+            Self::DuplicateUrl(_) => "invalid_request_error",
         }
     }
 
@@ -201,6 +236,7 @@ impl LbError {
             Self::Authentication(_) => StatusCode::UNAUTHORIZED,
             Self::Authorization(_) => StatusCode::FORBIDDEN,
             Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::DuplicateUrl(_) => StatusCode::CONFLICT,
         }
     }
 

@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure event-publishers migration-versions mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure event-publishers dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
 .PHONY: openai-tests notification-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -18,6 +18,8 @@ clippy-parity:
 	bash scripts/checks/check-clippy-parity.sh
 
 # SPEC #699 FR-009/FR-010: 1,500 行上限と mod.rs の re-export 化
+# Issue #811: 上限はテストコード（tests.rs / tests/ 配下）にも適用する。
+# CI (lint.yml rust-lint) も同一ターゲットを実行する。
 module-structure:
 	bash scripts/checks/check-module-structure.sh
 
@@ -26,9 +28,18 @@ module-structure:
 event-publishers:
 	bash scripts/checks/check-event-publishers.sh
 
+# SPEC #821 T016 / Issue #824: components/ 配下の useQuery / useMutation / useQueryClient 直接呼び出しを検出
+# （MVVM 移行中に新しいコンポーネント内フェッチが混入しても気付ける。現違反は allowlist で管理し、移行で減らす）
+dashboard-data-hooks:
+	bash scripts/checks/check-dashboard-data-hooks.sh
+
 # Issue #737: 並行ブランチ間のマイグレーション番号衝突を develop 着地前に検出
 migration-versions:
 	bash scripts/checks/check-migration-versions.sh
+
+# Issue #813: 未リリースの変更があるのにバージョンが main と同じまま（リリースしてもタグ・Release が作られない）状態を検出
+release-version:
+	bash scripts/checks/check-release-version.sh
 
 # Issue #776: canonical モデルマッピングの最終確認日が古くなっていないか検査（ネットワーク非依存）
 # CI (lint.yml commitlint) も同一ターゲットを実行する。
@@ -72,7 +83,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure event-publishers migration-versions mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
+quality-checks: fmt clippy-parity module-structure event-publishers dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 
@@ -84,7 +95,7 @@ security-checks:
 openai-tests:
 	cargo test -p llmlb --test e2e_openai_proxy
 
-# SPEC #777 AC-8: 運用通知（users.email・メール送信基盤・日次ダイジェスト・通知設定 API）の受け入れテスト
+# SPEC #777 AC-8: 運用通知（users.email・メール送信基盤・Offline 到達の即時通知・日次ダイジェスト・通知設定 API）の受け入れテスト
 # 実際のメール送信は行わない（記録用トランスポートを使う）。
 # CI (test.yml rust-test) も同一ターゲットを実行する。
 notification-tests:
@@ -92,7 +103,7 @@ notification-tests:
 
 test-checks:
 	@if [ -x "./node_modules/bats/bin/bats" ]; then \
-		bash ./node_modules/bats/bin/bats tests/checks; \
+		bash ./node_modules/bats/bin/bats tests/checks scripts/checks/tests; \
 	else \
 		echo "bats is not installed. Run 'pnpm install' first." >&2; \
 		exit 1; \

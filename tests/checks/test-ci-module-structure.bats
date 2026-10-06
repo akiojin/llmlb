@@ -45,11 +45,39 @@ job_block() {
     [[ "$output" == *"FR-009: big.rs"* ]] || false
 }
 
-@test "tests.rs は行数上限の対象外である" {
+# Issue #811: テストコードも同じ上限で守る（3,000 行超の tests.rs が CI 緑のまま残っていた）
+@test "tests.rs も行数上限の対象である" {
     src="$BATS_TEST_TMPDIR/src"
     mkdir -p "$src"
     printf '# empty\n' > "$BATS_TEST_TMPDIR/allowlist.txt"
     for _ in 1 2 3 4; do echo '// line'; done > "$src/tests.rs"
     SRC_DIR="$src" ALLOWLIST="$BATS_TEST_TMPDIR/allowlist.txt" MAX_LINES=3 run bash "$SCRIPT"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FR-009: tests.rs"* ]] || false
+}
+
+@test "tests/ 配下へ分割したテストファイルも行数上限の対象である" {
+    src="$BATS_TEST_TMPDIR/src"
+    mkdir -p "$src/foo/tests"
+    printf '# empty\n' > "$BATS_TEST_TMPDIR/allowlist.txt"
+    echo 'mod part;' > "$src/foo/tests.rs"
+    for _ in 1 2 3 4; do echo '// line'; done > "$src/foo/tests/part.rs"
+    SRC_DIR="$src" ALLOWLIST="$BATS_TEST_TMPDIR/allowlist.txt" MAX_LINES=3 run bash "$SCRIPT"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FR-009: foo/tests/part.rs"* ]] || false
+}
+
+@test "上限内の tests.rs は通る" {
+    src="$BATS_TEST_TMPDIR/src"
+    mkdir -p "$src"
+    printf '# empty\n' > "$BATS_TEST_TMPDIR/allowlist.txt"
+    for _ in 1 2 3; do echo '// line'; done > "$src/tests.rs"
+    SRC_DIR="$src" ALLOWLIST="$BATS_TEST_TMPDIR/allowlist.txt" MAX_LINES=3 run bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+}
+
+@test "リポジトリの llmlb/src に上限超過ファイルが無い" {
+    cd "$BATS_TEST_DIRNAME/../.."
+    run bash "$SCRIPT"
     [ "$status" -eq 0 ]
 }

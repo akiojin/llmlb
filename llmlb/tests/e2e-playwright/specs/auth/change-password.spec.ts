@@ -149,6 +149,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     test('CP-05: successful change redirects to login and the new password works', async ({
       page,
     }) => {
+      // The change and old/new password sign-ins each hash a password on a shared host.
+      test.setTimeout(60000);
       await signInAndReachChangePassword(page, user);
 
       const form = changePasswordForm(page);
@@ -204,6 +206,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     test('CP-08: signed-in users can change their password from the user menu', async ({
       page,
     }) => {
+      // Two changes and three sign-ins perform several password hashes on a shared host.
+      test.setTimeout(90000);
       // Complete the forced change first so the user lands on the dashboard
       await signInAndReachChangePassword(page, user);
       let form = changePasswordForm(page);
@@ -211,6 +215,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await form.newPassword.fill(NEW_PASSWORD);
       await form.confirmPassword.fill(NEW_PASSWORD);
       await form.submit.click();
+      await expect(page.getByText('Password changed', { exact: true })).toBeVisible({
+        timeout: 15000,
+      });
       await page.waitForURL(/\/dashboard\/login\.html/, { timeout: 10000 });
 
       const loginPage = new LoginPage(page);

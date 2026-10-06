@@ -158,6 +158,138 @@ async fn update_endpoint_syncs_registry_cache() {
 }
 
 #[tokio::test]
+async fn endpoint_unique_errors_distinguish_url_name_and_id() {
+    let _guard = TEST_LOCK.lock().await;
+    let state = TestAppStateBuilder::new().await.build().await;
+    let original = Endpoint::new(
+        "original".into(),
+        "http://localhost:8080".into(),
+        EndpointType::OpenaiCompatible,
+    );
+    db::create_endpoint(&state.db_pool, &original)
+        .await
+        .unwrap();
+    let url_duplicate = Endpoint::new(
+        "different".into(),
+        original.base_url.clone(),
+        EndpointType::OpenaiCompatible,
+    );
+    let name_duplicate = Endpoint::new(
+        original.name.clone(),
+        "http://localhost:8081".into(),
+        EndpointType::OpenaiCompatible,
+    );
+    for (endpoint, expected) in [
+        (&url_duplicate, "duplicate_url"),
+        (&name_duplicate, "conflict"),
+        (&original, "conflict"),
+    ] {
+        let error = db::create_endpoint(&state.db_pool, endpoint)
+            .await
+            .unwrap_err();
+        let classified =
+            endpoint_write_error(&state.db_pool, endpoint, error, "write failed").await;
+        assert_eq!(classified.0.code(), expected);
+        assert_eq!(classified.0.status_code(), StatusCode::CONFLICT);
+    }
+    let error = db::create_endpoint(&state.db_pool, &url_duplicate)
+        .await
+        .unwrap_err();
+    state.db_pool.close().await;
+    let classified =
+        endpoint_write_error(&state.db_pool, &url_duplicate, error, "write failed").await;
+    assert_eq!(
+        classified.0.code(),
+        "database_error",
+        "failed classification must fail closed"
+    );
+}
+
+#[tokio::test]
+async fn update_endpoint_duplicate_url_does_not_change_saved_endpoint() {
+    let _guard = TEST_LOCK.lock().await;
+    let state = TestAppStateBuilder::new().await.build().await;
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": []})))
+        .mount(&mock)
+        .await;
+    let original = Endpoint::new(
+        "original".into(),
+        mock.uri(),
+        EndpointType::OpenaiCompatible,
+    );
+    let second = Endpoint::new(
+        "second".into(),
+        "http://localhost:8081".into(),
+        EndpointType::OpenaiCompatible,
+    );
+    for endpoint in [&original, &second] {
+        state
+            .balancer
+            .endpoint_registry
+            .add(endpoint.clone())
+            .await
+            .unwrap();
+    }
+    for (id, status) in [
+        (second.id, StatusCode::CONFLICT),
+        (original.id, StatusCode::OK),
+    ] {
+        let response = update_endpoint(
+            Extension(Claims {
+                sub: "admin".into(),
+                role: UserRole::Admin,
+                exp: 0,
+                must_change_password: false,
+                password_changed_at: 0,
+            }),
+            State(state.clone()),
+            Path(id),
+            Json(UpdateEndpointRequest {
+                name: None,
+                base_url: Some(original.base_url.clone()),
+                api_key: None,
+                health_check_interval_secs: None,
+                inference_timeout_secs: None,
+                notes: None,
+            }),
+        )
+        .await
+        .into_response();
+        assert_eq!(response.status(), status);
+        if status == StatusCode::CONFLICT {
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(body["code"], "duplicate_url");
+            assert_eq!(
+                body["error"],
+                "Endpoint with this name or URL already exists"
+            );
+        }
+    }
+    assert_eq!(
+        db::get_endpoint(&state.db_pool, second.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .base_url,
+        second.base_url
+    );
+    assert_eq!(
+        state
+            .balancer
+            .endpoint_registry
+            .get(second.id)
+            .await
+            .unwrap()
+            .base_url,
+        second.base_url
+    );
+}
+
+#[tokio::test]
 async fn proxy_chat_completions_keeps_endpoint_online_on_client_error() {
     let _guard = TEST_LOCK.lock().await;
     let state = TestAppStateBuilder::new().await.build().await;

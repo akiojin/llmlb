@@ -108,14 +108,14 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 /// NOTE: この機能はxLLMタイプのエンドポイントでのみ利用可能
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T123で実装予定"]
 async fn test_download_model_request() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::xllm::spawn_mock_xllm().await;
 
     // エンドポイントを登録
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": format!("http://{}", mock.addr())
     });
 
     let response = app
@@ -165,7 +165,6 @@ async fn test_download_model_request() {
 /// POST /api/endpoints/:id/download - 異常系: 存在しないエンドポイント
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T123で実装予定"]
 async fn test_download_model_endpoint_not_found() {
     let TestApp { app, admin_key } = build_app().await;
 
@@ -191,14 +190,14 @@ async fn test_download_model_endpoint_not_found() {
 /// POST /api/endpoints/:id/download - 異常系: モデル名未指定
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T123で実装予定"]
 async fn test_download_model_missing_model_name() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::xllm::spawn_mock_xllm().await;
 
     // エンドポイントを登録
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": format!("http://{}", mock.addr())
     });
 
     let response = app
@@ -242,14 +241,14 @@ async fn test_download_model_missing_model_name() {
 /// POST /api/endpoints/:id/download - 異常系: 非xLLMエンドポイント
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T123で実装予定"]
 async fn test_download_model_non_xllm_endpoint() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::node::MockNodeServer::start().await;
 
     // エンドポイントを登録（タイプがunknownの場合はダウンロード不可）
     let payload = json!({
         "name": "Generic Endpoint",
-        "base_url": "http://localhost:11434"
+        "base_url": mock.server.uri()
     });
 
     let response = app
@@ -293,7 +292,6 @@ async fn test_download_model_non_xllm_endpoint() {
 /// POST /api/endpoints/:id/download - 異常系: 認証なし
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T123で実装予定"]
 async fn test_download_model_unauthorized() {
     let TestApp { app, .. } = build_app().await;
 
@@ -319,14 +317,14 @@ async fn test_download_model_unauthorized() {
 /// POST /api/endpoints/:id/download - レスポンス構造検証
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T123で実装予定"]
 async fn test_download_model_response_structure() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::xllm::spawn_mock_xllm().await;
 
     // エンドポイントを登録（xLLMタイプと仮定）
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": format!("http://{}", mock.addr())
     });
 
     let response = app

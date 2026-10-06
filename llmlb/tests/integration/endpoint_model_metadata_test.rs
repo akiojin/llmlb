@@ -7,12 +7,15 @@
 
 use reqwest::Client;
 use serde_json::{json, Value};
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
 
 use crate::support::{lb::spawn_test_lb, ollama::spawn_mock_ollama, xllm::spawn_mock_xllm};
 
 /// US9-シナリオ1: xLLMエンドポイントからモデルメタデータを取得
 #[tokio::test]
-#[ignore = "メタデータAPI未実装 - T125, T129で実装後に有効化"]
 async fn test_xllm_model_metadata_retrieval() {
     let server = spawn_test_lb().await;
     let xllm = spawn_mock_xllm().await;
@@ -77,7 +80,6 @@ async fn test_xllm_model_metadata_retrieval() {
 
 /// US9-シナリオ2: Ollamaエンドポイントからモデルメタデータを取得
 #[tokio::test]
-#[ignore = "メタデータAPI未実装 - T125, T130で実装後に有効化"]
 async fn test_ollama_model_metadata_retrieval() {
     let server = spawn_test_lb().await;
     let ollama = spawn_mock_ollama().await;
@@ -138,7 +140,6 @@ async fn test_ollama_model_metadata_retrieval() {
 
 /// US9-シナリオ3: モデル同期時にmax_tokensが自動取得される
 #[tokio::test]
-#[ignore = "メタデータAPI未実装 - T133で実装後に有効化"]
 async fn test_model_sync_retrieves_max_tokens() {
     let server = spawn_test_lb().await;
     let xllm = spawn_mock_xllm().await;
@@ -201,8 +202,17 @@ async fn test_model_sync_retrieves_max_tokens() {
 
 /// US9-シナリオ4: vLLM/OpenAI互換ではメタデータ取得非サポート
 #[tokio::test]
-#[ignore = "メタデータAPI未実装 - T125で実装後に有効化"]
 async fn test_vllm_metadata_not_supported() {
+    let vllm = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("server", "vllm")
+                .set_body_json(json!({"object": "list", "data": []})),
+        )
+        .mount(&vllm)
+        .await;
     let server = spawn_test_lb().await;
     let client = Client::new();
 
@@ -212,7 +222,7 @@ async fn test_vllm_metadata_not_supported() {
         .header("authorization", "Bearer sk_debug")
         .json(&json!({
             "name": "vLLM Server",
-            "base_url": "http://localhost:8000"
+            "base_url": vllm.uri()
         }))
         .send()
         .await
@@ -242,7 +252,6 @@ async fn test_vllm_metadata_not_supported() {
 
 /// US9-シナリオ5: 存在しないモデルのメタデータ取得
 #[tokio::test]
-#[ignore = "メタデータAPI未実装 - T125で実装後に有効化"]
 async fn test_nonexistent_model_metadata() {
     let server = spawn_test_lb().await;
     let xllm = spawn_mock_xllm().await;

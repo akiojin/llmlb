@@ -107,14 +107,14 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 /// GET /api/endpoints/:id/download/progress - 正常系: 進捗一覧取得
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_get_download_progress_list() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::xllm::spawn_mock_xllm().await;
 
     // エンドポイントを登録
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": format!("http://{}", mock.addr())
     });
 
     let response = app
@@ -162,14 +162,14 @@ async fn test_get_download_progress_list() {
 /// GET /api/endpoints/:id/download/progress - 正常系: 進捗詳細のフィールド検証
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_download_progress_response_structure() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::xllm::spawn_mock_xllm().await;
 
     // エンドポイントを登録
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": format!("http://{}", mock.addr())
     });
 
     let response = app
@@ -227,7 +227,6 @@ async fn test_download_progress_response_structure() {
 /// GET /api/endpoints/:id/download/progress - 異常系: 存在しないエンドポイント
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_download_progress_endpoint_not_found() {
     let TestApp { app, admin_key } = build_app().await;
 
@@ -248,7 +247,6 @@ async fn test_download_progress_endpoint_not_found() {
 /// GET /api/endpoints/:id/download/progress - 異常系: 認証なし
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_download_progress_unauthorized() {
     let TestApp { app, .. } = build_app().await;
 

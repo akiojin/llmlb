@@ -890,6 +890,7 @@ fn lb_error_detail_message(err: &LbError) -> String {
         | LbError::Authentication(message)
         | LbError::Authorization(message)
         | LbError::Conflict(message)
+        | LbError::DuplicateUrl(message)
         | LbError::NoCapableEndpoints(message) => message.clone(),
         LbError::EndpointNotFound(endpoint_id) => format!("Endpoint not found: {}", endpoint_id),
         LbError::EndpointOffline(endpoint_id) => format!("Endpoint {} is offline", endpoint_id),

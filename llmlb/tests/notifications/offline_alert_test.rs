@@ -129,6 +129,62 @@ async fn ac3_subscriber_mails_the_admins_only_when_an_endpoint_arrives_at_offlin
 }
 
 #[tokio::test]
+async fn ac3_registry_offline_transitions_reach_mail_once_until_recovery() {
+    let pool = ready_pool().await;
+    create_user_with_email(&pool, "viewer", UserRole::Viewer, "viewer@example.com").await;
+    let id = register_endpoint(&pool, "registry-offline", Pending).await;
+    let registry = llmlb::registry::endpoints::EndpointRegistry::new(pool.clone())
+        .await
+        .unwrap();
+    let bus = llmlb::events::create_shared_event_bus();
+    registry.set_event_bus(bus.clone());
+    let events = bus.subscribe();
+    let mut observed = bus.subscribe();
+    let transport = RecordingTransport::default();
+
+    for status in [Offline, Offline, Online, Error, Offline] {
+        registry
+            .update_status(id, status, None, None)
+            .await
+            .unwrap();
+    }
+    for (previous, next) in [
+        (Pending, Offline),
+        (Offline, Online),
+        (Online, Error),
+        (Error, Offline),
+    ] {
+        match observed.try_recv().unwrap() {
+            DashboardEvent::EndpointStatusChanged {
+                runtime_id,
+                old_status,
+                new_status,
+            } => assert_eq!((runtime_id, old_status, new_status), (id, previous, next)),
+            event => panic!("unexpected registry event: {event:?}"),
+        }
+    }
+    assert!(matches!(
+        observed.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+    drop(observed);
+    drop(registry);
+    // registryのpublisherと通知器のsubscriberを、手動publishを使わず接続する。
+    let bus = Arc::try_unwrap(bus).ok().unwrap();
+    run_until_closed(notifier(&pool, &transport), bus, events).await;
+
+    let sent = transport.sent();
+    assert_eq!(sent.len(), 2, "Offline同値更新は送らず、復帰後に再送する");
+    for mail in sent {
+        assert_eq!(mail.to, ["ops@example.com"]);
+        assert_eq!(
+            mail.subject,
+            "[llmlb] エンドポイントが Offline になりました: registry-offline"
+        );
+    }
+}
+
+#[tokio::test]
 async fn ac3_every_non_offline_arrival_is_ignored() {
     let pool = ready_pool().await;
     let gpu_b = register_endpoint(&pool, "gpu-b", Offline).await;

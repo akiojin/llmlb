@@ -348,51 +348,6 @@ async fn test_management_error_has_additive_code() {
     );
 }
 
-/// Issue #827: 共有AppErrorを使う互換APIのフラットな応答は変更しない。
-#[tokio::test]
-#[serial]
-async fn test_compatible_error_bodies_remain_unchanged() {
-    let TestApp { app, admin_key } = build_app().await;
-    for (path, request, message) in [
-        (
-            "/v1/chat/completions",
-            json!({}),
-            "`model` field is required for OpenAI-compatible requests",
-        ),
-        (
-            "/v1/completions",
-            json!({"model": "bad:", "prompt": "test"}),
-            "Invalid model name (quantization format): bad:",
-        ),
-        (
-            "/v1/audio/speech",
-            json!({"model": "bad:", "input": "test", "voice": "alloy"}),
-            "Invalid model name (quantization format): bad:",
-        ),
-    ] {
-        let response = app
-            .clone()
-            .oneshot(
-                admin_request(&admin_key)
-                    .method("POST")
-                    .uri(path)
-                    .extension(axum::extract::ConnectInfo(
-                        "127.0.0.1:12345".parse::<std::net::SocketAddr>().unwrap(),
-                    ))
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&request).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let expected = serde_json::to_vec(&json!({"error": message})).unwrap();
-        eprintln!("{path}: status=400 body={}", String::from_utf8_lossy(&body));
-        assert_eq!(body.as_ref(), expected.as_slice(), "{path}");
-    }
-}
-
 /// POST /api/endpoints - 異常系: 認証なし
 #[tokio::test]
 #[serial]

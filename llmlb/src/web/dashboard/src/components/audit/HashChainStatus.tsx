@@ -1,36 +1,20 @@
-import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { auditLogApi, HashChainVerifyResult } from '@/lib/api'
+import type { AuditLogVerificationViewModel } from '@/viewmodels/useAuditLogViewModel'
 import { ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react'
 
-export function HashChainStatus() {
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<HashChainVerifyResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleVerify = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await auditLogApi.verify()
-      setResult(res)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Verification failed')
-    } finally {
-      setLoading(false)
-    }
-  }
+export function HashChainStatus({ verification }: { verification: AuditLogVerificationViewModel }) {
+  const { isVerifying, result, error, verify } = verification
 
   return (
     <div className="flex items-center gap-3">
       <Button
         variant="outline"
         size="sm"
-        onClick={handleVerify}
-        disabled={loading}
+        onClick={verify}
+        disabled={isVerifying}
       >
-        {loading ? (
+        {isVerifying ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (
           <ShieldCheck className="mr-2 h-4 w-4" />

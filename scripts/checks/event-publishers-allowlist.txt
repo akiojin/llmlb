@@ -2,6 +2,3 @@
 #
 # production の publisher がまだ着地していない DashboardEvent のバリアントを 1 行に 1 つ書く。
 # publisher が着地したら、そのエントリを削除する（残っていると検査が失敗する）。
-
-# Issue #692 / PR #728 が EndpointRegistry::update_status に publisher を追加する
-EndpointStatusChanged

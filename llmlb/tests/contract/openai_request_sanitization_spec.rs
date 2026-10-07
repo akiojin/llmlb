@@ -1,6 +1,6 @@
 //! OpenAI request history sanitization contract test
 //!
-//! TDD RED: このテストはサニタイズ実装前に失敗する必要があります。
+//! 添付メディアの生データ（base64）がリクエスト履歴に保存されないことを検証する。
 //!
 //! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
@@ -105,7 +105,6 @@ async fn wait_for_one_record(
 
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: request history sanitization not implemented"]
 async fn request_history_redacts_inline_media_data() {
     let mock_server = MockServer::start().await;
 
@@ -164,7 +163,7 @@ async fn request_history_redacts_inline_media_data() {
     let record = wait_for_one_record(&app.request_history).await;
     let stored = serde_json::to_string(&record.request_body).expect("stored json");
 
-    // 添付の生データが履歴に残らないこと（RED: 現状は残るため失敗するはず）
+    // 添付の生データが履歴に残らないこと
     assert!(
         !stored.contains(sensitive_image),
         "request history should redact image base64"

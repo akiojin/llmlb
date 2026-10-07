@@ -13,6 +13,60 @@ use serde_json::json;
 #[derive(Debug)]
 pub struct AppError(pub LbError);
 
+/// OpenAI compatibility handlers use the existing safe, structured converter.
+#[derive(Debug)]
+pub struct OpenAIError(pub LbError);
+
+impl From<LbError> for OpenAIError {
+    fn from(error: LbError) -> Self {
+        Self(error)
+    }
+}
+
+impl From<AppError> for OpenAIError {
+    fn from(error: AppError) -> Self {
+        Self(error.0)
+    }
+}
+
+impl From<OpenAIError> for AppError {
+    fn from(error: OpenAIError) -> Self {
+        Self(error.0)
+    }
+}
+
+impl IntoResponse for OpenAIError {
+    fn into_response(self) -> Response {
+        (self.0.status_code(), Json(self.0.to_openai_error())).into_response()
+    }
+}
+
+/// Management handlers opt in to an additive machine-readable error code.
+/// Legacy management exits continue using `AppError`.
+#[derive(Debug)]
+pub struct ManagementError(pub LbError);
+
+impl From<LbError> for ManagementError {
+    fn from(error: LbError) -> Self {
+        Self(error)
+    }
+}
+
+impl From<AppError> for ManagementError {
+    fn from(error: AppError) -> Self {
+        Self(error.0)
+    }
+}
+
+impl IntoResponse for ManagementError {
+    fn into_response(self) -> Response {
+        let status = self.0.status_code();
+        let code = self.0.code();
+        let message = AppError(self.0).message();
+        (status, Json(json!({"error": message, "code": code}))).into_response()
+    }
+}
+
 /// ハンドラ/ミドルウェアの `Err` 用に `Response` を Box 化した軽量エラー型
 ///
 /// `Result<_, Response>` は `Err` が大きく `clippy::result_large_err` に抵触するため、
@@ -210,12 +264,24 @@ impl From<LbError> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let status = self.0.status_code();
+        let message = self.message();
 
+        let payload = json!({
+            "error": message
+        });
+
+        (status, Json(payload)).into_response()
+    }
+}
+
+#[allow(clippy::items_after_test_module)]
+impl AppError {
+    fn message(&self) -> String {
         // Determine the user-facing message.
         // For errors that may contain internal details (IP addresses, ports, DB info),
         // use the generic external_message(). For user-facing errors where the message
         // is developer-crafted and safe to expose, use the actual error message.
-        let message: String = match &self.0 {
+        match &self.0 {
             // May contain internal details (IPs, ports, DB info): use generic message
             LbError::Database(_)
             | LbError::Http(_)
@@ -243,17 +309,12 @@ impl IntoResponse for AppError {
                 }
             }
             LbError::Conflict(msg) => msg.clone(),
+            LbError::DuplicateUrl(msg) => msg.clone(),
             LbError::NotFound(msg) => msg.clone(),
             LbError::Authorization(msg) => msg.clone(),
             LbError::Authentication(msg) => msg.clone(),
             LbError::InvalidModelName(msg) => msg.clone(),
             LbError::InsufficientStorage(msg) => msg.clone(),
-        };
-
-        let payload = json!({
-            "error": message
-        });
-
-        (status, Json(payload)).into_response()
+        }
     }
 }

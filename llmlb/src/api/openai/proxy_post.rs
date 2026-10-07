@@ -7,7 +7,7 @@ use super::{
     add_queue_headers, parse_cloud_model, payload_requires_image_input, proxy_openai_cloud_post,
     update_inference_latency, UNSPECIFIED_IP,
 };
-use crate::api::error::AppError;
+use crate::api::error::OpenAIError;
 use crate::api::model_name::resolve_runtime_model_name_for_endpoint;
 use crate::api::models::load_registered_model;
 use crate::api::openai_util::{
@@ -49,7 +49,7 @@ pub(super) async fn proxy_openai_post(
     request_type: RequestType,
     client_ip: Option<IpAddr>,
     api_key_id: Option<Uuid>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     // Cloud-prefixed model -> forward to provider API
     if parse_cloud_model(&model).is_some() {
         return proxy_openai_cloud_post(
@@ -177,7 +177,7 @@ pub(super) async fn proxy_openai_post(
         .load_manager
         .begin_request(endpoint_id)
         .await
-        .map_err(AppError::from)?;
+        .map_err(OpenAIError::from)?;
 
     let client = state.http_client.clone();
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
@@ -266,7 +266,7 @@ pub(super) async fn proxy_openai_post(
             request_lease
                 .complete(RequestOutcome::Error, duration)
                 .await
-                .map_err(AppError::from)?;
+                .map_err(OpenAIError::from)?;
             record_endpoint_request_stats(
                 state.balancer.endpoint_registry.clone(),
                 endpoint_id,
@@ -349,13 +349,13 @@ pub(super) async fn proxy_openai_post(
                 state.event_bus.clone(),
                 Some(request_lease),
             )
-            .map_err(AppError::from)?
+            .map_err(OpenAIError::from)?
         } else {
             // 失敗時はトークンストリームが無いため、ここで lease を完了し統計を記録する
             request_lease
                 .complete(RequestOutcome::Error, duration)
                 .await
-                .map_err(AppError::from)?;
+                .map_err(OpenAIError::from)?;
             record_endpoint_request_stats(
                 state.balancer.endpoint_registry.clone(),
                 endpoint_id,
@@ -426,7 +426,7 @@ pub(super) async fn proxy_openai_post(
         request_lease
             .complete(RequestOutcome::Error, duration)
             .await
-            .map_err(AppError::from)?;
+            .map_err(OpenAIError::from)?;
         record_endpoint_request_stats(
             state.balancer.endpoint_registry.clone(),
             endpoint_id,
@@ -500,7 +500,7 @@ pub(super) async fn proxy_openai_post(
             request_lease
                 .complete_with_tokens(RequestOutcome::Success, duration, token_usage.clone())
                 .await
-                .map_err(AppError::from)?;
+                .map_err(OpenAIError::from)?;
             // SPEC-f8e3a1b7: 成功時に推論レイテンシを更新
             update_inference_latency(&state.balancer.endpoint_registry, endpoint_id, duration);
             // SPEC-4bb5b55f: TPS計測用にoutput_tokensとdurationを渡す
@@ -562,7 +562,7 @@ pub(super) async fn proxy_openai_post(
             request_lease
                 .complete(RequestOutcome::Error, duration)
                 .await
-                .map_err(AppError::from)?;
+                .map_err(OpenAIError::from)?;
             record_endpoint_request_stats(
                 state.balancer.endpoint_registry.clone(),
                 endpoint_id,

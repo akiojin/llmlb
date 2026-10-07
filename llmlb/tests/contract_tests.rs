@@ -155,6 +155,10 @@ mod endpoints_contract_extended_test;
 #[path = "contract/api_route_coverage_test.rs"]
 mod api_route_coverage_test;
 
+// SPEC #585 FR-027 / Issue #806: 契約テストが無かった公開ルート 22 組の契約
+#[path = "contract/public_route_contracts_test.rs"]
+mod public_route_contracts_test;
+
 // Issue #775: 互換APIの未知フィールド透過を固定する契約テスト
 #[path = "contract/unknown_field_passthrough_test.rs"]
 mod unknown_field_passthrough_test;

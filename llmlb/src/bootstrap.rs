@@ -320,6 +320,10 @@ async fn initialize_inner(
         });
     }
 
+    let event_bus = crate::events::create_shared_event_bus();
+    update_manager.set_event_bus(event_bus.clone());
+    endpoint_registry.set_event_bus(event_bus.clone());
+
     let state = AppState {
         balancer: crate::BalancerState {
             load_manager,
@@ -329,11 +333,7 @@ async fn initialize_inner(
         db_pool,
         auth: crate::AuthState { jwt_secret },
         http_client,
-        event_bus: {
-            let bus = crate::events::create_shared_event_bus();
-            update_manager.set_event_bus(bus.clone());
-            bus
-        },
+        event_bus,
         lifecycle: crate::LifecycleState {
             inference_gate,
             shutdown: shutdown.clone(),
@@ -345,6 +345,9 @@ async fn initialize_inner(
             archive_pool: audit_archive_pool,
         },
     };
+
+    // 即時通知（SPEC #777）。日次ダイジェストと同じく、SMTP 設定が未設定・不正でも起動は続ける
+    crate::notifications::start_offline_alert_task(state.db_pool.clone(), &state.event_bus);
 
     InitContext {
         state,

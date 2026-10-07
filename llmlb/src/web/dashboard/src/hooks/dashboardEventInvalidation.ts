@@ -1,6 +1,13 @@
 import type { QueryKey } from '@tanstack/react-query'
 import type { DashboardEvent, DashboardEventType } from './useWebSocket'
 
+function endpointLifecycleKeys(data: DashboardEvent['data']): QueryKey[] {
+  const keys: QueryKey[] = [['dashboard-overview'], ['dashboard-endpoints'], ['request-responses']]
+  // Endpoint detail used by the endpoint playground (EndpointPlayground.tsx)
+  if (data?.runtime_id) keys.push(['endpoint', data.runtime_id])
+  return keys
+}
+
 /**
  * SPEC #582 FR-048f: event type -> query keys to invalidate when it arrives.
  *
@@ -13,10 +20,9 @@ export const DASHBOARD_EVENT_INVALIDATIONS: {
   [T in DashboardEventType]: (data: DashboardEvent['data']) => QueryKey[]
 } = {
   connected: () => [],
-  // Dashboard overview includes endpoints and stats
-  NodeRegistered: () => [['dashboard-overview'], ['request-responses']],
-  NodeStatusChanged: () => [['dashboard-overview'], ['request-responses']],
-  NodeRemoved: () => [['dashboard-overview'], ['request-responses']],
+  NodeRegistered: endpointLifecycleKeys,
+  EndpointStatusChanged: endpointLifecycleKeys,
+  NodeRemoved: endpointLifecycleKeys,
   MetricsUpdated: () => [['dashboard-overview']],
   // SPEC-4bb5b55f: Invalidate TPS data for the affected endpoint
   TpsUpdated: (data) => (data?.endpoint_id ? [['endpoint-model-tps', data.endpoint_id]] : []),

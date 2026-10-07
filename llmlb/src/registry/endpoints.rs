@@ -3,12 +3,13 @@
 //! エンドポイントの状態をメモリ内で管理し、SQLiteと同期
 
 use crate::db::endpoints as db;
+use crate::events::{DashboardEvent, SharedEventBus};
 use crate::types::endpoint::{
     Endpoint, EndpointCapability, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
 };
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -88,6 +89,8 @@ pub struct EndpointRegistry {
     model_to_endpoints: Arc<RwLock<HashMap<String, Vec<Uuid>>>>,
     /// データベースプール
     pool: SqlitePool,
+    /// 状態遷移を通知するダッシュボードイベントバス（bootstrap で設定）
+    event_bus: Arc<OnceLock<SharedEventBus>>,
 }
 
 impl EndpointRegistry {
@@ -97,12 +100,20 @@ impl EndpointRegistry {
             endpoints: Arc::new(RwLock::new(HashMap::new())),
             model_to_endpoints: Arc::new(RwLock::new(HashMap::new())),
             pool,
+            event_bus: Arc::new(OnceLock::new()),
         };
 
         // DBからエンドポイントを読み込み
         registry.load_from_db().await?;
 
         Ok(registry)
+    }
+
+    /// ダッシュボードイベントバスを設定する（最初の1回のみ有効）
+    ///
+    /// 設定後は `update_status` の状態遷移が `EndpointStatusChanged` として発行される。
+    pub fn set_event_bus(&self, bus: SharedEventBus) {
+        let _ = self.event_bus.set(bus);
     }
 
     /// DBからエンドポイントとモデルマッピングを読み込み
@@ -319,6 +330,9 @@ impl EndpointRegistry {
     }
 
     /// エンドポイントのステータスを更新
+    ///
+    /// ステータスが遷移した場合は `EndpointStatusChanged` を1遷移につき1回発行する。
+    /// 同値更新（遷移なし）では発行しない。
     pub async fn update_status(
         &self,
         id: Uuid,
@@ -333,6 +347,7 @@ impl EndpointRegistry {
             // キャッシュを更新
             let mut endpoints = self.endpoints.write().await;
             if let Some(endpoint) = endpoints.get_mut(&id) {
+                let old_status = endpoint.status;
                 endpoint.status = status;
                 if let Some(v) = latency_ms {
                     endpoint.latency_ms = Some(v);
@@ -345,6 +360,17 @@ impl EndpointRegistry {
                     0
                 };
                 endpoint.last_seen = Some(chrono::Utc::now());
+
+                // キャッシュの書き込みロック内で比較・発行し、並行更新でも遷移ごとに1回だけ発行する
+                if old_status != status {
+                    if let Some(bus) = self.event_bus.get() {
+                        bus.publish(DashboardEvent::EndpointStatusChanged {
+                            runtime_id: id,
+                            old_status,
+                            new_status: status,
+                        });
+                    }
+                }
             }
         }
 

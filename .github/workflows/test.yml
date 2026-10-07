@@ -30,10 +30,12 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - '.github/workflows/test.yml'
+              - 'scripts/checks/collect-flaky-tests.mjs'
             e2e:
               - 'llmlb/tests/e2e-playwright/**'
               - 'llmlb/src/dashboard/**'
               - '.github/workflows/test.yml'
+              - 'scripts/checks/collect-flaky-tests.mjs'
 
   rust-test:
     # 要件: FR-003
@@ -75,10 +77,49 @@ jobs:
         shell: bash
 
       - name: Run Rust tests
+        id: rust-tests
         if: needs.changes.outputs.rust == 'true'
         run: |
-          echo "🧪 Running Rust tests on ${{ matrix.os }}..."
-          cargo test --all-features --workspace -- --test-threads=1
+          mkdir -p reports/flaky
+          {
+            echo "🧪 Running Rust tests on ${{ matrix.os }}..."
+            cargo test --all-features --workspace -- --test-threads=1
+          } 2>&1 | tee reports/flaky/rust-first.log
+        shell: bash
+
+      - name: Diagnose Rust retry successes
+        # The original failed step remains failed; this retry only produces observations.
+        if: failure() && steps.rust-tests.outcome == 'failure'
+        shell: bash
+        run: |
+          if grep -qE '^test .* \.\.\. FAILED' reports/flaky/rust-first.log; then
+            cargo test --all-features --workspace -- --test-threads=1 2>&1 | tee reports/flaky/rust-retry.log
+          fi
+
+      - name: Setup Node.js for Rust flake reporting
+        if: always() && needs.changes.outputs.rust == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Record Rust flaky tests
+        if: always() && needs.changes.outputs.rust == 'true'
+        shell: bash
+        run: |
+          retry_args=()
+          if [ -f reports/flaky/rust-retry.log ]; then
+            retry_args=(--rust-retry reports/flaky/rust-retry.log)
+          fi
+          node scripts/checks/collect-flaky-tests.mjs --rust-first reports/flaky/rust-first.log "${retry_args[@]}" --output reports/flaky/flaky-tests.md --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"
+
+      - name: Upload Rust flake observations
+        if: always() && needs.changes.outputs.rust == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-tests-rust-${{ matrix.os }}-${{ github.run_attempt }}
+          path: reports/flaky/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Run operational notification tests
         # SPEC #777 AC-8: 運用通知の受け入れテスト（AC-1〜AC-7）を必須チェックで実行する。
@@ -209,11 +250,26 @@ jobs:
       - name: Run Playwright tests
         if: needs.changes.outputs.e2e == 'true'
         working-directory: llmlb/tests/e2e-playwright
-        run: pnpm exec playwright test --reporter=list --grep-invert @real-runtimes
+        run: pnpm exec playwright test --grep-invert @real-runtimes
         env:
           SKIP_SERVER: '1'
           BASE_URL: 'http://127.0.0.1:32768'
           CI: 'true'
+
+      - name: Record Playwright flaky tests
+        if: always() && needs.changes.outputs.e2e == 'true'
+        run: node scripts/checks/collect-flaky-tests.mjs --playwright llmlb/tests/e2e-playwright/reports/results.json --output llmlb/tests/e2e-playwright/reports/flaky-tests.md --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"
+
+      - name: Upload flake observations
+        if: always() && needs.changes.outputs.e2e == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-tests-playwright-${{ github.run_attempt }}
+          path: |
+            llmlb/tests/e2e-playwright/reports/flaky-tests.*
+            llmlb/tests/e2e-playwright/reports/results.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload test results
         if: failure() && needs.changes.outputs.e2e == 'true'

@@ -1,4 +1,3 @@
-import { useCallback, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -7,45 +6,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { AuditLogFilters as FilterType } from '@/lib/api'
+import type { AuditLogViewModel } from '@/viewmodels/useAuditLogViewModel'
 
-interface AuditLogFiltersProps {
-  filters: FilterType
-  onFiltersChange: (filters: FilterType) => void
-}
+type AuditLogFiltersProps = Pick<AuditLogViewModel,
+  'filters' | 'searchText' | 'changeSearch' | 'changeFilter'
+>
 
-export function AuditLogFilters({ filters, onFiltersChange }: AuditLogFiltersProps) {
-  const [searchText, setSearchText] = useState(filters.search || '')
-  const [debounceTimer, setDebounceTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchText(value)
-    if (debounceTimer) clearTimeout(debounceTimer)
-    const timer = setTimeout(() => {
-      onFiltersChange({ ...filters, search: value || undefined, page: 1 })
-    }, 300)
-    setDebounceTimer(timer)
-  }, [filters, onFiltersChange, debounceTimer])
-
-  const handleSelectChange = useCallback((key: keyof FilterType, value: string) => {
-    onFiltersChange({
-      ...filters,
-      [key]: value === 'all' ? undefined : value,
-      page: 1,
-    })
-  }, [filters, onFiltersChange])
+export function AuditLogFilters({ filters, searchText, changeSearch, changeFilter }: AuditLogFiltersProps) {
 
   return (
     <div className="flex flex-wrap gap-3">
       <Input
         placeholder="Search..."
         value={searchText}
-        onChange={(e) => handleSearchChange(e.target.value)}
+        onChange={(e) => changeSearch(e.target.value)}
         className="w-[200px]"
       />
       <Select
         value={filters.actor_type || 'all'}
-        onValueChange={(v) => handleSelectChange('actor_type', v)}
+        onValueChange={(v) => changeFilter('actor_type', v)}
       >
         <SelectTrigger className="w-[130px]">
           <SelectValue placeholder="Actor Type" />
@@ -59,7 +38,7 @@ export function AuditLogFilters({ filters, onFiltersChange }: AuditLogFiltersPro
       </Select>
       <Select
         value={filters.http_method || 'all'}
-        onValueChange={(v) => handleSelectChange('http_method', v)}
+        onValueChange={(v) => changeFilter('http_method', v)}
       >
         <SelectTrigger className="w-[110px]">
           <SelectValue placeholder="Method" />
@@ -75,7 +54,7 @@ export function AuditLogFilters({ filters, onFiltersChange }: AuditLogFiltersPro
       </Select>
       <Select
         value={filters.status_code?.toString() || 'all'}
-        onValueChange={(v) => handleSelectChange('status_code', v)}
+        onValueChange={(v) => changeFilter('status_code', v)}
       >
         <SelectTrigger className="w-[130px]">
           <SelectValue placeholder="Status" />

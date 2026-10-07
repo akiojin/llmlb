@@ -1,12 +1,4 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useAuth } from '@/hooks/useAuth'
-import {
-  auditLogApi,
-  type AuditLogFilters as FilterType,
-  type AuditLogListResponse,
-} from '@/lib/api'
+import { useAuditLogViewModel } from '@/viewmodels/useAuditLogViewModel'
 import { AuditLogTable } from '@/components/audit/AuditLogTable'
 import { AuditLogFilters } from '@/components/audit/AuditLogFilters'
 import { HashChainStatus } from '@/components/audit/HashChainStatus'
@@ -19,33 +11,9 @@ interface AuditLogPageProps {
 }
 
 export default function AuditLogPage({ onBack }: AuditLogPageProps) {
-  const { user } = useAuth()
-  const [filters, setFilters] = useState<FilterType>({
-    page: 1,
-    per_page: 50,
-  })
+  const viewModel = useAuditLogViewModel()
 
-  const { data, isLoading } = useQuery<AuditLogListResponse>({
-    queryKey: queryKeys.auditLogs(filters),
-    queryFn: () => auditLogApi.list(filters),
-    enabled: user?.role === 'admin',
-  })
-
-  const handleFiltersChange = useCallback((newFilters: FilterType) => {
-    setFilters(newFilters)
-  }, [])
-
-  const totalPages = data ? Math.ceil(data.total / (filters.per_page || 50)) : 0
-  const currentPage = filters.page || 1
-
-  const handlePageChange = useCallback(
-    (page: number) => {
-      setFilters((prev) => ({ ...prev, page }))
-    },
-    [],
-  )
-
-  if (user?.role !== 'admin') {
+  if (!viewModel.canView) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="text-center">
@@ -81,22 +49,27 @@ export default function AuditLogPage({ onBack }: AuditLogPageProps) {
               </h1>
             </div>
           </div>
-          <HashChainStatus />
+          <HashChainStatus verification={viewModel.verification} />
         </div>
       </header>
 
       <main className="relative mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-4">
-          <AuditLogFilters filters={filters} onFiltersChange={handleFiltersChange} />
+          <AuditLogFilters
+            filters={viewModel.filters}
+            searchText={viewModel.searchText}
+            changeSearch={viewModel.changeSearch}
+            changeFilter={viewModel.changeFilter}
+          />
         </div>
 
-        <AuditLogTable entries={data?.items || []} loading={isLoading} />
+        <AuditLogTable entries={viewModel.entries} loading={viewModel.isLoading} />
 
         <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalCount={data?.total}
-          onPageChange={handlePageChange}
+          currentPage={viewModel.currentPage}
+          totalPages={viewModel.totalPages}
+          totalCount={viewModel.totalCount}
+          onPageChange={viewModel.changePage}
         />
       </main>
     </div>

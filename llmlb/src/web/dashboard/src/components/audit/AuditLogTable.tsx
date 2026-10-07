@@ -1,5 +1,4 @@
-import { AuditLogEntry } from '@/lib/api'
-import { formatRelativeTime } from '@/lib/utils'
+import type { AuditLogRow } from '@/viewmodels/useAuditLogViewModel'
 import {
   Table,
   TableBody,
@@ -14,7 +13,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ScrollText } from 'lucide-react'
 
 interface AuditLogTableProps {
-  entries: AuditLogEntry[]
+  entries: AuditLogRow[]
   loading?: boolean
 }
 
@@ -77,7 +76,7 @@ export function AuditLogTable({ entries, loading }: AuditLogTableProps) {
           {entries.map((entry) => (
             <TableRow key={entry.id}>
               <TableCell className="text-xs text-muted-foreground">
-                {formatRelativeTime(entry.timestamp)}
+                {entry.timestampLabel}
               </TableCell>
               <TableCell>
                 <Badge variant={methodBadgeVariant(entry.http_method)}>
@@ -96,12 +95,12 @@ export function AuditLogTable({ entries, loading }: AuditLogTableProps) {
                 </Badge>
               </TableCell>
               <TableCell className="text-xs truncate max-w-[100px]">
-                {entry.actor_username || entry.actor_id || '-'}
+                {entry.actorLabel}
               </TableCell>
               <TableCell className="text-xs">
                 {entry.client_ip ? (
                   <a
-                    href={`?tab=clients&ip=${encodeURIComponent(entry.client_ip)}`}
+                    href={entry.clientHref ?? undefined}
                     className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-mono"
                   >
                     {entry.client_ip}
@@ -111,10 +110,10 @@ export function AuditLogTable({ entries, loading }: AuditLogTableProps) {
                 )}
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                {entry.duration_ms != null ? `${entry.duration_ms}ms` : '-'}
+                {entry.durationLabel}
               </TableCell>
               <TableCell className="text-xs">
-                {entry.total_tokens != null ? entry.total_tokens.toLocaleString() : '-'}
+                {entry.tokenLabel}
               </TableCell>
             </TableRow>
           ))}

@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useQuery } from '@tanstack/react-query'
 import {
   clientsApi,
@@ -15,12 +16,12 @@ interface ClientDrilldownProps {
 
 export function ClientDrilldown({ ip }: ClientDrilldownProps) {
   const { data, isLoading } = useQuery<ClientDetailResponse>({
-    queryKey: ['client-detail', ip],
+    queryKey: queryKeys.clientDetail(ip),
     queryFn: () => clientsApi.getClientDetail(ip),
   })
 
   const { data: apiKeysData } = useQuery<ClientApiKeyUsage[]>({
-    queryKey: ['client-api-keys', ip],
+    queryKey: queryKeys.clientApiKeys(ip),
     queryFn: () => clientsApi.getClientApiKeys(ip),
   })
 

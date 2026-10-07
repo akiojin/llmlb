@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { endpointsApi, ApiError, type DashboardEndpoint } from '@/lib/api'
@@ -84,12 +85,12 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
   }, [])
 
   const { data: endpoint, isLoading: isLoadingEndpoint } = useQuery({
-    queryKey: ['endpoint', endpointId],
+    queryKey: queryKeys.endpoint(endpointId),
     queryFn: () => endpointsApi.get(endpointId),
   })
 
   const { data: endpointModels, isLoading: isLoadingModels, error: modelsError } = useQuery({
-    queryKey: ['endpoint-models', endpointId],
+    queryKey: queryKeys.endpointModels(endpointId),
     queryFn: () => endpointsApi.getModels(endpointId),
     retry: false,
   })

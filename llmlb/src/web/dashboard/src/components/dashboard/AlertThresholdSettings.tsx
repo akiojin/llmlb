@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi } from '@/lib/api'
@@ -11,15 +12,15 @@ export function AlertThresholdSettings() {
   const [inputValue, setInputValue] = useState('')
 
   const { data } = useQuery({
-    queryKey: ['alert-threshold'],
+    queryKey: queryKeys.alertThreshold(),
     queryFn: () => clientsApi.getAlertThreshold(),
   })
 
   const mutation = useMutation({
     mutationFn: (value: string) => clientsApi.updateAlertThreshold(value),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alert-threshold'] })
-      queryClient.invalidateQueries({ queryKey: ['client-ranking'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.alertThreshold() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.clientRanking() })
       setEditing(false)
     },
   })

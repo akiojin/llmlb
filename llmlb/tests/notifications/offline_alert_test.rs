@@ -139,14 +139,35 @@ async fn ac3_registry_offline_transitions_reach_mail_once_until_recovery() {
     let bus = llmlb::events::create_shared_event_bus();
     registry.set_event_bus(bus.clone());
     let events = bus.subscribe();
+    let mut observed = bus.subscribe();
     let transport = RecordingTransport::default();
 
-    for status in [Online, Error, Offline, Offline, Online, Offline] {
+    for status in [Offline, Offline, Online, Error, Offline] {
         registry
             .update_status(id, status, None, None)
             .await
             .unwrap();
     }
+    for (previous, next) in [
+        (Pending, Offline),
+        (Offline, Online),
+        (Online, Error),
+        (Error, Offline),
+    ] {
+        match observed.try_recv().unwrap() {
+            DashboardEvent::EndpointStatusChanged {
+                runtime_id,
+                old_status,
+                new_status,
+            } => assert_eq!((runtime_id, old_status, new_status), (id, previous, next)),
+            event => panic!("unexpected registry event: {event:?}"),
+        }
+    }
+    assert!(matches!(
+        observed.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+    drop(observed);
     drop(registry);
     // registryのpublisherと通知器のsubscriberを、手動publishを使わず接続する。
     let bus = Arc::try_unwrap(bus).ok().unwrap();

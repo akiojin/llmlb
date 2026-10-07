@@ -5,6 +5,7 @@ import type { ProxyOptions } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeWebSocket } from '@/test/fake-websocket'
 import viteConfig from '../../vite.config'
+import { DASHBOARD_EVENT_INVALIDATIONS } from './dashboardEventInvalidation'
 import { useWebSocket, type DashboardEvent, type DashboardEventType } from './useWebSocket'
 
 const ENDPOINT_ID = '11111111-2222-3333-4444-555555555555'
@@ -60,6 +61,23 @@ const INVALIDATION_MATRIX: {
   },
 }
 
+/**
+ * The canonical events that gained a publisher in #781, with the payload the
+ * backend sends (SPEC #582 FR-048a-d). `MetricsUpdated` carries no resource
+ * usage: llmlb does not observe it, so those fields arrive as null.
+ */
+const PUBLISHED_EVENTS = {
+  NodeRegistered: {
+    type: 'NodeRegistered',
+    data: { runtime_id: ENDPOINT_ID, machine_name: 'gpu-1', ip_address: '192.0.2.10', status: 'pending' },
+  },
+  NodeRemoved: { type: 'NodeRemoved', data: { runtime_id: ENDPOINT_ID } },
+  MetricsUpdated: {
+    type: 'MetricsUpdated',
+    data: { runtime_id: ENDPOINT_ID, cpu_usage: null, memory_usage: null, gpu_usage: null },
+  },
+} satisfies { [T in DashboardEventType]?: DashboardEvent & { type: T } }
+
 function setup(options: Parameters<typeof useWebSocket>[0] = {}) {
   const queryClient = new QueryClient()
   const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
@@ -103,6 +121,20 @@ describe('useWebSocket query invalidation matrix', () => {
     expect(sorted(invalidatedKeys())).toEqual(sorted(invalidates))
   })
 
+  // SPEC #582 FR-048f: the hook invalidates from this table, so a rule added
+  // to it without a row above is a rule that no test verifies.
+  it('has a row for every event type in the table the hook invalidates from', () => {
+    expect(Object.keys(INVALIDATION_MATRIX).sort()).toEqual(Object.keys(DASHBOARD_EVENT_INVALIDATIONS).sort())
+  })
+
+  it.each(Object.values(PUBLISHED_EVENTS))('$type as published by the backend', (event) => {
+    const { invalidatedKeys } = setup()
+
+    receive(event)
+
+    expect(sorted(invalidatedKeys())).toEqual(sorted(INVALIDATION_MATRIX[event.type].invalidates))
+  })
+
   it('TpsUpdated without endpoint_id invalidates nothing', () => {
     const { invalidatedKeys } = setup()
 
@@ -117,6 +149,17 @@ describe('useWebSocket query invalidation matrix', () => {
     receive({ type: 'SomethingTheClientDoesNotKnow', data: { runtime_id: ENDPOINT_ID } })
 
     expect(invalidatedKeys()).toEqual([])
+  })
+
+  // These names resolve on any plain object; they must not be taken for a rule.
+  it.each(['constructor', 'toString', '__proto__'])('an event type named %s invalidates nothing', (type) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { invalidatedKeys } = setup()
+
+    receive({ type })
+
+    expect(invalidatedKeys()).toEqual([])
+    expect(consoleError).not.toHaveBeenCalled()
   })
 
   it('a malformed message is reported and invalidates nothing', () => {

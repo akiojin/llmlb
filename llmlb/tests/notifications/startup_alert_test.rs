@@ -56,9 +56,19 @@ async fn ac3_startup_offline_arrival_reaches_notifications_without_blocking_serv
     let output = File::create(&output_path).unwrap();
     let mut server = ServerProcess(
         Command::new(env!("CARGO_BIN_EXE_llmlb"))
-            .args(["serve", "--no-tray", "--port", &port.to_string()])
+            .args([
+                "serve",
+                "--no-tray",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                &port.to_string(),
+            ])
             .env("HOME", directory.path())
             .env("USERPROFILE", directory.path())
+            .env("LLMLB_DATA_DIR", directory.path())
+            .env("LLMLB_ADMIN_USERNAME", "startup-admin")
+            .env("LLMLB_ADMIN_PASSWORD", "StartupTest123")
             .env("LLMLB_DATABASE_URL", &db_url)
             .env("LLMLB_LOG_DIR", directory.path().join("logs"))
             .env("LLMLB_LOG_LEVEL", "info")
@@ -83,12 +93,14 @@ async fn ac3_startup_offline_arrival_reaches_notifications_without_blocking_serv
                 "server exited early"
             );
             let logs = std::fs::read_to_string(&output_path).unwrap();
-            if logs.contains("Offline alert was not sent; notifications are unavailable")
-                && client
-                    .get(format!("http://127.0.0.1:{port}/api/version"))
-                    .send()
-                    .await
-                    .is_ok_and(|response| response.status().is_success())
+            if logs.lines().any(|line| {
+                line.contains("Offline alert was not sent; notifications are unavailable")
+                    && line.contains(&endpoint.id.to_string())
+            }) && client
+                .get(format!("http://127.0.0.1:{port}/api/version"))
+                .send()
+                .await
+                .is_ok_and(|response| response.status().is_success())
             {
                 break;
             }

@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -7,7 +8,7 @@ import {
 } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 
-const QUERY_KEY = ['notification-settings']
+const QUERY_KEY = queryKeys.notificationSettings()
 
 // The port is edited as text so that an empty or partial entry can be shown as invalid.
 type FormState = Omit<NotificationSettings, 'smtp_port'> & { smtp_port: string }

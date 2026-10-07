@@ -21,9 +21,10 @@ export interface DashboardEvent {
     status?: string
     old_status?: string
     new_status?: string
-    cpu_usage?: number
-    memory_usage?: number
-    gpu_usage?: number
+    // null when llmlb does not observe the value (it treats endpoints as black boxes)
+    cpu_usage?: number | null
+    memory_usage?: number | null
+    gpu_usage?: number | null
     model_id?: string
     tps?: number
     output_tokens?: number

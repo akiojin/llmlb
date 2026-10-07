@@ -7,7 +7,7 @@ use crate::types::endpoint::{Endpoint, EndpointStatus};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::SqlitePool;
 
-/// ダイジェストに載る 1 エンドポイント分の状態
+/// 通知に載る 1 エンドポイント分の状態
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndpointDigestEntry {
     /// 表示名
@@ -24,6 +24,19 @@ pub struct EndpointDigestEntry {
     pub last_error: Option<String>,
 }
 
+impl From<Endpoint> for EndpointDigestEntry {
+    fn from(endpoint: Endpoint) -> Self {
+        Self {
+            name: endpoint.name,
+            base_url: endpoint.base_url,
+            endpoint_type: endpoint.endpoint_type.as_str(),
+            status: endpoint.status,
+            last_seen: endpoint.last_seen,
+            last_error: endpoint.last_error,
+        }
+    }
+}
+
 /// 日次ダイジェストの内容
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DigestReport {
@@ -38,14 +51,7 @@ impl DigestReport {
     pub fn from_endpoints(generated_at: NaiveDateTime, endpoints: Vec<Endpoint>) -> Self {
         let mut endpoints: Vec<EndpointDigestEntry> = endpoints
             .into_iter()
-            .map(|endpoint| EndpointDigestEntry {
-                name: endpoint.name,
-                base_url: endpoint.base_url,
-                endpoint_type: endpoint.endpoint_type.as_str(),
-                status: endpoint.status,
-                last_seen: endpoint.last_seen,
-                last_error: endpoint.last_error,
-            })
+            .map(EndpointDigestEntry::from)
             .collect();
         endpoints.sort_by(|a, b| {
             attention_rank(a.status)

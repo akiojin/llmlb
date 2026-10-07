@@ -3,8 +3,8 @@
 # check-module-structure.sh - Rust モジュール構造の標準化チェック（SPEC #699）
 #
 # 検証内容:
-#   FR-009: 本体ソース (*.rs) が MAX_LINES 行以下であること。
-#           テスト専用ファイル tests.rs は対象外（#699 PM 裁定）。
+#   FR-009: ソース (*.rs) が MAX_LINES 行以下であること。
+#           テストコード（tests.rs と tests/ 配下）も同じ上限の対象（Issue #811）。
 #   FR-010: mod.rs が宣言と re-export のみで、fn/struct/impl 等の実装を持たないこと。
 #
 # 分割が未完了のファイルは ALLOWLIST に `size <path>` / `mod <path>` で列挙する。
@@ -66,7 +66,7 @@ while IFS= read -r file; do
             status=1
         fi
     fi
-done < <(find "$SRC_DIR" -name '*.rs' ! -name 'tests.rs' | sort)
+done < <(find "$SRC_DIR" -name '*.rs' | sort)
 
 # 実在しないファイルを指すエントリも不要として扱う
 while read -r kind path; do

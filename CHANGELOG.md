@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-10-05
+
+`v6.1.0` 以降に develop へ着地した 218 commit（マージを除く 142 commit）を SPEC・機能単位にまとめたもの。
+
+### Added
+
+- Notifications: 全登録エンドポイントの状態一覧を 1 日 1 回メールで管理者へ送る日次ダイジェスト、メール送信基盤（SMTP）、admin 専用の通知設定 API、通知先 `users.email` を追加（SPEC #777, #787）
+- Notifications: エンドポイントが Offline に到達したとき管理者へ即時メール通知する購読タスクを追加（SPEC #777, #810）。発火元となる `EndpointStatusChanged` の本番 publisher は本リリースに含まれないため、現時点では即時通知メールは送られない
+- Metrics: クラウドメトリクスの日次エクスポート API `GET /api/metrics/cloud/export`（JSON / CSV、provider × UTC 日の集計、90 日保持）を追加（SPEC #582, #734）
+- API: `/v1/messages` の `top_k` と `metadata` を上流へ転送（#779）
+- Dashboard: モデル一覧で canonical モデル名を区別表示（#738）
+- Checks: マイグレーション採番の衝突検出（#739）、Dependabot グループ件名長（#741）、canonical モデルマッピングの鮮度（#778）、canonical イベントの publisher 不在（#784）、未リリース変更のバージョン更新漏れ（#813）の各検査を `make quality-checks` に追加
+- CI: Rust 行カバレッジ 80% ゲート（#730）、dashboard の typecheck / lint / コンポーネントテスト（#773, #786）、運用通知の受け入れテスト（#787）、module-structure（#772）を必須チェックに追加
+- Tests: 公開ルートの契約台帳ガードと未到達ルートの契約テスト（#709, #808）、互換 API の未知フィールド透過の契約テスト（#779）、招待 API 契約テストの登録（SPEC #580, #767）、change-password と Model Add Wizard の E2E（#731）、vitest + React Testing Library によるコンポーネントテスト層と WebSocket invalidation matrix（#786）、`/ws/dashboard` のイベント名・認証経路の契約（#799）、canonical screen registry からの E2E 画面網羅（#800）、TPS/EMA・canonical 解決・異常系の integration テスト（#788, #802）
+
+### Changed
+
+- 構造標準化（SPEC #699）: 1,500 行超のファイルを submodule へ分割し、`mod.rs` を re-export のみに整理。`AppState` をドメイン別サブステートへ、`create_app()` をドメイン別 Router へ分割（#736, #745, #746, #747, #749, #752, #757, #758, #762, #764, #772）
+- Tests: 1,500 行超のテストファイル 6 本を機能単位に分割し、行数上限をテストコードにも CI で強制（SPEC #585, #812）
+- DB: 新規マイグレーションの採番を UTC タイムスタンプ形式へ変更（`001`〜`032` は凍結）（#739）
+- Checks: ローカルの clippy を CI と同一フラグに統一（#729）
+- Deps: `rand` を更新し、`tray-icon` の Linux 専用 feature を無効化して gtk3 系 47 パッケージを lock から削除（#801, #803）
+- Deps: cargo / npm 依存パッケージ更新（dependabot: #681, #682, #689, #710, #720, #726, #794）
+- Docs: 運用通知の設定と動作（#787）、互換 API で破棄・拒否されるフィールドの一覧（#779）、検証済みモデルカタログのマッピング（#708）、指示ファイルの事実不整合の解消（#743）
+
+### Fixed
+
+- API: 上流へ送るモデル名の解決規則を全推論ルートで一本化（#795）
+- Events: エンドポイントの登録・削除確定時と、リクエスト完了時の `MetricsUpdated` のイベントを発行（#784）
+- Notifications: 日次ダイジェストから URL 埋め込みの認証情報を除外し、通知設定の抜け道と email 保存の非原子性を解消（#787）
+- Audit: 旧 DB の監査ログバッチハッシュを一回性の移行で再基準化し、改ざん誤検知を解消。archive 欠落バッチは移行時に拒否（SPEC #583, #705）
+- Models: canonical モデルマッピングと Gemma のランタイムルーティングを是正（#708, #778）、エンドポイントのモデル削除後に再同期（#707）
+- Update: ペイロード準備の失敗時に payload を Error へ遷移（#765）、`is_dir_writable` のプローブ名を一意化して誤判定を解消（#759）
+- Dashboard: vite dev server で `/ws` を中継（#807）、TS 7 で壊れた typecheck / lint（#773）と eslint の既存エラー 15 件（#740）を修正
+- API: ハンドラの `Err` を Box 化して `result_large_err` を解消（#725）
+- Security: `h2`（RUSTSEC-2026-0258）と `rustls`（RUSTSEC-2026-0285）を修正版へ更新（#725）、`crossbeam-epoch` と `quick-xml` の RustSec advisory 3 件を解消（#703）
+- CI: Dependabot の npm group 分割と commitlint 件名長制限の限定除外（#741, #755）、`cargo doc -D warnings` と markdownlint の検証失敗（#733）を解消
+- Tests: ヘルスチェック回数検証（#753）、更新テストの固定 sleep と共有データディレクトリ（#763, #766）、E2E のナビゲーション競合（#774）によるフレークを解消
+
 ## [6.1.0](https://github.com/akiojin/llmlb/compare/v6.0.0...v6.1.0) (2026-06-30)
 
 ### Added

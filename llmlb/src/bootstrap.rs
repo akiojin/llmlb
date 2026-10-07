@@ -108,11 +108,10 @@ async fn initialize_inner(
     let health_check_interval_secs: u64 =
         get_env_with_fallback_parse("LLMLB_HEALTH_CHECK_INTERVAL", "HEALTH_CHECK_INTERVAL", 30);
 
-    // エンドポイントヘルスチェッカーをバックグラウンドで開始
+    // 初回チェックは通知購読開始後に実行する（開始は初期化の末尾）。
     let endpoint_health_checker = health::EndpointHealthChecker::new(endpoint_registry.clone())
         .with_load_manager(load_manager.clone())
         .with_interval(health_check_interval_secs);
-    endpoint_health_checker.start();
 
     // リクエスト履歴ストレージを初期化（SQLite使用）
     let request_history = std::sync::Arc::new(
@@ -320,6 +319,10 @@ async fn initialize_inner(
         });
     }
 
+    let event_bus = crate::events::create_shared_event_bus();
+    update_manager.set_event_bus(event_bus.clone());
+    endpoint_registry.set_event_bus(event_bus.clone());
+
     let state = AppState {
         balancer: crate::BalancerState {
             load_manager,
@@ -329,11 +332,7 @@ async fn initialize_inner(
         db_pool,
         auth: crate::AuthState { jwt_secret },
         http_client,
-        event_bus: {
-            let bus = crate::events::create_shared_event_bus();
-            update_manager.set_event_bus(bus.clone());
-            bus
-        },
+        event_bus,
         lifecycle: crate::LifecycleState {
             inference_gate,
             shutdown: shutdown.clone(),
@@ -345,6 +344,12 @@ async fn initialize_inner(
             archive_pool: audit_archive_pool,
         },
     };
+
+    // 即時通知（SPEC #777）。日次ダイジェストと同じく、SMTP 設定が未設定・不正でも起動は続ける
+    crate::notifications::start_offline_alert_task(state.db_pool.clone(), &state.event_bus);
+
+    // start() は初回チェックを即時実行するため、publisherとsubscriberが揃ってから開始する。
+    endpoint_health_checker.start();
 
     InitContext {
         state,

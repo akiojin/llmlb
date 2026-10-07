@@ -55,6 +55,7 @@ jobs:
       - name: Check module structure
         # SPEC #699 FR-009/FR-010, Issue #771: 1,500 行上限と mod.rs の re-export 化を
         # 必須チェックで強制する（pre-push のみだと上限超過が CI 緑のまま着地する）
+        # Issue #811: 上限はテストコード（tests.rs / tests/ 配下）にも適用する
         if: needs.changes.outputs.rust == 'true'
         run: make module-structure
 

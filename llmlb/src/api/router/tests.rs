@@ -1,5 +1,8 @@
-//! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
-//! NodeRegistry.register()を使用していたテストは#[ignore]でマーク。
+//! ルーターの契約テスト。
+//!
+//! `/api/dashboard/*` は管理UI向けのJWT専用ルートで、APIキー（`x-api-key`）では401になる。
+//! そのためダッシュボードAPIのテストは `create_jwt` で発行したトークンを `Authorization` に載せる。
+//! このファイルに `#[ignore]` のテストは無い。
 
 use super::dashboard::{normalize_dashboard_path, DASHBOARD_INDEX};
 use super::*;
@@ -11,6 +14,33 @@ use tower::Service;
 
 async fn test_state() -> AppState {
     TestAppStateBuilder::new().await.build().await
+}
+
+/// 管理者JWTで `/api/dashboard/*` にGETし、ステータスを返す
+async fn dashboard_get_status(uri: &str) -> StatusCode {
+    let state = test_state().await;
+    let admin_token = crate::auth::jwt::create_jwt(
+        "admin-user",
+        UserRole::Admin,
+        &state.auth.jwt_secret,
+        false,
+        0,
+    )
+    .expect("create admin jwt");
+    let mut app = create_app(state);
+    let response = app
+        .call(
+            Request::builder()
+                .method(axum::http::Method::GET)
+                .uri(uri)
+                .header("authorization", format!("Bearer {}", admin_token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    response.status()
 }
 
 #[tokio::test]
@@ -43,67 +73,28 @@ async fn test_dashboard_static_served() {
 // NOTE: test_playground_static_served は廃止
 // Playground機能はダッシュボード内のエンドポイント別Playgroundに移行 (#playground/:endpointId)
 
-/// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)
 #[tokio::test]
-#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)"]
 async fn test_dashboard_nodes_endpoint_returns_json() {
-    let state = test_state().await;
-    let mut app = create_app(state);
-    let response = app
-        .call(
-            Request::builder()
-                .method(axum::http::Method::GET)
-                .uri("/api/dashboard/endpoints")
-                .header("x-api-key", "sk_debug")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        dashboard_get_status("/api/dashboard/endpoints").await,
+        StatusCode::OK
+    );
 }
 
-/// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)
 #[tokio::test]
-#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)"]
 async fn test_dashboard_overview_endpoint_returns_all_sections() {
-    let state = test_state().await;
-    let mut app = create_app(state);
-    let response = app
-        .call(
-            Request::builder()
-                .method(axum::http::Method::GET)
-                .uri("/api/dashboard/overview")
-                .header("x-api-key", "sk_debug")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        dashboard_get_status("/api/dashboard/overview").await,
+        StatusCode::OK
+    );
 }
 
-/// NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)
 #[tokio::test]
-#[ignore = "NodeRegistry廃止: EndpointRegistry経由のテストに移行が必要 (SPEC-e8e9326e)"]
 async fn test_dashboard_metrics_endpoint_returns_history() {
-    let state = test_state().await;
-    let mut app = create_app(state);
-    let response = app
-        .call(
-            Request::builder()
-                .method(axum::http::Method::GET)
-                .uri("/api/dashboard/request-history")
-                .header("x-api-key", "sk_debug")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        dashboard_get_status("/api/dashboard/request-history").await,
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]

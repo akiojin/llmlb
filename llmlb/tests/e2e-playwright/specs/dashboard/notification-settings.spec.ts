@@ -68,13 +68,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const email = `${username}@example.com`
 
       const pageErrors: string[] = []
-      // The pre-login session probe returns 401 by design; only collect errors after login.
-      let loggedIn = false
-      page.on('pageerror', (err) => {
-        if (loggedIn) pageErrors.push(err.message)
-      })
+      page.on('pageerror', (err) => pageErrors.push(err.message))
       page.on('console', (msg) => {
-        if (loggedIn && msg.type() === 'error') pageErrors.push(msg.text())
+        if (msg.type() === 'error') pageErrors.push(msg.text())
       })
 
       const created = await createUser(request, username, '', 'admin')
@@ -82,8 +78,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
       let original: NotificationSettings | undefined
 
       try {
+        // Establish a real session before navigation so the expected anonymous
+        // 401 does not require excluding any browser console errors.
+        const login = await page.request.post('/api/auth/login', {
+          data: { username: 'admin', password: 'test' },
+        })
+        expect(login.ok()).toBe(true)
         await ensureDashboardLogin(page)
-        loggedIn = true
         if (colorScheme === 'dark') {
           await expect(page.locator('html')).toHaveClass(/\bdark\b/)
         } else {
@@ -180,6 +181,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         const removed = await deleteUser(request, created.id)
         if (original) await notificationsApi(page, original)
         expect(removed).toBe(true)
+        expect(pageErrors).toEqual([])
       }
     })
   })

@@ -18,6 +18,7 @@ use sqlx::SqlitePool;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
+use uuid::Uuid;
 
 /// テスト用ユーザーのパスワード
 pub const TEST_PASSWORD: &str = "password123";
@@ -173,8 +174,8 @@ pub async fn create_user_with_email(
         .expect("set notification email");
 }
 
-/// 指定した状態のエンドポイントを DB に登録する
-pub async fn register_endpoint(pool: &SqlitePool, name: &str, status: EndpointStatus) {
+/// 指定した状態のエンドポイントを DB に登録し、その ID を返す
+pub async fn register_endpoint(pool: &SqlitePool, name: &str, status: EndpointStatus) -> Uuid {
     let mut endpoint = Endpoint::new(
         name.to_string(),
         format!("http://{name}.example:8080"),
@@ -184,6 +185,7 @@ pub async fn register_endpoint(pool: &SqlitePool, name: &str, status: EndpointSt
     llmlb::db::endpoints::create_endpoint(pool, &endpoint)
         .await
         .expect("register endpoint");
+    endpoint.id
 }
 
 /// 記録用トランスポートを使うスケジューラを作る（プロセス再起動の再現にも使う）

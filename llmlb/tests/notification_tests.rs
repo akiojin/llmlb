@@ -17,3 +17,9 @@ mod delivery_test;
 
 #[path = "notifications/settings_api_test.rs"]
 mod settings_api_test;
+
+#[path = "notifications/offline_alert_test.rs"]
+mod offline_alert_test;
+
+#[path = "notifications/startup_alert_test.rs"]
+mod startup_alert_test;

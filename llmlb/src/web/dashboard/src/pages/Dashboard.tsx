@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -71,7 +72,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 
-const SYSTEM_INFO_QUERY_KEY = ['system-info'] as const
+const SYSTEM_INFO_QUERY_KEY = queryKeys.systemInfo()
 const CHECK_COOLDOWN_MS = 30_000
 
 function formatBytes(bytes: number): string {
@@ -145,7 +146,7 @@ export default function Dashboard() {
   }, [])
 
   const { data, isLoading, error, refetch } = useQuery<DashboardOverview>({
-    queryKey: ['dashboard-overview'],
+    queryKey: queryKeys.dashboardOverview(),
     queryFn: fetchWithTiming,
     refetchInterval: pollingInterval,
   })
@@ -162,7 +163,7 @@ export default function Dashboard() {
   // Bug 3: /api/version は認証不要・軽量なので全ロールで常時取得し、
   // systemInfo 未取得時のフォールバックにする
   const { data: versionData } = useQuery<VersionResponse>({
-    queryKey: ['version'],
+    queryKey: queryKeys.version(),
     queryFn: () => systemApi.getVersion(),
     refetchInterval: pollingInterval,
   })
@@ -205,7 +206,7 @@ export default function Dashboard() {
   // Fetch request history (individual request details)
   const { data: requestResponsesData, isLoading: isLoadingHistory } =
     useQuery<RequestResponsesPage>({
-      queryKey: ['request-responses'],
+      queryKey: queryKeys.requestResponses(),
       queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
       refetchInterval: pollingInterval,
       enabled: !isViewer,
@@ -213,7 +214,7 @@ export default function Dashboard() {
 
   // SPEC-e8e9326e: Fetch endpoints list
   const { data: endpointsData, isLoading: isLoadingEndpoints } = useQuery<DashboardEndpoint[]>({
-    queryKey: ['dashboard-endpoints'],
+    queryKey: queryKeys.dashboardEndpoints(),
     queryFn: () => dashboardApi.getEndpoints(),
     refetchInterval: pollingInterval,
     enabled: !isViewer,
@@ -227,7 +228,7 @@ export default function Dashboard() {
     isLoading: isLoadingViewerModels,
     refetch: refetchViewerModels,
   } = useQuery<RegisteredModelView[]>({
-    queryKey: ['viewer-models', modelsView],
+    queryKey: queryKeys.viewerModels(modelsView),
     queryFn: () => modelsApi.getRegistered(modelsView),
     refetchInterval: pollingInterval,
   })

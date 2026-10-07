@@ -1,10 +1,14 @@
-import type { QueryKey } from '@tanstack/react-query'
+import { queryKeys, type DashboardQueryKey } from '@/lib/queryKeys'
 import type { DashboardEvent, DashboardEventType } from './useWebSocket'
 
-function endpointLifecycleKeys(data: DashboardEvent['data']): QueryKey[] {
-  const keys: QueryKey[] = [['dashboard-overview'], ['dashboard-endpoints'], ['request-responses']]
+function endpointLifecycleKeys(data: DashboardEvent['data']): DashboardQueryKey[] {
+  const keys: DashboardQueryKey[] = [
+    queryKeys.dashboardOverview(),
+    queryKeys.dashboardEndpoints(),
+    queryKeys.requestResponses(),
+  ]
   // Endpoint detail used by the endpoint playground (EndpointPlayground.tsx)
-  if (data?.runtime_id) keys.push(['endpoint', data.runtime_id])
+  if (data?.runtime_id) keys.push(queryKeys.endpoint(data.runtime_id))
   return keys
 }
 
@@ -17,21 +21,21 @@ function endpointLifecycleKeys(data: DashboardEvent['data']): QueryKey[] {
  * (Dashboard.tsx etc.).
  */
 export const DASHBOARD_EVENT_INVALIDATIONS: {
-  [T in DashboardEventType]: (data: DashboardEvent['data']) => QueryKey[]
+  [T in DashboardEventType]: (data: DashboardEvent['data']) => DashboardQueryKey[]
 } = {
   connected: () => [],
   NodeRegistered: endpointLifecycleKeys,
   EndpointStatusChanged: endpointLifecycleKeys,
   NodeRemoved: endpointLifecycleKeys,
-  MetricsUpdated: () => [['dashboard-overview']],
+  MetricsUpdated: () => [queryKeys.dashboardOverview()],
   // SPEC-4bb5b55f: Invalidate TPS data for the affected endpoint
-  TpsUpdated: (data) => (data?.endpoint_id ? [['endpoint-model-tps', data.endpoint_id]] : []),
+  TpsUpdated: (data) => (data?.endpoint_id ? [queryKeys.endpointModelTps(data.endpoint_id)] : []),
   // Invalidate system-info so other clients see update state changes
-  UpdateStateChanged: () => [['system-info']],
+  UpdateStateChanged: () => [queryKeys.systemInfo()],
 }
 
 /** Query keys to invalidate when a dashboard WebSocket event arrives. */
-export function queryKeysToInvalidate(event: DashboardEvent): QueryKey[] {
+export function queryKeysToInvalidate(event: DashboardEvent): DashboardQueryKey[] {
   // The server may send a type this client does not know. An own-property
   // check also keeps inherited names such as "constructor" from being taken
   // for a rule.

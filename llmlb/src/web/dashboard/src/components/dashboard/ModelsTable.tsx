@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -388,11 +389,11 @@ function EndpointStatsRow({
   onDelete?: () => void
 }) {
   const { data: stats } = useQuery({
-    queryKey: ['endpoint-model-stats', endpoint.id],
+    queryKey: queryKeys.endpointModelStats(endpoint.id),
     queryFn: () => endpointsApi.getModelStats(endpoint.id),
   })
   const { data: tpsEntries } = useQuery({
-    queryKey: ['endpoint-model-tps', endpoint.id],
+    queryKey: queryKeys.endpointModelTps(endpoint.id),
     queryFn: () => endpointsApi.getModelTps(endpoint.id),
   })
 
@@ -520,7 +521,7 @@ export function ModelsTable({
   const aggregated = useMemo(() => aggregateModels(models), [models])
 
   const { data: allModelStats } = useQuery({
-    queryKey: ['all-model-stats'],
+    queryKey: queryKeys.allModelStats(),
     queryFn: () => dashboardApi.getAllModelStats(),
     enabled: !viewerMode,
   })

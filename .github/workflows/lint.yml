@@ -33,6 +33,8 @@ jobs:
               - 'scripts/checks/module-structure-allowlist.txt'
               - 'scripts/checks/check-event-publishers.sh'
               - 'scripts/checks/event-publishers-allowlist.txt'
+              - 'scripts/checks/check-flaky-patterns.sh'
+              - 'scripts/checks/flaky-patterns-allowlist.txt'
 
   rust-lint:
     # 要件: FR-004
@@ -64,6 +66,10 @@ jobs:
         # 無い状態を必須チェックで検出する（ポーリングで画面が更新されるため、欠落しても症状が出ない）
         if: needs.changes.outputs.rust == 'true'
         run: make event-publishers
+
+      - name: Check flaky patterns
+        if: needs.changes.outputs.rust == 'true'
+        run: make flaky-patterns
 
       - name: Setup Rust
         if: needs.changes.outputs.rust == 'true'

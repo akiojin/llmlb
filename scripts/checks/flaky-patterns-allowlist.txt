@@ -1,0 +1,719 @@
+# SPEC #838: 行内容と出現回数ごとの既存 baseline（ワイルドカード禁止）
+# 根因分類と検出限界: docs/flaky-tests.md。解消したキーは削除する。
+# (b) PR #837のalpha観測: 既存の背景色取得helper。T007で原因を除去するまでFR-005のbaseline。
+computed-style|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|3749528095-78|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/anthropic/tests.rs|488347826-63|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/openai/tests.rs|3979139906-39|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/openai/tests/cloud_prefix.rs|3979139906-39|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/openai/tests/streaming_tps.rs|3057913224-40|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/openai/tests/streaming_tps.rs|3114912644-40|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/openai/tests/streaming_tps.rs|3114912644-40|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/openai/tests/streaming_tps.rs|3114912644-40|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/responses.rs|3057913224-40|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/responses.rs|3057913224-40|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/api/responses.rs|3114912644-40|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|10
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|11
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|12
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|13
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|14
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|15
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|16
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|17
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|18
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|19
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|6
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|7
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|8
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|2563869862-60|9
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/middleware.rs|488347826-63|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/writer.rs|2563869862-60|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/writer.rs|2563869862-60|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/writer.rs|718000731-64|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/audit/writer.rs|718000731-64|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/balancer/lease.rs|864010792-48|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/balancer/manager.rs|359200672-55|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/balancer/manager/tests/request_lifecycle.rs|3845652040-39|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/db/api_keys.rs|46142634-63|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/db/endpoints/tests.rs|46142634-63|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/events/bus.rs|2601439474-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/events/bus.rs|2900423646-85|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/health/endpoint_checker.rs|2228575466-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/health/endpoint_checker.rs|2228575466-52|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/health/endpoint_checker.rs|2228575466-52|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/health/endpoint_checker.rs|2228575466-52|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/health/endpoint_checker.rs|2522014903-53|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/health/endpoint_checker.rs|2601439474-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/inference_gate.rs|100023501-49|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/inference_gate.rs|2228575466-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/inference_gate.rs|2467689976-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/server.rs|1542863380-53|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/server.rs|182137248-63|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/update/tests/payload_download.rs|2601439474-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/update/tests/scheduling.rs|2601439474-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/src/update/tests/scheduling.rs|3450423832-50|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/anthropic_messages_api_test.rs|3114912644-40|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/anthropic_messages_api_test.rs|330893709-46|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/cloud_metrics_export_test.rs|182137248-63|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/endpoints_get_list_test.rs|1138447626-53|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/openai_logging_test.rs|418629526-66|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/openai_request_sanitization_spec.rs|3979139906-39|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/public_route_contracts_test.rs|1138447626-53|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/queueing_test.rs|3845652040-39|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/queueing_test.rs|4209799760-39|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/contract/test_proxy_completions.rs|3845652040-39|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/api-helpers.ts|1417273151-66|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|10
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|6
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|7
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|8
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/helpers/mock-openai-endpoint.ts|4114783137-68|9
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/auth.page.ts|1169554232-36|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/auth.page.ts|1169554232-36|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|1169554232-36|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|1169554232-36|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|1169554232-36|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|10
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|11
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|12
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|13
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|14
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|15
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|16
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|17
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|18
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|19
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|20
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|6
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|7
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|8
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|524669992-36|9
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|74307920-36|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/dashboard.page.ts|74307920-36|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/playground.page.ts|524669992-36|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/playground.page.ts|74307920-36|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/playground.page.ts|74307920-36|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/pages/playground.page.ts|74307920-36|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/api/error-handling.spec.ts|920905101-32|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/api/prometheus-metrics.spec.ts|505228029-56|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/api/sse-streaming.spec.ts|1995707975-72|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|3719287498-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|3719287498-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/dashboard-stats.spec.ts|3719287498-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|3719287498-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|3719287498-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|3719287498-31|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|920905101-32|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-detail-viz.spec.ts|2639283118-57|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|2037966537-44|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|6
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|7
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|3141135716-30|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|3141135716-30|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|3141135716-30|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|322691833-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|322691833-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|322691833-31|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|322691833-31|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|322691833-31|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|322691833-31|6
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/logs-tab.spec.ts|322691833-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/logs-tab.spec.ts|322691833-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/logs-tab.spec.ts|322691833-31|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/logs-tab.spec.ts|322691833-31|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/logs-tab.spec.ts|322691833-31|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/logs-tab.spec.ts|322691833-31|6
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/mobile-responsive.spec.ts|165126653-30|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/mobile-responsive.spec.ts|165126653-30|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/mobile-responsive.spec.ts|165126653-30|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/model-add-wizard.spec.ts|3719287498-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/real-dashboard-display.spec.ts|322691833-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/screen-navigation.spec.ts|2271215066-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/statistics-tab.spec.ts|3141135716-30|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/statistics-tab.spec.ts|3141135716-30|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/statistics-tab.spec.ts|322691833-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/statistics-tab.spec.ts|322691833-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/statistics-tab.spec.ts|322691833-31|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/ux-criteria.spec.ts|2625106082-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/api-key-openai-e2e.spec.ts|3141135716-30|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/api-key-openai-e2e.spec.ts|322691833-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/api-key-openai-e2e.spec.ts|322691833-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/endpoint-playground-walkthrough.spec.ts|1044641137-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/endpoint-type-detection.spec.ts|2639283118-57|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/endpoint-type-detection.spec.ts|2639283118-57|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/endpoint-type-detection.spec.ts|2639283118-57|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/endpoint-type-detection.spec.ts|2639283118-57|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/endpoint-type-detection.spec.ts|2639283118-57|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/large-scale-load-test.spec.ts|505228029-56|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|2590288167-17|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|2639283118-57|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|2639283118-57|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|2639283118-57|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|3084909938-43|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|570678429-56|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|87718649-38|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|87718649-38|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|979512959-57|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/lmstudio-gemma4-vision-chat.spec.ts|979512959-57|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/model-download.spec.ts|2639283118-57|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/navigation-screenshots.spec.ts|2271215066-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/navigation-screenshots.spec.ts|3719287498-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/navigation-screenshots.spec.ts|3719287498-31|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-inference-feedback.spec.ts|627832841-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-reasoning.spec.ts|1044641137-31|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-settings.spec.ts|3720491205-58|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e/ip_recording_test.rs|718000731-64|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/e2e_openai_proxy.rs|3114912644-40|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/api_system_test.rs|458835003-41|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/api_system_test.rs|458835003-41|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/api_system_test.rs|458835003-41|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/endpoint_health_check_test.rs|2228575466-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/endpoint_model_sync_test.rs|2130096818-53|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/request_capture_test.rs|1138447626-53|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/request_capture_test.rs|1138447626-53|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/request_capture_test.rs|1138447626-53|3
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/request_capture_test.rs|1138447626-53|4
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/request_capture_test.rs|1138447626-53|5
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/test_dashboard.rs|418629526-66|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/test_dashboard.rs|418629526-66|2
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/test_proxy.rs|2228575466-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/integration/test_proxy.rs|2548506773-45|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/notifications/delivery_test.rs|2467689976-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/notifications/offline_alert_test.rs|2467689976-52|1
+# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
+fixed-wait|llmlb/tests/notifications/startup_alert_test.rs|2467689976-52|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/api/anthropic/tests.rs|2515143179-34|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/api/anthropic/tests.rs|2515143179-34|2
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/api/endpoints/tests.rs|1146602957-24|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/api/endpoints/tests.rs|2515143179-34|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/api/endpoints/tests.rs|2515143179-34|2
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1146602957-24|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1146602957-24|2
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1146602957-24|3
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1146602957-24|4
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1146602957-24|5
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1146602957-24|6
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1232880034-28|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1312079168-25|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1312079168-25|2
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1312079168-25|3
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|1312079168-25|4
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/src/health/endpoint_checker.rs|3918998197-43|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/cloud_metrics_export_test.rs|2515143179-34|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/endpoints_contract_extended_test.rs|1146602957-24|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/endpoints_contract_extended_test.rs|2966524092-23|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/endpoints_contract_extended_test.rs|3955357935-25|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/endpoints_post_test.rs|1146602957-24|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/endpoints_post_test.rs|1146602957-24|2
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/endpoints_post_test.rs|1146602957-24|3
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/public_route_contracts_test.rs|1146602957-24|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/public_route_contracts_test.rs|2515143179-34|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/contract/public_route_contracts_test.rs|495910014-23|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|2
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|3
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|4
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|5
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|6
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|7
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_auto_recovery_test.rs|1146602957-24|8
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_connection_test_test.rs|1146602957-24|1
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_connection_test_test.rs|1146602957-24|2
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_connection_test_test.rs|1146602957-24|3
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_connection_test_test.rs|1146602957-24|4
+# (e) #748/#753: 既存の固定mock path＋I/O回数候補。UUID/同期済みケースも含む保守的検出、FR-005でassert維持。
+mock-count|llmlb/tests/integration/endpoint_connection_test_test.rs|1146602957-24|5
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/helpers/real-local-runtime.ts|3121246060-66|1
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|2296099352-41|1
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|2543172126-45|1
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|859478823-56|1
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|3566334821-60|1
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|3566334821-60|2
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|4123567828-61|1
+# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
+navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|4123567828-61|2
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/audit_log.rs|1645937757-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|1748165160-69|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|1748165160-69|2
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|1748165160-69|3
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|1748165160-69|4
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|1748165160-69|5
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|4163175363-66|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|4163175363-66|2
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|4163175363-66|3
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/api/cloud_proxy.rs|4163175363-66|4
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/audit/middleware.rs|1645937757-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/db/mod.rs|1645937757-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/manager.rs|3773807849-32|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests.rs|1225684437-47|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|1225684437-47|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|10
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|11
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|12
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|13
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|14
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|15
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|16
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|17
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|18
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|19
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|2
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|20
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|21
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|22
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|3
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|4
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|5
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|6
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|7
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|8
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/src/update/tests/manager_state.rs|2440633020-33|9
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/chat_modal_embed.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_contract_extended_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_delete_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_download_progress_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_download_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_get_detail_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_get_list_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_model_delete_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_model_info_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_post_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_put_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_sync_test.rs|1677762818-31|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_sync_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_test_test.rs|1677762818-31|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_test_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/endpoints_type_filter_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/models_api_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/openai_request_sanitization_spec.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/contract/version_api_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/helpers/api-helpers.ts|4101614062-66|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/helpers/real-local-runtime.ts|3753390328-72|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/playwright.config.ts|4215839766-86|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/api-key-lifecycle.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/audio-api.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/error-handling.spec.ts|4101614062-66|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/image-api.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/permission-matrix.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/prometheus-metrics.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/responses-api.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/api/sse-streaming.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|4101614062-66|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/auth/register.spec.ts|4101614062-66|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/auth/session-management.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/canonical-events-live-update.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-detail-viz.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|4101614062-66|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-live-update.spec.ts|4101614062-66|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/logs-tab.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/real-dashboard-display.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/statistics-tab.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/system-update-banner.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/dashboard/user-management.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/api-key-openai-e2e.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/endpoint-type-detection.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/large-scale-load-test.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/lb-load-balancing.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/lb-playground-walkthrough.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/model-download.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/playground-settings.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e-playwright/specs/workflows/real-local-runtimes.spec.ts|1773004936-65|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e/api_key_flow_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e/auth_disabled_flow_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e/auth_flow_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e/dashboard_flow_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/e2e/invitation_flow_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/integration/images_api_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/integration/model_info_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/integration/model_info_test.rs|531089987-55|2
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/integration/system_update_apply_api_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/integration/test_dashboard.rs|1173210102-67|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/integration/update_drain_gate_test.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/support/lb.rs|531089987-55|1
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/support/lb.rs|531089987-55|2
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/support/lb.rs|531089987-55|3
+# (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
+shared-resource|llmlb/tests/support/lb.rs|531089987-55|4
+
+# (a) #695: forgot-passwordは応答後にトークンを発行。DB件数を毎回確認し期待値で即終了する状態pollの間隔。最大100回後も件数assertを維持し、固定待機だけで完了を推定しない。
+fixed-wait|llmlb/tests/contract/auth_api_test.rs|182137248-63|1

@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useQuery } from '@tanstack/react-query'
 import { type ModelTpsEntry, endpointsApi } from '@/lib/api'
 import {
@@ -76,20 +77,20 @@ export function EndpointModelsTable({
   headerActions,
 }: EndpointModelsTableProps) {
   const { data: modelsData, isLoading: modelsLoading } = useQuery({
-    queryKey: ['endpoint-models', endpointId],
+    queryKey: queryKeys.endpointModels(endpointId),
     queryFn: () => endpointsApi.getModels(endpointId),
     enabled,
   })
 
   const { data: modelTps, isLoading: tpsLoading } = useQuery({
-    queryKey: ['endpoint-model-tps', endpointId],
+    queryKey: queryKeys.endpointModelTps(endpointId),
     queryFn: () => endpointsApi.getModelTps(endpointId),
     enabled,
     refetchInterval: 10000,
   })
 
   const { data: modelStats, isLoading: statsLoading } = useQuery({
-    queryKey: ['endpoint-model-stats', endpointId],
+    queryKey: queryKeys.endpointModelStats(endpointId),
     queryFn: () => endpointsApi.getModelStats(endpointId),
     enabled,
   })

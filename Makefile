@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure event-publishers dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure event-publishers flaky-patterns dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
 .PHONY: openai-tests notification-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
@@ -27,6 +27,10 @@ module-structure:
 # CI (lint.yml rust-lint) も同一ターゲットを実行する。
 event-publishers:
 	bash scripts/checks/check-event-publishers.sh
+
+# SPEC #838: 既知のフレーク誘発パターンを候補単位の allowlist で固定
+flaky-patterns:
+	bash scripts/checks/check-flaky-patterns.sh
 
 # SPEC #821 T016 / Issue #824: components/ 配下の useQuery / useMutation / useQueryClient 直接呼び出しを検出
 # （MVVM 移行中に新しいコンポーネント内フェッチが混入しても気付ける。現違反は allowlist で管理し、移行で減らす）
@@ -83,7 +87,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure event-publishers dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
+quality-checks: fmt clippy-parity module-structure event-publishers flaky-patterns dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 

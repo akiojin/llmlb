@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { endpointsApi, type EndpointDailyStatEntry } from '@/lib/api'
@@ -32,7 +33,7 @@ export function EndpointRequestChart({ endpointId }: EndpointRequestChartProps) 
   const [days, setDays] = useState<DaysPeriod>('7')
 
   const { data, isLoading } = useQuery<EndpointDailyStatEntry[]>({
-    queryKey: ['endpoint-daily-stats', endpointId, days],
+    queryKey: queryKeys.endpointDailyStats(endpointId, days),
     queryFn: () => endpointsApi.getDailyStats(endpointId, Number(days)),
     enabled: !!endpointId,
   })

@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi, type User, type CreateUserResponse } from '@/lib/api'
@@ -110,7 +111,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
 
   // Fetch users
   const { data: users, isLoading, refetch } = useQuery({
-    queryKey: ['users'],
+    queryKey: queryKeys.users(),
     queryFn: usersApi.list,
     enabled: open,
   })
@@ -118,8 +119,8 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   // The notification recipients are the admins that have an email, so every
   // user change can alter them.
   const invalidateUsers = () => {
-    queryClient.invalidateQueries({ queryKey: ['users'] })
-    queryClient.invalidateQueries({ queryKey: ['notification-settings'] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.users() })
+    queryClient.invalidateQueries({ queryKey: queryKeys.notificationSettings() })
   }
 
   // Create user mutation

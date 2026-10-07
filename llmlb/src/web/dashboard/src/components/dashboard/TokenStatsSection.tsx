@@ -1,3 +1,4 @@
+import { queryKeys } from '@/lib/queryKeys'
 import { useQuery } from '@tanstack/react-query'
 import {
   Bar,
@@ -87,12 +88,12 @@ function StatsLoading({ rows }: { rows: number }) {
 
 export function TokenStatsSection() {
   const { data: dailyStats, isLoading: loadingDaily } = useQuery<DailyTokenStats[]>({
-    queryKey: ['token-stats-daily'],
+    queryKey: queryKeys.tokenStatsDaily(),
     queryFn: () => dashboardApi.getDailyTokenStats(7),
   })
 
   const { data: monthlyStats, isLoading: loadingMonthly } = useQuery<MonthlyTokenStats[]>({
-    queryKey: ['token-stats-monthly'],
+    queryKey: queryKeys.tokenStatsMonthly(),
     queryFn: () => dashboardApi.getMonthlyTokenStats(6),
   })
 

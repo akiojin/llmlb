@@ -153,27 +153,73 @@ async fn handle_socket(socket: WebSocket, event_bus: SharedEventBus) {
 mod tests {
     use super::*;
 
-    // --- Welcome message format tests ---
+    use crate::events::DashboardEvent;
+    use crate::types::endpoint::EndpointStatus;
+    use uuid::Uuid;
 
-    #[test]
-    fn welcome_message_has_correct_format() {
-        let welcome = serde_json::json!({
-            "type": "connected",
-            "message": "Dashboard WebSocket connected"
-        });
-        assert_eq!(welcome["type"], "connected");
-        assert_eq!(welcome["message"], "Dashboard WebSocket connected");
+    fn all_event_samples() -> Vec<DashboardEvent> {
+        let id = Uuid::nil();
+        let samples = vec![
+            DashboardEvent::NodeRegistered {
+                runtime_id: id,
+                machine_name: String::new(),
+                ip_address: String::new(),
+                status: EndpointStatus::Online,
+            },
+            DashboardEvent::EndpointStatusChanged {
+                runtime_id: id,
+                old_status: EndpointStatus::Online,
+                new_status: EndpointStatus::Offline,
+            },
+            DashboardEvent::MetricsUpdated {
+                runtime_id: id,
+                cpu_usage: None,
+                memory_usage: None,
+                gpu_usage: None,
+            },
+            DashboardEvent::NodeRemoved { runtime_id: id },
+            DashboardEvent::UpdateStateChanged,
+            DashboardEvent::TpsUpdated {
+                endpoint_id: id,
+                model_id: String::new(),
+                tps: 0.0,
+                output_tokens: 0,
+                duration_ms: 0,
+            },
+        ];
+        for event in &samples {
+            match event {
+                DashboardEvent::NodeRegistered { .. }
+                | DashboardEvent::EndpointStatusChanged { .. }
+                | DashboardEvent::MetricsUpdated { .. }
+                | DashboardEvent::NodeRemoved { .. }
+                | DashboardEvent::UpdateStateChanged
+                | DashboardEvent::TpsUpdated { .. } => {}
+            }
+        }
+        samples
     }
 
+    /// The wire projection must cover exactly the frontend resource union.
     #[test]
-    fn welcome_message_serializes_to_valid_json() {
-        let welcome = serde_json::json!({
-            "type": "connected",
-            "message": "Dashboard WebSocket connected"
-        });
-        let json_str = welcome.to_string();
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed["type"], "connected");
+    fn wire_resources_match_dashboard_frontend() {
+        let source = include_str!("../web/dashboard/src/lib/dashboardResources.ts");
+        let values = source
+            .split("export const DASHBOARD_RESOURCES = [")
+            .nth(1)
+            .expect("resource constant")
+            .split(']')
+            .next()
+            .unwrap();
+        let frontend: std::collections::BTreeSet<_> = values
+            .split(',')
+            .map(|name| name.trim().trim_matches('\''))
+            .filter(|name| !name.is_empty())
+            .collect();
+        let changes: Vec<_> = all_event_samples().iter().map(dashboard_change).collect();
+        let backend: std::collections::BTreeSet<_> =
+            changes.iter().map(|change| change.changed).collect();
+        assert_eq!(frontend, backend);
     }
 
     // --- UserRole authorization logic tests ---

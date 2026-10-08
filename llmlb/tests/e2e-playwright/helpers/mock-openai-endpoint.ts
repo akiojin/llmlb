@@ -5,6 +5,7 @@ export interface MockOpenAIEndpointServer {
   baseUrl: string
   models: string[]
   close: () => Promise<void>
+  setHealthy: (healthy: boolean) => void
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -63,8 +64,13 @@ export async function startMockOpenAIEndpointServer(options?: {
   // Track sockets and destroy them on shutdown so afterAll doesn't hang.
   const sockets = new Set<import('node:net').Socket>()
 
+  let healthy = true
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1')
+
+    if (!healthy && ['/api/health', '/v1/models'].includes(url.pathname)) {
+      return writeJson(res, 503, { error: 'test endpoint unavailable' })
+    }
 
     // llmlb health checker prefers /api/health (Phase 1.4). Keep it fast so
     // E2E tests don't depend on /v1/models latency.
@@ -315,6 +321,7 @@ export async function startMockOpenAIEndpointServer(options?: {
   return {
     baseUrl,
     models,
+    setHealthy: (value) => { healthy = value },
     close: () =>
       new Promise<void>((resolve, reject) => {
         for (const s of sockets) s.destroy()

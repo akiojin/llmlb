@@ -191,7 +191,7 @@ describe('Dashboard', () => {
 
     act(() => {
       FakeWebSocket.latest().receive(
-        JSON.stringify({ type: 'NodeRegistered', data: { runtime_id: 'ep-2' } }),
+        JSON.stringify({ changed: 'endpoints', id: 'ep-2' }),
       )
     })
 
@@ -206,7 +206,7 @@ describe('Dashboard', () => {
     await waitFor(() => expect(api.getSystem).toHaveBeenCalledTimes(1))
 
     act(() => {
-      FakeWebSocket.latest().receive(JSON.stringify({ type: 'UpdateStateChanged' }))
+      FakeWebSocket.latest().receive(JSON.stringify({ changed: 'system' }))
     })
 
     expect(api.getSystem).toHaveBeenCalledTimes(2)

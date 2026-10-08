@@ -9,10 +9,9 @@ const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
 // change that shows up well within that window was driven by the WebSocket event.
 const LIVE_UPDATE_TIMEOUT_MS = 3000;
 
-interface StatusChangedFrame {
-  runtime_id: string;
-  old_status: string;
-  new_status: string;
+interface EndpointChangeFrame {
+  changed: 'endpoints';
+  id: string;
 }
 
 for (const colorScheme of ['light', 'dark'] as const) {
@@ -23,10 +22,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       test.setTimeout(120_000);
 
       const endpointName = `e2e-status-live-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const statusFrames: StatusChangedFrame[] = [];
+      const statusFrames: EndpointChangeFrame[] = [];
       const pageErrors: string[] = [];
       const mock: MockOpenAIEndpointServer = await startMockOpenAIEndpointServer();
-      let mockClosed = false;
 
       // The pre-login session probe returns 401 by design; only collect errors after login.
       let loggedIn = false;
@@ -41,7 +39,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         ws.on('framereceived', ({ payload }) => {
           try {
             const event = JSON.parse(payload.toString());
-            if (event.type === 'EndpointStatusChanged') statusFrames.push(event.data);
+            if (event.changed === 'endpoints') statusFrames.push(event);
           } catch {
             // ignore non-JSON frames
           }
@@ -49,6 +47,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       });
 
       try {
+        await page.clock.install();
         await ensureDashboardLogin(page);
         loggedIn = true;
 
@@ -65,27 +64,37 @@ for (const colorScheme of ['light', 'dark'] as const) {
         const endpoint = (await listEndpoints(request)).find((e) => e.name === endpointName);
         expect(endpoint?.id).toBeTruthy();
         const endpointId = endpoint!.id;
-        const framesFor = (status: string) =>
-          statusFrames.filter((f) => f.runtime_id === endpointId && f.new_status === status);
+        const framesSince = (checkpoint: number) =>
+          statusFrames.slice(checkpoint).filter((f) => f.id === endpointId);
 
-        // -> Online
-        await request.post(`${API_BASE}/api/endpoints/${endpointId}/test`, { headers: AUTH_HEADER });
-        await expect.poll(() => framesFor('online').length, { timeout: 20000 }).toBeGreaterThan(0);
-        await expect(statusBadge).toHaveText('Online', { timeout: LIVE_UPDATE_TIMEOUT_MS });
+        // Registration may already trigger an automatic Online probe. Establish
+        // that baseline, then force two new transitions with polling frozen.
+        await expect(statusBadge).toHaveText('Online', { timeout: 20000 });
+        await page.clock.pauseAt(Date.now() + 1000);
+        const pausedAt = await page.evaluate(() => Date.now());
 
-        // -> Error (endpoint goes away)
-        await mock.close();
-        mockClosed = true;
-        await request.post(`${API_BASE}/api/endpoints/${endpointId}/test`, { headers: AUTH_HEADER });
-        await expect.poll(() => framesFor('error').length, { timeout: 20000 }).toBeGreaterThan(0);
+        const errorStart = statusFrames.length;
+        mock.setHealthy(false);
+        const failed = await request.post(`${API_BASE}/api/endpoints/${endpointId}/test`, { headers: AUTH_HEADER });
+        expect(failed.ok()).toBe(true);
+        expect((await failed.json()).success).toBe(false);
+        await expect.poll(() => framesSince(errorStart).length, { timeout: 20000 }).toBeGreaterThan(0);
         await expect(statusBadge).toHaveText('Error', { timeout: LIVE_UPDATE_TIMEOUT_MS });
 
-        // A transition is published exactly once.
-        expect(framesFor('online')).toHaveLength(1);
-        expect(framesFor('error')).toHaveLength(1);
+        const onlineStart = statusFrames.length;
+        mock.setHealthy(true);
+        const recovered = await request.post(`${API_BASE}/api/endpoints/${endpointId}/test`, { headers: AUTH_HEADER });
+        expect(recovered.ok()).toBe(true);
+        expect((await recovered.json()).success).toBe(true);
+        await expect.poll(() => framesSince(onlineStart).length, { timeout: 20000 }).toBeGreaterThan(0);
+        await expect(statusBadge).toHaveText('Online', { timeout: LIVE_UPDATE_TIMEOUT_MS });
+
+        expect(statusFrames.slice(errorStart, onlineStart).filter((f) => f.id === endpointId)).toHaveLength(1);
+        expect(framesSince(onlineStart)).toHaveLength(1);
+        expect(await page.evaluate(() => Date.now())).toBe(pausedAt);
         expect(pageErrors).toEqual([]);
       } finally {
-        if (!mockClosed) await mock.close();
+        await mock.close();
         await deleteEndpointsByName(request, endpointName);
       }
     });

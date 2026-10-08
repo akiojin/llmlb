@@ -91,9 +91,10 @@ Use them for anything a rendered component decides on its own:
 - role gating inside a page (what an admin sees and a viewer does not)
 - hook logic such as the WebSocket query invalidation matrix
   (`src/hooks/useWebSocket.test.tsx`). The hook invalidates from the table in
-  `src/hooks/dashboardEventInvalidation.ts`; adding a `DashboardEventType`
-  fails typecheck until both the table and the matrix list the query keys
-  that event invalidates
+  `src/hooks/dashboardEventInvalidation.ts`; adding a resource to `DASHBOARD_RESOURCES`
+  fails typecheck until both the table and the matrix list its query keys.
+  The wire contains only `{changed, id?}`; connection state comes from
+  `onopen`. The central table stays until the T005 subscription cutover
 
 They run in jsdom without a server. `src/test/setup.ts` replaces `fetch` and
 `WebSocket`; a request that a test did not stub fails that test. Stub the API

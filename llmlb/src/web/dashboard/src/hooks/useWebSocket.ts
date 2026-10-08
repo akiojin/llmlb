@@ -2,39 +2,10 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeysToInvalidate } from './dashboardEventInvalidation'
 
-export type DashboardEventType =
-  | 'connected'
-  | 'NodeRegistered'
-  | 'EndpointStatusChanged'
-  | 'MetricsUpdated'
-  | 'NodeRemoved'
-  | 'TpsUpdated'
-  | 'UpdateStateChanged'
-
-export interface DashboardEvent {
-  type: DashboardEventType
-  data?: {
-    runtime_id?: string
-    endpoint_id?: string
-    machine_name?: string
-    ip_address?: string
-    status?: string
-    old_status?: string
-    new_status?: string
-    // null when llmlb does not observe the value (it treats endpoints as black boxes)
-    cpu_usage?: number | null
-    memory_usage?: number | null
-    gpu_usage?: number | null
-    model_id?: string
-    tps?: number
-    output_tokens?: number
-    duration_ms?: number
-  }
-  message?: string
-}
+import type { DashboardChange } from '@/lib/dashboardResources'
 
 interface UseWebSocketOptions {
-  onMessage?: (event: DashboardEvent) => void
+  onMessage?: (event: DashboardChange) => void
   onConnect?: () => void
   onDisconnect?: () => void
   enabled?: boolean
@@ -62,7 +33,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const connectRef = useRef<() => void>(() => {})
   const shouldReconnectRef = useRef(false)
   const [isConnected, setIsConnected] = useState(false)
-  const [lastEvent, setLastEvent] = useState<DashboardEvent | null>(null)
+  const [lastEvent, setLastEvent] = useState<DashboardChange | null>(null)
 
   // Stabilize callback references with useRef to prevent infinite reconnection loops.
   // Without this, inline callbacks passed by callers create new references every render,
@@ -104,11 +75,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as DashboardEvent
+          const data = JSON.parse(event.data) as DashboardChange
           setLastEvent(data)
           onMessageRef.current?.(data)
 
-          // Invalidate relevant queries based on event type
+          // Keep existing query coverage until the subscription cutover (T005).
           for (const queryKey of queryKeysToInvalidate(data)) {
             queryClient.invalidateQueries({ queryKey })
           }

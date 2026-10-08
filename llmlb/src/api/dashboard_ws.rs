@@ -1,7 +1,7 @@
 //! WebSocket endpoint for real-time dashboard updates
 //!
 //! This module provides `/ws/dashboard` endpoint that streams
-//! DashboardEvents to connected clients in real-time.
+//! resource change notifications to connected clients in real-time.
 //!
 //! Authentication is required via Bearer token (`Authorization`) or JWT cookie.
 
@@ -15,8 +15,33 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use tracing::{debug, warn};
 
-use crate::events::SharedEventBus;
+use crate::events::{DashboardEvent, SharedEventBus};
 use crate::AppState;
+use serde::Serialize;
+use uuid::Uuid;
+
+/// Minimal wire notification; event details stay on the server-side bus.
+#[derive(Serialize)]
+struct DashboardChange {
+    changed: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<Uuid>,
+}
+
+/// Exhaustive projection at the WebSocket boundary (SPEC #821 FR-001/002).
+fn dashboard_change(event: &DashboardEvent) -> DashboardChange {
+    let (changed, id) = match event {
+        DashboardEvent::NodeRegistered { runtime_id, .. }
+        | DashboardEvent::NodeRemoved { runtime_id }
+        | DashboardEvent::EndpointStatusChanged { runtime_id, .. } => {
+            ("endpoints", Some(*runtime_id))
+        }
+        DashboardEvent::MetricsUpdated { runtime_id, .. } => ("metrics", Some(*runtime_id)),
+        DashboardEvent::TpsUpdated { endpoint_id, .. } => ("tps", Some(*endpoint_id)),
+        DashboardEvent::UpdateStateChanged => ("system", None),
+    };
+    DashboardChange { changed, id }
+}
 
 /// WebSocket upgrade handler for dashboard events
 ///
@@ -82,16 +107,6 @@ async fn handle_socket(socket: WebSocket, event_bus: SharedEventBus) {
 
     debug!("Dashboard WebSocket client connected");
 
-    // Send initial connection confirmation
-    let welcome = serde_json::json!({
-        "type": "connected",
-        "message": "Dashboard WebSocket connected"
-    });
-    if let Err(e) = sender.send(Message::Text(welcome.to_string().into())).await {
-        warn!("Failed to send welcome message: {}", e);
-        return;
-    }
-
     // Spawn task to handle incoming messages (ping/pong, close)
     let mut recv_task = tokio::spawn(async move {
         while let Some(msg) = receiver.next().await {
@@ -123,7 +138,7 @@ async fn handle_socket(socket: WebSocket, event_bus: SharedEventBus) {
             event_result = event_rx.recv() => {
                 match event_result {
                     Ok(event) => {
-                        let json = match serde_json::to_string(&event) {
+                        let json = match serde_json::to_string(&dashboard_change(&event)) {
                             Ok(j) => j,
                             Err(e) => {
                                 warn!("Failed to serialize event: {}", e);

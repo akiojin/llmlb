@@ -259,16 +259,15 @@ impl TrayController {
             let builder = {
                 let base = TrayIconBuilder::new()
                     .with_tooltip(self.options.tooltip())
-                    .with_icon(icon)
                     .with_menu(Box::new(self.menu.menu.clone()))
                     .with_menu_on_left_click(false);
                 #[cfg(target_os = "macos")]
                 {
-                    base.with_icon_as_template(true)
+                    base.with_icon_templated(icon)
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
-                    base
+                    base.with_icon(icon)
                 }
             };
 

@@ -714,3 +714,6 @@ shared-resource|llmlb/tests/support/lb.rs|531089987-55|2
 shared-resource|llmlb/tests/support/lb.rs|531089987-55|3
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
 shared-resource|llmlb/tests/support/lb.rs|531089987-55|4
+
+# (a) #695: forgot-passwordは応答後にトークンを発行。DB件数を毎回確認し期待値で即終了する状態pollの間隔。最大100回後も件数assertを維持し、固定待機だけで完了を推定しない。
+fixed-wait|llmlb/tests/contract/auth_api_test.rs|182137248-63|1

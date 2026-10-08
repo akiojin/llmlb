@@ -188,7 +188,8 @@ export const CANONICAL_SCREENS: readonly CanonicalScreen[] = [
     url: /\/dashboard\/change-password\.html/,
     // A user created by an admin must change the generated password on first sign-in.
     reach: async ({ page, request, onCleanup }) => {
-      const username = provisionedName();
+      // Usernames are mail IDs (SPEC #580 US-004); anything else is rejected.
+      const username = `${provisionedName()}@example.com`;
       const user = await createUser(request, username, '', 'viewer');
       expect(user.generated_password, 'server should return a generated password').toBeTruthy();
       onCleanup(async () => {

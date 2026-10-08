@@ -100,6 +100,8 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
+        .route("/auth/forgot-password", post(auth::forgot_password))
+        .route("/auth/reset-password", post(auth::reset_password))
         .merge(auth_routes)
         .merge(users_routes)
         .merge(my_api_keys_routes)

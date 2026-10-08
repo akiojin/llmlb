@@ -129,6 +129,8 @@ fn dashboard_html_shells_have_no_japanese_text() {
         "src/web/static/login.html",
         "src/web/static/register.html",
         "src/web/static/change-password.html",
+        "src/web/static/forgot-password.html",
+        "src/web/static/reset-password.html",
     ];
 
     for path in html_paths {

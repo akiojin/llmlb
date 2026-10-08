@@ -121,7 +121,7 @@ async fn test_create_viewer_user() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
-                        "username": "newviewer",
+                        "username": "newviewer@example.com",
                         "role": "viewer"
                     }))
                     .unwrap(),
@@ -134,7 +134,7 @@ async fn test_create_viewer_user() {
     assert_eq!(response.status(), StatusCode::CREATED);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let data: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(data["user"]["username"], "newviewer");
+    assert_eq!(data["user"]["username"], "newviewer@example.com");
     assert_eq!(data["user"]["role"], "viewer");
     assert!(data["generated_password"].is_string());
 }
@@ -154,7 +154,7 @@ async fn test_create_admin_user() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
-                        "username": "newadmin",
+                        "username": "newadmin@example.com",
                         "role": "admin"
                     }))
                     .unwrap(),
@@ -174,8 +174,18 @@ async fn test_create_admin_user() {
 #[tokio::test]
 #[serial]
 async fn test_create_user_duplicate_username() {
-    let (app, _db_pool) = build_app().await;
+    let (app, db_pool) = build_app().await;
     let jwt = login_as(&app, "admin", "password123").await;
+    let pw_hash = llmlb::auth::password::hash_password("pass1234").unwrap();
+    llmlb::db::users::create(
+        &db_pool,
+        "taken@example.com",
+        &pw_hash,
+        UserRole::Viewer,
+        false,
+    )
+    .await
+    .unwrap();
 
     let response = app
         .oneshot(
@@ -185,7 +195,7 @@ async fn test_create_user_duplicate_username() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({
-                        "username": "admin",
+                        "username": "taken@example.com",
                         "role": "viewer"
                     }))
                     .unwrap(),
@@ -310,7 +320,7 @@ async fn test_update_user_username() {
                 .uri(format!("/api/users/{}", user.id))
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({ "username": "newname" })).unwrap(),
+                    serde_json::to_vec(&json!({ "username": "newname@example.com" })).unwrap(),
                 ))
                 .unwrap(),
         )
@@ -320,7 +330,7 @@ async fn test_update_user_username() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let data: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(data["username"], "newname");
+    assert_eq!(data["username"], "newname@example.com");
 }
 
 /// 存在しないユーザーの更新は404
@@ -338,7 +348,7 @@ async fn test_update_nonexistent_user() {
                 .uri(format!("/api/users/{}", fake_id))
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({ "username": "ghost" })).unwrap(),
+                    serde_json::to_vec(&json!({ "username": "ghost@example.com" })).unwrap(),
                 ))
                 .unwrap(),
         )
@@ -359,9 +369,15 @@ async fn test_update_user_duplicate_username() {
     let user = llmlb::db::users::create(&db_pool, "user_a", &pw_hash, UserRole::Viewer, false)
         .await
         .unwrap();
-    llmlb::db::users::create(&db_pool, "user_b", &pw_hash, UserRole::Viewer, false)
-        .await
-        .ok();
+    llmlb::db::users::create(
+        &db_pool,
+        "user_b@example.com",
+        &pw_hash,
+        UserRole::Viewer,
+        false,
+    )
+    .await
+    .ok();
 
     let response = app
         .oneshot(
@@ -370,7 +386,7 @@ async fn test_update_user_duplicate_username() {
                 .uri(format!("/api/users/{}", user.id))
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    serde_json::to_vec(&json!({ "username": "user_b" })).unwrap(),
+                    serde_json::to_vec(&json!({ "username": "user_b@example.com" })).unwrap(),
                 ))
                 .unwrap(),
         )
@@ -478,4 +494,98 @@ async fn test_delete_user_requires_auth() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// メールID形式バリデーション（SPEC #580 T001）
+// ---------------------------------------------------------------------------
+
+async fn send_as(app: &Router, jwt: &str, method: &str, uri: &str, body: Value) -> StatusCode {
+    app.clone()
+        .oneshot(
+            bearer_request(jwt)
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+}
+
+/// メール形式でないユーザー名での作成は400
+#[tokio::test]
+#[serial]
+async fn test_create_user_rejects_non_email_username() {
+    let (app, db_pool) = build_app().await;
+    let jwt = login_as(&app, "admin", "password123").await;
+
+    for invalid in [
+        "plainname",
+        "no-at.example.com",
+        "@example.com",
+        "user@",
+        "user@localhost",
+        "user@@example.com",
+        "user name@example.com",
+        " user@example.com",
+        "",
+    ] {
+        let status = send_as(
+            &app,
+            &jwt,
+            "POST",
+            "/api/users",
+            json!({ "username": invalid, "role": "viewer" }),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{invalid:?} must be rejected"
+        );
+    }
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&db_pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "no user should have been created");
+}
+
+/// メール形式でないユーザー名への変更は400
+#[tokio::test]
+#[serial]
+async fn test_update_user_rejects_non_email_username() {
+    let (app, db_pool) = build_app().await;
+    let jwt = login_as(&app, "admin", "password123").await;
+
+    let pw_hash = llmlb::auth::password::hash_password("pass1234").unwrap();
+    let user = llmlb::db::users::create(
+        &db_pool,
+        "keep@example.com",
+        &pw_hash,
+        UserRole::Viewer,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let status = send_as(
+        &app,
+        &jwt,
+        "PUT",
+        &format!("/api/users/{}", user.id),
+        json!({ "username": "not-an-email" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let stored = llmlb::db::users::find_by_id(&db_pool, user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.username, "keep@example.com");
 }

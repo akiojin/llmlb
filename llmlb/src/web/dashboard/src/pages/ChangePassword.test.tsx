@@ -7,6 +7,7 @@ import { ApiError, authApi } from '@/lib/api'
 import { adminUser, deferred, type TestUser } from '@/test/render'
 import ChangePasswordPage from './ChangePassword'
 
+const CURRENT_PASSWORD = 'Curr3ntPass'
 const VALID_PASSWORD = 'Str0ngPass'
 
 // Same tree as the change-password.tsx entry point. The page checks the
@@ -23,7 +24,8 @@ function renderChangePassword(session: Promise<TestUser> = Promise.resolve(admin
 
 async function submitPasswords(newPassword: string, confirmPassword: string) {
   const user = userEvent.setup()
-  await user.type(await screen.findByLabelText('New Password'), newPassword)
+  await user.type(await screen.findByLabelText('Current Password'), CURRENT_PASSWORD)
+  await user.type(screen.getByLabelText('New Password'), newPassword)
   await user.type(screen.getByLabelText('Confirm Password'), confirmPassword)
   await user.click(screen.getByRole('button', { name: 'Change Password' }))
 }
@@ -36,19 +38,23 @@ describe('ChangePasswordPage', () => {
     expect(screen.getByText('Loading...')).toBeInTheDocument()
     expect(screen.queryByLabelText('New Password')).not.toBeInTheDocument()
 
-    session.resolve(adminUser)
+    session.resolve({ ...adminUser, must_change_password: true })
 
-    expect(await screen.findByLabelText('New Password')).toHaveAttribute('type', 'password')
+    expect(await screen.findByLabelText('Current Password')).toHaveAttribute('type', 'password')
+    expect(screen.getByLabelText('New Password')).toHaveAttribute('type', 'password')
     expect(screen.getByLabelText('Confirm Password')).toHaveAttribute('type', 'password')
     expect(screen.getByText('You must change your password before continuing.')).toBeInTheDocument()
     expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
   })
 
-  it('keeps the submit button disabled until both fields are filled', async () => {
+  it('keeps the submit button disabled until every field is filled', async () => {
     renderChangePassword()
     const user = userEvent.setup()
 
     const submit = await screen.findByRole('button', { name: 'Change Password' })
+    expect(submit).toBeDisabled()
+
+    await user.type(screen.getByLabelText('Current Password'), CURRENT_PASSWORD)
     expect(submit).toBeDisabled()
 
     await user.type(screen.getByLabelText('New Password'), VALID_PASSWORD)
@@ -107,7 +113,7 @@ describe('ChangePasswordPage', () => {
     expect(changePassword).not.toHaveBeenCalled()
   })
 
-  it('submits the new password and shows a busy state while saving', async () => {
+  it('submits the current and new passwords and shows a busy state while saving', async () => {
     // Left pending: a successful change schedules a full page navigation to
     // the login page, which the Playwright suite covers.
     const changePassword = vi
@@ -117,7 +123,7 @@ describe('ChangePasswordPage', () => {
 
     await submitPasswords(VALID_PASSWORD, VALID_PASSWORD)
 
-    expect(changePassword).toHaveBeenCalledExactlyOnceWith(VALID_PASSWORD)
+    expect(changePassword).toHaveBeenCalledExactlyOnceWith(CURRENT_PASSWORD, VALID_PASSWORD)
     expect(screen.getByRole('button', { name: 'Changing password...' })).toBeDisabled()
   })
 

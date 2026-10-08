@@ -19,7 +19,7 @@ use uuid::Uuid;
 /// ユーザー作成リクエスト
 #[derive(Debug, Deserialize)]
 pub struct CreateUserRequest {
-    /// ユーザー名
+    /// ユーザー名（メールID形式）
     pub username: String,
     /// ロール
     pub role: UserRole,
@@ -152,7 +152,8 @@ pub async fn list_users(
 ///
 /// # Returns
 /// * `201 Created` - 作成されたユーザー
-/// * `400 Bad Request` - ユーザー名重複等
+/// * `400 Bad Request` - ユーザー名がメールID形式でない、または通知先 email が不正
+/// * `409 Conflict` - ユーザー名重複
 /// * `403 Forbidden` - Admin権限なし
 /// * `500 Internal Server Error` - サーバーエラー
 pub async fn create_user(
@@ -161,6 +162,10 @@ pub async fn create_user(
     Json(request): Json<CreateUserRequest>,
 ) -> Result<(StatusCode, Json<CreateUserResponse>), HandlerError> {
     check_admin(&claims)?;
+
+    // ユーザー名はメールID形式（SPEC #580 T001）
+    crate::auth::email::validate_email(&request.username)
+        .map_err(|e| AppError(e).into_response())?;
 
     // 通知先 email の検証（不正な値ではユーザーを作成しない）
     let email = match request.email.as_deref() {
@@ -233,7 +238,8 @@ pub async fn create_user(
 ///
 /// # Returns
 /// * `200 OK` - 更新されたユーザー
-/// * `400 Bad Request` - ユーザー名重複等
+/// * `400 Bad Request` - ユーザー名がメールID形式でない、または通知先 email が不正
+/// * `409 Conflict` - ユーザー名重複
 /// * `403 Forbidden` - Admin権限なし
 /// * `404 Not Found` - ユーザーが見つからない
 /// * `500 Internal Server Error` - サーバーエラー
@@ -260,8 +266,9 @@ pub async fn update_user(
         })?
         .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
 
-    // ユーザー名の重複チェック
+    // ユーザー名の検証（メールID形式・重複）
     if let Some(ref username) = request.username {
+        crate::auth::email::validate_email(username).map_err(|e| AppError(e).into_response())?;
         if let Some(existing) = crate::db::users::find_by_username(&app_state.db_pool, username)
             .await
             .map_err(|e| {

@@ -15,6 +15,9 @@ pub mod models;
 /// 招待コード管理
 pub mod invitations;
 
+/// パスワードリセットトークン管理
+pub mod password_reset_tokens;
+
 /// データベースマイグレーション
 pub mod migrations;
 

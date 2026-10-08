@@ -38,11 +38,35 @@ export const authApi = {
   me: () =>
     fetchWithAuth<{ user_id: string; username: string; role: string; must_change_password: boolean }>('/api/auth/me'),
 
-  changePassword: async (newPassword: string) => {
+  changePassword: async (currentPassword: string, newPassword: string) => {
     await fetchWithAuth('/api/auth/change-password', {
       method: 'PUT',
-      body: JSON.stringify({ new_password: newPassword }),
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     })
+  },
+
+  forgotPassword: async (email: string) => {
+    const response = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+
+    if (!response.ok) {
+      throw await createApiErrorFromResponse(response)
+    }
+  },
+
+  resetPassword: async (token: string, newPassword: string) => {
+    const response = await fetch(`${API_BASE}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, new_password: newPassword }),
+    })
+
+    if (!response.ok) {
+      throw await createApiErrorFromResponse(response)
+    }
   },
 
   register: async (data: RegisterRequest): Promise<RegisterResponse> => {

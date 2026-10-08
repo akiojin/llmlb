@@ -20,6 +20,18 @@ Requirements, per-user-story implementation status, and remaining tasks are trac
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `PUT /api/auth/change-password` (requires `current_password`)
+
+### Password reset
+
+- `POST /api/auth/forgot-password` (no auth) issues a reset token for an email ID. It always
+  returns `202` and never includes the token, so account existence is not revealed.
+- There is no mail delivery. The reset link `/dashboard/reset-password.html#token=...` is written
+  to the server log; the operator hands it to the user.
+- `POST /api/auth/reset-password` (no auth) consumes the token and sets `new_password`. Tokens
+  expire after 30 minutes, are single-use, and only the latest token per user is valid.
+- Only the SHA-256 hash of a token is stored. A successful reset or password change bumps
+  `password_changed_at`, which revokes existing sessions.
 
 Accepted transports:
 

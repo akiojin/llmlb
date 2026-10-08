@@ -64,8 +64,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       test.setTimeout(120_000)
 
       const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-      const username = `e2e-notify-${suffix}`
-      const email = `${username}@example.com`
+      const username = `e2e-notify-${suffix}@example.com`
+      const email = `e2e-notify-destination-${suffix}@example.com`
 
       const pageErrors: string[] = []
       page.on('pageerror', (err) => pageErrors.push(err.message))

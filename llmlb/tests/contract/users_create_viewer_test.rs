@@ -66,7 +66,7 @@ async fn test_create_user_with_viewer_role() {
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::from(
                     serde_json::to_vec(&json!({
-                        "username": "testviewer",
+                        "username": "testviewer@example.com",
                         "role": "viewer"
                     }))
                     .unwrap(),
@@ -87,7 +87,10 @@ async fn test_create_user_with_viewer_role() {
         .unwrap();
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(resp["user"]["username"].as_str().unwrap(), "testviewer");
+    assert_eq!(
+        resp["user"]["username"].as_str().unwrap(),
+        "testviewer@example.com"
+    );
     assert_eq!(
         resp["user"]["role"].as_str().unwrap(),
         "viewer",
@@ -148,7 +151,7 @@ async fn test_create_user_with_admin_role() {
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::from(
                     serde_json::to_vec(&json!({
-                        "username": "testadmin",
+                        "username": "testadmin@example.com",
                         "role": "admin"
                     }))
                     .unwrap(),

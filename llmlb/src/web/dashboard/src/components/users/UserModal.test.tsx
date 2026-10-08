@@ -73,7 +73,7 @@ describe('UserModal notification email', () => {
 
   it('creates a user with the entered notification email', async () => {
     const create = vi.spyOn(usersApi, 'create').mockResolvedValue({
-      user: { ...bob, id: 'user-carol', username: 'carol', email: 'carol@example.com' },
+      user: { ...bob, id: 'user-carol', username: 'carol-login@example.com', email: 'carol@example.com' },
       generated_password: 'generated-password',
     })
     const user = userEvent.setup()
@@ -81,13 +81,13 @@ describe('UserModal notification email', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add User' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'Create User' }))
-    await fill(user, dialog.getByLabelText('Username'), 'carol')
+    await fill(user, dialog.getByLabelText('Email'), 'carol-login@example.com')
     await fill(user, dialog.getByLabelText(EMAIL_LABEL), 'carol@example.com')
     await user.click(dialog.getByRole('button', { name: 'Create' }))
 
     await waitFor(() =>
       expect(create).toHaveBeenCalledExactlyOnceWith({
-        username: 'carol',
+        username: 'carol-login@example.com',
         role: 'viewer',
         email: 'carol@example.com',
       }),
@@ -96,7 +96,7 @@ describe('UserModal notification email', () => {
 
   it('creates a user without an email field when the email is left blank', async () => {
     const create = vi.spyOn(usersApi, 'create').mockResolvedValue({
-      user: { ...bob, id: 'user-carol', username: 'carol' },
+      user: { ...bob, id: 'user-carol', username: 'carol-login@example.com' },
       generated_password: 'generated-password',
     })
     const user = userEvent.setup()
@@ -104,11 +104,11 @@ describe('UserModal notification email', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add User' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'Create User' }))
-    await fill(user, dialog.getByLabelText('Username'), 'carol')
+    await fill(user, dialog.getByLabelText('Email'), 'carol-login@example.com')
     await user.click(dialog.getByRole('button', { name: 'Create' }))
 
     await waitFor(() =>
-      expect(create).toHaveBeenCalledExactlyOnceWith({ username: 'carol', role: 'viewer' }),
+      expect(create).toHaveBeenCalledExactlyOnceWith({ username: 'carol-login@example.com', role: 'viewer' }),
     )
   })
 
@@ -155,16 +155,16 @@ describe('UserModal notification email', () => {
   })
 
   it('leaves the email out of the update when it was not changed', async () => {
-    const update = vi.spyOn(usersApi, 'update').mockResolvedValue({ ...alice, username: 'alicia' })
+    const update = vi.spyOn(usersApi, 'update').mockResolvedValue({ ...alice, username: 'alicia@example.com' })
     const user = userEvent.setup()
     await renderModal()
 
     const dialog = within(await openEditDialog(user, 'alice'))
-    await fill(user, dialog.getByLabelText('Username'), 'alicia')
+    await fill(user, dialog.getByLabelText('Email'), 'alicia@example.com')
     await user.click(dialog.getByRole('button', { name: 'Update' }))
 
     await waitFor(() =>
-      expect(update).toHaveBeenCalledExactlyOnceWith('user-alice', { username: 'alicia' }),
+      expect(update).toHaveBeenCalledExactlyOnceWith('user-alice', { username: 'alicia@example.com' }),
     )
   })
 

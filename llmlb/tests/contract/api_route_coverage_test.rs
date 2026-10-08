@@ -454,6 +454,16 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
         "/api/auth/register",
         StatusCode::UNPROCESSABLE_ENTITY,
     ),
+    open(
+        "POST",
+        "/api/auth/forgot-password",
+        StatusCode::UNPROCESSABLE_ENTITY,
+    ),
+    open(
+        "POST",
+        "/api/auth/reset-password",
+        StatusCode::UNPROCESSABLE_ENTITY,
+    ),
     protected("GET", "/api/auth/me"),
     protected("POST", "/api/auth/logout"),
     protected("PUT", "/api/auth/change-password"),

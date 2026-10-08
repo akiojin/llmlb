@@ -15,7 +15,7 @@ test.describe('User Management @dashboard', () => {
   })
 
   test('UM-01: admin creates user -> appears in list', async ({ page, request }) => {
-    const username = `e2e-user-${Date.now()}`
+    const username = `e2e-user-${Date.now()}@example.com`
     await ensureDashboardLogin(page)
 
     // Create user via API
@@ -30,7 +30,7 @@ test.describe('User Management @dashboard', () => {
   })
 
   test('UM-02: role change -> verified via API', async ({ page, request }) => {
-    const username = `e2e-role-${Date.now()}`
+    const username = `e2e-role-${Date.now()}@example.com`
     const user = await createUser(request, username, 'testpass123', 'viewer')
     testUsers.push(user.id)
 
@@ -50,7 +50,7 @@ test.describe('User Management @dashboard', () => {
   })
 
   test('UM-03: delete user -> login fails', async ({ page, request }) => {
-    const username = `e2e-del-${Date.now()}`
+    const username = `e2e-del-${Date.now()}@example.com`
     const user = await createUser(request, username, '', 'viewer')
     const generatedPassword = user.generated_password || 'unknown'
 
@@ -72,7 +72,7 @@ test.describe('User Management @dashboard', () => {
   })
 
   test('UM-04: duplicate username -> error', async ({ request }) => {
-    const username = `e2e-dup-${Date.now()}`
+    const username = `e2e-dup-${Date.now()}@example.com`
     const user = await createUser(request, username, 'testpass123', 'viewer')
     testUsers.push(user.id)
 
@@ -82,6 +82,14 @@ test.describe('User Management @dashboard', () => {
       data: { username, role: 'viewer' },
     })
     expect(resp.ok()).toBeFalsy()
+  })
+
+  test('UM-06: non-email username -> 400', async ({ request }) => {
+    const resp = await request.post(`${API_BASE}/api/users`, {
+      headers: { Authorization: 'Bearer sk_debug', 'Content-Type': 'application/json' },
+      data: { username: `e2e-plain-${Date.now()}`, role: 'viewer' },
+    })
+    expect(resp.status()).toBe(400)
   })
 
   test('UM-05: unauthenticated request -> 401', async ({ request }) => {

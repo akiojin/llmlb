@@ -10,9 +10,18 @@ SPEC #838。retry で成功しても初回失敗を消さず、観測と根因�
 | `download_background_transitions_to_downloading` | 2026-09-29 | 初期1/18 | (c)、撤去した危険形は(a) | 根因は固定名 `.llmlb_write_probe` のcreate_new衝突。待機不足ではない。PID＋UUID化後、固定100/200msを状態poll・仮想時間に置換。80/80、負荷下20/20成功。 | [#754](https://github.com/akiojin/llmlb/issues/754) / [#756](https://github.com/akiojin/llmlb/issues/756) / [#759](https://github.com/akiojin/llmlb/pull/759) / [#763](https://github.com/akiojin/llmlb/pull/763) | `fixed-wait` が旧sleepを捕捉。固定プローブはproduction内部のため本検査の対象外、根因回帰テストで検証済み。 |
 | `check_only_does_not_download_payload` | 2026-09-29 | 再現25/80プロセス | (c) | 実 `~/.llmlb` の固定 `update-check.tmp` を共有しrenameが競合。テスト専用data dir constructorで隔離。修正後0/80。 | [#761](https://github.com/akiojin/llmlb/issues/761) / [#766](https://github.com/akiojin/llmlb/pull/766) | `shared-resource` がhome/data/temp dirと実data dirを暗黙利用するUpdateManager constructorを捕捉。 |
 | navigationの4 spec（NAV-06 / NAV-08 / PS-01 / PS-02） | 2026-09-30 | CI hard fail 1、flaky 3 | (d)、NAV-08の危険形は(a) | 二重redirectがwaitForURLをabort。広いdashboard URL条件がlogin.htmlにも一致し、後続gotoと遅延redirectが競合。URL＋描画状態poll、hash変更へ置換。修正後80/80成功。 | [#770](https://github.com/akiojin/llmlb/issues/770) / [#774](https://github.com/akiojin/llmlb/pull/774) | `navigation-race` が広いURL条件・navigation event待ち・dashboard hashへのgotoを捕捉。 |
+| `llmlb/tests/e2e-playwright/specs/api/api-key-lifecycle.spec.ts:150` API key lifecycle | 2026-10-08 | 1（観測した初回失敗のみ） | (c) `shared-resource`（仮説） | 初回は推論応答の `chatResp.ok()` が `false`、retry 成功。根因未確定。共有API・モデルへの干渉は仮説で、失敗時のHTTP statusは未確認。 | [#821 T002 / PR #839](https://github.com/akiojin/llmlb/pull/839) pre-push 前 E2E / [追記裁定](https://github.com/akiojin/llmlb/issues/838#issuecomment-6051429836) | `shared-resource` が同ファイルの固定 `API_BASE`（位置14、allowlist済み）を捕捉。位置150の失敗assert自体と共有資源の因果関係は判定しない。 |
+| `llmlb/tests/e2e-playwright/specs/workflows/lb-playground-walkthrough.spec.ts:110` LB Playground walkthrough | 2026-10-08 | 1（観測した初回失敗のみ） | (c) `shared-resource`（仮説） | 初回は推論結果 `MOCK_OK` の要素が見つからず、可視性assertが20秒で失敗、retry 成功。根因未確定。共有API・モデルへの干渉は仮説。 | [#821 T002 / PR #839](https://github.com/akiojin/llmlb/pull/839) pre-push E2E / [追記裁定](https://github.com/akiojin/llmlb/issues/838#issuecomment-6051429836) | `shared-resource` が同ファイルの固定 `API_BASE`（位置5、allowlist済み）を捕捉。位置110の失敗assert自体と共有資源の因果関係は判定しない。 |
 
 観測日の過去4件は Issue・初回観測コメントの報告日。発生回数は異なる実行のため合算しない。
 既知の4件に(b)の確定根因はない。今回の仮説で過去の根因を書き換えない。
+
+追加2件は #821 T002 担当の Board 投稿 `66d02541-9ee1-472e-b97a-88a2e5217312` に基づく。
+投稿日時は UTC 2026-10-07 23:04（JST 2026-10-08）。別々の実行で各213 passed / 1 flaky /
+14 skipped、各初回失敗後の retry 成功を観測しており、発生回数は合算しない。
+(c)は固定 `API_BASE` という現検査の候補に対応する仮説分類であり、根因の確定ではない。
+検査の捕捉と失敗の根因除去も別である。既存5分類への候補対応はできるため、新分類は追加しない。
+T008 の観測追記だけを実施し、T007 / AC-8 と SPEC #838 のクローズは未完了のまま残す。
 
 ## 分類と禁止候補
 

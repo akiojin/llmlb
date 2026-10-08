@@ -6,7 +6,6 @@ import { queryKeys, type DashboardQueryKey } from '@/lib/queryKeys'
 import type { DashboardChange, DashboardResource } from '@/lib/dashboardResources'
 import { queryKeysToInvalidate } from './dashboardEventInvalidation'
 import { invalidateDashboardSubscriptions } from './dashboardSubscriptions'
-import type { DashboardEvent, DashboardEventType } from './useWebSocket'
 import { useInvalidateOn } from './useInvalidateOn'
 
 function client() {
@@ -22,30 +21,12 @@ function provider(queryClient: QueryClient) {
 const ID_A = '11111111-2222-3333-4444-555555555555'
 const ID_B = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 
-// Test-only projection of valid server payloads. Production wire changes belong to T004.
-const PARITY_MATRIX: { [T in DashboardEventType]: { event: DashboardEvent; change: DashboardChange | null } } = {
-  connected: { event: { type: 'connected' }, change: null },
-  NodeRegistered: {
-    event: { type: 'NodeRegistered', data: { runtime_id: ID_A, status: 'pending' } },
-    change: { changed: 'endpoints', id: ID_A },
-  },
-  NodeRemoved: {
-    event: { type: 'NodeRemoved', data: { runtime_id: ID_A } },
-    change: { changed: 'endpoints', id: ID_A },
-  },
-  EndpointStatusChanged: {
-    event: { type: 'EndpointStatusChanged', data: { runtime_id: ID_A, old_status: 'online', new_status: 'offline' } },
-    change: { changed: 'endpoints', id: ID_A },
-  },
-  MetricsUpdated: {
-    event: { type: 'MetricsUpdated', data: { runtime_id: ID_A } },
-    change: { changed: 'metrics', id: ID_A },
-  },
-  TpsUpdated: {
-    event: { type: 'TpsUpdated', data: { endpoint_id: ID_A, model_id: 'model', tps: 1 } },
-    change: { changed: 'tps', id: ID_A },
-  },
-  UpdateStateChanged: { event: { type: 'UpdateStateChanged' }, change: { changed: 'system' } },
+// Both invalidation paths consume the same wire format during T004/T005 migration.
+const PARITY_MATRIX: { [T in DashboardResource]: DashboardChange & { changed: T } } = {
+  endpoints: { changed: 'endpoints', id: ID_A },
+  metrics: { changed: 'metrics', id: ID_A },
+  tps: { changed: 'tps', id: ID_A },
+  system: { changed: 'system' },
 }
 
 function useLegacySubscriptions() {
@@ -60,15 +41,15 @@ function useLegacySubscriptions() {
 }
 
 describe('useInvalidateOn', () => {
-  it.each(Object.entries(PARITY_MATRIX))('matches legacy invalidation for %s with both paths present', (_type, { event, change }) => {
+  it.each(Object.entries(PARITY_MATRIX))('matches legacy invalidation for %s with both paths present', (_resource, change) => {
     const queryClient = client()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { unmount } = renderHook(useLegacySubscriptions, { wrapper: provider(queryClient) })
-    act(() => { if (change) invalidateDashboardSubscriptions(queryClient, change) })
-    expect(invalidate.mock.calls.map(([filter]) => filter?.queryKey)).toEqual(queryKeysToInvalidate(event))
+    act(() => { invalidateDashboardSubscriptions(queryClient, change) })
+    expect(invalidate.mock.calls.map(([filter]) => filter?.queryKey)).toEqual(queryKeysToInvalidate(change))
     unmount()
     invalidate.mockClear()
-    act(() => { if (change) invalidateDashboardSubscriptions(queryClient, change) })
+    act(() => { invalidateDashboardSubscriptions(queryClient, change) })
     expect(invalidate).not.toHaveBeenCalled()
   })
 

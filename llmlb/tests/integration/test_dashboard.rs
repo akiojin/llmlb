@@ -7,7 +7,7 @@
 
 use axum::Router;
 use futures::stream::{SplitSink, SplitStream};
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use llmlb::common::auth::UserRole;
 use llmlb::{
     api, auth::jwt::create_jwt, balancer::LoadManager, registry::endpoints::EndpointRegistry,
@@ -157,25 +157,11 @@ async fn test_dashboard_websocket_connection() {
 
     // Act: WebSocket connection
     let request = ws_request_with_token(addr, &state.auth.jwt_secret);
-    let (ws_stream, _) = connect_async(request)
+    let mut subscriber = DashboardSubscriber::connect_with(request).await;
+    assert!(subscriber
+        .next_event(Duration::from_millis(50))
         .await
-        .expect("Failed to connect to WebSocket");
-
-    let (mut _write, mut read) = ws_stream.split();
-
-    // Assert: Should receive connection confirmation
-    let msg = tokio::time::timeout(tokio::time::Duration::from_secs(5), read.next())
-        .await
-        .expect("Timeout waiting for message")
-        .expect("No message received")
-        .expect("Message error");
-
-    if let Message::Text(text) = msg {
-        let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
-        assert_eq!(json["type"], "connected");
-    } else {
-        panic!("Expected text message, got {:?}", msg);
-    }
+        .is_none());
 }
 
 type DashboardWsStream =
@@ -192,12 +178,12 @@ struct DashboardSubscriber {
 }
 
 impl DashboardSubscriber {
-    /// 接続し、ハンドシェイクの `connected` メッセージまで読み進める
+    /// HTTP upgrade で接続し、ping/pong でサーバーの購読準備を確認する
     async fn connect(addr: SocketAddr) -> Self {
         Self::connect_with(ws_request_with_token(addr, &test_jwt_secret())).await
     }
 
-    /// `request` で接続し、ハンドシェイクの `connected` メッセージまで読み進める
+    /// `request` の HTTP upgrade 後、welcome が無いことと購読準備を確認する
     async fn connect_with(request: WsRequest) -> Self {
         let (ws_stream, _) = connect_async(request)
             .await
@@ -207,11 +193,22 @@ impl DashboardSubscriber {
             _write: write,
             read,
         };
-        let connected = subscriber
-            .next_event(EVENT_TIMEOUT)
+        let probe = vec![1, 2, 3];
+        subscriber
+            ._write
+            .send(Message::Ping(probe.clone().into()))
             .await
-            .expect("connected message");
-        assert_eq!(connected["type"], "connected");
+            .unwrap();
+        let response = tokio::time::timeout(EVENT_TIMEOUT, subscriber.read.next())
+            .await
+            .expect("ping/pong readiness timeout")
+            .expect("WebSocket closed")
+            .expect("WebSocket read");
+        assert_eq!(
+            response,
+            Message::Pong(probe.into()),
+            "no welcome text frame is allowed"
+        );
         subscriber
     }
 
@@ -229,14 +226,14 @@ impl DashboardSubscriber {
         }
     }
 
-    /// `event_type` のイベントが届くまで受信し、そのイベントを返す
-    async fn expect_event(&mut self, event_type: &str) -> Value {
+    /// `resource` のイベントが届くまで受信し、そのイベントを返す
+    async fn expect_event(&mut self, resource: &str) -> Value {
         loop {
             let event = self
                 .next_event(EVENT_TIMEOUT)
                 .await
-                .unwrap_or_else(|| panic!("Timeout waiting for {event_type}"));
-            if event["type"] == event_type {
+                .unwrap_or_else(|| panic!("Timeout waiting for {resource}"));
+            if event["changed"] == resource {
                 return event;
             }
         }
@@ -261,8 +258,8 @@ impl DashboardSubscriber {
     }
 }
 
-fn is_event(event: &Value, event_type: &str, runtime_id: &str) -> bool {
-    event["type"] == event_type && event["data"]["runtime_id"] == runtime_id
+fn is_event(event: &Value, resource: &str, runtime_id: &str) -> bool {
+    event["changed"] == resource && event["id"] == runtime_id
 }
 
 /// OpenAI 互換として検出され、`test-model` の chat completions に応答するモック
@@ -407,7 +404,7 @@ async fn test_dashboard_websocket_connects_with_login_cookie() {
         .expect("login must set the JWT cookie")
         .to_string();
 
-    // Act / Assert: Authorization ヘッダーなしで接続し、`connected` を受信する
+    // Act / Assert: Authorization ヘッダーなしで HTTP upgrade に成功する
     let request = ws_request_with_header(server.addr(), "Cookie", &jwt_cookie);
     DashboardSubscriber::connect_with(request).await;
 }
@@ -459,18 +456,17 @@ async fn test_dashboard_receives_node_registered_once_on_registration() {
 
     // Assert
     let events = subscriber
-        .events_before(|event| is_event(event, "NodeRegistered", &sentinel_id))
+        .events_before(|event| is_event(event, "endpoints", &sentinel_id))
         .await;
     let registered: Vec<&Value> = events
         .iter()
-        .filter(|event| event["type"] == "NodeRegistered")
+        .filter(|event| event["changed"] == "endpoints")
         .collect();
     assert_eq!(registered.len(), 1, "events: {events:?}");
-    let data = &registered[0]["data"];
-    assert_eq!(data["runtime_id"], endpoint_id);
-    assert_eq!(data["machine_name"], "registered-node");
-    assert_eq!(data["ip_address"], "127.0.0.1");
-    assert_eq!(data["status"], "pending");
+    assert_eq!(
+        registered[0],
+        &json!({"changed":"endpoints", "id":endpoint_id})
+    );
 }
 
 /// SPEC #582 FR-048a: 失敗した登録では `NodeRegistered` を配信しない
@@ -506,10 +502,10 @@ async fn test_dashboard_receives_no_node_registered_on_failed_registration() {
 
     // Assert
     let events = subscriber
-        .events_before(|event| is_event(event, "NodeRemoved", &existing_id))
+        .events_before(|event| is_event(event, "endpoints", &existing_id))
         .await;
     assert!(
-        events.iter().all(|event| event["type"] != "NodeRegistered"),
+        events.iter().all(|event| event["changed"] != "endpoints"),
         "events: {events:?}"
     );
 }
@@ -537,14 +533,17 @@ async fn test_dashboard_receives_node_removed_once_on_deletion() {
 
     // Assert
     let events = subscriber
-        .events_before(|event| is_event(event, "NodeRegistered", &sentinel_id))
+        .events_before(|event| is_event(event, "endpoints", &sentinel_id))
         .await;
     let removed: Vec<&Value> = events
         .iter()
-        .filter(|event| event["type"] == "NodeRemoved")
+        .filter(|event| event["changed"] == "endpoints")
         .collect();
     assert_eq!(removed.len(), 1, "events: {events:?}");
-    assert_eq!(removed[0]["data"]["runtime_id"], endpoint_id);
+    assert_eq!(
+        removed[0],
+        &json!({"changed":"endpoints", "id":endpoint_id})
+    );
 }
 
 /// SPEC #582 FR-048b: 失敗した削除（対象なし・削除済み）では `NodeRemoved` を配信しない
@@ -576,10 +575,10 @@ async fn test_dashboard_receives_no_node_removed_on_failed_deletion() {
 
     // Assert
     let events = subscriber
-        .events_before(|event| is_event(event, "NodeRegistered", &sentinel_id))
+        .events_before(|event| is_event(event, "endpoints", &sentinel_id))
         .await;
     assert!(
-        events.iter().all(|event| event["type"] != "NodeRemoved"),
+        events.iter().all(|event| event["changed"] != "endpoints"),
         "events: {events:?}"
     );
 }
@@ -599,12 +598,8 @@ async fn test_dashboard_receives_metrics_updated_after_proxied_request() {
     assert_eq!(response.status().as_u16(), 200);
 
     // Assert
-    let event = subscriber.expect_event("MetricsUpdated").await;
-    assert_eq!(event["data"]["runtime_id"], endpoint_id);
-    // llmlb はエンドポイント内部のリソース使用率を観測しないため、値なしで配信する
-    assert!(event["data"]["cpu_usage"].is_null());
-    assert!(event["data"]["memory_usage"].is_null());
-    assert!(event["data"]["gpu_usage"].is_null());
+    let event = subscriber.expect_event("metrics").await;
+    assert_eq!(event, json!({"changed":"metrics", "id":endpoint_id}));
 }
 
 /// SPEC #582 FR-048d: 高頻度のリクエストでも `MetricsUpdated` はエンドポイントごとに
@@ -636,7 +631,7 @@ async fn test_dashboard_metrics_updated_is_coalesced_under_request_burst() {
     let mut last_received_at = burst_started_at;
     let mut timeout = EVENT_TIMEOUT;
     while let Some(event) = subscriber.next_event(timeout).await {
-        if is_event(&event, "MetricsUpdated", &endpoint_id) {
+        if is_event(&event, "metrics", &endpoint_id) {
             metrics_updated += 1;
             last_received_at = Instant::now();
             timeout = QUIET_PERIOD;
@@ -671,19 +666,8 @@ async fn test_dashboard_receives_tps_updated_after_proxied_request() {
     assert_eq!(response.status().as_u16(), 200);
 
     // Assert
-    let event = subscriber.expect_event("TpsUpdated").await;
-    let data = &event["data"];
-    assert_eq!(data["endpoint_id"], endpoint_id);
-    assert_eq!(data["model_id"], "test-model");
-    // モックの usage.completion_tokens
-    assert_eq!(data["output_tokens"], 1);
-    let duration_ms = data["duration_ms"].as_u64().expect("duration_ms");
-    assert!(duration_ms >= 50, "event: {event}");
-    let tps = data["tps"].as_f64().expect("tps");
-    assert!(
-        (tps - 1000.0 / duration_ms as f64).abs() < 1e-9,
-        "event: {event}"
-    );
+    let event = subscriber.expect_event("tps").await;
+    assert_eq!(event, json!({"changed":"tps", "id":endpoint_id}));
 }
 
 /// SPEC #582 FR-048: アップデート確認が完了すると、購読者は `UpdateStateChanged` を受信する
@@ -718,8 +702,8 @@ async fn test_dashboard_receives_update_state_changed_after_update_check() {
     assert_eq!(response.status().as_u16(), 200);
 
     // Assert: 再取得を促すだけの通知で、ペイロードを持たない
-    let event = subscriber.expect_event("UpdateStateChanged").await;
-    assert!(event.get("data").is_none(), "event: {event}");
+    let event = subscriber.expect_event("system").await;
+    assert_eq!(event, json!({"changed":"system"}));
 }
 
 #[tokio::test]
@@ -736,16 +720,9 @@ async fn test_dashboard_receives_node_status_change() {
     // Give the server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // Connect WebSocket
-    let request = ws_request_with_token(addr, &state.auth.jwt_secret);
-    let (ws_stream, _) = connect_async(request)
-        .await
-        .expect("Failed to connect to WebSocket");
-
-    let (_write, mut read) = ws_stream.split();
-
-    // Skip the initial "connected" message
-    let _ = read.next().await;
+    let mut subscriber =
+        DashboardSubscriber::connect_with(ws_request_with_token(addr, &state.auth.jwt_secret))
+            .await;
 
     // Arrange: register an endpoint (Pending)
     let endpoint = llmlb::types::endpoint::Endpoint::new(
@@ -774,20 +751,74 @@ async fn test_dashboard_receives_node_status_change() {
         .await
         .unwrap();
 
-    // Assert: WebSocket client should receive status change event
-    let msg = tokio::time::timeout(tokio::time::Duration::from_secs(5), read.next())
-        .await
-        .expect("Timeout waiting for message")
-        .expect("No message received")
-        .expect("Message error");
+    let event = subscriber.expect_event("endpoints").await;
+    assert_eq!(event, json!({"changed":"endpoints", "id":endpoint_id}));
+}
 
-    if let Message::Text(text) = msg {
-        let json: serde_json::Value = serde_json::from_str(&text).expect("Invalid JSON");
-        assert_eq!(json["type"], "EndpointStatusChanged");
-        assert_eq!(json["data"]["runtime_id"], endpoint_id.to_string());
-        assert_eq!(json["data"]["old_status"], "pending");
-        assert_eq!(json["data"]["new_status"], "offline");
-    } else {
-        panic!("Expected text message, got {:?}", msg);
+/// SPEC #821: every internal variant projects to only changed/id at the WS boundary.
+#[tokio::test]
+async fn test_dashboard_wire_projects_all_internal_variants() {
+    use llmlb::events::DashboardEvent;
+    use llmlb::types::endpoint::EndpointStatus;
+    let (state, app) = build_test_app().await;
+    let server = spawn_lb(app).await;
+    let mut subscriber = DashboardSubscriber::connect_with(ws_request_with_token(
+        server.addr(),
+        &state.auth.jwt_secret,
+    ))
+    .await;
+    let id = uuid::Uuid::new_v4();
+    let cases = [
+        (
+            DashboardEvent::NodeRegistered {
+                runtime_id: id,
+                machine_name: "private-name".into(),
+                ip_address: "192.0.2.1".into(),
+                status: EndpointStatus::Pending,
+            },
+            json!({"changed":"endpoints", "id":id}),
+        ),
+        (
+            DashboardEvent::NodeRemoved { runtime_id: id },
+            json!({"changed":"endpoints", "id":id}),
+        ),
+        (
+            DashboardEvent::EndpointStatusChanged {
+                runtime_id: id,
+                old_status: EndpointStatus::Online,
+                new_status: EndpointStatus::Offline,
+            },
+            json!({"changed":"endpoints", "id":id}),
+        ),
+        (
+            DashboardEvent::MetricsUpdated {
+                runtime_id: id,
+                cpu_usage: Some(12.0),
+                memory_usage: None,
+                gpu_usage: None,
+            },
+            json!({"changed":"metrics", "id":id}),
+        ),
+        (
+            DashboardEvent::TpsUpdated {
+                endpoint_id: id,
+                model_id: "private-model".into(),
+                tps: 10.0,
+                output_tokens: 1,
+                duration_ms: 100,
+            },
+            json!({"changed":"tps", "id":id}),
+        ),
+        (
+            DashboardEvent::UpdateStateChanged,
+            json!({"changed":"system"}),
+        ),
+    ];
+    for (event, expected) in cases {
+        state.event_bus.publish(event);
+        assert_eq!(
+            subscriber.next_event(EVENT_TIMEOUT).await.unwrap(),
+            expected
+        );
     }
 }

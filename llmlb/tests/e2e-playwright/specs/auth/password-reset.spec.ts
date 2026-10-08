@@ -49,7 +49,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       });
     });
 
-    test.afterEach(() => {
+    test.afterEach(async ({ page }) => {
+      await page.close();
       expect(pageErrors, 'no uncaught page errors').toEqual([]);
       expect(consoleErrors, 'no unexpected console errors').toEqual([]);
     });

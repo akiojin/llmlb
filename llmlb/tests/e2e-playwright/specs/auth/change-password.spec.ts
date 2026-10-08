@@ -75,7 +75,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       user = await provisionUser(request);
     });
 
-    test.afterEach(async ({ request }) => {
+    test.afterEach(async ({ page, request }) => {
+      // End page requests before deleting its authenticated user.
+      await page.close();
       if (user?.id) {
         await deleteUser(request, user.id);
       }
@@ -217,10 +219,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expect(page).toHaveURL(CHANGE_PASSWORD_URL);
 
       // Password is unchanged: signing in again with the original password still works
-      const loginPage = new LoginPage(page);
-      await loginPage.goto();
-      await loginPage.login(user.username, user.password);
-      await page.waitForURL(CHANGE_PASSWORD_URL, { timeout: 10000 });
+      await signInAndReachChangePassword(page, user);
     });
 
     test('CP-08: signed-in users can change their password from the user menu', async ({

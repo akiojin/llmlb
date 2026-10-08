@@ -35,7 +35,7 @@ while IFS= read -r file; do
         port_pending && /(127\.0\.0\.1|localhost|0\.0\.0\.0):[1-9][0-9]*/ { emit("shared-resource") }
         /UpdateManager::new(_with_config)?[ \t]*\(|home_dir\(|data_dir\(|(API_BASE|baseURL).*(127\.0\.0\.1:[1-9][0-9]*|localhost:[1-9][0-9]*|0\.0\.0\.0:[1-9][0-9]*)|\.listen\([1-9][0-9]*/ { emit("shared-resource") }
         /waitForNavigation[ \t]*\(|(\*\*\/dashboard\/\*\*|\*\*\/login\*\*)|\.goto.*\/dashboard\/#/ { emit("navigation-race") }
-        strict && /path[ \t]*\("\/[^\"]*"\)/ { emit("mock-count") }
+        strict && /path[ \t]*\("\/[^"]*"\)/ { emit("mock-count") }
         unit && !all {
             code=$0
             gsub(/"([^"\\]|\\.)*"/, "", code)

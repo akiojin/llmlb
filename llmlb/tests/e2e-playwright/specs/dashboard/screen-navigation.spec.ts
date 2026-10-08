@@ -22,7 +22,7 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
     await visit(DASHBOARD_SCREEN);
     const dashboard = new DashboardPage(page);
     const { createUser, deleteUser, listUsers } = await import('../../helpers/api-helpers');
-    const viewerUsername = `viewer_nav_${Date.now()}`;
+    const viewerUsername = `viewer_nav_${Date.now()}@example.com`;
     const result = await createUser(request, viewerUsername, '', 'viewer');
     const generatedPassword = (result as { generated_password?: string }).generated_password;
     test.skip(!generatedPassword, 'Failed to create viewer user');
@@ -44,6 +44,7 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
 
       // Handle password change if required (must_change_password)
       if (await newPasswordInput.isVisible()) {
+        await page.fill('#current-password', generatedPassword!);
         await newPasswordInput.fill(newPassword);
         await page.fill('#confirm-password', newPassword);
         await page.click('button[type="submit"]');

@@ -18,6 +18,7 @@ import {
   Bell,
   Cpu,
   Key,
+  KeyRound,
   LogOut,
   Moon,
   Network,
@@ -293,6 +294,14 @@ export function Header({
                   </>
                 )}
 
+                <DropdownMenuItem
+                  onClick={() => {
+                    window.location.href = '/dashboard/change-password.html'
+                  }}
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Change Password
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout} className="text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out

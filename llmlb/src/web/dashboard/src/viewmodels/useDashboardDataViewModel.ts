@@ -20,7 +20,7 @@ export interface DashboardDataViewModel extends Pick<UseQueryResult<DashboardOve
   fetchTimeMs: number | null
 }
 
-/** The dashboard's notified queries; remaining page state migrates in T007. */
+/** The notified queries composed by the dashboard page ViewModel. */
 export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
   pollingInterval: number
   isViewer: boolean

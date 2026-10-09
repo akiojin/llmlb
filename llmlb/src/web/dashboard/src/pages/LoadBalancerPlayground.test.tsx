@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { StrictMode } from 'react'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -13,6 +15,7 @@ import {
 import type { AssistantTextParts } from '@/lib/reasoning'
 import { deferred, renderPage, viewerUser } from '@/test/render'
 import LoadBalancerPlayground from './LoadBalancerPlayground'
+import { invalidateDashboardSubscriptions } from '@/hooks/dashboardSubscriptions'
 
 function model(id: string, overrides: Partial<OpenAIModel> = {}): OpenAIModel {
   return {
@@ -82,6 +85,54 @@ async function sendPrompt(text: string) {
 }
 
 describe('LoadBalancerPlayground', () => {
+  it('delegates state, fetching, commands and display values to its JSX-free ViewModel', () => {
+    const source = readFileSync('src/pages/LoadBalancerPlayground.tsx', 'utf8')
+    const hooks = [...source.matchAll(/\b(use[A-Z]\w*)\s*(?:<[^>]*>)?\s*\(/g)]
+      .map((match) => match[1])
+    expect(hooks).toEqual(['useLoadBalancerPlaygroundViewModel'])
+    expect(source).not.toMatch(/\b\w+Api\s*\.\s*\w+\s*\(/)
+    expect(source).not.toMatch(/JSON\.stringify|Math\.round|toLocaleTimeString/)
+  })
+
+  it('keeps streamed replies and completion updates after StrictMode effect replay', async () => {
+    stubModels('model-a')
+    stubHistory()
+    stubStreamedReply('strict reply')
+    renderPage(<StrictMode><LoadBalancerPlayground onBack={vi.fn()} /></StrictMode>)
+    await waitForSelectedModel('model-a')
+    await sendPrompt('Hello')
+    expect(await screen.findByText('strict reply')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Send' })).toBeInTheDocument()
+  })
+
+  it('keeps model refresh on the existing polling/manual path without new resource invalidation', async () => {
+    const getModels = stubModels('model-a')
+    const { queryClient } = renderPage(<LoadBalancerPlayground onBack={vi.fn()} />)
+    await waitForSelectedModel('model-a')
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    await act(async () => {
+      await invalidateDashboardSubscriptions(queryClient, { changed: 'endpoints', id: 'endpoint-a' })
+      await invalidateDashboardSubscriptions(queryClient, { changed: 'metrics' })
+    })
+    expect(invalidate).not.toHaveBeenCalled()
+    expect(getModels).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for distribution after a reply before ending the busy state', async () => {
+    stubModels('model-a')
+    stubStreamedReply('ready reply')
+    const history = deferred<RequestResponsesPage>()
+    vi.spyOn(dashboardApi, 'getRequestResponses').mockReturnValue(history.promise)
+    renderPage(<LoadBalancerPlayground onBack={vi.fn()} />)
+    await waitForSelectedModel('model-a')
+    await sendPrompt('Hello')
+    expect(await screen.findByText('ready reply')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+    history.resolve(historyPage([]))
+    expect(await screen.findByRole('button', { name: 'Send' })).toBeInTheDocument()
+    expect(await screen.findByText('No records found for this run yet.')).toBeInTheDocument()
+  })
+
   describe('model list', () => {
     it('switches from loading to the loaded models and selects the first one', async () => {
       const response = deferred<OpenAIModelsResponse>()

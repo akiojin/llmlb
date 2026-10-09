@@ -5,8 +5,9 @@
 // `llmlb/src/web/dashboard/src/pages/LoadBalancerPlayground.test.tsx` が担う。
 // ここには、描画では観測できないソースの性質だけを残す。
 
-fn lb_playground_source() -> String {
-    include_str!("../../src/web/dashboard/src/pages/LoadBalancerPlayground.tsx").to_string()
+fn lb_playground_viewmodel_source() -> String {
+    include_str!("../../src/web/dashboard/src/viewmodels/useLoadBalancerPlaygroundViewModel.ts")
+        .to_string()
 }
 
 fn chat_api_source() -> String {
@@ -17,7 +18,7 @@ fn chat_api_source() -> String {
 // 多重防御のガードはソースで担保する。
 #[test]
 fn start_load_test_guards_on_admin() {
-    let source = lb_playground_source();
+    let source = lb_playground_viewmodel_source();
     assert!(
         source.contains("if (!isAdmin"),
         "startLoadTest must bail out for non-admin users"

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { queryKeysToInvalidate } from './dashboardEventInvalidation'
+import { invalidateDashboardSubscriptions } from './dashboardSubscriptions'
 
 import type { DashboardChange } from '@/lib/dashboardResources'
 
@@ -79,10 +79,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           setLastEvent(data)
           onMessageRef.current?.(data)
 
-          // Keep existing query coverage until the subscription cutover (T005).
-          for (const queryKey of queryKeysToInvalidate(data)) {
-            queryClient.invalidateQueries({ queryKey })
-          }
+          invalidateDashboardSubscriptions(queryClient, data)
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err)
         }

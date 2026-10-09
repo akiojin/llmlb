@@ -37,7 +37,7 @@ export function registerDashboardSubscription(
 /**
  * SPEC #821 FR-004: id-less changes broadcast; scoped changes reach aggregate
  * registrations and the same explicit id. Query key structure never sets scope.
- * T003 keeps this entrypoint alongside the old WS path; T005 will connect it.
+ * ViewModels own registrations; the WebSocket transport only dispatches changes.
  */
 export function invalidateDashboardSubscriptions(queryClient: QueryClient, change: DashboardChange): void {
   const entries = subscriptions.get(queryClient)

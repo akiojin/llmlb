@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { ModelIdentity } from './ModelIdentity'
 import { Loader2, Grid3X3 } from 'lucide-react'
 import { useMemo } from 'react'
+import { useEndpointModelTpsViewModel } from '@/viewmodels/useEndpointModelTpsViewModel'
 
 /**
  * SPEC-8c32349f: Unified endpoint models table
@@ -82,9 +83,7 @@ export function EndpointModelsTable({
     enabled,
   })
 
-  const { data: modelTps, isLoading: tpsLoading } = useQuery({
-    queryKey: queryKeys.endpointModelTps(endpointId),
-    queryFn: () => endpointsApi.getModelTps(endpointId),
+  const { tpsEntries: modelTps, isLoading: tpsLoading } = useEndpointModelTpsViewModel(endpointId, {
     enabled,
     refetchInterval: 10000,
   })

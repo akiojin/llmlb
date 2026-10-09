@@ -24,7 +24,16 @@ View は公開された値を JSX で描画し、入力やクリックをコマ�
 
 タイマーや購読などの寿命は hook の寿命に結び付け、unmount 時に解除する。
 移行時は既存の query key、取得条件、更新間隔、エラー表示、操作結果の保持を確認する。
-resource 購読と `useInvalidateOn` は T003〜T005 の対象であり、この試験移行では追加しない。
+resource に依存する query は、取得を所有する ViewModel 内で
+`useInvalidateOn(resources, queryKey, { id? })` を宣言する。集計 query は id を宣言せず、
+詳細 query は同じ id の通知だけに反応するよう明示する。id 無し通知は全購読に一致する。
+WebSocket transport は購読レジストリへの通知だけを行い、画面と query の対応を持たない。
+
+T005 では通知対象の query だけを `useDashboardDataViewModel`、`useEndpointViewModel`、
+`useEndpointModelTpsViewModel` に抽出した。残りの画面状態や操作は T007 以降で移行する。
+Audit Log は現在の通知 resource に依存しないため、購読を追加しない。
+`dashboardResourceCoverage.test.tsx` は実 ViewModel の購読を全 resource で検査し、
+resource union を増やすとコンパイラも新しい期待行を要求する。
 
 ## 参照実装: usePlayground
 

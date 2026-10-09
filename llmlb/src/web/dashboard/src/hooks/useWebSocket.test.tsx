@@ -1,33 +1,15 @@
 import type { ReactNode } from 'react'
-import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import type { ProxyOptions } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeWebSocket } from '@/test/fake-websocket'
 import viteConfig from '../../vite.config'
-import { DASHBOARD_EVENT_INVALIDATIONS } from './dashboardEventInvalidation'
 import { useWebSocket } from './useWebSocket'
-import { DASHBOARD_RESOURCES, type DashboardChange, type DashboardResource } from '@/lib/dashboardResources'
+import { useInvalidateOn } from './useInvalidateOn'
+import { queryKeys } from '@/lib/queryKeys'
 
 const ENDPOINT_ID = '11111111-2222-3333-4444-555555555555'
-
-// Endpoint list/detail views, including the endpoint playground (['endpoint', id])
-const ENDPOINT_LIFECYCLE_KEYS: QueryKey[] = [
-  ['dashboard-overview'],
-  ['dashboard-endpoints'],
-  ['request-responses'],
-  ['endpoint', ENDPOINT_ID],
-]
-
-/** Exhaustive over the wire resource union; new resources require a tested rule. */
-const INVALIDATION_MATRIX: {
-  [T in DashboardResource]: { event: DashboardChange & { changed: T }; invalidates: QueryKey[] }
-} = {
-  endpoints: { event: { changed: 'endpoints', id: ENDPOINT_ID }, invalidates: ENDPOINT_LIFECYCLE_KEYS },
-  metrics: { event: { changed: 'metrics', id: ENDPOINT_ID }, invalidates: [['dashboard-overview']] },
-  tps: { event: { changed: 'tps', id: ENDPOINT_ID }, invalidates: [['endpoint-model-tps', ENDPOINT_ID]] },
-  system: { event: { changed: 'system' }, invalidates: [['system-info']] },
-}
 
 function setup(options: Parameters<typeof useWebSocket>[0] = {}) {
   const queryClient = new QueryClient()
@@ -60,26 +42,25 @@ function devProxyRule(pathname: string): ProxyOptions | undefined {
   return typeof rule === 'string' ? { target: rule } : rule
 }
 
-// Invalidation order carries no meaning; compare as sets.
-const sorted = (keys: unknown[]) => keys.map((key) => JSON.stringify(key)).sort()
-
-describe('useWebSocket query invalidation matrix', () => {
-  it.each(Object.entries(INVALIDATION_MATRIX))('%s', (_type, { event, invalidates }) => {
+describe('useWebSocket subscription dispatch', () => {
+  it('does not invalidate any query without a mounted subscriber', () => {
     const { invalidatedKeys } = setup()
-
-    receive(event)
-
-    expect(sorted(invalidatedKeys())).toEqual(sorted(invalidates))
+    receive({ changed: 'endpoints', id: ENDPOINT_ID })
+    expect(invalidatedKeys()).toEqual([])
   })
 
-  // SPEC #582 FR-048f: the hook invalidates from this table, so a rule added
-  // to it without a row above is a rule that no test verifies.
-  it('has a row for every resource in the table the hook invalidates from', () => {
-    expect(Object.keys(INVALIDATION_MATRIX).sort()).toEqual(Object.keys(DASHBOARD_EVENT_INVALIDATIONS).sort())
-  })
-
-  it('tests every resource declared by the wire contract', () => {
-    expect(Object.keys(INVALIDATION_MATRIX).sort()).toEqual([...DASHBOARD_RESOURCES].sort())
+  it('invalidates only the keys declared by the mounted owner', () => {
+    const queryClient = new QueryClient()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    renderHook(() => {
+      useInvalidateOn(['endpoints'], queryKeys.auditLogs({ page: 1 }))
+      useWebSocket()
+    }, { wrapper })
+    receive({ changed: 'endpoints', id: ENDPOINT_ID })
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: queryKeys.auditLogs({ page: 1 }) })
   })
 
   it('an unknown resource invalidates nothing', () => {
@@ -149,9 +130,10 @@ describe('useWebSocket connection', () => {
     expect(onConnect).toHaveBeenCalledTimes(1)
     expect(onMessage).not.toHaveBeenCalled()
 
-    receive(INVALIDATION_MATRIX.endpoints.event)
-    expect(result.current.lastEvent).toEqual(INVALIDATION_MATRIX.endpoints.event)
-    expect(onMessage).toHaveBeenCalledExactlyOnceWith(INVALIDATION_MATRIX.endpoints.event)
+    const change = { changed: 'endpoints', id: ENDPOINT_ID }
+    receive(change)
+    expect(result.current.lastEvent).toEqual(change)
+    expect(onMessage).toHaveBeenCalledExactlyOnceWith(change)
     expect(onConnect).toHaveBeenCalledTimes(1)
 
     act(() => result.current.disconnect())

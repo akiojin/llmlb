@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import { queryKeys, type DashboardQueryKey } from '@/lib/queryKeys'
 import type { DashboardChange, DashboardResource } from '@/lib/dashboardResources'
-import { queryKeysToInvalidate } from './dashboardEventInvalidation'
 import { invalidateDashboardSubscriptions } from './dashboardSubscriptions'
 import { useInvalidateOn } from './useInvalidateOn'
 
@@ -21,15 +20,20 @@ function provider(queryClient: QueryClient) {
 const ID_A = '11111111-2222-3333-4444-555555555555'
 const ID_B = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 
-// Both invalidation paths consume the same wire format during T004/T005 migration.
-const PARITY_MATRIX: { [T in DashboardResource]: DashboardChange & { changed: T } } = {
-  endpoints: { changed: 'endpoints', id: ID_A },
-  metrics: { changed: 'metrics', id: ID_A },
-  tps: { changed: 'tps', id: ID_A },
-  system: { changed: 'system' },
+// Keep the scoped T003 parity baseline after deleting the old production table.
+const PARITY_MATRIX: { [T in DashboardResource]: {
+  change: DashboardChange & { changed: T }; keys: DashboardQueryKey[]
+} } = {
+  endpoints: {
+    change: { changed: 'endpoints', id: ID_A },
+    keys: [queryKeys.dashboardOverview(), queryKeys.dashboardEndpoints(), queryKeys.requestResponses(), queryKeys.endpoint(ID_A)],
+  },
+  metrics: { change: { changed: 'metrics', id: ID_A }, keys: [queryKeys.dashboardOverview()] },
+  tps: { change: { changed: 'tps', id: ID_A }, keys: [queryKeys.endpointModelTps(ID_A)] },
+  system: { change: { changed: 'system' }, keys: [queryKeys.systemInfo()] },
 }
 
-function useLegacySubscriptions() {
+function useTestSubscriptions() {
   useInvalidateOn(['endpoints', 'metrics'], queryKeys.dashboardOverview())
   useInvalidateOn(['endpoints'], queryKeys.dashboardEndpoints())
   useInvalidateOn(['endpoints'], queryKeys.requestResponses())
@@ -41,12 +45,12 @@ function useLegacySubscriptions() {
 }
 
 describe('useInvalidateOn', () => {
-  it.each(Object.entries(PARITY_MATRIX))('matches legacy invalidation for %s with both paths present', (_resource, change) => {
+  it.each(Object.entries(PARITY_MATRIX))('retains the frozen T003 scoped contract for %s', (_resource, { change, keys }) => {
     const queryClient = client()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
-    const { unmount } = renderHook(useLegacySubscriptions, { wrapper: provider(queryClient) })
+    const { unmount } = renderHook(useTestSubscriptions, { wrapper: provider(queryClient) })
     act(() => { invalidateDashboardSubscriptions(queryClient, change) })
-    expect(invalidate.mock.calls.map(([filter]) => filter?.queryKey)).toEqual(queryKeysToInvalidate(change))
+    expect(invalidate.mock.calls.map(([filter]) => filter?.queryKey)).toEqual(keys)
     unmount()
     invalidate.mockClear()
     act(() => { invalidateDashboardSubscriptions(queryClient, change) })

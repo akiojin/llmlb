@@ -12,7 +12,6 @@ dashboard/ClientsTab.tsx
 dashboard/EndpointDetailModal.tsx
 dashboard/EndpointModelsTable.tsx
 dashboard/EndpointRequestChart.tsx
-dashboard/EndpointTable.tsx
 dashboard/LogViewer.tsx
 dashboard/ModelAddWizard.tsx
 dashboard/ModelDeleteDialog.tsx

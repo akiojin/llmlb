@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { endpointsApi, type DashboardEndpoint } from '@/lib/api'
 import { deferred, renderWithProviders } from '@/test/render'
 import { EndpointTable } from './EndpointTable'
+import { registerDashboardSubscription } from '@/hooks/dashboardSubscriptions'
+import { queryKeys } from '@/lib/queryKeys'
 
 function endpoint(overrides: Partial<DashboardEndpoint> = {}): DashboardEndpoint {
   return {
@@ -83,6 +86,41 @@ async function fill(user: UserEvent, label: string, value: string) {
 }
 
 describe('EndpointTable', () => {
+  it('owns only rendering while its JSX-free ViewModel owns state and commands', () => {
+    const source = readFileSync('src/components/dashboard/EndpointTable.tsx', 'utf8')
+    const hooks = [...source.matchAll(/\b(use[A-Z]\w*)\s*(?:<[^>]*>)?\s*\(/g)]
+      .map((match) => match[1])
+    expect(hooks).toEqual(['useEndpointTableViewModel'])
+    expect(source).not.toMatch(/\b\w+Api\s*\.\s*\w+\s*\(/)
+    expect(source).not.toMatch(/formatRelativeTime|toLocaleString|toFixed/)
+  })
+
+  it('refreshes aggregate and same-id subscriptions after sync and waits before clearing busy', async () => {
+    vi.spyOn(endpointsApi, 'sync').mockResolvedValue({ synced_models: 3 })
+    const refreshed = deferred<void>()
+    const { queryClient } = renderTable([alpha, beta])
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(refreshed.promise)
+    const cleanup = [
+      registerDashboardSubscription(queryClient, ['endpoints'], queryKeys.dashboardOverview()),
+      registerDashboardSubscription(queryClient, ['endpoints'], queryKeys.endpoint(alpha.id), { id: alpha.id }),
+      registerDashboardSubscription(queryClient, ['endpoints'], queryKeys.endpoint(beta.id), { id: beta.id }),
+    ]
+    try {
+      const button = within(rowFor('alpha')).getByRole('button', { name: 'Sync Models' })
+      await userEvent.setup().click(button)
+      await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.endpoint(alpha.id) }))
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.dashboardEndpoints() })
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.dashboardOverview() })
+      expect(invalidate).not.toHaveBeenCalledWith({ queryKey: queryKeys.endpoint(beta.id) })
+      expect(button).toBeDisabled()
+      refreshed.resolve()
+      await waitFor(() => expect(button).toBeEnabled())
+    } finally {
+      refreshed.resolve()
+      cleanup.forEach((remove) => remove())
+    }
+  })
+
   it('shows no table and no empty state while the first load is pending', () => {
     renderTable([], true)
 

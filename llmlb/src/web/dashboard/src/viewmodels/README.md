@@ -48,6 +48,13 @@ T008 では `useModelsTableViewModel` が ModelsTable の集計統計取得、�
 集計統計・行統計は移行前と同じ provider の既定ポーリングを継承し、新たな通知購読を追加しない。
 列の JSX、色、badge、アイコンは ModelsTable に残し、子ダイアログ自身の取得移行は T012 で扱う。
 
+T009 では `useEndpointTableViewModel` が EndpointTable の検索・フィルター・ソート・ページ、
+ダイアログ・フォーム、表示文字列、作成・削除・接続テスト・同期の操作を所有する。
+一覧取得とポーリングは親の data ViewModel に残し、一覧キーは id 無しで購読する。
+操作成功時も `endpoints` / 対象 id を購読レジストリへ渡し、再取得完了まで実行状態を維持する。
+接続テストの状態不変時とモデル同期は WS 通知がないため、この即時更新を維持する。
+詳細 id の一致は FR-004 に従い、別 id の詳細は更新しない。子モーダルの取得移行は T012 で扱う。
+
 ## 参照実装: usePlayground
 
 [`hooks/usePlayground.ts`](../hooks/usePlayground.ts) は、JSX を持たず、state・ref と

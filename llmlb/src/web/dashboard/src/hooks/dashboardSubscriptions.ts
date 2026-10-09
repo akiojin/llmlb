@@ -39,11 +39,12 @@ export function registerDashboardSubscription(
  * registrations and the same explicit id. Query key structure never sets scope.
  * ViewModels own registrations; the WebSocket transport only dispatches changes.
  */
-export function invalidateDashboardSubscriptions(queryClient: QueryClient, change: DashboardChange): void {
+export async function invalidateDashboardSubscriptions(queryClient: QueryClient, change: DashboardChange): Promise<void> {
   const entries = subscriptions.get(queryClient)
   if (!entries) return
 
   const invalidated = new Set<string>()
+  const refreshes: Promise<void>[] = []
   for (const subscription of entries) {
     if (!subscription.resources.has(change.changed)) continue
     if (change.id !== undefined && subscription.id !== undefined && subscription.id !== change.id) continue
@@ -52,6 +53,7 @@ export function invalidateDashboardSubscriptions(queryClient: QueryClient, chang
     if (invalidated.has(hash)) continue
     invalidated.add(hash)
     // Preserve the existing WS path's React Query prefix invalidation contract.
-    void queryClient.invalidateQueries({ queryKey: subscription.queryKey })
+    refreshes.push(queryClient.invalidateQueries({ queryKey: subscription.queryKey }))
   }
+  await Promise.all(refreshes)
 }

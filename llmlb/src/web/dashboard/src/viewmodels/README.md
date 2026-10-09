@@ -68,6 +68,19 @@ T012a の `useEndpointDetailViewModel` は詳細モーダルのフォーム、to
 グラフの取得条件は id のみで、モーダル open 条件を追加しない。
 現在 WS 無効化を持たない統計 query に新購読を加えず、更新タイミングを維持する。
 
+T012b の管理モーダルは `useApiKeyModalViewModel`、`useUserModalViewModel`、
+`useInvitationModalViewModel` が一覧取得、フォーム、派生表示、CRUD、コピー状態を所有する。
+queryKeys と既存の clipboard / manual-copy ユーティリティを共用し、汎用 CRUD hook は追加しない。
+API キーの作成は公開情報だけをキャッシュへ挿入し、平文は VM 内だけに保持する。
+明示 Refresh と主モーダルの close で平文を消し、polling / focus 再取得なしを維持する。
+User の全 CRUD は users と通知先設定を再取得し、Invitation は生成コードの close で
+コードと作成ダイアログを閉じる。これらの異なる成功処理・フォーム寿命を共通化しない。
+User / Invitation の open 条件と provider の 5 秒 polling は維持する。
+現在の WS resource は管理データの変更を通知しないため、新たな購読は加えない。
+`useInvalidateOn` は既存 resource に依存する query の契約であり、管理 CRUD のローカル
+無効化は従来どおり VM が行う。無関係な resource への結合や wire の拡張は行わない。
+badge / アイコン / フィールドの JSX は View に残す。
+
 ## 参照実装: usePlayground
 
 [`hooks/usePlayground.ts`](../hooks/usePlayground.ts) は、JSX を持たず、state・ref と

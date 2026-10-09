@@ -1,20 +1,4 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  apiKeysApi,
-  type ApiKey,
-  type ApiKeyPermission,
-  type CreateApiKeyResponse,
-} from '@/lib/api'
-import { useAuth } from '@/hooks/useAuth'
-import {
-  copyToClipboard,
-  formatRelativeTime,
-  selectTextForManualCopy,
-  cleanupManualCopyBuffer,
-} from '@/lib/utils'
-import { toast } from '@/hooks/use-toast'
+import { useApiKeyModalViewModel } from '@/viewmodels/useApiKeyModalViewModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -64,223 +48,15 @@ interface ApiKeyModalProps {
   onOpenChange: (open: boolean) => void
 }
 
-const VIEWER_FIXED_PERMISSIONS: ApiKeyPermission[] = [
-  'openai.inference',
-  'openai.models.read',
-]
-
-const ADMIN_PERMISSION_OPTIONS: ApiKeyPermission[] = [
-  'openai.inference',
-  'openai.models.read',
-  'endpoints.read',
-  'endpoints.manage',
-  'api_keys.manage',
-  'users.manage',
-  'invitations.manage',
-  'models.manage',
-  'registry.read',
-  'logs.read',
-  'metrics.read',
-]
-
 export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
-  const queryClient = useQueryClient()
-  const [createOpen, setCreateOpen] = useState(false)
-  const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
-  const [newKeyName, setNewKeyName] = useState('')
-  const [newKeyExpires, setNewKeyExpires] = useState('')
-  const [selectedPermissions, setSelectedPermissions] = useState<ApiKeyPermission[]>(
-    VIEWER_FIXED_PERMISSIONS
-  )
-  const [createdKey, setCreatedKey] = useState<string | null>(null)
-  const [showKey, setShowKey] = useState<string | null>(null)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const createdKeyCodeRef = useRef<HTMLElement | null>(null)
-
-  // Fetch API keys
   const {
-    data: apiKeys,
-    isLoading,
-    refetch,
-  } = useQuery({
-    queryKey: queryKeys.apiKeys(),
-    queryFn: apiKeysApi.list,
-    enabled: open,
-    // Plaintext keys are only shown once at creation time. We must not auto-refresh
-    // this query while the modal is open, otherwise it becomes unclear whether the
-    // key is still "copyable".
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-  })
-
-  const clearCreatedKeyState = () => {
-    setCreatedKey(null)
-    setShowKey(null)
-    setCopiedId(null)
-    cleanupManualCopyBuffer()
-  }
-
-  const resetCreateForm = () => {
-    setNewKeyName('')
-    setNewKeyExpires('')
-    setSelectedPermissions(VIEWER_FIXED_PERMISSIONS)
-  }
-
-  const handleMainOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      clearCreatedKeyState()
-    }
-    onOpenChange(nextOpen)
-  }
-
-  const handleCreateOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      resetCreateForm()
-    }
-    setCreateOpen(nextOpen)
-  }
-
-  const handleOpenCreateDialog = () => {
-    resetCreateForm()
-    setCreateOpen(true)
-  }
-
-  const selectCreatedKeyForManualCopy = (text: string) => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
-      return
-    }
-
-    const selection = window.getSelection()
-    if (selection && createdKeyCodeRef.current) {
-      const range = document.createRange()
-      range.selectNodeContents(createdKeyCodeRef.current)
-      selection.removeAllRanges()
-      selection.addRange(range)
-      return
-    }
-
-    selectTextForManualCopy(text)
-  }
-
-  // Create API key mutation
-  const createMutation = useMutation({
-    mutationFn: (data: {
-      name: string
-      expires_at?: string
-      permissions?: ApiKeyPermission[]
-    }) =>
-      apiKeysApi.create(data),
-    onSuccess: (data: CreateApiKeyResponse) => {
-      // Update list without refetching, so the "created key" stays visible/copyable
-      // until the user explicitly refreshes or closes the modal.
-      queryClient.setQueryData(queryKeys.apiKeys(), (old?: ApiKey[]) => {
-        const next = Array.isArray(old) ? old : []
-        const withoutDup = next.filter((k) => k.id !== data.id)
-        const created: ApiKey = {
-          id: data.id,
-          name: data.name,
-          key_prefix: data.key_prefix,
-          created_at: data.created_at,
-          expires_at: data.expires_at,
-          permissions: data.permissions,
-        }
-        return [created, ...withoutDup]
-      })
-
-      setCreatedKey(data.key)
-      setShowKey(null)
-      setCopiedId(null)
-      resetCreateForm()
-      setCreateOpen(false)
-      toast({ title: 'API key created' })
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to create API key',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  // Delete API key mutation
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiKeysApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys() })
-      setDeleteKey(null)
-      toast({ title: 'API key deleted' })
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to delete API key',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  const handleCopy = async (text: string, id: string) => {
-    try {
-      const { method } = await copyToClipboard(text)
-      if (method !== 'manual') {
-        setCopiedId(id)
-        setTimeout(() => setCopiedId(null), 2000)
-        toast({ title: 'Copied full API key' })
-        return
-      }
-
-      setCopiedId(null)
-      if (id === 'created') {
-        setShowKey('created')
-        window.setTimeout(() => selectCreatedKeyForManualCopy(text), 0)
-      } else {
-        selectTextForManualCopy(text)
-      }
-      toast({
-        title: 'Auto copy unavailable',
-        description: 'Press Ctrl+C to copy the selected value.',
-      })
-    } catch {
-      toast({ title: 'Failed to copy', variant: 'destructive' })
-    }
-  }
-
-  const handleCreate = () => {
-    const payload: {
-      name: string
-      expires_at?: string
-      permissions?: ApiKeyPermission[]
-    } = {
-      name: newKeyName,
-      expires_at: newKeyExpires || undefined,
-    }
-
-    if (isAdmin) {
-      payload.permissions = selectedPermissions
-    }
-
-    createMutation.mutate(payload)
-  }
-
-  const handleTogglePermission = (permission: ApiKeyPermission, checked: boolean) => {
-    if (!isAdmin) return
-
-    setSelectedPermissions((prev) => {
-      if (checked) {
-        if (prev.includes(permission)) return prev
-        return [...prev, permission]
-      }
-      return prev.filter((p) => p !== permission)
-    })
-  }
-
-  const isExpired = (expiresAt: string | null | undefined) => {
-    if (!expiresAt) return false
-    return new Date(expiresAt) < new Date()
-  }
+    isAdmin, createOpen, deleteKey, setDeleteKey, newKeyName, setNewKeyName,
+    newKeyExpires, setNewKeyExpires, selectedPermissions, permissionOptions,
+    createdKey, showKey, copiedId, createdKeyCodeRef, apiKeys, isLoading,
+    isCreating, isDeleting, canCreate, handleMainOpenChange, handleCreateOpenChange,
+    handleOpenCreateDialog, handleCopy, handleCreate, handleTogglePermission,
+    toggleCreatedKey, handleRefresh, handleDelete,
+  } = useApiKeyModalViewModel({ open, onOpenChange })
 
   return (
     <>
@@ -308,12 +84,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                 size="icon"
                 aria-label="Refresh API keys"
                 title="Refresh API keys"
-                onClick={() => {
-                  // Enforce: plaintext keys are copyable only immediately after creation.
-                  // Any "refresh" action should make copying impossible, requiring re-creation.
-                  clearCreatedKeyState()
-                  refetch()
-                }}
+                onClick={handleRefresh}
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -343,7 +114,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                         ? 'Hide API key'
                         : 'Show API key'
                     }
-                    onClick={() => setShowKey(showKey === 'created' ? null : 'created')}
+                    onClick={toggleCreatedKey}
                   >
                     {showKey === 'created' ? (
                       <EyeOff className="h-4 w-4" />
@@ -376,7 +147,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
-              ) : !apiKeys || (apiKeys as ApiKey[]).length === 0 ? (
+              ) : !apiKeys || apiKeys.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Key className="h-8 w-8" />
                   <p>No API keys</p>
@@ -394,7 +165,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(apiKeys as ApiKey[]).map((key) => (
+                    {apiKeys.map((key) => (
                       <TableRow key={key.id}>
                         <TableCell className="font-medium">{key.name}</TableCell>
                         <TableCell>
@@ -415,16 +186,14 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                           </span>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatRelativeTime(key.created_at)}
+                          {key.createdAtLabel}
                         </TableCell>
                         <TableCell>
                           {key.expires_at ? (
                             <Badge
-                              variant={isExpired(key.expires_at) ? 'destructive' : 'outline'}
+                              variant={key.expired ? 'destructive' : 'outline'}
                             >
-                              {isExpired(key.expires_at)
-                                ? 'Expired'
-                                : formatRelativeTime(key.expires_at)}
+                              {key.expiresLabel}
                             </Badge>
                           ) : (
                             <Badge variant="secondary">Never</Badge>
@@ -485,7 +254,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   <div className="space-y-3">
                     <p>Select one or more permissions for this key:</p>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      {ADMIN_PERMISSION_OPTIONS.map((permission) => {
+                      {permissionOptions.map((permission) => {
                         const checked = selectedPermissions.includes(permission)
                         return (
                           <label
@@ -524,13 +293,9 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={
-                !newKeyName ||
-                createMutation.isPending ||
-                (isAdmin && selectedPermissions.length === 0)
-              }
+              disabled={!canCreate}
             >
-              {createMutation.isPending && (
+              {isCreating && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Create
@@ -551,10 +316,10 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteKey && deleteMutation.mutate(deleteKey.id)}
+              onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleteMutation.isPending && (
+              {isDeleting && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Delete

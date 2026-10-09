@@ -1,14 +1,4 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { invitationsApi, type Invitation, type CreateInvitationResponse } from '@/lib/api'
-import {
-  copyToClipboard,
-  formatRelativeTime,
-  selectTextForManualCopy,
-  cleanupManualCopyBuffer,
-} from '@/lib/utils'
-import { toast } from '@/hooks/use-toast'
+import { useInvitationModalViewModel } from '@/viewmodels/useInvitationModalViewModel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -65,93 +55,12 @@ interface InvitationModalProps {
 }
 
 export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
-  const queryClient = useQueryClient()
-  const [createOpen, setCreateOpen] = useState(false)
-  const [expiresInHours, setExpiresInHours] = useState<number>(72)
-  const [revokeInvitation, setRevokeInvitation] = useState<Invitation | null>(null)
-  const [createdCode, setCreatedCode] = useState<CreateInvitationResponse | null>(null)
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!open) {
-      cleanupManualCopyBuffer()
-    }
-  }, [open])
-
-  // Fetch invitations
-  const { data: invitations, isLoading, refetch } = useQuery({
-    queryKey: queryKeys.invitations(),
-    queryFn: invitationsApi.list,
-    enabled: open,
-  })
-
-  // Create invitation mutation
-  const createMutation = useMutation({
-    mutationFn: (hours: number) => invitationsApi.create(hours),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.invitations() })
-      setCreatedCode(data)
-      toast({ title: 'Invitation code created' })
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to create invitation code',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  // Revoke invitation mutation
-  const revokeMutation = useMutation({
-    mutationFn: (id: string) => invitationsApi.revoke(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.invitations() })
-      setRevokeInvitation(null)
-      toast({ title: 'Invitation code revoked' })
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to revoke invitation code',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  const handleCreate = () => {
-    createMutation.mutate(expiresInHours)
-  }
-
-  const handleCopy = async () => {
-    if (createdCode?.code) {
-      try {
-        const { method } = await copyToClipboard(createdCode.code)
-        if (method !== 'manual') {
-          setCopied(true)
-          setTimeout(() => setCopied(false), 2000)
-          toast({ title: 'Copied to clipboard' })
-          return
-        }
-
-        setCopied(false)
-        selectTextForManualCopy(createdCode.code)
-        toast({
-          title: 'Auto copy unavailable',
-          description: 'Press Ctrl+C to copy the selected value.',
-        })
-      } catch {
-        toast({ title: 'Failed to copy', variant: 'destructive' })
-      }
-    }
-  }
-
-  const handleCloseCreatedDialog = () => {
-    setCreatedCode(null)
-    setCreateOpen(false)
-    setCopied(false)
-    cleanupManualCopyBuffer()
-  }
+  const {
+    createOpen, setCreateOpen, expiresInHours, setExpiresInHours,
+    revokeInvitation, setRevokeInvitation, createdCode, copied, invitations, isLoading,
+    isCreating, isRevoking, createdCodeExpiresLabel,
+    handleCreate, handleCopy, handleCloseCreatedDialog, handleRefresh, handleRevoke,
+  } = useInvitationModalViewModel({ open })
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -181,10 +90,6 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
     }
   }
 
-  const isExpired = (expiresAt: string) => {
-    return new Date(expiresAt) < new Date()
-  }
-
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -206,7 +111,7 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
                 <Plus className="mr-2 h-4 w-4" />
                 Create Code
               </Button>
-              <Button variant="outline" size="icon" onClick={() => refetch()}>
+              <Button variant="outline" size="icon" onClick={handleRefresh}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -238,29 +143,29 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
                     {invitations.map((invitation) => (
                       <TableRow key={invitation.id}>
                         <TableCell className="font-mono text-xs">
-                          {invitation.id.slice(0, 8)}...
+                          {invitation.idLabel}
                         </TableCell>
                         <TableCell>
-                          {invitation.status === 'active' && isExpired(invitation.expires_at) ? (
+                          {invitation.displayStatus === 'expired' ? (
                             <Badge variant="outline" className="gap-1">
                               <XCircle className="h-3 w-3" />
                               Expired
                             </Badge>
                           ) : (
-                            getStatusBadge(invitation.status)
+                            getStatusBadge(invitation.displayStatus)
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatRelativeTime(invitation.created_at)}
+                          {invitation.createdAtLabel}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatRelativeTime(invitation.expires_at)}
+                          {invitation.expiresAtLabel}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">
-                          {invitation.used_by ? `${invitation.used_by.slice(0, 8)}...` : '-'}
+                          {invitation.usedByLabel}
                         </TableCell>
                         <TableCell className="text-right">
-                          {invitation.status === 'active' && !isExpired(invitation.expires_at) && (
+                          {invitation.canRevoke && (
                             <Button
                               variant="outline"
                               size="icon"
@@ -314,8 +219,8 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              {createMutation.isPending && (
+            <Button onClick={handleCreate} disabled={isCreating}>
+              {isCreating && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Create
@@ -358,7 +263,7 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
               </div>
             </div>
             <div className="text-sm text-muted-foreground">
-              <p>{`Expires: ${createdCode ? new Date(createdCode.expires_at).toLocaleString() : ''}`}</p>
+              <p>{`Expires: ${createdCodeExpiresLabel}`}</p>
             </div>
           </div>
           <DialogFooter>
@@ -379,10 +284,10 @@ export function InvitationModal({ open, onOpenChange }: InvitationModalProps) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => revokeInvitation && revokeMutation.mutate(revokeInvitation.id)}
+              onClick={handleRevoke}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {revokeMutation.isPending && (
+              {isRevoking && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Revoke

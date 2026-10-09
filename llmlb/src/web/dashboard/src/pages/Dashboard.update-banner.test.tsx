@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -9,7 +9,8 @@ import {
   type SystemInfo,
   type UpdateState,
 } from '@/lib/api'
-import { renderPage, viewerUser, type TestUser } from '@/test/render'
+import { FakeWebSocket } from '@/test/fake-websocket'
+import { deferred, renderPage, viewerUser, type TestUser } from '@/test/render'
 import Dashboard from './Dashboard'
 
 const overview: DashboardOverview = {
@@ -291,6 +292,65 @@ describe('Dashboard update banner', () => {
         'title',
         'Please wait before checking again',
       )
+    })
+
+    it('preserves newer download progress when a delayed update check completes', async () => {
+      // Only a system notification may refresh this test's cache; polling
+      // must not repair an update state overwritten by the late check response.
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+      const response = deferred<{ update: UpdateState }>()
+      const checkUpdate = vi.spyOn(systemApi, 'checkUpdate').mockReturnValue(response.promise)
+      const { getSystem, user } = await renderDashboard({ update: upToDate })
+      await screen.findByText('Up to date')
+      getSystem.mockResolvedValue(systemInfo(available({
+        payload: 'downloading',
+        started_at: '2026-10-01T00:00:00Z',
+        downloaded_bytes: 5 * 1024 * 1024,
+        total_bytes: 10 * 1024 * 1024,
+      })))
+
+      await user.click(button('Check for updates'))
+      expect(checkUpdate).toHaveBeenCalledOnce()
+
+      act(() => {
+        FakeWebSocket.latest().receive(JSON.stringify({ changed: 'system' }))
+      })
+      const progress = 'Downloading: 5MB / 10MB (50%)'
+      expect(await screen.findByText(progress)).toBeInTheDocument()
+      expect(getSystem).toHaveBeenCalledTimes(2)
+
+      await act(async () => {
+        response.resolve({ update: available({ payload: 'not_ready' }) })
+      })
+      expect(await screen.findByText('Checked for updates')).toBeInTheDocument()
+
+      expect(screen.getByText(progress)).toBeInTheDocument()
+      expect(screen.queryByText('Preparing...')).not.toBeInTheDocument()
+      expect(getSystem).toHaveBeenCalledTimes(2)
+    })
+
+    it('preserves the fresh system response when an update check starts without cached system info', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+      const checkUpdate = vi.spyOn(systemApi, 'checkUpdate').mockResolvedValue({
+        update: available({ payload: 'not_ready' }),
+      })
+      const { getSystem, user } = await renderDashboard({ update: 'unavailable' })
+      expect(await screen.findByText('Update status unavailable')).toBeInTheDocument()
+      expect(getSystem).toHaveBeenCalledTimes(1)
+      getSystem.mockResolvedValue(systemInfo(available({
+        payload: 'downloading',
+        started_at: '2026-10-01T00:00:00Z',
+        downloaded_bytes: 5 * 1024 * 1024,
+        total_bytes: 10 * 1024 * 1024,
+      })))
+
+      await user.click(button('Check for updates'))
+
+      expect(checkUpdate).toHaveBeenCalledOnce()
+      expect(await screen.findByText('Checked for updates')).toBeInTheDocument()
+      expect(await screen.findByText('Downloading: 5MB / 10MB (50%)')).toBeInTheDocument()
+      expect(screen.queryByText('Preparing...')).not.toBeInTheDocument()
+      expect(getSystem).toHaveBeenCalledTimes(2)
     })
 
     it('reports a failed update check', async () => {

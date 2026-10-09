@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   dashboardApi,
   modelsApi,
@@ -113,6 +114,23 @@ describe('Dashboard', () => {
 
   beforeEach(() => {
     api = stubDashboardApis()
+    // Freeze polling without freezing React Query's notifications or DOM waits.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps data, state and commands in the dashboard ViewModel', () => {
+    const source = readFileSync('src/pages/Dashboard.tsx', 'utf8')
+
+    expect(source).toMatch(/\buseDashboardViewModel\s*\(/)
+    const hooks = [...source.matchAll(/\b(use[A-Z]\w*)\s*(?:<[^>]*>)?\s*\(/g)]
+      .map((match) => match[1])
+    expect(hooks).toEqual(['useDashboardViewModel'])
+    expect(source).not.toMatch(/\b\w+Api\s*\.\s*\w+\s*\(/)
+    expect(source).not.toMatch(/\bSYSTEM_INFO_QUERY_KEY\b|\binvalidateQueries\s*\(/)
   })
 
   it('switches from the loading state to the operations overview', async () => {
@@ -165,10 +183,48 @@ describe('Dashboard', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }))
 
-    // Checked before waiting: the overview also polls every 5s, which would
-    // reload the dashboard on its own.
+    // The polling clock is frozen: retry must issue the request immediately.
     expect(api.getOverview).toHaveBeenCalledTimes(2)
     expect(await screen.findByText('gpu-box-1')).toBeInTheDocument()
+  })
+
+  it('polls the overview every five seconds while the live connection is closed', async () => {
+    renderPage(<Dashboard />)
+    await screen.findByText('gpu-box-1')
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(4999))
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(api.getOverview).toHaveBeenCalledTimes(2)
+  })
+
+  it('polls the overview every ten seconds while the live connection is open', async () => {
+    renderPage(<Dashboard />)
+    await screen.findByText('gpu-box-1')
+    act(() => FakeWebSocket.latest().onopen?.())
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(9999))
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(api.getOverview).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns to five-second overview polling when the live connection closes', async () => {
+    renderPage(<Dashboard />)
+    await screen.findByText('gpu-box-1')
+    act(() => FakeWebSocket.latest().onopen?.())
+    act(() => FakeWebSocket.latest().onclose?.())
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(4999))
+    expect(api.getOverview).toHaveBeenCalledTimes(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(api.getOverview).toHaveBeenCalledTimes(2)
   })
 
   it('subscribes admins to live dashboard events', async () => {
@@ -180,9 +236,9 @@ describe('Dashboard', () => {
     )
   })
 
-  // The hook invalidates query keys by name; these tests tie those names to
-  // the queries this page actually runs. The calls are counted right after
-  // the event, before the 5s polling could refetch on its own.
+  // Keep the real ViewModels and query hooks: these counts tie their declared
+  // subscriptions to the queries the page runs. With polling frozen, only the
+  // event can trigger these refetches.
   it('reloads the overview and the request history when an endpoint event arrives', async () => {
     renderPage(<Dashboard />)
     await screen.findByText('gpu-box-1')

@@ -35,6 +35,12 @@ Audit Log は現在の通知 resource に依存しないため、購読を追加
 `dashboardResourceCoverage.test.tsx` は実 ViewModel の購読を全 resource で検査し、
 resource union を増やすとコンパイラも新しい期待行を要求する。
 
+T007 では `useDashboardViewModel` が Dashboard ページの認可、WS 接続、取得、履歴整形、
+タブを所有し、既存の `useDashboardDataViewModel` を組み合わせる。
+`useSystemUpdateViewModel` は更新バナーの表示値、操作、ダイアログ、カウントダウンを所有する。
+更新コマンドは system クエリを手動で無効化せず、data ViewModel の `system` 購読で取得する。
+更新チェック応答のキャッシュ反映と、WS 切断時 5 秒・接続時 10 秒のポーリングは維持する。
+
 ## 参照実装: usePlayground
 
 [`hooks/usePlayground.ts`](../hooks/usePlayground.ts) は、JSX を持たず、state・ref と

@@ -7,6 +7,9 @@ name: Lint
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - develop
   pull_request:
     branches:
       - develop
@@ -18,12 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
+      macos_clippy: ${{ steps.filter.outputs.macos_clippy }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
+            macos_clippy:
+              - 'llmlb/src/gui/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
             rust:
               - 'llmlb/**'
               - 'Cargo.toml'
@@ -97,6 +105,29 @@ jobs:
         run: |
           echo "🔍 Running Rust linter..."
           cargo clippy --all-targets --all-features -- -D warnings
+
+  macos-clippy:
+    # Issue #851: Linux では cfg 対象外の GUI とその依存更新を検査する。
+    name: macOS Clippy
+    needs: changes
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'pull_request' && needs.changes.outputs.macos_clippy == 'true')
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+
+      - name: Run cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   dashboard-lint:
     # Issue #769, #782

@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import type { ComponentProps } from 'react'
+import { invalidateDashboardSubscriptions } from '@/hooks/dashboardSubscriptions'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -104,6 +106,15 @@ afterEach(() => {
 })
 
 describe('ModelsTable', () => {
+  it('keeps acquisition, derived state and commands in JSX-free ViewModels', () => {
+    const source = readFileSync('src/components/dashboard/ModelsTable.tsx', 'utf8')
+    const hooks = [...source.matchAll(/\b(use[A-Z]\w*)\s*(?:<[^>]*>)?\s*\(/g)]
+      .map((match) => match[1])
+    expect(hooks).toEqual(['useModelEndpointStatsViewModel', 'useModelsTableViewModel'])
+    expect(source).not.toMatch(/\b\w+Api\s*\.\s*\w+\s*\(/)
+    expect(source).not.toMatch(/window\.location\.hash\s*=/)
+  })
+
   it('renders a row per model with its status, endpoint count and routed requests', async () => {
     vi.spyOn(dashboardApi, 'getAllModelStats').mockResolvedValue([
       stat({ total_requests: 42, successful_requests: 40, failed_requests: 2 }),
@@ -318,9 +329,9 @@ describe('ModelsTable', () => {
     expect(screen.queryByText('xllm-gpu-1')).not.toBeInTheDocument()
   })
 
-  // useWebSocket invalidates this key on TpsUpdated (see useWebSocket.test.tsx).
-  // The expanded row must run its TPS query under the same key to be refreshed.
-  it('reloads the endpoint TPS when its query key is invalidated', async () => {
+  // The row ViewModel composes the TPS ViewModel, whose useInvalidateOn declaration
+  // explicitly scopes resource notifications to the endpoint (SPEC #821 FR-004).
+  it('reloads endpoint TPS only for its scoped resource notifications', async () => {
     const getModelTps = vi.spyOn(endpointsApi, 'getModelTps').mockResolvedValue([tps()])
     const { queryClient } = await renderTable({
       models: [model({ endpoint_ids: ['ep-1'] })],
@@ -331,10 +342,29 @@ describe('ModelsTable', () => {
     expect(getModelTps).toHaveBeenCalledExactlyOnceWith('ep-1')
 
     getModelTps.mockResolvedValue([tps({ tps: 12 })])
-    await act(() => queryClient.invalidateQueries({ queryKey: ['endpoint-model-tps', 'ep-1'] }))
+    const getModelStats = vi.mocked(endpointsApi.getModelStats)
+    const getAllModelStats = vi.mocked(dashboardApi.getAllModelStats)
+    await act(async () => {
+      invalidateDashboardSubscriptions(queryClient, { changed: 'tps', id: 'ep-2' })
+      invalidateDashboardSubscriptions(queryClient, { changed: 'metrics', id: 'ep-1' })
+    })
+    expect(getModelTps).toHaveBeenCalledTimes(1)
+    expect(getModelStats).toHaveBeenCalledTimes(1)
+    expect(getAllModelStats).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      invalidateDashboardSubscriptions(queryClient, { changed: 'tps', id: 'ep-1' })
+    })
 
     expect(getModelTps).toHaveBeenCalledTimes(2)
     expect(await screen.findByText('TPS: chat 12.0 tok/s')).toBeInTheDocument()
+
+    getModelTps.mockResolvedValue([tps({ tps: 21 })])
+    await act(async () => {
+      invalidateDashboardSubscriptions(queryClient, { changed: 'tps' })
+    })
+    expect(await screen.findByText('TPS: chat 21.0 tok/s')).toBeInTheDocument()
+    expect(getModelTps).toHaveBeenCalledTimes(3)
   })
 
   it('explains when no registered endpoint serves an expanded model', async () => {

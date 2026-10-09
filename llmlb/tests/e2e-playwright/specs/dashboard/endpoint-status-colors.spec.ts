@@ -80,19 +80,23 @@ async function expectStatusBadgeClasses(badge: Locator, status: 'pending' | 'onl
 
 async function expectStatusBadgeStyles(badge: Locator, status: 'pending' | 'online' | 'offline' | 'error') {
   // This catches "class is present but CSS isn't generated" regressions (the original bug report).
-  const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const { alpha, explicitAlpha } = parseCssColorAlpha(bg);
+  // Badge animates background-color for 150ms; classes/text can already match
+  // while the computed alpha is still between the previous and current status.
+  await expect(async () => {
+    const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const { alpha, explicitAlpha } = parseCssColorAlpha(bg);
 
-  // Badge backgrounds should never be fully transparent.
-  expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThan(0);
+    // Badge backgrounds should never be fully transparent.
+    expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThan(0);
 
-  if (status === 'error') {
-    // Error uses solid destructive background.
-    expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThanOrEqual(0.95);
-  } else if (explicitAlpha) {
-    // online/pending/offline use `/20` variants (tinted background).
-    expect(alpha, `backgroundColor was ${bg}`).toBeLessThan(0.95);
-  }
+    if (status === 'error') {
+      // Error uses solid destructive background.
+      expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThanOrEqual(0.95);
+    } else if (explicitAlpha) {
+      // online/pending/offline use `/20` variants (tinted background).
+      expect(alpha, `backgroundColor was ${bg}`).toBeLessThan(0.95);
+    }
+  }).toPass({ timeout: 3000 });
 }
 
 async function expectStatusBadge(badge: Locator, status: 'pending' | 'online' | 'offline' | 'error') {

@@ -1,13 +1,7 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { endpointsApi, ApiError, type DashboardEndpoint } from '@/lib/api'
-import { cn, isAbortError } from '@/lib/utils'
-import { toast } from '@/hooks/use-toast'
-import { usePlayground } from '@/hooks/usePlayground'
-import { useEndpointViewModel } from '@/viewmodels/useEndpointViewModel'
-import { splitAssistantMessage } from '@/lib/reasoning'
-import { PlaygroundBase, getErrorMessage, transformMessage, MAX_INPUT_CHARS, type Message } from '@/components/playground'
+import type { DashboardEndpoint } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import { useEndpointPlaygroundViewModel } from '@/viewmodels/useEndpointPlaygroundViewModel'
+import { PlaygroundBase } from '@/components/playground'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -56,202 +50,11 @@ function getStatusIndicatorColor(status: DashboardEndpoint['status'] | undefined
   }
 }
 
-function getStatusLabel(
-  status: DashboardEndpoint['status'] | undefined
-): string {
-  switch (status) {
-    case 'online':
-      return 'Online'
-    case 'pending':
-      return 'Pending'
-    case 'offline':
-      return 'Offline'
-    case 'error':
-      return 'Error'
-    default:
-      return 'Unknown'
-  }
-}
-
 export default function EndpointPlayground({ endpointId, onBack }: EndpointPlaygroundProps) {
-  const pg = usePlayground()
-  const { abortControllerRef } = pg
-  const isMountedRef = useRef(true)
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false
-      abortControllerRef.current?.abort()
-    }
-  }, [])
-
-  const { endpoint, isLoadingEndpoint } = useEndpointViewModel(endpointId)
-
-  const { data: endpointModels, isLoading: isLoadingModels, error: modelsError } = useQuery({
-    queryKey: queryKeys.endpointModels(endpointId),
-    queryFn: () => endpointsApi.getModels(endpointId),
-    retry: false,
-  })
-
-  useEffect(() => {
-    if (modelsError) {
-      let description = 'Failed to fetch model list'
-      if (modelsError instanceof ApiError) {
-        description = getErrorMessage(modelsError)
-      }
-      toast({ title: 'Error', description, variant: 'destructive' })
-    }
-  }, [modelsError])
-
-  useEffect(() => {
-    if (endpointModels?.models && !pg.selectedModel && endpointModels.models.length > 0) {
-      pg.setSelectedModel(endpointModels.models[0].model_id)
-    }
-  }, [endpointModels, pg.selectedModel, pg.setSelectedModel])
-
-  const models = endpointModels?.models || []
-  const selectedModelMaxTokens = models.find(m => m.model_id === pg.selectedModel)?.max_tokens
-  const effectiveMaxTokens = pg.useMaxContext && selectedModelMaxTokens != null ? selectedModelMaxTokens : pg.maxTokens
-  const baseUrl = endpoint?.base_url?.replace(/\/$/, '') || ''
-  const hasBaseUrl = baseUrl.length > 0
-
-  const sendMessage = async () => {
-    if ((!pg.input.trim() && pg.attachments.length === 0) || !pg.selectedModel || pg.isStreaming) return
-
-    if (pg.input.length > MAX_INPUT_CHARS) {
-      toast({
-        title: 'Message too long',
-        description: `Keep your message under ${MAX_INPUT_CHARS.toLocaleString()} characters.`,
-        variant: 'destructive',
-      })
-      return
-    }
-
-    const userMessage: Message = {
-      role: 'user',
-      content: pg.input.trim(),
-      attachments: pg.attachments.length > 0 ? pg.attachments : undefined,
-    }
-    const newMessages = [...pg.messages, userMessage]
-    pg.setMessages(newMessages)
-    pg.setInput('')
-    pg.setAttachments([])
-    pg.setIsStreaming(true)
-    abortControllerRef.current = new AbortController()
-
-    try {
-      const requestMessages = pg.systemPrompt
-        ? [{ role: 'system' as const, content: pg.systemPrompt }, ...newMessages.map(transformMessage)]
-        : newMessages.map(transformMessage)
-
-      if (pg.streamEnabled) {
-        let assistantContent = ''
-        let assistantReasoning = ''
-        pg.setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
-
-        await endpointsApi.chatCompletions(
-          endpointId,
-          {
-            model: pg.selectedModel,
-            messages: requestMessages,
-            stream: true,
-            temperature: pg.temperature,
-            max_tokens: effectiveMaxTokens,
-          },
-          (delta) => {
-            assistantContent += delta.content
-            assistantReasoning += delta.reasoning
-            if (!isMountedRef.current) return
-            pg.setMessages((prev) => {
-              const updated = [...prev]
-              updated[updated.length - 1] = {
-                role: 'assistant',
-                content: assistantContent,
-                reasoning: assistantReasoning || undefined,
-              }
-              return updated
-            })
-          },
-          abortControllerRef.current.signal
-        )
-      } else {
-        const data = await endpointsApi.chatCompletions(
-          endpointId,
-          {
-            model: pg.selectedModel,
-            messages: requestMessages,
-            stream: false,
-            temperature: pg.temperature,
-            max_tokens: effectiveMaxTokens,
-          },
-          undefined,
-          abortControllerRef.current.signal
-        )
-
-        const { content, reasoning } = splitAssistantMessage(data)
-        pg.setMessages((prev) => [...prev, {
-          role: 'assistant',
-          content,
-          reasoning: reasoning || undefined,
-        }])
-      }
-    } catch (error) {
-      if (!isAbortError(error)) {
-        toast({
-          title: 'Failed to send message',
-          description:
-            error instanceof ApiError
-              ? getErrorMessage(error)
-              : error instanceof Error
-                ? error.message
-                : 'Unknown error',
-          variant: 'destructive',
-        })
-        // Drop only the optimistic empty assistant placeholder (streaming),
-        // keep the user's message, and restore the input so it can be resent.
-        pg.setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'assistant' && last.content === '') {
-            return prev.slice(0, -1)
-          }
-          return prev
-        })
-        pg.setInput(userMessage.content)
-      }
-    } finally {
-      if (isMountedRef.current) {
-        pg.setIsStreaming(false)
-      }
-      abortControllerRef.current = null
-      if (isMountedRef.current) {
-        pg.inputRef.current?.focus()
-      }
-    }
-  }
-
-  const generateCurl = () => {
-    const requestMessages = pg.systemPrompt
-      ? [{ role: 'system', content: pg.systemPrompt }, ...pg.messages]
-      : pg.messages
-
-    if (!hasBaseUrl) {
-      return '# Error: endpoint base_url is not configured. Please set it in the dashboard.'
-    }
-
-    return `curl -X POST '${baseUrl}/v1/chat/completions' \\
-  -H 'Content-Type: application/json' \\
-  -d '${JSON.stringify(
-    {
-      model: pg.selectedModel,
-      messages: requestMessages,
-      stream: pg.streamEnabled,
-      temperature: pg.temperature,
-      max_tokens: effectiveMaxTokens,
-    },
-    null,
-    2
-  )}'`
-  }
+  const {
+    pg, isLoadingEndpoint, endpointName, endpointBaseUrl, endpointStatus, statusLabel,
+    models, isLoadingModels, selectedModelMaxTokens, hasBaseUrl, canSend, sendMessage, curlCommand,
+  } = useEndpointPlaygroundViewModel(endpointId)
 
   if (isLoadingEndpoint) {
     return (
@@ -274,8 +77,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
             <Cpu className="h-4 w-4 text-primary" />
           </div>
           <div>
-            <h1 className="font-semibold text-sm truncate" title={endpoint?.name}>
-              {endpoint?.name || 'Endpoint'}
+            <h1 className="font-semibold text-sm truncate" title={endpointName}>
+              {endpointName || 'Endpoint'}
             </h1>
             <p className="text-xs text-muted-foreground">Playground</p>
           </div>
@@ -285,8 +88,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
         <div className="p-3 space-y-2">
           <div className="text-xs text-muted-foreground">
             <span className="font-medium">URL:</span>{' '}
-            <span className="truncate block" title={endpoint?.base_url}>
-              {hasBaseUrl ? endpoint?.base_url : 'Not set'}
+            <span className="truncate block" title={endpointBaseUrl}>
+              {hasBaseUrl ? endpointBaseUrl : 'Not set'}
             </span>
           </div>
           {!hasBaseUrl && (
@@ -296,8 +99,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           )}
           <div className="text-xs text-muted-foreground">
             <span className="font-medium">Status:</span>{' '}
-            <Badge variant={getStatusBadgeVariant(endpoint?.status)} className="text-xs">
-              {getStatusLabel(endpoint?.status)}
+            <Badge variant={getStatusBadgeVariant(endpointStatus)} className="text-xs">
+              {statusLabel}
             </Badge>
           </div>
           <div className="text-xs text-muted-foreground">
@@ -325,8 +128,8 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
           </Select>
 
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <CircleDot className={cn("h-3 w-3", getStatusIndicatorColor(endpoint?.status))} />
-            {getStatusLabel(endpoint?.status)}
+            <CircleDot className={cn("h-3 w-3", getStatusIndicatorColor(endpointStatus))} />
+            {statusLabel}
           </span>
 
           {pg.streamEnabled && (
@@ -358,7 +161,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
       audioInputRef={pg.audioInputRef}
       onImageAttach={(file) => void pg.handleFileAttachment(file, 'image')}
       onAudioAttach={(file) => void pg.handleFileAttachment(file, 'audio')}
-      sendDisabled={(!pg.input.trim() && pg.attachments.length === 0) || !pg.selectedModel}
+      sendDisabled={!canSend}
       formMaxWidth="max-w-3xl"
       settingsOpen={pg.settingsOpen}
       onSettingsOpenChange={pg.setSettingsOpen}
@@ -376,7 +179,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
       settingsDescription="Configure your chat preferences."
       curlOpen={pg.curlOpen}
       onCurlOpenChange={pg.setCurlOpen}
-      curlCommand={generateCurl()}
+      curlCommand={curlCommand}
       copied={pg.copied}
       onCopyCurl={pg.handleCopyCurl}
       curlCopyDisabled={!hasBaseUrl}

@@ -64,7 +64,11 @@ T009 では `useEndpointTableViewModel` が EndpointTable の検索・フィル�
 
 この hook は HTTP/API 取得を行わないが、FileReader、clipboard、DOM 操作と toast を使う。
 副作用が存在することと、JSX を持たないことは別の契約である。
-Playground の API 取得や推論要求との責務分担は T010 で扱う。
+T010 の `useLoadBalancerPlaygroundViewModel` はこの hook を合成し、モデル取得・選択、
+Chat の推論要求、admin 負荷試験、停止と寿命管理、分布取得・集計・表示文字列を所有する。
+共通状態は複製しない。モデル一覧は既存の query key と provider の 5 秒 polling を維持し、
+通知による無効化が元からないため、新しい購読や WebSocket 接続は追加しない（US-004）。
+分布は Chat 成功後・負荷試験終了後・手動 Refresh で取得し、polling へ変更しない。
 
 ## 試験移行: Audit Log
 

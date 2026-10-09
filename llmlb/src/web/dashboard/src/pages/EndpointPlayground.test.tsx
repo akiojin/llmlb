@@ -5,6 +5,8 @@ import { ApiError, endpointsApi, type DashboardEndpoint } from '@/lib/api'
 import type { AssistantTextParts } from '@/lib/reasoning'
 import { deferred, renderPage } from '@/test/render'
 import EndpointPlayground from './EndpointPlayground'
+import { queryKeys } from '@/lib/queryKeys'
+import { invalidateDashboardSubscriptions } from '@/hooks/dashboardSubscriptions'
 
 type EndpointModels = Awaited<ReturnType<typeof endpointsApi.getModels>>
 
@@ -76,6 +78,49 @@ async function sendPrompt(text: string) {
 }
 
 describe('EndpointPlayground', () => {
+  it('delegates fetching, state, commands and display values to its JSX-free ViewModel', () => {
+    const source = readFileSync('src/pages/EndpointPlayground.tsx', 'utf8')
+    const hooks = Array.from(source.matchAll(/\b(use[A-Z]\w*)\s*\(/g), (match) => match[1])
+    expect(hooks).toEqual(['useEndpointPlaygroundViewModel'])
+    expect(source).not.toMatch(/\b(?:endpointsApi|toast|splitAssistantMessage|transformMessage)\b/)
+    expect(source).not.toMatch(/\b(?:sendMessage|generateCurl|getStatusLabel)\s*=/)
+    const viewModel = readFileSync('src/viewmodels/useEndpointPlaygroundViewModel.ts', 'utf8')
+    expect(viewModel).not.toMatch(/return\s*\(?\s*</)
+  })
+
+  it('keeps streaming and completion state after StrictMode effect replay', async () => {
+    stubEndpoint()
+    stubModels('model-a')
+    stubStreamedReply(chunk('StrictMode answer'))
+    renderPage(<StrictMode><EndpointPlayground endpointId={ENDPOINT_ID} onBack={vi.fn()} /></StrictMode>)
+    await waitForSelectedModel('model-a')
+    await sendPrompt('Hello')
+    expect(await screen.findByText('StrictMode answer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument()
+  })
+
+  it('scopes detail invalidation to the endpoint and keeps models on the polling path', async () => {
+    const get = stubEndpoint()
+    const getModels = stubModels('model-a')
+    const { queryClient, unmount } = renderPage(<EndpointPlayground endpointId={ENDPOINT_ID} onBack={vi.fn()} />)
+    await waitForSelectedModel('model-a')
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    await act(async () => {
+      await invalidateDashboardSubscriptions(queryClient, { changed: 'endpoints', id: 'another-endpoint' })
+    })
+    expect(invalidate).not.toHaveBeenCalled()
+    await act(async () => {
+      await invalidateDashboardSubscriptions(queryClient, { changed: 'endpoints', id: ENDPOINT_ID })
+    })
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: queryKeys.endpoint(ENDPOINT_ID) })
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(getModels).toHaveBeenCalledTimes(1)
+    unmount()
+    invalidate.mockClear()
+    await invalidateDashboardSubscriptions(queryClient, { changed: 'endpoints' })
+    expect(invalidate).not.toHaveBeenCalled()
+  })
+
   describe('endpoint details', () => {
     it('switches from the loading state to the details of the requested endpoint', async () => {
       const response = deferred<DashboardEndpoint>()
@@ -435,3 +480,5 @@ describe('EndpointPlayground', () => {
     })
   })
 })
+import { readFileSync } from 'node:fs'
+import { StrictMode } from 'react'

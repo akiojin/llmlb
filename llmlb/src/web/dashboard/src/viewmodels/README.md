@@ -70,6 +70,15 @@ Chat の推論要求、admin 負荷試験、停止と寿命管理、分布取得
 通知による無効化が元からないため、新しい購読や WebSocket 接続は追加しない（US-004）。
 分布は Chat 成功後・負荷試験終了後・手動 Refresh で取得し、polling へ変更しない。
 
+T011 の `useEndpointPlaygroundViewModel` も `usePlayground` を合成する。
+共通の会話・入力・設定・添付・DOM・clipboard・停止コマンドを複製せず、専用 VM は
+エンドポイントのモデル取得・初期選択・直接推論・エラー復旧・寿命管理・cURL と表示値を所有する。
+T010 の VM はゲートウェイ推論と負荷試験・分布を所有する別の利用者であり、その挙動は変更しない。
+詳細取得は既存 `useEndpointViewModel` に委譲し、`endpoints` / 同 id の `useInvalidateOn` 宣言を維持する。
+モデル一覧は既存キー・retry:false・provider の 5 秒 polling を継承し、通知購読や WS 接続を追加しない。
+モデル未選択時だけ先頭を選ぶ既存条件も維持する。色・badge・JSX と親の戻る操作は View が所有する。
+Audit Log は T002 で移行済みのため、T011 では Query hook がページに残っていないことだけ確認する。
+
 ## 試験移行: Audit Log
 
 [`useAuditLogViewModel.ts`](./useAuditLogViewModel.ts) は次の型を公開する。

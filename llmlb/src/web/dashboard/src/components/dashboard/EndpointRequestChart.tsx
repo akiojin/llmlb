@@ -1,7 +1,4 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { endpointsApi, type EndpointDailyStatEntry } from '@/lib/api'
+import { useEndpointRequestChartViewModel } from '@/viewmodels/useEndpointRequestChartViewModel'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Label } from '@/components/ui/label'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
@@ -18,31 +15,8 @@ interface EndpointRequestChartProps {
   endpointId: string
 }
 
-type DaysPeriod = '7' | '30' | '90'
-
-function formatDateLabel(dateStr: string): string {
-  // YYYY-MM-DD -> MM/DD
-  const parts = dateStr.split('-')
-  if (parts.length === 3) {
-    return `${parts[1]}/${parts[2]}`
-  }
-  return dateStr
-}
-
 export function EndpointRequestChart({ endpointId }: EndpointRequestChartProps) {
-  const [days, setDays] = useState<DaysPeriod>('7')
-
-  const { data, isLoading } = useQuery<EndpointDailyStatEntry[]>({
-    queryKey: queryKeys.endpointDailyStats(endpointId, days),
-    queryFn: () => endpointsApi.getDailyStats(endpointId, Number(days)),
-    enabled: !!endpointId,
-  })
-
-  const chartData = (data ?? []).map((entry) => ({
-    date: formatDateLabel(entry.date),
-    successful: entry.successful_requests,
-    failed: entry.failed_requests,
-  }))
+  const { days, setDays, chartData, isLoading } = useEndpointRequestChartViewModel(endpointId)
 
   return (
     <div className="space-y-3">
@@ -51,7 +25,7 @@ export function EndpointRequestChart({ endpointId }: EndpointRequestChartProps) 
           <BarChart3 className="h-4 w-4" />
           Daily Requests
         </Label>
-        <Tabs value={days} onValueChange={(v) => setDays(v as DaysPeriod)}>
+        <Tabs value={days} onValueChange={setDays}>
           <TabsList className="h-8">
             <TabsTrigger value="7" className="px-2.5 py-1 text-xs">
               7D

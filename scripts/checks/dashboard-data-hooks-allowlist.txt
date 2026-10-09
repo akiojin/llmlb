@@ -9,9 +9,6 @@ api-keys/ApiKeyModal.tsx
 dashboard/AlertThresholdSettings.tsx
 dashboard/ClientDrilldown.tsx
 dashboard/ClientsTab.tsx
-dashboard/EndpointDetailModal.tsx
-dashboard/EndpointModelsTable.tsx
-dashboard/EndpointRequestChart.tsx
 dashboard/LogViewer.tsx
 dashboard/ModelAddWizard.tsx
 dashboard/ModelDeleteDialog.tsx

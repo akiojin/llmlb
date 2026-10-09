@@ -17,7 +17,6 @@ dashboard/LogViewer.tsx
 dashboard/ModelAddWizard.tsx
 dashboard/ModelDeleteDialog.tsx
 dashboard/ModelDownloadDialog.tsx
-dashboard/ModelsTable.tsx
 dashboard/TokenStatsSection.tsx
 invitations/InvitationModal.tsx
 users/UserModal.tsx

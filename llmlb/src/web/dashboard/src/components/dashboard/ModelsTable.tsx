@@ -1,19 +1,18 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useEndpointModelTpsViewModel } from '@/viewmodels/useEndpointModelTpsViewModel'
+import {
+  useModelsTableViewModel,
+  type AggregatedModel,
+  type SupportedApi,
+  type SortField,
+  type ModelEndpoint,
+  type ModelTraffic,
+} from '@/viewmodels/useModelsTableViewModel'
+import { useModelEndpointStatsViewModel } from '@/viewmodels/useModelEndpointStatsViewModel'
 import {
   type RegisteredModelView,
   type DashboardEndpoint,
   type ModelsView,
   type LifecycleStatus,
-  type ModelCapabilities,
-  type ModelStatEntry,
-  type ModelTpsEntry,
-  endpointsApi,
-  dashboardApi,
 } from '@/lib/api'
-import { formatBytes } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -88,168 +87,6 @@ interface ModelsTableProps {
   onViewChange?: (view: ModelsView) => void
 }
 
-type SortField =
-  | 'id'
-  | 'bestStatus'
-  | 'endpointCount'
-  | 'totalRequests'
-type SortDirection = 'asc' | 'desc'
-type SupportedApi =
-  | 'chat_completions'
-  | 'completions'
-  | 'responses'
-  | 'embeddings'
-  | 'fine_tune'
-  | 'inference'
-  | 'audio_speech'
-  | 'audio_transcription'
-  | 'image_input'
-  | 'image_generation'
-
-interface AggregatedModel {
-  id: string
-  bestStatus: LifecycleStatus
-  ready: boolean
-  supportedApis: SupportedApi[]
-  maxTokens?: number | null
-  source?: string
-  tags: string[]
-  description?: string
-  repo?: string
-  filename?: string
-  requiredMemoryBytes?: number
-  chatTemplate?: string
-  endpointIds: string[]
-  endpointCount: number
-  canonicalName?: string
-  aliases: string[]
-  isCanonical: boolean
-}
-
-function emptyCapabilities(): ModelCapabilities {
-  return {
-    chat_completion: false,
-    completion: false,
-    embeddings: false,
-    fine_tune: false,
-    inference: false,
-    text_to_speech: false,
-    speech_to_text: false,
-    image_input: false,
-    image_generation: false,
-  }
-}
-
-function normalizeSupportedApi(api: string): SupportedApi | null {
-  switch (api) {
-    case 'chat':
-    case 'chat_completion':
-    case 'chat_completions':
-      return 'chat_completions'
-    case 'completion':
-    case 'completions':
-      return 'completions'
-    case 'response':
-    case 'responses':
-      return 'responses'
-    case 'embedding':
-    case 'embeddings':
-      return 'embeddings'
-    case 'fine_tune':
-    case 'fine_tuning':
-      return 'fine_tune'
-    case 'inference':
-      return 'inference'
-    case 'text_to_speech':
-    case 'tts':
-    case 'audio_speech':
-      return 'audio_speech'
-    case 'speech_to_text':
-    case 'asr':
-    case 'audio_transcription':
-    case 'audio_transcriptions':
-      return 'audio_transcription'
-    case 'image':
-    case 'images':
-    case 'image_input':
-    case 'vision':
-    case 'visual':
-    case 'multimodal':
-      return 'image_input'
-    case 'image_generation':
-    case 'images_generations':
-      return 'image_generation'
-    default:
-      return null
-  }
-}
-
-function uniqueApis(apis: SupportedApi[]): SupportedApi[] {
-  return Array.from(new Set(apis))
-}
-
-function supportedApisFromCapabilities(capabilities?: ModelCapabilities): SupportedApi[] {
-  const caps = capabilities ?? emptyCapabilities()
-  return uniqueApis([
-    ...(caps.chat_completion ? ['chat_completions' as const] : []),
-    ...(caps.completion ? ['completions' as const] : []),
-    ...(caps.embeddings ? ['embeddings' as const] : []),
-    ...(caps.fine_tune ? ['fine_tune' as const] : []),
-    ...(caps.inference ? ['inference' as const] : []),
-    ...(caps.text_to_speech ? ['audio_speech' as const] : []),
-    ...(caps.speech_to_text ? ['audio_transcription' as const] : []),
-    ...(caps.image_input ? ['image_input' as const] : []),
-    ...(caps.image_generation ? ['image_generation' as const] : []),
-  ])
-}
-
-function normalizeSupportedApis(
-  supportedApis?: string[],
-  capabilities?: ModelCapabilities
-): SupportedApi[] {
-  const apis = uniqueApis(
-    (supportedApis ?? [])
-      .map(normalizeSupportedApi)
-      .filter((api): api is SupportedApi => api != null)
-  )
-  return apis.length > 0 ? apis : supportedApisFromCapabilities(capabilities)
-}
-
-function aggregateModels(models: RegisteredModelView[]): AggregatedModel[] {
-  return models.map((model) => {
-    const endpointIds = model.endpoint_ids ?? []
-    return {
-      id: model.name,
-      bestStatus: model.lifecycle_status,
-      ready: model.ready,
-      supportedApis: normalizeSupportedApis(model.supported_apis, model.capabilities),
-      maxTokens: undefined,
-      source: model.source,
-      tags: model.tags ?? [],
-      description: model.description,
-      repo: model.repo,
-      filename: model.filename,
-      requiredMemoryBytes:
-        typeof model.required_memory_gb === 'number'
-          ? Math.round(model.required_memory_gb * 1024 * 1024 * 1024)
-          : undefined,
-      chatTemplate: model.chat_template,
-      endpointIds,
-      endpointCount: endpointIds.length,
-      canonicalName: model.canonical_name,
-      aliases: model.aliases ?? [],
-      isCanonical: model.is_canonical ?? false,
-    }
-  })
-}
-
-const LIFECYCLE_PRIORITY: Record<LifecycleStatus, number> = {
-  registered: 4,
-  caching: 3,
-  pending: 2,
-  error: 1,
-}
-
 function getLifecycleBadgeVariant(
   status: LifecycleStatus
 ): 'online' | 'pending' | 'destructive' {
@@ -261,21 +98,6 @@ function getLifecycleBadgeVariant(
       return 'pending'
     case 'error':
       return 'destructive'
-  }
-}
-
-function getLifecycleLabel(
-  status: LifecycleStatus
-): string {
-  switch (status) {
-    case 'registered':
-      return 'Registered'
-    case 'caching':
-      return 'Caching'
-    case 'pending':
-      return 'Pending'
-    case 'error':
-      return 'Error'
   }
 }
 
@@ -327,23 +149,20 @@ function SupportedApiBadges({ apis }: { apis: SupportedApi[] }) {
   )
 }
 
-function TrafficCell({ stat }: { stat?: ModelStatEntry }) {
-  const total = stat?.total_requests ?? 0
-  const successful = stat?.successful_requests ?? 0
-  const failed = stat?.failed_requests ?? 0
-  if (total === 0) {
+function TrafficCell({ stat }: { stat: ModelTraffic }) {
+  if (stat.total === 0) {
     return <span className="text-sm tabular-nums text-muted-foreground">0</span>
   }
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="text-sm tabular-nums">{total.toLocaleString()}</span>
+          <span className="text-sm tabular-nums">{stat.totalLabel}</span>
         </TooltipTrigger>
         <TooltipContent>
           <div className="text-xs space-y-0.5">
-            <div className="text-green-400">{`OK: ${successful.toLocaleString()}`}</div>
-            <div className="text-red-400">{`Fail: ${failed.toLocaleString()}`}</div>
+            <div className="text-green-400">{`OK: ${stat.successfulLabel}`}</div>
+            <div className="text-red-400">{`Fail: ${stat.failedLabel}`}</div>
           </div>
         </TooltipContent>
       </Tooltip>
@@ -351,33 +170,15 @@ function TrafficCell({ stat }: { stat?: ModelStatEntry }) {
   )
 }
 
-function EndpointCountCell({ count }: { count: number }) {
+function EndpointCountCell({ count, label }: { count: number; label: string }) {
   return (
     <div className="flex items-center gap-2">
       <Server className="h-3.5 w-3.5 text-muted-foreground" />
       <span className={count === 0 ? 'text-sm tabular-nums text-muted-foreground' : 'text-sm tabular-nums'}>
-        {count.toLocaleString()}
+        {label}
       </span>
     </div>
   )
-}
-
-function formatApiKindLabel(apiKind: ModelTpsEntry['api_kind']): string {
-  switch (apiKind) {
-    case 'chat_completions':
-      return 'chat'
-    case 'completions':
-      return 'completion'
-    case 'responses':
-      return 'responses'
-    default:
-      return apiKind
-  }
-}
-
-function formatTps(tps: number | null): string {
-  if (tps == null) return '-'
-  return `${tps.toFixed(1)} tok/s`
 }
 
 function EndpointStatsRow({
@@ -389,25 +190,8 @@ function EndpointStatsRow({
   modelId: string
   onDelete?: () => void
 }) {
-  const { data: stats } = useQuery({
-    queryKey: queryKeys.endpointModelStats(endpoint.id),
-    queryFn: () => endpointsApi.getModelStats(endpoint.id),
-  })
-  const { tpsEntries } = useEndpointModelTpsViewModel(endpoint.id)
-
-  const modelStat = stats?.find((s) => s.model_id === modelId)
-  const totalRequests = modelStat?.total_requests ?? 0
-  const successfulRequests = modelStat?.successful_requests ?? 0
-  const failedRequests = modelStat?.failed_requests ?? 0
-  const modelTps = (tpsEntries ?? [])
-    .filter((entry) => entry.model_id === modelId && entry.source === 'production')
-    .sort((a, b) => a.api_kind.localeCompare(b.api_kind))
-  const modelTpsSummary =
-    modelTps.length > 0
-      ? modelTps
-          .map((entry) => `${formatApiKindLabel(entry.api_kind)} ${formatTps(entry.tps)}`)
-          .join(' | ')
-      : '-'
+  const { totalRequests, successfulRequests, failedRequests, modelTpsSummary, playgroundHref } =
+    useModelEndpointStatsViewModel(endpoint.id, modelId)
 
   return (
     <div className="flex items-center justify-between py-1.5 px-3 text-sm">
@@ -421,16 +205,16 @@ function EndpointStatsRow({
         <span className="truncate font-medium">{endpoint.name}</span>
       </div>
       <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
-        <span>{`Total: ${totalRequests.toLocaleString()}`}</span>
+        <span>{`Total: ${totalRequests}`}</span>
         <span className="text-green-600">
-          {`OK: ${successfulRequests.toLocaleString()}`}
+          {`OK: ${successfulRequests}`}
         </span>
         <span className="text-red-600">
-          {`Fail: ${failedRequests.toLocaleString()}`}
+          {`Fail: ${failedRequests}`}
         </span>
         <span>{`TPS: ${modelTpsSummary}`}</span>
         <a
-          href={`#playground/${endpoint.id}`}
+          href={playgroundHref}
           className="text-primary hover:underline"
         >
           <Play className="h-3 w-3" />
@@ -486,77 +270,15 @@ export function ModelsTable({
       </div>
     ) : null
 
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<LifecycleStatus | 'all'>('all')
-  const [capabilityFilters, setCapabilityFilters] = useState<Record<string, boolean>>({})
-  const [sortField, setSortField] = useState<SortField>('id')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set())
-  const [addWizardOpen, setAddWizardOpen] = useState(false)
-  const [deleteDialog, setDeleteDialog] = useState<{
-    open: boolean
-    modelId: string
-    endpointId: string
-    endpointName: string
-    endpointType: string
-  }>({ open: false, modelId: '', endpointId: '', endpointName: '', endpointType: '' })
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({
-    id: true,
-    bestStatus: true,
-    endpointCount: true,
-    totalRequests: true,
-    supportedApis: true,
-    maxTokens: false,
-    source: false,
-    tags: false,
-    description: false,
-    repo: false,
-    filename: false,
-    requiredMemoryBytes: false,
-    chatTemplate: false,
-  })
+  const {
+    search, setSearch, statusFilter, setStatusFilter, capabilityFilters, setCapabilityFilter,
+    sortField, sortDirection, handleSort, expandedModels, toggleExpand, addWizardOpen, setAddWizardOpen,
+    deleteDialog, openDeleteDialog, setDeleteDialogOpen, columnVisibility, setColumnVisible,
+    aggregatedWithStatsFallback, getModelTraffic, modelEndpoints, activeApiFilters, sorted, viewerFiltered,
+    openPlayground,
+  } = useModelsTableViewModel({ models, endpoints, viewerMode })
 
-  const aggregated = useMemo(() => aggregateModels(models), [models])
-
-  const { data: allModelStats } = useQuery({
-    queryKey: queryKeys.allModelStats(),
-    queryFn: () => dashboardApi.getAllModelStats(),
-    enabled: !viewerMode,
-  })
-
-  const modelStatsMap = useMemo(() => {
-    const map = new Map<string, ModelStatEntry>()
-    if (allModelStats) {
-      for (const stat of allModelStats) {
-        map.set(stat.model_id, stat)
-      }
-    }
-    return map
-  }, [allModelStats])
-
-  const aggregatedWithStatsFallback = useMemo(() => {
-    if (!allModelStats) return aggregated
-
-    const existingIds = new Set(aggregated.map((m) => m.id))
-    const statsOnlyModels: AggregatedModel[] = allModelStats
-      .filter((stat) => !existingIds.has(stat.model_id))
-      .map((stat) => ({
-        id: stat.model_id,
-        bestStatus: 'registered',
-        ready: false,
-        supportedApis: [],
-        tags: [],
-        endpointIds: [],
-        endpointCount: 0,
-        aliases: [],
-        isCanonical: false,
-      }))
-
-    return [...aggregated, ...statsOnlyModels]
-  }, [aggregated, allModelStats])
-
-  const columns: ColumnDef[] = useMemo(
-    () => [
+  const columns: ColumnDef[] = [
       {
         key: 'id',
         label: 'Model ID',
@@ -581,7 +303,7 @@ export function ModelsTable({
               title={m.ready ? 'Ready' : 'Not Ready'}
             />
             <Badge variant={getLifecycleBadgeVariant(m.bestStatus)}>
-              {getLifecycleLabel(m.bestStatus)}
+              {m.lifecycleLabel}
             </Badge>
           </div>
         ),
@@ -590,13 +312,13 @@ export function ModelsTable({
         key: 'endpointCount',
         label: 'Endpoints',
         defaultVisible: true,
-        render: (m) => <EndpointCountCell count={m.endpointCount} />,
+        render: (m) => <EndpointCountCell count={m.endpointCount} label={m.endpointCountLabel} />,
       },
       {
         key: 'totalRequests',
         label: 'Routed Requests',
         defaultVisible: true,
-        render: (m) => <TrafficCell stat={modelStatsMap.get(m.id)} />,
+        render: (m) => <TrafficCell stat={getModelTraffic(m.id)} />,
       },
       {
         key: 'supportedApis',
@@ -610,7 +332,7 @@ export function ModelsTable({
         defaultVisible: false,
         render: (m) => (
           <span className="text-sm">
-            {m.maxTokens != null ? m.maxTokens.toLocaleString() : '-'}
+            {m.maxTokensLabel}
           </span>
         ),
       },
@@ -667,7 +389,7 @@ export function ModelsTable({
         defaultVisible: false,
         render: (m) => (
           <span className="text-sm">
-            {m.requiredMemoryBytes ? formatBytes(m.requiredMemoryBytes) : '-'}
+            {m.requiredMemoryLabel}
           </span>
         ),
       },
@@ -681,62 +403,9 @@ export function ModelsTable({
           </span>
         ),
       },
-    ],
-    [modelStatsMap]
-  )
+  ]
 
-  const visibleColumns = useMemo(
-    () => columns.filter((col) => columnVisibility[col.key]),
-    [columns, columnVisibility]
-  )
-
-  const activeApiFilters = useMemo(
-    () => Object.entries(capabilityFilters).filter(([, v]) => v).map(([k]) => k),
-    [capabilityFilters]
-  )
-
-  const filtered = useMemo(() => {
-    return aggregatedWithStatsFallback.filter((m) => {
-      if (search && !m.id.toLowerCase().includes(search.toLowerCase())) return false
-      if (statusFilter !== 'all' && m.bestStatus !== statusFilter) return false
-      if (activeApiFilters.length > 0) {
-        for (const api of activeApiFilters) {
-          if (!m.supportedApis.includes(api as SupportedApi)) return false
-        }
-      }
-      return true
-    })
-  }, [aggregatedWithStatsFallback, search, statusFilter, activeApiFilters])
-
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      let cmp = 0
-      switch (sortField) {
-        case 'id':
-          cmp = a.id.localeCompare(b.id)
-          break
-        case 'bestStatus':
-          cmp = LIFECYCLE_PRIORITY[a.bestStatus] - LIFECYCLE_PRIORITY[b.bestStatus]
-          break
-        case 'endpointCount':
-          cmp = a.endpointCount - b.endpointCount
-          break
-        case 'totalRequests':
-          cmp = (modelStatsMap.get(a.id)?.total_requests ?? 0) - (modelStatsMap.get(b.id)?.total_requests ?? 0)
-          break
-      }
-      return sortDirection === 'asc' ? cmp : -cmp
-    })
-  }, [filtered, sortField, sortDirection, modelStatsMap])
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
-  }
+  const visibleColumns = columns.filter((col) => columnVisibility[col.key])
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return null
@@ -745,18 +414,6 @@ export function ModelsTable({
     ) : (
       <ChevronDown className="ml-1 h-4 w-4 inline" />
     )
-  }
-
-  const toggleExpand = (id: string) => {
-    setExpandedModels((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
   }
 
   if (isLoading && models.length === 0) {
@@ -778,9 +435,6 @@ export function ModelsTable({
   }
 
   if (viewerMode) {
-    const viewerFiltered = aggregatedWithStatsFallback.filter((m) =>
-      m.id.toLowerCase().includes(search.toLowerCase())
-    )
     return (
       <Card>
         <CardHeader>
@@ -852,7 +506,7 @@ export function ModelsTable({
                             title={model.ready ? 'Ready' : 'Not Ready'}
                           />
                           <Badge variant={getLifecycleBadgeVariant(model.bestStatus)}>
-                            {getLifecycleLabel(model.bestStatus)}
+                            {model.lifecycleLabel}
                           </Badge>
                         </div>
                       </TableCell>
@@ -915,7 +569,7 @@ export function ModelsTable({
           </div>
           <Select
             value={statusFilter}
-            onValueChange={(v) => setStatusFilter(v as LifecycleStatus | 'all')}
+            onValueChange={setStatusFilter}
           >
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Status" />
@@ -946,7 +600,7 @@ export function ModelsTable({
                   key={key}
                   checked={!!capabilityFilters[key]}
                   onCheckedChange={(checked) =>
-                    setCapabilityFilters((prev) => ({ ...prev, [key]: !!checked }))
+                    setCapabilityFilter(key, !!checked)
                   }
                 >
                   {label}
@@ -967,7 +621,7 @@ export function ModelsTable({
                   key={col.key}
                   checked={!!columnVisibility[col.key]}
                   onCheckedChange={(checked) =>
-                    setColumnVisibility((prev) => ({ ...prev, [col.key]: !!checked }))
+                    setColumnVisible(col.key, !!checked)
                   }
                   disabled={col.key === 'id'}
                 >
@@ -1035,16 +689,9 @@ export function ModelsTable({
                       visibleColumns={visibleColumns}
                       isExpanded={isExpanded}
                       onToggleExpand={() => toggleExpand(model.id)}
-                      endpoints={endpoints}
-                      onDeleteModel={(endpointId, endpointName, endpointType) =>
-                        setDeleteDialog({
-                          open: true,
-                          modelId: model.id,
-                          endpointId,
-                          endpointName,
-                          endpointType,
-                        })
-                      }
+                      modelEndpoints={modelEndpoints.get(model.id) ?? []}
+                      onDeleteModel={(endpoint) => openDeleteDialog(model.id, endpoint)}
+                      onOpenPlayground={() => openPlayground(model.id)}
                     />
                   )
                 })
@@ -1056,7 +703,7 @@ export function ModelsTable({
         <ModelAddWizard open={addWizardOpen} onOpenChange={setAddWizardOpen} />
         <ModelDeleteDialog
           open={deleteDialog.open}
-          onOpenChange={(open) => setDeleteDialog((prev) => ({ ...prev, open }))}
+          onOpenChange={setDeleteDialogOpen}
           modelId={deleteDialog.modelId}
           endpointId={deleteDialog.endpointId}
           endpointName={deleteDialog.endpointName}
@@ -1067,26 +714,23 @@ export function ModelsTable({
   )
 }
 
-const DELETABLE_ENDPOINT_TYPES = new Set(['xllm', 'ollama'])
-
 function ModelRow({
   model,
   visibleColumns,
   isExpanded,
   onToggleExpand,
-  endpoints,
+  modelEndpoints,
   onDeleteModel,
+  onOpenPlayground,
 }: {
   model: AggregatedModel
   visibleColumns: ColumnDef[]
   isExpanded: boolean
   onToggleExpand: () => void
-  endpoints: DashboardEndpoint[]
-  onDeleteModel: (endpointId: string, endpointName: string, endpointType: string) => void
+  modelEndpoints: ModelEndpoint[]
+  onDeleteModel: (endpoint: ModelEndpoint) => void
+  onOpenPlayground: () => void
 }) {
-  const modelEndpointIdSet = new Set(model.endpointIds)
-  const modelEndpoints = endpoints.filter((ep) => modelEndpointIdSet.has(ep.id))
-
   return (
     <>
       <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onToggleExpand}>
@@ -1120,7 +764,7 @@ function ModelRow({
                   disabled={!model.ready}
                   onClick={(e) => {
                     e.stopPropagation()
-                    window.location.hash = 'lb-playground?model=' + encodeURIComponent(model.id)
+                    onOpenPlayground()
                   }}
                 >
                   <Play className="h-4 w-4" />
@@ -1136,9 +780,7 @@ function ModelRow({
           <TableCell colSpan={visibleColumns.length + 2} className="bg-muted/30 p-0">
             <div className="py-2 px-4">
               <div className="text-xs font-medium text-muted-foreground mb-2">
-                {model.endpointCount === 1
-                  ? `Endpoints (${model.endpointCount} source)`
-                  : `Endpoints (${model.endpointCount} sources)`}
+                {model.endpointSourcesLabel}
               </div>
               <div className="space-y-1 rounded-md border bg-background">
                 {modelEndpoints.length > 0 ? (
@@ -1148,8 +790,8 @@ function ModelRow({
                       endpoint={ep}
                       modelId={model.id}
                       onDelete={
-                        DELETABLE_ENDPOINT_TYPES.has(ep.endpoint_type)
-                          ? () => onDeleteModel(ep.id, ep.name, ep.endpoint_type)
+                        ep.canDeleteModel
+                          ? () => onDeleteModel(ep)
                           : undefined
                       }
                     />

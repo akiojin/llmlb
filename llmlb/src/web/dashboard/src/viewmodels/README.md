@@ -41,6 +41,13 @@ T007 では `useDashboardViewModel` が Dashboard ページの認可、WS 接続
 更新コマンドは system クエリを手動で無効化せず、data ViewModel の `system` 購読で取得する。
 更新チェック応答のキャッシュ反映と、WS 切断時 5 秒・接続時 10 秒のポーリングは維持する。
 
+T008 では `useModelsTableViewModel` が ModelsTable の集計統計取得、モデル正規化、
+検索・フィルター・ソート・展開・列の表示状態、ダイアログの開閉と対象、Playground 遷移を所有する。
+`useModelEndpointStatsViewModel` は展開行の統計取得と model ごとの production TPS 表示値を所有し、
+既存 `useEndpointModelTpsViewModel` の `tps` / endpoint id 購読を組み合わせる。
+集計統計・行統計は移行前と同じ provider の既定ポーリングを継承し、新たな通知購読を追加しない。
+列の JSX、色、badge、アイコンは ModelsTable に残し、子ダイアログ自身の取得移行は T012 で扱う。
+
 ## 参照実装: usePlayground
 
 [`hooks/usePlayground.ts`](../hooks/usePlayground.ts) は、JSX を持たず、state・ref と

@@ -55,6 +55,19 @@ T009 では `useEndpointTableViewModel` が EndpointTable の検索・フィル�
 接続テストの状態不変時とモデル同期は WS 通知がないため、この即時更新を維持する。
 詳細 id の一致は FR-004 に従い、別 id の詳細は更新しない。子モーダルの取得移行は T012 で扱う。
 
+T012a の `useEndpointDetailViewModel` は詳細モーダルのフォーム、today 統計、表示値、
+保存・接続テスト・同期・Playground 遷移を所有する。endpoint 本体は親の snapshot を維持し、
+`useEndpointViewModel` の追加 GET や `useEndpointTableViewModel` の一覧・選択状態を複製しない。
+フォームの初期化は View の endpoint id key に従い、同 id の再描画では入力を保持する。
+操作後の一覧更新は `endpoints` の集計購読と既存 `invalidateDashboardSubscriptions` を利用し、
+元の mutation と同じく再取得の完了では pending を延長しない。別 id の詳細登録は更新しない。
+`useEndpointModelsTableViewModel` はモデル一覧と統計の取得・結合・表示値を所有し、
+既存 `useEndpointModelTpsViewModel` の `tps` / 同 id 購読と 10 秒 polling を合成する。
+モデル一覧・統計・today は既存の provider polling と open/enabled 条件を維持する。
+`useEndpointRequestChartViewModel` は 7/30/90 日の選択、日別取得、日付整形を所有する。
+グラフの取得条件は id のみで、モーダル open 条件を追加しない。
+現在 WS 無効化を持たない統計 query に新購読を加えず、更新タイミングを維持する。
+
 ## 参照実装: usePlayground
 
 [`hooks/usePlayground.ts`](../hooks/usePlayground.ts) は、JSX を持たず、state・ref と

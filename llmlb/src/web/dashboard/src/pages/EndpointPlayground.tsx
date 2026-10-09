@@ -5,6 +5,7 @@ import { endpointsApi, ApiError, type DashboardEndpoint } from '@/lib/api'
 import { cn, isAbortError } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
 import { usePlayground } from '@/hooks/usePlayground'
+import { useEndpointViewModel } from '@/viewmodels/useEndpointViewModel'
 import { splitAssistantMessage } from '@/lib/reasoning'
 import { PlaygroundBase, getErrorMessage, transformMessage, MAX_INPUT_CHARS, type Message } from '@/components/playground'
 import { Badge } from '@/components/ui/badge'
@@ -84,10 +85,7 @@ export default function EndpointPlayground({ endpointId, onBack }: EndpointPlayg
     }
   }, [])
 
-  const { data: endpoint, isLoading: isLoadingEndpoint } = useQuery({
-    queryKey: queryKeys.endpoint(endpointId),
-    queryFn: () => endpointsApi.get(endpointId),
-  })
+  const { endpoint, isLoadingEndpoint } = useEndpointViewModel(endpointId)
 
   const { data: endpointModels, isLoading: isLoadingModels, error: modelsError } = useQuery({
     queryKey: queryKeys.endpointModels(endpointId),

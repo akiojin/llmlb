@@ -1,23 +1,20 @@
 import { queryKeys } from '@/lib/queryKeys'
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  dashboardApi,
   modelsApi,
   systemApi,
   type SystemInfo,
   type UpdateState,
   type ScheduleInfo,
-  type DashboardOverview,
-  type DashboardEndpoint,
   type RequestHistoryItem,
-  type RequestResponsesPage,
   type RegisteredModelView,
   type ModelsView,
   type VersionResponse,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
+import { useDashboardDataViewModel } from '@/viewmodels/useDashboardDataViewModel'
 import { toast } from '@/hooks/use-toast'
 import { Header } from '@/components/dashboard/Header'
 import { OperationsOverview } from '@/components/dashboard/OperationsOverview'
@@ -113,9 +110,6 @@ export default function Dashboard() {
   const isAdmin = user?.role === 'admin'
   const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: !isViewer })
   const queryClient = useQueryClient()
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
-  const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
-  const fetchStartRef = useRef<number | null>(null)
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false)
   const [isApplyingForceUpdate, setIsApplyingForceUpdate] = useState(false)
   const [isForceUpdateDialogOpen, setIsForceUpdateDialogOpen] = useState(false)
@@ -136,29 +130,10 @@ export default function Dashboard() {
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
 
-  const fetchWithTiming = useCallback(async () => {
-    fetchStartRef.current = performance.now()
-    const result = await dashboardApi.getOverview()
-    const endTime = performance.now()
-    setFetchTimeMs(Math.round(endTime - (fetchStartRef.current || endTime)))
-    setLastRefreshed(new Date())
-    return result
-  }, [])
-
-  const { data, isLoading, error, refetch } = useQuery<DashboardOverview>({
-    queryKey: queryKeys.dashboardOverview(),
-    queryFn: fetchWithTiming,
-    refetchInterval: pollingInterval,
-  })
-
   const {
-    data: systemInfo,
-  } = useQuery<SystemInfo>({
-    queryKey: SYSTEM_INFO_QUERY_KEY,
-    queryFn: () => systemApi.getSystem(),
-    refetchInterval: pollingInterval,
-    enabled: !isViewer,
-  })
+    data, isLoading, error, refetch, systemInfo, requestResponsesData,
+    isLoadingHistory, endpointsData, isLoadingEndpoints, lastRefreshed, fetchTimeMs,
+  } = useDashboardDataViewModel({ pollingInterval, isViewer })
 
   // Bug 3: /api/version は認証不要・軽量なので全ロールで常時取得し、
   // systemInfo 未取得時のフォールバックにする
@@ -202,23 +177,6 @@ export default function Dashboard() {
     const timer = setTimeout(() => setIsCooldown(false), CHECK_COOLDOWN_MS)
     return () => clearTimeout(timer)
   }, [isCooldown])
-
-  // Fetch request history (individual request details)
-  const { data: requestResponsesData, isLoading: isLoadingHistory } =
-    useQuery<RequestResponsesPage>({
-      queryKey: queryKeys.requestResponses(),
-      queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
-      refetchInterval: pollingInterval,
-      enabled: !isViewer,
-    })
-
-  // SPEC-e8e9326e: Fetch endpoints list
-  const { data: endpointsData, isLoading: isLoadingEndpoints } = useQuery<DashboardEndpoint[]>({
-    queryKey: queryKeys.dashboardEndpoints(),
-    queryFn: () => dashboardApi.getEndpoints(),
-    refetchInterval: pollingInterval,
-    enabled: !isViewer,
-  })
 
   // US-029: モデル一覧の表示モード（canonical 集約 / detail 全 variant）
   const [modelsView, setModelsView] = useState<ModelsView>('canonical')

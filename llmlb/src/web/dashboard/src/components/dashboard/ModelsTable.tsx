@@ -1,6 +1,7 @@
 import { queryKeys } from '@/lib/queryKeys'
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useEndpointModelTpsViewModel } from '@/viewmodels/useEndpointModelTpsViewModel'
 import {
   type RegisteredModelView,
   type DashboardEndpoint,
@@ -392,10 +393,7 @@ function EndpointStatsRow({
     queryKey: queryKeys.endpointModelStats(endpoint.id),
     queryFn: () => endpointsApi.getModelStats(endpoint.id),
   })
-  const { data: tpsEntries } = useQuery({
-    queryKey: queryKeys.endpointModelTps(endpoint.id),
-    queryFn: () => endpointsApi.getModelTps(endpoint.id),
-  })
+  const { tpsEntries } = useEndpointModelTpsViewModel(endpoint.id)
 
   const modelStat = stats?.find((s) => s.model_id === modelId)
   const totalRequests = modelStat?.total_requests ?? 0

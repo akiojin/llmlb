@@ -89,6 +89,60 @@ async fn test_dashboard_ws_rejects_revoked_admin_token() {
     );
 }
 
+/// Authorization ヘッダーがない場合も、Cookie の失効済み admin セッションを拒否する。
+#[tokio::test]
+async fn test_dashboard_ws_rejects_revoked_admin_cookie() {
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap();
+
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let admin = llmlb::db::users::create(
+        &db_pool,
+        "ws_cookie_admin",
+        &password_hash,
+        llmlb::common::auth::UserRole::Admin,
+        false,
+    )
+    .await
+    .expect("create ws_cookie_admin");
+    let token = login(&client, server.addr(), "ws_cookie_admin").await;
+    let cookie = format!("{}={token}", llmlb::auth::DASHBOARD_JWT_COOKIE);
+
+    // Cookie の抽出と WS upgrade 自体が成功することを先に確認する。
+    let resp = ws_request(&client, server.addr(), None)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .expect("valid cookie ws request");
+    assert_eq!(
+        resp.status().as_u16(),
+        101,
+        "valid admin cookie must upgrade"
+    );
+    drop(resp);
+
+    let new_hash = llmlb::auth::password::hash_password("Password456!").unwrap();
+    llmlb::db::users::update(&db_pool, admin.id, None, Some(&new_hash), None)
+        .await
+        .expect("update cookie admin password");
+
+    // Bearer を付けず同じ Cookie を再送し、署名ではなく失効検査による拒否を検証する。
+    let resp = ws_request(&client, server.addr(), None)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .expect("revoked cookie ws request");
+    assert_eq!(
+        resp.status().as_u16(),
+        401,
+        "revoked admin cookie must be rejected by the dashboard WebSocket"
+    );
+    assert!(resp.text().await.unwrap().contains("Session revoked"));
+}
+
 /// viewer ロールは従来通り WS で 403（リグレッション）。
 #[tokio::test]
 async fn test_dashboard_ws_rejects_viewer() {

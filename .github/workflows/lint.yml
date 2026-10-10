@@ -130,7 +130,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   dashboard-lint:
-    # Issue #769, #782
+    # Issue #769, #782, #878
     # 目的: dashboard の typecheck / lint / コンポーネントテストの失敗を検出する（依存更新での破損を着地前に止める）
     # pnpm-lock.yaml 等ルートの変更でも壊れ得るため、パスフィルタを掛けず常に実行する
     name: Dashboard Typecheck, Lint & Test
@@ -139,6 +139,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Check dashboard data hooks
+        run: make dashboard-data-hooks
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

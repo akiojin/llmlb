@@ -5,14 +5,45 @@ SPEC #838。retry で成功しても初回失敗を消さず、観測と根因�
 
 | spec | 観測日 | 発生回数 | 根因パターン | 根因（未確定可） | 関連 Issue・PR | 検査の捕捉 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts:320` Offline alpha | 2026-10-08 | 1 | (b) 仮説 | 初回 alpha `0.973421`、期待 `<0.95`、retry 成功。根因未確定。仮説は `transition-colors` の途中値。 | [PR #837](https://github.com/akiojin/llmlb/pull/837) pre-push | `computed-style` が背景色取得 helper を捕捉。解消は検査着地後の T007。 |
+| S-EP-01 Offline alpha（`endpoint-status-colors.spec.ts`、旧:320） | 2026-10-08、2026-10-11調査 | 初回1、回帰fixture 1/1 RED | (b) 確定 | 初回 alpha `0.973421`、期待 `<0.95`、retry 成功。text/class確定後もCSS色は遷移中。新回帰fixtureでは旧helperが14msでalpha=1・animation runningのまま成功を返した。animation.finishedへの同期で解消。 | [PR #837](https://github.com/akiojin/llmlb/pull/837) / [#880](https://github.com/akiojin/llmlb/issues/880)（SPEC #838 T007） | `computed-style` が最終色取得と回帰fixtureを捕捉。遷移完了待ち・旧helperでのREDを根拠に個別allowlistを更新。 |
+| S-EP-01 Playground Offline表示 | 2026-10-10、2026-10-11調査 | #876のbaseline・serial・pre-pushで各1（計3） | (d) hash遷移とcache寿命の競合 | 一覧・詳細Offline後もPlaygroundはError。hashだけの遷移で5秒freshなendpoint queryを再利用し、既定5秒pollと5秒class assertが競合。新documentへreloadして色mappingの観測をcacheから分離。alpha取得前の失敗で、上の色遷移とは別根因。 | [#876](https://github.com/akiojin/llmlb/issues/876) / [PR #877](https://github.com/akiojin/llmlb/pull/877) / [#880](https://github.com/akiojin/llmlb/issues/880) | `navigation-race` が旧hash goto 4箇所を捕捉済み。hash設定→reloadへ置換して不要な4キーを削除。cache寿命自体は静的検査では証明せず、失敗snapshotと実行証跡で確認。 |
 | xLLM `/v1/models` fallback | 2026-09-29 | 1以上（総数未測定） | (e)、残存待機は(a) | エフェメラルポート再利用で別プロセスの要求が混入。非同期モデル同期も厳密な回数assertに混入。UUID base pathと自動同期のthrottleで隔離。修正後の負荷実行30/30成功。 | [#748](https://github.com/akiojin/llmlb/issues/748) / [#753](https://github.com/akiojin/llmlb/pull/753) | `mock-count` が固定path＋回数観測の候補、`fixed-wait` が300msの残存待機を捕捉。UUID隔離・同期の正しさは静的検査だけでは証明できない。 |
 | `download_background_transitions_to_downloading` | 2026-09-29 | 初期1/18 | (c)、撤去した危険形は(a) | 根因は固定名 `.llmlb_write_probe` のcreate_new衝突。待機不足ではない。PID＋UUID化後、固定100/200msを状態poll・仮想時間に置換。80/80、負荷下20/20成功。 | [#754](https://github.com/akiojin/llmlb/issues/754) / [#756](https://github.com/akiojin/llmlb/issues/756) / [#759](https://github.com/akiojin/llmlb/pull/759) / [#763](https://github.com/akiojin/llmlb/pull/763) | `fixed-wait` が旧sleepを捕捉。固定プローブはproduction内部のため本検査の対象外、根因回帰テストで検証済み。 |
 | `check_only_does_not_download_payload` | 2026-09-29 | 再現25/80プロセス | (c) | 実 `~/.llmlb` の固定 `update-check.tmp` を共有しrenameが競合。テスト専用data dir constructorで隔離。修正後0/80。 | [#761](https://github.com/akiojin/llmlb/issues/761) / [#766](https://github.com/akiojin/llmlb/pull/766) | `shared-resource` がhome/data/temp dirと実data dirを暗黙利用するUpdateManager constructorを捕捉。 |
 | navigationの4 spec（NAV-06 / NAV-08 / PS-01 / PS-02） | 2026-09-30 | CI hard fail 1、flaky 3 | (d)、NAV-08の危険形は(a) | 二重redirectがwaitForURLをabort。広いdashboard URL条件がlogin.htmlにも一致し、後続gotoと遅延redirectが競合。URL＋描画状態poll、hash変更へ置換。修正後80/80成功。 | [#770](https://github.com/akiojin/llmlb/issues/770) / [#774](https://github.com/akiojin/llmlb/pull/774) | `navigation-race` が広いURL条件・navigation event待ち・dashboard hashへのgotoを捕捉。 |
 
 観測日の過去4件は Issue・初回観測コメントの報告日。発生回数は異なる実行のため合算しない。
-既知の4件に(b)の確定根因はない。今回の仮説で過去の根因を書き換えない。
+既知の4件に(b)の確定根因はない。S-EP-01の調査で過去4件の根因は書き換えない。
+
+## S-EP-01 の根因調査（2026-10-11、Issue #880）
+
+色と状態取得は独立した競合だった。実画面の計測ではOfflineのclass/textが変わった直後に
+`oklab(0.635585 0.188125 0.0892456 / 0.973536)` を観測した。
+その時点のtransition currentTimeは16.729ms。確定色は同じoklabのalpha `0.2`。
+既存の閾値pollは途中色を許容し、opaque rgbではexplicit alphaなしとして通過する。
+1秒のCSS遷移を発生させる回帰fixtureで、旧helperは14ms・`rgb(255, 0, 0)`・alpha `1`・
+animation runningのまま返ってRED。修正後は1022ms・`rgba(255, 0, 0, 0.2)`・alpha `0.2`・
+running animationゼロでGREEN。固定sleepやassert期限延長は導入しない。
+
+Issue #876の保存JSONでは3回ともPlaygroundのOffline locatorを取得できず、色assertより前に失敗。
+pre-pushの失敗は開始から32739msで、snapshotは`Status: Error`。
+一覧・詳細のOffline確認後、同じendpointのPlaygroundへ5秒以内に戻っていた。
+Playgroundを離れるとendpoint queryのイベント購読も解除されるため、その間のOffline通知は
+一覧queryを更新してもinactiveなendpoint queryを更新しない。
+色mapping専用テストはPlaygroundを新documentで読み込み、初回取得した状態を観測する。
+製品のcache/pollingやヘルスチェックは変更しない。
+
+新しい待機はブラウザのanimation.finishedという完了条件で、固定時間待ちではない。
+取消・失敗は成功扱いせず既存toPassが再評価する。computed styleの検査は維持し、
+安全な取得点と回帰fixtureだけを個別allowlistで説明するため、新パターンは追加しない。
+Rustの`test_endpoint_offline_status_detection`に同じ根因があるという証拠はなく、変更対象外。
+
+修正後の実行（Chromium、retryなし）:
+
+- `playwright test endpoint-status-colors --repeat-each=10 --workers=1 --retries=0`:
+  S-EP-01本体10/10、遷移回帰10/10、計20 PASS（5.6分）、失敗・flakyゼロ。
+- `playwright test endpoint-status-colors --repeat-each=4 --workers=4 --retries=0`:
+  実際の4 workerでS-EP-01本体4/4、遷移回帰4/4、計8 PASS（44.7秒）、失敗・flakyゼロ。
 
 ## 分類と禁止候補
 

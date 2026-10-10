@@ -1,3 +1,6 @@
+#[path = "ui/source.rs"]
+mod source;
+
 #[path = "ui/model_panel_removed.rs"]
 mod model_panel_removed;
 

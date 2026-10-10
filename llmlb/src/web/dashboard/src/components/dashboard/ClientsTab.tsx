@@ -1,13 +1,4 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import {
-  clientsApi,
-  type ClientRankingResponse,
-  type UniqueIpTimelinePoint,
-  type ModelDistribution,
-  type HeatmapCell,
-} from '@/lib/api'
+import { useClientsTabViewModel } from '@/viewmodels/useClientsTabViewModel'
 import { ClientBarChart } from './ClientBarChart'
 import { ClientRankingTable } from './ClientRankingTable'
 import { UniqueIpTimeline } from './UniqueIpTimeline'
@@ -19,41 +10,10 @@ import { Badge } from '@/components/ui/badge'
 import { Users, TrendingUp, PieChart, Grid3X3, Loader2, X } from 'lucide-react'
 
 export function ClientsTab() {
-  const [page, setPage] = useState(1)
-  const perPage = 20
-
-  // URLのクエリパラメーターからIPフィルタを取得
-  const ipFilter = useMemo(() => {
-    const params = new URLSearchParams(window.location.search)
-    return params.get('ip') || undefined
-  }, [])
-
-  const { data, isLoading } = useQuery<ClientRankingResponse>({
-    queryKey: queryKeys.clientRanking(page, perPage, ipFilter),
-    queryFn: () => clientsApi.getClientRanking({ page, per_page: perPage, ip: ipFilter }),
-  })
-
-  const { data: timelineData } = useQuery<UniqueIpTimelinePoint[]>({
-    queryKey: queryKeys.clientTimeline(),
-    queryFn: () => clientsApi.getTimeline(),
-  })
-
-  const { data: modelsData } = useQuery<ModelDistribution[]>({
-    queryKey: queryKeys.clientModels(),
-    queryFn: () => clientsApi.getModels(),
-  })
-
-  const { data: heatmapData } = useQuery<HeatmapCell[]>({
-    queryKey: queryKeys.clientHeatmap(ipFilter),
-    queryFn: () => clientsApi.getHeatmap({ ip: ipFilter }),
-  })
-
-  const handleClearFilter = () => {
-    const params = new URLSearchParams(window.location.search)
-    params.delete('ip')
-    const newSearch = params.toString()
-    window.location.search = newSearch
-  }
+  const {
+    isLoading, page, perPage, ipFilterLabel, rankings, totalCount,
+    timelineData, modelsData, heatmapData, setPage, clearIpFilter,
+  } = useClientsTabViewModel()
 
   if (isLoading) {
     return (
@@ -63,9 +23,6 @@ export function ClientsTab() {
       </div>
     )
   }
-
-  const rankings = data?.rankings ?? []
-  const totalCount = data?.total_count ?? 0
 
   return (
     <div className="space-y-6">
@@ -90,7 +47,7 @@ export function ClientsTab() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <UniqueIpTimeline data={timelineData ?? []} />
+            <UniqueIpTimeline data={timelineData} />
           </CardContent>
         </Card>
 
@@ -102,7 +59,7 @@ export function ClientsTab() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ModelDistributionPie data={modelsData ?? []} />
+            <ModelDistributionPie data={modelsData} />
           </CardContent>
         </Card>
       </div>
@@ -113,13 +70,13 @@ export function ClientsTab() {
             <Grid3X3 className="h-4 w-4" />
             Request Heatmap (Hour x Day)
           </CardTitle>
-          {ipFilter && (
+          {ipFilterLabel && (
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-xs">
-                {`Filtered: ${ipFilter}`}
+                {ipFilterLabel}
               </Badge>
               <button
-                onClick={handleClearFilter}
+                onClick={clearIpFilter}
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 title="Clear IP filter"
               >
@@ -129,7 +86,7 @@ export function ClientsTab() {
           )}
         </CardHeader>
         <CardContent>
-          <RequestHeatmap data={heatmapData ?? []} />
+          <RequestHeatmap data={heatmapData} />
         </CardContent>
       </Card>
 
@@ -142,13 +99,13 @@ export function ClientsTab() {
             </CardTitle>
             <AlertThresholdSettings />
           </div>
-          {ipFilter && (
+          {ipFilterLabel && (
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-xs">
-                {`Filtered: ${ipFilter}`}
+                {ipFilterLabel}
               </Badge>
               <button
-                onClick={handleClearFilter}
+                onClick={clearIpFilter}
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 title="Clear IP filter"
               >

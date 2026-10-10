@@ -1,5 +1,3 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useQuery } from '@tanstack/react-query'
 import {
   Bar,
   BarChart,
@@ -10,22 +8,18 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { dashboardApi, type DailyTokenStats, type MonthlyTokenStats } from '@/lib/api'
-import { formatNumber } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { MessageSquare, TrendingUp, Calendar } from 'lucide-react'
-
-interface TokenChartDatum {
-  label: string
-  input: number
-  output: number
-}
+import { useTokenStatsViewModel, type TokenChartDatum, type TokenStatsViewModel } from '@/viewmodels/useTokenStatsViewModel'
 
 /** 入力/出力トークンを期間ごとに積み上げ表示するバーチャート。 */
-function TokenBarChart({ data }: { data: TokenChartDatum[] }) {
+function TokenBarChart({ data, formatChartNumber }: {
+  data: TokenChartDatum[]
+  formatChartNumber: TokenStatsViewModel['formatChartNumber']
+}) {
   return (
     <div
       role="img"
@@ -48,7 +42,7 @@ function TokenBarChart({ data }: { data: TokenChartDatum[] }) {
             tickLine={false}
             axisLine={false}
             width={48}
-            tickFormatter={(v) => formatNumber(Number(v))}
+            tickFormatter={(v) => formatChartNumber(Number(v))}
           />
           <Tooltip
             contentStyle={{
@@ -59,7 +53,7 @@ function TokenBarChart({ data }: { data: TokenChartDatum[] }) {
             }}
             labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
             formatter={(value, name) => [
-              formatNumber(Number(value ?? 0)),
+              formatChartNumber(Number(value ?? 0)),
               name === 'input' ? 'Input' : 'Output',
             ]}
           />
@@ -87,26 +81,10 @@ function StatsLoading({ rows }: { rows: number }) {
 }
 
 export function TokenStatsSection() {
-  const { data: dailyStats, isLoading: loadingDaily } = useQuery<DailyTokenStats[]>({
-    queryKey: queryKeys.tokenStatsDaily(),
-    queryFn: () => dashboardApi.getDailyTokenStats(7),
-  })
-
-  const { data: monthlyStats, isLoading: loadingMonthly } = useQuery<MonthlyTokenStats[]>({
-    queryKey: queryKeys.tokenStatsMonthly(),
-    queryFn: () => dashboardApi.getMonthlyTokenStats(6),
-  })
-
-  const dailyChart: TokenChartDatum[] = (dailyStats ?? []).map((s) => ({
-    label: s.date,
-    input: s.total_input_tokens,
-    output: s.total_output_tokens,
-  }))
-  const monthlyChart: TokenChartDatum[] = (monthlyStats ?? []).map((s) => ({
-    label: s.month,
-    input: s.total_input_tokens,
-    output: s.total_output_tokens,
-  }))
+  const {
+    dailyRows, monthlyRows, dailyChart, monthlyChart,
+    loadingDaily, loadingMonthly, formatChartNumber,
+  } = useTokenStatsViewModel()
 
   return (
     <Card>
@@ -132,9 +110,9 @@ export function TokenStatsSection() {
           <TabsContent value="daily">
             {loadingDaily ? (
               <StatsLoading rows={5} />
-            ) : dailyStats && dailyStats.length > 0 ? (
+            ) : dailyRows.length > 0 ? (
               <div className="space-y-2">
-                <TokenBarChart data={dailyChart} />
+                <TokenBarChart data={dailyChart} formatChartNumber={formatChartNumber} />
                 <div className="grid grid-cols-5 gap-2 text-sm font-medium text-muted-foreground border-b pb-2">
                   <div>Date</div>
                   <div className="text-right">Requests</div>
@@ -142,13 +120,13 @@ export function TokenStatsSection() {
                   <div className="text-right">Output</div>
                   <div className="text-right">Total</div>
                 </div>
-                {dailyStats.map((stat) => (
-                  <div key={stat.date} className="grid grid-cols-5 gap-2 text-sm py-2 border-b border-border/50">
-                    <div className="font-medium">{stat.date}</div>
-                    <div className="text-right">{formatNumber(stat.request_count)}</div>
-                    <div className="text-right text-muted-foreground">{formatNumber(stat.total_input_tokens)}</div>
-                    <div className="text-right text-muted-foreground">{formatNumber(stat.total_output_tokens)}</div>
-                    <div className="text-right font-medium">{formatNumber(stat.total_tokens)}</div>
+                {dailyRows.map((row) => (
+                  <div key={row.label} className="grid grid-cols-5 gap-2 text-sm py-2 border-b border-border/50">
+                    <div className="font-medium">{row.label}</div>
+                    <div className="text-right">{row.requestsLabel}</div>
+                    <div className="text-right text-muted-foreground">{row.inputTokensLabel}</div>
+                    <div className="text-right text-muted-foreground">{row.outputTokensLabel}</div>
+                    <div className="text-right font-medium">{row.totalTokensLabel}</div>
                   </div>
                 ))}
               </div>
@@ -163,9 +141,9 @@ export function TokenStatsSection() {
           <TabsContent value="monthly">
             {loadingMonthly ? (
               <StatsLoading rows={3} />
-            ) : monthlyStats && monthlyStats.length > 0 ? (
+            ) : monthlyRows.length > 0 ? (
               <div className="space-y-2">
-                <TokenBarChart data={monthlyChart} />
+                <TokenBarChart data={monthlyChart} formatChartNumber={formatChartNumber} />
                 <div className="grid grid-cols-5 gap-2 text-sm font-medium text-muted-foreground border-b pb-2">
                   <div>Month</div>
                   <div className="text-right">Requests</div>
@@ -173,13 +151,13 @@ export function TokenStatsSection() {
                   <div className="text-right">Output</div>
                   <div className="text-right">Total</div>
                 </div>
-                {monthlyStats.map((stat) => (
-                  <div key={stat.month} className="grid grid-cols-5 gap-2 text-sm py-2 border-b border-border/50">
-                    <div className="font-medium">{stat.month}</div>
-                    <div className="text-right">{formatNumber(stat.request_count)}</div>
-                    <div className="text-right text-muted-foreground">{formatNumber(stat.total_input_tokens)}</div>
-                    <div className="text-right text-muted-foreground">{formatNumber(stat.total_output_tokens)}</div>
-                    <div className="text-right font-medium">{formatNumber(stat.total_tokens)}</div>
+                {monthlyRows.map((row) => (
+                  <div key={row.label} className="grid grid-cols-5 gap-2 text-sm py-2 border-b border-border/50">
+                    <div className="font-medium">{row.label}</div>
+                    <div className="text-right">{row.requestsLabel}</div>
+                    <div className="text-right text-muted-foreground">{row.inputTokensLabel}</div>
+                    <div className="text-right text-muted-foreground">{row.outputTokensLabel}</div>
+                    <div className="text-right font-medium">{row.totalTokensLabel}</div>
                   </div>
                 ))}
               </div>

@@ -119,3 +119,20 @@ describe('useInvalidateOn', () => {
     expect(invalidate).not.toHaveBeenCalled()
   })
 })
+
+it('returns an owner-only refresh command without broadcasting to other subscribers', async () => {
+  const client = new QueryClient()
+  const invalidate = vi.spyOn(client, 'invalidateQueries').mockResolvedValue()
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const { result } = renderHook(() => {
+    const refresh = useInvalidateOn(['endpoints'], queryKeys.endpointModels('A'), { id: 'A' })
+    useInvalidateOn(['endpoints'], queryKeys.endpointModels('B'), { id: 'B' })
+    useInvalidateOn(['endpoints'], queryKeys.dashboardOverview())
+    return refresh
+  }, { wrapper })
+  expect(result.current).toBeTypeOf('function')
+  await act(() => result.current())
+  expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: queryKeys.endpointModels('A') })
+})

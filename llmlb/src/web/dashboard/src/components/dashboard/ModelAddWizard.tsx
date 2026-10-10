@@ -1,13 +1,5 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  type CatalogSearchResult,
-  type RecommendedEndpoint,
-  catalogApi,
-  endpointsApi,
-} from '@/lib/api'
-import { toast } from '@/hooks/use-toast'
+import { type RecommendedEndpoint } from '@/lib/api'
+import { useModelAddWizardViewModel } from '@/viewmodels/useModelAddWizardViewModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -36,8 +28,6 @@ interface ModelAddWizardProps {
   onOpenChange: (open: boolean) => void
 }
 
-type WizardStep = 'search' | 'detail' | 'endpoints' | 'download'
-
 export function ModelAddWizard({ open, onOpenChange }: ModelAddWizardProps) {
   return (
     <ModelAddWizardContent
@@ -49,155 +39,13 @@ export function ModelAddWizard({ open, onOpenChange }: ModelAddWizardProps) {
 }
 
 function ModelAddWizardContent({ open, onOpenChange }: ModelAddWizardProps) {
-  const queryClient = useQueryClient()
-  const [step, setStep] = useState<WizardStep>('search')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [selectedModel, setSelectedModel] = useState<CatalogSearchResult | null>(null)
-  const [selectedEndpointIds, setSelectedEndpointIds] = useState<Set<string>>(new Set())
-  const [downloadStatuses, setDownloadStatuses] = useState<
-    Record<string, 'pending' | 'downloading' | 'completed' | 'failed'>
-  >({})
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Cancel pending search debounce when this dialog session is discarded.
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current)
-      }
-    }
-  }, [])
-
-  // Debounce search input
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchQuery(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      setDebouncedQuery(value)
-    }, 300)
-  }, [])
-
-  // Search query
-  const { data: searchResults, isLoading: isSearching } = useQuery({
-    queryKey: queryKeys.catalogSearch(debouncedQuery),
-    queryFn: () => catalogApi.search(debouncedQuery, 20),
-    enabled: debouncedQuery.length >= 2,
-  })
-
-  // Model detail query
-  const { data: modelDetail, isLoading: isLoadingDetail } = useQuery({
-    queryKey: queryKeys.catalogModel(selectedModel?.repo_id),
-    queryFn: () => catalogApi.getModel(selectedModel!.repo_id),
-    enabled: !!selectedModel && (step === 'detail' || step === 'endpoints'),
-  })
-
-  // Endpoint recommendations
-  const { data: recommendations, isLoading: isLoadingEndpoints } = useQuery({
-    queryKey: queryKeys.catalogRecommend(selectedModel?.repo_id),
-    queryFn: () => catalogApi.recommendEndpoints(selectedModel!.repo_id),
-    enabled: !!selectedModel && step === 'endpoints',
-  })
-
-  // Download mutation
-  const downloadMutation = useMutation({
-    mutationFn: async ({
-      endpointId,
-      model,
-    }: {
-      endpointId: string
-      model: string
-    }) => {
-      return endpointsApi.downloadModel(endpointId, {
-        model,
-        hf_repo: selectedModel?.repo_id,
-      })
-    },
-  })
-
-  const handleSelectModel = (model: CatalogSearchResult) => {
-    setSelectedModel(model)
-    setStep('detail')
-  }
-
-  const handleProceedToEndpoints = () => {
-    setSelectedEndpointIds(new Set())
-    setStep('endpoints')
-  }
-
-  const toggleEndpoint = (id: string) => {
-    setSelectedEndpointIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }
-
-  const handleStartDownload = async () => {
-    if (!selectedModel || selectedEndpointIds.size === 0) return
-
-    setStep('download')
-    const initialStatuses: Record<string, 'pending' | 'downloading' | 'completed' | 'failed'> = {}
-    for (const id of selectedEndpointIds) {
-      initialStatuses[id] = 'pending'
-    }
-    setDownloadStatuses(initialStatuses)
-
-    for (const endpointId of selectedEndpointIds) {
-      setDownloadStatuses((prev) => ({ ...prev, [endpointId]: 'downloading' }))
-      try {
-        await downloadMutation.mutateAsync({
-          endpointId,
-          model: selectedModel.repo_id,
-        })
-        setDownloadStatuses((prev) => ({ ...prev, [endpointId]: 'completed' }))
-      } catch {
-        setDownloadStatuses((prev) => ({ ...prev, [endpointId]: 'failed' }))
-      }
-    }
-
-    queryClient.invalidateQueries({ queryKey: queryKeys.dashboardEndpoints() })
-    queryClient.invalidateQueries({ queryKey: queryKeys.models() })
-    toast({
-      title: 'Download requests sent',
-      description: `Initiated download of ${selectedModel.repo_id} to ${selectedEndpointIds.size} endpoint(s)`,
-    })
-  }
-
-  const handleBack = () => {
-    switch (step) {
-      case 'detail':
-        setStep('search')
-        break
-      case 'endpoints':
-        setStep('detail')
-        break
-      default:
-        break
-    }
-  }
-
-  const allDownloadsFinished =
-    step === 'download' &&
-    Object.values(downloadStatuses).every((s) => s === 'completed' || s === 'failed')
-
-  const stepTitle: Record<WizardStep, string> = {
-    search: 'Search HuggingFace Models',
-    detail: 'Model Details',
-    endpoints: 'Select Endpoints',
-    download: 'Download Progress',
-  }
-
-  const downloadableEndpoints = recommendations?.endpoints.filter((ep) => ep.can_download) ?? []
-  const compatibleEngineEntries = modelDetail
-    ? Object.entries(modelDetail.engine_names).filter(
-        (entry): entry is [string, string] => entry[1] != null && entry[1] !== ''
-      )
-    : []
+  const {
+    step, stepTitle, searchQuery, debouncedQuery, selectedModel, selectedEndpointIds,
+    searchResults, modelDetail, isSearching, isLoadingDetail, isLoadingEndpoints, hasRecommendations,
+    downloadableEndpoints, downloadRows, compatibleEngineEntries, allDownloadsFinished,
+    downloadButtonLabel, handleSearchChange, handleSelectModel, handleProceedToEndpoints,
+    toggleEndpoint, handleStartDownload, handleBack,
+  } = useModelAddWizardViewModel()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -205,7 +53,7 @@ function ModelAddWizardContent({ open, onOpenChange }: ModelAddWizardProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
-            {stepTitle[step]}
+            {stepTitle}
           </DialogTitle>
           <DialogDescription>
             {step === 'search' && 'Search for models on HuggingFace to add to your endpoints'}
@@ -407,7 +255,7 @@ function ModelAddWizardContent({ open, onOpenChange }: ModelAddWizardProps) {
                 </div>
               )}
 
-              {recommendations && (
+              {hasRecommendations && (
                 <>
                   {downloadableEndpoints.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
@@ -434,20 +282,15 @@ function ModelAddWizardContent({ open, onOpenChange }: ModelAddWizardProps) {
           {/* Step 4: Download */}
           {step === 'download' && (
             <div className="space-y-3">
-              {recommendations?.endpoints
-                .filter((ep) => selectedEndpointIds.has(ep.id))
-                .map((ep) => {
-                  const status = downloadStatuses[ep.id] ?? 'pending'
-                  return (
-                    <div key={ep.id} className="flex items-center gap-3 p-3 rounded-md border">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{ep.name}</p>
-                        <p className="text-xs text-muted-foreground">{ep.endpoint_type}</p>
-                      </div>
-                      <DownloadStatusIcon status={status} />
-                    </div>
-                  )
-                })}
+              {downloadRows.map((ep) => (
+                <div key={ep.id} className="flex items-center gap-3 p-3 rounded-md border">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{ep.name}</p>
+                    <p className="text-xs text-muted-foreground">{ep.endpoint_type}</p>
+                  </div>
+                  <DownloadStatusIcon status={ep.status} />
+                </div>
+              ))}
 
               {!allDownloadsFinished && (
                 <div className="space-y-1">
@@ -487,9 +330,7 @@ function ModelAddWizardContent({ open, onOpenChange }: ModelAddWizardProps) {
               disabled={selectedEndpointIds.size === 0}
             >
               <Download className="h-4 w-4 mr-1" />
-              {selectedEndpointIds.size === 1
-                ? `Download to ${selectedEndpointIds.size} Endpoint`
-                : `Download to ${selectedEndpointIds.size} Endpoints`}
+              {downloadButtonLabel}
             </Button>
           )}
           {step === 'download' && allDownloadsFinished && (

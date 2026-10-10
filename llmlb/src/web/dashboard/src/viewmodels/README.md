@@ -81,6 +81,18 @@ User / Invitation の open 条件と provider の 5 秒 polling は維持する�
 無効化は従来どおり VM が行う。無関係な resource への結合や wire の拡張は行わない。
 badge / アイコン / フィールドの JSX は View に残す。
 
+T012c の `useModelAddWizardViewModel` は catalog の3クエリ、300ms debounce、
+段階遷移・選択・逐次ダウンロードと結果表示を所有する。View の open/closed key による
+セッション破棄を保ち、catalog の取得条件と provider polling に新たなWS購読を加えない。
+`useModelDeleteDialogViewModel` は削除対応判定、mutation、toast、close を所有する。
+両VMは `useInvalidateOn` の宣言から返るキー専用更新コマンドを使い、操作成功で
+無関係な resource 購読へ配信しない。一覧は既存 `endpoints` の集計購読を再利用し、
+通知更新の無かった models / endpointModels は空の resource 宣言で polling を維持する。
+削除の `endpointModels(id)` には対象 id を明示する。更新は再取得完了を待たず、
+操作中に unmount しても完了時には元のキーを刷新する。
+追加はバッチ終了後、削除は成功直後に従来のキャッシュを更新する。
+モデル表の取得・統計は既存 `useEndpointModelsTableViewModel` の責務として複製しない。
+
 ## 参照実装: usePlayground
 
 [`hooks/usePlayground.ts`](../hooks/usePlayground.ts) は、JSX を持たず、state・ref と

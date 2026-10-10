@@ -1,7 +1,11 @@
 # SPEC #838: 行内容と出現回数ごとの既存 baseline（ワイルドカード禁止）
 # 根因分類と検出限界: docs/flaky-tests.md。解消したキーは削除する。
-# (b) PR #837のalpha観測: 既存の背景色取得helper。T007で原因を除去するまでFR-005のbaseline。
-computed-style|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|3749528095-78|1
+# (b) #880/T007: animation.finishedを全件awaitした後の最終色だけをassert。取消はtoPassで再評価し、時間延長なし。
+computed-style|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|4037398205-44|1
+# (b) #880/T007回帰fixture: 遷移前のstyle flush。数値assertではなくCSS transitionを確実に発生させる準備。
+computed-style|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|1031926846-42|1
+# (b) #880/T007回帰: helper完了後の色とrunning animationゼロを検証し、旧helperでREDを実測。
+computed-style|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|2331886528-44|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/src/api/anthropic/tests.rs|488347826-63|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
@@ -472,14 +476,6 @@ navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|
 navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|2543172126-45|1
 # (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
 navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|859478823-56|1
-# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
-navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|3566334821-60|1
-# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
-navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|3566334821-60|2
-# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
-navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|4123567828-61|1
-# (d) #770/#774: 既存のURL/hash遷移候補。FR-005で現在のテスト挙動を保全、新しい遷移待ちは禁止。
-navigation-race|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-status-colors.spec.ts|4123567828-61|2
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
 shared-resource|llmlb/src/api/audit_log.rs|1645937757-55|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。

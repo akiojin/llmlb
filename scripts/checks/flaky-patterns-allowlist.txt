@@ -227,8 +227,6 @@ fixed-wait|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|3719287498-3
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|3719287498-31|2
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/dashboard-stats.spec.ts|3719287498-31|1
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|3719287498-31|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|3719287498-31|2
@@ -239,31 +237,7 @@ fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|92090
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-detail-viz.spec.ts|2639283118-57|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|2037966537-44|1
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|1
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|2
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|3
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|4
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|3141135716-30|5
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|1
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|2
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|3
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|4
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|5
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|6
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/endpoint-edit.spec.ts|322691833-31|7
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/history-tab.spec.ts|3141135716-30|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。

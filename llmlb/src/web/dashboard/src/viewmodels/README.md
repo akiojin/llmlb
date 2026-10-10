@@ -160,3 +160,11 @@ pnpm --filter @llm/dashboard build
 ```
 
 全体の品質検証には repository の `make quality-checks` と正式な `verify.plan` / `verify.run` を使う。
+
+T013 の `useModelDownloadDialogViewModel` は endpoint 単位のダウンロード進捗、入力、
+開始操作、完了・失敗・close の状態と表示値を所有する。既存 API・queryKeys・
+`useInvalidateOn` のキー専用 refresh を再利用し、catalog の一括要求やモデル一覧取得は
+既存 VM に残す。進捗は task 別 Query で初回即時・2 秒 polling を行い、terminal/close で
+停止する。close/unmount は AbortSignal で取得を破棄し、遅い開始 POST も破棄済みの
+ダイアログで polling を起動しない。完了は従来の endpointModels と dashboardEndpoints
+の 2 キーのみを非 await で更新する。allowlist は検査の入力としてコメントのみで保持する。

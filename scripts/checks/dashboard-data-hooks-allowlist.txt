@@ -4,5 +4,3 @@
 # 1 行に 1 つ、llmlb/src/web/dashboard/src/components からの相対パスで書く。
 # ViewModel への移行（SPEC #821 T008 / T009 / T012 / T013）が完了したら、そのエントリを削除する
 # （残っていると検査が失敗する）。
-
-dashboard/ModelDownloadDialog.tsx

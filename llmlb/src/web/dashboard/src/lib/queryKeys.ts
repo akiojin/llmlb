@@ -13,6 +13,8 @@ export const queryKeys = {
   endpointPrefix: () => ['endpoint'] as const,
   endpoint: (endpointId: string | undefined) => ['endpoint', endpointId] as const,
   endpointModels: (endpointId: string) => ['endpoint-models', endpointId] as const,
+  endpointDownloadProgress: (endpointId: string | undefined, taskId: string | undefined) =>
+    ['endpoint-download-progress', endpointId, taskId] as const,
   endpointModelTpsPrefix: () => ['endpoint-model-tps'] as const,
   endpointModelTps: (endpointId: string) => ['endpoint-model-tps', endpointId] as const,
   endpointModelStats: (endpointId: string) => ['endpoint-model-stats', endpointId] as const,

@@ -1,8 +1,5 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useEffect, useRef } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { type DashboardEndpoint, endpointsApi } from '@/lib/api'
-import { toast } from '@/hooks/use-toast'
+import { type DashboardEndpoint } from '@/lib/api'
+import { useModelDownloadDialogViewModel } from '@/viewmodels/useModelDownloadDialogViewModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,8 +25,6 @@ interface ModelDownloadDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-type DownloadStatus = 'idle' | 'downloading' | 'completed' | 'error'
-
 export function ModelDownloadDialog({
   endpoint,
   open,
@@ -50,138 +45,17 @@ function ModelDownloadDialogContent({
   open,
   onOpenChange,
 }: ModelDownloadDialogProps) {
-  const queryClient = useQueryClient()
-  const [modelName, setModelName] = useState('')
-  const [status, setStatus] = useState<DownloadStatus>('idle')
-  const [progress, setProgress] = useState(0)
-  const [progressMessage, setProgressMessage] = useState('')
-  const [errorMessage, setErrorMessage] = useState('')
-  const pollingRef = useRef<number | null>(null)
+  const {
+    supportsDownload, modelName, setModelName, status, progress, progressMessage,
+    errorMessage, isDownloadPending, canDownload, handleDownload, handleClose, handleOpenChange,
+  } = useModelDownloadDialogViewModel({ endpoint, open, onOpenChange })
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current)
-      }
-    }
-  }, [])
-
-  // Download mutation
-  const downloadMutation = useMutation({
-    mutationFn: (data: { model: string }) =>
-      endpointsApi.downloadModel(endpoint!.id, data),
-    onSuccess: (data) => {
-      setStatus('downloading')
-      setProgress(0)
-      setProgressMessage('Starting download...')
-      // Start polling for progress
-      startProgressPolling(data.task_id)
-    },
-    onError: (error) => {
-      setStatus('error')
-      setErrorMessage(error instanceof Error ? error.message : 'Download failed')
-      toast({
-        title: 'Download Failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  const startProgressPolling = (downloadTaskId: string) => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current)
-    }
-
-    const pollProgress = async () => {
-      if (!endpoint) return
-
-      try {
-        const result = await endpointsApi.getDownloadProgress(endpoint.id)
-        const task =
-          result.tasks.find((t) => t.task_id === downloadTaskId) ||
-          result.tasks.find((t) => t.model === modelName)
-
-        if (!task) {
-          setProgressMessage('Waiting for download to start...')
-          return
-        }
-
-        if (task.status === 'completed') {
-          setStatus('completed')
-          setProgress(100)
-          setProgressMessage('Download completed')
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current)
-            pollingRef.current = null
-          }
-          queryClient.invalidateQueries({ queryKey: queryKeys.endpointModels(endpoint.id) })
-          queryClient.invalidateQueries({ queryKey: queryKeys.dashboardEndpoints() })
-          toast({
-            title: 'Download Completed',
-            description: `Model ${modelName} has been downloaded successfully`,
-          })
-        } else if (task.status === 'failed' || task.status === 'cancelled') {
-          setStatus('error')
-          setErrorMessage(task.error || 'Download failed')
-          setProgressMessage('')
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current)
-            pollingRef.current = null
-          }
-        } else if (task.status === 'downloading' || task.status === 'pending') {
-          setProgress(task.progress || 0)
-          setProgressMessage(buildProgressMessage(task))
-        }
-      } catch {
-        // Polling error - might be temporary, keep trying
-      }
-    }
-
-    // Poll immediately, then every 2 seconds
-    pollProgress()
-    pollingRef.current = window.setInterval(pollProgress, 2000)
-  }
-
-  const handleDownload = () => {
-    if (!modelName.trim()) {
-      toast({
-        title: 'Model name required',
-        description: 'Please enter a model name',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setErrorMessage('')
-    downloadMutation.mutate({ model: modelName.trim() })
-  }
-
-  const handleClose = () => {
-    if (status === 'downloading') {
-      // Don't close while downloading - warn user
-      toast({
-        title: 'Download in progress',
-        description: 'Please wait for the download to complete',
-      })
-      return
-    }
-    onOpenChange(false)
-  }
-
-  if (!endpoint || endpoint.endpoint_type !== 'xllm') return null
+  if (!supportsDownload || !endpoint) return null
 
   return (
     <Dialog
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (nextOpen) {
-          onOpenChange(true)
-          return
-        }
-        handleClose()
-      }}
+      onOpenChange={handleOpenChange}
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -203,7 +77,7 @@ function ModelDownloadDialogContent({
                 placeholder="e.g., llama-3.1-8b-instruct"
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
-                disabled={downloadMutation.isPending}
+                disabled={isDownloadPending}
               />
               <p className="text-xs text-muted-foreground">
                 Enter the model name as recognized by xLLM
@@ -249,9 +123,9 @@ function ModelDownloadDialogContent({
               </Button>
               <Button
                 onClick={handleDownload}
-                disabled={!modelName.trim() || downloadMutation.isPending}
+                disabled={!canDownload}
               >
-                {downloadMutation.isPending && (
+                {isDownloadPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 Download
@@ -270,23 +144,4 @@ function ModelDownloadDialogContent({
       </DialogContent>
     </Dialog>
   )
-}
-
-function buildProgressMessage(
-  task: { speed_mbps?: number; eta_seconds?: number }
-): string {
-  const parts: string[] = []
-  if (task.speed_mbps != null) parts.push(`${task.speed_mbps.toFixed(1)} Mbps`)
-  if (task.eta_seconds != null)
-    parts.push(`ETA ${formatEta(task.eta_seconds)}`)
-  return parts.join(' / ') || 'Downloading...'
-}
-
-function formatEta(seconds: number): string {
-  if (!Number.isFinite(seconds)) return '-'
-  const s = Math.max(0, Math.floor(seconds))
-  const m = Math.floor(s / 60)
-  const r = s % 60
-  if (m <= 0) return `${r}s`
-  return `${m}m ${r}s`
 }

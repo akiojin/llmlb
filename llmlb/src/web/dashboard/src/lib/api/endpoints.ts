@@ -216,9 +216,9 @@ export const endpointsApi = {
     }),
 
   /** SPEC-e8e9326e: Get download progress (xLLM only) */
-  getDownloadProgress: (id: string) =>
+  getDownloadProgress: (id: string, signal?: AbortSignal) =>
     fetchWithAuth<{ tasks: DownloadTask[] }>(
-      `/api/endpoints/${id}/download/progress`
+      `/api/endpoints/${id}/download/progress`, { signal }
     ),
 
   /** SPEC-8c32349f: Get today's request statistics for an endpoint */

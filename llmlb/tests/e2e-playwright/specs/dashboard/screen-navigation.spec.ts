@@ -25,9 +25,10 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
     const viewerUsername = `viewer_nav_${Date.now()}@example.com`;
     const result = await createUser(request, viewerUsername, '', 'viewer');
     const generatedPassword = (result as { generated_password?: string }).generated_password;
-    test.skip(!generatedPassword, 'Failed to create viewer user');
 
     try {
+      expect(result.id, 'viewer fixture must be created').toBeTruthy();
+      expect(generatedPassword, 'viewer fixture must include its password').toBeTruthy();
       // Log out and log in as viewer
       await dashboard.signOut();
 

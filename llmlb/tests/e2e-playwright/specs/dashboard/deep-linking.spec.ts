@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../helpers/endpoint.fixture';
 import { DashboardPage } from '../../pages/dashboard.page';
 
 test.describe('Deep Linking @dashboard @navigation', () => {
@@ -29,15 +29,11 @@ test.describe('Deep Linking @dashboard @navigation', () => {
     await expect(dashboardButton).toBeVisible({ timeout: 10000 });
   });
 
-  test('DL-03: Direct access to /#playground/:id when authenticated', async ({ page, request }) => {
+  test('DL-03: Direct access to /#playground/:id when authenticated', async ({ page, endpoint }) => {
     const dashboard = new DashboardPage(page);
     await dashboard.goto();
 
-    const { listEndpoints } = await import('../../helpers/api-helpers');
-    const endpoints = await listEndpoints(request);
-    test.skip(endpoints.length === 0, 'No endpoints available to test');
-
-    const endpointId = endpoints[0].id;
+    const endpointId = endpoint.id;
 
     await page.goto(`/dashboard/#playground/${endpointId}`);
     await page.waitForLoadState('load');

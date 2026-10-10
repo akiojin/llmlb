@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../helpers/endpoint.fixture';
 import { DashboardPage } from '../../pages/dashboard.page';
-import { DashboardSelectors } from '../../helpers/selectors';
 
 test.describe('Modal Lifecycle @dashboard @navigation', () => {
   let dashboard: DashboardPage;
@@ -50,36 +49,33 @@ test.describe('Modal Lifecycle @dashboard @navigation', () => {
     await expect(dashboard.invitationModal).not.toBeVisible({ timeout: 5000 });
   });
 
-  test('MOD-05: Endpoint detail modal opens and closes', async ({ page }) => {
-    const rows = page.locator('#nodes-body tr');
-    const rowCount = await rows.count();
-    test.skip(rowCount === 0, 'No endpoints available to test');
-
-    const detailButton = rows.first().locator('button[title="Details"]');
-    if (await detailButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await detailButton.click();
-      const nodeModal = page.locator(DashboardSelectors.modals.nodeModal);
-      await expect(nodeModal).toBeVisible({ timeout: 5000 });
-
-      const closeBtn = page.locator(DashboardSelectors.modals.nodeModalClose);
-      await closeBtn.click();
-      await expect(nodeModal).not.toBeVisible({ timeout: 5000 });
-    }
+  test('MOD-05: Endpoint detail modal opens and closes', async ({ page, endpoint }) => {
+    await page.getByPlaceholder('Search by name or URL...').fill(endpoint.name);
+    const row = page.getByRole('row').filter({ hasText: endpoint.name });
+    await expect(row).toBeVisible();
+    await row.locator('button[title="Details"]').click();
+    const modal = page.getByRole('dialog');
+    await expect(modal.getByLabel('Display Name')).toHaveValue(endpoint.name);
+    await modal.getByRole('button', { name: 'Close', exact: true }).first().click();
+    await expect(modal).not.toBeVisible();
   });
 
-  test('MOD-06: Request detail modal opens and closes (History tab)', async ({ page }) => {
+  test('MOD-06: Request detail modal opens and closes (History tab)', async ({ page, request, endpoint }) => {
+    const completion = await request.post('/v1/chat/completions', {
+      headers: { Authorization: 'Bearer sk_debug' },
+      data: { model: endpoint.model, messages: [{ role: 'user', content: 'modal lifecycle' }] },
+    });
+    expect(completion.ok()).toBeTruthy();
+    // History was fetched before the inference; reload after producing our own record.
+    await dashboard.goto();
     await dashboard.goToHistoryTab();
-
-    const rows = dashboard.getHistoryRows();
-    const rowCount = await rows.count();
-    test.skip(rowCount === 0, 'No history entries available to test');
-
-    await dashboard.clickHistoryRow(0);
+    const row = dashboard.getHistoryRows().filter({ hasText: endpoint.model });
+    await expect(row).toHaveCount(1);
+    await row.click();
     const requestModal = dashboard.getHistoryDetailModal();
-    await expect(requestModal).toBeVisible({ timeout: 5000 });
-
-    // Radix UI Dialog close: use Escape key (no explicit close button ID)
+    await expect(requestModal).toBeVisible();
+    await expect(requestModal).toContainText(endpoint.model);
     await page.keyboard.press('Escape');
-    await expect(requestModal).not.toBeVisible({ timeout: 5000 });
+    await expect(requestModal).not.toBeVisible();
   });
 });

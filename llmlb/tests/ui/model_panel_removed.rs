@@ -30,12 +30,14 @@ async fn dashboard_html_has_no_model_panel() {
     let html = String::from_utf8_lossy(&bytes);
 
     assert!(html.contains("LLM Load Balancer"));
+    // The title belongs to the served shell; removed panels belong to React.
+    let markup = html.to_string() + &super::source::dashboard_sources();
     assert!(
-        !html.contains("available-models-list"),
+        !markup.contains("available-models-list"),
         "model panel should be removed"
     );
     assert!(
-        !html.contains("loaded-models-list"),
+        !markup.contains("loaded-models-list"),
         "model load panel should be removed"
     );
 }

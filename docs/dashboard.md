@@ -89,12 +89,21 @@ Use them for anything a rendered component decides on its own:
 - what is rendered from given data, and the loading / empty / error states
 - which API method a user action calls, and with which arguments
 - role gating inside a page (what an admin sees and a viewer does not)
-- hook logic such as the WebSocket query invalidation matrix
-  (`src/hooks/useWebSocket.test.tsx`). The hook invalidates from the table in
-  `src/hooks/dashboardEventInvalidation.ts`; adding a resource to `DASHBOARD_RESOURCES`
-  fails typecheck until both the table and the matrix list its query keys.
-  The wire contains only `{changed, id?}`; connection state comes from
-  `onopen`. The central table stays until the T005 subscription cutover
+- hook logic such as WebSocket query invalidation. Each ViewModel declares its
+  dependencies with `src/hooks/useInvalidateOn.ts`; the subscription registry in
+  `src/hooks/dashboardSubscriptions.ts` invalidates matching query keys when
+  `useWebSocket` receives `{changed, id?}`. An id-less notification reaches all
+  subscribers of the resource; an id-scoped notification reaches aggregate
+  subscribers and subscribers declaring that same id. Connection state comes
+  from `onopen`.
+- resource type and subscription coverage. `DashboardResource` is a union derived
+  from the single `DASHBOARD_RESOURCES` constant in `src/lib/dashboardResources.ts`;
+  unknown resource names fail typecheck in `dashboardResources.type-test.ts`.
+  `src/viewmodels/dashboardResourceCoverage.test.tsx` requires a behavior row for
+  every resource and verifies that mounted production ViewModels subscribe and
+  invalidate the expected query keys. CI runs these checks through
+  `make dashboard-checks`, and directly runs `make dashboard-data-hooks` to reject
+  data-fetching hooks in views.
 
 They run in jsdom without a server. `src/test/setup.ts` replaces `fetch` and
 `WebSocket`; a request that a test did not stub fails that test. Stub the API

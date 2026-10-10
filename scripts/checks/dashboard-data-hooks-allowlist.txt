@@ -5,7 +5,6 @@
 # ViewModel への移行（SPEC #821 T008 / T009 / T012 / T013）が完了したら、そのエントリを削除する
 # （残っていると検査が失敗する）。
 
-api-keys/ApiKeyModal.tsx
 dashboard/AlertThresholdSettings.tsx
 dashboard/ClientDrilldown.tsx
 dashboard/ClientsTab.tsx
@@ -14,5 +13,3 @@ dashboard/ModelAddWizard.tsx
 dashboard/ModelDeleteDialog.tsx
 dashboard/ModelDownloadDialog.tsx
 dashboard/TokenStatsSection.tsx
-invitations/InvitationModal.tsx
-users/UserModal.tsx

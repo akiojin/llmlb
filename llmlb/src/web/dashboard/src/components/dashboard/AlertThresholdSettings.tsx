@@ -1,43 +1,13 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { clientsApi } from '@/lib/api'
+import { useAlertThresholdSettingsViewModel } from '@/viewmodels/useAlertThresholdSettingsViewModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Settings2 } from 'lucide-react'
 
 export function AlertThresholdSettings() {
-  const queryClient = useQueryClient()
-  const [editing, setEditing] = useState(false)
-  const [inputValue, setInputValue] = useState('')
-
-  const { data } = useQuery({
-    queryKey: queryKeys.alertThreshold(),
-    queryFn: () => clientsApi.getAlertThreshold(),
-  })
-
-  const mutation = useMutation({
-    mutationFn: (value: string) => clientsApi.updateAlertThreshold(value),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.alertThreshold() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.clientRanking() })
-      setEditing(false)
-    },
-  })
-
-  const threshold = data?.value ?? '100'
-
-  function startEditing() {
-    setInputValue(threshold)
-    setEditing(true)
-  }
-
-  function save() {
-    const num = parseInt(inputValue, 10)
-    if (!isNaN(num) && num > 0) {
-      mutation.mutate(String(num))
-    }
-  }
+  const {
+    editing, inputValue, setInputValue, thresholdLabel, isPending,
+    startEditing, save, cancelEditing, handleKeyDown,
+  } = useAlertThresholdSettingsViewModel()
 
   if (editing) {
     return (
@@ -50,16 +20,13 @@ export function AlertThresholdSettings() {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           className="h-7 w-24"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') save()
-            if (e.key === 'Escape') setEditing(false)
-          }}
+          onKeyDown={(e) => handleKeyDown(e.key)}
           autoFocus
         />
-        <Button size="sm" variant="outline" className="h-7" onClick={save} disabled={mutation.isPending}>
+        <Button size="sm" variant="outline" className="h-7" onClick={save} disabled={isPending}>
           Save
         </Button>
-        <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(false)}>
+        <Button size="sm" variant="ghost" className="h-7" onClick={cancelEditing}>
           Cancel
         </Button>
       </div>
@@ -70,7 +37,7 @@ export function AlertThresholdSettings() {
     <div className="flex items-center gap-2 text-sm">
       <Settings2 className="h-4 w-4 text-muted-foreground" />
       <span className="text-muted-foreground">Alert threshold (1h):</span>
-      <span className="font-medium">{`${threshold} requests`}</span>
+      <span className="font-medium">{thresholdLabel}</span>
       <Button size="sm" variant="ghost" className="h-7" onClick={startEditing}>
         Edit
       </Button>

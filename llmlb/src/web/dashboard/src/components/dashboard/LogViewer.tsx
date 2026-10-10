@@ -1,7 +1,4 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useState, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { type LogEntry, dashboardApi } from '@/lib/api'
+import { useLogViewerViewModel } from '@/viewmodels/useLogViewerViewModel'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,7 +14,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { FileText, RefreshCw, Trash2, Server, Download } from 'lucide-react'
-import { toast } from '@/hooks/use-toast'
 
 /**
  * SPEC-e8e9326e: Router-Driven Endpoint Registration System
@@ -27,68 +23,11 @@ import { toast } from '@/hooks/use-toast'
  * Currently displays load balancer logs only. Can be extended when endpoints provide log APIs.
  */
 
-type LogLevel = 'all' | 'error' | 'warn' | 'info' | 'debug'
-
 export function LogViewer() {
-  const [levelFilter, setLevelFilter] = useState<LogLevel>('all')
-  const [autoScroll, setAutoScroll] = useState(true)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // Fetch load balancer logs only (endpoints are external services without log API)
   const {
-    data: routerLogs,
-    refetch: refetchRouter,
-    isRefetching,
-  } = useQuery({
-    queryKey: queryKeys.routerLogs(),
-    queryFn: () => dashboardApi.getRouterLogs({ limit: 200 }),
-    refetchInterval: 5000,
-  })
-
-  const logs = routerLogs?.entries as LogEntry[] | undefined
-
-  const filteredLogs = logs?.filter((log) => {
-    if (levelFilter === 'all') return true
-    return log.level.toLowerCase() === levelFilter
-  })
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      const scrollContainer = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]')
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight
-      }
-    }
-  }, [filteredLogs, autoScroll])
-
-  const handleRefresh = () => {
-    refetchRouter()
-  }
-
-  const handleClear = () => {
-    toast({ title: 'Log clearing is handled on the server side' })
-  }
-
-  const handleDownload = () => {
-    if (!filteredLogs || filteredLogs.length === 0) {
-      toast({ title: 'No logs to download', variant: 'destructive' })
-      return
-    }
-
-    const logText = filteredLogs
-      .map((log) => `[${log.timestamp}] [${log.level}] ${log.target ? `[${log.target}] ` : ''}${log.message || ''}`)
-      .join('\n')
-
-    const blob = new Blob([logText], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `logs-llmlb-${new Date().toISOString().slice(0, 10)}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast({ title: 'Logs downloaded' })
-  }
+    levelFilter, setLevelFilter, autoScroll, setAutoScroll, scrollRef,
+    filteredLogs, logCount, isRefetching, handleRefresh, handleClear, handleDownload,
+  } = useLogViewerViewModel()
 
   const getLevelColor = (level: string) => {
     const l = level.toLowerCase()
@@ -108,7 +47,7 @@ export function LogViewer() {
             Log Viewer
             {filteredLogs && (
               <Badge variant="secondary" className="ml-2">
-                {filteredLogs.length}
+                {logCount}
               </Badge>
             )}
           </CardTitle>
@@ -121,7 +60,7 @@ export function LogViewer() {
             </div>
 
             {/* Level Filter */}
-            <Select value={levelFilter} onValueChange={(v) => setLevelFilter(v as LogLevel)}>
+            <Select value={levelFilter} onValueChange={setLevelFilter}>
               <SelectTrigger className="w-28">
                 <SelectValue />
               </SelectTrigger>
@@ -189,7 +128,7 @@ export function LogViewer() {
                   className="flex gap-2 py-0.5 hover:bg-muted/50 rounded px-1 -mx-1"
                 >
                   <span className="text-muted-foreground shrink-0">
-                    {new Date(log.timestamp).toLocaleTimeString()}
+                    {log.timeLabel}
                   </span>
                   <span
                     className={cn(
@@ -199,12 +138,12 @@ export function LogViewer() {
                   >
                     {log.level}
                   </span>
-                  {log.target && (
+                  {log.targetLabel && (
                     <span className="text-muted-foreground shrink-0">
-                      [{log.target}]
+                      {log.targetLabel}
                     </span>
                   )}
-                  <span className="break-all">{log.message || ''}</span>
+                  <span className="break-all">{log.message}</span>
                 </div>
               ))
             )}

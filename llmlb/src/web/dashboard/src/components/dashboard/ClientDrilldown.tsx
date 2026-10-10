@@ -1,11 +1,4 @@
-import { queryKeys } from '@/lib/queryKeys'
-import { useQuery } from '@tanstack/react-query'
-import {
-  clientsApi,
-  type ClientDetailResponse,
-  type ClientApiKeyUsage,
-  type ModelDistribution,
-} from '@/lib/api'
+import { useClientDrilldownViewModel } from '@/viewmodels/useClientDrilldownViewModel'
 import { ModelDistributionPie } from './ModelDistributionPie'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { Loader2 } from 'lucide-react'
@@ -15,15 +8,11 @@ interface ClientDrilldownProps {
 }
 
 export function ClientDrilldown({ ip }: ClientDrilldownProps) {
-  const { data, isLoading } = useQuery<ClientDetailResponse>({
-    queryKey: queryKeys.clientDetail(ip),
-    queryFn: () => clientsApi.getClientDetail(ip),
-  })
-
-  const { data: apiKeysData } = useQuery<ClientApiKeyUsage[]>({
-    queryKey: queryKeys.clientApiKeys(ip),
-    queryFn: () => clientsApi.getClientApiKeys(ip),
-  })
+  const {
+    isLoading, hasData, totalRequestsLabel, firstSeenLabel, lastSeenLabel,
+    recentRequests, modelDistribution, hourlyPattern, hasHourlyData, apiKeys,
+    formatHourlyRequests, formatHour,
+  } = useClientDrilldownViewModel(ip)
 
   if (isLoading) {
     return (
@@ -33,7 +22,7 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
     )
   }
 
-  if (!data || data.total_requests === 0) {
+  if (!hasData) {
     return (
       <div className="py-4 text-center text-sm text-muted-foreground">
         No data for this IP
@@ -41,26 +30,24 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
     )
   }
 
-  const apiKeys = apiKeysData ?? []
-
   return (
     <div className="space-y-4 p-4">
       {/* Summary */}
       <div className="flex flex-wrap gap-4 text-sm">
         <div>
           <span className="text-muted-foreground">{'Total: '}</span>
-          <span className="font-medium">{`${data.total_requests.toLocaleString()} requests`}</span>
+          <span className="font-medium">{totalRequestsLabel}</span>
         </div>
-        {data.first_seen && (
+        {firstSeenLabel && (
           <div>
             <span className="text-muted-foreground">{'First: '}</span>
-            <span>{formatDate(data.first_seen)}</span>
+            <span>{firstSeenLabel}</span>
           </div>
         )}
-        {data.last_seen && (
+        {lastSeenLabel && (
           <div>
             <span className="text-muted-foreground">{'Last: '}</span>
-            <span>{formatDate(data.last_seen)}</span>
+            <span>{lastSeenLabel}</span>
           </div>
         )}
       </div>
@@ -74,14 +61,14 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
           <div className="max-h-48 overflow-y-auto">
             <table className="w-full text-xs">
               <tbody>
-                {data.recent_requests.map((r) => (
+                {recentRequests.map((r) => (
                   <tr key={r.id} className="border-b last:border-0">
                     <td className="px-3 py-1.5 text-muted-foreground">
-                      {formatTime(r.timestamp)}
+                      {r.timeLabel}
                     </td>
                     <td className="px-3 py-1.5 font-mono">{r.model}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">
-                      {r.duration_ms != null ? `${r.duration_ms}ms` : '-'}
+                      {r.durationLabel}
                     </td>
                   </tr>
                 ))}
@@ -96,7 +83,7 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
             Model Distribution
           </div>
           <div className="p-2">
-            <ModelDistributionPie data={data.model_distribution as ModelDistribution[]} />
+            <ModelDistributionPie data={modelDistribution} />
           </div>
         </div>
 
@@ -106,13 +93,13 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
             Hourly Pattern
           </div>
           <div className="p-2">
-            {data.hourly_pattern.every((p) => p.count === 0) ? (
+            {!hasHourlyData ? (
               <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
                 No hourly data
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={data.hourly_pattern} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <BarChart data={hourlyPattern} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                   <XAxis
                     dataKey="hour"
                     tick={{ fontSize: 9 }}
@@ -134,8 +121,8 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
                       borderRadius: '6px',
                       fontSize: '11px',
                     }}
-                    formatter={(value) => [Number(value ?? 0), 'Requests']}
-                    labelFormatter={(label) => `${String(label ?? '')}:00`}
+                    formatter={formatHourlyRequests}
+                    labelFormatter={formatHour}
                   />
                   <Bar dataKey="count" fill="hsl(var(--chart-3))" radius={[2, 2, 0, 0]} />
                 </BarChart>
@@ -158,12 +145,12 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
               <table className="w-full text-xs">
                 <tbody>
                   {apiKeys.map((k) => (
-                    <tr key={k.api_key_id} className="border-b last:border-0">
+                    <tr key={k.id} className="border-b last:border-0">
                       <td className="px-3 py-1.5">
                         {k.name ?? <span className="text-muted-foreground italic">Deleted</span>}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
-                        {k.request_count.toLocaleString()}
+                        {k.requestCountLabel}
                       </td>
                     </tr>
                   ))}
@@ -175,20 +162,4 @@ export function ClientDrilldown({ ip }: ClientDrilldownProps) {
       </div>
     </div>
   )
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleString()
-  } catch {
-    return dateStr
-  }
-}
-
-function formatTime(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleTimeString()
-  } catch {
-    return dateStr
-  }
 }

@@ -93,6 +93,19 @@ T012c の `useModelAddWizardViewModel` は catalog の3クエリ、300ms debounc
 追加はバッチ終了後、削除は成功直後に従来のキャッシュを更新する。
 モデル表の取得・統計は既存 `useEndpointModelsTableViewModel` の責務として複製しない。
 
+T012d の `useClientsTabViewModel` はランキング、timeline、model 分布、heatmap、
+URL の IP フィルターとページを所有する。`useClientDrilldownViewModel` は展開中の IP の
+詳細と API キー使用量だけを取得し、集計取得を複製しない。詳細の寿命は既存の行展開に従う。
+`useTokenStatsViewModel` は既存の 7 日・6 か月の同時取得、グラフと表の表示値を所有する。
+overview や endpoint 統計は別 API なので、それらの VM を合成して余分な取得を作らない。
+これらは API クライアント、queryKeys、表示の共通 utility を再利用し、provider の polling を保つ。
+`useLogViewerViewModel` は 200 件・5 秒 polling、フィルター、auto-scroll、手動更新、
+clear の通知、フィルター済みログのダウンロードと URL 解除を所有する。
+`useAlertThresholdSettingsViewModel` は編集・正整数保存・pending と成功時 close を所有し、
+`useInvalidateOn` のキー専用更新コマンドで threshold と ranking prefix だけを刷新する。
+両キーは空 resource 宣言とし、新しい WS 依存を加えない。再取得を await しない既存の成功時点と、
+操作中に unmount しても元のキャッシュを更新する性質を維持する。
+
 ## 参照実装: usePlayground
 
 [`hooks/usePlayground.ts`](../hooks/usePlayground.ts) は、JSX を持たず、state・ref と

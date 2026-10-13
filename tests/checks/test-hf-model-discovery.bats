@@ -12,9 +12,10 @@ setup() {
 @test "weekly discovery has schedule, manual trigger, limited permissions and concurrency" {
     workflow="$ROOT/.github/workflows/model-discovery.yml"
     [ -f "$workflow" ]
-    run rg 'cron:.*0 3 \* \* 1' "$workflow"
+    # CI does not install ripgrep; keep these assertions on standard tools.
+    run grep -E 'cron:.*0 3 \* \* 1' "$workflow"
     [ "$status" -eq 0 ]
-    run rg 'workflow_dispatch:|contents: read|issues: write|group: hf-model-discovery|ref: develop|discover_hf_models.py --publish' "$workflow"
+    run grep -E 'workflow_dispatch:|contents: read|issues: write|group: hf-model-discovery|ref: develop|discover_hf_models.py --publish' "$workflow"
     [ "$status" -eq 0 ]
     [ "${#lines[@]}" -eq 6 ]
 }

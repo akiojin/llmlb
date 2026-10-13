@@ -1,5 +1,6 @@
 //! エンドポイント種別の自動判定（優先順位に従った判定と OpenAI 互換フォールバック）
 
+use super::strata::detect_strata_family;
 use super::{detect_llamacpp, detect_lm_studio, detect_ollama, detect_vllm, detect_xllm};
 use reqwest::Client;
 use tracing::{debug, warn};
@@ -90,7 +91,14 @@ pub async fn detect_endpoint_type_with_client(
         });
     }
 
-    // Priority 5: llama.cpp detection
+    // Priority 5: Strata / Project Maya intentionally mimic llama.cpp APIs.
+    // Check their public /health markers first to avoid misclassifying them.
+    if let Some(result) = detect_strata_family(client, base_url).await {
+        debug!(endpoint_type = %result.endpoint_type, "Detected Strata-family endpoint");
+        return Ok(result);
+    }
+
+    // Priority 6: llama.cpp detection
     if let Some(reason) = detect_llamacpp(client, base_url).await {
         debug!(endpoint_type = "llamacpp", "Detected llama.cpp endpoint");
         return Ok(DetectionResult {
@@ -99,7 +107,7 @@ pub async fn detect_endpoint_type_with_client(
         });
     }
 
-    // Priority 6: OpenAI-compatible detection (also serves as connectivity check)
+    // Priority 7: OpenAI-compatible detection (also serves as connectivity check)
     match detect_openai_compatible(client, base_url, api_key).await {
         OpenAiDetectResult::Detected(reason) => {
             debug!(

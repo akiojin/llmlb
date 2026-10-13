@@ -266,7 +266,11 @@ fn can_recommend_download(endpoint_type: EndpointType, engine_name: Option<&str>
         EndpointType::Ollama => engine_name.is_some(),
         EndpointType::LmStudio => true,
         EndpointType::Xllm => true,
-        EndpointType::Llamacpp | EndpointType::Vllm | EndpointType::OpenaiCompatible => false,
+        EndpointType::Llamacpp
+        | EndpointType::Vllm
+        | EndpointType::Strata
+        | EndpointType::ProjectMaya
+        | EndpointType::OpenaiCompatible => false,
     }
 }
 

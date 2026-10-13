@@ -2,11 +2,13 @@
 //!
 //! SPEC-e8e9326e: Automatic endpoint type detection
 //!
-//! Detection priority: xLLM > LM Studio > Ollama > vLLM > llama.cpp > OpenAI-compatible
+//! Detection priority: xLLM > LM Studio > Ollama > vLLM > Project Maya / Strata
+//! > llama.cpp > OpenAI-compatible
 
 mod llama_cpp;
 mod lm_studio;
 mod ollama;
+mod strata;
 mod vllm;
 mod xllm;
 pub use llama_cpp::detect_llamacpp;

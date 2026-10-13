@@ -32,6 +32,17 @@ function setup(polling = false) {
 afterEach(() => vi.useRealTimers())
 
 describe('endpoint detail ViewModels', () => {
+  it.each([
+    ['strata', 'Strata'],
+    ['project_maya', 'Project Maya'],
+  ] as const)('displays the %s endpoint type in details', (type, label) => {
+    const { wrapper } = setup()
+    const runtime = { ...endpoint, endpoint_type: type }
+    const { result } = renderHook(() => useEndpointDetailViewModel(runtime, false, vi.fn()), { wrapper })
+
+    expect(result.current.typeLabel).toBe(label)
+  })
+
   it('keeps today acquisition gated by open and uses the supplied endpoint without a new detail GET', async () => {
     const today = vi.spyOn(endpointsApi, 'getTodayStats').mockResolvedValue({
       date: '2026-10-10', total_requests: 12, successful_requests: 10, failed_requests: 2,

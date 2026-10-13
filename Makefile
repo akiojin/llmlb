@@ -5,6 +5,7 @@ SHELL := /bin/sh
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 .PHONY: poc-gptoss poc-gptoss-metal poc-gptoss-cuda
+.PHONY: shell-variable-boundaries
 
 FIND ?= /usr/bin/find
 
@@ -16,6 +17,11 @@ clippy:
 
 clippy-parity:
 	bash scripts/checks/check-clippy-parity.sh
+
+# Issue #889: macOS bash 3.2 の非ASCII隣接変数展開を検出する。
+# CI (lint.yml commitlint) のパス条件のない必須ジョブでも実行する。
+shell-variable-boundaries:
+	bash scripts/checks/check-shell-variable-boundaries.sh
 
 # SPEC #699 FR-009/FR-010: 1,500 行上限と mod.rs の re-export 化
 # Issue #811: 上限はテストコード（tests.rs / tests/ 配下）にも適用する。
@@ -87,7 +93,7 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy-parity module-structure event-publishers flaky-patterns dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
+quality-checks: fmt clippy-parity shell-variable-boundaries module-structure event-publishers flaky-patterns dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
 
 quality-checks-pre-commit: fmt clippy-parity clippy
 
@@ -105,9 +111,11 @@ openai-tests:
 notification-tests:
 	cargo test -p llmlb --test notification_tests
 
+# Bats 1.13 / bash 3.2 の日本語テスト名をバイト単位で処理する（Issue #889）。
+# ハーネスだけに限定し、UTF-8回帰テストは対象コマンドのロケールを明示する。
 test-checks:
 	@if [ -x "./node_modules/bats/bin/bats" ]; then \
-		bash ./node_modules/bats/bin/bats tests/checks scripts/checks/tests; \
+		env -u LC_ALL LC_CTYPE=C bash ./node_modules/bats/bin/bats tests/checks scripts/checks/tests; \
 	else \
 		echo "bats is not installed. Run 'pnpm install' first." >&2; \
 		exit 1; \
@@ -115,7 +123,7 @@ test-checks:
 
 test-hooks:
 	@bash -lc 'if [ -x "./node_modules/bats/bin/bats" ]; then \
-		bash ./node_modules/bats/bin/bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \
+		env -u LC_ALL LC_CTYPE=C bash ./node_modules/bats/bin/bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \
 			(echo "bats tests failed (Windows Git Bash compatibility issue). Hooks are still active." && exit 0); \
 	else \
 		echo "bats is not installed. Run '\''pnpm install'\'' first."; \

@@ -95,4 +95,4 @@ if [ "$violations" -gt 0 ]; then
     echo "✗ マイグレーション採番チェック失敗: ${violations} 件"
     exit 1
 fi
-echo "✓ マイグレーション採番チェック OK（BASE_REF: $BASE_REF）"
+echo "✓ マイグレーション採番チェック OK（BASE_REF: ${BASE_REF}）"

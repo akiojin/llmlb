@@ -263,3 +263,7 @@ jobs:
         # 時間経過だけで失効するため、パスフィルタのない必須ジョブ（全 PR で実行）に置く。
         # ネットワークには依存しない。
         run: make mapping-freshness
+
+      - name: Check shell variable boundaries
+        # Issue #889: 全PRでLinux実行し、scripts/のみの変更も検査する。
+        run: make shell-variable-boundaries

@@ -91,7 +91,7 @@ for variant in $variants; do
         fi
     elif ! allowed "$variant"; then
         echo "✗ DashboardEvent::$variant に production の publisher がありません" >&2
-        echo "    $SRC_DIR（$EVENTS_DIR とテストコードを除く）で publish(DashboardEvent::$variant ...) を呼び出してください" >&2
+        echo "    ${SRC_DIR}（$EVENTS_DIR とテストコードを除く）で publish(DashboardEvent::$variant ...) を呼び出してください" >&2
         status=1
     fi
 done

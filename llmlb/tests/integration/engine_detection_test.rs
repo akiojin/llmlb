@@ -118,6 +118,102 @@ async fn detection_koboldcpp_requires_exact_version_identity() {
 }
 
 #[tokio::test]
+async fn detection_koboldcpp_wins_over_ollama_compatible_tags() {
+    let (mock, base_url, client) = detection_fixture("local", Some("llama.cpp")).await;
+    let prefix = reqwest::Url::parse(&base_url).unwrap().path().to_owned();
+    Mock::given(method("GET"))
+        .and(path(format!("{prefix}/api/tags")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{"name": "test-model", "details": {"family": "koboldcpp"}}]
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("{prefix}/api/extra/version")))
+        .and(wiremock::matchers::header(
+            "authorization",
+            "Bearer detection-key",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "result": "KoboldCpp", "version": "1.0"
+        })))
+        .mount(&mock)
+        .await;
+
+    let result = llmlb::detection::detect_endpoint_type_with_client(
+        &client,
+        &base_url,
+        Some("detection-key"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.endpoint_type.as_str(), "koboldcpp");
+    let requests = mock.received_requests().await.unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.url.path() == format!("{prefix}/api/extra/version"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn detection_ollama_rejects_koboldcpp_version_lookalikes() {
+    for body in [
+        json!({"version": "0.7.0"}),
+        json!({"result": "koboldcpp"}),
+        json!({"result": "KoboldCpp-proxy"}),
+    ] {
+        let (mock, base_url, client) = detection_fixture("library", None).await;
+        let prefix = reqwest::Url::parse(&base_url).unwrap().path().to_owned();
+        Mock::given(method("GET"))
+            .and(path(format!("{prefix}/api/tags")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "models": [{"name": "llama3:8b", "size": 4_000_000_000i64}]
+            })))
+            .mount(&mock)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("{prefix}/api/extra/version")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&mock)
+            .await;
+        let result = llmlb::detection::detect_endpoint_type_with_client(
+            &client,
+            &base_url,
+            Some("detection-key"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.endpoint_type.as_str(), "ollama");
+    }
+}
+
+#[tokio::test]
+async fn detection_model_owners_win_over_ollama_compatible_tags() {
+    for owner in ["sglang", "lmdeploy", "xinference", "lemonade"] {
+        let (mock, base_url, client) = detection_fixture(owner, None).await;
+        let prefix = reqwest::Url::parse(&base_url).unwrap().path().to_owned();
+        Mock::given(method("GET"))
+            .and(path(format!("{prefix}/api/tags")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "models": [{"name": "test-model"}]
+            })))
+            .mount(&mock)
+            .await;
+        let result = llmlb::detection::detect_endpoint_type_with_client(
+            &client,
+            &base_url,
+            Some("detection-key"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.endpoint_type.as_str(), owner);
+    }
+}
+
+#[tokio::test]
 async fn detection_shared_and_partial_owners_remain_generic() {
     for owner in [
         "local",
@@ -171,7 +267,7 @@ async fn detection_existing_models_markers_share_one_response() {
 }
 
 #[tokio::test]
-async fn detection_native_engines_keep_priority_over_model_owners() {
+async fn detection_xllm_and_lm_studio_keep_priority_over_model_owners() {
     for (probe, body, expected) in [
         ("/api/system", json!({"xllm_version": "0.1.0"}), "xllm"),
         (
@@ -179,7 +275,6 @@ async fn detection_native_engines_keep_priority_over_model_owners() {
             json!({"models": [{"publisher": "test", "architecture": "llama", "loaded_instances": []}]}),
             "lm_studio",
         ),
-        ("/api/tags", json!({"models": []}), "ollama"),
     ] {
         let mock = MockServer::start().await;
         let prefix = format!("/{}", uuid::Uuid::new_v4());

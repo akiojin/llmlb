@@ -82,6 +82,17 @@ async fn test_additional_engine_registration_and_persistence() {
                 .mount(&mock)
                 .await;
         }
+        if matches!(engine, "sglang" | "lemonade" | "koboldcpp") {
+            // These engines expose Ollama-compatible tags alongside their
+            // dedicated identities. Registration must preserve the native type.
+            Mock::given(method("GET"))
+                .and(path("/api/tags"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "models": [{"name": "test", "details": {"family": "koboldcpp"}}]
+                })))
+                .mount(&mock)
+                .await;
+        }
         let response = client
             .post(format!("http://{}/api/endpoints", server.addr()))
             .bearer_auth(&admin_key)

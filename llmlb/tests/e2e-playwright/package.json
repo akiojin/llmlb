@@ -1,6 +1,6 @@
 {
   "name": "llmlb-e2e-playwright",
-  "version": "1.0.0",
+  "version": "6.2.0",
   "private": true,
   "description": "Playwright E2E tests for LLM Router Dashboard and Playground",
   "scripts": {

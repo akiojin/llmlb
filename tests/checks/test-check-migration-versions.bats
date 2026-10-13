@@ -32,6 +32,12 @@ add_migration() {
     [ "$status" -eq 0 ]
 }
 
+@test "標準bashのUTF-8ロケールで成功メッセージを表示できる" {
+    run env -u LC_ALL LANG=C.UTF-8 LC_CTYPE=C.UTF-8 /bin/bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"BASE_REF: HEAD）"* ]]
+}
+
 @test "タイムスタンプ形式の新規マイグレーションは成功する" {
     add_migration 20260928010203_add_feature.sql
     run "$SCRIPT"

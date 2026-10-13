@@ -353,6 +353,26 @@ fn test_endpoint_type_from_str() {
 }
 
 #[test]
+fn test_strata_family_endpoint_types_roundtrip() {
+    for name in ["strata", "project_maya"] {
+        let endpoint_type: EndpointType = name.parse().expect("supported endpoint type");
+        assert_eq!(endpoint_type.as_str(), name);
+        assert_eq!(endpoint_type.to_string(), name);
+        let json = serde_json::to_string(&endpoint_type).unwrap();
+        assert_eq!(json, format!("\"{name}\""));
+        assert_eq!(
+            serde_json::from_str::<EndpointType>(&json).unwrap(),
+            endpoint_type
+        );
+        assert_eq!(endpoint_type.recommended_inference_timeout_secs(), 120);
+        assert!(!endpoint_type.supports_model_download());
+        assert!(!endpoint_type.supports_model_delete());
+        assert!(!endpoint_type.supports_model_metadata());
+        assert!(endpoint_type.is_tps_trackable());
+    }
+}
+
+#[test]
 fn test_endpoint_type_as_str() {
     assert_eq!(EndpointType::Xllm.as_str(), "xllm");
     assert_eq!(EndpointType::Ollama.as_str(), "ollama");

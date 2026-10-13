@@ -4,17 +4,18 @@
 
 use llmlb::types::endpoint::EndpointType;
 
-/// 判別優先度のテスト: xLLM > LM Studio > Ollama > vLLM > OpenAI-compatible
+/// 判別優先度のテスト: Strata / Maya は llama.cpp より先に識別する
 #[test]
 fn test_detection_priority_order() {
     // 各タイプの優先度を数値化
-    // 優先度順: xLLM > LM Studio > Ollama > vLLM > llama.cpp > OpenAI-compatible
+    // xLLM > LM Studio > Ollama > vLLM > Strata / Maya > llama.cpp > OpenAI-compatible
     fn priority(t: EndpointType) -> u8 {
         match t {
-            EndpointType::Xllm => 6,
-            EndpointType::LmStudio => 5,
-            EndpointType::Ollama => 4,
-            EndpointType::Vllm => 3,
+            EndpointType::Xllm => 7,
+            EndpointType::LmStudio => 6,
+            EndpointType::Ollama => 5,
+            EndpointType::Vllm => 4,
+            EndpointType::Strata | EndpointType::ProjectMaya => 3,
             EndpointType::Llamacpp => 2,
             EndpointType::OpenaiCompatible => 1,
         }
@@ -26,6 +27,10 @@ fn test_detection_priority_order() {
     assert!(priority(EndpointType::Ollama) > priority(EndpointType::Vllm));
     assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Vllm));
     assert!(priority(EndpointType::Vllm) > priority(EndpointType::OpenaiCompatible));
+    for endpoint_type in [EndpointType::Strata, EndpointType::ProjectMaya] {
+        assert!(priority(EndpointType::Vllm) > priority(endpoint_type));
+        assert!(priority(endpoint_type) > priority(EndpointType::Llamacpp));
+    }
 }
 
 /// xLLMエンドポイントはモデルダウンロードをサポート

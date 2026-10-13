@@ -21,6 +21,70 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`Endpoint Table ViewModel (${colorScheme}) @dashboard`, () => {
     test.use({ colorScheme })
 
+    test('displays, filters and opens details for Strata and Project Maya (#886)', async ({ page }, testInfo) => {
+      const pageErrors: string[] = []
+      page.on('pageerror', (error) => pageErrors.push(error.message))
+      page.on('console', (message) => {
+        if (message.type() === 'error') pageErrors.push(message.text())
+      })
+
+      const login = await page.request.post('/api/auth/login', {
+        data: { username: 'admin', password: 'test' },
+      })
+      expect(login.ok()).toBe(true)
+      await page.routeWebSocket('**/ws/dashboard', () => {})
+
+      const runtimes = [
+        { ...endpoint(ENDPOINT_A, 'strata-endpoint', 1), endpoint_type: 'strata', label: 'Strata' },
+        { ...endpoint(ENDPOINT_B, 'maya-endpoint', 2), endpoint_type: 'project_maya', label: 'Project Maya' },
+      ] satisfies Array<DashboardEndpoint & { label: string }>
+      await page.route('**/api/dashboard/endpoints', (route) => route.fulfill({
+        json: runtimes.map(({ label: _label, ...runtime }) => runtime),
+      }))
+      for (const runtime of runtimes) {
+        await page.route(`**/api/endpoints/${runtime.id}/today-stats`, (route) => route.fulfill({
+          json: { date: '2026-10-14', total_requests: 0, successful_requests: 0, failed_requests: 0 },
+        }))
+        await page.route(`**/api/endpoints/${runtime.id}/models`, (route) => route.fulfill({
+          json: { endpoint_id: runtime.id, models: [] },
+        }))
+        for (const path of ['model-stats', 'model-tps', 'daily-stats*']) {
+          await page.route(`**/api/endpoints/${runtime.id}/${path}`, (route) => route.fulfill({ json: [] }))
+        }
+      }
+
+      await ensureDashboardLogin(page)
+      if (colorScheme === 'dark') await expect(page.locator('html')).toHaveClass(/\bdark\b/)
+      else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
+      const panel = page.getByRole('tabpanel', { name: 'Endpoints', exact: true })
+      const table = panel.getByRole('table')
+      const rowFor = (name: string) => table.getByRole('row').filter({
+        has: page.getByRole('cell', { name, exact: true }),
+      })
+      for (const runtime of runtimes) {
+        await expect(rowFor(runtime.name).getByText(runtime.label, { exact: true })).toBeVisible()
+      }
+
+      let selectedType = 'All Types'
+      for (const runtime of runtimes) {
+        await panel.getByRole('combobox').filter({ hasText: selectedType }).click()
+        await page.getByRole('option', { name: runtime.label, exact: true }).click()
+        selectedType = runtime.label
+        await expect(table.locator('tbody tr td:first-child')).toHaveText([runtime.name])
+
+        await rowFor(runtime.name).getByRole('button', { name: 'Details', exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: runtime.name, exact: true })
+        await expect(dialog.getByText(runtime.label, { exact: true })).toBeVisible()
+        await expect(dialog.getByText('Type is auto-detected', { exact: true })).toBeVisible()
+        await testInfo.attach(`endpoint-type-${runtime.endpoint_type}-${colorScheme}`, {
+          body: await page.screenshot(), contentType: 'image/png',
+        })
+        await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
+        await expect(dialog).toBeHidden()
+      }
+      expect(pageErrors).toEqual([])
+    })
+
     test('preserves controls, mutation refresh, endpoint notifications and provider polling (#858)', async ({ page }, testInfo) => {
       const pageErrors: string[] = []
       page.on('pageerror', (error) => pageErrors.push(error.message))

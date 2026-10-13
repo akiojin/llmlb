@@ -230,6 +230,24 @@ describe('EndpointTable', () => {
     expect(rowNames()).toEqual(['gamma'])
   })
 
+  it.each([
+    ['strata', 'Strata'],
+    ['project_maya', 'Project Maya'],
+  ] as const)('displays and filters %s endpoints', async (type, label) => {
+    const user = userEvent.setup()
+    const runtime = endpoint({
+      id: `ep-${type}`,
+      name: `${type}-endpoint`,
+      endpoint_type: type,
+    })
+    renderTable([alpha, runtime])
+
+    expect(within(rowFor(runtime.name)).getByText(label, { exact: true })).toBeInTheDocument()
+    await chooseFilter(user, 'All Types', label)
+
+    expect(rowNames()).toEqual([runtime.name])
+  })
+
   it('sorts by a column and reverses the order on a second click', async () => {
     const user = userEvent.setup()
     renderTable([alpha, beta, gamma])

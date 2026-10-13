@@ -51,6 +51,9 @@ async fn test_additional_engine_registration_and_persistence() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
+    // Keep each server alive: wiremock can recycle a dropped server's URL,
+    // which is still registered in the database and would correctly return 409.
+    let mut mocks = Vec::new();
     for engine in [
         "sglang",
         "lmdeploy",
@@ -86,8 +89,9 @@ async fn test_additional_engine_registration_and_persistence() {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status().as_u16(), 201, "{engine}");
+        let status = response.status();
         let body: Value = response.json().await.unwrap();
+        assert_eq!(status.as_u16(), 201, "{engine}: {body}");
         assert_eq!(body["endpoint_type"], engine);
         let endpoint_id = uuid::Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
         let reloaded = llmlb::db::endpoints::get_endpoint(&db_pool, endpoint_id)
@@ -95,6 +99,7 @@ async fn test_additional_engine_registration_and_persistence() {
             .unwrap()
             .unwrap();
         assert_eq!(reloaded.endpoint_type.as_str(), engine);
+        mocks.push(mock);
     }
 }
 

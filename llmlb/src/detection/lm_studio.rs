@@ -6,6 +6,7 @@
 //! (publisher, arch, state) and may include "lm-studio" in Server header
 //! or owned_by fields on /v1/models.
 
+use super::models_response::ModelsResponse;
 use reqwest::Client;
 use tracing::debug;
 
@@ -16,6 +17,17 @@ use tracing::debug;
 /// 2. Fallback 1: GET /v1/models - check Server header for "lm-studio"/"lm studio"
 /// 3. Fallback 2: Same /v1/models response - check owned_by for LM Studio markers
 pub async fn detect_lm_studio(
+    client: &Client,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> Option<String> {
+    if let Some(reason) = detect_lm_studio_native(client, base_url, api_key).await {
+        return Some(reason);
+    }
+    detect_lm_studio_from_models(&ModelsResponse::fetch(client, base_url, api_key).await)
+}
+
+pub(super) async fn detect_lm_studio_native(
     client: &Client,
     base_url: &str,
     api_key: Option<&str>,
@@ -48,51 +60,21 @@ pub async fn detect_lm_studio(
         }
     }
 
-    // Fallback: Try /v1/models (shared endpoint, check header and owned_by)
-    let v1_url = format!("{}/v1/models", base_url);
+    None
+}
 
-    let mut request = client.get(&v1_url);
-    if let Some(key) = api_key {
-        request = request.header("Authorization", format!("Bearer {}", key));
-    }
-
-    match request.send().await {
-        Ok(response) => {
-            // Fallback 1: Check Server header for "lm-studio" or "lm studio"
-            if let Some(server) = response.headers().get("server") {
-                if let Ok(server_str) = server.to_str() {
-                    if is_lm_studio_server_header(server_str) {
-                        debug!(
-                            server_header = %server_str,
-                            "Detected LM Studio endpoint via Server header"
-                        );
-                        return Some(format!(
-                            "LM Studio: Server header contains lm-studio ({})",
-                            server_str
-                        ));
-                    }
-                }
-            }
-
-            // Fallback 2: Check owned_by in response data
-            if response.status().is_success() {
-                if let Ok(json) = response.json::<serde_json::Value>().await {
-                    if has_lm_studio_owned_by(&json) {
-                        debug!("Detected LM Studio endpoint via owned_by field");
-                        return Some(
-                            "LM Studio: owned_by field contains LM Studio marker".to_string(),
-                        );
-                    }
-                }
-            }
-
-            None
-        }
-        Err(e) => {
-            debug!(error = %e, "LM Studio /v1/models request failed");
-            None
+pub(super) fn detect_lm_studio_from_models(models: &ModelsResponse) -> Option<String> {
+    if let Some(server) = &models.server {
+        if is_lm_studio_server_header(server) {
+            return Some(format!(
+                "LM Studio: Server header contains lm-studio ({server})"
+            ));
         }
     }
+    if models.json.as_ref().is_some_and(has_lm_studio_owned_by) {
+        return Some("LM Studio: owned_by field matches LM Studio identity".to_string());
+    }
+    None
 }
 
 /// Check if JSON response from /api/v1/models contains LM Studio-specific fields.
@@ -163,12 +145,20 @@ fn has_lm_studio_marker(value: &str) -> bool {
 fn is_lm_studio_server_header(header: &str) -> bool {
     has_lm_studio_marker(header)
 }
-/// Check if any model in data array has owned_by containing LM Studio markers.
+/// Match only known LM Studio owner identities, without substring inference.
 fn has_lm_studio_owned_by(json: &serde_json::Value) -> bool {
     if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
         for model in data {
             if let Some(owned_by) = model.get("owned_by").and_then(|v| v.as_str()) {
-                if has_lm_studio_marker(owned_by) {
+                if matches!(
+                    owned_by,
+                    "lm-studio"
+                        | "lmstudio"
+                        | "lmstudio-community"
+                        | "lm_studio-community"
+                        | "LM-Studio"
+                        | "LMSTUDIO"
+                ) {
                     return true;
                 }
             }

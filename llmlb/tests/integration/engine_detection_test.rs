@@ -58,10 +58,14 @@ async fn assert_detected_engine(owner: &str, probe: Option<(&str, Value)>, expec
     .unwrap();
     assert_eq!(result.endpoint_type.as_str(), expected);
     let requests = mock.received_requests().await.unwrap();
+    let models_path = format!(
+        "{}/v1/models",
+        reqwest::Url::parse(&base_url).unwrap().path()
+    );
     assert_eq!(
         requests
             .iter()
-            .filter(|r| r.url.path().ends_with("/v1/models"))
+            .filter(|r| r.url.path() == models_path)
             .count(),
         1
     );

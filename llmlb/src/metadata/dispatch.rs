@@ -112,7 +112,15 @@ pub async fn get_model_metadata(
                 ..Default::default()
             })
         }
-        EndpointType::Strata | EndpointType::ProjectMaya | EndpointType::OpenaiCompatible => {
+        EndpointType::Strata
+        | EndpointType::ProjectMaya
+        | EndpointType::Sglang
+        | EndpointType::Lmdeploy
+        | EndpointType::Xinference
+        | EndpointType::Lemonade
+        | EndpointType::Tgi
+        | EndpointType::Koboldcpp
+        | EndpointType::OpenaiCompatible => {
             // OpenAI-compatible endpoints may not have metadata endpoints
             Ok(ModelMetadata {
                 model: model.to_string(),

@@ -49,6 +49,7 @@ detected `endpoint_type`.
 
 - `xllm`, `ollama`, `lm_studio`: `600`
 - `vllm`, `llamacpp`, `openai_compatible`: `120`
+- `sglang`, `lmdeploy`, `xinference`, `lemonade`, `tgi`, `koboldcpp`: `120`
 
 Use `600` seconds or more for large local models that may spend several
 minutes loading weights before the first response. Existing endpoints are not

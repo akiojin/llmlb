@@ -99,6 +99,12 @@ function getTypeBadgeVariant(
     case 'ollama':
       return 'secondary'
     case 'vllm':
+    case 'sglang':
+    case 'lmdeploy':
+    case 'xinference':
+    case 'lemonade':
+    case 'tgi':
+    case 'koboldcpp':
       return 'secondary'
     case 'lm_studio':
       return 'secondary'
@@ -208,6 +214,12 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 <SelectItem value="xllm">xLLM</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
                 <SelectItem value="vllm">vLLM</SelectItem>
+                <SelectItem value="sglang">SGLang</SelectItem>
+                <SelectItem value="lmdeploy">LMDeploy</SelectItem>
+                <SelectItem value="xinference">Xinference</SelectItem>
+                <SelectItem value="lemonade">Lemonade</SelectItem>
+                <SelectItem value="tgi">TGI</SelectItem>
+                <SelectItem value="koboldcpp">KoboldCpp</SelectItem>
                 <SelectItem value="lm_studio">LM Studio</SelectItem>
                 <SelectItem value="llamacpp">llama.cpp</SelectItem>
                 <SelectItem value="strata">Strata</SelectItem>

@@ -66,6 +66,12 @@ function getTypeBadgeVariant(
       return 'default'
     case 'ollama':
     case 'vllm':
+    case 'sglang':
+    case 'lmdeploy':
+    case 'xinference':
+    case 'lemonade':
+    case 'tgi':
+    case 'koboldcpp':
     case 'lm_studio':
     case 'llamacpp':
       return 'secondary'

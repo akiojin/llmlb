@@ -1,7 +1,14 @@
 //! エンドポイント種別の自動判定（優先順位に従った判定と OpenAI 互換フォールバック）
 
 use super::strata::detect_strata_family;
-use super::{detect_llamacpp, detect_lm_studio, detect_ollama, detect_vllm, detect_xllm};
+use super::{
+    detect_ollama, detect_xllm,
+    engines::{detect_model_owner, detect_native_engine},
+    llama_cpp::detect_llamacpp_from_models,
+    lm_studio::{detect_lm_studio_from_models, detect_lm_studio_native},
+    models_response::ModelsResponse,
+    vllm::detect_vllm_from_models,
+};
 use reqwest::Client;
 use tracing::{debug, warn};
 
@@ -46,51 +53,39 @@ pub async fn detect_endpoint_type_with_client(
 
     debug!(base_url = %base_url, "Starting endpoint type detection");
 
-    // Track whether at least one HTTP response was received
-    let mut got_any_response = false;
-
-    // Priority 1: xLLM detection
-    match detect_xllm(client, base_url, api_key).await {
-        Some(reason) => {
-            debug!(endpoint_type = "xllm", "Detected xLLM endpoint");
-            return Ok(DetectionResult {
-                endpoint_type: EndpointType::Xllm,
-                reason,
-            });
-        }
-        None => {
-            // Check if xLLM probe got any HTTP response (not just connection error)
-            // For now, we track this via the subsequent probes
-        }
+    if let Some(reason) = detect_xllm(client, base_url, api_key).await {
+        return Ok(DetectionResult {
+            endpoint_type: EndpointType::Xllm,
+            reason,
+        });
     }
-
-    // Priority 2: LM Studio detection
-    if let Some(reason) = detect_lm_studio(client, base_url, api_key).await {
-        debug!(endpoint_type = "lm_studio", "Detected LM Studio endpoint");
+    if let Some(reason) = detect_lm_studio_native(client, base_url, api_key).await {
         return Ok(DetectionResult {
             endpoint_type: EndpointType::LmStudio,
             reason,
         });
     }
 
-    // Priority 3: Ollama detection
+    // Preserve native-probe priority, but fetch this shared endpoint only once.
+    let models = ModelsResponse::fetch(client, base_url, api_key).await;
+    if let Some(reason) = detect_lm_studio_from_models(&models) {
+        return Ok(DetectionResult {
+            endpoint_type: EndpointType::LmStudio,
+            reason,
+        });
+    }
     if let Some(reason) = detect_ollama(client, base_url).await {
-        debug!(endpoint_type = "ollama", "Detected Ollama endpoint");
         return Ok(DetectionResult {
             endpoint_type: EndpointType::Ollama,
             reason,
         });
     }
-
-    // Priority 4: vLLM detection
-    if let Some(reason) = detect_vllm(client, base_url, api_key).await {
-        debug!(endpoint_type = "vllm", "Detected vLLM endpoint");
+    if let Some(reason) = detect_vllm_from_models(&models) {
         return Ok(DetectionResult {
             endpoint_type: EndpointType::Vllm,
             reason,
         });
     }
-
     // Priority 5: Strata / Project Maya intentionally mimic llama.cpp APIs.
     // Check their public /health markers first to avoid misclassifying them.
     if let Some(result) = detect_strata_family(client, base_url).await {
@@ -98,104 +93,45 @@ pub async fn detect_endpoint_type_with_client(
         return Ok(result);
     }
 
-    // Priority 6: llama.cpp detection
-    if let Some(reason) = detect_llamacpp(client, base_url).await {
-        debug!(endpoint_type = "llamacpp", "Detected llama.cpp endpoint");
+    if let Some((endpoint_type, reason)) = detect_model_owner(&models) {
+        return Ok(DetectionResult {
+            endpoint_type,
+            reason,
+        });
+    }
+    // KoboldCpp also implements /props: its explicit identity must win first.
+    if let Some((endpoint_type, reason)) = detect_native_engine(client, base_url, api_key).await {
+        return Ok(DetectionResult {
+            endpoint_type,
+            reason,
+        });
+    }
+    if let Some(reason) = detect_llamacpp_from_models(&models) {
         return Ok(DetectionResult {
             endpoint_type: EndpointType::Llamacpp,
             reason,
         });
     }
-
-    // Priority 7: OpenAI-compatible detection (also serves as connectivity check)
-    match detect_openai_compatible(client, base_url, api_key).await {
-        OpenAiDetectResult::Detected(reason) => {
-            debug!(
-                endpoint_type = "openai_compatible",
-                "Detected OpenAI-compatible endpoint"
-            );
-            return Ok(DetectionResult {
-                endpoint_type: EndpointType::OpenaiCompatible,
-                reason,
-            });
-        }
-        OpenAiDetectResult::NotMatched => {
-            got_any_response = true;
-        }
-        OpenAiDetectResult::ConnectionError => {
-            // No HTTP response from this probe
-        }
+    if models.is_openai_compatible() {
+        return Ok(DetectionResult {
+            endpoint_type: EndpointType::OpenaiCompatible,
+            reason: "OpenAI-compatible: /v1/models responded 200".to_string(),
+        });
     }
 
-    // If we got any HTTP response but no type matched, it's unsupported
-    if got_any_response {
+    // The shared probe also distinguishes HTTP responses from connection errors;
+    // retrying /v1/models here would violate the single-response contract.
+    if models.responded {
         warn!(base_url = %base_url, "Endpoint responded but type could not be determined");
         Err(DetectionError::UnsupportedType(format!(
             "endpoint at {} responded but does not match any supported type",
             base_url
         )))
     } else {
-        // Try a simple connectivity check to distinguish unreachable from unsupported
-        match client.get(format!("{}/v1/models", base_url)).send().await {
-            Ok(_) => {
-                // Got a response but nothing matched
-                warn!(base_url = %base_url, "Endpoint responded but type could not be determined");
-                Err(DetectionError::UnsupportedType(format!(
-                    "endpoint at {} responded but does not match any supported type",
-                    base_url
-                )))
-            }
-            Err(e) => {
-                warn!(base_url = %base_url, error = %e, "Endpoint is unreachable");
-                Err(DetectionError::Unreachable(format!(
-                    "could not connect to {}",
-                    base_url
-                )))
-            }
-        }
-    }
-}
-
-/// Internal result for OpenAI-compatible detection
-enum OpenAiDetectResult {
-    /// Detected as OpenAI-compatible
-    Detected(String),
-    /// Got HTTP response but not OpenAI-compatible
-    NotMatched,
-    /// Connection error (no HTTP response)
-    ConnectionError,
-}
-
-/// Detect OpenAI-compatible endpoint (GET /v1/models)
-async fn detect_openai_compatible(
-    client: &Client,
-    base_url: &str,
-    api_key: Option<&str>,
-) -> OpenAiDetectResult {
-    let url = format!("{}/v1/models", base_url);
-
-    let mut request = client.get(&url);
-    if let Some(key) = api_key {
-        request = request.header("Authorization", format!("Bearer {}", key));
-    }
-
-    match request.send().await {
-        Ok(response) if response.status().is_success() => {
-            // Check if the response looks like OpenAI models response
-            if let Ok(json) = response.json::<serde_json::Value>().await {
-                if json.get("data").is_some() || json.get("object").is_some() {
-                    return OpenAiDetectResult::Detected(
-                        "OpenAI-compatible: /v1/models responded 200".to_string(),
-                    );
-                }
-            }
-            OpenAiDetectResult::NotMatched
-        }
-        Ok(_) => OpenAiDetectResult::NotMatched,
-        Err(e) => {
-            debug!(error = %e, "OpenAI-compatible detection failed");
-            OpenAiDetectResult::ConnectionError
-        }
+        Err(DetectionError::Unreachable(format!(
+            "could not connect to {}",
+            base_url
+        )))
     }
 }
 

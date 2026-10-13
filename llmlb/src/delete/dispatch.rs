@@ -66,8 +66,14 @@ pub async fn delete_model(
         EndpointType::Strata | EndpointType::ProjectMaya => {
             Err(DeleteError::UnsupportedType(endpoint_type.to_string()))
         }
-        EndpointType::OpenaiCompatible => Err(DeleteError::UnsupportedType(
-            "openai_compatible".to_string(),
+        EndpointType::Sglang
+        | EndpointType::Lmdeploy
+        | EndpointType::Xinference
+        | EndpointType::Lemonade
+        | EndpointType::Tgi
+        | EndpointType::Koboldcpp
+        | EndpointType::OpenaiCompatible => Err(DeleteError::UnsupportedType(
+            endpoint_type.as_str().to_string(),
         )),
     }
 }

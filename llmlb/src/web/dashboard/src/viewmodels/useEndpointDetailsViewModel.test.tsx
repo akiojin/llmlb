@@ -43,6 +43,39 @@ describe('endpoint detail ViewModels', () => {
     expect(result.current.typeLabel).toBe(label)
   })
 
+  const extendedTypes = [
+    ['sglang', 'SGLang'],
+    ['lmdeploy', 'LMDeploy'],
+    ['xinference', 'Xinference'],
+    ['lemonade', 'Lemonade'],
+    ['tgi', 'TGI'],
+    ['koboldcpp', 'KoboldCpp'],
+  ] as const
+
+  it.each(extendedTypes)('labels the extended endpoint type %s in details', (endpointType, label) => {
+    const { wrapper } = setup()
+    const { result } = renderHook(() => useEndpointDetailViewModel({
+      ...endpoint,
+      endpoint_type: endpointType as DashboardEndpoint['endpoint_type'],
+      inference_timeout_secs: 120,
+    }, false, vi.fn()), { wrapper })
+
+    expect(result.current.typeLabel).toBe(label)
+  })
+
+  it.each(extendedTypes)('recommends the generic timeout for the extended endpoint type %s', (endpointType, label) => {
+    const { wrapper } = setup()
+    const { result } = renderHook(() => useEndpointDetailViewModel({
+      ...endpoint,
+      endpoint_type: endpointType as DashboardEndpoint['endpoint_type'],
+      inference_timeout_secs: 120,
+    }, false, vi.fn()), { wrapper })
+
+    expect(result.current.inferenceTimeout).toBe('120')
+    expect(result.current.recommendedInferenceTimeoutLabel).toBe(`Recommended for ${label}: 120 seconds`)
+    expect(result.current.differsFromRecommendedTimeout).toBe(false)
+  })
+
   it('keeps today acquisition gated by open and uses the supplied endpoint without a new detail GET', async () => {
     const today = vi.spyOn(endpointsApi, 'getTodayStats').mockResolvedValue({
       date: '2026-10-10', total_requests: 12, successful_requests: 10, failed_requests: 2,

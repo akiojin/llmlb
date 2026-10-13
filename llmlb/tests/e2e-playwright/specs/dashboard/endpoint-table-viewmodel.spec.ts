@@ -85,6 +85,81 @@ for (const colorScheme of ['light', 'dark'] as const) {
       expect(pageErrors).toEqual([])
     })
 
+    test('labels, filters and shows timeouts for extended endpoint types (#887)', async ({ page }, testInfo) => {
+      test.setTimeout(60000)
+      const pageErrors: string[] = []
+      page.on('pageerror', (error) => pageErrors.push(error.message))
+      page.on('console', (message) => {
+        if (message.type() === 'error') pageErrors.push(message.text())
+      })
+
+      const login = await page.request.post('/api/auth/login', {
+        data: { username: 'admin', password: 'test' },
+      })
+      expect(login.ok()).toBe(true)
+      await page.routeWebSocket('**/ws/dashboard', () => {})
+
+      const extendedTypes = [
+        ['sglang', 'SGLang'],
+        ['lmdeploy', 'LMDeploy'],
+        ['xinference', 'Xinference'],
+        ['lemonade', 'Lemonade'],
+        ['tgi', 'TGI'],
+        ['koboldcpp', 'KoboldCpp'],
+      ] as const
+      const endpoints = extendedTypes.map(([endpointType], index) => ({
+        ...endpoint(`00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, `${endpointType}-endpoint`, index + 1),
+        endpoint_type: endpointType as DashboardEndpoint['endpoint_type'],
+        inference_timeout_secs: 120,
+        model_count: 0,
+      }))
+      await page.route('**/api/dashboard/endpoints', (route) => route.fulfill({ json: endpoints }))
+      await page.route('**/api/endpoints/*/today-stats', (route) => route.fulfill({ json: {
+        date: '2026-10-14', total_requests: 0, successful_requests: 0, failed_requests: 0,
+      } }))
+      await page.route('**/api/endpoints/*/models', (route) => route.fulfill({ json: {
+        endpoint_id: new URL(route.request().url()).pathname.split('/')[3], models: [],
+      } }))
+      for (const path of ['model-stats', 'model-tps', 'daily-stats*']) {
+        await page.route(`**/api/endpoints/*/${path}`, (route) => route.fulfill({ json: [] }))
+      }
+
+      await ensureDashboardLogin(page)
+      const panel = page.getByRole('tabpanel', { name: 'Endpoints', exact: true })
+      const table = panel.getByRole('table')
+      const names = table.locator('tbody tr td:first-child')
+      if (colorScheme === 'dark') await expect(page.locator('html')).toHaveClass(/\bdark\b/)
+      else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
+      await expect(names).toHaveCount(extendedTypes.length)
+
+      for (const [endpointType, label] of extendedTypes) {
+        const name = `${endpointType}-endpoint`
+        const row = table.getByRole('row').filter({ has: page.getByRole('cell', { name, exact: true }) })
+        await expect(row.getByRole('cell', { name: label, exact: true })).toBeVisible()
+        await panel.getByRole('combobox').filter({ hasText: 'All Types' }).click()
+        await page.getByRole('option', { name: label, exact: true }).click()
+        await expect(names).toHaveText([name])
+
+        await row.getByRole('button', { name: 'Details', exact: true }).click()
+        const dialog = page.getByRole('dialog', { name, exact: true })
+        await expect(dialog.getByText(label, { exact: true })).toBeVisible()
+        await expect(dialog.getByText(`Recommended for ${label}: 120 seconds`, { exact: true })).toBeVisible()
+        await expect(dialog.getByLabel('Inference Timeout (sec)', { exact: true })).toHaveValue('120')
+        await expect(dialog.getByRole('button', { name: 'Download Model', exact: true })).toHaveCount(0)
+        await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
+        await expect(dialog).toHaveCount(0)
+
+        await panel.getByRole('combobox').filter({ hasText: label }).click()
+        await page.getByRole('option', { name: 'All Types', exact: true }).click()
+        await expect(names).toHaveCount(extendedTypes.length)
+      }
+
+      expect(pageErrors).toEqual([])
+      await testInfo.attach(`extended-endpoint-types-${colorScheme}`, {
+        body: await page.screenshot(), contentType: 'image/png',
+      })
+    })
+
     test('preserves controls, mutation refresh, endpoint notifications and provider polling (#858)', async ({ page }, testInfo) => {
       const pageErrors: string[] = []
       page.on('pageerror', (error) => pageErrors.push(error.message))

@@ -45,6 +45,59 @@ async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     api_key.key
 }
 
+/// Issue #887 AC-5: engine identities survive registration and SQLite reload.
+#[tokio::test]
+async fn test_additional_engine_registration_and_persistence() {
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let client = Client::new();
+    let admin_key = create_admin_api_key(&db_pool).await;
+    for engine in [
+        "sglang",
+        "lmdeploy",
+        "xinference",
+        "lemonade",
+        "tgi",
+        "koboldcpp",
+    ] {
+        let mock = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "object": "list", "data": [{"id": "test", "owned_by": engine}]
+            })))
+            .mount(&mock)
+            .await;
+        let probe = match engine {
+            "tgi" => Some(("/info", json!({"router": "text-generation-router"}))),
+            "koboldcpp" => Some(("/api/extra/version", json!({"result": "KoboldCpp"}))),
+            _ => None,
+        };
+        if let Some((probe_path, body)) = probe {
+            Mock::given(method("GET"))
+                .and(path(probe_path))
+                .respond_with(ResponseTemplate::new(200).set_body_json(body))
+                .mount(&mock)
+                .await;
+        }
+        let response = client
+            .post(format!("http://{}/api/endpoints", server.addr()))
+            .bearer_auth(&admin_key)
+            .json(&json!({"name": format!("Issue887-{engine}"), "base_url": mock.uri()}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 201, "{engine}");
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["endpoint_type"], engine);
+        let endpoint_id = uuid::Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
+        let reloaded = llmlb::db::endpoints::get_endpoint(&db_pool, endpoint_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(reloaded.endpoint_type.as_str(), engine);
+    }
+}
+
 /// US6-シナリオ1: オフラインエンドポイント登録はエラーを返す
 /// NOTE: 到達不能なエンドポイントは BAD_GATEWAY で拒否される
 #[tokio::test]
@@ -285,9 +338,9 @@ async fn test_endpoint_type_detection_llamacpp_via_server_header() {
     assert_eq!(body["endpoint_type"], "llamacpp");
 }
 
-/// US6-シナリオ5c: llama.cpp判別（`/v1/version` の server="llama.cpp"）
+/// Issue #887: 存在しない llama.cpp /v1/version 判定を使用しない
 #[tokio::test]
-async fn test_endpoint_type_detection_llamacpp_via_version_endpoint() {
+async fn test_endpoint_type_detection_ignores_removed_llamacpp_version_endpoint() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
@@ -337,7 +390,7 @@ async fn test_endpoint_type_detection_llamacpp_via_version_endpoint() {
         .expect("registration request failed");
 
     let body: Value = response.json().await.unwrap();
-    assert_eq!(body["endpoint_type"], "llamacpp");
+    assert_eq!(body["endpoint_type"], "openai_compatible");
 }
 
 /// US6-シナリオ6: LM Studio判別（/v1/models owned_byフォールバック）

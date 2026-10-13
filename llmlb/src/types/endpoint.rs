@@ -146,7 +146,7 @@ impl std::fmt::Display for EndpointStatus {
 ///
 /// エンドポイントの種別を表す列挙型。
 /// 登録時に自動判別され、タイプに応じた機能制御に使用される。
-/// 対応する5タイプのみ許可し、検出できないエンドポイントの登録は拒否する。
+/// 対応する種別のみ許可し、検出できないエンドポイントの登録は拒否する。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointType {
@@ -160,6 +160,10 @@ pub enum EndpointType {
     LmStudio,
     /// llama.cppサーバー
     Llamacpp,
+    /// Strata推論サーバー
+    Strata,
+    /// StrataベースのProject Mayaサーバー
+    ProjectMaya,
     /// その他のOpenAI互換API
     OpenaiCompatible,
 }
@@ -173,6 +177,8 @@ impl EndpointType {
             Self::Vllm => "vllm",
             Self::LmStudio => "lm_studio",
             Self::Llamacpp => "llamacpp",
+            Self::Strata => "strata",
+            Self::ProjectMaya => "project_maya",
             Self::OpenaiCompatible => "openai_compatible",
         }
     }
@@ -206,7 +212,11 @@ impl EndpointType {
     pub fn recommended_inference_timeout_secs(&self) -> u32 {
         match self {
             Self::Xllm | Self::Ollama | Self::LmStudio => 600,
-            Self::Vllm | Self::Llamacpp | Self::OpenaiCompatible => 120,
+            Self::Vllm
+            | Self::Llamacpp
+            | Self::Strata
+            | Self::ProjectMaya
+            | Self::OpenaiCompatible => 120,
         }
     }
 }
@@ -233,6 +243,8 @@ impl FromStr for EndpointType {
             "vllm" => Ok(Self::Vllm),
             "lm_studio" => Ok(Self::LmStudio),
             "llamacpp" => Ok(Self::Llamacpp),
+            "strata" => Ok(Self::Strata),
+            "project_maya" => Ok(Self::ProjectMaya),
             "openai_compatible" => Ok(Self::OpenaiCompatible),
             _ => Err(ParseEndpointTypeError(s.to_string())),
         }
@@ -350,7 +362,7 @@ pub struct Endpoint {
     /// 現在の状態
     pub status: EndpointStatus,
     /// エンドポイントタイプ（SPEC-e8e9326e追加要件 2026-01-26）
-    /// 登録時に自動検出される。対応する5タイプのみ許可。
+    /// 登録時に自動検出される。対応する種別のみ許可。
     pub endpoint_type: EndpointType,
     /// ヘルスチェック間隔（秒）
     pub health_check_interval_secs: u32,

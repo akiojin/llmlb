@@ -168,7 +168,11 @@ pub async fn download_model(
                 }
             });
         }
-        EndpointType::Llamacpp | EndpointType::Vllm | EndpointType::OpenaiCompatible => {
+        EndpointType::Llamacpp
+        | EndpointType::Vllm
+        | EndpointType::Strata
+        | EndpointType::ProjectMaya
+        | EndpointType::OpenaiCompatible => {
             // Should not reach here due to supports_model_download() check above
             unreachable!()
         }

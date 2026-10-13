@@ -74,6 +74,10 @@ function getTypeLabel(
       return 'LM Studio'
     case 'llamacpp':
       return 'llama.cpp'
+    case 'strata':
+      return 'Strata'
+    case 'project_maya':
+      return 'Project Maya'
     case 'openai_compatible':
       return 'OpenAI Compatible'
     case 'unknown':

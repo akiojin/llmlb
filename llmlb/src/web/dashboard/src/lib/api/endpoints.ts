@@ -15,6 +15,8 @@ export type EndpointType =
   | 'vllm'
   | 'lm_studio'
   | 'llamacpp'
+  | 'strata'
+  | 'project_maya'
   | 'openai_compatible'
   | 'unknown'
 

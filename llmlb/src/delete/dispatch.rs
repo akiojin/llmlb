@@ -63,6 +63,9 @@ pub async fn delete_model(
             "llamacpp (delete API not available)".to_string(),
         )),
         EndpointType::Vllm => Err(DeleteError::UnsupportedType("vllm".to_string())),
+        EndpointType::Strata | EndpointType::ProjectMaya => {
+            Err(DeleteError::UnsupportedType(endpoint_type.to_string()))
+        }
         EndpointType::OpenaiCompatible => Err(DeleteError::UnsupportedType(
             "openai_compatible".to_string(),
         )),

@@ -210,6 +210,8 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 <SelectItem value="vllm">vLLM</SelectItem>
                 <SelectItem value="lm_studio">LM Studio</SelectItem>
                 <SelectItem value="llamacpp">llama.cpp</SelectItem>
+                <SelectItem value="strata">Strata</SelectItem>
+                <SelectItem value="project_maya">Project Maya</SelectItem>
                 <SelectItem value="openai_compatible">OpenAI Compatible</SelectItem>
                 <SelectItem value="unknown">Unknown</SelectItem>
               </SelectContent>

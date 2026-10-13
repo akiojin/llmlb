@@ -390,6 +390,108 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             name: "qwen-image-edit-rapid-aio",
         }],
     },
+    // Issue #884: HF 実在確認と runtime 名の出典は docs/model-catalog-policy.md を参照。
+    // GLM / Kimi は確認できた Ollama cloud tag のみ。未確認の LM Studio 名は登録しない。
+    ModelMapping {
+        canonical: "zai-org/GLM-5.3-Flash",
+        last_verified: "2026-10-13",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "glm-5.3-flash:cloud",
+        }],
+    },
+    ModelMapping {
+        canonical: "Qwen/Qwen3.8-Flash-Next",
+        last_verified: "2026-10-13",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3.8-flash-next:125b-a6b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3.8-flash-next",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "Qwen/Qwen3.6-35B-A3B",
+        last_verified: "2026-10-13",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "qwen3.6:35b-a3b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3.6-35b-a3b",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "google/gemma-4-31B-it",
+        last_verified: "2026-10-13",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "gemma4:31b-it-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/gemma-4-31B-it-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "google/gemma-4-12B-it",
+        last_verified: "2026-10-13",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "gemma4:12b-it-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/gemma-4-12B-it-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        last_verified: "2026-10-13",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nemotron-3.5-lightning:30b-a3b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "moonshotai/Kimi-K3",
+        last_verified: "2026-10-13",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "kimi-k3:cloud",
+        }],
+    },
+    ModelMapping {
+        canonical: "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        last_verified: "2026-10-13",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "llama4:17b-scout-16e-instruct-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/Llama-4-Scout-17B-16E-Instruct-GGUF",
+            },
+        ],
+    },
 ];
 
 /// Resolve a runtime model ID to its canonical Hugging Face repo ID.
@@ -820,6 +922,10 @@ const KNOWN_CONTEXT_LENGTHS: &[(&str, u32)] = &[
     ("Qwen/Qwen3-Coder-30B-A3B-Instruct", 262_144),
     ("Qwen/Qwen3-Coder-Next", 262_144),
     ("Qwen/Qwen3.5-35B-A3B", 262_144),
+    ("Qwen/Qwen3.6-35B-A3B", 262_144),
+    ("Qwen/Qwen3.8-27B", 262_144),
+    ("Qwen/Qwen3.8-Flash-Next", 262_144),
+    ("Qwen/Qwen3-30B-A3B", 40_960),
     ("Qwen/Qwen2.5-14B-Instruct-AWQ", 32_768),
     // Google Gemma
     ("google/gemma-3-27b-it", 131_072),
@@ -827,14 +933,21 @@ const KNOWN_CONTEXT_LENGTHS: &[(&str, u32)] = &[
     ("google/gemma-4-E4B-it", 131_072),
     ("google/gemma-4-26B-A4B", 262_144),
     ("google/gemma-4-26B-A4B-it", 262_144),
+    ("google/gemma-4-31B-it", 262_144),
+    ("google/gemma-4-12B-it", 262_144),
     // GLM
     ("zai-org/GLM-4.7-Flash", 202_752),
+    ("zai-org/GLM-5.3-Flash", 1_048_576),
     // Nvidia Nemotron
     ("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16", 131_072),
     ("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", 1_048_576),
     ("nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", 262_144),
+    ("nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16", 262_144),
+    // Moonshot AI
+    ("moonshotai/Kimi-K3", 1_048_576),
     // Meta Llama
     ("meta-llama/Llama-3.3-70B-Instruct", 131_072),
+    ("meta-llama/Llama-4-Scout-17B-16E-Instruct", 10_485_760),
     // Embeddings
     ("nomic-ai/nomic-embed-text-v1.5", 8_192),
 ];

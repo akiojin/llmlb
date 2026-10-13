@@ -874,3 +874,149 @@ fn test_issue_776_every_mapping_has_valid_last_verified_date() {
         );
     }
 }
+
+fn assert_issue_884_mapping(canonical: &str, ollama: &str, lm_studio: Option<&str>) {
+    assert_eq!(
+        resolve_canonical(ollama, &EndpointType::Ollama),
+        Some(canonical)
+    );
+    assert_eq!(resolve_canonical_any(canonical), Some(canonical));
+    assert_eq!(
+        resolve_canonical(canonical, &EndpointType::LmStudio),
+        Some(canonical)
+    );
+    assert_eq!(
+        resolve_engine_name(canonical, &EndpointType::Ollama),
+        Some(ollama)
+    );
+    assert_eq!(resolve_canonical(ollama, &EndpointType::LmStudio), None);
+
+    let mut inputs = vec![
+        (ollama, resolve_canonical(ollama, &EndpointType::Ollama)),
+        (
+            canonical,
+            resolve_canonical(canonical, &EndpointType::LmStudio),
+        ),
+    ];
+    if let Some(lm_studio) = lm_studio {
+        assert_eq!(
+            resolve_canonical(lm_studio, &EndpointType::LmStudio),
+            Some(canonical)
+        );
+        assert_eq!(
+            resolve_engine_name(canonical, &EndpointType::LmStudio),
+            Some(lm_studio)
+        );
+        inputs.push((
+            lm_studio,
+            resolve_canonical(lm_studio, &EndpointType::LmStudio),
+        ));
+    } else {
+        // AC-2: 未確認の runtime 名を創作して AC-5 の三形式を埋めない。
+        assert!(resolve_engine_names(canonical, &EndpointType::LmStudio).is_empty());
+    }
+
+    let resolution = build_canonical_maps(inputs.iter().copied());
+    for (input, _) in inputs {
+        assert_eq!(resolution.canonical_for(input), canonical);
+    }
+}
+
+#[test]
+fn test_issue_884_glm_53_flash_mapping() {
+    assert_issue_884_mapping("zai-org/GLM-5.3-Flash", "glm-5.3-flash:cloud", None);
+}
+
+#[test]
+fn test_issue_884_qwen_38_flash_next_mapping() {
+    assert_issue_884_mapping(
+        "Qwen/Qwen3.8-Flash-Next",
+        "qwen3.8-flash-next:125b-a6b-q4_K_M",
+        Some("qwen/qwen3.8-flash-next"),
+    );
+}
+
+#[test]
+fn test_issue_884_qwen_36_mapping() {
+    assert_issue_884_mapping(
+        "Qwen/Qwen3.6-35B-A3B",
+        "qwen3.6:35b-a3b-q4_K_M",
+        Some("qwen/qwen3.6-35b-a3b"),
+    );
+}
+
+#[test]
+fn test_issue_884_gemma_4_31b_it_mapping() {
+    assert_issue_884_mapping(
+        "google/gemma-4-31B-it",
+        "gemma4:31b-it-q4_K_M",
+        Some("lmstudio-community/gemma-4-31B-it-GGUF"),
+    );
+}
+
+#[test]
+fn test_issue_884_gemma_4_12b_it_mapping() {
+    assert_issue_884_mapping(
+        "google/gemma-4-12B-it",
+        "gemma4:12b-it-q4_K_M",
+        Some("lmstudio-community/gemma-4-12B-it-GGUF"),
+    );
+}
+
+#[test]
+fn test_issue_884_nemotron_35_lightning_mapping() {
+    assert_issue_884_mapping(
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        "nemotron-3.5-lightning:30b-a3b-q4_K_M",
+        Some("lmstudio-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF"),
+    );
+}
+
+#[test]
+fn test_issue_884_kimi_k3_mapping() {
+    assert_issue_884_mapping("moonshotai/Kimi-K3", "kimi-k3:cloud", None);
+}
+
+#[test]
+fn test_issue_884_llama_4_scout_mapping() {
+    assert_issue_884_mapping(
+        "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        "llama4:17b-scout-16e-instruct-q4_K_M",
+        Some("lmstudio-community/Llama-4-Scout-17B-16E-Instruct-GGUF"),
+    );
+}
+
+#[test]
+fn test_issue_884_context_fallbacks_preserve_endpoint_override() {
+    for (canonical, context) in [
+        ("zai-org/GLM-5.3-Flash", 1_048_576),
+        ("Qwen/Qwen3.8-Flash-Next", 262_144),
+        ("Qwen/Qwen3.6-35B-A3B", 262_144),
+        ("google/gemma-4-31B-it", 262_144),
+        ("google/gemma-4-12B-it", 262_144),
+        ("nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16", 262_144),
+        ("moonshotai/Kimi-K3", 1_048_576),
+        ("meta-llama/Llama-4-Scout-17B-16E-Instruct", 10_485_760),
+        ("Qwen/Qwen3.8-27B", 262_144),
+        ("Qwen/Qwen3-30B-A3B", 40_960),
+    ] {
+        assert_eq!(known_max_tokens(canonical), Some(context), "{canonical}");
+        assert_eq!(resolve_max_tokens(canonical, None), Some(context));
+        assert_eq!(resolve_max_tokens(canonical, Some(8_192)), Some(8_192));
+    }
+}
+
+#[test]
+fn test_issue_884_unverified_runtime_names_and_base_skus_stay_unknown() {
+    for model in [
+        "glm-5.3-flash:320b",
+        "kimi-k3:2.8t",
+        "google/gemma-4-31B",
+        "google/gemma-4-12B",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+    for model in ["glm-5.3-flash", "kimi-k3"] {
+        assert_eq!(resolve_canonical(model, &EndpointType::LmStudio), None);
+    }
+}

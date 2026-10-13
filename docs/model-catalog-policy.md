@@ -18,6 +18,7 @@
   旧 org の表記を alias として残す（例: `THUDM/glm-4.7-flash` → alias）。
   canonical の ID を差し替えた場合も同様に、旧 ID を alias の**末尾**へ残す（先頭の alias が
   エンドポイントへ送る名前になるため）。
+- パラメータ数による canonical 対象の除外は行わず、マルチ GPU 環境向けの大型モデルも扱う（Issue #884）。
 - alias 名は **各エンドポイントタイプ固有の命名形式** に従う。
   - Ollama: `family:tag`（例: `gpt-oss:20b`、`gemma4:e4b`）
   - LM Studio: HuggingFace 形式（例: `openai/gpt-oss-20b`）
@@ -128,8 +129,8 @@ Gemma 4 の Ollama runtime 名は、SKU を一意にする固定タグだけを�
 
 ### 2. 何を根拠にするか
 
-- **追加**: 稼働中エンドポイントが実際に報告し、`resolve_canonical` が解決に失敗した
-  モデル ID に限る。「新しい版が出たはず」という推測では追加しない。
+- **追加**: 稼働中エンドポイントが報告して解決に失敗したモデル ID、または承認済み Issue で
+  指定され一次情報で実在を確認した公開モデルを対象とする。「新しい版が出たはず」という推測では追加しない。
 - **canonical の選定**: Hugging Face 上で実在を確認した一次配布元のリポジトリ ID。
   エンドポイントの実体が再配布リポジトリ（GGUF / MLX 変換等）の場合は、その
   `base_model` が指す配布元を canonical にする。
@@ -170,6 +171,51 @@ Models API で当時の 18 件を確認し、16 件が実在、2 件が不存在
 |---|---|
 | `qwen/qwen3.8-27b` | `Qwen/Qwen3.8-27B` |
 | `qwen-image-edit-rapid-aio` | `Phr00t/Qwen-Image-Edit-Rapid-AIO` |
+
+### 2026-10-13 の追従結果（Issue #884）
+
+以下の 8 canonical は Hugging Face Models API で `200` と ID の一致を確認し、
+`last_verified` に確認日（UTC）を記録した。Kimi は公式 `moonshotai` の
+[公開モデル一覧](https://huggingface.co/api/models?author=moonshotai&sort=createdAt&direction=-1&limit=100&full=true)
+を作成日時降順で照合し、最新のオープンウェイト `moonshotai/Kimi-K3` を選んだ。
+K3 はマルチモーダルだが、公式 README にテキスト入力の生成例と vLLM / SGLang のローカル実行手順がある。
+
+| canonical | context length | 一次情報 |
+|---|---:|---|
+| `zai-org/GLM-5.3-Flash` | 1048576 | [config](https://huggingface.co/zai-org/GLM-5.3-Flash/blob/main/config.json) |
+| `Qwen/Qwen3.8-Flash-Next` | 262144 | [config](https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/main/config.json) |
+| `Qwen/Qwen3.6-35B-A3B` | 262144 | [config](https://huggingface.co/Qwen/Qwen3.6-35B-A3B/blob/main/config.json) |
+| `google/gemma-4-31B-it` | 262144 | [config](https://huggingface.co/google/gemma-4-31B-it/blob/main/config.json) |
+| `google/gemma-4-12B-it` | 262144 | [config](https://huggingface.co/google/gemma-4-12B-it/blob/main/config.json) |
+| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | 262144 | [config](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/blob/main/config.json) |
+| `moonshotai/Kimi-K3` | 1048576 | [config](https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json) |
+| `meta-llama/Llama-4-Scout-17B-16E-Instruct` | 10485760 | [Meta 公式 SKU 定義](https://github.com/meta-llama/llama-models/blob/main/models/sku_types.py) |
+| `Qwen/Qwen3.8-27B`（既存） | 262144 | [config](https://huggingface.co/Qwen/Qwen3.8-27B/blob/main/config.json) |
+| `Qwen/Qwen3-30B-A3B`（既存） | 40960 | [config](https://huggingface.co/Qwen/Qwen3-30B-A3B/blob/main/config.json) |
+
+Scout の HF config は gated（未認証で `401`）のため、Meta 公式の Instruct SKU の
+`max_seq_length` を用いた。他は config の `max_position_embeddings`（マルチモーダルでは
+`text_config` 配下）を採用した。Nemotron の拡張時 1M や Qwen3-30B-A3B の YaRN 値と区別し、
+実行環境の申告値があればそちらを優先する。
+
+登録した runtime 名と出典は次のとおり。Ollama は `latest` を使わず、確認できた明示タグを使う。
+LM Studio は公式 catalog のキー、または公式配布 GGUF のリポジトリ名を使い、
+配布元の `base_model` または README の `Original model` リンクと canonical の対応も確認した。
+
+| モデル | Ollama の確認済みタグ | LM Studio の確認済み名 |
+|---|---|---|
+| GLM-5.3-Flash | [`glm-5.3-flash:cloud`](https://ollama.com/library/glm-5.3-flash/tags) | なし（ローカル runtime 名未確認） |
+| Qwen3.8-Flash-Next | [`qwen3.8-flash-next:125b-a6b-q4_K_M`](https://ollama.com/library/qwen3.8-flash-next/tags) | [`qwen/qwen3.8-flash-next`](https://lmstudio.ai/models/qwen/qwen3.8-flash-next) |
+| Qwen3.6-35B-A3B | [`qwen3.6:35b-a3b-q4_K_M`](https://ollama.com/library/qwen3.6/tags) | [`qwen/qwen3.6-35b-a3b`](https://lmstudio.ai/models/qwen/qwen3.6-35b-a3b) |
+| Gemma 4 31B IT | [`gemma4:31b-it-q4_K_M`](https://ollama.com/library/gemma4/tags) | [`lmstudio-community/gemma-4-31B-it-GGUF`](https://huggingface.co/lmstudio-community/gemma-4-31B-it-GGUF) |
+| Gemma 4 12B IT | [`gemma4:12b-it-q4_K_M`](https://ollama.com/library/gemma4/tags) | [`lmstudio-community/gemma-4-12B-it-GGUF`](https://huggingface.co/lmstudio-community/gemma-4-12B-it-GGUF) |
+| Nemotron 3.5 Lightning | [`nemotron-3.5-lightning:30b-a3b-q4_K_M`](https://ollama.com/library/nemotron-3.5-lightning/tags) | [`lmstudio-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF`](https://huggingface.co/lmstudio-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF) |
+| Kimi K3 | [`kimi-k3:cloud`](https://ollama.com/library/kimi-k3/tags) | なし（ローカル runtime 名未確認） |
+| Llama 4 Scout | [`llama4:17b-scout-16e-instruct-q4_K_M`](https://ollama.com/library/llama4/tags) | [`lmstudio-community/Llama-4-Scout-17B-16E-Instruct-GGUF`](https://huggingface.co/lmstudio-community/Llama-4-Scout-17B-16E-Instruct-GGUF) |
+
+GLM / Kimi の `:cloud` は Ollama が提供するクラウド実行タグで、ローカル重みのタグではない。
+LM Studio catalog の bare slug や未確認のローカルタグを別名として推測登録しない。
+Gemma の catalog 名は `-it` が省略されて base の HF ID と衝突するため、IT を明示する配布リポジトリ名を使う。
 
 ## 量子化サフィックス方針（G-3、暫定実装済み）
 

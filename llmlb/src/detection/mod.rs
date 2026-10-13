@@ -2,11 +2,12 @@
 //!
 //! SPEC-e8e9326e: Automatic endpoint type detection
 //!
-//! Detection priority: xLLM > LM Studio > Ollama > vLLM > Project Maya / Strata
-//! > llama.cpp > OpenAI-compatible
+//! Native engine identities take precedence over the generic OpenAI fallback.
 
+mod engines;
 mod llama_cpp;
 mod lm_studio;
+mod models_response;
 mod ollama;
 mod strata;
 mod vllm;

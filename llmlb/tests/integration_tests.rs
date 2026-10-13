@@ -60,6 +60,9 @@ mod endpoint_viewer_access_test;
 #[path = "integration/endpoint_type_detection_test.rs"]
 mod endpoint_type_detection_test;
 
+#[path = "integration/engine_detection_test.rs"]
+mod engine_detection_test;
+
 #[path = "integration/endpoint_type_filter_test.rs"]
 mod endpoint_type_filter_test;
 

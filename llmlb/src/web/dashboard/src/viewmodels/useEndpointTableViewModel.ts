@@ -89,6 +89,18 @@ function getTypeLabel(
       return 'Ollama'
     case 'vllm':
       return 'vLLM'
+    case 'sglang':
+      return 'SGLang'
+    case 'lmdeploy':
+      return 'LMDeploy'
+    case 'xinference':
+      return 'Xinference'
+    case 'lemonade':
+      return 'Lemonade'
+    case 'tgi':
+      return 'TGI'
+    case 'koboldcpp':
+      return 'KoboldCpp'
     case 'lm_studio':
       return 'LM Studio'
     case 'llamacpp':

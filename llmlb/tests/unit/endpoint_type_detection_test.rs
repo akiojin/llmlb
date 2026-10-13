@@ -4,35 +4,6 @@
 
 use llmlb::types::endpoint::EndpointType;
 
-/// 判別優先度のテスト: Strata / Maya は llama.cpp より先に識別する
-#[test]
-fn test_detection_priority_order() {
-    // 各タイプの優先度を数値化
-    // xLLM > LM Studio > Ollama > vLLM > Strata / Maya > llama.cpp > OpenAI-compatible
-    fn priority(t: EndpointType) -> u8 {
-        match t {
-            EndpointType::Xllm => 7,
-            EndpointType::LmStudio => 6,
-            EndpointType::Ollama => 5,
-            EndpointType::Vllm => 4,
-            EndpointType::Strata | EndpointType::ProjectMaya => 3,
-            EndpointType::Llamacpp => 2,
-            EndpointType::OpenaiCompatible => 1,
-        }
-    }
-
-    // xLLM が最高優先度
-    assert!(priority(EndpointType::Xllm) > priority(EndpointType::LmStudio));
-    assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Ollama));
-    assert!(priority(EndpointType::Ollama) > priority(EndpointType::Vllm));
-    assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Vllm));
-    assert!(priority(EndpointType::Vllm) > priority(EndpointType::OpenaiCompatible));
-    for endpoint_type in [EndpointType::Strata, EndpointType::ProjectMaya] {
-        assert!(priority(EndpointType::Vllm) > priority(endpoint_type));
-        assert!(priority(endpoint_type) > priority(EndpointType::Llamacpp));
-    }
-}
-
 /// xLLMエンドポイントはモデルダウンロードをサポート
 #[test]
 fn test_xllm_supports_model_download() {

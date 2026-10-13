@@ -248,6 +248,27 @@ describe('EndpointTable', () => {
     expect(rowNames()).toEqual([runtime.name])
   })
 
+  it.each([
+    ['sglang', 'SGLang'],
+    ['lmdeploy', 'LMDeploy'],
+    ['xinference', 'Xinference'],
+    ['lemonade', 'Lemonade'],
+    ['tgi', 'TGI'],
+    ['koboldcpp', 'KoboldCpp'],
+  ])('labels and filters the extended endpoint type %s', async (endpointType, label) => {
+    const user = userEvent.setup()
+    renderTable([alpha, endpoint({
+      id: `ep-${endpointType}`,
+      name: `${endpointType}-endpoint`,
+      endpoint_type: endpointType as DashboardEndpoint['endpoint_type'],
+      inference_timeout_secs: 120,
+    })])
+
+    expect(within(rowFor(`${endpointType}-endpoint`)).getByText(label)).toBeInTheDocument()
+    await chooseFilter(user, 'All Types', label)
+    expect(rowNames()).toEqual([`${endpointType}-endpoint`])
+  })
+
   it('sorts by a column and reverses the order on a second click', async () => {
     const user = userEvent.setup()
     renderTable([alpha, beta, gamma])

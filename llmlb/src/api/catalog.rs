@@ -270,6 +270,12 @@ fn can_recommend_download(endpoint_type: EndpointType, engine_name: Option<&str>
         | EndpointType::Vllm
         | EndpointType::Strata
         | EndpointType::ProjectMaya
+        | EndpointType::Sglang
+        | EndpointType::Lmdeploy
+        | EndpointType::Xinference
+        | EndpointType::Lemonade
+        | EndpointType::Tgi
+        | EndpointType::Koboldcpp
         | EndpointType::OpenaiCompatible => false,
     }
 }

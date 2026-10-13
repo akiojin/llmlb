@@ -13,6 +13,12 @@ export type EndpointType =
   | 'xllm'
   | 'ollama'
   | 'vllm'
+  | 'sglang'
+  | 'lmdeploy'
+  | 'xinference'
+  | 'lemonade'
+  | 'tgi'
+  | 'koboldcpp'
   | 'lm_studio'
   | 'llamacpp'
   | 'strata'
@@ -48,6 +54,18 @@ export function getRecommendedInferenceTimeoutLabel(
       return 'Recommended for LM Studio: 600 seconds'
     case 'vllm':
       return 'Recommended for vLLM: 120 seconds'
+    case 'sglang':
+      return 'Recommended for SGLang: 120 seconds'
+    case 'lmdeploy':
+      return 'Recommended for LMDeploy: 120 seconds'
+    case 'xinference':
+      return 'Recommended for Xinference: 120 seconds'
+    case 'lemonade':
+      return 'Recommended for Lemonade: 120 seconds'
+    case 'tgi':
+      return 'Recommended for TGI: 120 seconds'
+    case 'koboldcpp':
+      return 'Recommended for KoboldCpp: 120 seconds'
     case 'llamacpp':
       return 'Recommended for llama.cpp: 120 seconds'
     case 'openai_compatible':

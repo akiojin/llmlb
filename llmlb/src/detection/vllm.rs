@@ -5,6 +5,7 @@
 //! vLLM endpoints typically include "vllm" in the Server response header
 //! or respond to /v1/models in a specific way.
 
+use super::models_response::ModelsResponse;
 use reqwest::Client;
 use tracing::debug;
 
@@ -13,65 +14,20 @@ use tracing::debug;
 /// Returns a reason string if the endpoint returns
 /// a Server header containing "vllm" (case-insensitive).
 pub async fn detect_vllm(client: &Client, base_url: &str, api_key: Option<&str>) -> Option<String> {
-    // Try /v1/models endpoint first
-    let url = format!("{}/v1/models", base_url);
+    detect_vllm_from_models(&ModelsResponse::fetch(client, base_url, api_key).await)
+}
 
-    let mut request = client.get(&url);
-    if let Some(key) = api_key {
-        request = request.header("Authorization", format!("Bearer {}", key));
-    }
-
-    match request.send().await {
-        Ok(response) => {
-            // Check Server header for "vllm"
-            if let Some(server) = response.headers().get("server") {
-                if let Ok(server_str) = server.to_str() {
-                    let server_lower = server_str.to_lowercase();
-                    if server_lower.contains("vllm") {
-                        debug!(
-                            server_header = %server_str,
-                            "Detected vLLM endpoint via Server header"
-                        );
-                        return Some(format!(
-                            "vLLM: Server header contains vllm ({})",
-                            server_str
-                        ));
-                    }
-                }
-            }
-
-            // Alternative: Check for vLLM-specific response patterns
-            if response.status().is_success() {
-                if let Ok(json) = response.json::<serde_json::Value>().await {
-                    // vLLM may include specific fields
-                    if let Some(data) = json.get("data") {
-                        if let Some(models) = data.as_array() {
-                            for model in models {
-                                // vLLM models often have "vllm" in owned_by or other fields
-                                if let Some(owned_by) = model.get("owned_by") {
-                                    if owned_by
-                                        .as_str()
-                                        .map(|s| s.to_lowercase().contains("vllm"))
-                                        .unwrap_or(false)
-                                    {
-                                        debug!("Detected vLLM endpoint via owned_by field");
-                                        return Some(
-                                            "vLLM: owned_by field contains vllm".to_string(),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        }
-        Err(e) => {
-            debug!(error = %e, "vLLM detection request failed");
-            None
+pub(super) fn detect_vllm_from_models(models: &ModelsResponse) -> Option<String> {
+    if let Some(server) = &models.server {
+        if server.to_ascii_lowercase().contains("vllm") {
+            debug!(server_header = %server, "Detected vLLM endpoint via Server header");
+            return Some(format!("vLLM: Server header contains vllm ({server})"));
         }
     }
+    if models.owners().any(|owner| owner == "vllm") {
+        return Some("vLLM: owned_by field is vllm".to_string());
+    }
+    None
 }
 
 #[cfg(test)]
@@ -136,7 +92,7 @@ mod tests {
             .and(path("/v1/models"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": [
-                    {"id": "model-a", "owned_by": "community-vllm"}
+                    {"id": "model-a", "owned_by": "vllm"}
                 ]
             })))
             .mount(&server)
@@ -144,10 +100,7 @@ mod tests {
 
         let client = reqwest::Client::new();
         let detected = detect_vllm(&client, &server.uri(), None).await;
-        assert_eq!(
-            detected,
-            Some("vLLM: owned_by field contains vllm".to_string())
-        );
+        assert_eq!(detected, Some("vLLM: owned_by field is vllm".to_string()));
     }
 
     #[tokio::test]

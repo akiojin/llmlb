@@ -146,7 +146,7 @@ impl std::fmt::Display for EndpointStatus {
 ///
 /// エンドポイントの種別を表す列挙型。
 /// 登録時に自動判別され、タイプに応じた機能制御に使用される。
-/// 対応する種別のみ許可し、検出できないエンドポイントの登録は拒否する。
+/// 既知の推論エンジンを識別し、その他はOpenAI互換として扱う。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointType {
@@ -164,6 +164,18 @@ pub enum EndpointType {
     Strata,
     /// StrataベースのProject Mayaサーバー
     ProjectMaya,
+    /// SGLang推論サーバー
+    Sglang,
+    /// LMDeploy推論サーバー
+    Lmdeploy,
+    /// Xinference推論サーバー
+    Xinference,
+    /// Lemonade推論サーバー
+    Lemonade,
+    /// Hugging Face Text Generation Inference
+    Tgi,
+    /// KoboldCpp推論サーバー
+    Koboldcpp,
     /// その他のOpenAI互換API
     OpenaiCompatible,
 }
@@ -179,6 +191,12 @@ impl EndpointType {
             Self::Llamacpp => "llamacpp",
             Self::Strata => "strata",
             Self::ProjectMaya => "project_maya",
+            Self::Sglang => "sglang",
+            Self::Lmdeploy => "lmdeploy",
+            Self::Xinference => "xinference",
+            Self::Lemonade => "lemonade",
+            Self::Tgi => "tgi",
+            Self::Koboldcpp => "koboldcpp",
             Self::OpenaiCompatible => "openai_compatible",
         }
     }
@@ -216,6 +234,12 @@ impl EndpointType {
             | Self::Llamacpp
             | Self::Strata
             | Self::ProjectMaya
+            | Self::Sglang
+            | Self::Lmdeploy
+            | Self::Xinference
+            | Self::Lemonade
+            | Self::Tgi
+            | Self::Koboldcpp
             | Self::OpenaiCompatible => 120,
         }
     }
@@ -245,6 +269,12 @@ impl FromStr for EndpointType {
             "llamacpp" => Ok(Self::Llamacpp),
             "strata" => Ok(Self::Strata),
             "project_maya" => Ok(Self::ProjectMaya),
+            "sglang" => Ok(Self::Sglang),
+            "lmdeploy" => Ok(Self::Lmdeploy),
+            "xinference" => Ok(Self::Xinference),
+            "lemonade" => Ok(Self::Lemonade),
+            "tgi" => Ok(Self::Tgi),
+            "koboldcpp" => Ok(Self::Koboldcpp),
             "openai_compatible" => Ok(Self::OpenaiCompatible),
             _ => Err(ParseEndpointTypeError(s.to_string())),
         }

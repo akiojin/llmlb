@@ -172,6 +172,12 @@ pub async fn download_model(
         | EndpointType::Vllm
         | EndpointType::Strata
         | EndpointType::ProjectMaya
+        | EndpointType::Sglang
+        | EndpointType::Lmdeploy
+        | EndpointType::Xinference
+        | EndpointType::Lemonade
+        | EndpointType::Tgi
+        | EndpointType::Koboldcpp
         | EndpointType::OpenaiCompatible => {
             // Should not reach here due to supports_model_download() check above
             unreachable!()

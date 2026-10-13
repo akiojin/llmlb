@@ -37,9 +37,15 @@ test.describe('Login Page', () => {
   });
 
   test('L-05: Invalid credentials show error toast', async ({ page }) => {
-    await loginPage.login('invalid', 'wrongpassword');
+    const [response] = await Promise.all([
+      page.waitForResponse((res) =>
+        new URL(res.url()).pathname === '/api/auth/login' && res.request().method() === 'POST'
+      ),
+      loginPage.login('invalid', 'wrongpassword'),
+    ]);
+    expect(response.status()).toBe(401);
 
-    // Wait for error toast (Toaster component)
+    // Check rendering after authentication finishes, including its password hash.
     const toast = page.locator('[data-sonner-toast], [role="status"], .toast');
     await expect(toast.first()).toBeVisible({ timeout: 5000 });
   });

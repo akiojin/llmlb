@@ -64,9 +64,15 @@ test.describe('User Management @dashboard', () => {
     // Fill login form
     await page.fill('#username', username)
     await page.fill('#password', generatedPassword)
-    await page.click('button[type="submit"]')
+    const [response] = await Promise.all([
+      page.waitForResponse((res) =>
+        new URL(res.url()).pathname === '/api/auth/login' && res.request().method() === 'POST'
+      ),
+      page.click('button[type="submit"]'),
+    ])
+    expect(response.status()).toBe(401)
 
-    // Should show error (toast or inline message)
+    // Check rendering after the deleted-user authentication attempt finishes.
     const errorIndicator = page.locator('[data-sonner-toast], [role="status"], .toast').first()
     await expect(errorIndicator).toBeVisible({ timeout: 5000 })
   })

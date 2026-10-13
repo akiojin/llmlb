@@ -1,0 +1,40 @@
+name: HF Model Discovery
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: hf-model-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline acceptance tests
+        run: python3 -m unittest discover -s tests/models -v
+      - name: Discover and aggregate candidates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python3 scripts/models/discover_hf_models.py --publish --output discovery-report.json
+      - name: Preserve complete or incomplete fetch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hf-model-discovery
+          path: discovery-report.json
+          if-no-files-found: warn

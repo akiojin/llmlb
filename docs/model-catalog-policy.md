@@ -104,6 +104,62 @@ Gemma 4 の Ollama runtime 名は、SKU を一意にする固定タグだけを�
 
 ## canonical テーブルの更新手順（Issue #776）
 
+### 新リリースと話題モデルの週次検知（Issue #885）
+
+`HF Model Discovery`（`.github/workflows/model-discovery.yml`）が毎週月曜 03:00 UTC
+（日本時間 12:00）に実行される。GitHub Actions の `workflow_dispatch` でも再実行できる。
+定期実行には workflow がデフォルトブランチへリリースされている必要がある。
+検査する対応表と設定は `develop` から取得する。
+
+公開元リストと件数は `scripts/models/hf-discovery-config.json` だけで管理する。
+初期設定は Qwen、zai-org、google、nvidia、meta-llama、moonshotai、mistralai、
+deepseek-ai、openai、microsoft。公開元別に `createdAt` 降順でページングし、直近14日
+のモデルを取得する。週次実行の遅延や一時失敗を吸収するため、期間を2週間にしている。
+話題度の代理指標は HF API の **`trendingScore` 降順上位100件**。X の直接監視はしない。
+順位はテキスト生成以外も含む全モデル内の順位で、トレンド側は公開日で制限しない。
+API の属性は [HF 公式リファレンス][hf-list-models] を参照。
+
+[hf-list-models]: https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.list_models
+
+候補は `BUILTIN_MAPPINGS` の canonical / alias に未登録（大文字小文字を無視した
+完全一致）、かつ `text-generation` / `text2text-generation` / `image-text-to-text` の
+モデルに限る。規模は `safetensors.total` または `gguf.total` の**総パラメータ数**が
+120B 未満であることを要求する。両形式の総数がある場合は大きい方を採用し、
+小さな補助重みだけで GGUF 本体の規模を過小評価しない。
+120B ちょうど、規模不明、公開日不明は除外する。
+モデル名や MoE の active parameter 数だけから規模を推測しない。規模不明の ID は
+レポートの `unverified_size` に残るため、必要なら別途メタデータを確認する。
+
+候補があると marker `<!-- llmlb:hf-model-discovery -->` または固定タイトル
+`[model-discovery] Hugging Face 新モデル候補` の open Issue を全ページから探す。
+なければ1件作成し、あれば未記載モデルだけコメントに追記する。各行にモデル ID、
+公開日（HF リポジトリ作成日時の UTC 日付）、トレンド順位、総パラメータ数を記載する。
+同一 workflow は concurrency で直列化し、コメント済み ID の再通知も抑制する。
+候補の確認が終わったら集約 Issue を閉じる。採用する場合は以下の通常手順に従い、
+実際のエンドポイント ID、Ollama / LM Studio のタグ実在を確認してから対応表を変更する。
+**検知ジョブは対応表を自動変更しない。**
+
+HF API の HTTP エラー、タイムアウト、JSON/応答形式の異常は警告にして exit 0 で終える。
+`status: incomplete` と失敗した取得元を出力し、取得済み候補は保持する。
+`incomplete` かつ候補ゼロでも「新モデルなし」を意味しない。Actions の警告と artifact
+`hf-model-discovery` 内の `discovery-report.json` を確認し、回復後に手動再実行する。
+候補ゼロを確定できるのは `status: complete` の場合だけである。設定・対応表の破損や
+GitHub Issue 操作の失敗はジョブを失敗させ、無言で通知を失わない。
+
+HF の公開 API は認証なしで利用する。レート制限対策として repository secret
+`HF_TOKEN` を任意で設定できる。Issue 操作には `GITHUB_TOKEN` の `issues: write`
+だけを使う。ローカルでは次のコマンドで通知なしの確認とオフラインテストができる。
+
+```bash
+python3 scripts/models/discover_hf_models.py --output /tmp/hf-discovery.json
+python3 -m unittest discover -s tests/models -v
+make test-checks
+```
+
+`--publish` は実際に Issue を作成・追記するため、ローカルの確認には付けない。
+
+### 既存エントリの鮮度検査
+
 `BUILTIN_MAPPINGS` は人手で編集する静的テーブルで、自動では追従しない。各エントリの
 `last_verified`（Hugging Face 上で canonical の実在を最後に確認した日）を
 `make mapping-freshness` が検査し、**180 日**を超えたエントリが 1 件でもあると失敗する。

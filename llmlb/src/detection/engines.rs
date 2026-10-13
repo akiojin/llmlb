@@ -20,46 +20,65 @@ pub(super) fn detect_model_owner(models: &ModelsResponse) -> Option<(EndpointTyp
     None
 }
 
-pub(super) async fn detect_native_engine(
+pub(super) async fn detect_tgi(
     client: &Client,
     base_url: &str,
     api_key: Option<&str>,
 ) -> Option<(EndpointType, String)> {
-    // TGI serializes CARGO_PKG_NAME in Info.router; KoboldCpp sets result in
-    // get_capabilities(). Neither a model name nor generic /props is an identity.
-    for (path, field, identity, endpoint_type) in [
+    // TGI serializes CARGO_PKG_NAME in Info.router.
+    detect_native_identity(
+        client,
+        base_url,
+        api_key,
         (
             "/info",
             "router",
             "text-generation-router",
             EndpointType::Tgi,
         ),
+    )
+    .await
+}
+
+pub(super) async fn detect_koboldcpp(
+    client: &Client,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> Option<(EndpointType, String)> {
+    // KoboldCpp exposes Ollama-compatible tags as well as this native identity.
+    detect_native_identity(
+        client,
+        base_url,
+        api_key,
         (
             "/api/extra/version",
             "result",
             "KoboldCpp",
             EndpointType::Koboldcpp,
         ),
-    ] {
-        let mut request = client.get(format!("{base_url}{path}"));
-        if let Some(key) = api_key {
-            request = request.bearer_auth(key);
-        }
-        let Ok(response) = request.send().await else {
-            continue;
-        };
-        if !response.status().is_success() {
-            continue;
-        }
-        let Ok(json) = response.json::<Value>().await else {
-            continue;
-        };
-        if json.get(field).and_then(Value::as_str) == Some(identity) {
-            return Some((
-                endpoint_type,
-                format!("{endpoint_type}: {path} {field} is '{identity}'"),
-            ));
-        }
+    )
+    .await
+}
+
+async fn detect_native_identity(
+    client: &Client,
+    base_url: &str,
+    api_key: Option<&str>,
+    (path, field, identity, endpoint_type): (&str, &str, &str, EndpointType),
+) -> Option<(EndpointType, String)> {
+    let mut request = client.get(format!("{base_url}{path}"));
+    if let Some(key) = api_key {
+        request = request.bearer_auth(key);
     }
-    None
+    let response = request.send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let json = response.json::<Value>().await.ok()?;
+    (json.get(field).and_then(Value::as_str) == Some(identity)).then(|| {
+        (
+            endpoint_type,
+            format!("{endpoint_type}: {path} {field} is '{identity}'"),
+        )
+    })
 }

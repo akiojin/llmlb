@@ -3,7 +3,7 @@
 use super::strata::detect_strata_family;
 use super::{
     detect_ollama, detect_xllm,
-    engines::{detect_model_owner, detect_native_engine},
+    engines::{detect_koboldcpp, detect_model_owner, detect_tgi},
     llama_cpp::detect_llamacpp_from_models,
     lm_studio::{detect_lm_studio_from_models, detect_lm_studio_native},
     models_response::ModelsResponse,
@@ -74,6 +74,20 @@ pub async fn detect_endpoint_type_with_client(
             reason,
         });
     }
+    // SGLang, Lemonade, and KoboldCpp also expose Ollama-compatible tags.
+    // Their exact identities must win before that compatibility API is checked.
+    if let Some((endpoint_type, reason)) = detect_model_owner(&models) {
+        return Ok(DetectionResult {
+            endpoint_type,
+            reason,
+        });
+    }
+    if let Some((endpoint_type, reason)) = detect_koboldcpp(client, base_url, api_key).await {
+        return Ok(DetectionResult {
+            endpoint_type,
+            reason,
+        });
+    }
     if let Some(reason) = detect_ollama(client, base_url).await {
         return Ok(DetectionResult {
             endpoint_type: EndpointType::Ollama,
@@ -93,14 +107,7 @@ pub async fn detect_endpoint_type_with_client(
         return Ok(result);
     }
 
-    if let Some((endpoint_type, reason)) = detect_model_owner(&models) {
-        return Ok(DetectionResult {
-            endpoint_type,
-            reason,
-        });
-    }
-    // KoboldCpp also implements /props: its explicit identity must win first.
-    if let Some((endpoint_type, reason)) = detect_native_engine(client, base_url, api_key).await {
+    if let Some((endpoint_type, reason)) = detect_tgi(client, base_url, api_key).await {
         return Ok(DetectionResult {
             endpoint_type,
             reason,

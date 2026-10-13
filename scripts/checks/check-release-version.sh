@@ -71,7 +71,7 @@ if [ "$develop_ahead" -eq 0 ] && [ "$head_ahead" -eq 0 ]; then
 fi
 
 if [ "$develop_version" != "$main_version" ] || [ "$head_version" != "$main_version" ]; then
-    echo "✓ リリースバージョンチェック OK（$MAIN_REF: $main_version / $DEVELOP_REF: $develop_version / $HEAD_REF: $head_version）"
+    echo "✓ リリースバージョンチェック OK（$MAIN_REF: $main_version / $DEVELOP_REF: $develop_version / $HEAD_REF: ${head_version}）"
     exit 0
 fi
 

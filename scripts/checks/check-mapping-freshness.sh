@@ -109,11 +109,11 @@ while IFS=$'\t' read -r canonical verified; do
     fi
     age=$((today_days - verified_days))
     if ((age < 0)); then
-        fail "$canonical: last_verified が未来日です: $verified（今日: $today）"
+        fail "$canonical: last_verified が未来日です: ${verified}（今日: ${today}）"
         continue
     fi
     if ((age > MAX_AGE_DAYS)); then
-        fail "$canonical: 最終確認から ${age} 日経過しています（last_verified: $verified、閾値: ${MAX_AGE_DAYS} 日）"
+        fail "$canonical: 最終確認から ${age} 日経過しています（last_verified: ${verified}、閾値: ${MAX_AGE_DAYS} 日）"
     fi
     if ((age > oldest_age)); then
         oldest_age=$age

@@ -77,6 +77,16 @@ land_on_develop() {
     [ "$status" -eq 0 ]
 }
 
+@test "標準bashのUTF-8ロケールでバージョン更新の成功メッセージを表示できる" {
+    add_feature one
+    land_on_develop
+    write_manifest 6.2.0
+    commit_all "chore(release): v6.2.0"
+    run env -u LC_ALL LANG=C.UTF-8 LC_CTYPE=C.UTF-8 /bin/bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"HEAD: 6.2.0）"* ]]
+}
+
 @test "develop がバージョンを上げていれば古い作業ブランチでも成功する" {
     git tag stale-base
     add_feature one

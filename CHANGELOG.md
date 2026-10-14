@@ -8,6 +8,8 @@
 
 ### Added
 
+- Endpoints: Strata、Project Maya、SGLang、LMDeploy、Xinference、Lemonade、Hugging Face TGI、KoboldCpp のエンドポイント種別と自動識別を追加（#886, #887）。独自クライアントへの影響は「互換性に関する注意」を参照
+- Models: GLM-5.3-Flash、Qwen3.8-Flash-Next、Qwen3.6-35B-A3B、Gemma 4 31B / 12B IT、Nemotron 3.5 Lightning、Kimi K3、Llama 4 Scout の計 8 モデルに canonical 対応と確認済みランタイム名・コンテキスト長を追加（#884）
 - Notifications: 全登録エンドポイントの状態一覧を 1 日 1 回メールで管理者へ送る日次ダイジェスト、メール送信基盤（SMTP）、admin 専用の通知設定 API、通知先 `users.email` を追加（SPEC #777, #787）
 - Notifications: エンドポイントが Offline に到達したとき管理者へ即時メール通知する購読タスクを追加（SPEC #777, #810）
 - Dashboard: ユーザー管理の通知先 email と、日次ダイジェスト・SMTP 設定を編集する通知設定ダイアログを追加（SPEC #777, #791）
@@ -19,11 +21,14 @@
 - Dashboard: モデル一覧で canonical モデル名を区別表示（#738）
 - Checks: マイグレーション採番の衝突検出（#739）、Dependabot グループ件名長（#741）、canonical モデルマッピングの鮮度（#778）、canonical イベントの publisher 不在（#784）、未リリース変更のバージョン更新漏れ（#813）の各検査を `make quality-checks` に追加
 - Checks: フレーク観測台帳と誘発パターン検査（SPEC #838）、コンポーネント内の React Query 直接呼び出し検査（#824）、resource 購読レジストリと無効化 hook（SPEC #821）を追加
+- Checks: macOS 標準 Bash 3.2 で誤解釈される、非 ASCII 文字に隣接した波括弧なしの変数展開を検出する検査を `make quality-checks` と CI に追加（#889）
 - CI: Rust 行カバレッジ 80% ゲート（#730）、dashboard の typecheck / lint / コンポーネントテスト（#773, #786）、運用通知の受け入れテスト（#787）、module-structure（#772）を必須チェックに追加
+- CI: Hugging Face の新モデル・話題モデルを毎週検知し、重複を避けて GitHub Issue に登録する workflow を追加。手動実行にも対応（#885）
 - Tests: 公開ルートの契約台帳ガードと未到達ルートの契約テスト（#709, #808）、互換 API の未知フィールド透過の契約テスト（#779）、招待 API 契約テストの登録（SPEC #580, #767）、change-password と Model Add Wizard の E2E（#731）、vitest + React Testing Library によるコンポーネントテスト層（#786）、`/ws/dashboard` の resource 通知・認証経路・ViewModel 購読網羅性の契約（#799, SPEC #821）、canonical screen registry からの E2E 画面網羅（#800）、TPS/EMA・canonical 解決・異常系の integration テスト（#788, #802）
 
 ### Changed
 
+- Endpoints: llama.cpp の自動識別から機能しない上流 `/v1/version` 判定を削除し、`/v1/models` の `Server` ヘッダーによる判定へ統一（#887）
 - Dashboard: 画面・モデル操作・管理モーダル・Playground・統計・ログ・ダウンロード進捗の状態とデータ取得を ViewModel に分離し、query key と resource 購読を集約（SPEC #821）
 - API: `/ws/dashboard` の通知を `{changed, id?}` に変更し、接続時の welcome フレームを廃止（SPEC #821）。移行方法は「互換性に関する注意」を参照
 - Auth: ユーザー作成・更新時のユーザー名にメール ID 形式の検証を適用（SPEC #580, #695）
@@ -38,6 +43,7 @@
 
 ### Fixed
 
+- Endpoints: Ollama 互換 API を併せ持つ推論サーバーを Ollama と誤認しないよう、各エンジン固有の識別を優先（#887）
 - API: OpenAI 互換 API のエラー出口を構造化し、Anthropic 側のエラー形式を維持（#830）。移行方法は「互換性に関する注意」を参照
 - Notifications: 初回ヘルスチェックを通知購読後に開始し、起動直後の Offline 通知の取りこぼしを防止（#834）
 - Dashboard: エンドポイント状態変化で画面を自動更新（#692）し、通知設定の保存と再取得が競合して編集内容が失われる問題を修正（SPEC #777, #791）
@@ -57,9 +63,12 @@
 - CI: Dependabot の npm group 分割と commitlint 件名長制限の限定除外（#741, #755）、`cargo doc -D warnings` と markdownlint の検証失敗（#733）を解消
 - Tests: ヘルスチェック回数検証（#753）、更新テストの固定 sleep と共有データディレクトリ（#763, #766）、E2E のナビゲーション競合（#774）によるフレークを解消
 - Tests: ログイン失敗とユーザー削除後のログイン確認 E2E を認証応答に同期し、パスワード検証中にトーストの確認期限が切れる問題を修正（#888）
+- Checks: macOS 標準 Bash 3.2 の UTF-8 環境で日本語に隣接する変数展開が誤解釈され、品質チェックが失敗する問題を修正。Bats ハーネスの日本語テスト名処理も安定化（#889）
+- Tests: `make e2e-playwright` が Playwright の失敗を握りつぶす問題を修正し、`make quality-checks` と pre-push へ失敗を伝播（#890）
 
 ### 互換性に関する注意
 
+- **エンドポイント種別**（#886, #887）: 管理 API の `endpoint_type` に `strata` / `project_maya` / `sglang` / `lmdeploy` / `xinference` / `lemonade` / `tgi` / `koboldcpp` を追加。既存エンドポイントも再検出で新種別に変わりうるため、独自クライアントの列挙型・網羅的な分岐を更新してください。
 - **互換 API のエラー形式**（#830、`ae1b3827`）: OpenAI 互換 API のハンドラー由来の文字列 `error` を、`error.message` / `error.type` / `error.code` を持つオブジェクトへ変更。
   独自クライアントは `error.message` を表示し、文言一致による判定を HTTP ステータス・`error.type`・`error.code`（HTTP ステータスの文字列）へ切り替えてください。Anthropic `/v1/messages` は既存の `type: "error"` 形式を維持し、`error.code` を追加します。
 - **Dashboard WebSocket**（SPEC #821、`ee781bf9`）: `/ws/dashboard` は `{type, data}` から `{changed, id?}` へ変更し、`connected` welcome フレームを廃止。

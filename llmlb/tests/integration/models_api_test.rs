@@ -296,3 +296,6 @@ async fn v1_models_excludes_models_not_on_endpoints() {
         "registered model without online endpoint should NOT be in /v1/models"
     );
 }
+
+#[path = "models_filter_test.rs"]
+mod models_filter_test;

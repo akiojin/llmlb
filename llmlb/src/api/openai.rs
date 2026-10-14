@@ -7,11 +7,12 @@ const UNSPECIFIED_IP: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr
 
 mod catalog;
 mod cloud;
+mod model_filter;
 mod proxy_post;
 #[cfg(test)]
 mod tests;
 
-pub use catalog::{get_model, list_models};
+pub use catalog::{get_model, list_models, list_models_filtered};
 #[cfg(test)]
 use cloud::cloud_virtual_node;
 use cloud::{parse_cloud_model, proxy_openai_cloud_post};

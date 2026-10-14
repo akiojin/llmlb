@@ -3,13 +3,14 @@
 //! 登録済みモデルのメタデータとエンドポイント申告の supported_apis 等を
 //! OpenAI 互換のモデル一覧へ集約する。親モジュールは `pub use` でルーター参照を維持する。
 
+use super::model_filter::ModelFilter;
 use crate::api::error::OpenAIError;
 use crate::api::models::{list_registered_models, LifecycleStatus};
 use crate::types::model::{ModelCapabilities, ModelCapability};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     response::{IntoResponse, Response},
     Json,
 };
@@ -84,6 +85,22 @@ fn build_supported_apis(
 /// ダッシュボード用の拡張フィールド（lifecycle_status, download_progress, ready）を追加。
 /// 登録済みの全モデルを返す（ダウンロード中・待機中含む）。
 pub async fn list_models(State(state): State<AppState>) -> Result<Response, OpenAIError> {
+    list_models_with_filter(state, ModelFilter::default()).await
+}
+
+/// GET /v1/models with optional, validated query filters.
+pub async fn list_models_filtered(
+    State(state): State<AppState>,
+    uri: Uri,
+) -> Result<Response, OpenAIError> {
+    let filter = ModelFilter::from_uri(&uri)?;
+    list_models_with_filter(state, filter).await
+}
+
+async fn list_models_with_filter(
+    state: AppState,
+    filter: ModelFilter,
+) -> Result<Response, OpenAIError> {
     use crate::types::endpoint::SupportedAPI;
     use std::collections::HashSet;
 
@@ -277,6 +294,8 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Response, Open
         });
         data.push(obj);
     }
+
+    data.retain(|model| filter.matches(model));
 
     let body = json!({
         "object": "list",

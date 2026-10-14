@@ -620,6 +620,45 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - GET `/v1/models`（API キー）
 - GET `/v1/models/:model_id`（API キー）
 
+`GET /v1/models` は任意のクエリでモデル一覧を絞り込めます。
+指定しなければ従来と同じレスポンスを返し、異なるパラメータは AND で結合します。
+各モデルのフィールドと並び順は変わりません。
+
+| パラメータ | 条件 |
+|------------|------|
+| `type` | 用途別の `llm` / `tts` / `stt` / `image` / `vision` / `embedding`。カンマ区切りは OR |
+| `capability` | 能力の boolean フィールド名。カンマ区切りは AND |
+| `supported_api` | `supported_apis` の完全一致。`chat_completions` / `responses` / `embeddings` / `image_input` / `image_generation` |
+| `ready` | `true` / `false` |
+| `endpoint_id` | モデルを提供するエンドポイントの UUID |
+| `owned_by` | 所有者の完全一致 |
+| `q` | `id` / `canonical_name` / `aliases` の大文字小文字を区別しない部分一致 |
+
+`type` の対応能力は、`llm` → `chat_completion`、`tts` → `text_to_speech`、
+`stt` → `speech_to_text`、`image` → `image_generation`、`vision` → `image_input`、
+`embedding` → `embeddings` です。`capability` と併用すると AND で結合します。
+指定可能な能力は `chat_completion` / `completion` / `embeddings` / `fine_tune` /
+`inference` / `text_to_speech` / `speech_to_text` / `image_generation` / `image_input` です。
+
+`capabilities` がない行（クラウドモデルを含む）は `supported_apis` から判定します。
+`chat_completions` は `chat_completion` と `completion` に対応し、`embeddings` /
+`image_input` / `image_generation` は同名能力に対応します。
+`responses` 単独からは能力を導出せず、導出できない能力は不一致となります。
+明示された能力の boolean 値がある場合は、そちらを正とします。
+未知の `type` / `capability` / `supported_api`、空の type/capability リスト、
+不正な boolean / UUID は HTTP 400 の `invalid_request_error` を返します。
+一覧は従来どおり利用可能なモデルのみを含むため、現状 `ready=false` は空配列を返します。
+`/api/models` と `/api/models/hub` は対象外です。
+
+例（API キー認証が必要）:
+
+```http
+GET /v1/models?type=tts
+GET /v1/models?type=tts,stt
+GET /v1/models?capability=chat_completion,image_input&ready=true
+GET /v1/models?supported_api=embeddings&owned_by=example&q=embed
+```
+
 #### エンドポイント管理
 
 - POST `/api/endpoints`（登録、JWT: admin / APIキー: `endpoints.manage`）

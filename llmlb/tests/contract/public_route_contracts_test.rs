@@ -198,53 +198,26 @@ const PLAYGROUND_LOAD_TEST_CHAT: &str = "/api/dashboard/playground/load-test/cha
 
 #[tokio::test]
 #[serial]
-async fn registration_route_creates_a_viewer_from_an_invitation_code() {
+async fn registration_route_accepts_a_pending_request_without_an_invitation() {
     let (app, db_pool) = crate::support::lb::create_test_lb_default_auth().await;
-    let admin_jwt = create_user_jwt(&db_pool, "route-contract-admin", UserRole::Admin).await;
-
     let response = send_request(
         &app,
         Method::POST,
-        "/api/invitations",
-        Some(&admin_jwt),
-        Some(json!({})),
+        "/api/auth/register",
+        None,
+        Some(json!({"username":"route-contract-applicant@example.com","password":"Password123"})),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let invitation = response_json(response).await;
-
-    let register = |username: &'static str, invitation_code: Value| {
-        send_request(
-            &app,
-            Method::POST,
-            "/api/auth/register",
-            None,
-            Some(json!({
-                "invitation_code": invitation_code,
-                "username": username,
-                "password": "Password123"
-            })),
-        )
-    };
-
-    let response = register("route-contract-invitee", invitation["code"].clone()).await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let user = response_json(response).await;
-    assert!(user["id"]
-        .as_str()
-        .is_some_and(|id| Uuid::parse_str(id).is_ok()));
-    assert_eq!(user["username"], "route-contract-invitee");
-    assert_eq!(user["role"], "viewer");
-    assert!(user["created_at"].is_string());
-
-    // 招待コードは 1 回しか使えない。
-    let response = register("route-contract-second-invitee", invitation["code"].clone()).await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert!(response_json(response).await["error"].is_string());
-
-    let response = register("route-contract-uninvited", json!("inv_unknown")).await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert!(response_json(response).await["error"].is_string());
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let body = response_json(response).await;
+    assert_eq!(body["status"], "pending");
+    assert!(body["message"].is_string());
+    assert!(
+        llmlb::db::users::find_by_username(&db_pool, "route-contract-applicant@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]

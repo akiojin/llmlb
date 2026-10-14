@@ -41,14 +41,6 @@ test.describe('Modal Lifecycle @dashboard @navigation', () => {
     await expect(dashboard.userModal).not.toBeVisible({ timeout: 5000 });
   });
 
-  test('MOD-04: Invitation modal opens and closes (admin)', async ({ page }) => {
-    await dashboard.openInvitationModal();
-    await expect(dashboard.invitationModal).toBeVisible();
-
-    await page.keyboard.press('Escape');
-    await expect(dashboard.invitationModal).not.toBeVisible({ timeout: 5000 });
-  });
-
   test('MOD-05: Endpoint detail modal opens and closes', async ({ page, endpoint }) => {
     await page.getByPlaceholder('Search by name or URL...').fill(endpoint.name);
     const row = page.getByRole('row').filter({ hasText: endpoint.name });

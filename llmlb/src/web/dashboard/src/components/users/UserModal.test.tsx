@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { usersApi, type User } from '@/lib/api'
+import { registrationRequestsApi, usersApi, type User } from '@/lib/api'
 import { renderWithProviders } from '@/test/render'
 import { UserModal } from './UserModal'
 
@@ -48,6 +48,7 @@ async function fill(user: UserEvent, field: HTMLElement, value: string) {
 
 beforeEach(() => {
   vi.spyOn(usersApi, 'list').mockResolvedValue([alice, bob])
+  vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([])
 })
 
 describe('UserModal notification email', () => {
@@ -188,12 +189,73 @@ describe('UserModal notification email', () => {
     const { queryClient } = await renderModal()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
-    await user.click(within(rowFor('alice')).getByRole('button', { name: 'Delete alice' }))
+    await user.click(within(rowFor('bob')).getByRole('button', { name: 'Delete bob' }))
     const dialog = within(await screen.findByRole('alertdialog', { name: 'Delete User' }))
     await user.click(dialog.getByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByText('User deleted')).toBeInTheDocument()
-    expect(remove).toHaveBeenCalledExactlyOnceWith('user-alice')
+    expect(remove).toHaveBeenCalledExactlyOnceWith('user-bob')
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['notification-settings'] })
   })
+})
+
+
+describe('UserModal registration approval', () => {
+  it('shows a pending registration section alongside existing users', async () => {
+    await renderModal()
+    expect(screen.getByRole('region', { name: 'Pending registrations' })).toBeInTheDocument()
+  })
+
+  it('protects the last administrator from deletion and demotion', async () => {
+    const user = userEvent.setup()
+    await renderModal()
+    expect(within(rowFor('alice')).getByRole('button', { name: 'Delete alice' })).toBeDisabled()
+    const dialog = within(await openEditDialog(user, 'alice'))
+    await user.click(dialog.getByRole('combobox', { name: 'Role' }))
+    expect(await screen.findByRole('option', { name: 'Viewer' })).toHaveAttribute('data-disabled')
+  })
+})
+
+
+const pendingRequest = { id: 'request-new', username: 'new@example.com', created_at: '2026-10-01T00:00:00Z' }
+
+it('approves a request with a default viewer role and refreshes users and pending requests', async () => {
+  vi.mocked(registrationRequestsApi.list).mockResolvedValue([pendingRequest])
+  const approve = vi.spyOn(registrationRequestsApi, 'approve').mockResolvedValue({ ...bob, username: pendingRequest.username })
+  const user = userEvent.setup()
+  const { queryClient } = await renderModal()
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+  await user.click(await screen.findByRole('button', { name: 'Approve new@example.com' }))
+  const dialog = within(await screen.findByRole('dialog', { name: 'Approve registration' }))
+  expect(dialog.getByRole('combobox', { name: 'Approval role' })).toHaveTextContent('Viewer')
+  await user.click(dialog.getByRole('button', { name: 'Approve' }))
+  await waitFor(() => expect(approve).toHaveBeenCalledExactlyOnceWith('request-new', 'viewer'))
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['registration-requests'] })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['users'] })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['notification-settings'] })
+})
+
+it('lets the administrator select admin explicitly for approval', async () => {
+  vi.mocked(registrationRequestsApi.list).mockResolvedValue([pendingRequest])
+  const approve = vi.spyOn(registrationRequestsApi, 'approve').mockResolvedValue({ ...alice, username: pendingRequest.username })
+  const user = userEvent.setup()
+  await renderModal()
+  await user.click(await screen.findByRole('button', { name: 'Approve new@example.com' }))
+  const dialog = within(await screen.findByRole('dialog', { name: 'Approve registration' }))
+  await user.click(dialog.getByRole('combobox', { name: 'Approval role' }))
+  await user.click(await screen.findByRole('option', { name: 'Admin' }))
+  await user.click(dialog.getByRole('button', { name: 'Approve' }))
+  await waitFor(() => expect(approve).toHaveBeenCalledExactlyOnceWith('request-new', 'admin'))
+})
+
+it('rejects a request only after confirmation', async () => {
+  vi.mocked(registrationRequestsApi.list).mockResolvedValue([pendingRequest])
+  const reject = vi.spyOn(registrationRequestsApi, 'reject').mockResolvedValue(undefined)
+  const user = userEvent.setup()
+  await renderModal()
+  await user.click(await screen.findByRole('button', { name: 'Reject new@example.com' }))
+  const dialog = within(await screen.findByRole('alertdialog', { name: 'Reject registration' }))
+  expect(reject).not.toHaveBeenCalled()
+  await user.click(dialog.getByRole('button', { name: 'Reject' }))
+  await waitFor(() => expect(reject).toHaveBeenCalledExactlyOnceWith('request-new'))
 })

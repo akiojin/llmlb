@@ -1,6 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test'
 import { ensureDashboardLogin } from '../../helpers/api-helpers'
-import type { ApiKey, User, Invitation } from '../../../../src/web/dashboard/src/lib/api'
+import type { PendingRegistration } from '../../helpers/registration.fixture'
+import type { ApiKey, User } from '../../../../src/web/dashboard/src/lib/api'
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`Admin modal ViewModels (${colorScheme}) @dashboard`, () => {
@@ -20,16 +21,16 @@ for (const colorScheme of ['light', 'dark'] as const) {
       })
       expect(login.ok()).toBe(true)
       const createdAt = '2026-10-01T00:00:00Z'
-      const expiresAt = '2099-01-01T00:00:00Z'
       const secret = 'sk_modal_viewmodel_plaintext_only_once'
       let keys: ApiKey[] = []
-      let users: User[] = []
-      let invitations: Invitation[] = []
-      const gets = { keys: 0, users: 0, invitations: 0, notifications: 0 }
+      const seedAdmin: User = { id: 'modal-seed-admin', username: 'admin', role: 'admin', email: null, created_at: createdAt }
+      let users: User[] = [seedAdmin]
+      let registrations: PendingRegistration[] = []
+      const gets = { keys: 0, users: 0, registrations: 0, notifications: 0 }
       const keyPayloads: unknown[] = []
       const userPayloads: unknown[] = []
       const updates: unknown[] = []
-      const invitationPayloads: unknown[] = []
+      const approvalPayloads: unknown[] = []
 
       await page.route('**/api/me/api-keys', (route) => {
         if (route.request().method() === 'GET') {
@@ -66,40 +67,41 @@ for (const colorScheme of ['light', 'dark'] as const) {
           id: 'modal-user', username: payload.username, role: payload.role,
           email: payload.email ?? null, created_at: createdAt,
         }
-        users = [user]
+        users = [seedAdmin, user]
         return route.fulfill({ json: { user, generated_password: 'modal-generated-password' } })
       })
       await page.route('**/api/users/modal-user', (route) => {
         expect(route.request().headers()['x-csrf-token']).toBeTruthy()
         if (route.request().method() === 'DELETE') {
-          users = []
+          users = users.filter((user) => user.id !== 'modal-user')
           return route.fulfill({ status: 204 })
         }
         expect(route.request().method()).toBe('PUT')
         const payload = route.request().postDataJSON()
         updates.push(payload)
-        users = users.map((user) => ({ ...user, ...payload, email: payload.email || null }))
-        return route.fulfill({ json: users[0] })
+        users = users.map((user) => user.id === 'modal-user' ? { ...user, ...payload, email: payload.email || null } : user)
+        return route.fulfill({ json: users.find((user) => user.id === 'modal-user') })
       })
-      await page.route('**/api/invitations', (route) => {
-        if (route.request().method() === 'GET') {
-          gets.invitations++
-          return route.fulfill({ json: { invitations } })
-        }
+      await page.route('**/api/registration-requests', (route) => {
+        expect(route.request().method()).toBe('GET')
+        gets.registrations++
+        return route.fulfill({ json: registrations })
+      })
+      await page.route('**/api/registration-requests/*/approve', (route) => {
         expect(route.request().method()).toBe('POST')
         expect(route.request().headers()['x-csrf-token']).toBeTruthy()
-        invitationPayloads.push(route.request().postDataJSON())
-        const invitation: Invitation = {
-          id: '22222222-3333-4444-5555-666666666666', created_by: 'admin',
-          created_at: createdAt, expires_at: expiresAt, status: 'active',
-        }
-        invitations = [invitation]
-        return route.fulfill({ json: { ...invitation, code: 'inv_modal_once_only' } })
+        const payload = route.request().postDataJSON()
+        approvalPayloads.push(payload)
+        const pending = registrations.find((item) => route.request().url().endsWith(`/${item.id}/approve`))!
+        const user: User = { id: pending.id, username: pending.username, role: payload.role, email: null, created_at: createdAt }
+        users = [...users, user]
+        registrations = registrations.filter((item) => item.id !== pending.id)
+        return route.fulfill({ status: 201, json: user })
       })
-      await page.route('**/api/invitations/*', (route) => {
+      await page.route('**/api/registration-requests/*', (route) => {
         expect(route.request().method()).toBe('DELETE')
         expect(route.request().headers()['x-csrf-token']).toBeTruthy()
-        invitations = invitations.map((invitation) => ({ ...invitation, status: 'revoked' }))
+        registrations = registrations.filter((item) => !route.request().url().endsWith(`/${item.id}`))
         return route.fulfill({ status: 204 })
       })
       await page.route('**/api/dashboard/notifications', (route) => {
@@ -130,13 +132,15 @@ for (const colorScheme of ['light', 'dark'] as const) {
       }).toBe(false)
       const menu = async (name: string) => {
         await page.getByRole('button', { name: 'User menu' }).click()
-        await page.getByRole('menuitem', { name, exact: true }).click()
+        // The pending-count badge contributes to Manage Users' accessible name.
+        await page.getByRole('menuitem').filter({ hasText: name }).click()
       }
       const screenshot = async (name: string) => testInfo.attach(`${name}-${colorScheme}`, {
         body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png',
       })
       await page.clock.runFor(5000)
-      expect(gets).toEqual({ keys: 0, users: 0, invitations: 0, notifications: 0 })
+      expect({ keys: gets.keys, users: gets.users, notifications: gets.notifications }).toEqual({ keys: 0, users: 0, notifications: 0 })
+      expect(gets.registrations).toBeGreaterThan(0) // Header continuously tracks pending count.
 
       await page.locator('#api-keys-button').click()
       const keyModal = page.getByRole('dialog', { name: 'API Keys', exact: true })
@@ -202,7 +206,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await hidden(notifications)
       await menu('Manage Users')
       const userModal = page.getByRole('dialog', { name: 'User Management', exact: true })
-      await visible(userModal.getByText('No users', { exact: true }))
+      await visible(userModal.getByRole('cell', { name: 'admin', exact: true }))
       expect(gets.users).toBe(1)
       await userModal.getByRole('button', { name: 'Add User', exact: true }).click()
       const userForm = page.getByRole('dialog', { name: 'Create User', exact: true })
@@ -236,7 +240,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const userRow = userModal.getByRole('row').filter({ hasText: 'modal-admin@example.com' })
       await visible(userRow)
       const beforeUserPoll = gets.users
-      users = users.map((user) => ({ ...user, email: 'polled@example.com' }))
+      users = users.map((user) => user.id === 'modal-user' ? { ...user, email: 'polled@example.com' } : user)
       await page.clock.runFor(4900)
       expect(gets.users).toBe(beforeUserPoll)
       await expect(userRow).toContainText('ops@example.com')
@@ -253,7 +257,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
       expect(updates).toEqual([{ email: '' }])
       await userRow.getByRole('button', { name: 'Delete modal-admin@example.com', exact: true }).click()
       await page.getByRole('alertdialog', { name: 'Delete User' }).getByRole('button', { name: 'Delete', exact: true }).click()
-      await visible(userModal.getByText('No users', { exact: true }))
+      await hidden(userRow)
+      await visible(userModal.getByRole('cell', { name: 'admin', exact: true }))
       await expect(page.getByText('modal-generated-password', { exact: true })).toHaveCount(0)
       await userModal.getByRole('button', { name: 'Close', exact: true }).click()
       await hidden(userModal)
@@ -261,39 +266,40 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await page.clock.runFor(6000)
       expect(gets.users).toBe(closedUsers)
 
-      await menu('Invitation Codes')
-      const invitationModal = page.getByRole('dialog', { name: 'Invitation Codes', exact: true })
-      await visible(invitationModal.getByText('No invitation codes', { exact: true }))
-      expect(gets.invitations).toBe(1)
-      await page.clock.runFor(4900)
-      expect(gets.invitations).toBe(1)
-      await page.clock.runFor(200)
-      await expect.poll(async () => { await page.clock.runFor(1); return gets.invitations }).toBe(2)
-      await invitationModal.getByRole('button', { name: 'Create Code', exact: true }).click()
-      const invitationForm = page.getByRole('dialog', { name: 'Create Invitation Code', exact: true })
-      await expect(invitationForm.getByRole('combobox')).toHaveText('72 hours (3 days)')
-      await invitationForm.getByRole('button', { name: 'Create', exact: true }).click()
-      const codeDialog = page.getByRole('dialog', { name: 'Invitation Code Created', exact: true })
-      await visible(codeDialog.getByText('inv_modal_once_only', { exact: true }))
-      expect(invitationPayloads).toEqual([{ expires_in_hours: 72 }])
-      await expect.poll(async () => { await page.clock.runFor(1); return gets.invitations }).toBe(3)
-      await screenshot('invitation-created')
-      await codeDialog.getByRole('button', { name: 'Done', exact: true }).click()
-      await hidden(codeDialog)
-      const invitationRow = invitationModal.getByRole('row').filter({ hasText: '22222222...' })
-      await visible(invitationRow.getByText('Active', { exact: true }))
-      await invitationRow.getByRole('button').click()
-      await page.getByRole('alertdialog', { name: 'Revoke Invitation Code' }).getByRole('button', { name: 'Revoke', exact: true }).click()
-      await visible(invitationRow.getByText('Revoked', { exact: true }))
-      await expect(invitationRow.getByRole('button')).toHaveCount(0)
-      await expect(page.getByText('inv_modal_once_only', { exact: true })).toHaveCount(0)
-      await invitationModal.getByRole('button', { name: 'Close', exact: true }).click()
-      await hidden(invitationModal)
-      const closedInvitations = gets.invitations
+      registrations = [
+        { id: 'pending-approve', username: 'approved@example.com', created_at: createdAt },
+        { id: 'pending-reject', username: 'rejected@example.com', created_at: createdAt },
+      ]
+      await page.clock.runFor(5100)
+      await menu('Manage Users')
+      const pendingSection = userModal.getByRole('region', { name: 'Pending registrations', exact: true })
+      const pendingApproval = pendingSection.getByTestId('registration-request-pending-approve')
+      await visible(pendingApproval)
+      await expect(page.getByRole('menuitem', { name: 'Invitation Codes', exact: true })).toHaveCount(0)
+      await pendingApproval.getByRole('button', { name: 'Approve approved@example.com', exact: true }).click()
+      const approval = page.getByRole('dialog', { name: 'Approve registration', exact: true })
+      await expect(approval.getByRole('combobox', { name: 'Approval role', exact: true })).toHaveText('Viewer')
+      await approval.getByRole('combobox', { name: 'Approval role', exact: true }).click()
+      await page.getByRole('option', { name: 'Admin', exact: true }).click()
+      await approval.getByRole('button', { name: 'Approve', exact: true }).click()
+      await hidden(approval)
+      await hidden(pendingApproval)
+      await visible(userModal.getByRole('cell', { name: 'approved@example.com', exact: true }))
+      expect(approvalPayloads).toEqual([{ role: 'admin' }])
+      await screenshot('registration-approved')
+      const pendingRejection = pendingSection.getByTestId('registration-request-pending-reject')
+      await pendingRejection.getByRole('button', { name: 'Reject rejected@example.com', exact: true }).click()
+      await page.getByRole('alertdialog', { name: 'Reject registration', exact: true }).getByRole('button', { name: 'Reject', exact: true }).click()
+      await hidden(pendingRejection)
+      await visible(pendingSection.getByText('No pending registrations', { exact: true }))
+      await userModal.getByRole('button', { name: 'Close', exact: true }).click()
+      await hidden(userModal)
       const closedKeys = gets.keys
+      const usersAfterRegistration = gets.users
+      const registrationsWhileClosed = gets.registrations
       await page.clock.runFor(6000)
-      expect(gets.invitations).toBe(closedInvitations)
-      expect(gets.users).toBe(closedUsers)
+      expect(gets.registrations).toBeGreaterThan(registrationsWhileClosed) // Header remains live.
+      expect(gets.users).toBe(usersAfterRegistration)
       expect(gets.keys).toBe(closedKeys)
       expect(errors).toEqual([])
     })

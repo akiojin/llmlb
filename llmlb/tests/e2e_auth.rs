@@ -14,9 +14,6 @@ mod api_key_flow_test;
 #[path = "e2e/dashboard_flow_test.rs"]
 mod dashboard_flow_test;
 
-#[path = "e2e/invitation_flow_test.rs"]
-mod invitation_flow_test;
-
 #[path = "e2e/auth_disabled_flow_test.rs"]
 mod auth_disabled_flow_test;
 

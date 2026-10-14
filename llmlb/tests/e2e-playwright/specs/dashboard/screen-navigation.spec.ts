@@ -48,7 +48,14 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
         await page.fill('#current-password', generatedPassword!);
         await newPasswordInput.fill(newPassword);
         await page.fill('#confirm-password', newPassword);
-        await page.click('button[type="submit"]');
+        const [changePasswordResponse] = await Promise.all([
+          page.waitForResponse((response) =>
+            new URL(response.url()).pathname === '/api/auth/change-password' &&
+            response.request().method() === 'PUT'
+          ),
+          page.click('button[type="submit"]'),
+        ]);
+        expect(changePasswordResponse.ok()).toBe(true);
 
         // Password change redirects to the login page after a delay
         await expect(page).toHaveURL(/\/login/, { timeout: 15000 });

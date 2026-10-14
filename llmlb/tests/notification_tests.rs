@@ -23,3 +23,6 @@ mod offline_alert_test;
 
 #[path = "notifications/startup_alert_test.rs"]
 mod startup_alert_test;
+
+#[path = "notifications/registration_test.rs"]
+mod registration_test;

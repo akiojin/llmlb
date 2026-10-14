@@ -1,3 +1,4 @@
+import { registrationRequestsApi } from '@/lib/api'
 import { readFileSync } from 'node:fs'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -113,6 +114,7 @@ describe('Dashboard', () => {
   let api: ReturnType<typeof stubDashboardApis>
 
   beforeEach(() => {
+  vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([])
     api = stubDashboardApis()
     // Freeze polling without freezing React Query's notifications or DOM waits.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })

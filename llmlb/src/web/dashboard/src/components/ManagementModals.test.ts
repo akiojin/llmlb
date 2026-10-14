@@ -6,7 +6,6 @@ describe('management modal View boundaries', () => {
   for (const [directory, component] of [
     ['api-keys', 'ApiKeyModal'],
     ['users', 'UserModal'],
-    ['invitations', 'InvitationModal'],
   ]) {
     it(`${component} delegates acquisition, state and commands to its ViewModel`, () => {
       const source = readFileSync(`src/components/${directory}/${component}.tsx`, 'utf8')

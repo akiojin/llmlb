@@ -568,6 +568,20 @@ LLM Load Balancer (OpenAI-compatible)
 | `admin` | `/api` 管理系 API とダッシュボード機能にフルアクセス |
 | `viewer` | ダッシュボード閲覧とエンドポイントREADのみ（管理操作は 403） |
 
+#### ユーザー登録申請
+
+登録画面または `POST /api/auth/register` にメール形式の username と password を送ると、
+`202` と `status: "pending"` が返ります。承認待ち申請として保存され、承認前はログインや
+API キー発行ができません。管理者は Manage Users で申請を承認・却下できます。
+承認時には admin / viewer を指定し、画面の初期値は viewer です。後からのロール変更にも対応し、
+最後の管理者は降格・削除できません。未処理申請の上限は 100 件です。
+
+管理 API は `GET /api/registration-requests`、
+`POST /api/registration-requests/:id/approve`（必須 `role`）、
+`DELETE /api/registration-requests/:id` です。JWT+Admin または `users.manage` API キーが必要です。
+新規申請は設定済みの管理者通知メール経路でも通知します。メール未設定でも申請は保存されます。
+6.4.0 で招待 API と未使用コードを廃止しました。
+
 #### APIキー（permissions）
 
 | 権限 | 目的 |
@@ -576,8 +590,7 @@ LLM Load Balancer (OpenAI-compatible)
 | `openai.models.read` | OpenAI互換モデル一覧（`GET /v1/models*`） |
 | `endpoints.read` | エンドポイントREAD（`GET /api/endpoints*`） |
 | `endpoints.manage` | エンドポイントWRITE（`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`） |
-| `users.manage` | ユーザー管理（`/api/users*`） |
-| `invitations.manage` | 招待管理（`/api/invitations*`） |
+| `users.manage` | ユーザー・登録申請管理（`/api/users*`、`/api/registration-requests*`） |
 | `models.manage` | モデル登録/削除（`POST /api/models/register`, `DELETE /api/models/*`） |
 | `registry.read` | モデルレジストリ/一覧（`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`） |
 | `logs.read` | エンドポイントログ（`GET /api/endpoints/:id/logs`） |

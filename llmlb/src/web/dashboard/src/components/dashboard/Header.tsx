@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ApiKeyModal } from '@/components/api-keys/ApiKeyModal'
 import { UserModal } from '@/components/users/UserModal'
-import { InvitationModal } from '@/components/invitations/InvitationModal'
+import { usePendingRegistrationCountViewModel } from '@/viewmodels/useRegistrationRequestsViewModel'
+import { Badge } from '@/components/ui/badge'
 import { NotificationSettingsModal } from '@/components/notifications/NotificationSettingsModal'
 import {
   Bell,
@@ -27,7 +28,6 @@ import {
   User,
   Users,
   RefreshCw,
-  Ticket,
 } from 'lucide-react'
 
 type UpdateStateSummary =
@@ -63,7 +63,7 @@ export function Header({
   const { theme, toggleTheme } = useTheme()
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [userModalOpen, setUserModalOpen] = useState(false)
-  const [invitationModalOpen, setInvitationModalOpen] = useState(false)
+  const { pendingCount } = usePendingRegistrationCountViewModel(user?.role === 'admin')
   const [notificationModalOpen, setNotificationModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const displayVersion = systemVersion ?? '--'
@@ -273,10 +273,7 @@ export function Header({
                     <DropdownMenuItem onClick={() => setUserModalOpen(true)}>
                       <Users className="mr-2 h-4 w-4" />
                       Manage Users
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setInvitationModalOpen(true)}>
-                      <Ticket className="mr-2 h-4 w-4" />
-                      Invitation Codes
+                      {pendingCount > 0 && <Badge className="ml-auto" data-testid="pending-registration-count" aria-label={`${pendingCount} pending registrations`}>{pendingCount}</Badge>}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setNotificationModalOpen(true)}>
                       <Bell className="mr-2 h-4 w-4" />
@@ -314,8 +311,7 @@ export function Header({
 
       {/* Modals */}
       <ApiKeyModal open={apiKeyModalOpen} onOpenChange={setApiKeyModalOpen} />
-      <UserModal open={userModalOpen} onOpenChange={setUserModalOpen} />
-      <InvitationModal open={invitationModalOpen} onOpenChange={setInvitationModalOpen} />
+      {user?.role === 'admin' && <UserModal open={userModalOpen} onOpenChange={setUserModalOpen} />}
       {user?.role === 'admin' && (
         <NotificationSettingsModal
           open={notificationModalOpen}

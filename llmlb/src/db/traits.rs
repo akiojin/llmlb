@@ -18,7 +18,6 @@ use crate::types::endpoint::{
 
 use super::endpoint_daily_stats::{DailyStatEntry, ModelStatEntry};
 use super::endpoints::EndpointRequestTotals;
-use super::invitations::{InvitationCode, InvitationCodeWithPlaintext};
 use super::request_history::{FilteredRecords, RecordFilter, TokenStatistics};
 
 // ---------------------------------------------------------------------------
@@ -163,31 +162,6 @@ pub trait ApiKeyRepository: Send + Sync {
     async fn list_api_keys(&self) -> Result<Vec<ApiKey>, LbError>;
     /// APIキーを削除
     async fn delete_api_key(&self, id: Uuid) -> Result<(), LbError>;
-}
-
-// ---------------------------------------------------------------------------
-// InvitationRepository
-// ---------------------------------------------------------------------------
-
-/// 招待コードCRUD操作のRepository trait
-#[async_trait]
-pub trait InvitationRepository: Send + Sync {
-    /// 招待コードを生成
-    async fn create_invitation(
-        &self,
-        created_by: Uuid,
-        expires_in_hours: Option<i64>,
-    ) -> Result<InvitationCodeWithPlaintext, LbError>;
-    /// 平文コードから招待コードを検索
-    async fn find_by_code(&self, plaintext_code: &str) -> Result<Option<InvitationCode>, LbError>;
-    /// すべての招待コードを取得
-    async fn list_invitations(&self) -> Result<Vec<InvitationCode>, LbError>;
-    /// 招待コードを使用済みにする
-    async fn mark_as_used(&self, id: Uuid, used_by: Uuid) -> Result<(), LbError>;
-    /// 招待コードを無効化
-    async fn revoke(&self, id: Uuid) -> Result<bool, LbError>;
-    /// 招待コードを削除
-    async fn delete_invitation(&self, id: Uuid) -> Result<(), LbError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -527,37 +501,6 @@ impl ApiKeyRepository for SqlitePool {
 
     async fn delete_api_key(&self, id: Uuid) -> Result<(), LbError> {
         super::api_keys::delete(self, id).await
-    }
-}
-
-#[async_trait]
-impl InvitationRepository for SqlitePool {
-    async fn create_invitation(
-        &self,
-        created_by: Uuid,
-        expires_in_hours: Option<i64>,
-    ) -> Result<InvitationCodeWithPlaintext, LbError> {
-        super::invitations::create(self, created_by, expires_in_hours).await
-    }
-
-    async fn find_by_code(&self, plaintext_code: &str) -> Result<Option<InvitationCode>, LbError> {
-        super::invitations::find_by_code(self, plaintext_code).await
-    }
-
-    async fn list_invitations(&self) -> Result<Vec<InvitationCode>, LbError> {
-        super::invitations::list(self).await
-    }
-
-    async fn mark_as_used(&self, id: Uuid, used_by: Uuid) -> Result<(), LbError> {
-        super::invitations::mark_as_used(self, id, used_by).await
-    }
-
-    async fn revoke(&self, id: Uuid) -> Result<bool, LbError> {
-        super::invitations::revoke(self, id).await
-    }
-
-    async fn delete_invitation(&self, id: Uuid) -> Result<(), LbError> {
-        super::invitations::delete(self, id).await
     }
 }
 

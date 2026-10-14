@@ -301,7 +301,6 @@ fn arb_api_key_permission() -> impl Strategy<Value = ApiKeyPermission> {
         Just(ApiKeyPermission::EndpointsManage),
         Just(ApiKeyPermission::ApiKeysManage),
         Just(ApiKeyPermission::UsersManage),
-        Just(ApiKeyPermission::InvitationsManage),
         Just(ApiKeyPermission::ModelsManage),
         Just(ApiKeyPermission::RegistryRead),
         Just(ApiKeyPermission::LogsRead),

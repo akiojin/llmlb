@@ -32,8 +32,8 @@ const REQUIRED_COVERAGE: Record<CanonicalScreen['kind'], string[]> = {
   ],
 };
 
-/** SPEC #582 US-006 "Explicit exclusions": the invite flow is legacy coverage. */
-const LEGACY_SCREEN = /invitation|register/i;
+/** Registration requests have a dedicated workflow suite; no separate modal exists. */
+const STANDALONE_REGISTRATION_SCREEN = /register/i;
 
 const E2E_ROOT = path.resolve(__dirname, '../..');
 
@@ -107,9 +107,9 @@ test.describe('Canonical Screen Registry @dashboard @navigation', () => {
     }
   });
 
-  test('SR-03: legacy invite-flow screens are not canonical', () => {
+  test('SR-03: registration has dedicated workflow coverage', () => {
     for (const screen of CANONICAL_SCREENS) {
-      expect(`${screen.id} ${screen.title}`).not.toMatch(LEGACY_SCREEN);
+      expect(`${screen.id} ${screen.title}`).not.toMatch(STANDALONE_REGISTRATION_SCREEN);
     }
   });
 
@@ -174,7 +174,7 @@ test.describe('Canonical Screen Registry @dashboard @navigation', () => {
         expect(listed.filter((listedTitle) => listedTitle === title), title).toHaveLength(1);
       }
       for (const listedTitle of listed) {
-        expect(listedTitle).not.toMatch(LEGACY_SCREEN);
+        expect(listedTitle).not.toMatch(STANDALONE_REGISTRATION_SCREEN);
       }
     }
   });

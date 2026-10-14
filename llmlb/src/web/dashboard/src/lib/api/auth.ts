@@ -3,16 +3,13 @@
 import { createApiErrorFromResponse, fetchWithAuth, API_BASE } from './client'
 
 export interface RegisterRequest {
-  invitation_code: string
   username: string
   password: string
 }
 
 export interface RegisterResponse {
-  id: string
-  username: string
-  role: string
-  created_at: string
+  status: 'pending'
+  message: string
 }
 
 export const authApi = {

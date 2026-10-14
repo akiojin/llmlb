@@ -227,9 +227,7 @@ fixed-wait|llmlb/tests/e2e-playwright/specs/api/prometheus-metrics.spec.ts|50522
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/api/sse-streaming.spec.ts|1995707975-72|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|3719287498-31|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|3719287498-31|2
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/dashboard/deep-linking.spec.ts|3719287498-31|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
@@ -611,9 +609,7 @@ shared-resource|llmlb/tests/e2e-playwright/specs/api/responses-api.spec.ts|17730
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
 shared-resource|llmlb/tests/e2e-playwright/specs/api/sse-streaming.spec.ts|1773004936-65|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
-shared-resource|llmlb/tests/e2e-playwright/specs/auth/invitation.spec.ts|4101614062-66|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
-shared-resource|llmlb/tests/e2e-playwright/specs/auth/register.spec.ts|4101614062-66|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
 shared-resource|llmlb/tests/e2e-playwright/specs/auth/session-management.spec.ts|1773004936-65|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
@@ -663,7 +659,6 @@ shared-resource|llmlb/tests/e2e/auth_flow_test.rs|531089987-55|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
 shared-resource|llmlb/tests/e2e/dashboard_flow_test.rs|531089987-55|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
-shared-resource|llmlb/tests/e2e/invitation_flow_test.rs|531089987-55|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。
 shared-resource|llmlb/tests/integration/images_api_test.rs|531089987-55|1
 # (c) #754/#759・#761/#766: 既存の共有root/固定port/暗黙data dir候補。隔離済みのhelperも保守的検出、FR-005で現状固定。

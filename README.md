@@ -1166,6 +1166,44 @@ Register an endpoint.
 
 List available models with Azure OpenAI-style capabilities.
 
+Optional query parameters filter the list without changing model fields or order.
+Without parameters, the response is unchanged. Different parameters combine with AND.
+
+| Parameter | Filter |
+|-----------|--------|
+| `type` | Purpose: `llm`, `tts`, `stt`, `image`, `vision`, `embedding`; comma-separated values combine with OR |
+| `capability` | Boolean capability fields; comma-separated values combine with AND |
+| `supported_api` | Exact member of `supported_apis`: `chat_completions`, `responses`, `embeddings`, `image_input`, `image_generation` |
+| `ready` | `true` or `false` |
+| `endpoint_id` | UUID of an endpoint serving the model |
+| `owned_by` | Exact owner match |
+| `q` | Case-insensitive substring of `id`, `canonical_name`, or any alias |
+
+`type` maps to capabilities: `llm` → `chat_completion`, `tts` → `text_to_speech`,
+`stt` → `speech_to_text`, `image` → `image_generation`, `vision` → `image_input`,
+and `embedding` → `embeddings`. It combines with `capability` using AND.
+Capability names are `chat_completion`, `completion`, `embeddings`, `fine_tune`,
+`inference`, `text_to_speech`, `speech_to_text`, `image_generation`, and `image_input`.
+
+For rows without `capabilities` (including cloud models), capabilities are derived
+from `supported_apis`: `chat_completions` supports `chat_completion` and `completion`;
+`embeddings`, `image_input`, and `image_generation` map to the corresponding capability.
+`responses` alone does not imply a capability; capabilities that cannot be derived do
+not match. Explicit capability booleans take precedence. Unknown `type`, `capability`,
+or `supported_api` values, empty type/capability lists, and invalid booleans or UUIDs
+return HTTP 400 with OpenAI-compatible `invalid_request_error`.
+The catalog still lists available models only, so `ready=false` currently returns an
+empty list. These filters do not apply to `/api/models` or `/api/models/hub`.
+
+Examples (API key authentication required):
+
+```http
+GET /v1/models?type=tts
+GET /v1/models?type=tts,stt
+GET /v1/models?capability=chat_completion,image_input&ready=true
+GET /v1/models?supported_api=embeddings&owned_by=example&q=embed
+```
+
 **Response:**
 
 ```json

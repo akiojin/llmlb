@@ -62,7 +62,7 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
     // `/v1/models*` は外部クライアント(APIキー)からのみ参照される
     // SPEC-e8e9326e: ノードトークン認証は廃止されました
     let models_routes = Router::new()
-        .route("/v1/models", get(openai::list_models))
+        .route("/v1/models", get(openai::list_models_filtered))
         .route("/v1/models/{model_id}", get(openai::get_model));
     let models_protected_routes = models_routes
         .layer(middleware::from_fn_with_state(

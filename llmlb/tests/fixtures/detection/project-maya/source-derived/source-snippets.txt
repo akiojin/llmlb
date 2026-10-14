@@ -1,0 +1,312 @@
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/VERSION#L1-L1
+1: 1.1.8
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/maya.py#L90-L92
+90: MODEL_NAME = "glm-5.3-flash"
+91: SAMPLING = {"temperature": 1.0, "top_p": 0.95}     # the dashboard's and the API's defaults for requests that set none
+92: EFFORT = "high"                                    # thinking level for requests that name none (GLM's High)
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/maya.py#L1810-L1821
+1810: def write_config(a, pc, meta, pack: Path, quant: str, ctx: int, models: Path, vision: dict | None,
+1811:                  choice: tuple | None = None, dflash: Path | None = None) -> Path:
+1812:     step(8, "the configuration and the start script")
+1813:     port = a.port or 8080
+1814:     # --prefill auto (as Strata's setup writes it): the engine picks its prompt chunk - the largest its expert pool
+1815:     # can lend, up to 8192; a number (`32768`) sets the chunk itself
+1816:     cfg = {"exe": str(EXE), "args": ["--glm-pack", str(pack), "--max-context", str(ctx), "--prefill", "auto",
+1817:                                      "--kv-streaming", KV_STREAMING],
+1818:            "cwd": str(ROOT),
+1819:            "tokenizer": str(pack / "tokenizer"), "model_name": MODEL_NAME, "gpu": [g["index"] for g in pc["gpus"]],
+1820:            "sampling": dict(SAMPLING), "reasoning_effort": EFFORT, "lib_dirs": meta.get("lib_dirs") or [],
+1821:            "port": port}
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L58-L60
+58:     MAYA_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip() or None
+59: except OSError:
+60:     MAYA_VERSION = None
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L408-L458
+408:     def __init__(self, exe: str, args: list[str], cwd: str | None = None, log: str | None = None,
+409:                  env: dict | None = None):
+410:         self.spawn = (exe, list(args), cwd, log, env)   # to start it again after it died (issue #27)
+411:         paths = {k: v for k, v in zip(args, args[1:]) if k in ("--native", "--pack")}
+412:         self.model_path = paths.get("--native") or paths.get("--pack", "pack/full")
+413:         self.log_path = log
+414:         self.log = open(log, "a", encoding="utf-8") if log else subprocess.DEVNULL
+415:         loading = threading.Event()                     # set once READY: the narrator below stops
+416:         log_start = os.path.getsize(log) if log else 0
+417:         if log:
+418:             threading.Thread(target=narrate_start, args=(log, log_start, args, loading),
+419:                              daemon=True).start()
+420:         self.proc = subprocess.Popen([exe, "--serve", *args], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+421:                                      stderr=self.log, text=True, encoding="utf-8", bufsize=1, env=env)
+422:         self.max_context = 0
+423:         self.can_stop = False            # the engine honours a STOP line mid-request (READY <ctx> stop)
+424:         self.can_pause = False           # ... and PAUSE: a STOP that keeps the state with what was written (fair slices)
+425:         self.multi = 0                   # READY ... multi=<n>: n conversations at once (requests tagged rid=<id>)
+426:         self._routes: dict[int, queue.Queue] = {}       # rid -> its lines (multi)
+427:         self._routes_lock = threading.Lock()
+428:         self._rids = itertools.count(1)
+429:         self._tls = threading.local()                   # the request this thread is generating (pause())
+430:         self.last = {}
+431:         self.info = {}                   # INFO key=value facts (engine 0.1.8+): kv, expert slots, ... (Monitor tab)
+432:         self.prefill_tok_s_mean = None
+433:         self.progress = None             # (read, total, reuse, ms) prompt progress while a prompt is read, from PP lines
+434:         try:                             # a ready-made engine's BUILD.json says its version
+435:             self.info["version"] = json.loads((Path(exe).parent / "BUILD.json").read_text()).get("version")
+436:         except (OSError, ValueError):
+437:             self.info["version"] = None
+438:         for line in self.proc.stdout:
+439:             if line.startswith("NOTE "):
+440:                 print("[maya] " + line[5:].strip(), flush=True)
+441:             if line.startswith("INFO "):
+442:                 for kv in line.split()[1:]:
+443:                     k, _, v = kv.partition("=")
+444:                     self.info[k] = int(v) if v.lstrip("-").isdigit() else v
+445:             if line.startswith("READY"):
+446:                 f = line.split()
+447:                 self.max_context = int(f[1])
+448:                 self.can_stop = "stop" in f[2:]
+449:                 self.can_pause = "pause" in f[2:]
+450:                 self.multi = next((int(x[6:]) for x in f[2:] if x.startswith("multi=") and x[6:].isdigit()), 0)
+451:                 break
+452:         loading.set()
+453:         if self.max_context <= 0:
+454:             raise RuntimeError("the engine exited before it was ready" + (f" (see {log})" if log else ""))
+455:         # (from PR #41, midhatn) a locally built engine can sit next to another release's BUILD.json: engines that
+456:         # report their own version (INFO engine=, 0.1.8+) win, the manifest stays the fallback for older ones
+457:         if self.info.get("engine"):
+458:             self.info["version"] = str(self.info["engine"])
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L1283-L1315
+1283:     def __init__(self, engine: Engine, tokenizer, template: ChatTemplate, model_name: str = "qwen3.8-flash-next",
+1284:                  vision: Vision | None = None, sampling_defaults: dict | None = None,
+1285:                  fit_max_tokens: bool = False):
+1286:         self.engine, self.tok, self.template, self.model, self.vision = engine, tokenizer, template, model_name, vision
+1287:         self.fit_max_tokens = fit_max_tokens          # --fit-max-tokens: clamp the output cap instead of 400
+1288:         self.sampling_defaults = dict(sampling_defaults or {})   # the run config's `sampling` block
+1289:         self.default_effort = None                    # the run config's `reasoning_effort`: a request without one
+1290:         self.shared = {}                              # the web app's Chat settings for every client (POST /settings)
+1291:         self.shared_path = None                       # where they are kept between starts (next to the config)
+1292:         self.fifo = FairLock()
+1293:         self.stopping = False            # the server is ending: a request still queued is refused, not started
+1294:         self.embeddings = threading.local()           # the current request's image embeddings file (GENI)
+1295:         self.api_key = ""                              # when set, /v1/* needs it (Bearer or x-api-key)
+1296:         # pages on OTHER origins allowed to call /v1/* from a browser (CORS; the config's "cors_origins"): exact origins
+1297:         # like "http://127.0.0.1:8090", or "*" for every page.  Empty = no CORS headers at all.
+1298:         self.cors_origins: list[str] = []
+1299:         self.status = {"busy": False, "queued": 0}      # GET /status: what the model is doing right now
+1300:         self.active = 0                                 # requests with the engine now (several: READY multi=<n>)
+1301:         self.rate = collections.deque(maxlen=32)        # (time, generated) samples for the live tok/s window
+1302:         self.history = collections.deque(maxlen=500)    # the last finished requests, newest last (GET /metrics)
+1303:         # since the server started (the Monitor's totals, issue #35)
+1304:         self.totals = {"since": time.time(), "requests": 0, "prompt_tokens": 0, "reused": 0, "output_tokens": 0,
+1305:                        "prompt_ms": 0.0, "decode_ms": 0.0}
+1306:         self.last_timings = None                         # the last finished request's, llama.cpp's names (/v1/status)
+1307:         self.last_request_at = None                      # when a request last started or finished
+1308:         self.started_at = time.time()
+1309:         self.status_lock = threading.Lock()
+1310:         self.mcp = None                                  # serve/mcp.py's McpHub when MCP servers are configured
+1311:         self.config_path = None                          # the run config (a context change is saved into it)
+1312:         self.model_dir = None                            # the model's folder (free disk on the dashboard)
+1313:         self.trained_context = None                      # what the model was trained for (its GGUF): the slider's top
+1314:         self.reload = None                               # a context change: {state, from, to, started, error}
+1315:         self.updater = Updater(MAYA_VERSION)             # About > Updates: a newer release, and updating to it
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L1408-L1410
+1408:     def reloading(self) -> bool:
+1409:         with self.status_lock:
+1410:             return bool(self.reload) and self.reload.get("state") in ("waiting", "running")
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2684-L2690
+2684:         def _json(self, code, obj):
+2685:             body = json.dumps(obj, ensure_ascii=False).encode()
+2686:             self.send_response(code)
+2687:             self.send_header("Content-Type", "application/json")
+2688:             self.send_header("Content-Length", str(len(body)))
+2689:             self.end_headers()
+2690:             self.wfile.write(body)
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2723-L2731
+2723:         def _authorized(self) -> bool:
+2724:             if not svc.api_key:
+2725:                 return True
+2726:             auth = self.headers.get("Authorization", "")
+2727:             given = auth[7:].strip() if auth.lower().startswith("bearer ") else self.headers.get("x-api-key", "")
+2728:             if given and any(hmac.compare_digest(given.encode(), k.encode()) for k in key_list(svc.api_key)):
+2729:                 return True
+2730:             self._json(401, {"error": {"type": "authentication_error", "message": "missing or wrong API key"}})
+2731:             return False
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2798-L2807
+2798:             elif path == "/health":
+2799:                 # the run config's recommended settings: the web app's Chat defaults until its user picks their own
+2800:                 rec = {k: v for k, v in svc.sampling_defaults.items() if k in ("temperature", "top_p", "top_k")}
+2801:                 if svc.default_effort:
+2802:                     rec["reasoning_effort"] = effort_level(svc.default_effort) or svc.default_effort
+2803:                 self._json(200, {"status": "updating" if svc.updater.busy() else
+2804:                                            "reloading" if svc.reloading() else "ok",
+2805:                                  "max_context": svc.engine.max_context, "model": svc.model,
+2806:                                  "images": svc.vision is not None, "api_key": bool(svc.api_key), "defaults": rec,
+2807:                                  "version": MAYA_VERSION, "mcp_tools": bool(svc.mcp)})
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2838-L2848
+2838:             elif path in ("/v1/models", "/models"):
+2839:                 if self._authorized():
+2840:                     loaded = not hasattr(svc.engine, "alive") or svc.engine.alive()
+2841:                     model = {"id": svc.model, "object": "model", "status": {"value": "loaded"},
+2842:                              "meta": {"n_ctx": svc.engine.max_context},
+2843:                              "architecture": {"input_modalities": ["text", "image"] if svc.vision is not None else ["text"],
+2844:                                               "output_modalities": ["text"]}}
+2845:                     self._json(200, {"object": "list", "data": [model] if loaded else []})
+2846:             elif path == "/props":
+2847:                 if self._authorized():
+2848:                     self._props()
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2923-L2946
+2923:         def _props(self):
+2924:             model = parse_qs(urlsplit(self.path).query).get("model", [svc.model])[0]
+2925:             if model != svc.model:
+2926:                 self._json(404, {"error": {"message": "model not found"}})
+2927:                 return
+2928:             if hasattr(svc.engine, "alive") and not svc.engine.alive():
+2929:                 self._json(503, {"error": {"message": "the engine is not running"}})
+2930:                 return
+2931:             defaults = {**svc.sampling_defaults, **svc.shared}
+2932:             names = {"repetition_penalty": "repeat_penalty", "penalty_last_n": "repeat_last_n"}
+2933:             params = {names.get(k, k): v for k, v in defaults.items()
+2934:                       if k in ("temperature", "top_p", "top_k", "min_p", "seed", "repetition_penalty",
+2935:                                "presence_penalty", "frequency_penalty", "penalty_last_n")}
+2936:             params["n_predict"] = svc.shared.get("max_tokens", -1)
+2937:             props = {"default_generation_settings": {"n_ctx": svc.engine.max_context, "params": params},
+2938:                      "total_slots": max(1, int(getattr(svc.engine, "multi", 0) or 0)), "model_alias": svc.model, "chat_template": svc.template.source,
+2939:                      "modalities": {"vision": svc.vision is not None}, "models_autoload": False,
+2940:                      "is_sleeping": False}
+2941:             if getattr(svc.engine, "model_path", None):
+2942:                 props["model_path"] = svc.engine.model_path
+2943:             version = getattr(svc.engine, "info", {}).get("version")
+2944:             if version:
+2945:                 props["build_info"] = "Strata " + str(version)
+2946:             self._json(200, props)
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3373-L3378
+3373:         env = child_env(cfg)
+3374:         sampling_defaults = sampling_defaults_from_config(cfg)
+3375:         if sampling_defaults:
+3376:             pretty = ", ".join(f"{k}={v}" for k, v in sampling_defaults.items())
+3377:             print(f"[maya] sampling defaults from the config: {pretty}", flush=True)
+3378:         vcfg = cfg.get("vision") or None
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3422-L3443
+3422:     # the model's own chat template (exported with its tokenizer), else the original model's
+3423:     tpl = tpath / "chat_template.jinja"
+3424:     svc = Service(engine, tok, ChatTemplate(tpl if tpl.exists() else ROOT / "serve/chat_template.jinja"),
+3425:                   model_name=cfg.get("model_name", "qwen3.8-flash-next"), vision=vision,
+3426:                   sampling_defaults=sampling_defaults,
+3427:                   fit_max_tokens=a.fit_max_tokens or cfg.get("fit_max_tokens") is True)
+3428:     if getattr(engine, "multi", 0) > 1:                 # n conversations at once: n places in the FIFO
+3429:         svc.fifo.set_capacity(engine.multi)
+3430:         print(f"[maya] {engine.multi} conversations at once (--parallel)", flush=True)
+3431:     if cfg.get("reasoning_effort"):
+3432:         try:
+3433:             effort_kwargs(cfg["reasoning_effort"])
+3434:         except ValueError as e:
+3435:             raise SystemExit(f"[maya] config reasoning_effort: {e}")
+3436:         svc.default_effort = cfg["reasoning_effort"]
+3437:         print(f"[maya] thinking level when a request names none: {effort_level(svc.default_effort) or 'none'}"
+3438:               f"{'' if effort_level(svc.default_effort) == svc.default_effort else f' (the config says {svc.default_effort})'}",
+3439:               flush=True)
+3440:     svc.think_budget = int(cfg.get("thinking_budget", 32768) or 0) if svc.think_end_id is not None else 0
+3441:     if svc.think_budget:
+3442:         print(f"[maya] thinking budget: {svc.think_budget} tokens (then the answer)", flush=True)
+3443:     svc.api_key = a.api_key or cfg.get("api_key", "")
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3468-L3475
+3468:     if hub is not None:
+3469:         import atexit
+3470:         svc.mcp = hub
+3471:         print(f"[maya] starting {len(hub.servers)} MCP server{'s' * (len(hub.servers) != 1)} for the web app's "
+3472:               f"chat: {', '.join(hub.servers)}", flush=True)
+3473:         hub.start()
+3474:         atexit.register(hub.close)                      # the servers Strata started end with it
+3475:     httpd = serve(svc, host=a.host, port=a.port)
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/frontend.py#L32-L46
+32: class ChatTemplate:
+33:     """The model's chat template, rendered with the same Jinja settings as transformers' apply_chat_template."""
+34:
+35:     def __init__(self, path: str | Path):
+36:         def raise_exception(message):
+37:             raise jinja2.exceptions.TemplateError(message)
+38:
+39:         def tojson(x, ensure_ascii=False, indent=None, separators=None, sort_keys=False):
+40:             return json.dumps(x, ensure_ascii=ensure_ascii, indent=indent, separators=separators, sort_keys=sort_keys)
+41:
+42:         env = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True, extensions=["jinja2.ext.loopcontrols"])
+43:         env.filters["tojson"] = tojson
+44:         env.globals["raise_exception"] = raise_exception
+45:         self.source = Path(path).read_text(encoding="utf-8")
+46:         self.template = env.from_string(self.source)
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/frontend.py#L90-L100
+90: QWEN_EFFORT = {"low": "low", "high": "medium", "max": "xhigh"}   # the same levels in a Qwen3.x template's words
+91:
+92:
+93: def effort_level(value) -> str | None:
+94:     """A client's spelling -> the level's name (none / low / high / max); None when none is given or it is unknown."""
+95:     if value is None or value == "":
+96:         return None
+97:     if value is False:
+98:         return "none"
+99:     key = str(value).strip().lower()
+100:     return (EFFORT[key] or "none") if key in EFFORT else None
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/mcp.py#L594-L620
+594: def _check_server(name, cfg, where) -> dict:
+595:     if not isinstance(cfg, dict):
+596:         raise SystemExit(f"[maya] {where}: MCP server {name!r} must be an object with \"command\" or \"url\"")
+597:     if cfg.get("url"):
+598:         if cfg.get("type") == "sse":
+599:             raise SystemExit(f"[maya] {where}: MCP server {name!r} uses the old SSE transport (\"type\": \"sse\"); "
+600:                              "Strata speaks Streamable HTTP - most servers offer it at /mcp")
+601:         if not isinstance(cfg.get("headers") or {}, dict):
+602:             raise SystemExit(f"[maya] {where}: MCP server {name!r}: \"headers\" must be an object")
+603:         return cfg
+604:     if not isinstance(cfg.get("command"), str) or not cfg["command"].strip():
+605:         raise SystemExit(f"[maya] {where}: MCP server {name!r} needs \"command\" (a program to start) or \"url\"")
+606:     if not isinstance(cfg.get("args") or [], list):
+607:         raise SystemExit(f"[maya] {where}: MCP server {name!r}: \"args\" must be a list")
+608:     if not isinstance(cfg.get("env") or {}, dict):
+609:         raise SystemExit(f"[maya] {where}: MCP server {name!r}: \"env\" must be an object")
+610:     return cfg
+611:
+612:
+613: def servers_from(block, where: str) -> dict[str, dict]:
+614:     """{"name": {...}} with the entries checked; `"disabled": true` leaves one out."""
+615:     if block is None:
+616:         return {}
+617:     if not isinstance(block, dict):
+618:         raise SystemExit(f"[maya] {where}: the MCP servers must be an object {{\"name\": {{...}}}}")
+619:     return {str(n): _check_server(n, c, where) for n, c in block.items()
+620:             if not (isinstance(c, dict) and c.get("disabled") is True)}
+
+https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/mcp.py#L641-L659
+641: def hub_from_config(cfg: dict, mcp_config_path: str | None = None) -> McpHub | None:
+642:     """The run config's `"mcp_servers"` (or `"mcpServers"`) plus the servers in the --mcp-config file (Claude
+643:     Desktop's format: {"mcpServers": {...}}); a name in both takes the file's entry.  None when there are none."""
+644:     servers = {}
+645:     servers.update(servers_from(cfg.get("mcp_servers"), "config mcp_servers"))
+646:     servers.update(servers_from(cfg.get("mcpServers"), "config mcpServers"))
+647:     if mcp_config_path:
+648:         try:
+649:             with open(mcp_config_path, encoding="utf-8-sig") as f:
+650:                 data = json.load(f)
+651:         except (OSError, ValueError) as e:
+652:             raise SystemExit(f"[maya] --mcp-config {mcp_config_path}: {e}") from None
+653:         block = data.get("mcpServers", data.get("mcp_servers")) if isinstance(data, dict) else None
+654:         if block is None:
+655:             raise SystemExit(f"[maya] --mcp-config {mcp_config_path}: expected {{\"mcpServers\": {{...}}}}")
+656:         servers.update(servers_from(block, f"--mcp-config {mcp_config_path}"))
+657:     if not servers:
+658:         return None
+659:     return McpHub(servers, settings_from(cfg))

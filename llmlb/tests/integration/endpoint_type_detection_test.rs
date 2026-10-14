@@ -18,6 +18,35 @@ use wiremock::{
 
 use crate::support::lb::spawn_test_lb_with_db;
 
+fn family_fixture(engine: &str, case: &str, probe: &str) -> (u16, String, Value) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/detection")
+        .join(engine);
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("manifest.json"))
+            .expect("Issue #908 requires upstream fixtures with recorded provenance"),
+    )
+    .unwrap();
+    let response = manifest["responses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["case"] == case && entry["path"] == probe)
+        .expect("fixture response exists");
+    let body = std::fs::read_to_string(root.join(response["body_file"].as_str().unwrap())).unwrap();
+    (
+        response["status"].as_u64().unwrap() as u16,
+        body,
+        response["headers"].clone(),
+    )
+}
+
+fn family_health(engine: &str, case: &str) -> Value {
+    let (status, body, _) = family_fixture(engine, case, "/health");
+    assert_eq!(status, 200);
+    serde_json::from_str(&body).unwrap()
+}
+
 async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
     let created =
@@ -697,12 +726,12 @@ async fn test_health_detection_distinguishes_strata_maya_llamacpp_and_openai() {
     let client = Client::new();
     for (health, server_header, expected) in [
         (
-            json!({"status": "ok", "service": "strata"}),
+            family_health("strata", "auth-disabled-no-bearer"),
             "llama.cpp",
             "strata",
         ),
         (
-            json!({"status": "ok", "version": "1.0", "mcp_tools": false, "defaults": {}}),
+            family_health("project-maya/source-derived", "auth-disabled-no-bearer"),
             "llama.cpp",
             "project_maya",
         ),
@@ -749,9 +778,20 @@ async fn test_health_detection_distinguishes_strata_maya_llamacpp_and_openai() {
 #[tokio::test]
 async fn test_strata_and_maya_detection_uses_only_health() {
     for (health, expected) in [
-        (json!({"service": "strata"}), "strata"),
-        (json!({"mcp_tools": false}), "project_maya"),
         (
+            family_health("strata", "auth-enabled-valid-bearer"),
+            "strata",
+        ),
+        (
+            family_health("project-maya/source-derived", "auth-enabled-valid-bearer"),
+            "project_maya",
+        ),
+        (
+            family_health("project-maya/source-derived", "mcp-enabled"),
+            "project_maya",
+        ),
+        (
+            // Synthetic collision: the Maya marker must win over service=strata.
             json!({"service": "strata", "mcp_tools": true}),
             "project_maya",
         ),
@@ -811,6 +851,65 @@ async fn test_strata_health_invalid_signals_fall_back_to_openai() {
     }
 }
 
+/// #908: replay real Strata responses and explicitly source-derived Maya fixtures.
+#[tokio::test]
+async fn test_strata_captured_and_maya_source_derived_http_responses() {
+    for (engine, expected) in [
+        ("strata", "strata"),
+        ("project-maya/source-derived", "project_maya"),
+    ] {
+        for (case, api_key) in [
+            ("auth-disabled-no-bearer", None),
+            ("auth-enabled-no-bearer", None),
+            ("auth-enabled-valid-bearer", Some("fixture-test-key")),
+            ("auth-enabled-invalid-bearer", Some("wrong-fixture-key")),
+        ] {
+            let mock = MockServer::start().await;
+            let prefix = format!("/{}", uuid::Uuid::new_v4());
+            for probe in ["/health", "/v1/models", "/props"] {
+                let (status, body, headers) = family_fixture(engine, case, probe);
+                let mut response = ResponseTemplate::new(status).set_body_string(body);
+                for (name, value) in headers.as_object().unwrap() {
+                    response = response.insert_header(name.as_str(), value.as_str().unwrap());
+                }
+                Mock::given(method("GET"))
+                    .and(path(format!("{prefix}{probe}")))
+                    .respond_with(response)
+                    .mount(&mock)
+                    .await;
+            }
+            let result = llmlb::detection::detect_endpoint_type_with_client(
+                &Client::new(),
+                &format!("{}{prefix}", mock.uri()),
+                api_key,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.endpoint_type.as_str(), expected, "{engine}: {case}");
+            let requests = mock.received_requests().await.unwrap();
+            let health = requests
+                .iter()
+                .find(|request| request.url.path() == format!("{prefix}/health"))
+                .unwrap();
+            assert!(!health.headers.contains_key("authorization"), "{case}");
+            let models = requests
+                .iter()
+                .find(|request| request.url.path() == format!("{prefix}/v1/models"))
+                .unwrap();
+            let expected_bearer = api_key.map(|key| format!("Bearer {key}"));
+            assert_eq!(
+                models
+                    .headers
+                    .get("authorization")
+                    .map(|v| v.to_str().unwrap()),
+                expected_bearer.as_deref(),
+                "{case}"
+            );
+            assert!(!requests.iter().any(|r| r.url.path().ends_with("/props")));
+        }
+    }
+}
+
 /// #886: registration and DB reads preserve the new endpoint types.
 #[tokio::test]
 async fn test_strata_and_maya_registration_persists_detected_type() {
@@ -820,8 +919,11 @@ async fn test_strata_and_maya_registration_persists_detected_type() {
     // Keep registered servers alive so wiremock cannot reuse a registered URL.
     let mut mocks = Vec::new();
     for (health, expected) in [
-        (json!({"service": "strata"}), "strata"),
-        (json!({"mcp_tools": false}), "project_maya"),
+        (family_health("strata", "auth-disabled-no-bearer"), "strata"),
+        (
+            family_health("project-maya/source-derived", "auth-disabled-no-bearer"),
+            "project_maya",
+        ),
     ] {
         let mock = MockServer::start().await;
         Mock::given(method("GET"))
@@ -829,9 +931,18 @@ async fn test_strata_and_maya_registration_persists_detected_type() {
             .respond_with(ResponseTemplate::new(200).set_body_json(health))
             .mount(&mock)
             .await;
+        let engine = if expected == "strata" {
+            "strata"
+        } else {
+            "project-maya/source-derived"
+        };
+        let models: Value = serde_json::from_str(
+            &family_fixture(engine, "auth-disabled-no-bearer", "/v1/models").1,
+        )
+        .unwrap();
         Mock::given(method("GET"))
             .and(path("/v1/models"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": []})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(models))
             .mount(&mock)
             .await;
         let response = client

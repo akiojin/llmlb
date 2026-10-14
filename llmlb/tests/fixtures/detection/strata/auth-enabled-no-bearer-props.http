@@ -1,0 +1,8 @@
+HTTP/1.0 401 Unauthorized
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Wed, 14 Oct 2026 06:52:06 GMT
+Content-Type: application/json
+Content-Length: 82
+Connection: close
+
+{"error": {"type": "authentication_error", "message": "missing or wrong API key"}}

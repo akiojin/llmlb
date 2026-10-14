@@ -1,0 +1,13 @@
+Observed on 2026-10-14 UTC against the actual unmodified upstream HTTP server.
+LLMLB_STRATA_URL=http://127.0.0.1:19281 cargo test -p llmlb --test integration_tests strata_family_live_test::test_live_strata_identification_and_registration -- --ignored --nocapture
+
+   Compiling llmlb v6.3.0 (/Users/akiojin/Workbench/llmlb/work/issue-908/llmlb)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.06s
+     Running tests/integration_tests.rs (target/debug/deps/integration_tests-bd09ab3ce9fe641c)
+
+running 1 test
+live detection: endpoint_type=strata, reason=Strata: /health service is strata
+live registration: HTTP 201 Created, endpoint_type=strata, SQLite=strata
+test strata_family_live_test::test_live_strata_identification_and_registration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out; finished in 0.75s

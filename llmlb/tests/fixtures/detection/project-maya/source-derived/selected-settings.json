@@ -1,0 +1,62 @@
+{
+  "kind": "source-derived",
+  "is_measured_http_response": false,
+  "purpose": "固定 source の response 組立式と選択状態から作る識別用 fixture。実 HTTP/engine 起動成功の主張ではない。",
+  "config_fragment": {
+    "model_name": "glm-5.3-flash",
+    "args": [
+      "--glm-pack",
+      "/example/glm-pack",
+      "--max-context",
+      "4096"
+    ],
+    "sampling": {
+      "temperature": 1.0,
+      "top_p": 0.95
+    },
+    "reasoning_effort": "high"
+  },
+  "runtime_assumptions": {
+    "engine_ready": true,
+    "engine_alive": true,
+    "engine_max_context": 4096,
+    "engine_multi": 0,
+    "vision": null,
+    "reload": null,
+    "updater_busy": false,
+    "shared_settings": {}
+  },
+  "configuration_variants": {
+    "auth-disabled": {
+      "api_key": ""
+    },
+    "auth-enabled": {
+      "api_key": "sk_llmlb908_maya_test_only"
+    },
+    "mcp-disabled": {
+      "mcp_servers": {}
+    },
+    "mcp-enabled": {
+      "mcp_servers": {
+        "example-local-tools": {
+          "url": "http://127.0.0.1:3001/mcp"
+        }
+      }
+    }
+  },
+  "notes": [
+    "/example/glm-pack と MCP URL は設定選択を示す例であり、ファイル/サービスの存在を主張しない。",
+    "実 engine は起動できていない。engine_ready/alive/max_context/multi は fixture の前提値であり、観測値ではない。",
+    "sampling と reasoning_effort は upstream installer の既定値。4096 は小さな説明用 context 値として選択した。",
+    "vision 未設定、shared settings 空、update/reload なしの平常状態を選択した。",
+    "mcp_tools は bool(svc.mcp)。tool 数や MCP server の接続成功を意味しない。",
+    "HTTP headers は source が明記する Content-Type のみ。Date、Server、raw HTTP、実測を装う時刻は作らない。"
+  ],
+  "sources": {
+    "installer_defaults": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/maya.py#L90-L92",
+    "config_writer": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/maya.py#L1810-L1821",
+    "service_config": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3422-L3443",
+    "mcp_hub": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/mcp.py#L641-L659",
+    "mcp_service_assignment": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3468-L3474"
+  }
+}

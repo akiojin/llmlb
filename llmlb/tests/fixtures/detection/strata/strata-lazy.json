@@ -1,0 +1,15 @@
+{
+  "exe": "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/build-metal/strata",
+  "args": [
+    "--pack",
+    "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/model-not-downloaded",
+    "--max-context",
+    "4096"
+  ],
+  "cwd": "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/Strata-0.1.44.1",
+  "tokenizer": "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/tokenizer",
+  "model_name": "qwen3.8-flash-next",
+  "backend": "metal",
+  "lazy_load": true,
+  "log": "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/engine.log"
+}

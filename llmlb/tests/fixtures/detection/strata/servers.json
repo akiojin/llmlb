@@ -1,0 +1,46 @@
+[
+  {
+    "label": "auth-disabled",
+    "port": 19281,
+    "url": "http://127.0.0.1:19281",
+    "pid": 32155,
+    "command": [
+      "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/venv/bin/python",
+      "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/Strata-0.1.44.1/serve/server.py",
+      "--engine",
+      "strata",
+      "--config",
+      "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/strata-lazy.json",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "19281",
+      "--lazy"
+    ],
+    "api_key": null,
+    "log": "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/auth-disabled.log"
+  },
+  {
+    "label": "auth-enabled",
+    "port": 19282,
+    "url": "http://127.0.0.1:19282",
+    "pid": 32156,
+    "command": [
+      "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/venv/bin/python",
+      "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/Strata-0.1.44.1/serve/server.py",
+      "--engine",
+      "strata",
+      "--config",
+      "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/strata-lazy.json",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "19282",
+      "--lazy",
+      "--api-key",
+      "llmlb-issue-908-strata-test-key"
+    ],
+    "api_key": "llmlb-issue-908-strata-test-key",
+    "log": "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/auth-enabled.log"
+  }
+]

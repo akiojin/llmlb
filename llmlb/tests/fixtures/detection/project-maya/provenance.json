@@ -1,0 +1,25 @@
+{
+  "upstream": "https://github.com/mw00/project-maya",
+  "release_url": "https://github.com/mw00/project-maya/releases/tag/v1.1.8",
+  "release_tag": "v1.1.8",
+  "release_published_at": "2026-10-14T04:38:22Z",
+  "annotated_tag_sha": "a0ab33aeb0b3c44e72d62cf155795fa6e1834f4f",
+  "commit_sha": "5c970a863ce2fdd87b6e23ffb4822f6d76522b1c",
+  "commit_date": "2026-10-14T04:25:22Z",
+  "source_url": "https://codeload.github.com/mw00/project-maya/tar.gz/refs/tags/v1.1.8",
+  "archive_sha256": "575ce2ee51dff24963721e0f41e02e7dfdc5f36071012674440885033f8d6a34",
+  "version_file": "1.1.8",
+  "captured_at": "2026-10-14T06:52:24.212001+00:00",
+  "runtime_status": "blocked_before_http_listener",
+  "model": null,
+  "model_downloaded": false,
+  "mock_engine_used": false,
+  "source_modified": false,
+  "pid": null,
+  "running_urls": [],
+  "attempted_urls": [
+    "http://127.0.0.1:19291",
+    "http://127.0.0.1:19292"
+  ],
+  "test_only_api_key": "sk_llmlb908_maya_test_only"
+}

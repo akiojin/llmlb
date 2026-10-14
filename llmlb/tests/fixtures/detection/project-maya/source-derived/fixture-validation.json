@@ -1,0 +1,62 @@
+{
+  "kind": "source-derived-expression-validation",
+  "is_http_verification": false,
+  "checked_at": "2026-10-14T07:16:08.162077+00:00",
+  "checks": [
+    {
+      "fixture": "health-auth-disabled.json",
+      "result": "PASS",
+      "source_line": 2803,
+      "method": "upstream dict expression evaluated against declared illustrative state; no application or HTTP service instantiated"
+    },
+    {
+      "fixture": "health-auth-enabled.json",
+      "result": "PASS",
+      "source_line": 2803,
+      "method": "upstream dict expression evaluated against declared illustrative state; no application or HTTP service instantiated"
+    },
+    {
+      "fixture": "health-mcp-enabled.json",
+      "result": "PASS",
+      "source_line": 2803,
+      "method": "upstream dict expression evaluated against declared illustrative state; no application or HTTP service instantiated"
+    },
+    {
+      "fixture": "health-auth-enabled-mcp-enabled.json",
+      "result": "PASS",
+      "source_line": 2803,
+      "method": "upstream dict expression evaluated against declared illustrative state; no application or HTTP service instantiated"
+    },
+    {
+      "fixture": "models-loaded.json",
+      "result": "PASS",
+      "source_lines": [
+        2841,
+        2845
+      ]
+    },
+    {
+      "fixture": "props-deterministic-fields.json",
+      "result": "PASS",
+      "source_line": 2937,
+      "scope": "required dict only; optional runtime field mutations at 2941-2945 intentionally excluded"
+    },
+    {
+      "fixture": "authentication-error.json",
+      "result": "PASS",
+      "source_line": 2730
+    },
+    {
+      "manifest": "manifest.json",
+      "result": "PASS",
+      "responses": 13,
+      "checks": [
+        "all body JSON parse",
+        "source-only Content-Type header",
+        "all metadata explicitly non-measured",
+        "health remains public across API key conditions",
+        "protected route authentication status matrix"
+      ]
+    }
+  ]
+}

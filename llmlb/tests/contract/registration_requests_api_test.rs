@@ -503,3 +503,106 @@ async fn registration_requests_demotion_revokes_existing_admin_session() {
         StatusCode::FORBIDDEN
     );
 }
+
+/// 承認制は管理画面/APIの契約。既存 /v1 APIキーの認証・権限を変更しない。
+#[tokio::test]
+#[serial]
+async fn registration_requests_leave_existing_v1_api_key_contract_unchanged() {
+    let (app, pool, admin, _) = setup().await;
+    let viewer = llmlb::db::users::find_by_username(&pool, "viewer@example.com")
+        .await
+        .unwrap()
+        .unwrap();
+    let allowed = llmlb::db::api_keys::create(
+        &pool,
+        "existing-viewer-key",
+        viewer.id,
+        None,
+        vec![
+            ApiKeyPermission::OpenaiInference,
+            ApiKeyPermission::OpenaiModelsRead,
+        ],
+    )
+    .await
+    .unwrap();
+    let inference_only = llmlb::db::api_keys::create(
+        &pool,
+        "existing-inference-only-key",
+        viewer.id,
+        None,
+        vec![ApiKeyPermission::OpenaiInference],
+    )
+    .await
+    .unwrap();
+
+    for state in ["before", "pending", "rejected", "approved_viewer"] {
+        match state {
+            "pending" => {
+                assert_eq!(
+                    submit(&app, "upstream-applicant@example.com").await.0,
+                    StatusCode::ACCEPTED
+                );
+            }
+            "rejected" => {
+                let id = pending_id(&app, &admin).await;
+                assert_eq!(
+                    request(
+                        &app,
+                        "DELETE",
+                        &format!("/api/registration-requests/{id}"),
+                        Some(&admin),
+                        Value::Null
+                    )
+                    .await
+                    .0,
+                    StatusCode::NO_CONTENT
+                );
+            }
+            "approved_viewer" => {
+                assert_eq!(
+                    submit(&app, "upstream-applicant@example.com").await.0,
+                    StatusCode::ACCEPTED
+                );
+                let id = pending_id(&app, &admin).await;
+                assert_eq!(
+                    request(
+                        &app,
+                        "POST",
+                        &format!("/api/registration-requests/{id}/approve"),
+                        Some(&admin),
+                        json!({"role":"viewer"})
+                    )
+                    .await
+                    .0,
+                    StatusCode::CREATED
+                );
+            }
+            _ => {}
+        }
+        let (status, models) =
+            request(&app, "GET", "/v1/models", Some(&allowed.key), Value::Null).await;
+        assert_eq!(status, StatusCode::OK, "registration state: {state}");
+        assert_eq!(models["object"], "list");
+        assert!(models["data"].is_array());
+        assert_eq!(
+            request(
+                &app,
+                "GET",
+                "/v1/models",
+                Some(&inference_only.key),
+                Value::Null
+            )
+            .await
+            .0,
+            StatusCode::FORBIDDEN,
+            "models scope must still be required: {state}"
+        );
+        assert_eq!(
+            request(&app, "GET", "/v1/models", None, Value::Null)
+                .await
+                .0,
+            StatusCode::UNAUTHORIZED,
+            "API key authentication must still be required: {state}"
+        );
+    }
+}

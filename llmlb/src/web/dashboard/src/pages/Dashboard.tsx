@@ -63,7 +63,8 @@ export default function Dashboard() {
     isApplyingUpdate, isApplyingForceUpdate, isForceUpdateDialogOpen, setIsForceUpdateDialogOpen,
     isCheckingUpdate, isCooldown, isRollbackDialogOpen, setIsRollbackDialogOpen, isRollingBack,
     isSettingsOpen, setIsSettingsOpen, scheduleMode, setScheduleMode, scheduledAt, setScheduledAt,
-    isScheduling, drainCountdown, applyTimeoutCountdown,
+    isScheduling, drainCountdown, applyTimeoutCountdown, applyTimedOut, updateHistory,
+    isLoadingUpdateHistory, updateHistoryError,
     updateState, applying, showRestartButton, showForceButton, canApply, canForceApply,
     canCheck, forceUpdateTitle, rollbackAvailable, title, description, link, payloadHint,
     downloadProgress, onCheck, onApply, onForceApply, onRollback, onSchedule, onCancelSchedule,
@@ -76,7 +77,9 @@ export default function Dashboard() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-              {applying ? (
+              {applyTimedOut ? (
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              ) : applying ? (
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
               ) : (
                 <ArrowUpCircle className="h-5 w-5 text-primary" />
@@ -245,9 +248,32 @@ export default function Dashboard() {
                     </TabsContent>
 
                     <TabsContent value="history" className="pt-4">
-                      <p className="text-sm text-muted-foreground">
-                        Update history will be available after the first update completes.
-                      </p>
+                      {isLoadingUpdateHistory ? (
+                        <p role="status" className="text-sm text-muted-foreground">Loading update history...</p>
+                      ) : updateHistoryError ? (
+                        <p role="alert" className="text-sm text-destructive">Failed to load update history: {updateHistoryError}</p>
+                      ) : updateHistory.length > 0 ? (
+                        <ol aria-label="Update history" className="max-h-80 space-y-3 overflow-y-auto">
+                          {updateHistory.map((entry, index) => (
+                            <li key={`${entry.timestamp}-${entry.kind}-${index}`} className="rounded-lg border border-border p-3">
+                              <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className={entry.kind === 'failed' ? 'font-medium text-destructive' : 'font-medium'}>
+                                  {entry.kind === 'failed' ? 'Failed' : entry.kind === 'rollback' ? 'Rolled back' : 'Applied'}
+                                </span>
+                                <span className="font-mono text-muted-foreground">v{entry.version}</span>
+                              </div>
+                              <time dateTime={entry.timestamp} className="mt-1 block text-xs text-muted-foreground">
+                                {new Date(entry.timestamp).toLocaleString()}
+                              </time>
+                              {entry.message && <p className="mt-2 break-words text-sm text-muted-foreground">{entry.message}</p>}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Update history will be available after the first update completes.
+                        </p>
+                      )}
                     </TabsContent>
                   </Tabs>
                 </DialogContent>
@@ -435,7 +461,7 @@ export default function Dashboard() {
         lastRefreshed={lastRefreshed}
         fetchTimeMs={fetchTimeMs}
         systemVersion={systemVersion}
-        updateState={update.updateState}
+        updateState={applyTimedOut ? undefined : update.updateState}
         updateLatest={update.updateLatest}
         minimalViewer={isViewer}
       />

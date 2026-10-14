@@ -6,6 +6,7 @@ export const queryKeys = {
   dashboardOverview: () => ['dashboard-overview'] as const,
   dashboardEndpoints: () => ['dashboard-endpoints'] as const,
   systemInfo: () => ['system-info'] as const,
+  systemUpdateHistory: () => ['system-update-history'] as const,
   version: () => ['version'] as const,
   requestResponses: () => ['request-responses'] as const,
   viewerModels: (view: ModelsView) => ['viewer-models', view] as const,

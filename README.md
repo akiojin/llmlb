@@ -143,9 +143,16 @@ available, it notifies via the dashboard and (Windows/macOS) the tray menu.
 When you approve the update ("Restart to update"), llmlb rejects new inference requests (`/v1/*`)
 with 503 + `Retry-After`, waits for in-flight inference requests (including streaming) to finish,
 then applies the update and restarts. A drain timeout of 300 seconds prevents indefinite waiting.
-For Windows `-setup.exe` updates, llmlb runs the installer silently with
-`/VERYSILENT /CLOSEAPPLICATIONS /SUPPRESSMSGBOXES` in user context (`%LOCALAPPDATA%` install),
-so no UAC prompt is required.
+Windows updates preserve the existing installation directory and mode. Per-user
+installations update without elevation. If an all-users installation needs
+administrator privileges, browser updates stop before shutting down the server.
+Run the installer on the server, or restart llmlb as administrator. Local tray
+updates allow up to 60 seconds for UAC and 300 seconds for the installer.
+
+Administrators can see failure reasons and recovery guidance in Settings → History
+(`GET /api/system/update/history` requires an administrator JWT). After five minutes
+in Applying, the dashboard asks you to check the server. Helper stage logs are saved
+at `<LLMLB_DATA_DIR>/updates/<version>/helper.log` (under `~/.llmlb/updates` by default).
 
 **Update scheduling:**
 
@@ -169,7 +176,7 @@ and percentage during update asset downloads.
 Auto-apply method depends on the platform/install:
 
 - Portable install: replace the executable in-place when writable
-- macOS `.pkg` / Windows `-setup.exe`: run the installer (Windows runs silently without UAC)
+- macOS `.pkg` / Windows `-setup.exe`: run the installer (see the Windows privilege guidance above)
 - Linux non-writable installs: auto-apply is not supported; reinstall manually from GitHub Releases
 
 For full details, see [CLAUDE.md](./CLAUDE.md).

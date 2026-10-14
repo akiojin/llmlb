@@ -61,6 +61,13 @@ export interface ScheduleInfo {
   created_at: string
 }
 
+export interface HistoryEntry {
+  kind: 'applied' | 'failed' | 'rollback'
+  version: string
+  message?: string | null
+  timestamp: string
+}
+
 export interface SystemInfo {
   version: string
   pid: number
@@ -102,6 +109,7 @@ export const systemApi = {
     return res.json()
   },
   getSystem: () => fetchWithAuth<SystemInfo>('/api/system'),
+  getUpdateHistory: () => fetchWithAuth<{ history: HistoryEntry[] }>('/api/system/update/history'),
   checkUpdate: () =>
     fetchWithAuth<{ update: UpdateState }>('/api/system/update/check', {
       method: 'POST',

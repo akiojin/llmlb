@@ -10,6 +10,7 @@ import {
   type UpdateState,
 } from '@/lib/api'
 import { FakeWebSocket } from '@/test/fake-websocket'
+import type { HistoryEntry } from '@/lib/api/system'
 import { deferred, renderPage, viewerUser, type TestUser } from '@/test/render'
 import Dashboard from './Dashboard'
 
@@ -99,6 +100,7 @@ interface Scenario {
   /** `'unavailable'` makes `/api/system` fail, so no update state is known. */
   update?: UpdateState | 'unavailable'
   system?: Partial<SystemInfo>
+  history?: HistoryEntry[]
   user?: TestUser
 }
 
@@ -106,7 +108,7 @@ function systemInfo(update: UpdateState, system: Partial<SystemInfo> = {}): Syst
   return { version: '6.2.0', pid: 1, in_flight: 0, update, ...system }
 }
 
-async function renderDashboard({ update = upToDate, system, user }: Scenario = {}) {
+async function renderDashboard({ update = upToDate, system, history = [], user }: Scenario = {}) {
   vi.spyOn(dashboardApi, 'getOverview').mockResolvedValue(overview)
   vi.spyOn(dashboardApi, 'getEndpoints').mockResolvedValue([])
   vi.spyOn(dashboardApi, 'getRequestResponses').mockResolvedValue({
@@ -118,6 +120,7 @@ async function renderDashboard({ update = upToDate, system, user }: Scenario = {
   vi.spyOn(systemApi, 'getVersion').mockResolvedValue({ version: '6.2.0' })
   vi.spyOn(modelsApi, 'getRegistered').mockResolvedValue([])
   const getSystem = vi.spyOn(systemApi, 'getSystem')
+  const getUpdateHistory = vi.spyOn(systemApi, 'getUpdateHistory').mockResolvedValue({ history })
   if (update === 'unavailable') {
     getSystem.mockRejectedValue(new Error('system unavailable'))
   } else {
@@ -126,7 +129,7 @@ async function renderDashboard({ update = upToDate, system, user }: Scenario = {
 
   renderPage(<Dashboard />, { user })
   await screen.findByText('No endpoints')
-  return { getSystem, user: userEvent.setup() }
+  return { getSystem, getUpdateHistory, user: userEvent.setup() }
 }
 
 const button = (name: string) => screen.getByRole('button', { name })
@@ -243,6 +246,50 @@ describe('Dashboard update banner', () => {
       expect(button('Check for updates')).toBeDisabled()
     })
 
+    it.each([
+      { name: 'without backend timestamps', timing: {}, waitMs: 300_000 },
+      { name: 'with an earlier backend timeout', timing: { timeout_at: '2026-10-01T00:00:10Z' }, waitMs: 10_000 },
+      { name: 'from the backend start time', timing: { started_at: '2026-09-30T23:56:00Z' }, waitMs: 60_000 },
+      { name: 'with a backend timeout beyond five minutes', timing: { timeout_at: '2026-10-01T00:30:00Z' }, waitMs: 300_000 },
+    ])('stops the applying spinner $name even when the server is unavailable', async ({ timing, waitMs }) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: NOW })
+      const { getSystem } = await renderDashboard({
+        update: { state: 'applying', latest: '6.3.0', method: 'installer', ...timing },
+      })
+      const banner = (await screen.findByText('Applying update: v6.3.0')).closest('section')!
+      getSystem.mockRejectedValue(new Error('server restarting'))
+      expect(banner.querySelector('.animate-spin')).not.toBeNull()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(waitMs) })
+
+      expect(await screen.findByText('Update needs attention')).toBeInTheDocument()
+      expect(screen.getByText(/Check the server.*manually run the installer/)).toBeInTheDocument()
+      expect(banner.querySelector('.animate-spin')).toBeNull()
+      expect(queryButton('Applying update...')).not.toBeInTheDocument()
+      expect(button('Check for updates')).toBeEnabled()
+
+      getSystem.mockResolvedValue(systemInfo(upToDate, { version: '6.3.0' }))
+      act(() => { FakeWebSocket.latest().receive(JSON.stringify({ changed: 'system' })) })
+      expect(await screen.findByText('Up to date')).toBeInTheDocument()
+      expect(screen.queryByText('Update needs attention')).not.toBeInTheDocument()
+      expect(screen.queryByText(/Check the server.*manually run the installer/)).not.toBeInTheDocument()
+    })
+
+    it('does not restart the five-minute deadline when applying is polled again', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: NOW })
+      const update: UpdateState = { state: 'applying', latest: '6.3.0', method: 'installer' }
+      const { getSystem } = await renderDashboard({ update })
+      await screen.findByText('Applying update: v6.3.0')
+      await act(async () => { await vi.advanceTimersByTimeAsync(240_000) })
+      getSystem.mockResolvedValue(systemInfo({ ...update, phase_message: 'Restarting llmlb' }))
+      act(() => { FakeWebSocket.latest().receive(JSON.stringify({ changed: 'system' })) })
+      expect(await screen.findByText('Restarting llmlb')).toBeInTheDocument()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+
+      expect(await screen.findByText('Update needs attention')).toBeInTheDocument()
+    })
+
     it('lets a failed update with a known target be retried', async () => {
       await renderDashboard({ update: failed('6.3.0') })
 
@@ -263,7 +310,7 @@ describe('Dashboard update banner', () => {
     })
 
     it('hides the banner and skips the system query for viewers', async () => {
-      const { getSystem } = await renderDashboard({
+      const { getSystem, getUpdateHistory } = await renderDashboard({
         update: available({ payload: 'not_ready' }),
         user: viewerUser,
       })
@@ -271,6 +318,7 @@ describe('Dashboard update banner', () => {
       expect(queryButton('Check for updates')).not.toBeInTheDocument()
       expect(screen.queryByText('Update available: v6.3.0')).not.toBeInTheDocument()
       expect(getSystem).not.toHaveBeenCalled()
+      expect(getUpdateHistory).not.toHaveBeenCalled()
     })
   })
 
@@ -512,6 +560,67 @@ describe('Dashboard update banner', () => {
       expect(
         within(dialog).getByText('Update history will be available after the first update completes.'),
       ).toBeInTheDocument()
+    })
+
+    it('fetches protected update history only after Settings opens', async () => {
+      const { user, getUpdateHistory } = await renderDashboard({ update: upToDate })
+      expect(getUpdateHistory).not.toHaveBeenCalled()
+
+      await user.click(await screen.findByRole('button', { name: 'Settings' }))
+
+      await waitFor(() => expect(getUpdateHistory).toHaveBeenCalledOnce())
+    })
+
+    it('shows loading while protected update history is being fetched', async () => {
+      const response = deferred<{ history: HistoryEntry[] }>()
+      const { user, getUpdateHistory } = await renderDashboard({ update: upToDate })
+      getUpdateHistory.mockReturnValue(response.promise)
+      await user.click(await screen.findByRole('button', { name: 'Settings' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+      await user.click(within(dialog).getByRole('tab', { name: 'History' }))
+
+      expect(within(dialog).getByText('Loading update history...')).toBeInTheDocument()
+      expect(within(dialog).queryByText('Update history will be available after the first update completes.')).not.toBeInTheDocument()
+
+      await act(async () => { response.resolve({ history: [] }) })
+      expect(await within(dialog).findByText('Update history will be available after the first update completes.')).toBeInTheDocument()
+    })
+
+    it('reports a history fetch failure instead of an empty history', async () => {
+      const { user, getUpdateHistory } = await renderDashboard({ update: upToDate })
+      getUpdateHistory.mockRejectedValue(new Error('history unavailable'))
+      await user.click(await screen.findByRole('button', { name: 'Settings' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+      await user.click(within(dialog).getByRole('tab', { name: 'History' }))
+
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Failed to load update history: history unavailable')
+      expect(within(dialog).queryByText('Update history will be available after the first update completes.')).not.toBeInTheDocument()
+    })
+
+    it('shows update history newest first with the failure reason and rollback', async () => {
+      const { user } = await renderDashboard({
+        update: upToDate,
+        history: [
+          { kind: 'applied', version: '6.2.0', timestamp: '2026-09-29T00:00:00Z' },
+          { kind: 'failed', version: '6.3.0', message: 'Administrator privileges are required. Run the installer on the server.', timestamp: '2026-10-01T00:00:00Z' },
+          { kind: 'rollback', version: '6.2.0', timestamp: '2026-09-30T00:00:00Z' },
+        ],
+      })
+      await user.click(await screen.findByRole('button', { name: 'Settings' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+      await user.click(within(dialog).getByRole('tab', { name: 'History' }))
+
+      const history = within(dialog).getByRole('list', { name: 'Update history' })
+      const entries = within(history).getAllByRole('listitem')
+      expect(entries.map((entry) => within(entry).getByText(/^(Failed|Rolled back|Applied)$/).textContent))
+        .toEqual(['Failed', 'Rolled back', 'Applied'])
+      expect(within(entries[0]).getByText('v6.3.0')).toBeInTheDocument()
+      expect(within(entries[0]).getByText('Administrator privileges are required. Run the installer on the server.')).toBeInTheDocument()
+      expect(entries.map((entry) => entry.querySelector('time')?.dateTime)).toEqual([
+        '2026-10-01T00:00:00Z', '2026-09-30T00:00:00Z', '2026-09-29T00:00:00Z',
+      ])
+      expect(within(dialog).queryByText('Update history will be available after the first update completes.'))
+        .not.toBeInTheDocument()
     })
   })
 })

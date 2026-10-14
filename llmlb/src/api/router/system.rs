@@ -14,6 +14,7 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
     // GET /api/system は認証不要（FR-006: バージョン情報を常時表示するため）
     // POST /api/system/update/* は JWT + CSRF で保護
     let system_mutation_routes = Router::new()
+        .route("/system/update/history", get(system::get_update_history))
         .route("/system/update/check", post(system::check_update))
         .route("/system/update/apply", post(system::apply_update))
         .route(

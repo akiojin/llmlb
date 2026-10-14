@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { systemApi, type SystemInfo, type UpdateState, type ScheduleInfo } from '@/lib/api/system'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { systemApi, type SystemInfo, type UpdateState, type ScheduleInfo, type HistoryEntry } from '@/lib/api/system'
 import { queryKeys } from '@/lib/queryKeys'
 import { toast } from '@/hooks/use-toast'
 
 const SYSTEM_INFO_QUERY_KEY = queryKeys.systemInfo()
 const CHECK_COOLDOWN_MS = 30_000
+const APPLY_MAX_WAIT_MS = 5 * 60_000
 
 type ScheduleMode = 'immediate' | 'idle' | 'scheduled'
 
@@ -28,6 +29,7 @@ export interface SystemUpdateViewModel {
   isScheduling: boolean
   drainCountdown: string | null
   applyTimeoutCountdown: string | null
+  applyTimedOut: boolean
   updateState: UpdateState['state'] | undefined
   updateLatest: string | null
   restartLabel: string
@@ -47,6 +49,9 @@ export interface SystemUpdateViewModel {
   downloadProgressPercent: number | null
   scheduleInfo: ScheduleInfo | null | undefined
   scheduleDescription: string | null
+  updateHistory: HistoryEntry[]
+  isLoadingUpdateHistory: boolean
+  updateHistoryError: string | null
   onCheck: () => Promise<void>
   onApply: () => Promise<void>
   onForceApply: () => Promise<void>
@@ -76,6 +81,11 @@ interface Countdown {
   text: string | null
 }
 
+interface ApplyingCountdown extends Countdown {
+  key: string
+  expired: boolean
+}
+
 function countdownFor(state: Countdown | null, timeoutAt: string | null): string | null {
   return timeoutAt && state?.timeoutAt === timeoutAt ? state.text : null
 }
@@ -91,12 +101,18 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
   const [isRollbackDialogOpen, setIsRollbackDialogOpen] = useState(false)
   const [isRollingBack, setIsRollingBack] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const { data: historyData, isLoading: isLoadingUpdateHistory, error: historyError } = useQuery({
+    queryKey: queryKeys.systemUpdateHistory(),
+    queryFn: systemApi.getUpdateHistory,
+    enabled: isAdmin && isSettingsOpen,
+  })
+  const updateHistoryError = historyError instanceof Error ? historyError.message : null
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('immediate')
   const [scheduledAt, setScheduledAt] = useState('')
   const [isScheduling, setIsScheduling] = useState(false)
   // カウントダウン表示は対象の timeout_at と組で保持し、別の timeout_at に対する古い表示を出さない
   const [drainCountdownState, setDrainCountdownState] = useState<Countdown | null>(null)
-  const [applyTimeoutCountdownState, setApplyTimeoutCountdownState] = useState<Countdown | null>(null)
+  const [applyTimeoutCountdownState, setApplyTimeoutCountdownState] = useState<ApplyingCountdown | null>(null)
   // Drain timeout countdown timer
   const drainTimeoutAt =
     systemInfo?.update?.state === 'draining' ? systemInfo.update.timeout_at || null : null
@@ -110,17 +126,44 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
   }, [drainTimeoutAt])
   const drainCountdown = countdownFor(drainCountdownState, drainTimeoutAt)
 
-  const applyTimeoutAt =
-    systemInfo?.update?.state === 'applying' ? systemInfo.update.timeout_at || null : null
+  const applyUpdate = systemInfo?.update?.state === 'applying' ? systemInfo.update : null
+  const applyStartedAt = applyUpdate?.started_at
+  const applyBackendTimeoutAt = applyUpdate?.timeout_at
+  // Phase updates and repeated polls must not extend this wait. Older servers
+  // omit timestamps, so anchor their deadline when Applying is first received.
+  const applyKey = applyUpdate
+    ? `${applyUpdate.latest}:${applyUpdate.method}:${applyStartedAt ?? ''}:${applyBackendTimeoutAt ?? ''}`
+    : null
   useEffect(() => {
-    if (!applyTimeoutAt) return
-    const tick = () =>
-      setApplyTimeoutCountdownState({ timeoutAt: applyTimeoutAt, text: formatCountdown(applyTimeoutAt) })
+    if (!applyKey) return
+    const deadlines = [Date.now() + APPLY_MAX_WAIT_MS]
+    if (applyStartedAt && Number.isFinite(Date.parse(applyStartedAt))) {
+      deadlines.push(Date.parse(applyStartedAt) + APPLY_MAX_WAIT_MS)
+    }
+    if (applyBackendTimeoutAt && Number.isFinite(Date.parse(applyBackendTimeoutAt))) {
+      deadlines.push(Date.parse(applyBackendTimeoutAt))
+    }
+    const deadline = Math.min(...deadlines)
+    const timeoutAt = new Date(deadline).toISOString()
+    const tick = () => setApplyTimeoutCountdownState({
+      key: applyKey,
+      timeoutAt,
+      text: formatCountdown(timeoutAt),
+      expired: Date.now() >= deadline,
+    })
     tick()
-    const timer = setInterval(tick, 1000)
+    if (Date.now() >= deadline) return
+    const timer = setInterval(() => {
+      tick()
+      if (Date.now() >= deadline) clearInterval(timer)
+    }, 1000)
     return () => clearInterval(timer)
-  }, [applyTimeoutAt])
-  const applyTimeoutCountdown = countdownFor(applyTimeoutCountdownState, applyTimeoutAt)
+  }, [applyKey, applyStartedAt, applyBackendTimeoutAt])
+  const currentApplyCountdown = applyTimeoutCountdownState?.key === applyKey ? applyTimeoutCountdownState : null
+  const applyTimedOut = currentApplyCountdown?.expired === true
+  const applyTimeoutCountdown = applyTimedOut ? null : currentApplyCountdown?.text ?? null
+  const updateHistory = useMemo(() => [...(historyData?.history ?? [])]
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)), [historyData?.history])
 
   // Update check cooldown: re-enable the check button CHECK_COOLDOWN_MS after the last check
   useEffect(() => {
@@ -137,7 +180,7 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
       hasAvailableUpdate && update?.payload?.payload === 'ready'
     const failedHasUpdateCandidate = updateState === 'failed' && Boolean(update?.latest)
     const canApply = isAdmin && (updateState === 'available' || failedHasUpdateCandidate)
-    const applying = updateState === 'draining' || updateState === 'applying'
+    const applying = updateState === 'draining' || (updateState === 'applying' && !applyTimedOut)
     const showRestartButton = updateState === 'available' || failedHasUpdateCandidate || applying
     const showForceButton = hasAvailableUpdate
     const canForceApply = isAdmin && isPayloadReady && !applying
@@ -197,8 +240,10 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
       title = `Updating to v${update.latest}`
       description = `Waiting for in-flight requests: ${update.in_flight}`
     } else if (updateState === 'applying' && update) {
-      title = `Applying update: v${update.latest}`
-      description = update.phase_message ?? 'Restarting...'
+      title = applyTimedOut ? 'Update needs attention' : `Applying update: v${update.latest}`
+      description = applyTimedOut
+        ? 'Check the server: llmlb has not confirmed the update completed. Review the helper log under ~/.llmlb/updates, then manually run the installer on the server if needed.'
+        : update.phase_message ?? 'Restarting...'
     } else if (updateState === 'failed' && update) {
       title = 'Update failed'
       description = update.message
@@ -368,6 +413,7 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
     systemInfo?.rollback_available,
     systemInfo?.schedule,
     isCooldown,
+    applyTimedOut,
     scheduleMode,
     scheduledAt,
     queryClient,
@@ -379,6 +425,7 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
     isApplyingUpdate, isApplyingForceUpdate, isForceUpdateDialogOpen, setIsForceUpdateDialogOpen,
     isCheckingUpdate, isCooldown, isRollbackDialogOpen, setIsRollbackDialogOpen, isRollingBack,
     isSettingsOpen, setIsSettingsOpen, scheduleMode, setScheduleMode, scheduledAt, setScheduledAt,
-    isScheduling, drainCountdown, applyTimeoutCountdown,
+    isScheduling, drainCountdown, applyTimeoutCountdown, applyTimedOut, updateHistory,
+    isLoadingUpdateHistory, updateHistoryError,
   }
 }

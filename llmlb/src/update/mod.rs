@@ -13,9 +13,15 @@ mod cache;
 mod check;
 mod download;
 mod dto;
+#[cfg(any(windows, test))]
+mod file_replace;
 mod github;
 mod helper;
+#[cfg(any(windows, test))]
+mod helper_log;
 pub mod history;
+#[cfg(any(windows, test))]
+mod installer_preflight;
 #[cfg(target_os = "macos")]
 mod macos_installer;
 mod manager;
@@ -26,12 +32,16 @@ mod platform;
 pub mod schedule;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod tray;
+#[cfg(any(windows, test))]
+mod windows_installer;
 
 pub use dto::*;
 pub(crate) use helper::{internal_apply_update, internal_rollback, internal_run_installer};
 pub use manager::UpdateManager;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub use notifier::UpdateNotifier;
+#[cfg(windows)]
+pub(crate) use windows_installer::run_windows_installer_worker;
 
 #[cfg(test)]
 mod tests;

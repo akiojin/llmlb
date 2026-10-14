@@ -370,9 +370,17 @@ llmlb はバックグラウンドで GitHub Releases を確認し（ベストエ
 - in-flight の推論リクエスト（ストリーミング含む）が完了するまで待機（ドレイン、最大300秒）
 - 更新を適用して再起動
 
-Windows の `-setup.exe` 更新では
-`/VERYSILENT /CLOSEAPPLICATIONS /SUPPRESSMSGBOXES` を付けてユーザー権限
-（`%LOCALAPPDATA%` 配置）でサイレント実行するため、UAC 承認は不要です。
+Windows の更新では既存のインストール先とインストールモードを維持します。
+ユーザー単位のインストールは昇格なしで更新します。全ユーザー向けインストールで
+管理者権限が必要な場合、ブラウザからの適用はサーバーを停止する前に案内して止めます。
+サーバー上でインストーラを手動実行するか、llmlb を管理者として再起動してください。
+ローカルトレイからの昇格待ちは60秒、インストーラ実行は300秒で期限切れになります。
+
+更新の失敗理由と対処は管理者の Settings → History で確認できます
+（`GET /api/system/update/history` は管理者の JWT が必要）。
+ダッシュボードは Applying のまま5分経過するとサーバー確認を案内します。
+ヘルパーの段階ログは `<LLMLB_DATA_DIR>/updates/<version>/helper.log`
+（既定は `~/.llmlb/updates` 配下）に残ります。
 
 **アップデートスケジュール:**
 
@@ -394,7 +402,7 @@ Windows の `-setup.exe` 更新では
 自動適用方式は OS/インストール形態により分岐します。
 
 - ポータブル配置: 実行ファイルを置換（配置先が書き込み可能な場合）
-- macOS `.pkg` / Windows `-setup.exe`: インストーラ実行（Windows はUACなしでサイレント実行）
+- macOS `.pkg` / Windows `-setup.exe`: インストーラ実行（Windows の権限不足時は上記の手動対処を案内）
 - Linux の書き込み不可配置: 自動適用は非対応（GitHub Releases から手動更新）
 
 詳細は [CLAUDE.md](./CLAUDE.md) を参照。

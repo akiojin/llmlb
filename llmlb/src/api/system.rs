@@ -67,6 +67,20 @@ pub async fn get_system(State(state): State<AppState>) -> Response {
     .into_response()
 }
 
+/// GET /api/system/update/history
+///
+/// Durable helper diagnostics are restricted to administrators.
+pub async fn get_update_history(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Response {
+    if claims.role != UserRole::Admin {
+        return AppError(LbError::Authorization("Admin access required".to_string()))
+            .into_response();
+    }
+    Json(json!({ "history": state.lifecycle.update_manager.get_history() })).into_response()
+}
+
 /// POST /api/system/update/check
 ///
 /// Check for updates (GitHub API only, no download).
@@ -140,6 +154,19 @@ pub async fn apply_update(
             .into_response();
     }
 
+    if let Err(error) = state
+        .lifecycle
+        .update_manager
+        .validate_apply_environment()
+        .await
+    {
+        state
+            .lifecycle
+            .update_manager
+            .record_apply_failure(&error)
+            .await;
+        return AppError(LbError::Conflict(format!("{error:#}"))).into_response();
+    }
     let queued = state.lifecycle.update_manager.request_apply_normal().await;
     (
         StatusCode::ACCEPTED,
@@ -163,6 +190,19 @@ pub async fn apply_force_update(
             .into_response();
     }
 
+    if let Err(error) = state
+        .lifecycle
+        .update_manager
+        .validate_apply_environment()
+        .await
+    {
+        state
+            .lifecycle
+            .update_manager
+            .record_apply_failure(&error)
+            .await;
+        return AppError(LbError::Conflict(format!("{error:#}"))).into_response();
+    }
     match state.lifecycle.update_manager.request_apply_force().await {
         Ok(dropped_in_flight) => (
             StatusCode::ACCEPTED,

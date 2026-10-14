@@ -30,6 +30,12 @@ fn admin_jwt(secret: &str) -> String {
 }
 
 async fn build_app() -> (String, Router) {
+    build_app_with_history(vec![]).await
+}
+
+async fn build_app_with_history(
+    history: Vec<llmlb::update::history::HistoryEntry>,
+) -> (String, Router) {
     let temp_dir = std::env::temp_dir().join(format!(
         "update-api-test-{}-{}",
         std::process::id(),
@@ -56,6 +62,10 @@ async fn build_app() -> (String, Router) {
         shutdown.clone(),
     )
     .expect("Failed to create update manager");
+
+    for entry in history {
+        update_manager.record_history(entry);
+    }
 
     let audit_log_writer = llmlb::audit::writer::AuditLogWriter::new(
         llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
@@ -324,4 +334,87 @@ async fn check_update_rate_limits_within_60_seconds() {
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["error"]["code"], 429);
+}
+
+/// #907: helper failures survive restart and reach the authenticated dashboard API.
+#[tokio::test]
+async fn admin_history_includes_persisted_update_failure_and_recovery() {
+    let message = "Elevation was rejected. Manually run the installer on the server.";
+    let (secret, app) = build_app_with_history(vec![llmlb::update::history::HistoryEntry {
+        kind: llmlb::update::history::HistoryEventKind::Failed,
+        version: "6.3.1".into(),
+        message: Some(message.into()),
+        timestamp: chrono::Utc::now(),
+    }])
+    .await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/system/update/history")
+                .header("authorization", format!("Bearer {}", admin_jwt(&secret)))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["history"][0]["kind"], "failed");
+    assert_eq!(json["history"][0]["version"], "6.3.1");
+    assert_eq!(json["history"][0]["message"], message);
+}
+
+#[tokio::test]
+async fn update_history_requires_admin_and_is_absent_from_public_status() {
+    let (secret, app) = build_app().await;
+    let anonymous = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/system/update/history")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+    let token = llmlb::auth::jwt::create_jwt(
+        "viewer",
+        llmlb::common::auth::UserRole::Viewer,
+        &secret,
+        false,
+        0,
+    )
+    .unwrap();
+    let viewer = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/system/update/history")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(viewer.status(), StatusCode::FORBIDDEN);
+    let public = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/system")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(public.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(public.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("update_history").is_none());
+    assert!(json.get("history").is_none());
 }

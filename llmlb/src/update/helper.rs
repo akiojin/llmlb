@@ -39,6 +39,71 @@ pub(super) fn write_restart_args_file(update_dir: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Keep the Windows helper image separate from the executable being replaced.
+fn helper_executable(current_exe: &Path, args_file: &Path) -> Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        let directory = args_file.parent().context("Missing update directory")?;
+        fs::create_dir_all(directory)?;
+        let helper = directory.join(format!("llmlb-update-helper-{}.exe", uuid::Uuid::new_v4()));
+        fs::copy(current_exe, &helper).context("Failed to stage Windows update helper")?;
+        Ok(helper)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = args_file;
+        Ok(current_exe.to_path_buf())
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn internal_apply_update(
+    old_pid: u32,
+    target: PathBuf,
+    new_binary: PathBuf,
+    args_file: PathBuf,
+) -> Result<()> {
+    use super::helper_log::{phase, run};
+    // Only recover by restarting while no updated process has been started.
+    let mut restarted = false;
+    let result = run(&args_file, || {
+        phase(&args_file, "waiting_old_process_exit");
+        wait_for_pid_exit(old_pid, Duration::from_secs(300))?;
+        phase(&args_file, "replacing_executable");
+        let mut child = super::file_replace::replace_and_start(&target, &new_binary, || {
+            phase(&args_file, "restarting");
+            restart_from_args_file(&target, &args_file)
+        })?;
+        restarted = true;
+        phase(&args_file, "waiting_health_check");
+        if let Err(error) = wait_for_health_check(&args_file, Duration::from_secs(30)) {
+            phase(&args_file, "rolling_back_after_health_check_failure");
+            if child.try_wait()?.is_none() {
+                child
+                    .kill()
+                    .context("Failed to stop updated process for rollback")?;
+                child.wait()?;
+            }
+            restore_backup(&target.with_extension("bak"), &target)?;
+            record_auto_rollback_history(&args_file, &error.to_string());
+            restart_from_args_file(&target, &args_file)?;
+            return Err(error);
+        }
+        phase(&args_file, "completed");
+        Ok(())
+    });
+    if result.is_err() && !restarted && !crate::lock::is_process_running(old_pid) {
+        phase(&args_file, "restarting_original_after_failure");
+        if let Err(error) = restart_from_args_file(&target, &args_file) {
+            phase(
+                &args_file,
+                &format!("restarting_original_failed: {error:#}"),
+            );
+        }
+    }
+    result
+}
+
 pub(super) fn spawn_internal_apply_update(
     current_exe: &Path,
     new_binary_path: &str,
@@ -46,7 +111,7 @@ pub(super) fn spawn_internal_apply_update(
 ) -> Result<()> {
     let pid = std::process::id().to_string();
     let target = current_exe.to_string_lossy().to_string();
-    Command::new(current_exe)
+    Command::new(helper_executable(current_exe, args_file)?)
         .arg("__internal")
         .arg("apply-update")
         .arg("--old-pid")
@@ -73,7 +138,7 @@ pub(super) fn spawn_internal_run_installer(
 
     // Internal helper process executes installer for each OS.
     // Other platforms: best-effort (may fail due to missing privileges).
-    Command::new(current_exe)
+    Command::new(helper_executable(current_exe, args_file)?)
         .arg("__internal")
         .arg("run-installer")
         .arg("--old-pid")
@@ -176,6 +241,7 @@ fn should_retry_restore_backup(err: &io::Error) -> bool {
     false
 }
 
+#[cfg(not(windows))]
 pub(crate) fn internal_apply_update(
     old_pid: u32,
     target: PathBuf,
@@ -325,7 +391,7 @@ pub(super) fn record_auto_rollback_history(args_file: &Path, reason: &str) {
     });
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 pub(crate) fn internal_run_installer(
     old_pid: u32,
     target: PathBuf,
@@ -347,25 +413,50 @@ pub(crate) fn internal_run_installer(
             }
         }
         InstallerKind::WindowsSetup => {
-            #[cfg(target_os = "windows")]
-            {
-                let status = Command::new(&installer)
-                    .args(["/VERYSILENT", "/CLOSEAPPLICATIONS", "/SUPPRESSMSGBOXES"])
-                    .status()
-                    .context("Failed to run Windows setup installer")?;
-                if !status.success() {
-                    return Err(anyhow!("Windows setup installer exited with {}", status));
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                return Err(anyhow!("windows_setup installer can only run on Windows"));
-            }
+            return Err(anyhow!("windows_setup installer can only run on Windows"));
         }
     }
 
     restart_from_args_file(&target, &args_file)?;
     Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn internal_run_installer(
+    old_pid: u32,
+    target: PathBuf,
+    installer: PathBuf,
+    installer_kind: InstallerKind,
+    args_file: PathBuf,
+) -> Result<()> {
+    use super::helper_log::{phase, run};
+    let mut restarted = false;
+    let result = run(&args_file, || {
+        phase(&args_file, "waiting_old_process_exit");
+        wait_for_pid_exit(old_pid, Duration::from_secs(300))?;
+        if installer_kind != InstallerKind::WindowsSetup {
+            return Err(anyhow!("mac_pkg installer can only run on macOS"));
+        }
+        phase(&args_file, "running_installer");
+        super::windows_installer::run_windows_installer(&installer, &target)?;
+        phase(&args_file, "restarting");
+        restart_from_args_file(&target, &args_file)?;
+        restarted = true;
+        phase(&args_file, "completed");
+        Ok(())
+    });
+    if let Err(error) = &result {
+        if !restarted
+            && !super::windows_installer::installer_may_still_run(error)
+            && !crate::lock::is_process_running(old_pid)
+        {
+            phase(&args_file, "restarting_after_installer_failure");
+            if let Err(error) = restart_from_args_file(&target, &args_file) {
+                phase(&args_file, &format!("restart_failed: {error:#}"));
+            }
+        }
+    }
+    result
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -388,7 +479,7 @@ pub(super) fn spawn_internal_rollback(
 ) -> Result<()> {
     let pid = std::process::id().to_string();
     let target = current_exe.to_string_lossy().to_string();
-    Command::new(current_exe)
+    Command::new(helper_executable(current_exe, args_file)?)
         .arg("__internal")
         .arg("rollback")
         .arg("--old-pid")
@@ -433,7 +524,7 @@ pub(crate) fn internal_rollback(
     Ok(())
 }
 
-fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<()> {
+fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<std::process::Child> {
     let content = fs::read_to_string(args_file).context("Failed to read args-file")?;
     let parsed: RestartArgsFile =
         serde_json::from_str(&content).context("Invalid args-file JSON")?;
@@ -443,6 +534,5 @@ fn restart_from_args_file(target: &Path, args_file: &Path) -> Result<()> {
     if !parsed.cwd.is_empty() {
         cmd.current_dir(parsed.cwd);
     }
-    cmd.spawn().context("Failed to spawn restarted process")?;
-    Ok(())
+    cmd.spawn().context("Failed to spawn restarted process")
 }

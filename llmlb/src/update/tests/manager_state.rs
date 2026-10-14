@@ -880,3 +880,59 @@ async fn check_and_maybe_download_does_not_deadlock() {
         other => panic!("expected Available state, got {other:?}"),
     }
 }
+
+#[test]
+fn local_tray_apply_preserves_interactive_origin_and_force_priority() {
+    let (manager, _dir) = test_manager_with_gate(InferenceGate::default());
+    manager.request_apply_interactive();
+    assert_eq!(
+        manager.take_apply_request_mode(),
+        ApplyRequestMode::InteractiveNormal
+    );
+    manager.request_apply_mode(ApplyRequestMode::Force);
+    manager.request_apply_interactive();
+    assert_eq!(manager.take_apply_request_mode(), ApplyRequestMode::Force);
+}
+
+#[tokio::test]
+async fn apply_failure_persists_reason_and_keeps_server_available() {
+    let (manager, _dir) = test_manager_with_gate(InferenceGate::default());
+    *manager.inner.state.write().await = available_state_with_payload(PayloadState::Ready {
+        kind: PayloadKind::Portable {
+            binary_path: "new.exe".into(),
+        },
+    });
+    manager.inner.gate.start_rejecting();
+    let error = anyhow::anyhow!("access denied").context("Failed to stage Windows update helper");
+    manager.record_apply_failure(&error).await;
+    assert!(!manager.inner.gate.is_rejecting());
+    assert!(!manager.inner.shutdown.is_shutdown_requested());
+    assert!(matches!(manager.state().await, UpdateState::Failed { .. }));
+    let entries = manager.get_history();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].version, "4.5.1");
+    assert_eq!(entries[0].kind, history::HistoryEventKind::Failed);
+    assert!(entries[0]
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("access denied"));
+}
+
+#[tokio::test]
+async fn apply_failure_preserves_version_already_recorded_by_drain_timeout() {
+    let (manager, _dir) = test_manager_with_gate(InferenceGate::default());
+    *manager.inner.state.write().await = UpdateState::Failed {
+        latest: Some("6.3.9".into()),
+        release_url: Some("https://example.test/release".into()),
+        message: "Drain timed out".into(),
+        failed_at: Utc::now(),
+    };
+    manager
+        .record_apply_failure(&anyhow::anyhow!("Drain timed out"))
+        .await;
+    assert_eq!(manager.get_history()[0].version, "6.3.9");
+    assert!(
+        matches!(manager.state().await, UpdateState::Failed { latest: Some(ref version), .. } if version == "6.3.9")
+    );
+}

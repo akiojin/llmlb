@@ -1,0 +1,21 @@
+{
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--platform",
+    "linux/amd64",
+    "--network",
+    "none",
+    "--read-only",
+    "--tmpfs",
+    "/tmp:rw,size=1g",
+    "--entrypoint",
+    "/bin/sh",
+    "issue-4984-linux-agent:local",
+    "-c",
+    "command -v python3; command -v python; uname -a; test -f /etc/os-release && cat /etc/os-release"
+  ],
+  "returncode": 0,
+  "captured_at": "2026-10-14T07:09:38.159503+00:00"
+}

@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "max_context": 4096,
+  "model": "glm-5.3-flash",
+  "images": false,
+  "api_key": false,
+  "defaults": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "reasoning_effort": "high"
+  },
+  "version": "1.1.8",
+  "mcp_tools": true
+}

@@ -823,6 +823,12 @@ For detailed development guidelines, testing procedures, and contribution workfl
 make quality-checks
 ```
 
+### Live Strata / Project Maya detection smoke tests
+
+Opt-in integration tests verify identification, authenticated registration, and persistence
+against real upstream servers. See the [development guide](DEVELOPMENT.md#live-endpoint-detection-smoke-tests)
+for commands, fixture provenance, and supported runtime requirements.
+
 ### PoCs
 
 - gpt-oss (auto): `make poc-gptoss`

@@ -1,0 +1,25 @@
+{
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--platform",
+    "linux/amd64",
+    "--user",
+    "0",
+    "--tmpfs",
+    "/tmp:rw,size=1g",
+    "--mount",
+    "type=bind,src=/private/tmp/llmlb908-maya/project-maya-v1.1.8.tar.gz,dst=/input/project-maya-v1.1.8.tar.gz,readonly",
+    "--mount",
+    "type=bind,src=/private/tmp/llmlb908-maya/docker-linux/run-official-maya-with-venv.py,dst=/input/run-official-maya.py,readonly",
+    "--entrypoint",
+    "/usr/bin/python3",
+    "issue-4984-linux-agent:local",
+    "/input/run-official-maya.py"
+  ],
+  "returncode": 0,
+  "captured_at": "2026-10-14T07:12:07.788695+00:00",
+  "image_id": "sha256:40a565312b6ce6a77db8364570be440dc7c2178c6473a56882e45aa1ffffa425",
+  "dependency_install_scope": "ephemeral --rm container filesystem only"
+}

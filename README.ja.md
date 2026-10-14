@@ -745,6 +745,12 @@ GET /v1/models?supported_api=embeddings&owned_by=example&q=embed
 make quality-checks
 ```
 
+### Strata / Project Maya の実サーバー識別スモークテスト
+
+実 upstream に対する識別、認証付き登録、永続化を検証する任意テストを用意しています。
+実行手順、フィクスチャの由来、対応環境は
+[開発ガイド](DEVELOPMENT.md#live-endpoint-detection-smoke-tests)を参照してください。
+
 ### PoC
 
 - gpt-oss（自動）: `make poc-gptoss`

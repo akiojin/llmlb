@@ -1,0 +1,1 @@
+{"object": "list", "data": [{"id": "qwen3.8-flash-next", "object": "model", "status": {"value": "unloaded"}, "meta": {"n_ctx": 4096}, "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]}}]}

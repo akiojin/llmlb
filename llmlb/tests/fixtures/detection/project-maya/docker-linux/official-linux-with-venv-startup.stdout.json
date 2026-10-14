@@ -1,0 +1,116 @@
+{
+  "captured_at": "2026-10-14T07:11:46.722121+00:00",
+  "platform": "Linux-7.0.14-linuxkit-x86_64-with-glibc2.36",
+  "system": "Linux",
+  "machine": "x86_64",
+  "python": "3.11.2",
+  "archive_sha256": "575ce2ee51dff24963721e0f41e02e7dfdc5f36071012674440885033f8d6a34",
+  "source_version": "1.1.8",
+  "gpu_tools": {
+    "nvidia-smi": null,
+    "nvcc": null,
+    "hipcc": null,
+    "rocminfo": null
+  },
+  "gpu_device_nodes": [],
+  "attempts": [
+    {
+      "command": [
+        "apt-get",
+        "update"
+      ],
+      "returncode": 0,
+      "stdout": "Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]\nGet:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]\nGet:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]\nGet:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]\nGet:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]\nGet:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [349 kB]\nFetched 9388 kB in 6s (1608 kB/s)\nReading package lists...\n",
+      "stderr": "",
+      "captured_at": "2026-10-14T07:11:46.818727+00:00"
+    },
+    {
+      "command": [
+        "apt-get",
+        "install",
+        "--no-install-recommends",
+        "-y",
+        "python3.11-venv"
+      ],
+      "returncode": 0,
+      "stdout": "Reading package lists...\nBuilding dependency tree...\nReading state information...\nThe following additional packages will be installed:\n  libpython3.11-minimal libpython3.11-stdlib python3-pip-whl\n  python3-setuptools-whl python3.11 python3.11-minimal\nSuggested packages:\n  python3.11-doc binfmt-support\nThe following NEW packages will be installed:\n  python3-pip-whl python3-setuptools-whl python3.11-venv\nThe following packages will be upgraded:\n  libpython3.11-minimal libpython3.11-stdlib python3.11 python3.11-minimal\n4 upgraded, 3 newly installed, 0 to remove and 35 not upgraded.\nNeed to get 8084 kB of archives.\nAfter this operation, 3165 kB of additional disk space will be used.\nGet:1 http://deb.debian.org/debian-security bookworm-security/main amd64 python3.11 amd64 3.11.2-6+deb12u9 [575 kB]\nGet:2 http://deb.debian.org/debian-security bookworm-security/main amd64 libpython3.11-stdlib amd64 3.11.2-6+deb12u9 [1798 kB]\nGet:3 http://deb.debian.org/debian-security bookworm-security/main amd64 python3.11-minimal amd64 3.11.2-6+deb12u9 [2055 kB]\nGet:4 http://deb.debian.org/debian-security bookworm-security/main amd64 libpython3.11-minimal amd64 3.11.2-6+deb12u9 [821 kB]\nGet:5 http://deb.debian.org/debian bookworm/main amd64 python3-pip-whl all 23.0.1+dfsg-1 [1717 kB]\nGet:6 http://deb.debian.org/debian bookworm/main amd64 python3-setuptools-whl all 66.1.1-1+deb12u2 [1112 kB]\nGet:7 http://deb.debian.org/debian-security bookworm-security/main amd64 python3.11-venv amd64 3.11.2-6+deb12u9 [5896 B]\nFetched 8084 kB in 1s (11.1 MB/s)\n(Reading database ... \n(Reading database ... 5%\n(Reading database ... 10%\n(Reading database ... 15%\n(Reading database ... 20%\n(Reading database ... 25%\n(Reading database ... 30%\n(Reading database ... 35%\n(Reading database ... 40%\n(Reading database ... 45%\n(Reading database ... 50%\n(Reading database ... 55%\n(Reading database ... 60%\n(Reading database ... 65%\n(Reading database ... 70%\n(Reading database ... 75%\n(Reading database ... 80%\n(Reading database ... 85%\n(Reading database ... 90%\n(Reading database ... 95%\n(Reading database ... 100%\n(Reading database ... 23256 files and directories currently installed.)\nPreparing to unpack .../0-python3.11_3.11.2-6+deb12u9_amd64.deb ...\nUnpacking python3.11 (3.11.2-6+deb12u9) over (3.11.2-6+deb12u8) ...\nPreparing to unpack .../1-libpython3.11-stdlib_3.11.2-6+deb12u9_amd64.deb ...\nUnpacking libpython3.11-stdlib:amd64 (3.11.2-6+deb12u9) over (3.11.2-6+deb12u8) ...\nPreparing to unpack .../2-python3.11-minimal_3.11.2-6+deb12u9_amd64.deb ...\nUnpacking python3.11-minimal (3.11.2-6+deb12u9) over (3.11.2-6+deb12u8) ...\nPreparing to unpack .../3-libpython3.11-minimal_3.11.2-6+deb12u9_amd64.deb ...\nUnpacking libpython3.11-minimal:amd64 (3.11.2-6+deb12u9) over (3.11.2-6+deb12u8) ...\nSelecting previously unselected package python3-pip-whl.\nPreparing to unpack .../4-python3-pip-whl_23.0.1+dfsg-1_all.deb ...\nUnpacking python3-pip-whl (23.0.1+dfsg-1) ...\nSelecting previously unselected package python3-setuptools-whl.\nPreparing to unpack .../5-python3-setuptools-whl_66.1.1-1+deb12u2_all.deb ...\nUnpacking python3-setuptools-whl (66.1.1-1+deb12u2) ...\nSelecting previously unselected package python3.11-venv.\nPreparing to unpack .../6-python3.11-venv_3.11.2-6+deb12u9_amd64.deb ...\nUnpacking python3.11-venv (3.11.2-6+deb12u9) ...\nSetting up python3-setuptools-whl (66.1.1-1+deb12u2) ...\nSetting up python3-pip-whl (23.0.1+dfsg-1) ...\nSetting up libpython3.11-minimal:amd64 (3.11.2-6+deb12u9) ...\nSetting up python3.11-minimal (3.11.2-6+deb12u9) ...\nSetting up libpython3.11-stdlib:amd64 (3.11.2-6+deb12u9) ...\nSetting up python3.11 (3.11.2-6+deb12u9) ...\nSetting up python3.11-venv (3.11.2-6+deb12u9) ...\n",
+      "stderr": "debconf: delaying package configuration, since apt-utils is not installed\n",
+      "captured_at": "2026-10-14T07:11:53.462482+00:00"
+    },
+    {
+      "command": [
+        "python3",
+        "-m",
+        "venv",
+        "/tmp/project-maya-1.1.8/.venv"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "",
+      "captured_at": "2026-10-14T07:12:01.617686+00:00"
+    },
+    {
+      "command": [
+        "sh",
+        "/tmp/project-maya-1.1.8/maya.sh",
+        "--plain",
+        "--check"
+      ],
+      "returncode": 1,
+      "stdout": "Project Maya v1.1.8 - GLM-5.3-Flash on your own GPU(s).\n\n=== Step 1: checking this PC ===\n\n  [X]  no NVIDIA GPU found (nvidia-smi did not answer)\n       install the NVIDIA driver (Ubuntu: sudo ubuntu-drivers install), restart, and run ./maya.sh again\n\nSetup stopped. Fix the item above and run it again - everything already done is kept and skipped.\n",
+      "stderr": "",
+      "captured_at": "2026-10-14T07:12:05.111976+00:00"
+    },
+    {
+      "command": [
+        "sh",
+        "/tmp/project-maya-1.1.8/maya.sh",
+        "--plain",
+        "--yes",
+        "--no-vision",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "19291"
+      ],
+      "returncode": 1,
+      "stdout": "Project Maya v1.1.8 - GLM-5.3-Flash on your own GPU(s).\n\n=== Step 1: checking this PC ===\n\n  [X]  no NVIDIA GPU found (nvidia-smi did not answer)\n       install the NVIDIA driver (Ubuntu: sudo ubuntu-drivers install), restart, and run ./maya.sh again\n\nSetup stopped. Fix the item above and run it again - everything already done is kept and skipped.\n",
+      "stderr": "",
+      "captured_at": "2026-10-14T07:12:05.701619+00:00"
+    },
+    {
+      "command": [
+        "sh",
+        "/tmp/project-maya-1.1.8/maya.sh",
+        "--plain",
+        "--yes",
+        "--no-vision",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "19292",
+        "--api-key",
+        "sk_llmlb908_maya_test_only"
+      ],
+      "returncode": 1,
+      "stdout": "Project Maya v1.1.8 - GLM-5.3-Flash on your own GPU(s).\n\n=== Step 1: checking this PC ===\n\n  [X]  no NVIDIA GPU found (nvidia-smi did not answer)\n       install the NVIDIA driver (Ubuntu: sudo ubuntu-drivers install), restart, and run ./maya.sh again\n\nSetup stopped. Fix the item above and run it again - everything already done is kept and skipped.\n",
+      "stderr": "",
+      "captured_at": "2026-10-14T07:12:06.248471+00:00"
+    },
+    {
+      "command": [
+        "sh",
+        "/tmp/project-maya-1.1.8/maya.sh",
+        "--plain",
+        "--check",
+        "--backend",
+        "hip"
+      ],
+      "returncode": 1,
+      "stdout": "Project Maya v1.1.8 - GLM-5.3-Flash on your own GPU(s).\n\n=== Step 1: checking this PC ===\n\n  [X]  no supported AMD GPU found\n       this port targets RX 7900 XT / XTX (gfx1100), RX 9070 / AI PRO R9700 (gfx1201), and Strix Halo / Gorgon Halo, Radeon 8050S / 8060S / 8065S (gfx1151)\n\nSetup stopped. Fix the item above and run it again - everything already done is kept and skipped.\n",
+      "stderr": "",
+      "captured_at": "2026-10-14T07:12:06.814020+00:00"
+    }
+  ],
+  "source_files_match_archive": true
+}

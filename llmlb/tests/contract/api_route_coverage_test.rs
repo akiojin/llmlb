@@ -440,6 +440,7 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
     // router/system.rs
     open("GET", "/api/version", StatusCode::OK),
     open("GET", "/api/system", StatusCode::OK),
+    protected("GET", "/api/system/update/history"),
     protected("POST", "/api/system/update/check"),
     protected("POST", "/api/system/update/apply"),
     protected("POST", "/api/system/update/apply/force"),
@@ -769,7 +770,8 @@ async fn route_contract_ledger_matches_the_production_router() {
 #[serial]
 async fn system_update_routes_expose_only_documented_methods() {
     let (app, jwt) = build_app_with_admin_jwt().await;
-    let cases: [(&str, &[&str]); 5] = [
+    let cases: [(&str, &[&str]); 6] = [
+        ("/api/system/update/history", &["GET", "HEAD"]),
         ("/api/system/update/check", &["POST"]),
         ("/api/system/update/apply", &["POST"]),
         ("/api/system/update/apply/force", &["POST"]),

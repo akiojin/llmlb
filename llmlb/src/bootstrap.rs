@@ -185,7 +185,7 @@ async fn initialize_inner(
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         let mgr = update_manager.clone();
-        crate::gui::tray::set_update_apply_handler(move || mgr.request_apply());
+        crate::gui::tray::set_update_apply_handler(move || mgr.request_apply_interactive());
     }
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]

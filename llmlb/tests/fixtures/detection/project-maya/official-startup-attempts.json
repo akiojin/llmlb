@@ -1,0 +1,56 @@
+[
+  {
+    "command": [
+      "sh",
+      "/tmp/llmlb908-maya/project-maya-1.1.8/maya.sh",
+      "--plain",
+      "--check"
+    ],
+    "returncode": 1,
+    "captured_at": "2026-10-14T06:48:49.650000+00:00"
+  },
+  {
+    "command": [
+      "sh",
+      "/tmp/llmlb908-maya/project-maya-1.1.8/maya.sh",
+      "--plain",
+      "--yes",
+      "--no-vision",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "19291"
+    ],
+    "returncode": 1,
+    "captured_at": "2026-10-14T06:48:49.899078+00:00"
+  },
+  {
+    "command": [
+      "sh",
+      "/tmp/llmlb908-maya/project-maya-1.1.8/maya.sh",
+      "--plain",
+      "--yes",
+      "--no-vision",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "19292",
+      "--api-key",
+      "sk_llmlb908_maya_test_only"
+    ],
+    "returncode": 1,
+    "captured_at": "2026-10-14T06:48:50.148875+00:00"
+  },
+  {
+    "command": [
+      "sh",
+      "/tmp/llmlb908-maya/project-maya-1.1.8/maya.sh",
+      "--plain",
+      "--check",
+      "--backend",
+      "hip"
+    ],
+    "returncode": 1,
+    "captured_at": "2026-10-14T06:48:50.406732+00:00"
+  }
+]

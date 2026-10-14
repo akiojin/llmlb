@@ -13,6 +13,83 @@ use chrono::{DateTime, Utc};
 use std::time::Duration;
 
 impl UpdateManager {
+    /// Persist failures that happen before a helper can record its own outcome.
+    pub async fn record_apply_failure(&self, error: &anyhow::Error) {
+        self.inner.gate.stop_rejecting();
+        let message =
+            format!("{error:#}. Check the server logs and retry, or install the release manually.");
+        let version = {
+            let mut state = self.inner.state.write().await;
+            let (latest, release_url) = match &*state {
+                UpdateState::Available {
+                    latest,
+                    release_url,
+                    ..
+                } => (Some(latest.clone()), Some(release_url.clone())),
+                UpdateState::Draining { latest, .. } | UpdateState::Applying { latest, .. } => {
+                    (Some(latest.clone()), None)
+                }
+                UpdateState::Failed {
+                    latest,
+                    release_url,
+                    ..
+                } => (latest.clone(), release_url.clone()),
+                _ => (None, None),
+            };
+            let version = latest
+                .clone()
+                .unwrap_or_else(|| env!("CARGO_PKG_VERSION").into());
+            *state = UpdateState::Failed {
+                latest,
+                release_url,
+                message: message.clone(),
+                failed_at: Utc::now(),
+            };
+            version
+        };
+        self.record_history(super::history::HistoryEntry {
+            kind: super::history::HistoryEventKind::Failed,
+            version: version.clone(),
+            message: Some(message.clone()),
+            timestamp: Utc::now(),
+        });
+        #[cfg(windows)]
+        super::helper_log::phase(
+            &self
+                .inner
+                .updates_dir
+                .join(version)
+                .join("restart_args.json"),
+            &format!("failed_before_helper: {message}"),
+        );
+        self.notify_state_changed();
+    }
+
+    /// Fail before draining/shutdown when a remote browser cannot approve UAC.
+    pub async fn validate_apply_environment(&self) -> Result<()> {
+        #[cfg(windows)]
+        {
+            let payload = {
+                let state = self.inner.state.read().await;
+                match &*state {
+                    UpdateState::Available {
+                        payload: PayloadState::Ready { kind },
+                        ..
+                    } => kind.clone(),
+                    _ => return Ok(()),
+                }
+            };
+            let target =
+                std::env::current_exe().context("Failed to resolve current executable path")?;
+            super::installer_preflight::check(
+                &payload,
+                &target,
+                super::windows_installer::requires_elevation,
+            )?;
+        }
+        Ok(())
+    }
+
     pub(super) async fn require_ready_payload(&self) -> Result<PayloadKind> {
         let st = self.inner.state.read().await;
         match &*st {
@@ -49,10 +126,15 @@ impl UpdateManager {
 
     pub(super) async fn apply_flow(&self, mode: ApplyRequestMode) -> Result<()> {
         let payload = match mode {
-            ApplyRequestMode::Normal => self.ensure_payload_ready().await?,
+            ApplyRequestMode::Normal | ApplyRequestMode::InteractiveNormal => {
+                self.ensure_payload_ready().await?
+            }
             ApplyRequestMode::Force => self.require_ready_payload().await?,
             ApplyRequestMode::None => return Err(anyhow!("No apply request mode")),
         };
+        if mode != ApplyRequestMode::InteractiveNormal {
+            self.validate_apply_environment().await?;
+        }
         let apply_method = match &payload {
             PayloadKind::Portable { .. } => ApplyMethod::PortableReplace,
             PayloadKind::Installer { kind, .. } => match kind {
@@ -94,7 +176,10 @@ impl UpdateManager {
             }
         }
 
-        if mode == ApplyRequestMode::Normal {
+        if matches!(
+            mode,
+            ApplyRequestMode::Normal | ApplyRequestMode::InteractiveNormal
+        ) {
             let requested_at = Utc::now();
             let drain_timeout = Duration::from_secs(DEFAULT_DRAIN_TIMEOUT_SECS);
             let timeout_at =

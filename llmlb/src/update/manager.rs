@@ -86,13 +86,23 @@ pub(super) enum ApplyRequestMode {
     None = 0,
     Normal = 1,
     Force = 2,
+    InteractiveNormal = 4,
 }
 
 impl ApplyRequestMode {
+    fn priority(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Normal => 1,
+            Self::InteractiveNormal => 2,
+            Self::Force => 3,
+        }
+    }
     pub(super) fn from_u8(value: u8) -> Self {
         match value {
             x if x == Self::Normal as u8 => Self::Normal,
             x if x == Self::Force as u8 => Self::Force,
+            x if x == Self::InteractiveNormal as u8 => Self::InteractiveNormal,
             _ => Self::None,
         }
     }
@@ -489,6 +499,13 @@ impl UpdateManager {
     /// - Ensure the payload is downloaded/prepared
     /// - Start rejecting new inference requests and drain in-flight requests
     /// - Spawn an internal helper to apply the update, then request shutdown
+    ///
+    /// A local tray action can approve a prompt on the server desktop.
+    pub fn request_apply_interactive(&self) {
+        self.request_apply_mode(ApplyRequestMode::InteractiveNormal);
+    }
+
+    /// Request a browser or scheduled apply without an interactive UAC prompt.
     pub fn request_apply(&self) {
         self.request_apply_mode(ApplyRequestMode::Normal);
     }
@@ -555,7 +572,7 @@ impl UpdateManager {
                         // Force apply intentionally skips refresh/download because request_apply_force()
                         // already validated `payload=ready`; re-checking here can delay or invalidate an
                         // already accepted immediate apply request.
-                        if request_mode == ApplyRequestMode::Normal {
+                        if matches!(request_mode, ApplyRequestMode::Normal | ApplyRequestMode::InteractiveNormal) {
                             if let Err(e) = mgr.check_and_maybe_download(true).await {
                                 tracing::warn!("update check failed before apply: {e}");
 
@@ -589,24 +606,7 @@ impl UpdateManager {
 
                         if let Err(err) = mgr.apply_flow(request_mode).await {
                             tracing::warn!("update apply failed: {err}");
-                            mgr.inner.gate.stop_rejecting();
-                            {
-                                let mut st = mgr.inner.state.write().await;
-                                let (latest, release_url) = match &*st {
-                                    UpdateState::Available { latest, release_url, .. } => {
-                                        (Some(latest.clone()), Some(release_url.clone()))
-                                    }
-                                    UpdateState::Draining { latest, .. } => (Some(latest.clone()), None),
-                                    UpdateState::Applying { latest, .. } => (Some(latest.clone()), None),
-                                    _ => (None, None),
-                                };
-                                *st = UpdateState::Failed {
-                                    latest,
-                                    release_url,
-                                    message: err.to_string(),
-                                    failed_at: Utc::now(),
-                                };
-                            }
+                            mgr.record_apply_failure(&err).await;
                             #[cfg(any(target_os = "windows", target_os = "macos"))]
                             notify_tray_failed(&mgr.inner.tray_proxy, err.to_string()).await;
                         }
@@ -620,7 +620,7 @@ impl UpdateManager {
         let requested = mode as u8;
         loop {
             let current = self.inner.apply_request_mode.load(Ordering::SeqCst);
-            if current >= requested {
+            if ApplyRequestMode::from_u8(current).priority() >= mode.priority() {
                 break;
             }
             if self

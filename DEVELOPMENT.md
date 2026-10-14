@@ -39,6 +39,48 @@ Use explicit E2E coverage and record results in the PR.
 
 - E2E coverage: `LLM_TEST_MODEL=<model-id> npx bats tests/e2e/test-openai-api.bats`
 
+## Live endpoint detection smoke tests
+
+The integration suite includes opt-in tests against real upstream servers.
+They verify automatic identification, registration through the authenticated
+llmlb API, and SQLite persistence. They use an isolated llmlb database.
+Normal `cargo test` runs ignore these tests; they never download models or
+start an inference engine in CI. Start the upstream server yourself, then run:
+
+```bash
+LLMLB_STRATA_URL=http://127.0.0.1:19281 \
+  cargo test -p llmlb --test integration_tests \
+  strata_family_live_test::test_live_strata_identification_and_registration \
+  -- --ignored --nocapture
+
+LLMLB_MAYA_URL=http://127.0.0.1:19291 \
+  cargo test -p llmlb --test integration_tests \
+  strata_family_live_test::test_live_project_maya_identification_and_registration \
+  -- --ignored --nocapture
+```
+
+For an upstream requiring authentication, also set `LLMLB_STRATA_API_KEY` or
+`LLMLB_MAYA_API_KEY`. Explicitly running an ignored test without its URL fails
+with a configuration error. A configured but unreachable server or incorrect
+identity fails the test.
+
+Strata v0.1.44.1 was captured on 2026-10-14 using its official `--lazy` mode
+with the unmodified HTTP server configured for the freshly built Metal engine.
+Model weights remained unloaded and inference was not tested. Its
+[capture manifest](llmlb/tests/fixtures/detection/strata/manifest.json)
+records versions, commands, and all `/health`, `/v1/models`, and `/props`
+responses with authentication disabled, absent, valid, and invalid.
+Project Maya v1.1.8 requires a supported Linux/Windows GPU environment;
+its official launcher rejects macOS. Its
+[startup evidence](llmlb/tests/fixtures/detection/project-maya/provenance.json)
+records that limitation. The
+[Maya fixtures](llmlb/tests/fixtures/detection/project-maya/source-derived/manifest.json)
+are explicitly labeled `source-derived`
+and cite the response-building code at the pinned v1.1.8 commit; they are not
+HTTP captures. This fallback follows the Issue #908 PM ruling after Linux
+startup was also attempted. Actual Maya runtime confirmation is tracked
+in [Issue #909](https://github.com/akiojin/llmlb/issues/909); the opt-in test can run on a supported Linux/Windows host.
+
 ## Environment Variables
 - Router: `LLMLB_HOST`, `LLMLB_PORT`, `LLMLB_DATABASE_URL` (or `DATABASE_URL`),
   `LLMLB_LOG_LEVEL`, `LLMLB_ADMIN_USERNAME`, `LLMLB_ADMIN_PASSWORD`,

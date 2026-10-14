@@ -1,0 +1,290 @@
+{
+  "provenance": {
+    "captured_at": "2026-10-14T06:52:06.077099+00:00",
+    "upstream": "https://github.com/Niko1221/Strata/",
+    "release_url": "https://github.com/Niko1221/Strata/releases/tag/v0.1.44.1",
+    "tag": "v0.1.44.1",
+    "release_created_at": "2026-10-14T00:10:53Z",
+    "release_published_at": "2026-10-14T00:13:09Z",
+    "tag_sha": "9791ea335ba2001c87b5f783146d6eb08fdd9e5e",
+    "tag_date": "2026-10-14T00:10:53Z",
+    "commit_sha": "296b59d2f73c8f04a805df29c2fa97655adace78",
+    "commit_author_date": "2026-10-13T23:51:12Z",
+    "commit_committer_date": "2026-10-13T23:51:12Z",
+    "source_archive_url": "https://codeload.github.com/Niko1221/Strata/tar.gz/refs/tags/v0.1.44.1",
+    "source_archive_sha256": "3d6ed3659a90ffbb5f435a9b03d000d1d54a36b9ff2b0d016f761a86b5081728",
+    "engine_version": "strata 0.1.44.1-metal",
+    "engine_binary_sha256": "5547299c5d39e918e3a6c5886d032edf2290778f71d435c5cace6f44c1662ccb",
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python_version": "Python 3.12.13",
+    "llama_cpp_commit": "3cf03257f219afbe7334045ff7c6a06ac68c627d",
+    "metal_cpp_url": "https://developer.apple.com/metal/cpp/files/metal-cpp_26.zip",
+    "metal_cpp_sha256": "4df3c078b9aadcb516212e9cb03004cbc5ce9a3e9c068fa3144d021db585a3a4",
+    "mode": "upstream --engine strata --lazy; unmodified source; no mock engine",
+    "model_name": "qwen3.8-flash-next",
+    "model_weights": "not downloaded; official lazy mode keeps model unloaded; no inference verified",
+    "tokenizer_provenance_file": "tokenizer-provenance.json",
+    "config_file": "strata-lazy.json",
+    "server_file": "servers.json",
+    "build_commands": [
+      "cmake -S Strata-0.1.44.1/metal -B build-metal -DCMAKE_BUILD_TYPE=Release -DMETAL_CPP_DIR=<scratch>/metal-cpp -DSTRATA_GGML_DIR=<scratch>/llama.cpp-3cf03257f219afbe7334045ff7c6a06ac68c627d",
+      "cmake --build build-metal --target strata -j 6"
+    ],
+    "startup_commands": [
+      [
+        "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/venv/bin/python",
+        "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/Strata-0.1.44.1/serve/server.py",
+        "--engine",
+        "strata",
+        "--config",
+        "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/strata-lazy.json",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "19281",
+        "--lazy"
+      ],
+      [
+        "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/venv/bin/python",
+        "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/Strata-0.1.44.1/serve/server.py",
+        "--engine",
+        "strata",
+        "--config",
+        "/Users/akiojin/Workbench/llmlb/work/issue-908/.tmp/llmlb908-strata/strata-lazy.json",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "19282",
+        "--lazy",
+        "--api-key",
+        "llmlb-issue-908-strata-test-key"
+      ]
+    ],
+    "authentication_cases": {
+      "auth-disabled-no-bearer": {
+        "server_api_key_required": false,
+        "request_authorization": null
+      },
+      "auth-enabled-no-bearer": {
+        "server_api_key_required": true,
+        "request_authorization": null
+      },
+      "auth-enabled-valid-bearer": {
+        "server_api_key_required": true,
+        "request_authorization": "Bearer llmlb-issue-908-strata-test-key (test-only)"
+      },
+      "auth-enabled-invalid-bearer": {
+        "server_api_key_required": true,
+        "request_authorization": "Bearer <invalid test-only key>"
+      }
+    },
+    "kind": "http-capture",
+    "is_measured_http_response": true
+  },
+  "responses": [
+    {
+      "captured_at": "2026-10-14T06:52:06.077790+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "168",
+        "Connection": "close"
+      },
+      "body_sha256": "d19c377a7b784754124a3311d7d1582c36566d0c289ab940466fa10790098b5e",
+      "case": "auth-disabled-no-bearer",
+      "path": "/health",
+      "body_file": "auth-disabled-no-bearer-health.body.json",
+      "raw_response_file": "auth-disabled-no-bearer-health.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.080330+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "214",
+        "Connection": "close"
+      },
+      "body_sha256": "599c569f2759eae820ce8a7fc197efb1c43708b7b8172fb700495d7a66dea5b5",
+      "case": "auth-disabled-no-bearer",
+      "path": "/v1/models",
+      "body_file": "auth-disabled-no-bearer-models.body.json",
+      "raw_response_file": "auth-disabled-no-bearer-models.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.081308+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "9736",
+        "Connection": "close"
+      },
+      "body_sha256": "3ec9f27faa31b0871aa3e7af415db1595ec07b411f6b35f6f7007e45d199b604",
+      "case": "auth-disabled-no-bearer",
+      "path": "/props",
+      "body_file": "auth-disabled-no-bearer-props.body.json",
+      "raw_response_file": "auth-disabled-no-bearer-props.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.082376+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "167",
+        "Connection": "close"
+      },
+      "body_sha256": "29a68f2d326085c14ac1d04e21030154d99b2a175ed93028427a66d360d81916",
+      "case": "auth-enabled-no-bearer",
+      "path": "/health",
+      "body_file": "auth-enabled-no-bearer-health.body.json",
+      "raw_response_file": "auth-enabled-no-bearer-health.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.083495+00:00",
+      "method": "GET",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82",
+        "Connection": "close"
+      },
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "case": "auth-enabled-no-bearer",
+      "path": "/v1/models",
+      "body_file": "auth-enabled-no-bearer-models.body.json",
+      "raw_response_file": "auth-enabled-no-bearer-models.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.084664+00:00",
+      "method": "GET",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82",
+        "Connection": "close"
+      },
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "case": "auth-enabled-no-bearer",
+      "path": "/props",
+      "body_file": "auth-enabled-no-bearer-props.body.json",
+      "raw_response_file": "auth-enabled-no-bearer-props.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.085515+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "167",
+        "Connection": "close"
+      },
+      "body_sha256": "29a68f2d326085c14ac1d04e21030154d99b2a175ed93028427a66d360d81916",
+      "case": "auth-enabled-valid-bearer",
+      "path": "/health",
+      "body_file": "auth-enabled-valid-bearer-health.body.json",
+      "raw_response_file": "auth-enabled-valid-bearer-health.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.086310+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "214",
+        "Connection": "close"
+      },
+      "body_sha256": "599c569f2759eae820ce8a7fc197efb1c43708b7b8172fb700495d7a66dea5b5",
+      "case": "auth-enabled-valid-bearer",
+      "path": "/v1/models",
+      "body_file": "auth-enabled-valid-bearer-models.body.json",
+      "raw_response_file": "auth-enabled-valid-bearer-models.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.087378+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "9736",
+        "Connection": "close"
+      },
+      "body_sha256": "3ec9f27faa31b0871aa3e7af415db1595ec07b411f6b35f6f7007e45d199b604",
+      "case": "auth-enabled-valid-bearer",
+      "path": "/props",
+      "body_file": "auth-enabled-valid-bearer-props.body.json",
+      "raw_response_file": "auth-enabled-valid-bearer-props.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.088363+00:00",
+      "method": "GET",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "167",
+        "Connection": "close"
+      },
+      "body_sha256": "29a68f2d326085c14ac1d04e21030154d99b2a175ed93028427a66d360d81916",
+      "case": "auth-enabled-invalid-bearer",
+      "path": "/health",
+      "body_file": "auth-enabled-invalid-bearer-health.body.json",
+      "raw_response_file": "auth-enabled-invalid-bearer-health.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.089209+00:00",
+      "method": "GET",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82",
+        "Connection": "close"
+      },
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "case": "auth-enabled-invalid-bearer",
+      "path": "/v1/models",
+      "body_file": "auth-enabled-invalid-bearer-models.body.json",
+      "raw_response_file": "auth-enabled-invalid-bearer-models.http"
+    },
+    {
+      "captured_at": "2026-10-14T06:52:06.090028+00:00",
+      "method": "GET",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.12.13",
+        "Date": "Wed, 14 Oct 2026 06:52:06 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82",
+        "Connection": "close"
+      },
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "case": "auth-enabled-invalid-bearer",
+      "path": "/props",
+      "body_file": "auth-enabled-invalid-bearer-props.body.json",
+      "raw_response_file": "auth-enabled-invalid-bearer-props.http"
+    }
+  ]
+}

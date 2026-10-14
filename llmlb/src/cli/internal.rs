@@ -25,6 +25,9 @@ pub enum InternalCommand {
     RunInstaller(RunInstallerArgs),
     /// Rollback to the previous version from `.bak`.
     Rollback(RollbackArgs),
+    /// Isolated Windows installer worker with a bounded elevation handshake.
+    #[cfg(windows)]
+    WindowsInstallerWorker(WindowsInstallerWorkerArgs),
 }
 
 /// Arguments for `__internal apply-update`.
@@ -62,6 +65,21 @@ pub struct RunInstallerArgs {
     /// Restart args file written by the main process
     #[arg(long)]
     pub args_file: std::path::PathBuf,
+}
+
+/// Arguments for the isolated Windows installer worker.
+#[cfg(windows)]
+#[derive(Args, Debug)]
+pub struct WindowsInstallerWorkerArgs {
+    /// Installer executable path.
+    #[arg(long)]
+    pub installer: std::path::PathBuf,
+    /// Existing installed executable path.
+    #[arg(long)]
+    pub target: std::path::PathBuf,
+    /// Atomic launch handshake file.
+    #[arg(long)]
+    pub ready_file: std::path::PathBuf,
 }
 
 /// Installer kind for `__internal run-installer`.
@@ -104,6 +122,14 @@ impl From<InstallerKindArg> for crate::update::InstallerKind {
 /// Execute an internal helper command.
 pub fn execute(command: InternalCommand) -> Result<()> {
     match command {
+        #[cfg(windows)]
+        InternalCommand::WindowsInstallerWorker(args) => {
+            crate::update::run_windows_installer_worker(
+                &args.installer,
+                &args.target,
+                &args.ready_file,
+            )
+        }
         InternalCommand::ApplyUpdate(args) => crate::update::internal_apply_update(
             args.old_pid,
             args.target,

@@ -1,0 +1,113 @@
+{
+  "kind": "source-derived-expression-validation",
+  "is_http_verification": false,
+  "is_measured_http_response": false,
+  "checked_at": "2026-10-14T08:17:47.415644+00:00",
+  "source_commit_sha": "5c970a863ce2fdd87b6e23ffb4822f6d76522b1c",
+  "source_server_sha256": "e47cb1b70d28e6cde5e2f7f7ba057931e1062a95befeda687ba6ea305a73b83f",
+  "source_archive_sha256": "575ce2ee51dff24963721e0f41e02e7dfdc5f36071012674440885033f8d6a34",
+  "checks": [
+    {
+      "selected_settings": "selected-settings.json",
+      "result": "PASS",
+      "source_lines": [
+        411,
+        412
+      ],
+      "derived_engine_attributes": {
+        "model_path": "pack/full"
+      },
+      "selected_args": [
+        "--glm-pack",
+        "/example/glm-pack",
+        "--max-context",
+        "4096"
+      ],
+      "derived_paths": {},
+      "method": "constructor assignment expressions evaluated without constructing StrataEngine"
+    },
+    {
+      "fixture": "health-auth-disabled.json",
+      "result": "PASS",
+      "source_lines": [
+        2800,
+        2801,
+        2803
+      ],
+      "method": "upstream response expression evaluated against declared illustrative state; no application, engine, or HTTP service constructed"
+    },
+    {
+      "fixture": "health-auth-enabled.json",
+      "result": "PASS",
+      "source_lines": [
+        2800,
+        2801,
+        2803
+      ],
+      "method": "upstream response expression evaluated against declared illustrative state; no application, engine, or HTTP service constructed"
+    },
+    {
+      "fixture": "health-mcp-enabled.json",
+      "result": "PASS",
+      "source_lines": [
+        2800,
+        2801,
+        2803
+      ],
+      "method": "upstream response expression evaluated against declared illustrative state; no application, engine, or HTTP service constructed"
+    },
+    {
+      "fixture": "health-auth-enabled-mcp-enabled.json",
+      "result": "PASS",
+      "source_lines": [
+        2800,
+        2801,
+        2803
+      ],
+      "method": "upstream response expression evaluated against declared illustrative state; no application, engine, or HTTP service constructed"
+    },
+    {
+      "fixture": "models-loaded.json",
+      "result": "PASS",
+      "source_lines": [
+        2841,
+        2845
+      ]
+    },
+    {
+      "fixture": "props-deterministic-fields.json",
+      "result": "PASS",
+      "source_lines": [
+        411,
+        412,
+        2931,
+        2933,
+        2936,
+        2937,
+        2941,
+        2942
+      ],
+      "scope": "source-derived fields include constructor-derived model_path and the truthy optional-field branch; only the unobserved engine.info.version/build_info branch at 2943-2945 is excluded",
+      "derived_model_path": "pack/full",
+      "method": "upstream assignments and model_path conditional evaluated against declared illustrative state; no app, engine, or HTTP service constructed"
+    },
+    {
+      "fixture": "authentication-error.json",
+      "result": "PASS",
+      "source_line": 2730
+    },
+    {
+      "manifest": "manifest.json",
+      "result": "PASS",
+      "responses": 13,
+      "checks": [
+        "all body JSON parse",
+        "source-only Content-Type header",
+        "all is_measured_http_response fields false",
+        "public health and protected-route authentication matrix",
+        "props omission metadata names only unobserved build_info",
+        "dedicated PROVENANCE.md exists and fixture README.md has been removed"
+      ]
+    }
+  ]
+}

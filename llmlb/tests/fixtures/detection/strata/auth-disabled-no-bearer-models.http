@@ -1,0 +1,8 @@
+HTTP/1.0 200 OK
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Wed, 14 Oct 2026 06:52:06 GMT
+Content-Type: application/json
+Content-Length: 214
+Connection: close
+
+{"object": "list", "data": [{"id": "qwen3.8-flash-next", "object": "model", "status": {"value": "unloaded"}, "meta": {"n_ctx": 4096}, "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]}}]}

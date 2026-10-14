@@ -1,0 +1,32 @@
+[
+  {
+    "path": ".tmp/llmlb908-strata/tokenizer/chat_template.jinja",
+    "url": "https://huggingface.co/Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata/resolve/640a1db97446ddd5e89d2b70ecd0297987192c93/pack/tokenizer/chat_template.jinja",
+    "sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+    "size": 8952
+  },
+  {
+    "path": ".tmp/llmlb908-strata/tokenizer/merges.txt",
+    "url": "https://huggingface.co/Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata/resolve/640a1db97446ddd5e89d2b70ecd0297987192c93/pack/tokenizer/merges.txt",
+    "sha256": "080cf95432173729d160346b7882bd2a644b07f7a3813a3eb73f4e66787bfde9",
+    "size": 3600844
+  },
+  {
+    "path": ".tmp/llmlb908-strata/tokenizer/token_type.json",
+    "url": "https://huggingface.co/Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata/resolve/640a1db97446ddd5e89d2b70ecd0297987192c93/pack/tokenizer/token_type.json",
+    "sha256": "5088c8c298fc06af8382ddb3b76c888703ac2634e82263b97eedcc2ad202738b",
+    "size": 744960
+  },
+  {
+    "path": ".tmp/llmlb908-strata/tokenizer/tokenizer.json",
+    "url": "https://huggingface.co/Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata/resolve/640a1db97446ddd5e89d2b70ecd0297987192c93/pack/tokenizer/tokenizer.json",
+    "sha256": "87be2ac47d8bc7393b7435df6ccd276740019a393941a2585d5edce59f450c54",
+    "size": 554
+  },
+  {
+    "path": ".tmp/llmlb908-strata/tokenizer/vocab.json",
+    "url": "https://huggingface.co/Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata/resolve/640a1db97446ddd5e89d2b70ecd0297987192c93/pack/tokenizer/vocab.json",
+    "sha256": "4ba64f0332abcfb0b600b7df1537d1e836e68009d5fb7cdb77339738dc6365c4",
+    "size": 5737005
+  }
+]

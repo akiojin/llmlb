@@ -1,4 +1,4 @@
-# Project Maya の source-derived fixtures
+# Project Maya の source-derived fixtures の出典
 
 これらの JSON は最新安定 release v1.1.8 の固定 source から導出した例です。
 HTTP 応答の実測ではありません。manifest の provenance.kind は source-derived です。
@@ -14,6 +14,7 @@ HTTP 応答の実測ではありません。manifest の provenance.kind は sou
 
 `source-snippets.txt` に固定 commit permalink と行番号付きの実 source を保存しています。
 `selected-settings.json` に選択設定・前提・値の選択理由を保存しています。
+この `PROVENANCE.md` は fixture 専用の証跡説明です。
 
 [health 組立][health]、[models 組立][models]、[props 組立][props]、[認証][auth]を参照してください。
 JSON の Content-Type は [_json][json] に明記された値のみを使います。
@@ -41,15 +42,20 @@ Date、Server、raw HTTP response は作成していません。
 | props.default_generation_settings | n_ctx=4096 | 選択した max_context と一致 |
 | props.params.n_predict | -1 | shared.max_tokens 未設定の handler 既定値 |
 | props.model_alias | glm-5.3-flash | 選択した model_name |
+| props.model_path | pack/full | 選択 args から server.py:411-412 が導出する既定値 |
 | props.chat_template | upstream 全文 | tokenizer 側に template がない場合の fallback source |
 | props.modalities.vision | false | vision 未設定の例 |
 | props.models_autoload | false | handler の固定値 |
 | props.is_sleeping | false | handler の固定値 |
 
-`props-deterministic-fields.json` は required dict の projection です。
-任意の engine 属性から追加される model_path/build_info は含めません。
-この省略を manifest の body_scope / omitted_optional_fields に明記しています。
-engine.info.version を発明していません。
+`props-deterministic-fields.json` は選択状態から導出できる dict の projection です。
+[StrataEngine の model_path 組立][model-path]は `--native` または `--pack` のみを検索します。
+選択 args には `--glm-pack` があり、検索対象の option はないため paths は空です。
+その結果 model_path は既定の `pack/full` となり、[props への追加条件][props-path]を満たします。
+この値は固定 source と選択設定から導出できるため fixture に含めています。
+実際にロードしたモデルの場所を観測した値ではありません。
+未観測の engine.info.version による build_info のみを省略しています。
+この範囲を manifest の body_scope / omitted_optional_fields に明記しています。
 
 MCP ありの例は `mcp_servers` に1件の HTTP server 設定を選択します。
 設定例 URL は説明用であり、存在・接続成功を主張しません。
@@ -104,3 +110,6 @@ Docker command、platform、stdout/stderr、各 command の exit code は親 evi
 [auth]: https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2723-L2731
 [json]: https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2684-L2690
 [mcp]: https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/mcp.py#L641-L659
+
+[model-path]: https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L411-L412
+[props-path]: https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2941-L2945

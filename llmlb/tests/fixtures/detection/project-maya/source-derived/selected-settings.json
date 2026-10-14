@@ -50,13 +50,20 @@
     "sampling と reasoning_effort は upstream installer の既定値。4096 は小さな説明用 context 値として選択した。",
     "vision 未設定、shared settings 空、update/reload なしの平常状態を選択した。",
     "mcp_tools は bool(svc.mcp)。tool 数や MCP server の接続成功を意味しない。",
-    "HTTP headers は source が明記する Content-Type のみ。Date、Server、raw HTTP、実測を装う時刻は作らない。"
+    "HTTP headers は source が明記する Content-Type のみ。Date、Server、raw HTTP、実測を装う時刻は作らない。",
+    "選択 args の --glm-pack は StrataEngine.__init__ の --native/--pack 検索対象外。そのため paths={} となり model_path=\"pack/full\" が固定 source から導出される。実測値ではない。",
+    "/props は truthy な model_path を含む。engine.info.version は未観測のため build_info のみ省略する。"
   ],
   "sources": {
     "installer_defaults": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/maya.py#L90-L92",
     "config_writer": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/maya.py#L1810-L1821",
     "service_config": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3422-L3443",
     "mcp_hub": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/mcp.py#L641-L659",
-    "mcp_service_assignment": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3468-L3474"
+    "mcp_service_assignment": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3468-L3474",
+    "engine_model_path": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L411-L412",
+    "props_model_path": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2941-L2945"
+  },
+  "derived_engine_attributes": {
+    "model_path": "pack/full"
   }
 }

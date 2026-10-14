@@ -14,5 +14,6 @@
     "vision": false
   },
   "models_autoload": false,
-  "is_sleeping": false
+  "is_sleeping": false,
+  "model_path": "pack/full"
 }

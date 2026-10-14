@@ -739,40 +739,9 @@ make quality-checks
 
 ### Strata / Project Maya の実サーバー識別スモークテスト
 
-実 upstream サーバーに対する識別、認証付き llmlb API 経由の登録、
-SQLite への保存を、一時 llmlb データベースで検証する任意テストを用意しています。
-通常の `cargo test` では ignored です。CI でモデルのダウンロードや
-推論エンジンの起動は行いません。upstream を起動してから明示実行してください。
-
-```bash
-LLMLB_STRATA_URL=http://127.0.0.1:19281 \
-  cargo test -p llmlb --test integration_tests \
-  strata_family_live_test::test_live_strata_identification_and_registration \
-  -- --ignored --nocapture
-
-LLMLB_MAYA_URL=http://127.0.0.1:19291 \
-  cargo test -p llmlb --test integration_tests \
-  strata_family_live_test::test_live_project_maya_identification_and_registration \
-  -- --ignored --nocapture
-```
-
-upstream が認証を要求する場合は `LLMLB_STRATA_API_KEY` または
-`LLMLB_MAYA_API_KEY` も設定してください。URL 未設定のまま ignored テストを
-明示実行すると設定エラーになり、接続不能や異なる識別結果もテスト失敗になります。
-
-2026-10-14 に Strata v0.1.44.1 の未改変 HTTP サーバーを正式な `--lazy` で起動し、
-ビルドした実 Metal engine を設定して、
-認証無効・未指定・有効・無効キーの `/health`、`/v1/models`、`/props` を採取しました。
-モデル本体は未ロードで、推論は検証していません。
-[採取 manifest](llmlb/tests/fixtures/detection/strata/manifest.json) にバージョン、
-起動コマンド、実応答を記録しています。
-Maya v1.1.8 の公式ランチャーは macOS を拒否し、対応する Linux/Windows GPU 環境が必要です。
-[起動失敗証跡](llmlb/tests/fixtures/detection/project-maya/provenance.json) を保存しています。
-[Maya のフィクスチャ](llmlb/tests/fixtures/detection/project-maya/source-derived/manifest.json) は
-`source-derived` と明記し、v1.1.8 の固定 commit にある
-応答組み立て箇所を引用しています。HTTP 採取結果ではありません。Linux 上の起動も試行したうえで、
-Issue #908 の PM 裁定に従ってこの代替方法を採用しています。Maya の実機確認は PM が別途追跡し、
-追加済みの任意テストを対応する Linux/Windows ホストで実行できます。
+実 upstream に対する識別、認証付き登録、永続化を検証する任意テストを用意しています。
+実行手順、フィクスチャの由来、対応環境は
+[開発ガイド](DEVELOPMENT.md#live-endpoint-detection-smoke-tests)を参照してください。
 
 ### PoC
 

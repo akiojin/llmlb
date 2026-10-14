@@ -16,7 +16,7 @@
       "macOS 正規 launcher は platform 非対応で exit 1。",
       "Docker Linux x86_64 正規 launcher は venv 依存解決後、NVIDIA GPU 欠如で exit 1。HIP も対応 GPU 欠如で exit 1。",
       "起動中 HTTP service、model、PID はない。これらの fixture は HTTP capture ではない。",
-      "/props は optional runtime fields を省いた deterministic projection。"
+      "/props は選択 args から導出した model_path を含め、未観測の engine.info.version による build_info のみ省略した source-derived projection。"
     ],
     "additional_examples": [
       {
@@ -26,7 +26,8 @@
         "source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2798-L2807",
         "is_measured_http_response": false
       }
-    ]
+    ],
+    "evidence_document_file": "PROVENANCE.md"
   },
   "responses": [
     {
@@ -67,13 +68,13 @@
       "is_measured_http_response": false,
       "status_origin": "source-derived conditional on selected-settings.json",
       "headers_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2684-L2690",
-      "body_scope": "deterministic source-derived projection",
+      "body_scope": "deterministic source-derived fields including model_path; unobserved build_info omitted",
       "omitted_optional_fields": {
-        "model_path": "engine runtime attribute is omitted; no observed value is available",
         "build_info": "engine.info.version is unobserved; no version is invented"
       },
       "template_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/chat_template.jinja",
-      "template_selection_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3422-L3425"
+      "template_selection_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3422-L3425",
+      "model_path_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L411-L412"
     },
     {
       "case": "auth-enabled-no-bearer",
@@ -152,13 +153,13 @@
       "is_measured_http_response": false,
       "status_origin": "source-derived conditional on selected-settings.json",
       "headers_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L2684-L2690",
-      "body_scope": "deterministic source-derived projection",
+      "body_scope": "deterministic source-derived fields including model_path; unobserved build_info omitted",
       "omitted_optional_fields": {
-        "model_path": "engine runtime attribute is omitted; no observed value is available",
         "build_info": "engine.info.version is unobserved; no version is invented"
       },
       "template_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/chat_template.jinja",
-      "template_selection_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3422-L3425"
+      "template_selection_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L3422-L3425",
+      "model_path_source_url": "https://github.com/mw00/project-maya/blob/5c970a863ce2fdd87b6e23ffb4822f6d76522b1c/serve/server.py#L411-L412"
     },
     {
       "case": "auth-enabled-invalid-bearer",

@@ -47,6 +47,15 @@ fn family_health(engine: &str, case: &str) -> Value {
     serde_json::from_str(&body).unwrap()
 }
 
+fn family_response(engine: &str, case: &str, probe: &str) -> ResponseTemplate {
+    let (status, body, headers) = family_fixture(engine, case, probe);
+    let mut response = ResponseTemplate::new(status).set_body_string(body);
+    for (name, value) in headers.as_object().unwrap() {
+        response = response.insert_header(name.as_str(), value.as_str().unwrap());
+    }
+    response
+}
+
 async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
     let created =
@@ -854,27 +863,44 @@ async fn test_strata_health_invalid_signals_fall_back_to_openai() {
 /// #908: replay real Strata responses and explicitly source-derived Maya fixtures.
 #[tokio::test]
 async fn test_strata_captured_and_maya_source_derived_http_responses() {
-    for (engine, expected) in [
-        ("strata", "strata"),
-        ("project-maya/source-derived", "project_maya"),
+    for (engine, expected, valid_key) in [
+        ("strata", "strata", "llmlb-issue-908-strata-test-key"),
+        (
+            "project-maya/source-derived",
+            "project_maya",
+            "sk_llmlb908_maya_test_only",
+        ),
     ] {
         for (case, api_key) in [
             ("auth-disabled-no-bearer", None),
             ("auth-enabled-no-bearer", None),
-            ("auth-enabled-valid-bearer", Some("fixture-test-key")),
+            ("auth-enabled-valid-bearer", Some(valid_key)),
             ("auth-enabled-invalid-bearer", Some("wrong-fixture-key")),
         ] {
             let mock = MockServer::start().await;
             let prefix = format!("/{}", uuid::Uuid::new_v4());
             for probe in ["/health", "/v1/models", "/props"] {
-                let (status, body, headers) = family_fixture(engine, case, probe);
-                let mut response = ResponseTemplate::new(status).set_body_string(body);
-                for (name, value) in headers.as_object().unwrap() {
-                    response = response.insert_header(name.as_str(), value.as_str().unwrap());
-                }
+                let needs_auth = case != "auth-disabled-no-bearer" && probe != "/health";
+                let response = family_response(engine, case, probe);
+                let authorized = family_response(engine, "auth-enabled-valid-bearer", probe);
+                let denied = family_response(engine, "auth-enabled-invalid-bearer", probe);
+                let valid_bearer = format!("Bearer {valid_key}");
                 Mock::given(method("GET"))
                     .and(path(format!("{prefix}{probe}")))
-                    .respond_with(response)
+                    .respond_with(move |request: &wiremock::Request| {
+                        if !needs_auth {
+                            response.clone()
+                        } else if request
+                            .headers
+                            .get("authorization")
+                            .and_then(|value| value.to_str().ok())
+                            == Some(valid_bearer.as_str())
+                        {
+                            authorized.clone()
+                        } else {
+                            denied.clone()
+                        }
+                    })
                     .mount(&mock)
                     .await;
             }
@@ -906,6 +932,25 @@ async fn test_strata_captured_and_maya_source_derived_http_responses() {
                 "{case}"
             );
             assert!(!requests.iter().any(|r| r.url.path().ends_with("/props")));
+            if case == "auth-enabled-valid-bearer" {
+                for probe in ["/v1/models", "/props"] {
+                    for (key, response_case) in [
+                        (Some(valid_key), "auth-enabled-valid-bearer"),
+                        (Some("wrong-fixture-key"), "auth-enabled-invalid-bearer"),
+                        (None, "auth-enabled-no-bearer"),
+                    ] {
+                        let mut request =
+                            Client::new().get(format!("{}{prefix}{probe}", mock.uri()));
+                        if let Some(key) = key {
+                            request = request.bearer_auth(key);
+                        }
+                        let response = request.send().await.unwrap();
+                        let (status, body, _) = family_fixture(engine, response_case, probe);
+                        assert_eq!(response.status().as_u16(), status, "{engine}: {probe}");
+                        assert_eq!(response.text().await.unwrap(), body, "{engine}: {probe}");
+                    }
+                }
+            }
         }
     }
 }

@@ -14,13 +14,17 @@
 ルール:
 
 - canonical 名は HuggingFace 上で**実在するリポジトリ ID** を採用する（例:
-  `zai-org/glm-4.7-flash`、`openai/gpt-oss-20b`）。組織名が変わったモデルでは、
+  `zai-org/GLM-4.7-Flash`、`openai/gpt-oss-20b`）。組織名が変わったモデルでは、
   旧 org の表記を alias として残す（例: `THUDM/glm-4.7-flash` → alias）。
+  canonical の ID を差し替えた場合も同様に、旧 ID を alias の**末尾**へ残す（先頭の alias が
+  エンドポイントへ送る名前になるため）。
+- パラメータ数による canonical 対象の除外は行わず、マルチ GPU 環境向けの大型モデルも扱う（Issue #884）。
 - alias 名は **各エンドポイントタイプ固有の命名形式** に従う。
-  - Ollama: `family:tag`（例: `gpt-oss:20b`、`gemma4`）
+  - Ollama: `family:tag`（例: `gpt-oss:20b`、`gemma4:e4b`）
   - LM Studio: HuggingFace 形式（例: `openai/gpt-oss-20b`）
-- `:latest` のような **可変タグは alias に含めない**。世代交代でルックアップ先が
-  ねじれて、後方互換性を壊すため（例: `gemma4:latest` を撤廃）。
+- 新規 mapping では `:latest` のような **可変タグを原則登録しない**。Issue #643 の
+  Gemma 4 mapping には `gemma4:latest` を登録せず、SKU 固定タグを使う。一方、
+  Qwen / GLM / Nomic 等の既存 `:latest` alias は後方互換性のため残り得る。
 - 量子化サフィックス（`:Q4_K_M` など）は現状 ID に同居しているケースがあるが、
   正規化方針は別 SPEC で扱う（後述「量子化サフィックス方針」）。
 
@@ -35,6 +39,11 @@
 「mapping に登録があるか？」の判定が必要な場合は `CanonicalResolution::is_known()`
 を併用する。`canonical_for` は `String` を必ず返す（`null` を返さない）。
 
+`/v1/models` と `/api/dashboard/models` の `is_canonical` は、その行の `id` 自身が
+canonical テーブルに登録された canonical 名である場合のみ `true` になる。self-fallback
+で `canonical_name` に `id` が入っているだけの未登録モデルは `false` とし、ダッシュボードは
+このフラグで canonical バッジを表示する（Issue #722）。
+
 ## max_tokens フォールバック（B-1 / G-7）
 
 `/v1/models` の `max_tokens` は次の優先順で解決する（`llmlb/src/models/mapping.rs:resolve_max_tokens`）。
@@ -47,22 +56,222 @@
 モデルの context length のみを登録する。バリエーションごとに異なる値が公称される
 モデル（量子化バリエーションで差がある等）は登録しない。
 
+Issue #643 で確認した fallback 値は次のとおり。
+
+| canonical | context length (tokens) |
+|---|---:|
+| `google/gemma-4-E2B-it` | 131072 |
+| `google/gemma-4-E4B-it` | 131072 |
+| `google/gemma-4-26B-A4B` | 262144 |
+| `google/gemma-4-26B-A4B-it` | 262144 |
+| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` | 1048576 |
+| `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16` | 262144 |
+| `Qwen/Qwen3-Coder-Next` | 262144 |
+| `zai-org/GLM-4.7-Flash` | 202752 |
+
+Nemotron 30B の 1048576 はモデルカードの公称最大 1M tokens であり、標準設定の値と
+異なる場合がある。実際の応答では前述のとおりエンドポイント申告値を優先する。
+
 新しいモデルを追加する際は出典（HF README / 公式リリースノート等）を PR 説明に
 記載する。
 
-## SKU 命名と派生バリエーション（G-2）
+## 検証済み SKU と派生バリエーション（G-1 / G-2 / G-5 / C-3）
 
 ggml-org のように community 配布版のリポジトリは、独自 SKU 接頭辞（`E2B`、`E4B`
-等）を付ける場合がある。これらは公式の SKU と区別される派生で、自動的な canonical
-集約はしない方針。必要なら個別に `BUILTIN_MAPPINGS` に登録する。
+等）を付ける場合がある。Issue #643 では一次情報と照合し、同一 SKU の GGUF
+再配布を次の official canonical へ明示的に集約した。サイズ違い、および base と
+instruction-tuned（`-it`）は別 SKU として扱う。
 
-例:
+| official canonical | 検証済みの対応・備考 |
+|---|---|
+| `google/gemma-4-E2B-it` | `ggml-org/gemma-4-E2B-it-GGUF` |
+| `google/gemma-4-E4B-it` | `ggml-org/gemma-4-E4B-it-GGUF` |
+| `google/gemma-4-26B-A4B` | Google 公式 base。対応する Ollama alias は割り当てない |
+| `google/gemma-4-26B-A4B-it` | `ggml-org/gemma-4-26B-A4B-it-GGUF` |
+| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` | NVIDIA 公式 30B-A3B BF16 |
+| `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16` | NVIDIA 公式 4B BF16 |
+| `Qwen/Qwen3-Coder-Next` | Qwen 公式 |
+| `zai-org/GLM-4.7-Flash` | Z.ai 公式。旧 `THUDM/glm-4.7-flash` は alias |
 
-- `ggml-org/gemma-4-E2B-it-GGUF`: ggml-org community エッジ派生（仮）
-- `google/gemma-4-26b-a4b`: Google 公式の MoE 版（実在性は別途確認）
+Gemma 4 の Ollama runtime 名は、SKU を一意にする固定タグだけを利用する。
 
-派生バリエーションは「同じ世代の別 SKU」として扱う。利用者には UI/ドキュメントで
-派生関係を明示する（dashboard 側の表示改善は別 SPEC）。
+- E2B instruction-tuned: `gemma4:e2b`
+- E4B instruction-tuned: outbound は固定タグ `gemma4:e4b` を優先する。既存の
+  bare `gemma4` は互換入力専用の legacy alias として受理する
+- 26B instruction-tuned: `gemma4:26b`
+- 26B base: Ollama alias なし
+
+`gemma4:latest` は参照先が将来変わり得るため、alias に含めない。
+
+## canonical テーブルの更新手順（Issue #776）
+
+### 新リリースと話題モデルの週次検知（Issue #885）
+
+`HF Model Discovery`（`.github/workflows/model-discovery.yml`）が毎週月曜 03:00 UTC
+（日本時間 12:00）に実行される。GitHub Actions の `workflow_dispatch` でも再実行できる。
+定期実行には workflow がデフォルトブランチへリリースされている必要がある。
+検査する対応表と設定は `develop` から取得する。
+
+公開元リストと件数は `scripts/models/hf-discovery-config.json` だけで管理する。
+初期設定は Qwen、zai-org、google、nvidia、meta-llama、moonshotai、mistralai、
+deepseek-ai、openai、microsoft。公開元別に `createdAt` 降順でページングし、直近14日
+のモデルを取得する。週次実行の遅延や一時失敗を吸収するため、期間を2週間にしている。
+話題度の代理指標は HF API の **`trendingScore` 降順上位100件**。X の直接監視はしない。
+順位はテキスト生成以外も含む全モデル内の順位で、トレンド側は公開日で制限しない。
+API の属性は [HF 公式リファレンス][hf-list-models] を参照。
+
+[hf-list-models]: https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.list_models
+
+候補は `BUILTIN_MAPPINGS` の canonical / alias に未登録（大文字小文字を無視した
+完全一致）、かつ `text-generation` / `text2text-generation` / `image-text-to-text` の
+モデルに限る。規模は `safetensors.total` または `gguf.total` の**総パラメータ数**が
+120B 未満であることを要求する。両形式の総数がある場合は大きい方を採用し、
+小さな補助重みだけで GGUF 本体の規模を過小評価しない。
+120B ちょうど、規模不明、公開日不明は除外する。
+モデル名や MoE の active parameter 数だけから規模を推測しない。規模不明の ID は
+レポートの `unverified_size` に残るため、必要なら別途メタデータを確認する。
+
+候補があると marker `<!-- llmlb:hf-model-discovery -->` または固定タイトル
+`[model-discovery] Hugging Face 新モデル候補` の open Issue を全ページから探す。
+なければ1件作成し、あれば未記載モデルだけコメントに追記する。各行にモデル ID、
+公開日（HF リポジトリ作成日時の UTC 日付）、トレンド順位、総パラメータ数を記載する。
+同一 workflow は concurrency で直列化し、コメント済み ID の再通知も抑制する。
+候補の確認が終わったら集約 Issue を閉じる。採用する場合は以下の通常手順に従い、
+実際のエンドポイント ID、Ollama / LM Studio のタグ実在を確認してから対応表を変更する。
+**検知ジョブは対応表を自動変更しない。**
+
+HF API の HTTP エラー、タイムアウト、JSON/応答形式の異常は警告にして exit 0 で終える。
+`status: incomplete` と失敗した取得元を出力し、取得済み候補は保持する。
+`incomplete` かつ候補ゼロでも「新モデルなし」を意味しない。Actions の警告と artifact
+`hf-model-discovery` 内の `discovery-report.json` を確認し、回復後に手動再実行する。
+候補ゼロを確定できるのは `status: complete` の場合だけである。設定・対応表の破損や
+GitHub Issue 操作の失敗はジョブを失敗させ、無言で通知を失わない。
+
+HF の公開 API は認証なしで利用する。レート制限対策として repository secret
+`HF_TOKEN` を任意で設定できる。Issue 操作には `GITHUB_TOKEN` の `issues: write`
+だけを使う。ローカルでは次のコマンドで通知なしの確認とオフラインテストができる。
+
+```bash
+python3 scripts/models/discover_hf_models.py --output /tmp/hf-discovery.json
+python3 -m unittest discover -s tests/models -v
+make test-checks
+```
+
+`--publish` は実際に Issue を作成・追記するため、ローカルの確認には付けない。
+
+### 既存エントリの鮮度検査
+
+`BUILTIN_MAPPINGS` は人手で編集する静的テーブルで、自動では追従しない。各エントリの
+`last_verified`（Hugging Face 上で canonical の実在を最後に確認した日）を
+`make mapping-freshness` が検査し、**180 日**を超えたエントリが 1 件でもあると失敗する。
+この検査は `make quality-checks` と、CI の必須チェック `Commit Message Lint` ジョブの
+両方で実行される。ネットワークには依存しない（時計だけを見る）。
+
+検査が失敗したとき、またはモデルを追加・是正したいときは次の順で作業する。
+
+### 1. どこを見るか
+
+- 対象は `llmlb/src/models/mapping.rs` の `BUILTIN_MAPPINGS`。`make mapping-freshness`
+  の出力が、期限切れのエントリと経過日数を名指しする。
+- 実在確認は Hugging Face Models API を使う。認証なしの場合、`200` は実在、`401` /
+  `404` は不存在（または非公開）を意味する。
+
+  ```bash
+  curl -s -o /dev/null -w '%{http_code}\n' https://huggingface.co/api/models/<org>/<repo>
+  ```
+
+- 稼働中エンドポイントが報告する ID は、各エンドポイントの `/v1/models`（LM Studio は
+  `/api/v0/models` で publisher も取得可）で確認する。
+
+### 2. 何を根拠にするか
+
+- **追加**: 稼働中エンドポイントが報告して解決に失敗したモデル ID、または承認済み Issue で
+  指定され一次情報で実在を確認した公開モデルを対象とする。「新しい版が出たはず」という推測では追加しない。
+- **canonical の選定**: Hugging Face 上で実在を確認した一次配布元のリポジトリ ID。
+  エンドポイントの実体が再配布リポジトリ（GGUF / MLX 変換等）の場合は、その
+  `base_model` が指す配布元を canonical にする。
+- **alias**: 実際のエンドポイント応答、または公式リポジトリ名。確認できていないランタイムの
+  alias は登録しない（例: LM Studio でしか確認していないモデルに Ollama alias を付けない）。
+- **改名・廃止**: 実在確認で `401` / `404` になった canonical は、Models API の検索
+  （`/api/models?author=<org>&search=<name>`）で現行の ID を特定して差し替える。
+  後継が特定できない場合はエントリを削除する。
+
+### 3. どう更新するか
+
+- 追加・差し替えは、先に `llmlb/src/models/mapping/tests.rs` へ失敗するテストを書く。
+- canonical を差し替えたら、旧 ID を alias の末尾へ残し、`KNOWN_CONTEXT_LENGTHS` のキーも
+  新しい canonical に合わせる。
+- 根拠（API 応答、エンドポイント応答）を PR 本文に記載する。
+
+### 4. 最終確認日をどう更新するか
+
+- 手順 1 の実在確認で `200` を得たエントリの `last_verified` を、**確認した当日の日付**
+  （UTC, `YYYY-MM-DD`）へ更新する。確認していないエントリの日付は更新しない。
+- 日付だけを機械的に書き換えて検査を通すことは禁止する。`last_verified` は「その日に
+  実在を確認した」という記録である。
+- 更新後に `make mapping-freshness` が成功することを確認する。
+
+### 2026-09-30 の確認結果
+
+Models API で当時の 18 件を確認し、16 件が実在、2 件が不存在だった。不存在の 2 件は
+実在する ID へ差し替え、旧 ID は alias として残した。
+
+| 旧 canonical（不存在） | 現行 canonical |
+|---|---|
+| `Qwen/Qwen3-30B` | `Qwen/Qwen3-30B-A3B` |
+| `nvidia/nemotron-3-super-120b-a12b` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16` |
+
+稼働中の LM Studio が報告し解決に失敗していた 2 件を追加した。
+
+| LM Studio の ID | canonical |
+|---|---|
+| `qwen/qwen3.8-27b` | `Qwen/Qwen3.8-27B` |
+| `qwen-image-edit-rapid-aio` | `Phr00t/Qwen-Image-Edit-Rapid-AIO` |
+
+### 2026-10-13 の追従結果（Issue #884）
+
+以下の 8 canonical は Hugging Face Models API で `200` と ID の一致を確認し、
+`last_verified` に確認日（UTC）を記録した。Kimi は公式 `moonshotai` の
+[公開モデル一覧](https://huggingface.co/api/models?author=moonshotai&sort=createdAt&direction=-1&limit=100&full=true)
+を作成日時降順で照合し、最新のオープンウェイト `moonshotai/Kimi-K3` を選んだ。
+K3 はマルチモーダルだが、公式 README にテキスト入力の生成例と vLLM / SGLang のローカル実行手順がある。
+
+| canonical | context length | 一次情報 |
+|---|---:|---|
+| `zai-org/GLM-5.3-Flash` | 1048576 | [config](https://huggingface.co/zai-org/GLM-5.3-Flash/blob/main/config.json) |
+| `Qwen/Qwen3.8-Flash-Next` | 262144 | [config](https://huggingface.co/Qwen/Qwen3.8-Flash-Next/blob/main/config.json) |
+| `Qwen/Qwen3.6-35B-A3B` | 262144 | [config](https://huggingface.co/Qwen/Qwen3.6-35B-A3B/blob/main/config.json) |
+| `google/gemma-4-31B-it` | 262144 | [config](https://huggingface.co/google/gemma-4-31B-it/blob/main/config.json) |
+| `google/gemma-4-12B-it` | 262144 | [config](https://huggingface.co/google/gemma-4-12B-it/blob/main/config.json) |
+| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | 262144 | [config](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/blob/main/config.json) |
+| `moonshotai/Kimi-K3` | 1048576 | [config](https://huggingface.co/moonshotai/Kimi-K3/blob/main/config.json) |
+| `meta-llama/Llama-4-Scout-17B-16E-Instruct` | 10485760 | [Meta 公式 SKU 定義](https://github.com/meta-llama/llama-models/blob/main/models/sku_types.py) |
+| `Qwen/Qwen3.8-27B`（既存） | 262144 | [config](https://huggingface.co/Qwen/Qwen3.8-27B/blob/main/config.json) |
+| `Qwen/Qwen3-30B-A3B`（既存） | 40960 | [config](https://huggingface.co/Qwen/Qwen3-30B-A3B/blob/main/config.json) |
+
+Scout の HF config は gated（未認証で `401`）のため、Meta 公式の Instruct SKU の
+`max_seq_length` を用いた。他は config の `max_position_embeddings`（マルチモーダルでは
+`text_config` 配下）を採用した。Nemotron の拡張時 1M や Qwen3-30B-A3B の YaRN 値と区別し、
+実行環境の申告値があればそちらを優先する。
+
+登録した runtime 名と出典は次のとおり。Ollama は `latest` を使わず、確認できた明示タグを使う。
+LM Studio は公式 catalog のキー、または公式配布 GGUF のリポジトリ名を使い、
+配布元の `base_model` または README の `Original model` リンクと canonical の対応も確認した。
+
+| モデル | Ollama の確認済みタグ | LM Studio の確認済み名 |
+|---|---|---|
+| GLM-5.3-Flash | [`glm-5.3-flash:cloud`](https://ollama.com/library/glm-5.3-flash/tags) | なし（ローカル runtime 名未確認） |
+| Qwen3.8-Flash-Next | [`qwen3.8-flash-next:125b-a6b-q4_K_M`](https://ollama.com/library/qwen3.8-flash-next/tags) | [`qwen/qwen3.8-flash-next`](https://lmstudio.ai/models/qwen/qwen3.8-flash-next) |
+| Qwen3.6-35B-A3B | [`qwen3.6:35b-a3b-q4_K_M`](https://ollama.com/library/qwen3.6/tags) | [`qwen/qwen3.6-35b-a3b`](https://lmstudio.ai/models/qwen/qwen3.6-35b-a3b) |
+| Gemma 4 31B IT | [`gemma4:31b-it-q4_K_M`](https://ollama.com/library/gemma4/tags) | [`lmstudio-community/gemma-4-31B-it-GGUF`](https://huggingface.co/lmstudio-community/gemma-4-31B-it-GGUF) |
+| Gemma 4 12B IT | [`gemma4:12b-it-q4_K_M`](https://ollama.com/library/gemma4/tags) | [`lmstudio-community/gemma-4-12B-it-GGUF`](https://huggingface.co/lmstudio-community/gemma-4-12B-it-GGUF) |
+| Nemotron 3.5 Lightning | [`nemotron-3.5-lightning:30b-a3b-q4_K_M`](https://ollama.com/library/nemotron-3.5-lightning/tags) | [`lmstudio-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF`](https://huggingface.co/lmstudio-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF) |
+| Kimi K3 | [`kimi-k3:cloud`](https://ollama.com/library/kimi-k3/tags) | なし（ローカル runtime 名未確認） |
+| Llama 4 Scout | [`llama4:17b-scout-16e-instruct-q4_K_M`](https://ollama.com/library/llama4/tags) | [`lmstudio-community/Llama-4-Scout-17B-16E-Instruct-GGUF`](https://huggingface.co/lmstudio-community/Llama-4-Scout-17B-16E-Instruct-GGUF) |
+
+GLM / Kimi の `:cloud` は Ollama が提供するクラウド実行タグで、ローカル重みのタグではない。
+LM Studio catalog の bare slug や未確認のローカルタグを別名として推測登録しない。
+Gemma の catalog 名は `-it` が省略されて base の HF ID と衝突するため、IT を明示する配布リポジトリ名を使う。
 
 ## 量子化サフィックス方針（G-3、暫定実装済み）
 
@@ -98,7 +307,9 @@ ggml-org のように community 配布版のリポジトリは、独自 SKU 接�
 
 「`id` を量子化なしへ正規化し、エンドポイントへのルーティング時に `quantization`
 を別経路で扱う」構造的分離はクライアント・dashboard・OpenAI 互換契約への影響が
-大きいため、この PR では扱わず別 SPEC（要 Issue 起票）で扱う。
+大きい。SPEC #575 US-029 では requestable な detail ID を維持し、canonical と
+variant の集約情報を別に提供する互換方針を採用したため、G-3-struct の破壊的な ID
+正規化案は superseded とする。
 
 ## 異常検知ログ（C-defensive）
 
@@ -114,14 +325,16 @@ ggml-org のように community 配布版のリポジトリは、独自 SKU 接�
 ほぼ常に `Registered` / `null` だが、UI 連動のため API レスポンスからは削除しない。
 状態管理を実装するか、フィールドそのものを廃止するかは別 SPEC で扱う。
 
-## 別 SPEC へ送る項目（このブランチでは扱わない）
+## Issue #643 の対応状況と残課題
 
-- B-4: `lifecycle_status` / `download_progress` の挙動見直し（UI 連動の影響範囲が広い）
-- G-1: ggml-org gemma-4-E2B/E4B の canonical 追加（Gemma 4 系 SKU の実在性確認 G-5 が前提。本書時点では self-canonical fallback で `canonical_name` に id 自身が入る暫定動作）
-- G-3 構造分離: `id` から量子化部分を除去し別経路でルーティングする破壊的変更（本書時点では `quantization` フィールド追加で情報の別出しまで実施）
-- G-5: Gemma 4 SKU 実在性の事実確認（外部リソース照合）
-- C-1 / C-2 / G-6: 単一エンドポイントの大量モデル誤申告の根本対応（エンドポイント側設定。本書時点では sync_models() の警告ログで早期検知のみ）
-- C-3: モデル名妥当性の事実確認（外部リソース照合）
+- G-1 / G-5 / C-3: Issue #643 で公式モデル ID、派生関係、runtime alias、context
+  fallback を一次情報と照合し、`BUILTIN_MAPPINGS` と本書へ反映済み。
+- G-3-struct: SPEC #575 US-029 の互換方針により superseded。requestable な `id` は
+  維持し、canonical / variant 情報で集約する。
+- B-4: `lifecycle_status` / `download_progress` は UI/API のプロダクト判断が必要なため、
+  lifecycle 状態管理の実装またはフィールド廃止を別 owner/decision として扱う。
+- C-1 / C-2 / G-6: 単一エンドポイントの大量モデル誤申告は operator / endpoint 側の
+  責務として扱う。llmlb 側は `sync_models()` の警告ログで早期検知する。
 
 ## 関連リンク
 
@@ -130,3 +343,5 @@ ggml-org のように community 配布版のリポジトリは、独自 SKU 接�
 - /v1/models 実装: `llmlb/src/api/openai.rs` (`list_models`, `get_model`)
 - 親 SPEC: [#575 OpenAI互換APIゲートウェイ](https://github.com/akiojin/llmlb/issues/575)
 - Follow-up Issue: [#643 /v1/models 品質改善: 残課題](https://github.com/akiojin/llmlb/issues/643)
+- 鮮度検査: [#776 canonical マッピングの鮮度検査](https://github.com/akiojin/llmlb/issues/776)、
+  `scripts/checks/check-mapping-freshness.sh`

@@ -730,6 +730,8 @@ vLLM, xLLM, llama.cpp (`llama-server`), and other OpenAI-compatible endpoints.
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | `REQUEST_HISTORY_RETENTION_DAYS` |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | `LLM_DEFAULT_EMBEDDING_MODEL` |
+| `LLMLB_SMTP_USERNAME` | - | SMTP username for operational notification mail | required to send mail; see [docs/API.md](docs/API.md) |
+| `LLMLB_SMTP_PASSWORD` | - | SMTP password for operational notification mail | required to send mail; never stored in the database |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Default embedding model | deprecated (use `LLMLB_DEFAULT_EMBEDDING_MODEL`) |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | Request history retention days | deprecated (use `LLMLB_REQUEST_HISTORY_RETENTION_DAYS`) |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | Request history cleanup interval (seconds) | deprecated (use `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`) |
@@ -933,6 +935,16 @@ to `.migrated`.
 | POST | `/api/auth/login` | User authentication, JWT issuance (sets HttpOnly cookie) | None |
 | POST | `/api/auth/logout` | Logout | JWT (HttpOnly cookie or Authorization header) |
 | GET | `/api/auth/me` | Get authenticated user info | JWT (HttpOnly cookie or Authorization header) |
+| PUT | `/api/auth/change-password` | Change own password (`current_password` + `new_password`) | JWT (HttpOnly cookie or Authorization header) |
+| POST | `/api/auth/forgot-password` | Issue a password reset token for an email ID (always `202`) | None |
+| POST | `/api/auth/reset-password` | Set a new password with a reset token (`token` + `new_password`) | None |
+
+Usernames are email IDs (`POST /api/users` / `PUT /api/users/:id` reject other formats with
+`400`). There is no mail delivery: `forgot-password` never returns the token and responds
+identically whether or not the account exists. The reset link
+(`/dashboard/reset-password.html#token=...`) is written to the server log for the operator to
+hand to the user. Tokens expire after 30 minutes, are single-use, and a newer request revokes
+older tokens. A successful reset signs out existing sessions.
 
 Note: When using the JWT cookie for mutating dashboard requests, include the CSRF token via
 `X-CSRF-Token` header (token is provided in `llmlb_csrf` cookie). Origin/Referer must match the
@@ -960,7 +972,7 @@ dashboard origin.
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry and lists (`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`) |
 | `logs.read` | Endpoint log proxy (`GET /api/endpoints/:id/logs`) |
-| `metrics.read` | Metrics export (`GET /api/metrics/cloud`) |
+| `metrics.read` | Metrics export (`GET /api/metrics/cloud`, `GET /api/metrics/cloud/export`) |
 
 API authentication is always required; there is no anonymous/no-auth mode and unauthenticated
 requests receive `401`. On first boot an admin account is provisioned (`ADMIN_PASSWORD` or an
@@ -979,7 +991,7 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 |--------|------|-------------|------|
 | GET | `/api/users` | List users | JWT+Admin or API key (`users.manage`) |
 | POST | `/api/users` | Create user | JWT+Admin or API key (`users.manage`) |
-| PUT | `/api/users/:id` | Update user | JWT+Admin or API key (`users.manage`) |
+| PUT | `/api/users/:id` | Update user (`email` is the notification address, not a login identifier) | JWT+Admin or API key (`users.manage`) |
 | DELETE | `/api/users/:id` | Delete user | JWT+Admin or API key (`users.manage`) |
 
 #### API Key Management Endpoints (Self-service)
@@ -1064,6 +1076,8 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 | GET | `/api/dashboard/stats/tokens/daily` | Daily token stats | JWT only |
 | GET | `/api/dashboard/stats/tokens/monthly` | Monthly token stats | JWT only |
 | GET | `/api/dashboard/logs/lb` | Load balancer logs | JWT only |
+| GET | `/api/dashboard/notifications` | Operational notification settings, status and recipients | JWT+Admin |
+| PUT | `/api/dashboard/notifications` | Update operational notification settings | JWT+Admin |
 
 #### Log & Metrics Endpoints
 
@@ -1071,6 +1085,7 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 |--------|------|-------------|------|
 | GET | `/api/endpoints/:id/logs` | Endpoint logs proxy | JWT+Admin or API key (`logs.read`) |
 | GET | `/api/metrics/cloud` | Prometheus metrics export | JWT+Admin or API key (`metrics.read`) |
+| GET | `/api/metrics/cloud/export` | Cloud daily rollup export (`format=json\|csv`, `days=1..90`) | JWT+Admin or API key (`metrics.read`) |
 
 #### Playground Proxy
 
@@ -1234,3 +1249,6 @@ For detailed development guidelines, see [CLAUDE.md](./CLAUDE.md).
   - `ANTHROPIC_API_KEY` (required), `ANTHROPIC_API_BASE_URL` (optional, default `https://api.anthropic.com`)
 - Behavior: prefix is stripped before forwarding; responses remain OpenAI-compatible. Streaming is passthrough as SSE.
 - Metrics: `/api/metrics/cloud` exports Prometheus text with per-provider counters (`cloud_requests_total{provider,status}`) and latency histogram (`cloud_request_latency_seconds{provider}`).
+- Daily export: `/api/metrics/cloud/export?format=json|csv&days=1..90` returns UTC daily rollups per provider
+  (`openai`/`google`/`anthropic`) with `date, provider, request_count, success_count, error_count, avg_latency_ms, p95_latency_ms`.
+  `format` defaults to `json` and `days` to `90`; data older than 90 days is not retained.

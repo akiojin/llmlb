@@ -266,7 +266,17 @@ fn can_recommend_download(endpoint_type: EndpointType, engine_name: Option<&str>
         EndpointType::Ollama => engine_name.is_some(),
         EndpointType::LmStudio => true,
         EndpointType::Xllm => true,
-        EndpointType::Llamacpp | EndpointType::Vllm | EndpointType::OpenaiCompatible => false,
+        EndpointType::Llamacpp
+        | EndpointType::Vllm
+        | EndpointType::Strata
+        | EndpointType::ProjectMaya
+        | EndpointType::Sglang
+        | EndpointType::Lmdeploy
+        | EndpointType::Xinference
+        | EndpointType::Lemonade
+        | EndpointType::Tgi
+        | EndpointType::Koboldcpp
+        | EndpointType::OpenaiCompatible => false,
     }
 }
 
@@ -441,7 +451,7 @@ pub async fn recommend_endpoints(
     State(state): State<AppState>,
     Path(repo_id): Path<String>,
 ) -> Result<Json<RecommendEndpointsResponse>, AppError> {
-    let online = state.endpoint_registry.list_online().await;
+    let online = state.balancer.endpoint_registry.list_online().await;
 
     let mut recommendations = Vec::new();
 

@@ -8,8 +8,7 @@ test.describe('Dashboard Operations Overview @dashboard', () => {
   test.beforeEach(async ({ page }) => {
     dashboard = new DashboardPage(page);
     await dashboard.goto();
-    // Wait for initial data load
-    await page.waitForTimeout(500);
+    await expect(page.locator(DashboardSelectors.stats.operationalHealth)).toBeVisible();
   });
 
   test('S-01: Operational health summary is displayed', async ({ page }) => {
@@ -52,15 +51,13 @@ test.describe('Dashboard Operations Overview @dashboard', () => {
   });
 
   test('S-09: Overview updates on refresh', async ({ page }) => {
-    // Store initial values
-    const initialTotal = await dashboard.totalRequests.textContent();
-
-    // Trigger refresh (note: refresh reloads the page)
+    // Live updates/polling continue after load. Wait for the refresh's own response and rendered stat.
+    const refreshed = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/dashboard/overview' && response.request().method() === 'GET'
+    );
     await dashboard.refresh();
-    await page.waitForLoadState('networkidle');
-
-    // Values should still be present (may or may not change)
-    const newTotal = await dashboard.totalRequests.textContent();
-    expect(newTotal).toBeDefined();
+    expect((await refreshed).ok()).toBeTruthy();
+    await expect(dashboard.totalRequests).toBeVisible();
+    await expect(dashboard.totalRequests).toContainText(/\d/);
   });
 });

@@ -6,6 +6,8 @@ export interface User {
   id: string
   username: string
   role: 'admin' | 'viewer'
+  /** Destination for operational notifications. Not a login identifier. */
+  email: string | null
   created_at: string
 }
 
@@ -20,15 +22,16 @@ export const usersApi = {
     return res.users
   },
 
-  create: (data: { username: string; role: string }) =>
+  create: (data: { username: string; role: string; email?: string }) =>
     fetchWithAuth<CreateUserResponse>('/api/users', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
+  // `email: ''` clears the notification email; leaving it out keeps it.
   update: (
     id: string,
-    data: { username?: string; password?: string; role?: string }
+    data: { username?: string; password?: string; role?: string; email?: string }
   ) =>
     fetchWithAuth<User>(`/api/users/${id}`, {
       method: 'PUT',

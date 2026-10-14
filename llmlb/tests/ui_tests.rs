@@ -1,3 +1,6 @@
+#[path = "ui/source.rs"]
+mod source;
+
 #[path = "ui/model_panel_removed.rs"]
 mod model_panel_removed;
 
@@ -10,14 +13,8 @@ mod theme_effects;
 #[path = "ui/hf_buttons_removed.rs"]
 mod hf_buttons_removed;
 
-#[path = "ui/update_banner.rs"]
-mod update_banner;
-
 #[path = "ui/update_header.rs"]
 mod update_header;
-
-#[path = "ui/update_phase2.rs"]
-mod update_phase2;
 
 #[path = "ui/tps_tab_placement.rs"]
 mod tps_tab_placement;

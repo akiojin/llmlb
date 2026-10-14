@@ -1,10 +1,11 @@
 SHELL := /bin/sh
 
-.PHONY: quality-checks quality-checks-pre-commit fmt clippy test security-checks markdownlint specify-commits
-.PHONY: openai-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
+.PHONY: quality-checks quality-checks-pre-commit fmt clippy clippy-parity module-structure event-publishers flaky-patterns dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks test-checks coverage coverage-gate test security-checks markdownlint specify-commits
+.PHONY: openai-tests notification-tests test-hooks e2e-tests e2e-playwright e2e-playwright-screenshots
 .PHONY: bench-local bench-openai bench-google bench-anthropic
 .PHONY: build-macos-x86_64 build-macos-aarch64 build-macos-all
 .PHONY: poc-gptoss poc-gptoss-metal poc-gptoss-cuda
+.PHONY: shell-variable-boundaries
 
 FIND ?= /usr/bin/find
 
@@ -12,7 +13,68 @@ fmt:
 	cargo fmt --check
 
 clippy:
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
+
+clippy-parity:
+	bash scripts/checks/check-clippy-parity.sh
+
+# Issue #889: macOS bash 3.2 の非ASCII隣接変数展開を検出する。
+# CI (lint.yml commitlint) のパス条件のない必須ジョブでも実行する。
+shell-variable-boundaries:
+	bash scripts/checks/check-shell-variable-boundaries.sh
+
+# SPEC #699 FR-009/FR-010: 1,500 行上限と mod.rs の re-export 化
+# Issue #811: 上限はテストコード（tests.rs / tests/ 配下）にも適用する。
+# CI (lint.yml rust-lint) も同一ターゲットを実行する。
+module-structure:
+	bash scripts/checks/check-module-structure.sh
+
+# SPEC #582 FR-048e / Issue #781: canonical ダッシュボードイベントに production の publisher が無い状態を検出
+# CI (lint.yml rust-lint) も同一ターゲットを実行する。
+event-publishers:
+	bash scripts/checks/check-event-publishers.sh
+
+# SPEC #838: 既知のフレーク誘発パターンを候補単位の allowlist で固定
+flaky-patterns:
+	bash scripts/checks/check-flaky-patterns.sh
+
+# SPEC #821 T016 / Issue #824: components/ 配下の useQuery / useMutation / useQueryClient 直接呼び出しを検出
+# （MVVM 移行中に新しいコンポーネント内フェッチが混入しても気付ける。現違反は allowlist で管理し、移行で減らす）
+dashboard-data-hooks:
+	bash scripts/checks/check-dashboard-data-hooks.sh
+
+# Issue #737: 並行ブランチ間のマイグレーション番号衝突を develop 着地前に検出
+migration-versions:
+	bash scripts/checks/check-migration-versions.sh
+
+# Issue #813: 未リリースの変更があるのにバージョンが main と同じまま（リリースしてもタグ・Release が作られない）状態を検出
+release-version:
+	bash scripts/checks/check-release-version.sh
+
+# Issue #776: canonical モデルマッピングの最終確認日が古くなっていないか検査（ネットワーク非依存）
+# CI (lint.yml commitlint) も同一ターゲットを実行する。
+mapping-freshness:
+	bash scripts/checks/check-mapping-freshness.sh
+
+# Issue #727: Dependabot のグループ更新件名が commitlint (header-max-length) を通るか検証
+dependabot-subjects:
+	bash scripts/checks/check-dependabot-subjects.sh
+
+# Rust ユニットテストカバレッジ（SPEC #585 FR-032: 行カバレッジ80%以上）
+# CI (ci.yml coverage-rust) も同一ターゲットを実行する。要 cargo-llvm-cov。
+# Issue #769: dashboard の typecheck / lint（依存更新で壊れても CI が検出できるようにする）
+# CI (lint.yml dashboard-lint) も同一ターゲットを実行する。
+dashboard-checks:
+	pnpm --filter @llm/dashboard typecheck
+	pnpm --filter @llm/dashboard lint
+	pnpm --filter @llm/dashboard test
+
+coverage:
+	mkdir -p coverage-rust
+	cargo llvm-cov --all-features --workspace --fail-under-lines 80 --lcov --output-path coverage-rust/lcov.info
+
+coverage-gate:
+	bash scripts/checks/check-coverage-gate.sh
 
 test:
 	cargo test -- --test-threads=1
@@ -31,9 +93,9 @@ specify-commits:
 		bash scripts/checks/check-commits.sh --from origin/main --to HEAD; \
 	fi
 
-quality-checks: fmt clippy test security-checks specify-commits markdownlint openai-tests test-hooks e2e-playwright
+quality-checks: fmt clippy-parity shell-variable-boundaries module-structure event-publishers flaky-patterns dashboard-data-hooks migration-versions release-version mapping-freshness dependabot-subjects dashboard-checks coverage-gate clippy test security-checks specify-commits markdownlint openai-tests notification-tests test-hooks test-checks e2e-playwright
 
-quality-checks-pre-commit: fmt clippy
+quality-checks-pre-commit: fmt clippy-parity clippy
 
 security-checks:
 	cargo audit
@@ -43,9 +105,25 @@ security-checks:
 openai-tests:
 	cargo test -p llmlb --test e2e_openai_proxy
 
+# SPEC #777 AC-8: 運用通知（users.email・メール送信基盤・Offline 到達の即時通知・日次ダイジェスト・通知設定 API）の受け入れテスト
+# 実際のメール送信は行わない（記録用トランスポートを使う）。
+# CI (test.yml rust-test) も同一ターゲットを実行する。
+notification-tests:
+	cargo test -p llmlb --test notification_tests
+
+# Bats 1.13 / bash 3.2 の日本語テスト名をバイト単位で処理する（Issue #889）。
+# ハーネスだけに限定し、UTF-8回帰テストは対象コマンドのロケールを明示する。
+test-checks:
+	@if [ -x "./node_modules/bats/bin/bats" ]; then \
+		env -u LC_ALL LC_CTYPE=C bash ./node_modules/bats/bin/bats tests/checks scripts/checks/tests; \
+	else \
+		echo "bats is not installed. Run 'pnpm install' first." >&2; \
+		exit 1; \
+	fi
+
 test-hooks:
 	@bash -lc 'if [ -x "./node_modules/bats/bin/bats" ]; then \
-		bash ./node_modules/bats/bin/bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \
+		env -u LC_ALL LC_CTYPE=C bash ./node_modules/bats/bin/bats tests/hooks/test-block-git-branch-ops.bats tests/hooks/test-block-cd-command.bats || \
 			(echo "bats tests failed (Windows Git Bash compatibility issue). Hooks are still active." && exit 0); \
 	else \
 		echo "bats is not installed. Run '\''pnpm install'\'' first."; \
@@ -56,8 +134,7 @@ test-hooks:
 # Automatically starts the server via playwright.config.ts webServer.
 # Set SKIP_SERVER=1 to use an already-running server.
 e2e-playwright:
-	@cd llmlb/tests/e2e-playwright && pnpm exec playwright test --project=chromium --grep-invert @real-runtimes || \
-		(echo "⚠️  Some Playwright E2E tests failed. Review the report above." && exit 0)
+	@cd llmlb/tests/e2e-playwright && pnpm exec playwright test --project=chromium --grep-invert @real-runtimes
 
 # Playwright E2E screenshot capture (headed mode)
 # Screenshots are saved to llmlb/tests/e2e-playwright/reports/screenshots/

@@ -132,7 +132,7 @@ pub async fn audit_middleware(
         is_migrated: false,
     };
 
-    state.audit_log_writer.send(entry);
+    state.audit.writer.send(entry);
 
     response
 }
@@ -227,19 +227,27 @@ mod tests {
         );
 
         AppState {
-            load_manager,
-            request_history,
+            balancer: crate::BalancerState {
+                load_manager,
+                endpoint_registry,
+                request_history,
+            },
             db_pool: pool,
-            jwt_secret: "test-secret".to_string(),
+            auth: crate::AuthState {
+                jwt_secret: "test-secret".to_string(),
+            },
             http_client,
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-            audit_log_writer,
-            audit_log_storage,
-            audit_archive_pool: None,
+            lifecycle: crate::LifecycleState {
+                inference_gate,
+                shutdown,
+                update_manager,
+            },
+            audit: crate::AuditState {
+                writer: audit_log_writer,
+                storage: audit_log_storage,
+                archive_pool: None,
+            },
         }
     }
 
@@ -556,7 +564,7 @@ mod tests {
         .expect("create user");
 
         let state = create_test_state(pool.clone()).await;
-        let jwt_secret = state.jwt_secret.clone();
+        let jwt_secret = state.auth.jwt_secret.clone();
 
         // JWTトークン生成
         let token = crate::auth::jwt::create_jwt(

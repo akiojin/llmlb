@@ -4,30 +4,6 @@
 
 use llmlb::types::endpoint::EndpointType;
 
-/// 判別優先度のテスト: xLLM > LM Studio > Ollama > vLLM > OpenAI-compatible
-#[test]
-fn test_detection_priority_order() {
-    // 各タイプの優先度を数値化
-    // 優先度順: xLLM > LM Studio > Ollama > vLLM > llama.cpp > OpenAI-compatible
-    fn priority(t: EndpointType) -> u8 {
-        match t {
-            EndpointType::Xllm => 6,
-            EndpointType::LmStudio => 5,
-            EndpointType::Ollama => 4,
-            EndpointType::Vllm => 3,
-            EndpointType::Llamacpp => 2,
-            EndpointType::OpenaiCompatible => 1,
-        }
-    }
-
-    // xLLM が最高優先度
-    assert!(priority(EndpointType::Xllm) > priority(EndpointType::LmStudio));
-    assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Ollama));
-    assert!(priority(EndpointType::Ollama) > priority(EndpointType::Vllm));
-    assert!(priority(EndpointType::LmStudio) > priority(EndpointType::Vllm));
-    assert!(priority(EndpointType::Vllm) > priority(EndpointType::OpenaiCompatible));
-}
-
 /// xLLMエンドポイントはモデルダウンロードをサポート
 #[test]
 fn test_xllm_supports_model_download() {

@@ -51,24 +51,30 @@ async fn build_app() -> TestApp {
     )
     .expect("Failed to create update manager");
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
-            db_pool.clone(),
-        )),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+                db_pool.clone(),
+            )),
+            archive_pool: None,
+        },
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -253,7 +259,6 @@ async fn test_create_endpoint_invalid_url() {
 /// POST /api/endpoints - 異常系: URL重複
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: URL重複チェック未実装"]
 async fn test_create_endpoint_duplicate_url() {
     let mock = MockServer::start().await;
     Mock::given(method("GET"))
@@ -311,12 +316,35 @@ async fn test_create_endpoint_duplicate_url() {
         .await
         .unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    let code = body
-        .get("code")
-        .or_else(|| body.get("error").and_then(|e| e.get("code")));
-    assert!(
-        code.is_some() && code.unwrap().is_string(),
-        "error code should be present either at body.code or body.error.code"
+    assert_eq!(body["code"], "duplicate_url");
+    assert_eq!(
+        body["error"],
+        "Endpoint with this name or URL already exists"
+    );
+}
+
+/// Issue #827: 管理APIは既存の文字列errorを維持してcodeを追加する。
+#[tokio::test]
+#[serial]
+async fn test_management_error_has_additive_code() {
+    let TestApp { app, admin_key } = build_app().await;
+    let response = app
+        .oneshot(
+            admin_request(&admin_key)
+                .method("POST")
+                .uri("/api/endpoints")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"","base_url":"http://localhost"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        body,
+        json!({"error": "Name is required", "code": "validation_error"})
     );
 }
 

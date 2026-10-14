@@ -38,24 +38,30 @@ pub async fn build_test_router(db_pool: SqlitePool) -> Router {
     .expect("Failed to create update manager");
 
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
-            db_pool.clone(),
-        )),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+                db_pool.clone(),
+            )),
+            archive_pool: None,
+        },
     };
 
     api::create_app(state)
@@ -152,22 +158,28 @@ pub async fn spawn_test_lb() -> TestServer {
     .expect("Failed to create update manager");
 
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+            archive_pool: None,
+        },
     };
 
     let app = api::create_app(state);
@@ -208,22 +220,28 @@ pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
     .expect("Failed to create update manager");
 
     let state = AppState {
-        load_manager: load_manager.clone(),
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager: load_manager.clone(),
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+            archive_pool: None,
+        },
     };
 
     let app = api::create_app(state);
@@ -575,24 +593,30 @@ pub async fn spawn_test_lb_with_db() -> (TestServer, SqlitePool) {
     .expect("Failed to create update manager");
 
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
-            db_pool.clone(),
-        )),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+                db_pool.clone(),
+            )),
+            archive_pool: None,
+        },
     };
 
     let app = api::create_app(state);

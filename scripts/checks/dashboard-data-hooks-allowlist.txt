@@ -1,0 +1,6 @@
+# check-dashboard-data-hooks.sh の許可リスト（SPEC #821 T016 / Issue #824）
+#
+# まだ useQuery / useMutation / useQueryClient を直接呼んでいる components/ 配下のファイルを
+# 1 行に 1 つ、llmlb/src/web/dashboard/src/components からの相対パスで書く。
+# ViewModel への移行（SPEC #821 T008 / T009 / T012 / T013）が完了したら、そのエントリを削除する
+# （残っていると検査が失敗する）。

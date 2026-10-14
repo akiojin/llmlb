@@ -55,24 +55,30 @@ async fn build_app() -> TestApp {
     )
     .expect("Failed to create update manager");
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
-            db_pool.clone(),
-        )),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+                db_pool.clone(),
+            )),
+            archive_pool: None,
+        },
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -1188,12 +1194,7 @@ async fn test_delete_endpoint_invalid_api_key() {
 #[tokio::test]
 #[serial]
 async fn test_viewer_cannot_create_endpoint() {
-    let TestApp {
-        app,
-        db_pool,
-        admin_key: _,
-        ..
-    } = build_app().await;
+    let TestApp { app, db_pool, .. } = build_app().await;
 
     // Viewerユーザーを作成
     let password_hash = llmlb::auth::password::hash_password("viewer123").unwrap();

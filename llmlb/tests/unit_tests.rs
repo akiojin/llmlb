@@ -44,3 +44,5 @@ mod proptest_tests;
 
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.
+#[path = "unit/management_error_test.rs"]
+mod management_error_test;

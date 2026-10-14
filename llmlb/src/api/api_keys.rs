@@ -8,11 +8,11 @@ use crate::AppState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Extension, Json,
 };
 
-use super::error::AppError;
+use super::error::{AppError, HandlerError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -120,11 +120,10 @@ fn default_viewer_api_key_permissions() -> Vec<ApiKeyPermission> {
     ]
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_permissions_for_role(
     role: UserRole,
     requested_permissions: Option<Vec<ApiKeyPermission>>,
-) -> Result<Vec<ApiKeyPermission>, Response> {
+) -> Result<Vec<ApiKeyPermission>, HandlerError> {
     match role {
         UserRole::Admin => {
             let permissions = requested_permissions.ok_or_else(|| {
@@ -138,7 +137,7 @@ fn resolve_permissions_for_role(
                 return Err(AppError(LbError::Common(CommonError::Validation(
                     "Field 'permissions' must contain at least one permission.".to_string(),
                 )))
-                .into_response());
+                .into());
             }
 
             Ok(permissions)
@@ -149,7 +148,7 @@ fn resolve_permissions_for_role(
                     "Viewer users cannot provide 'permissions'; viewer keys always use fixed OpenAI permissions."
                         .to_string(),
                 )))
-                .into_response());
+                .into());
             }
 
             Ok(default_viewer_api_key_permissions())
@@ -157,18 +156,18 @@ fn resolve_permissions_for_role(
     }
 }
 
-#[allow(clippy::result_large_err)]
-fn parse_user_id_from_claims(claims: &Claims) -> Result<Uuid, Response> {
+fn parse_user_id_from_claims(claims: &Claims) -> Result<Uuid, HandlerError> {
     claims.sub.parse::<Uuid>().map_err(|e| {
         tracing::error!("Failed to parse user ID: {}", e);
-        AppError(LbError::Internal(format!("Failed to parse user ID: {}", e))).into_response()
+        AppError(LbError::Internal(format!("Failed to parse user ID: {}", e)))
+            .into_response()
+            .into()
     })
 }
 
-#[allow(clippy::result_large_err)]
 fn parse_expires_at(
     expires_at: Option<&String>,
-) -> Result<Option<chrono::DateTime<chrono::Utc>>, Response> {
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, HandlerError> {
     match expires_at {
         Some(expires_at_str) => Ok(Some(
             chrono::DateTime::parse_from_rfc3339(expires_at_str)
@@ -189,7 +188,7 @@ fn parse_expires_at(
 pub async fn list_api_keys(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
-) -> Result<Json<ListApiKeysResponse>, Response> {
+) -> Result<Json<ListApiKeysResponse>, HandlerError> {
     let user_id = parse_user_id_from_claims(&claims)?;
 
     let api_keys = crate::db::api_keys::list_by_creator(&app_state.db_pool, user_id)
@@ -209,12 +208,12 @@ pub async fn create_api_key(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Json(request): Json<CreateApiKeyRequest>,
-) -> Result<(StatusCode, Json<CreateApiKeyResponse>), Response> {
+) -> Result<(StatusCode, Json<CreateApiKeyResponse>), HandlerError> {
     if request.scopes.is_some() {
         return Err(AppError(LbError::Common(CommonError::Validation(
             "Field 'scopes' is deprecated and not accepted.".to_string(),
         )))
-        .into_response());
+        .into());
     }
 
     let permissions = resolve_permissions_for_role(claims.role, request.permissions)?;
@@ -246,7 +245,7 @@ pub async fn update_api_key(
     State(app_state): State<AppState>,
     Path(key_id): Path<Uuid>,
     Json(request): Json<UpdateApiKeyRequest>,
-) -> Result<Json<ApiKeyResponse>, Response> {
+) -> Result<Json<ApiKeyResponse>, HandlerError> {
     let user_id = parse_user_id_from_claims(&claims)?;
     let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
@@ -265,7 +264,7 @@ pub async fn update_api_key(
 
     match updated {
         Some(api_key) => Ok(Json(ApiKeyResponse::from(api_key))),
-        None => Err(AppError(LbError::NotFound("API key not found".to_string())).into_response()),
+        None => Err(AppError(LbError::NotFound("API key not found".to_string())).into()),
     }
 }
 
@@ -274,7 +273,7 @@ pub async fn delete_api_key(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Path(key_id): Path<Uuid>,
-) -> Result<StatusCode, Response> {
+) -> Result<StatusCode, HandlerError> {
     let user_id = parse_user_id_from_claims(&claims)?;
 
     let deleted = crate::db::api_keys::delete_by_creator(&app_state.db_pool, key_id, user_id)
@@ -289,7 +288,7 @@ pub async fn delete_api_key(
         })?;
 
     if !deleted {
-        return Err(AppError(LbError::NotFound("API key not found".to_string())).into_response());
+        return Err(AppError(LbError::NotFound("API key not found".to_string())).into());
     }
 
     Ok(StatusCode::NO_CONTENT)

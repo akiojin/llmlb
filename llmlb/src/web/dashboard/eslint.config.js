@@ -26,4 +26,11 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // Test files are never hot-reloaded, so the fast-refresh export rule does not apply.
+    files: ['src/**/*.test.{ts,tsx}', 'src/test/**'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 )

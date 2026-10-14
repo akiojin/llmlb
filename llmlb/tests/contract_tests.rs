@@ -22,6 +22,9 @@ mod endpoints_put_test;
 #[path = "contract/endpoints_delete_test.rs"]
 mod endpoints_delete_test;
 
+#[path = "contract/endpoints_model_delete_test.rs"]
+mod endpoints_model_delete_test;
+
 #[path = "contract/endpoints_test_test.rs"]
 mod endpoints_test_test;
 
@@ -92,6 +95,10 @@ mod anthropic_messages_api_test;
 #[path = "contract/endpoint_daily_stats_api_test.rs"]
 mod endpoint_daily_stats_api_test;
 
+// SPEC #582 US-005: クラウドメトリクスエクスポートAPI契約テスト
+#[path = "contract/cloud_metrics_export_test.rs"]
+mod cloud_metrics_export_test;
+
 // SPEC-82cd11b7: バージョンAPI契約テスト
 #[path = "contract/version_api_test.rs"]
 mod version_api_test;
@@ -136,9 +143,25 @@ mod users_api_test;
 #[path = "contract/api_keys_api_test.rs"]
 mod api_keys_api_test;
 
+// SPEC #580 US-010: 招待コード管理API契約テスト
+#[path = "contract/invitations_api_test.rs"]
+mod invitations_api_test;
+
 // SPEC-e8e9326e: エンドポイント管理API拡張契約テスト（不足ケース補完）
 #[path = "contract/endpoints_contract_extended_test.rs"]
 mod endpoints_contract_extended_test;
+
+// SPEC #585 FR-027 / Issue #696: 公開ルートの契約テスト欠落を補完
+#[path = "contract/api_route_coverage_test.rs"]
+mod api_route_coverage_test;
+
+// SPEC #585 FR-027 / Issue #806: 契約テストが無かった公開ルート 22 組の契約
+#[path = "contract/public_route_contracts_test.rs"]
+mod public_route_contracts_test;
+
+// Issue #775: 互換APIの未知フィールド透過を固定する契約テスト
+#[path = "contract/unknown_field_passthrough_test.rs"]
+mod unknown_field_passthrough_test;
 
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.

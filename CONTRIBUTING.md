@@ -30,6 +30,6 @@ changes small, well-documented, and fully verified before pushing.
   unavoidable for clarity.
 
 ## Testing Shortcuts
-- Rust: `cargo fmt --check && cargo clippy -- -D warnings && cargo test`
+- Rust: `cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test`
 - JS/TS: `pnpm test` when applicable.
 - OpenAI-compatible API: `make openai-tests` (included in `make quality-checks`).

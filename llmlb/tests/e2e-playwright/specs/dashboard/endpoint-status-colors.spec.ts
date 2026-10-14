@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type APIRequestContext } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { ensureDashboardLogin, deleteEndpointsByName, listEndpoints } from '../../helpers/api-helpers';
 import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '../../helpers/mock-openai-endpoint';
 import { mkdir } from 'node:fs/promises';
@@ -80,25 +80,66 @@ async function expectStatusBadgeClasses(badge: Locator, status: 'pending' | 'onl
 
 async function expectStatusBadgeStyles(badge: Locator, status: 'pending' | 'online' | 'offline' | 'error') {
   // This catches "class is present but CSS isn't generated" regressions (the original bug report).
-  const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const { alpha, explicitAlpha } = parseCssColorAlpha(bg);
+  // Text/classes update before the CSS transition finishes. A threshold can
+  // accept an intermediate color (or opaque rgb with no explicit alpha).
+  await expect(async () => {
+    const bg = await badge.evaluate(async (el) => {
+      await Promise.all(el.getAnimations().map(animation => animation.finished));
+      return getComputedStyle(el).backgroundColor;
+    });
+    const { alpha, explicitAlpha } = parseCssColorAlpha(bg);
 
-  // Badge backgrounds should never be fully transparent.
-  expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThan(0);
+    // Badge backgrounds should never be fully transparent.
+    expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThan(0);
 
-  if (status === 'error') {
-    // Error uses solid destructive background.
-    expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThanOrEqual(0.95);
-  } else if (explicitAlpha) {
-    // online/pending/offline use `/20` variants (tinted background).
-    expect(alpha, `backgroundColor was ${bg}`).toBeLessThan(0.95);
-  }
+    if (status === 'error') {
+      // Error uses solid destructive background.
+      expect(alpha, `backgroundColor was ${bg}`).toBeGreaterThanOrEqual(0.95);
+    } else if (explicitAlpha) {
+      // online/pending/offline use `/20` variants (tinted background).
+      expect(alpha, `backgroundColor was ${bg}`).toBeLessThan(0.95);
+    }
+  }).toPass({ timeout: 3000 });
 }
 
 async function expectStatusBadge(badge: Locator, status: 'pending' | 'online' | 'offline' | 'error') {
   await expectStatusBadgeClasses(badge, status);
   await expectStatusBadgeStyles(badge, status);
 }
+
+async function openFreshPlayground(page: Page, endpointId: string) {
+  // Hash navigation retains the previous status in a fresh 5s query cache.
+  // This color-mapping test needs a new snapshot, independent of cache polling.
+  await page.evaluate(id => { window.location.hash = `playground/${id}`; }, endpointId);
+  await page.reload();
+  await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
+}
+
+test('S-EP-01 regression: style checks wait for the final transition value @dashboard', async ({ page }) => {
+  await page.setContent(`
+    <style>
+      #badge { background-color: rgb(255 0 0 / 1); transition: background-color 1s linear; }
+      #badge.offline { background-color: rgb(255 0 0 / .2); }
+    </style>
+    <div id="badge">Offline</div>
+  `);
+  const badge = page.locator('#badge');
+  await badge.evaluate(el => {
+    // Flush the old style before starting a real browser CSS transition.
+    void getComputedStyle(el).backgroundColor;
+    el.classList.add('offline');
+  });
+  const started = Date.now();
+  await expectStatusBadgeStyles(badge, 'offline');
+  const sample = await badge.evaluate(el => ({
+    color: getComputedStyle(el).backgroundColor,
+    running: el.getAnimations().map(animation => animation.playState),
+  }));
+  const { alpha } = parseCssColorAlpha(sample.color);
+  console.log('transition sample', { ...sample, alpha, elapsedMs: Date.now() - started });
+  expect(sample.running).toEqual([]);
+  expect(alpha).toBeCloseTo(0.2);
+});
 
 test.describe('Endpoint Status Colors @dashboard', () => {
   let mock: MockOpenAIEndpointServer;
@@ -169,8 +210,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       const pendingEndpoints = await listEndpoints(request);
       const okEndpoint = pendingEndpoints.find((e) => e.name === endpointOkName);
       expect(okEndpoint?.id).toBeTruthy();
-      await page.goto(`/dashboard/#playground/${okEndpoint!.id}`);
-      await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
+      await openFreshPlayground(page, okEndpoint!.id);
 
       const pendingPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Pending$/ }).first();
       await expectStatusBadge(pendingPlaygroundBadge, 'pending');
@@ -210,8 +250,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await page.keyboard.press('Escape');
 
       // Playground (online)
-      await page.goto(`/dashboard/#playground/${okEndpoint!.id}`);
-      await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
+      await openFreshPlayground(page, okEndpoint!.id);
       const onlinePlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Online$/ }).first();
       await expectStatusBadge(onlinePlaygroundBadge, 'online');
       await shot('playground-online');
@@ -269,8 +308,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       expect(badEndpoint?.id).toBeTruthy();
 
       // Playground (error)
-      await page.goto(`/dashboard/#playground/${badEndpoint!.id}`);
-      await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
+      await openFreshPlayground(page, badEndpoint!.id);
       const errorPlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Error$/ }).first();
       await expectStatusBadge(errorPlaygroundBadge, 'error');
       await shot('playground-error');
@@ -314,8 +352,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       await page.keyboard.press('Escape');
 
       // Playground (offline)
-      await page.goto(`/dashboard/#playground/${badEndpoint!.id}`);
-      await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 });
+      await openFreshPlayground(page, badEndpoint!.id);
       const offlinePlaygroundBadge = page.locator('div.rounded-full').filter({ hasText: /^Offline$/ }).first();
       await expectStatusBadge(offlinePlaygroundBadge, 'offline');
       await shot('playground-offline');

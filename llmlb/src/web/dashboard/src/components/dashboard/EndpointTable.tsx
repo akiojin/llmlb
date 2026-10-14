@@ -1,13 +1,10 @@
-import { useState, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useEndpointTableViewModel } from '@/viewmodels/useEndpointTableViewModel'
 import {
   type DashboardEndpoint,
   type EndpointType,
-  endpointsApi,
   CREATE_ENDPOINT_TIMEOUT_GUIDANCE,
 } from '@/lib/api'
-import { classifyEndpointLastError } from '@/lib/endpoint-errors'
-import { formatRelativeTime, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,8 +45,6 @@ import {
 } from '@/components/ui/dialog'
 import { EndpointDetailModal } from './EndpointDetailModal'
 import {
-  sortEndpoints,
-  type EndpointSortDirection as SortDirection,
   type EndpointSortField as SortField,
 } from './endpointSorting'
 import {
@@ -77,8 +72,6 @@ interface EndpointTableProps {
   isLoading: boolean
 }
 
-const PAGE_SIZE = 10
-
 function getStatusBadgeVariant(
   status: DashboardEndpoint['status']
 ): 'online' | 'pending' | 'offline' | 'destructive' | 'outline' {
@@ -96,48 +89,6 @@ function getStatusBadgeVariant(
   }
 }
 
-function getStatusLabel(
-  status: DashboardEndpoint['status']
-): string {
-  switch (status) {
-    case 'online':
-      return 'Online'
-    case 'pending':
-      return 'Pending'
-    case 'offline':
-      return 'Offline'
-    case 'error':
-      return 'Error'
-    default:
-      return status
-  }
-}
-
-/** SPEC-e8e9326e: Get display label for endpoint type */
-function getTypeLabel(
-  type: EndpointType
-): string {
-  switch (type) {
-    case 'xllm':
-      return 'xLLM'
-    case 'ollama':
-      return 'Ollama'
-    case 'vllm':
-      return 'vLLM'
-    case 'lm_studio':
-      return 'LM Studio'
-    case 'llamacpp':
-      return 'llama.cpp'
-    case 'openai_compatible':
-      return 'OpenAI Compatible'
-    case 'unknown':
-      return 'Unknown'
-    default:
-      return type
-  }
-}
-
-
 /** SPEC-e8e9326e: Get badge variant for endpoint type */
 function getTypeBadgeVariant(
   type: EndpointType
@@ -148,6 +99,12 @@ function getTypeBadgeVariant(
     case 'ollama':
       return 'secondary'
     case 'vllm':
+    case 'sglang':
+    case 'lmdeploy':
+    case 'xinference':
+    case 'lemonade':
+    case 'tgi':
+    case 'koboldcpp':
       return 'secondary'
     case 'lm_studio':
       return 'secondary'
@@ -163,127 +120,16 @@ function getTypeBadgeVariant(
 }
 
 export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
-  const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<
-    'all' | 'online' | 'pending' | 'offline' | 'error'
-  >('all')
-  const [typeFilter, setTypeFilter] = useState<'all' | EndpointType>('all')
-  const [sortField, setSortField] = useState<SortField>('status')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-  const [currentPage, setCurrentPage] = useState(1)
-  const [selectedEndpoint, setSelectedEndpoint] = useState<DashboardEndpoint | null>(null)
-  const [deletingEndpoint, setDeletingEndpoint] = useState<DashboardEndpoint | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [isTesting, setIsTesting] = useState<string | null>(null)
-  const [isSyncing, setIsSyncing] = useState<string | null>(null)
-  // Create endpoint state
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [isCreating, setIsCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [createForm, setCreateForm] = useState({
-    name: '',
-    base_url: '',
-    api_key: '',
-    notes: '',
-  })
+  const {
+    search, setSearch, statusFilter, setStatusFilter, typeFilter, setTypeFilter,
+    sortField, sortDirection, handleSort, currentPage, totalPages, previousPage, nextPage,
+    paginationLabel, filteredCount, paginatedEndpoints, selectedEndpoint, setSelectedEndpoint,
+    deletingEndpoint, setDeletingEndpoint, isDeleting, isTesting, isSyncing,
+    handleCreate, handleDelete, handleTest, handleSync, isCreateDialogOpen, setIsCreateDialogOpen,
+    onCreateDialogOpenChange, isCreating, createError, createForm, updateCreateForm,
+  } = useEndpointTableViewModel(endpoints)
 
-  const handleCreate = async () => {
-    if (!createForm.name || !createForm.base_url) return
-    setIsCreating(true)
-    setCreateError(null)
-    try {
-      await endpointsApi.create({
-        name: createForm.name,
-        base_url: createForm.base_url,
-        api_key: createForm.api_key || undefined,
-        notes: createForm.notes || undefined,
-      })
-      await queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
-      setIsCreateDialogOpen(false)
-      setCreateForm({ name: '', base_url: '', api_key: '', notes: '' })
-    } catch (error) {
-      console.error('Failed to create endpoint:', error)
-      setCreateError(error instanceof Error ? error.message : 'Failed to create endpoint')
-    } finally {
-      setIsCreating(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    if (!deletingEndpoint) return
-    setIsDeleting(true)
-    try {
-      await endpointsApi.delete(deletingEndpoint.id)
-      await queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
-    } catch (error) {
-      console.error('Failed to delete endpoint:', error)
-    } finally {
-      setIsDeleting(false)
-      setDeletingEndpoint(null)
-    }
-  }
-
-  const handleTest = async (endpoint: DashboardEndpoint) => {
-    setIsTesting(endpoint.id)
-    try {
-      await endpointsApi.test(endpoint.id)
-      await queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
-    } catch (error) {
-      console.error('Failed to test endpoint:', error)
-    } finally {
-      setIsTesting(null)
-    }
-  }
-
-  const handleSync = async (endpoint: DashboardEndpoint) => {
-    setIsSyncing(endpoint.id)
-    try {
-      await endpointsApi.sync(endpoint.id)
-      await queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
-    } catch (error) {
-      console.error('Failed to sync endpoint:', error)
-    } finally {
-      setIsSyncing(null)
-    }
-  }
-
-  const filteredEndpoints = useMemo(() => {
-    return endpoints.filter((endpoint) => {
-      const matchesSearch =
-        endpoint.name.toLowerCase().includes(search.toLowerCase()) ||
-        endpoint.base_url.toLowerCase().includes(search.toLowerCase())
-      const matchesStatus = statusFilter === 'all' || endpoint.status === statusFilter
-      const matchesType = typeFilter === 'all' || endpoint.endpoint_type === typeFilter
-      return matchesSearch && matchesStatus && matchesType
-    })
-  }, [endpoints, search, statusFilter, typeFilter])
-
-  const sortedEndpoints = useMemo(() => {
-    return sortEndpoints(
-      filteredEndpoints,
-      sortField,
-      sortDirection
-    )
-  }, [filteredEndpoints, sortField, sortDirection])
-
-  const paginatedEndpoints = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
-    return sortedEndpoints.slice(start, start + PAGE_SIZE)
-  }, [sortedEndpoints, currentPage])
-
-  const totalPages = Math.ceil(sortedEndpoints.length / PAGE_SIZE)
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('desc')
-    }
-  }
-
-  const SortIcon = ({ field }: { field: SortField }) => {
+  const renderSortIcon = (field: SortField) => {
     if (sortField !== field) return null
     return sortDirection === 'asc' ? (
       <ChevronUp className="ml-1 h-4 w-4 inline" />
@@ -319,7 +165,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               <Server className="h-5 w-5" />
               Endpoints
               <Badge variant="secondary" className="ml-2">
-                {filteredEndpoints.length}
+                {filteredCount}
               </Badge>
             </CardTitle>
             <Button onClick={() => setIsCreateDialogOpen(true)}>
@@ -336,19 +182,13 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
               <Input
                 placeholder="Search by name or URL..."
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
-                  setCurrentPage(1)
-                }}
+                onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
               />
             </div>
             <Select
               value={statusFilter}
-              onValueChange={(value: typeof statusFilter) => {
-                setStatusFilter(value)
-                setCurrentPage(1)
-              }}
+              onValueChange={setStatusFilter}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status" />
@@ -364,10 +204,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
             {/* SPEC-e8e9326e: Type filter */}
             <Select
               value={typeFilter}
-              onValueChange={(value: typeof typeFilter) => {
-                setTypeFilter(value)
-                setCurrentPage(1)
-              }}
+              onValueChange={setTypeFilter}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Type" />
@@ -377,8 +214,16 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 <SelectItem value="xllm">xLLM</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
                 <SelectItem value="vllm">vLLM</SelectItem>
+                <SelectItem value="sglang">SGLang</SelectItem>
+                <SelectItem value="lmdeploy">LMDeploy</SelectItem>
+                <SelectItem value="xinference">Xinference</SelectItem>
+                <SelectItem value="lemonade">Lemonade</SelectItem>
+                <SelectItem value="tgi">TGI</SelectItem>
+                <SelectItem value="koboldcpp">KoboldCpp</SelectItem>
                 <SelectItem value="lm_studio">LM Studio</SelectItem>
                 <SelectItem value="llamacpp">llama.cpp</SelectItem>
+                <SelectItem value="strata">Strata</SelectItem>
+                <SelectItem value="project_maya">Project Maya</SelectItem>
                 <SelectItem value="openai_compatible">OpenAI Compatible</SelectItem>
                 <SelectItem value="unknown">Unknown</SelectItem>
               </SelectContent>
@@ -395,7 +240,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     onClick={() => handleSort('name')}
                   >
                     Name
-                    <SortIcon field="name" />
+                    {renderSortIcon('name')}
                   </TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead>Type</TableHead>
@@ -404,28 +249,28 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     onClick={() => handleSort('status')}
                   >
                     Status
-                    <SortIcon field="status" />
+                    {renderSortIcon('status')}
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('total_requests')}
                   >
                     Requests
-                    <SortIcon field="total_requests" />
+                    {renderSortIcon('total_requests')}
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('latency_ms')}
                   >
                     Latency
-                    <SortIcon field="latency_ms" />
+                    {renderSortIcon('latency_ms')}
                   </TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-muted/50 text-right"
                     onClick={() => handleSort('model_count')}
                   >
                     Models
-                    <SortIcon field="model_count" />
+                    {renderSortIcon('model_count')}
                   </TableHead>
                   <TableHead>Last Seen</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -452,7 +297,6 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                   </TableRow>
                 ) : (
                   paginatedEndpoints.map((endpoint) => {
-                    const errorDisplay = classifyEndpointLastError(endpoint.last_error)
                     return (
                       <TableRow key={endpoint.id}>
                         <TableCell className="font-medium">
@@ -469,59 +313,43 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                           <Badge
                             variant={getTypeBadgeVariant(endpoint.endpoint_type)}
                           >
-                            {getTypeLabel(endpoint.endpoint_type)}
+                            {endpoint.typeLabel}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant={getStatusBadgeVariant(endpoint.status)}>
-                            {getStatusLabel(endpoint.status)}
+                            {endpoint.statusLabel}
                           </Badge>
                           {endpoint.last_error && (
                             <>
                               <span className="ml-2 text-xs text-destructive">
-                                {`(${endpoint.error_count} errors)`}
+                                {endpoint.errorCountLabel}
                               </span>
-                              {errorDisplay && (
+                              {endpoint.errorLabel && (
                                 <Badge
                                   variant="outline"
                                   className="ml-2 border-destructive/40 text-destructive"
                                 >
-                                  {errorDisplay.label}
+                                  {endpoint.errorLabel}
                                 </Badge>
                               )}
                             </>
                           )}
                         </TableCell>
                       <TableCell className="text-right">
-                        {endpoint.total_requests > 0 ? (
-                          <span
-                            className={cn(
-                              endpoint.total_requests > 0 &&
-                                endpoint.failed_requests / endpoint.total_requests >= 0.2
-                                ? 'text-destructive font-medium'
-                                : endpoint.total_requests > 0 &&
-                                    endpoint.failed_requests / endpoint.total_requests >= 0.05
-                                  ? 'text-yellow-600 dark:text-yellow-500 font-medium'
-                                  : ''
-                            )}
-                          >
-                            {endpoint.total_requests.toLocaleString()}
-                            {' '}
-                            ({(
-                              (endpoint.successful_requests / endpoint.total_requests) *
-                              100
-                            ).toFixed(1)}%)
-                          </span>
-                        ) : (
-                          '-'
-                        )}
+                        <span className={cn(
+                          endpoint.requestHealth === 'error' ? 'text-destructive font-medium'
+                            : endpoint.requestHealth === 'warning' ? 'text-yellow-600 dark:text-yellow-500 font-medium' : ''
+                        )}>
+                          {endpoint.requestsLabel}
+                        </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        {endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-'}
+                        {endpoint.latencyLabel}
                       </TableCell>
                       <TableCell className="text-right">{endpoint.model_count}</TableCell>
                       <TableCell>
-                        {endpoint.last_seen ? formatRelativeTime(endpoint.last_seen) : '-'}
+                        {endpoint.lastSeenLabel}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -577,13 +405,13 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4">
               <div className="text-sm text-muted-foreground">
-                {`Showing ${(currentPage - 1) * PAGE_SIZE + 1} - ${Math.min(currentPage * PAGE_SIZE, sortedEndpoints.length)} of ${sortedEndpoints.length}`}
+                {paginationLabel}
               </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  onClick={previousPage}
                   disabled={currentPage === 1}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -594,7 +422,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  onClick={nextPage}
                   disabled={currentPage === totalPages}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -637,13 +465,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
       </AlertDialog>
 
       {/* Create Endpoint Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
-        if (!open) {
-          setCreateError(null)
-          setCreateForm({ name: '', base_url: '', api_key: '', notes: '' })
-        }
-        setIsCreateDialogOpen(open)
-      }}>
+      <Dialog open={isCreateDialogOpen} onOpenChange={onCreateDialogOpenChange}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Add New Endpoint</DialogTitle>
@@ -658,7 +480,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 id="endpoint-name"
                 placeholder="e.g., Production Ollama"
                 value={createForm.name}
-                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                onChange={(e) => updateCreateForm('name', e.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -667,7 +489,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 id="endpoint-url"
                 placeholder="e.g., http://localhost:11434"
                 value={createForm.base_url}
-                onChange={(e) => setCreateForm({ ...createForm, base_url: e.target.value })}
+                onChange={(e) => updateCreateForm('base_url', e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
                 The base URL of the OpenAI-compatible API endpoint
@@ -688,7 +510,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 type="password"
                 placeholder="sk-..."
                 value={createForm.api_key}
-                onChange={(e) => setCreateForm({ ...createForm, api_key: e.target.value })}
+                onChange={(e) => updateCreateForm('api_key', e.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -697,7 +519,7 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                 id="endpoint-notes"
                 placeholder="Description or notes about this endpoint"
                 value={createForm.notes}
-                onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })}
+                onChange={(e) => updateCreateForm('notes', e.target.value)}
               />
             </div>
             {createError && (

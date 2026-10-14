@@ -14,7 +14,7 @@ use super::DownloadError;
 /// LM Studio download request body
 #[derive(Debug, Serialize)]
 struct LmStudioDownloadRequest {
-    /// HuggingFace model URL (e.g., "https://huggingface.co/lmstudio-community/gemma-3-1b-it-GGUF")
+    /// HuggingFace model URL (e.g., `"https://huggingface.co/lmstudio-community/gemma-3-1b-it-GGUF"`)
     model: String,
     /// Quantization type (e.g., "Q4_K_M")
     quantization: String,

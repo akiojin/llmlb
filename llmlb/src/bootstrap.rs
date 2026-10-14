@@ -108,11 +108,10 @@ async fn initialize_inner(
     let health_check_interval_secs: u64 =
         get_env_with_fallback_parse("LLMLB_HEALTH_CHECK_INTERVAL", "HEALTH_CHECK_INTERVAL", 30);
 
-    // エンドポイントヘルスチェッカーをバックグラウンドで開始
+    // 初回チェックは通知購読開始後に実行する（開始は初期化の末尾）。
     let endpoint_health_checker = health::EndpointHealthChecker::new(endpoint_registry.clone())
         .with_load_manager(load_manager.clone())
         .with_interval(health_check_interval_secs);
-    endpoint_health_checker.start();
 
     // リクエスト履歴ストレージを初期化（SQLite使用）
     let request_history = std::sync::Arc::new(
@@ -158,6 +157,9 @@ async fn initialize_inner(
 
     crate::db::request_history::start_cleanup_task(request_history.clone());
     crate::db::endpoint_daily_stats::start_daily_stats_task(db_pool.clone());
+    crate::cloud_metrics::start_retention_task(db_pool.clone());
+    // 運用通知（SPEC #777）。SMTP 設定が未設定・不正でも起動は続け、送信だけを行わない
+    crate::notifications::start_daily_digest_task(db_pool.clone());
 
     // 管理者が存在しない場合は作成
     auth::bootstrap::ensure_admin_exists(&db_pool)
@@ -188,7 +190,9 @@ async fn initialize_inner(
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     if let Some(proxy) = tray_proxy {
-        update_manager.set_tray_proxy(proxy).await;
+        update_manager
+            .set_tray_proxy(std::sync::Arc::new(proxy))
+            .await;
     }
     update_manager.start_background_tasks();
 
@@ -315,25 +319,37 @@ async fn initialize_inner(
         });
     }
 
+    let event_bus = crate::events::create_shared_event_bus();
+    update_manager.set_event_bus(event_bus.clone());
+    endpoint_registry.set_event_bus(event_bus.clone());
+
     let state = AppState {
-        load_manager,
-        request_history,
-        db_pool,
-        jwt_secret,
-        http_client,
-        event_bus: {
-            let bus = crate::events::create_shared_event_bus();
-            update_manager.set_event_bus(bus.clone());
-            bus
+        balancer: crate::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
         },
-        endpoint_registry,
-        inference_gate,
-        shutdown: shutdown.clone(),
-        update_manager,
-        audit_log_writer,
-        audit_log_storage,
-        audit_archive_pool,
+        db_pool,
+        auth: crate::AuthState { jwt_secret },
+        http_client,
+        event_bus,
+        lifecycle: crate::LifecycleState {
+            inference_gate,
+            shutdown: shutdown.clone(),
+            update_manager,
+        },
+        audit: crate::AuditState {
+            writer: audit_log_writer,
+            storage: audit_log_storage,
+            archive_pool: audit_archive_pool,
+        },
     };
+
+    // 即時通知（SPEC #777）。日次ダイジェストと同じく、SMTP 設定が未設定・不正でも起動は続ける
+    crate::notifications::start_offline_alert_task(state.db_pool.clone(), &state.event_bus);
+
+    // start() は初回チェックを即時実行するため、publisherとsubscriberが揃ってから開始する。
+    endpoint_health_checker.start();
 
     InitContext {
         state,

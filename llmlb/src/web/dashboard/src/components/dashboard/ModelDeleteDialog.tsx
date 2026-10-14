@@ -1,6 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { endpointsApi } from '@/lib/api'
-import { toast } from '@/hooks/use-toast'
+import { useModelDeleteDialogViewModel } from '@/viewmodels/useModelDeleteDialogViewModel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -23,8 +21,6 @@ interface ModelDeleteDialogProps {
   onDeleted?: () => void
 }
 
-const DELETABLE_TYPES = new Set(['xllm', 'ollama'])
-
 export function ModelDeleteDialog({
   open,
   onOpenChange,
@@ -34,29 +30,8 @@ export function ModelDeleteDialog({
   endpointType,
   onDeleted,
 }: ModelDeleteDialogProps) {
-  const queryClient = useQueryClient()
-  const supportsDelete = DELETABLE_TYPES.has(endpointType)
-
-  const deleteMutation = useMutation({
-    mutationFn: () => endpointsApi.deleteModel(endpointId, modelId),
-    onSuccess: () => {
-      toast({
-        title: 'Model deleted',
-        description: `${modelId} has been removed from ${endpointName}`,
-      })
-      queryClient.invalidateQueries({ queryKey: ['endpoint-models', endpointId] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-endpoints'] })
-      queryClient.invalidateQueries({ queryKey: ['models'] })
-      onOpenChange(false)
-      onDeleted?.()
-    },
-    onError: (error) => {
-      toast({
-        title: 'Delete failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
+  const { supportsDelete, isDeleting, handleDelete } = useModelDeleteDialogViewModel({
+    modelId, endpointId, endpointName, endpointType, onOpenChange, onDeleted,
   })
 
   return (
@@ -114,10 +89,10 @@ export function ModelDeleteDialog({
           {supportsDelete && (
             <Button
               variant="destructive"
-              onClick={() => deleteMutation.mutate()}
-              disabled={deleteMutation.isPending}
+              onClick={handleDelete}
+              disabled={isDeleting}
             >
-              {deleteMutation.isPending && (
+              {isDeleting && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Delete

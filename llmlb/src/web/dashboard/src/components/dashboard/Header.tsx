@@ -13,9 +13,12 @@ import {
 import { ApiKeyModal } from '@/components/api-keys/ApiKeyModal'
 import { UserModal } from '@/components/users/UserModal'
 import { InvitationModal } from '@/components/invitations/InvitationModal'
+import { NotificationSettingsModal } from '@/components/notifications/NotificationSettingsModal'
 import {
+  Bell,
   Cpu,
   Key,
+  KeyRound,
   LogOut,
   Moon,
   Network,
@@ -61,6 +64,7 @@ export function Header({
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [userModalOpen, setUserModalOpen] = useState(false)
   const [invitationModalOpen, setInvitationModalOpen] = useState(false)
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const displayVersion = systemVersion ?? '--'
 
@@ -274,6 +278,10 @@ export function Header({
                       <Ticket className="mr-2 h-4 w-4" />
                       Invitation Codes
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setNotificationModalOpen(true)}>
+                      <Bell className="mr-2 h-4 w-4" />
+                      Notifications
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
                         window.location.hash = 'audit-log'
@@ -286,6 +294,14 @@ export function Header({
                   </>
                 )}
 
+                <DropdownMenuItem
+                  onClick={() => {
+                    window.location.href = '/dashboard/change-password.html'
+                  }}
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Change Password
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout} className="text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
@@ -300,6 +316,12 @@ export function Header({
       <ApiKeyModal open={apiKeyModalOpen} onOpenChange={setApiKeyModalOpen} />
       <UserModal open={userModalOpen} onOpenChange={setUserModalOpen} />
       <InvitationModal open={invitationModalOpen} onOpenChange={setInvitationModalOpen} />
+      {user?.role === 'admin' && (
+        <NotificationSettingsModal
+          open={notificationModalOpen}
+          onOpenChange={setNotificationModalOpen}
+        />
+      )}
     </>
   )
 }

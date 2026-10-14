@@ -87,6 +87,16 @@ export type {
 export { usersApi } from './users'
 export type { User, CreateUserResponse } from './users'
 
+export { notificationsApi } from './notifications'
+export type {
+  NotificationLanguage,
+  NotificationState,
+  NotificationSettings,
+  NotificationStatus,
+  NotificationRecipient,
+  NotificationSettingsResponse,
+} from './notifications'
+
 export { auditLogApi } from './audit-log'
 export type {
   AuditLogEntry,

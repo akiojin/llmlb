@@ -348,6 +348,8 @@ LM Studio / Ollama / vLLM / xLLM / OpenAI 互換サーバー側のセットア�
 | `LLMLB_REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（旧: `REQUEST_HISTORY_RETENTION_DAYS`） |
 | `LLMLB_REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、旧: `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS`） |
 | `LLMLB_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（旧: `LLM_DEFAULT_EMBEDDING_MODEL`） |
+| `LLMLB_SMTP_USERNAME` | - | 運用通知メールの SMTP ユーザー名（メール送信に必須。詳細は [docs/API.md](docs/API.md)） |
+| `LLMLB_SMTP_PASSWORD` | - | 運用通知メールの SMTP パスワード（メール送信に必須。DB には保存しない） |
 | `LLM_DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | 既定の埋め込みモデル（非推奨） |
 | `REQUEST_HISTORY_RETENTION_DAYS` | `7` | リクエスト履歴の保持日数（非推奨） |
 | `REQUEST_HISTORY_CLEANUP_INTERVAL_SECS` | `3600` | リクエスト履歴のクリーンアップ間隔（秒、非推奨） |
@@ -440,6 +442,10 @@ curl http://localhost:32768/v1/images/generations \
 - `GET /api/metrics/cloud` （Prometheus text）
   - `cloud_requests_total{provider,status}`
   - `cloud_request_latency_seconds{provider}`
+- `GET /api/metrics/cloud/export?format=json|csv&days=1..90`（provider × UTC日次の集計 export）
+  - 対象 provider: `openai` / `google` / `anthropic`
+  - フィールド: `date, provider, request_count, success_count, error_count, avg_latency_ms, p95_latency_ms`
+  - `format` 既定は `json`、`days` 既定は `90`。90日を超えるデータは保持しない
 
 ## アーキテクチャ
 
@@ -567,7 +573,7 @@ LLM Load Balancer (OpenAI-compatible)
 | `models.manage` | モデル登録/削除（`POST /api/models/register`, `DELETE /api/models/*`） |
 | `registry.read` | モデルレジストリ/一覧（`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`） |
 | `logs.read` | エンドポイントログ（`GET /api/endpoints/:id/logs`） |
-| `metrics.read` | メトリクス（`GET /api/metrics/cloud`） |
+| `metrics.read` | メトリクス（`GET /api/metrics/cloud`, `GET /api/metrics/cloud/export`） |
 
 APIキー管理はJWTで本人用エンドポイントを利用します:
 - `GET /api/me/api-keys`
@@ -582,6 +588,14 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。
+- ユーザー名はメールIDです（`POST /api/users` / `PUT /api/users/:id` はそれ以外の形式を 400 で拒否）。
+- `PUT /api/auth/change-password` は `current_password` と `new_password` が必須です（JWT必須）。
+- `POST /api/auth/forgot-password`（無認証）はメールIDに対してリセットトークンを発行し、
+  アカウントの有無に関わらず常に 202 を返します。メール送信機能はないため、リセットリンク
+  （`/dashboard/reset-password.html#token=...`）はサーバーログに出力され、運用者が本人に伝えます。
+- `POST /api/auth/reset-password`（無認証）はトークンと新パスワードでパスワードを更新します。
+  トークンは30分で失効し、1回限り有効で、再発行すると古いトークンは無効になります。
+  リセット後は既存セッションが無効化されます。
 - Cookie認証で変更系操作を行う場合は、`llmlb_csrf` Cookieの値を `X-CSRF-Token` ヘッダーで送信します。
 - Cookie認証の変更系操作では Origin/Referer が同一オリジンである必要があります。
 - API認証は常に必須です。無認証（匿名）モードはなく、未認証リクエストは 401 を返します。
@@ -645,7 +659,9 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - GET `/api/dashboard/stats/tokens/daily`
 - GET `/api/dashboard/stats/tokens/monthly`
 - GET `/api/dashboard/logs/lb`
+- GET / PUT `/api/dashboard/notifications`（運用通知の設定・状態・宛先、JWT: admin のみ）
 - GET `/api/metrics/cloud`（JWT: admin / APIキー: `metrics.read`）
+- GET `/api/metrics/cloud/export`（JWT: admin / APIキー: `metrics.read`）
 - GET `/api/endpoints/:id/logs`（JWT: admin / APIキー: `logs.read`）
 - POST `/api/endpoints/:id/chat/completions`（Endpoint Playground 用、JWTのみ）
 - GET `/dashboard/*`

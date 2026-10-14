@@ -23,7 +23,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use crate::{
     api::{
-        error::AppError,
+        error::OpenAIError,
         model_name::parse_quantized_model_name,
         models::load_registered_model,
         proxy::{forward_streaming_response, save_request_record},
@@ -57,7 +57,7 @@ fn error_response(error: LbError, status: StatusCode) -> Response {
 }
 
 /// OpenAI互換エラーレスポンスを返す（ハンドラで使用）
-fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response, AppError> {
+fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response, OpenAIError> {
     Ok(error_response(LbError::Http(msg.into()), status))
 }
 
@@ -168,6 +168,7 @@ impl AudioBackend {
 /// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
 async fn select_transcription_backend(state: &AppState) -> Result<AudioBackend, LbError> {
     let endpoints = state
+        .balancer
         .endpoint_registry
         .list_online_by_capability(EndpointCapability::AudioTranscription)
         .await;
@@ -185,6 +186,7 @@ async fn select_transcription_backend(state: &AppState) -> Result<AudioBackend, 
 /// EndpointRegistry経由でのみ取得（NodeRegistryフォールバック廃止）
 async fn select_speech_backend(state: &AppState) -> Result<AudioBackend, LbError> {
     let endpoints = state
+        .balancer
         .endpoint_registry
         .list_online_by_capability(EndpointCapability::AudioSpeech)
         .await;
@@ -211,7 +213,7 @@ pub async fn transcriptions(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let client_ip = Some(
         extract_client_ip_from_forwarded_headers(&headers)
             .unwrap_or_else(|| normalize_socket_ip(&addr)),
@@ -293,7 +295,7 @@ pub async fn transcriptions(
         Some(m) => m,
         None => return openai_error("Missing required field: model", StatusCode::BAD_REQUEST),
     };
-    let parsed = parse_quantized_model_name(&model).map_err(AppError::from)?;
+    let parsed = parse_quantized_model_name(&model).map_err(OpenAIError::from)?;
     let _lookup_model = parsed.base;
 
     // モデルの SpeechToText capability を検証
@@ -373,11 +375,11 @@ pub async fn transcriptions(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     // レスポンスを転送
     forward_streaming_response(response)
-        .map_err(AppError::from)
+        .map_err(OpenAIError::from)
         .map(|r| r.into_response())
 }
 
@@ -395,7 +397,7 @@ pub async fn speech(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<SpeechRequest>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let client_ip = Some(
         extract_client_ip_from_forwarded_headers(&headers)
             .unwrap_or_else(|| normalize_socket_ip(&addr)),
@@ -417,7 +419,7 @@ pub async fn speech(
         );
     }
 
-    let parsed = parse_quantized_model_name(&payload.model).map_err(AppError::from)?;
+    let parsed = parse_quantized_model_name(&payload.model).map_err(OpenAIError::from)?;
     let _lookup_model = parsed.base;
 
     // モデルの TextToSpeech capability を検証
@@ -480,7 +482,7 @@ pub async fn speech(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     if status.is_success() {
         // 音声バイナリをストリーミング転送
@@ -504,7 +506,7 @@ pub async fn speech(
     } else {
         // エラーレスポンスを転送
         forward_streaming_response(response)
-            .map_err(AppError::from)
+            .map_err(OpenAIError::from)
             .map(|r| r.into_response())
     }
 }

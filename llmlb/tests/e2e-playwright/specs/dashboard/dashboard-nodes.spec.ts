@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../helpers/endpoint.fixture';
 import { DashboardPage } from '../../pages/dashboard.page';
 
 /**
@@ -7,8 +7,7 @@ import { DashboardPage } from '../../pages/dashboard.page';
  * Note: The UI was renamed from "Nodes" to "Endpoints" as part of SPEC-e8e9326e.
  * These tests have been updated to reflect the current UI structure.
  *
- * Note: Static assets are embedded in the Rust binary at compile time.
- * After frontend changes, the Rust server must be rebuilt to reflect updates.
+ * Data-dependent cases provision their own endpoint, including on a fresh CI DB.
  */
 test.describe('Dashboard Endpoints Tab @dashboard', () => {
   let dashboard: DashboardPage;
@@ -78,50 +77,41 @@ test.describe('Dashboard Endpoints Tab @dashboard', () => {
   });
 
   test('E-06: Add Endpoint button exists', async ({ page }) => {
-    // Note: This test requires Rust server rebuild after frontend changes
-    // The static assets are embedded at compile time via include_dir! macro
-    // Skip until server is rebuilt with the new Add Endpoint button
-    test.skip(true, 'Requires Rust server rebuild to reflect frontend changes');
+    await expect(page.getByRole('button', { name: 'Add Endpoint', exact: true })).toBeVisible();
   });
 
   test('E-07: Clicking Add Endpoint opens dialog', async ({ page }) => {
-    // Note: This test requires Rust server rebuild after frontend changes
-    // Skip until server is rebuilt with the new Add Endpoint button
-    test.skip(true, 'Requires Rust server rebuild to reflect frontend changes');
+    await page.getByRole('button', { name: 'Add Endpoint', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add New Endpoint' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('Name')).toBeVisible();
+    await expect(dialog.getByLabel('Base URL')).toBeVisible();
   });
 
-  test('E-08: Select all checkbox exists', async ({ page }) => {
-    // Note: Select all checkbox is NOT currently implemented in the dashboard
-    // This test is skipped until the feature is implemented
-    test.skip(true, 'Select all checkbox not implemented');
+  test('E-08: Select all checkbox exists', async ({ page, endpoint }) => {
+    await page.getByPlaceholder('Search by name or URL...').fill(endpoint.name);
+    await expect(page.getByRole('row').filter({ hasText: endpoint.name })).toBeVisible();
+    // Measure absence with a populated table; fail if the feature appears so this skip is revisited.
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+    test.skip(true, 'Select all checkbox not implemented (populated table: 0 checkboxes)');
   });
 
   test('E-09: Export JSON button is clickable', async ({ page }) => {
-    // Note: Export buttons are NOT currently implemented in the dashboard
-    // This test is skipped until the feature is implemented
-    test.skip(true, 'Export JSON not implemented');
+    await expect(page.locator('#export-json').or(page.getByRole('button', { name: /export.*json/i }))).toHaveCount(0);
+    test.skip(true, 'Export JSON not implemented (0 matching controls)');
   });
 
   test('E-10: Export CSV button is clickable', async ({ page }) => {
-    // Note: Export buttons are NOT currently implemented in the dashboard
-    // This test is skipped until the feature is implemented
-    test.skip(true, 'Export CSV not implemented');
+    await expect(page.locator('#export-csv').or(page.getByRole('button', { name: /export.*csv/i }))).toHaveCount(0);
+    test.skip(true, 'Export CSV not implemented (0 matching controls)');
   });
 
-  test('E-11: Status badge shows correct color', async ({ page }) => {
-    const tableBody = page.locator('tbody');
-    const rows = tableBody.locator('tr');
+  test('E-11: Status badge shows correct color', async ({ page, endpoint }) => {
+    await page.getByPlaceholder('Search by name or URL...').fill(endpoint.name);
+    const rows = page.getByRole('row').filter({ hasText: endpoint.name });
+    await expect(rows).toHaveCount(1);
+    await expect(rows).toContainText('Online');
     const rowCount = await rows.count();
-
-    if (rowCount === 0) {
-      test.skip(true, 'No endpoint rows found');
-    }
-
-    const emptyCell = tableBody.locator('td[colspan]');
-    const hasEmptyMessage = await emptyCell.isVisible().catch(() => false);
-    if (hasEmptyMessage) {
-      test.skip(true, 'No endpoints registered');
-    }
 
     let verifiedRows = 0;
 
@@ -166,21 +156,12 @@ test.describe('Dashboard Endpoints Tab @dashboard', () => {
     expect(verifiedRows).toBeGreaterThan(0);
   });
 
-  test('E-12: Endpoint detail button works', async ({ page }) => {
-    // If there are endpoints, detail button should open a modal
-    const tableBody = page.locator('tbody');
-    const detailButtons = tableBody.locator('button[title="Details"]');
-    const buttonCount = await detailButtons.count();
-
-    if (buttonCount > 0) {
-      await detailButtons.first().click();
-      // Wait for modal to appear
-      const dialog = page.locator('[role="dialog"]');
-      const isDialogVisible = await dialog.isVisible({ timeout: 3000 }).catch(() => false);
-      expect(isDialogVisible).toBe(true);
-    } else {
-      // No endpoints available - test passes
-      test.skip(true, 'No endpoints to test detail view');
-    }
+  test('E-12: Endpoint detail button works', async ({ page, endpoint }) => {
+    await page.getByPlaceholder('Search by name or URL...').fill(endpoint.name);
+    const row = page.getByRole('row').filter({ hasText: endpoint.name });
+    await expect(row).toBeVisible();
+    await row.locator('button[title="Details"]').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog').getByLabel('Display Name')).toHaveValue(endpoint.name);
   });
 });

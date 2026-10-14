@@ -8,11 +8,11 @@ use crate::AppState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Extension, Json,
 };
 
-use super::error::AppError;
+use super::error::{AppError, HandlerError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -63,12 +63,9 @@ pub struct ListInvitationsResponse {
 }
 
 /// Admin権限チェックヘルパー
-#[allow(clippy::result_large_err)]
-fn check_admin(claims: &Claims) -> Result<(), Response> {
+fn check_admin(claims: &Claims) -> Result<(), HandlerError> {
     if claims.role != UserRole::Admin {
-        return Err(
-            AppError(LbError::Authorization("Admin access required".to_string())).into_response(),
-        );
+        return Err(AppError(LbError::Authorization("Admin access required".to_string())).into());
     }
     Ok(())
 }
@@ -90,7 +87,7 @@ pub async fn create_invitation(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Json(request): Json<CreateInvitationRequest>,
-) -> Result<(StatusCode, Json<CreateInvitationResponse>), Response> {
+) -> Result<(StatusCode, Json<CreateInvitationResponse>), HandlerError> {
     check_admin(&claims)?;
 
     // ユーザーIDをパース
@@ -138,7 +135,7 @@ pub async fn create_invitation(
 pub async fn list_invitations(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
-) -> Result<Json<ListInvitationsResponse>, Response> {
+) -> Result<Json<ListInvitationsResponse>, HandlerError> {
     check_admin(&claims)?;
 
     let invitations = crate::db::invitations::list(&app_state.db_pool)
@@ -186,7 +183,7 @@ pub async fn revoke_invitation(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, Response> {
+) -> Result<StatusCode, HandlerError> {
     check_admin(&claims)?;
 
     let revoked = crate::db::invitations::revoke(&app_state.db_pool, id)
@@ -206,7 +203,7 @@ pub async fn revoke_invitation(
         Err(AppError(LbError::NotFound(
             "Invitation not found or already used/revoked".to_string(),
         ))
-        .into_response())
+        .into())
     }
 }
 

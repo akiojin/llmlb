@@ -14,11 +14,14 @@ interface ApiErrorOptions {
 }
 
 interface ApiErrorBodyShape {
-  error?: {
-    message?: string
-    type?: string
-    code?: string | number
-  }
+  // llmlb's own `/api/*` errors use a plain string; OpenAI-compatible errors use an object.
+  error?:
+    | string
+    | {
+        message?: string
+        type?: string
+        code?: string | number
+      }
   message?: string
 }
 
@@ -50,6 +53,12 @@ function parseApiErrorBody(bodyText: string): ApiErrorOptions {
 
   try {
     const parsed = JSON.parse(bodyText) as ApiErrorBodyShape
+    if (typeof parsed?.error === 'string') {
+      return {
+        message: parsed.error,
+        rawBody: bodyText,
+      }
+    }
     if (parsed?.error) {
       return {
         message: parsed.error.message,

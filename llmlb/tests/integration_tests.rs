@@ -60,6 +60,9 @@ mod endpoint_viewer_access_test;
 #[path = "integration/endpoint_type_detection_test.rs"]
 mod endpoint_type_detection_test;
 
+#[path = "integration/engine_detection_test.rs"]
+mod engine_detection_test;
+
 #[path = "integration/endpoint_type_filter_test.rs"]
 mod endpoint_type_filter_test;
 
@@ -86,15 +89,6 @@ mod request_storage_test;
 mod request_capture_test;
 
 // 既存の統合テスト（ハーネス未登録だったものを追加）
-#[path = "integration/test_metrics.rs"]
-mod test_metrics;
-
-#[path = "integration/test_node_lifecycle.rs"]
-mod test_node_lifecycle;
-
-#[path = "integration/test_health_monitor.rs"]
-mod test_health_monitor;
-
 #[path = "integration/test_proxy.rs"]
 mod test_proxy;
 

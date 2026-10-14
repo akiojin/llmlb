@@ -100,9 +100,7 @@ async fn test_create_invitation_as_admin() {
                 .method("POST")
                 .uri("/api/invitations")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({})).unwrap(),
-                ))
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
                 .unwrap(),
         )
         .await
@@ -156,9 +154,7 @@ async fn test_create_invitation_requires_auth() {
                 .method("POST")
                 .uri("/api/invitations")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({})).unwrap(),
-                ))
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
                 .unwrap(),
         )
         .await
@@ -180,9 +176,7 @@ async fn test_create_invitation_viewer_forbidden() {
                 .method("POST")
                 .uri("/api/invitations")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({})).unwrap(),
-                ))
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
                 .unwrap(),
         )
         .await
@@ -234,9 +228,7 @@ async fn test_list_invitations_after_create() {
                 .method("POST")
                 .uri("/api/invitations")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({})).unwrap(),
-                ))
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
                 .unwrap(),
         )
         .await
@@ -259,7 +251,7 @@ async fn test_list_invitations_after_create() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let data: Value = serde_json::from_slice(&body).unwrap();
     let invitations = data["invitations"].as_array().unwrap();
-    assert!(invitations.len() >= 1);
+    assert!(!invitations.is_empty());
     assert!(invitations[0]["id"].is_string());
     assert!(invitations[0]["status"].is_string());
 }
@@ -324,16 +316,12 @@ async fn test_revoke_invitation() {
                 .method("POST")
                 .uri("/api/invitations")
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({})).unwrap(),
-                ))
+                .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
                 .unwrap(),
         )
         .await
         .unwrap();
-    let create_body = to_bytes(create_resp.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let create_body = to_bytes(create_resp.into_body(), usize::MAX).await.unwrap();
     let create_data: Value = serde_json::from_slice(&create_body).unwrap();
     let invitation_id = create_data["id"].as_str().unwrap();
 
@@ -342,7 +330,7 @@ async fn test_revoke_invitation() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/invitations/{}", invitation_id))
+                .uri(format!("/api/invitations/{}", invitation_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -364,7 +352,7 @@ async fn test_revoke_nonexistent_invitation() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/invitations/{}", fake_id))
+                .uri(format!("/api/invitations/{}", fake_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -385,7 +373,7 @@ async fn test_revoke_invitation_requires_auth() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(&format!("/api/invitations/{}", fake_id))
+                .uri(format!("/api/invitations/{}", fake_id))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -407,7 +395,7 @@ async fn test_revoke_invitation_viewer_forbidden() {
         .oneshot(
             bearer_request(&jwt)
                 .method("DELETE")
-                .uri(&format!("/api/invitations/{}", fake_id))
+                .uri(format!("/api/invitations/{}", fake_id))
                 .body(Body::empty())
                 .unwrap(),
         )

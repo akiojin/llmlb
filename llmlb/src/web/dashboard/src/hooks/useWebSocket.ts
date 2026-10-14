@@ -1,38 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { invalidateDashboardSubscriptions } from './dashboardSubscriptions'
 
-export type DashboardEventType =
-  | 'connected'
-  | 'NodeRegistered'
-  | 'NodeStatusChanged'
-  | 'MetricsUpdated'
-  | 'NodeRemoved'
-  | 'TpsUpdated'
-  | 'UpdateStateChanged'
-
-export interface DashboardEvent {
-  type: DashboardEventType
-  data?: {
-    runtime_id?: string
-    endpoint_id?: string
-    machine_name?: string
-    ip_address?: string
-    status?: string
-    old_status?: string
-    new_status?: string
-    cpu_usage?: number
-    memory_usage?: number
-    gpu_usage?: number
-    model_id?: string
-    tps?: number
-    output_tokens?: number
-    duration_ms?: number
-  }
-  message?: string
-}
+import type { DashboardChange } from '@/lib/dashboardResources'
 
 interface UseWebSocketOptions {
-  onMessage?: (event: DashboardEvent) => void
+  onMessage?: (event: DashboardChange) => void
   onConnect?: () => void
   onDisconnect?: () => void
   enabled?: boolean
@@ -60,7 +33,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const connectRef = useRef<() => void>(() => {})
   const shouldReconnectRef = useRef(false)
   const [isConnected, setIsConnected] = useState(false)
-  const [lastEvent, setLastEvent] = useState<DashboardEvent | null>(null)
+  const [lastEvent, setLastEvent] = useState<DashboardChange | null>(null)
 
   // Stabilize callback references with useRef to prevent infinite reconnection loops.
   // Without this, inline callbacks passed by callers create new references every render,
@@ -102,35 +75,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as DashboardEvent
+          const data = JSON.parse(event.data) as DashboardChange
           setLastEvent(data)
           onMessageRef.current?.(data)
 
-          // Invalidate relevant queries based on event type
-          // Query keys must match those used in Dashboard.tsx
-          switch (data.type) {
-            case 'NodeRegistered':
-            case 'NodeRemoved':
-            case 'NodeStatusChanged':
-              // Invalidate dashboard overview query (includes endpoints, stats)
-              queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
-              queryClient.invalidateQueries({ queryKey: ['request-responses'] })
-              break
-            case 'MetricsUpdated':
-              // Invalidate dashboard overview for metrics updates
-              queryClient.invalidateQueries({ queryKey: ['dashboard-overview'] })
-              break
-            case 'TpsUpdated':
-              // SPEC-4bb5b55f: Invalidate TPS data for the affected endpoint
-              if (data.data?.endpoint_id) {
-                queryClient.invalidateQueries({ queryKey: ['endpoint-model-tps', data.data.endpoint_id] })
-              }
-              break
-            case 'UpdateStateChanged':
-              // Invalidate system-info so other clients see update state changes
-              queryClient.invalidateQueries({ queryKey: ['system-info'] })
-              break
-          }
+          invalidateDashboardSubscriptions(queryClient, data)
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err)
         }

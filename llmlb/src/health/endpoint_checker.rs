@@ -642,6 +642,46 @@ mod tests {
         crate::db::test_utils::test_db_pool().await
     }
 
+    /// テストごとに一意なベースパスを返す。エンドポイントの `base_url` とモックのパスを
+    /// この配下に置くと、外部からの迷い込み要求は 404 になり、呼び出し回数には
+    /// テスト対象のヘルスチェッカー自身の要求だけが数えられる。
+    fn isolated_base_path() -> String {
+        format!("/{}", Uuid::new_v4())
+    }
+
+    /// `check_endpoint` 成功時に spawn される自動モデル同期は `/v1/models` を叩く。
+    /// 高負荷時はアサーションより先に届くことがあるため、呼び出し回数を数えるテストは
+    /// バックグラウンド要求が届き切るのを待ってから検証する（Issue #748）。
+    async fn wait_for_background_requests() {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+
+    /// ヘルスチェック経路の要求だけを数えるテスト向けに、自動モデル同期を直近実行済みとして
+    /// スロットリングさせ、`/v1/models` へのバックグラウンド要求を発生させない。
+    /// 自動モデル同期そのものは `test_health_check_triggers_auto_model_sync` などで検証する。
+    async fn suppress_auto_model_sync(checker: &mut EndpointHealthChecker, endpoint_id: Uuid) {
+        checker.auto_sync_models_interval = Duration::from_secs(60 * 60);
+        checker
+            .last_auto_sync_models
+            .write()
+            .await
+            .insert(endpoint_id, Instant::now());
+    }
+
+    /// 同一ホストで並走する別プロセス（E2E の `llmlb serve` など）のヘルスチェッカーは、
+    /// 解放済みのエフェメラルポートを再利用した MockServer にも
+    /// `GET /api/health` / `GET /v1/models` を送ってくる（Issue #748）。
+    /// 呼び出し回数を数えるテストは、この迷い込み要求を注入しても結果が変わらないことを保証する。
+    async fn simulate_foreign_health_poll(mock: &MockServer) {
+        let client = reqwest::Client::new();
+        for foreign_path in ["/api/health", "/v1/models"] {
+            let _ = client
+                .get(format!("{}{}", mock.uri(), foreign_path))
+                .send()
+                .await;
+        }
+    }
+
     #[tokio::test]
     async fn test_health_checker_creation() {
         let _lock = TEST_LOCK.lock().await;
@@ -724,12 +764,13 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
 
         let mock = MockServer::start().await;
+        let base_path = isolated_base_path();
         let health_call_count = Arc::new(AtomicUsize::new(0));
         let v1_call_count = Arc::new(AtomicUsize::new(0));
 
         let health_call_count_clone = health_call_count.clone();
         Mock::given(method("GET"))
-            .and(path("/api/health"))
+            .and(path(format!("{base_path}/api/health")))
             .respond_with(move |_req: &wiremock::Request| {
                 health_call_count_clone.fetch_add(1, Ordering::SeqCst);
                 ResponseTemplate::new(200).set_body_json(json!({"health": "ok"}))
@@ -739,7 +780,7 @@ mod tests {
 
         let v1_call_count_clone = v1_call_count.clone();
         Mock::given(method("GET"))
-            .and(path("/v1/models"))
+            .and(path(format!("{base_path}/v1/models")))
             .respond_with(move |_req: &wiremock::Request| {
                 v1_call_count_clone.fetch_add(1, Ordering::SeqCst);
                 ResponseTemplate::new(200).set_body_json(json!({
@@ -752,13 +793,17 @@ mod tests {
 
         let endpoint = Endpoint::new(
             "Test".to_string(),
-            mock.uri(),
+            format!("{}{base_path}", mock.uri()),
             EndpointType::OpenaiCompatible,
         );
         registry.add(endpoint.clone()).await.unwrap();
 
-        let checker = EndpointHealthChecker::new(registry.clone());
+        simulate_foreign_health_poll(&mock).await;
+
+        let mut checker = EndpointHealthChecker::new(registry.clone());
+        suppress_auto_model_sync(&mut checker, endpoint.id).await;
         checker.check_endpoint(&endpoint).await.unwrap();
+        wait_for_background_requests().await;
 
         assert_eq!(health_call_count.load(Ordering::SeqCst), 0);
         assert_eq!(v1_call_count.load(Ordering::SeqCst), 1);
@@ -774,12 +819,13 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
 
         let mock = MockServer::start().await;
+        let base_path = isolated_base_path();
         let health_call_count = Arc::new(AtomicUsize::new(0));
         let v1_call_count = Arc::new(AtomicUsize::new(0));
 
         let health_call_count_clone = health_call_count.clone();
         Mock::given(method("GET"))
-            .and(path("/api/health"))
+            .and(path(format!("{base_path}/api/health")))
             .respond_with(move |_req: &wiremock::Request| {
                 health_call_count_clone.fetch_add(1, Ordering::SeqCst);
                 ResponseTemplate::new(200).set_body_json(json!({
@@ -798,7 +844,7 @@ mod tests {
 
         let v1_call_count_clone = v1_call_count.clone();
         Mock::given(method("GET"))
-            .and(path("/v1/models"))
+            .and(path(format!("{base_path}/v1/models")))
             .respond_with(move |_req: &wiremock::Request| {
                 v1_call_count_clone.fetch_add(1, Ordering::SeqCst);
                 ResponseTemplate::new(200).set_body_json(json!({
@@ -809,11 +855,19 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            format!("{}{base_path}", mock.uri()),
+            EndpointType::Xllm,
+        );
         registry.add(endpoint.clone()).await.unwrap();
 
-        let checker = EndpointHealthChecker::new(registry.clone());
+        simulate_foreign_health_poll(&mock).await;
+
+        let mut checker = EndpointHealthChecker::new(registry.clone());
+        suppress_auto_model_sync(&mut checker, endpoint.id).await;
         checker.check_endpoint(&endpoint).await.unwrap();
+        wait_for_background_requests().await;
 
         assert_eq!(health_call_count.load(Ordering::SeqCst), 1);
         assert_eq!(v1_call_count.load(Ordering::SeqCst), 0);
@@ -831,12 +885,13 @@ mod tests {
         let registry = EndpointRegistry::new(pool).await.unwrap();
 
         let mock = MockServer::start().await;
+        let base_path = isolated_base_path();
         let health_call_count = Arc::new(AtomicUsize::new(0));
         let v1_call_count = Arc::new(AtomicUsize::new(0));
 
         let health_call_count_clone = health_call_count.clone();
         Mock::given(method("GET"))
-            .and(path("/api/health"))
+            .and(path(format!("{base_path}/api/health")))
             .respond_with(move |_req: &wiremock::Request| {
                 health_call_count_clone.fetch_add(1, Ordering::SeqCst);
                 ResponseTemplate::new(500).set_body_string("internal error")
@@ -846,7 +901,7 @@ mod tests {
 
         let v1_call_count_clone = v1_call_count.clone();
         Mock::given(method("GET"))
-            .and(path("/v1/models"))
+            .and(path(format!("{base_path}/v1/models")))
             .respond_with(move |_req: &wiremock::Request| {
                 v1_call_count_clone.fetch_add(1, Ordering::SeqCst);
                 ResponseTemplate::new(200).set_body_json(json!({
@@ -857,11 +912,19 @@ mod tests {
             .mount(&mock)
             .await;
 
-        let endpoint = Endpoint::new("Test".to_string(), mock.uri(), EndpointType::Xllm);
+        let endpoint = Endpoint::new(
+            "Test".to_string(),
+            format!("{}{base_path}", mock.uri()),
+            EndpointType::Xllm,
+        );
         registry.add(endpoint.clone()).await.unwrap();
 
-        let checker = EndpointHealthChecker::new(registry.clone());
+        simulate_foreign_health_poll(&mock).await;
+
+        let mut checker = EndpointHealthChecker::new(registry.clone());
+        suppress_auto_model_sync(&mut checker, endpoint.id).await;
         checker.check_endpoint(&endpoint).await.unwrap();
+        wait_for_background_requests().await;
 
         assert_eq!(health_call_count.load(Ordering::SeqCst), 1);
         assert_eq!(v1_call_count.load(Ordering::SeqCst), 1);

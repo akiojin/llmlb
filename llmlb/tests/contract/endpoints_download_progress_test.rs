@@ -49,24 +49,30 @@ async fn build_app() -> TestApp {
     )
     .expect("Failed to create update manager");
     let state = AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
-            db_pool.clone(),
-        )),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+                db_pool.clone(),
+            )),
+            archive_pool: None,
+        },
     };
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
@@ -101,14 +107,14 @@ fn admin_request(admin_key: &str) -> axum::http::request::Builder {
 /// GET /api/endpoints/:id/download/progress - 正常系: 進捗一覧取得
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_get_download_progress_list() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::xllm::spawn_mock_xllm().await;
 
     // エンドポイントを登録
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": format!("http://{}", mock.addr())
     });
 
     let response = app
@@ -156,14 +162,14 @@ async fn test_get_download_progress_list() {
 /// GET /api/endpoints/:id/download/progress - 正常系: 進捗詳細のフィールド検証
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_download_progress_response_structure() {
     let TestApp { app, admin_key } = build_app().await;
+    let mock = crate::support::xllm::spawn_mock_xllm().await;
 
     // エンドポイントを登録
     let payload = json!({
         "name": "xLLM Endpoint",
-        "base_url": "http://localhost:8080"
+        "base_url": format!("http://{}", mock.addr())
     });
 
     let response = app
@@ -221,7 +227,6 @@ async fn test_download_progress_response_structure() {
 /// GET /api/endpoints/:id/download/progress - 異常系: 存在しないエンドポイント
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_download_progress_endpoint_not_found() {
     let TestApp { app, admin_key } = build_app().await;
 
@@ -242,7 +247,6 @@ async fn test_download_progress_endpoint_not_found() {
 /// GET /api/endpoints/:id/download/progress - 異常系: 認証なし
 #[tokio::test]
 #[serial]
-#[ignore = "API未実装 - T124で実装予定"]
 async fn test_download_progress_unauthorized() {
     let TestApp { app, .. } = build_app().await;
 

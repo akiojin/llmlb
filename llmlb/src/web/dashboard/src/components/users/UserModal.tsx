@@ -1,13 +1,4 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { usersApi, type User, type CreateUserResponse } from '@/lib/api'
-import {
-  copyToClipboard,
-  formatRelativeTime,
-  selectTextForManualCopy,
-  cleanupManualCopyBuffer,
-} from '@/lib/utils'
-import { toast } from '@/hooks/use-toast'
+import { useUserModalViewModel } from '@/viewmodels/useUserModalViewModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -59,175 +50,51 @@ import {
   Check,
 } from 'lucide-react'
 
+const EMAIL_HINT =
+  'Destination for operational notifications, which are sent to administrators only. It is not a login identifier: users sign in with their username.'
+
+interface NotificationEmailFieldProps {
+  id: string
+  value: string
+  onChange: (value: string) => void
+}
+
+function NotificationEmailField({ id, value, onChange }: NotificationEmailFieldProps) {
+  const hintId = `${id}-hint`
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>Notification email (optional)</Label>
+      <Input
+        id={id}
+        type="email"
+        autoComplete="off"
+        placeholder="ops@example.com"
+        aria-describedby={hintId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <p id={hintId} className="text-xs text-muted-foreground">
+        {EMAIL_HINT}
+      </p>
+    </div>
+  )
+}
+
 interface UserModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
 export function UserModal({ open, onOpenChange }: UserModalProps) {
-  const queryClient = useQueryClient()
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editUser, setEditUser] = useState<User | null>(null)
-  const [deleteUser, setDeleteUser] = useState<User | null>(null)
-  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-
-  // Form state
-  const [formUsername, setFormUsername] = useState('')
-  const [formPassword, setFormPassword] = useState('')
-  const [formRole, setFormRole] = useState<'admin' | 'viewer'>('viewer')
-
-  // Fetch users
-  const { data: users, isLoading, refetch } = useQuery({
-    queryKey: ['users'],
-    queryFn: usersApi.list,
-    enabled: open,
-  })
-
-  // Create user mutation
-  const createMutation = useMutation({
-    mutationFn: (data: { username: string; role: string }) =>
-      usersApi.create(data),
-    onSuccess: (result: CreateUserResponse) => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
-      resetForm()
-      setCreateOpen(false)
-      setGeneratedPassword(result.generated_password)
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to create user',
-        description:
-          error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  // Update user mutation
-  const updateMutation = useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string
-      data: { username?: string; password?: string; role?: string }
-    }) => usersApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
-      resetForm()
-      setEditUser(null)
-      toast({ title: 'User updated' })
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to update user',
-        description:
-          error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  // Delete user mutation
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => usersApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
-      setDeleteUser(null)
-      toast({ title: 'User deleted' })
-    },
-    onError: (error) => {
-      toast({
-        title: 'Failed to delete user',
-        description:
-          error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    },
-  })
-
-  // Reset form
-  const resetForm = () => {
-    setFormUsername('')
-    setFormPassword('')
-    setFormRole('viewer')
-  }
-
-  useEffect(() => {
-    if (!open) {
-      cleanupManualCopyBuffer()
-    }
-  }, [open])
-
-  const handleMainOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      cleanupManualCopyBuffer()
-    }
-    onOpenChange(nextOpen)
-  }
-
-  const handleCreateOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      resetForm()
-    }
-    setCreateOpen(nextOpen)
-  }
-
-  const handleOpenCreateDialog = () => {
-    resetForm()
-    setCreateOpen(true)
-  }
-
-  const handleOpenEditDialog = (user: User) => {
-    setFormUsername(user.username)
-    setFormPassword('')
-    setFormRole(user.role as 'admin' | 'viewer')
-    setEditUser(user)
-  }
-
-  const handleCloseEditDialog = () => {
-    setEditUser(null)
-    resetForm()
-  }
-
-  const handleCreate = () => {
-    createMutation.mutate({
-      username: formUsername,
-      role: formRole,
-    })
-  }
-
-  const handleUpdate = () => {
-    if (!editUser) return
-    const data: { username?: string; password?: string; role?: string } = {}
-    if (formUsername !== editUser.username) data.username = formUsername
-    if (formPassword) data.password = formPassword
-    if (formRole !== editUser.role) data.role = formRole
-    updateMutation.mutate({ id: editUser.id, data })
-  }
-
-  const handleCopyPassword = async () => {
-    if (!generatedPassword) return
-    try {
-      const { method } = await copyToClipboard(generatedPassword)
-      if (method !== 'manual') {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-        toast({ title: 'Copied to clipboard' })
-        return
-      }
-
-      setCopied(false)
-      selectTextForManualCopy(generatedPassword)
-      toast({
-        title: 'Auto copy unavailable',
-        description: 'Press Ctrl+C to copy the selected value.',
-      })
-    } catch {
-      toast({ title: 'Failed to copy', variant: 'destructive' })
-    }
-  }
+  const {
+    createOpen, editUser, deleteUser, setDeleteUser, generatedPassword, copied,
+    formUsername, setFormUsername, formPassword, setFormPassword,
+    formRole, setFormRole, formEmail, setFormEmail, users, isLoading,
+    isCreating, isUpdating, isDeleting, canCreate, canUpdate,
+    handleMainOpenChange, handleCreateOpenChange, handleOpenCreateDialog,
+    handleOpenEditDialog, handleCloseEditDialog, handleCreate, handleUpdate,
+    handleCopyPassword, handleClosePassword, handlePasswordOpenChange, handleRefresh, handleDelete,
+  } = useUserModalViewModel({ open, onOpenChange })
 
   const getRoleBadge = (role: string) => {
     if (role === 'admin') {
@@ -249,7 +116,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={handleMainOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
@@ -260,14 +127,14 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="min-w-0 space-y-4 py-4">
             {/* Actions */}
             <div className="flex justify-between">
               <Button onClick={handleOpenCreateDialog}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add User
               </Button>
-              <Button variant="outline" size="icon" onClick={() => refetch()}>
+              <Button variant="outline" size="icon" onClick={handleRefresh}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -278,7 +145,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                 <div className="flex h-full items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
-              ) : !users || (users as User[]).length === 0 ? (
+              ) : !users || users.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Users className="h-8 w-8" />
                   <p>No users</p>
@@ -287,21 +154,27 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Username</TableHead>
+                      <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
+                      <TableHead>Notification email</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(users as User[]).map((user) => (
+                    {users.map((user) => (
                       <TableRow key={user.id}>
-                        <TableCell className="font-medium">
+                        <TableCell className="break-all font-medium">
                           {user.username}
                         </TableCell>
                         <TableCell>{getRoleBadge(user.role)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatRelativeTime(user.created_at)}
+                        <TableCell className="break-all text-sm">
+                          {user.email ?? (
+                            <span className="text-muted-foreground">Not set</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          {user.createdAtLabel}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -309,6 +182,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
+                              aria-label={`Edit ${user.username}`}
                               onClick={() => handleOpenEditDialog(user)}
                             >
                               <Edit className="h-4 w-4" />
@@ -317,6 +191,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
+                              aria-label={`Delete ${user.username}`}
                               onClick={() => setDeleteUser(user)}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
@@ -344,10 +219,11 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="create-username">Username</Label>
+              <Label htmlFor="create-username">Email</Label>
               <Input
                 id="create-username"
-                placeholder="johndoe"
+                type="email"
+                placeholder="user@example.com"
                 value={formUsername}
                 onChange={(e) => setFormUsername(e.target.value)}
               />
@@ -364,6 +240,11 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                 </SelectContent>
               </Select>
             </div>
+            <NotificationEmailField
+              id="create-email"
+              value={formEmail}
+              onChange={setFormEmail}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => handleCreateOpenChange(false)}>
@@ -371,9 +252,9 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!formUsername || createMutation.isPending}
+              disabled={!canCreate}
             >
-              {createMutation.isPending && (
+              {isCreating && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Create
@@ -385,13 +266,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
       {/* Generated Password Dialog */}
       <Dialog
         open={!!generatedPassword}
-        onOpenChange={(open) => {
-          if (!open) {
-            setGeneratedPassword(null)
-            setCopied(false)
-            cleanupManualCopyBuffer()
-          }
-        }}
+        onOpenChange={handlePasswordOpenChange}
       >
         <DialogContent>
           <DialogHeader>
@@ -420,11 +295,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           </div>
           <DialogFooter>
             <Button
-              onClick={() => {
-                setGeneratedPassword(null)
-                setCopied(false)
-                cleanupManualCopyBuffer()
-              }}
+              onClick={handleClosePassword}
             >
               I have saved the password
             </Button>
@@ -450,9 +321,10 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-username">Username</Label>
+              <Label htmlFor="edit-username">Email</Label>
               <Input
                 id="edit-username"
+                type="email"
                 value={formUsername}
                 onChange={(e) => setFormUsername(e.target.value)}
               />
@@ -479,6 +351,11 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                 </SelectContent>
               </Select>
             </div>
+            <NotificationEmailField
+              id="edit-email"
+              value={formEmail}
+              onChange={setFormEmail}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={handleCloseEditDialog}>
@@ -486,9 +363,9 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </Button>
             <Button
               onClick={handleUpdate}
-              disabled={!formUsername || updateMutation.isPending}
+              disabled={!canUpdate}
             >
-              {updateMutation.isPending && (
+              {isUpdating && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Update
@@ -509,10 +386,10 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
+              onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleteMutation.isPending && (
+              {isDeleting && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Delete

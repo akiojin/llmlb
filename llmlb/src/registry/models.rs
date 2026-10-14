@@ -149,10 +149,10 @@ impl ModelInfo {
 /// HuggingFace URLからrepo_idを抽出
 ///
 /// 入力例:
-/// - "https://huggingface.co/openai/gpt-oss-20b" → "openai/gpt-oss-20b"
-/// - "http://huggingface.co/openai/gpt-oss-20b" → "openai/gpt-oss-20b"
-/// - "openai/gpt-oss-20b" → "openai/gpt-oss-20b" (そのまま)
-/// - "gpt-oss-20b" → "gpt-oss-20b" (そのまま)
+/// - `"https://huggingface.co/openai/gpt-oss-20b"` → `"openai/gpt-oss-20b"`
+/// - `"http://huggingface.co/openai/gpt-oss-20b"` → `"openai/gpt-oss-20b"`
+/// - `"openai/gpt-oss-20b"` → `"openai/gpt-oss-20b"` (そのまま)
+/// - `"gpt-oss-20b"` → `"gpt-oss-20b"` (そのまま)
 ///
 /// 備考:
 /// - huggingface_hubのsnapshot_downloadはrepo_id形式（namespace/repo_name）を期待する

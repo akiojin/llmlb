@@ -13,8 +13,16 @@ export type EndpointType =
   | 'xllm'
   | 'ollama'
   | 'vllm'
+  | 'sglang'
+  | 'lmdeploy'
+  | 'xinference'
+  | 'lemonade'
+  | 'tgi'
+  | 'koboldcpp'
   | 'lm_studio'
   | 'llamacpp'
+  | 'strata'
+  | 'project_maya'
   | 'openai_compatible'
   | 'unknown'
 
@@ -46,6 +54,18 @@ export function getRecommendedInferenceTimeoutLabel(
       return 'Recommended for LM Studio: 600 seconds'
     case 'vllm':
       return 'Recommended for vLLM: 120 seconds'
+    case 'sglang':
+      return 'Recommended for SGLang: 120 seconds'
+    case 'lmdeploy':
+      return 'Recommended for LMDeploy: 120 seconds'
+    case 'xinference':
+      return 'Recommended for Xinference: 120 seconds'
+    case 'lemonade':
+      return 'Recommended for Lemonade: 120 seconds'
+    case 'tgi':
+      return 'Recommended for TGI: 120 seconds'
+    case 'koboldcpp':
+      return 'Recommended for KoboldCpp: 120 seconds'
     case 'llamacpp':
       return 'Recommended for llama.cpp: 120 seconds'
     case 'openai_compatible':
@@ -194,6 +214,7 @@ export const endpointsApi = {
         capabilities?: string[]
         max_tokens?: number | null
         last_checked?: string
+        canonical_name?: string | null
       }>
     }>(`/api/endpoints/${id}/models`),
 
@@ -215,9 +236,9 @@ export const endpointsApi = {
     }),
 
   /** SPEC-e8e9326e: Get download progress (xLLM only) */
-  getDownloadProgress: (id: string) =>
+  getDownloadProgress: (id: string, signal?: AbortSignal) =>
     fetchWithAuth<{ tasks: DownloadTask[] }>(
-      `/api/endpoints/${id}/download/progress`
+      `/api/endpoints/${id}/download/progress`, { signal }
     ),
 
   /** SPEC-8c32349f: Get today's request statistics for an endpoint */

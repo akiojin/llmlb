@@ -1,62 +1,56 @@
 // Load Test を admin ロール限定にするフロント実装のソースレベル回帰テスト。
 //
-// 目的: LB Playground の Load Test が UI/API 双方で admin 限定であることを、
-// コンポーネントソースの構造で担保する（viewer には Load Test トグル非表示・
-// startLoadTest ガード・admin 限定エンドポイントへの送信）。
+// viewer に Load Test トグルが表示されないこと、admin が実行すると
+// `chatApi.completeLoadTest` が呼ばれることは、描画して検証する
+// `llmlb/src/web/dashboard/src/pages/LoadBalancerPlayground.test.tsx` が担う。
+// ここには、描画では観測できないソースの性質だけを残す。
 
-fn lb_playground_source() -> String {
-    include_str!("../../src/web/dashboard/src/pages/LoadBalancerPlayground.tsx").to_string()
+fn lb_playground_viewmodel_source() -> String {
+    super::source::dashboard_file("viewmodels/useLoadBalancerPlaygroundViewModel.ts")
 }
 
 fn chat_api_source() -> String {
-    include_str!("../../src/web/dashboard/src/lib/api/chat.ts").to_string()
+    super::source::dashboard_file("lib/api/chat.ts")
 }
 
-#[test]
-fn lb_playground_derives_is_admin_from_auth() {
-    let source = lb_playground_source();
-    assert!(
-        source.contains("useAuth") && source.contains("user?.role === 'admin'"),
-        "LoadBalancerPlayground should derive isAdmin from useAuth"
-    );
-}
-
-#[test]
-fn load_test_mode_toggle_is_admin_gated() {
-    let source = lb_playground_source();
-    // Load Test モードトグルが isAdmin 条件下でのみ描画されること
-    assert!(
-        source.contains("{isAdmin && (") && source.contains("id=\"lb-mode-load-test\""),
-        "Load Test mode toggle must be rendered only when isAdmin"
-    );
-}
-
+// トグルが非表示の viewer は UI から startLoadTest に到達できないため、
+// 多重防御のガードはソースで担保する。
 #[test]
 fn start_load_test_guards_on_admin() {
-    let source = lb_playground_source();
+    let source = lb_playground_viewmodel_source();
+    let guard = super::source::section(
+        &source,
+        "const startLoadTest = async () => {",
+        "const totalRequests",
+    );
+    let guard = guard.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        source.contains("if (!isAdmin"),
+        guard.contains("if (!isAdmin || !pg.selectedModel || isLoadTesting) return"),
         "startLoadTest must bail out for non-admin users"
     );
 }
 
 #[test]
 fn load_test_uses_admin_only_endpoint() {
-    let lb = lb_playground_source();
-    assert!(
-        lb.contains("chatApi.completeLoadTest("),
-        "load test worker must call the admin-only completeLoadTest"
-    );
-
     let chat = chat_api_source();
+    let load_test = super::source::section(&chat, "completeLoadTest:", "getModels:");
+    let load_test = load_test.split_whitespace().collect::<String>();
     assert!(
-        chat.contains("completeLoadTest")
-            && chat.contains("/api/dashboard/playground/load-test/chat/completions"),
+        load_test
+            .contains("postChatCompletion('/api/dashboard/playground/load-test/chat/completions'"),
         "chat API must expose completeLoadTest targeting the admin-only load-test endpoint"
     );
-    // 通常 Chat は従来の全ユーザー向けエンドポイントのまま
+}
+
+#[test]
+fn regular_chat_uses_authenticated_endpoint() {
+    let chat = chat_api_source();
+    // 通常 Chat は従来の全ユーザー向けエンドポイントのまま。
+    // 分離して、Load Test と通常 Chat の dispatch を個別に mutation 確認する。
+    let regular_chat = super::source::section(&chat, "complete:", "completeLoadTest:");
+    let regular_chat = regular_chat.split_whitespace().collect::<String>();
     assert!(
-        chat.contains("/api/dashboard/playground/chat/completions"),
+        regular_chat.contains("postChatCompletion('/api/dashboard/playground/chat/completions'"),
         "regular chat endpoint must remain for all users"
     );
 }

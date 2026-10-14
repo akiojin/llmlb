@@ -10,7 +10,7 @@ const BIND_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 
 /// axumサーバーを起動し、シャットダウンシグナルを待機する
 pub async fn run(state: AppState, bind_addr: &str) {
-    let shutdown = state.shutdown.clone();
+    let shutdown = state.lifecycle.shutdown.clone();
 
     let app = crate::api::create_app(state);
 

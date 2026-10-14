@@ -39,22 +39,28 @@ async fn rejecting_gate_returns_503_with_retry_after_for_v1_inference() {
 
     let gate_handle = inference_gate.clone();
     let app = api::create_app(AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+            archive_pool: None,
+        },
     });
 
     gate_handle.start_rejecting();

@@ -8,7 +8,20 @@
 
 /// Read the index.css file content for testing (React dashboard source)
 fn get_styles_css() -> String {
-    include_str!("../../src/web/dashboard/src/index.css").to_string()
+    super::source::dashboard_file("index.css")
+}
+
+fn theme_variables<'a>(css: &'a str, selector: &str) -> &'a str {
+    // Match the whole selector, not the suffix of e.g. `.unused .dark`.
+    let rule = regex::Regex::new(&format!(
+        r"(?m)^[ \t]*{}[ \t]*\{{([^}}]*)\}}",
+        regex::escape(selector)
+    ))
+    .expect("theme rule expression must be valid");
+    rule.captures(css)
+        .and_then(|captures| captures.get(1))
+        .unwrap_or_else(|| panic!("theme rule missing: {selector}"))
+        .as_str()
 }
 
 // ============================================
@@ -16,12 +29,12 @@ fn get_styles_css() -> String {
 // ============================================
 
 #[test]
-fn dark_theme_is_default() {
+fn dark_theme_exists() {
     let css = get_styles_css();
-    // Dark theme should be defined in :root or .dark
+    // Theme selection belongs to useTheme; this contract checks the dark palette.
     assert!(
-        css.contains(":root") || css.contains(".dark"),
-        "Root or .dark should define theme variables"
+        theme_variables(&css, ".dark").contains("--background:"),
+        ".dark should define theme variables"
     );
 }
 
@@ -47,12 +60,14 @@ fn all_themes_define_core_css_variables() {
         "--card",
     ];
 
-    for var in core_vars {
-        assert!(
-            css.contains(var),
-            "CSS should define core variable: {}",
-            var
-        );
+    for selector in [":root", ".dark"] {
+        let variables = theme_variables(&css, selector);
+        for var in core_vars {
+            assert!(
+                variables.contains(&format!("{var}:")),
+                "{selector} should define core variable: {var}"
+            );
+        }
     }
 }
 
@@ -124,11 +139,12 @@ fn no_legacy_themes_exist() {
 
 #[test]
 fn responsive_breakpoints_exist() {
-    let css = get_styles_css();
-    // Tailwind uses @media for responsive styles
+    // Tailwind v4 generates viewport rules from responsive classes in Views.
+    // The stylesheet's reduced-motion @media is not a viewport breakpoint.
+    let header = super::source::dashboard_file("components/dashboard/Header.tsx");
     assert!(
-        css.contains("@media") || css.contains("@layer"),
-        "CSS should have media queries or layers"
+        header.contains("sm:") || header.contains("md:") || header.contains("lg:"),
+        "Header should use responsive Tailwind breakpoints"
     );
 }
 

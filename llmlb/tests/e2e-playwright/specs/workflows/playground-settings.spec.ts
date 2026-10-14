@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { ensureDashboardLogin, deleteEndpointsByName, listEndpoints } from '../../helpers/api-helpers'
+import { ensureDashboardLogin, deleteEndpointsByName, listEndpoints, openDashboardRoute } from '../../helpers/api-helpers'
 import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '../../helpers/mock-openai-endpoint'
 
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768'
@@ -52,7 +52,7 @@ test.describe('Playground Settings @playground', () => {
     const ep = endpoints.find((e) => e.name === endpointName)
     expect(ep).toBeTruthy()
 
-    await page.goto(`${API_BASE}/dashboard/#playground/${ep!.id}`)
+    await openDashboardRoute(page, `playground/${ep!.id}`)
     await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 })
 
     // If a system prompt textarea is visible, set it
@@ -83,7 +83,7 @@ test.describe('Playground Settings @playground', () => {
     const ep = endpoints.find((e) => e.name === endpointName)
     expect(ep).toBeTruthy()
 
-    await page.goto(`${API_BASE}/dashboard/#playground/${ep!.id}`)
+    await openDashboardRoute(page, `playground/${ep!.id}`)
     await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 })
 
     // Streaming badge should be visible by default
@@ -106,7 +106,7 @@ test.describe('Playground Settings @playground', () => {
     const ep = endpoints.find((e) => e.name === endpointName)
     expect(ep).toBeTruthy()
 
-    await page.goto(`${API_BASE}/dashboard/#playground/${ep!.id}`)
+    await openDashboardRoute(page, `playground/${ep!.id}`)
     await expect(page.getByText('Start a conversation')).toBeVisible({ timeout: 20000 })
 
     // The cURL button is a regular button with text "cURL" in the toolbar

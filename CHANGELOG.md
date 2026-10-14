@@ -2,6 +2,80 @@
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-10-14
+
+`v6.1.0` 以降に develop へ着地した変更を SPEC・機能単位にまとめたもの。
+
+### Added
+
+- Endpoints: Strata、Project Maya、SGLang、LMDeploy、Xinference、Lemonade、Hugging Face TGI、KoboldCpp のエンドポイント種別と自動識別を追加（#886, #887）。独自クライアントへの影響は「互換性に関する注意」を参照
+- Models: GLM-5.3-Flash、Qwen3.8-Flash-Next、Qwen3.6-35B-A3B、Gemma 4 31B / 12B IT、Nemotron 3.5 Lightning、Kimi K3、Llama 4 Scout の計 8 モデルに canonical 対応と確認済みランタイム名・コンテキスト長を追加（#884）
+- Notifications: 全登録エンドポイントの状態一覧を 1 日 1 回メールで管理者へ送る日次ダイジェスト、メール送信基盤（SMTP）、admin 専用の通知設定 API、通知先 `users.email` を追加（SPEC #777, #787）
+- Notifications: エンドポイントが Offline に到達したとき管理者へ即時メール通知する購読タスクを追加（SPEC #777, #810）
+- Dashboard: ユーザー管理の通知先 email と、日次ダイジェスト・SMTP 設定を編集する通知設定ダイアログを追加（SPEC #777, #791）
+- Auth: forgot/reset パスワード API、30 分有効・単回使用のリセットトークン、パスワード変更時の現在パスワード検証を追加。ダッシュボードにリセット画面と現在パスワード入力を追加（SPEC #580, #695）。リセットリンクはサーバーログに出力
+- System Info: xLLM の `GET /api/system` から GPU / CPU デバイス情報を取得し、エンドポイント詳細へ反映（#825）
+- Metrics: クラウドメトリクスの日次エクスポート API `GET /api/metrics/cloud/export`（JSON / CSV、provider × UTC 日の集計、90 日保持）を追加（SPEC #582, #734）
+- API: `/v1/messages` の `top_k` と `metadata` を上流へ転送（#779）
+- API: エンドポイント管理 API のエラーに機械判定用の固定 `code` を追加（#827）
+- Dashboard: モデル一覧で canonical モデル名を区別表示（#738）
+- Checks: マイグレーション採番の衝突検出（#739）、Dependabot グループ件名長（#741）、canonical モデルマッピングの鮮度（#778）、canonical イベントの publisher 不在（#784）、未リリース変更のバージョン更新漏れ（#813）の各検査を `make quality-checks` に追加
+- Checks: フレーク観測台帳と誘発パターン検査（SPEC #838）、コンポーネント内の React Query 直接呼び出し検査（#824）、resource 購読レジストリと無効化 hook（SPEC #821）を追加
+- Checks: macOS 標準 Bash 3.2 で誤解釈される、非 ASCII 文字に隣接した波括弧なしの変数展開を検出する検査を `make quality-checks` と CI に追加（#889）
+- CI: Rust 行カバレッジ 80% ゲート（#730）、dashboard の typecheck / lint / コンポーネントテスト（#773, #786）、運用通知の受け入れテスト（#787）、module-structure（#772）を必須チェックに追加
+- CI: Hugging Face の新モデル・話題モデルを毎週検知し、重複を避けて GitHub Issue に登録する workflow を追加。手動実行にも対応（#885）
+- Tests: 公開ルートの契約台帳ガードと未到達ルートの契約テスト（#709, #808）、互換 API の未知フィールド透過の契約テスト（#779）、招待 API 契約テストの登録（SPEC #580, #767）、change-password と Model Add Wizard の E2E（#731）、vitest + React Testing Library によるコンポーネントテスト層（#786）、`/ws/dashboard` の resource 通知・認証経路・ViewModel 購読網羅性の契約（#799, SPEC #821）、canonical screen registry からの E2E 画面網羅（#800）、TPS/EMA・canonical 解決・異常系の integration テスト（#788, #802）
+
+### Changed
+
+- Endpoints: llama.cpp の自動識別から機能しない上流 `/v1/version` 判定を削除し、`/v1/models` の `Server` ヘッダーによる判定へ統一（#887）
+- Dashboard: 画面・モデル操作・管理モーダル・Playground・統計・ログ・ダウンロード進捗の状態とデータ取得を ViewModel に分離し、query key と resource 購読を集約（SPEC #821）
+- API: `/ws/dashboard` の通知を `{changed, id?}` に変更し、接続時の welcome フレームを廃止（SPEC #821）。移行方法は「互換性に関する注意」を参照
+- Auth: ユーザー作成・更新時のユーザー名にメール ID 形式の検証を適用（SPEC #580, #695）
+- 構造標準化（SPEC #699）: 1,500 行超のファイルを submodule へ分割し、`mod.rs` を re-export のみに整理。`AppState` をドメイン別サブステートへ、`create_app()` をドメイン別 Router へ分割（#736, #745, #746, #747, #749, #752, #757, #758, #762, #764, #772）
+- Tests: 1,500 行超のテストファイル 6 本を機能単位に分割し、行数上限をテストコードにも CI で強制（SPEC #585, #812）
+- DB: 新規マイグレーションの採番を UTC タイムスタンプ形式へ変更（`001`〜`032` は凍結）（#739）
+- Checks: ローカルの clippy を CI と同一フラグに統一（#729）
+- Deps: `rand` を更新し、`tray-icon` の Linux 専用 feature を無効化して gtk3 系 47 パッケージを lock から削除（#801, #803）
+- Deps: cargo / npm 依存パッケージ更新（dependabot: #681, #682, #689, #710, #720, #726, #794, #842, #843）
+- CI / Tests: GUI・依存変更時の macOS clippy を追加し、モデル管理 API・images/audio・認証付き dashboard の未実行テストを有効化。MVVM 契約・購読網羅性・cookie 失効を検証し、E2E の skip・無実行成功と並列フレークの観測を整理（SPEC #821, #838）
+- Docs: 運用通知の設定と動作（#787）、互換 API で破棄・拒否されるフィールドの一覧（#779）、検証済みモデルカタログのマッピング（#708）、指示ファイルの事実不整合の解消（#743）
+
+### Fixed
+
+- Endpoints: Ollama 互換 API を併せ持つ推論サーバーを Ollama と誤認しないよう、各エンジン固有の識別を優先（#887）
+- API: OpenAI 互換 API のエラー出口を構造化し、Anthropic 側のエラー形式を維持（#830）。移行方法は「互換性に関する注意」を参照
+- Notifications: 初回ヘルスチェックを通知購読後に開始し、起動直後の Offline 通知の取りこぼしを防止（#834）
+- Dashboard: エンドポイント状態変化で画面を自動更新（#692）し、通知設定の保存と再取得が競合して編集内容が失われる問題を修正（SPEC #777, #791）
+- Auth: forgot-password の応答時間差によるアカウント列挙を防止（SPEC #580, #695）
+- GUI: macOS トレイのテンプレート API を移行し、依存更新後のビルドを修正（#845）
+- Checks: GNU awk で警告になる不要な正規表現エスケープを除去（#838, #841）
+- API: 上流へ送るモデル名の解決規則を全推論ルートで一本化（#795）
+- Events: エンドポイントの登録・削除確定時と、リクエスト完了時の `MetricsUpdated` のイベントを発行（#784）
+- Notifications: 日次ダイジェストから URL 埋め込みの認証情報を除外し、通知設定の抜け道と email 保存の非原子性を解消（#787）
+- Audit: 旧 DB の監査ログバッチハッシュを一回性の移行で再基準化し、改ざん誤検知を解消。archive 欠落バッチは移行時に拒否（SPEC #583, #705）
+- Models: canonical モデルマッピングと Gemma のランタイムルーティングを是正（#708, #778）、エンドポイントのモデル削除後に再同期（#707）
+- Update: ペイロード準備の失敗時に payload を Error へ遷移（#765）、`is_dir_writable` のプローブ名を一意化して誤判定を解消（#759）
+- Dashboard: vite dev server で `/ws` を中継（#807）、TS 7 で壊れた typecheck / lint（#773）と eslint の既存エラー 15 件（#740）を修正
+- API: ハンドラの `Err` を Box 化して `result_large_err` を解消（#725）
+- Security: `h2`（RUSTSEC-2026-0258）と `rustls`（RUSTSEC-2026-0285）を修正版へ更新（#725）、`crossbeam-epoch` と `quick-xml` の RustSec advisory 3 件を解消（#703）
+- Security: `quinn-proto` を 0.11.18 へ更新し、RUSTSEC-2026-0338 / 0339 / 0340 / 0341 / 0342 の 5 件を解消（#888）
+- CI: Dependabot の npm group 分割と commitlint 件名長制限の限定除外（#741, #755）、`cargo doc -D warnings` と markdownlint の検証失敗（#733）を解消
+- Tests: ヘルスチェック回数検証（#753）、更新テストの固定 sleep と共有データディレクトリ（#763, #766）、E2E のナビゲーション競合（#774）によるフレークを解消
+- Tests: ログイン失敗とユーザー削除後のログイン確認 E2E を認証応答に同期し、パスワード検証中にトーストの確認期限が切れる問題を修正（#888）
+- Checks: macOS 標準 Bash 3.2 の UTF-8 環境で日本語に隣接する変数展開が誤解釈され、品質チェックが失敗する問題を修正。Bats ハーネスの日本語テスト名処理も安定化（#889）
+- Tests: `make e2e-playwright` が Playwright の失敗を握りつぶす問題を修正し、`make quality-checks` と pre-push へ失敗を伝播（#890）
+
+### 互換性に関する注意
+
+- **エンドポイント種別**（#886, #887）: 管理 API の `endpoint_type` に `strata` / `project_maya` / `sglang` / `lmdeploy` / `xinference` / `lemonade` / `tgi` / `koboldcpp` を追加。既存エンドポイントも再検出で新種別に変わりうるため、独自クライアントの列挙型・網羅的な分岐を更新してください。
+- **互換 API のエラー形式**（#830、`ae1b3827`）: OpenAI 互換 API のハンドラー由来の文字列 `error` を、`error.message` / `error.type` / `error.code` を持つオブジェクトへ変更。
+  独自クライアントは `error.message` を表示し、文言一致による判定を HTTP ステータス・`error.type`・`error.code`（HTTP ステータスの文字列）へ切り替えてください。Anthropic `/v1/messages` は既存の `type: "error"` 形式を維持し、`error.code` を追加します。
+- **Dashboard WebSocket**（SPEC #821、`ee781bf9`）: `/ws/dashboard` は `{type, data}` から `{changed, id?}` へ変更し、`connected` welcome フレームを廃止。
+  独自クライアントは `changed` と任意の `id` で再取得し、接続完了を WebSocket の `onopen` で判定してください。組み込みダッシュボードは更新後に再読み込みしてください。
+- **パスワード変更とユーザー管理**（SPEC #580, #695）: `PUT /api/auth/change-password` で `current_password` が必須となり、ユーザー作成・更新時はユーザー名にメール ID 形式を要求。
+  独自クライアントは現在のパスワードも送信し、ユーザー作成・更新フォームでメール ID 形式を検証してください。旧トークンは失効するため、変更 API の新しい token/cookie を保持し、リセット後は再ログインしてください。
+
 ## [6.1.0](https://github.com/akiojin/llmlb/compare/v6.0.0...v6.1.0) (2026-06-30)
 
 ### Added

@@ -1,6 +1,6 @@
 //! OpenAI request history sanitization contract test
 //!
-//! TDD RED: このテストはサニタイズ実装前に失敗する必要があります。
+//! 添付メディアの生データ（base64）がリクエスト履歴に保存されないことを検証する。
 //!
 //! NOTE: NodeRegistry廃止（SPEC-e8e9326e）に伴い、EndpointRegistryベースに更新済み。
 
@@ -60,22 +60,28 @@ async fn build_app(openai_base_url: String) -> TestApp {
     )
     .expect("Failed to create update manager");
     let state = AppState {
-        load_manager,
-        request_history: request_history.clone(),
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history: request_history.clone(),
+        },
         db_pool: db_pool.clone(),
-        jwt_secret,
+        auth: llmlb::AuthState { jwt_secret },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer: llmlb::audit::writer::AuditLogWriter::new(
-            llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
-            llmlb::audit::writer::AuditLogWriterConfig::default(),
-        ),
-        audit_log_storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: llmlb::audit::writer::AuditLogWriter::new(
+                llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
+                llmlb::audit::writer::AuditLogWriterConfig::default(),
+            ),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+            archive_pool: None,
+        },
     };
 
     TestApp {
@@ -99,7 +105,6 @@ async fn wait_for_one_record(
 
 #[tokio::test]
 #[serial]
-#[ignore = "TDD RED: request history sanitization not implemented"]
 async fn request_history_redacts_inline_media_data() {
     let mock_server = MockServer::start().await;
 
@@ -158,7 +163,7 @@ async fn request_history_redacts_inline_media_data() {
     let record = wait_for_one_record(&app.request_history).await;
     let stored = serde_json::to_string(&record.request_body).expect("stored json");
 
-    // 添付の生データが履歴に残らないこと（RED: 現状は残るため失敗するはず）
+    // 添付の生データが履歴に残らないこと
     assert!(
         !stored.contains(sensitive_image),
         "request history should redact image base64"

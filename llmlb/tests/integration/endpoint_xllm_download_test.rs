@@ -233,7 +233,6 @@ async fn test_xllm_model_download_multiple() {
 
 /// US8-シナリオ4: ダウンロード完了後、モデル一覧に反映
 #[tokio::test]
-#[ignore = "ダウンロードAPI未実装 - 全タスク実装後に有効化"]
 async fn test_xllm_model_download_completion() {
     let mock = create_xllm_mock().await;
 

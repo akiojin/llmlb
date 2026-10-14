@@ -67,19 +67,27 @@ async fn build_app() -> (String, Router) {
     let jwt_secret = test_jwt_secret();
 
     let app = api::create_app(AppState {
-        load_manager,
-        request_history,
+        balancer: llmlb::BalancerState {
+            load_manager,
+            endpoint_registry,
+            request_history,
+        },
         db_pool,
-        jwt_secret: jwt_secret.clone(),
+        auth: llmlb::AuthState {
+            jwt_secret: jwt_secret.clone(),
+        },
         http_client,
         event_bus: llmlb::events::create_shared_event_bus(),
-        endpoint_registry,
-        inference_gate,
-        shutdown,
-        update_manager,
-        audit_log_writer,
-        audit_log_storage,
-        audit_archive_pool: None,
+        lifecycle: llmlb::LifecycleState {
+            inference_gate,
+            shutdown,
+            update_manager,
+        },
+        audit: llmlb::AuditState {
+            writer: audit_log_writer,
+            storage: audit_log_storage,
+            archive_pool: None,
+        },
     });
 
     (jwt_secret, app)

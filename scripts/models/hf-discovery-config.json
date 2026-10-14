@@ -1,0 +1,17 @@
+{
+  "authors": [
+    "Qwen",
+    "zai-org",
+    "google",
+    "nvidia",
+    "meta-llama",
+    "moonshotai",
+    "mistralai",
+    "deepseek-ai",
+    "openai",
+    "microsoft"
+  ],
+  "recent_days": 14,
+  "trending_limit": 100,
+  "page_size": 100
+}

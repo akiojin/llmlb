@@ -335,18 +335,3 @@ async fn test_node_connection_failure_capture() {
         .expect("connection failure record should exist");
     assert!(record.response_body.is_none());
 }
-
-/// T013: ストリーミングレスポンスのキャプチャ integration test
-#[tokio::test]
-#[ignore = "streaming capture test harness not implemented yet"]
-async fn test_streaming_response_capture() {}
-
-/// T013: ストリーミングエラーのキャプチャ
-#[tokio::test]
-#[ignore = "streaming error capture test harness not implemented yet"]
-async fn test_streaming_error_capture() {}
-
-/// T011-T013: プロキシのパフォーマンスへの影響テスト
-#[tokio::test]
-#[ignore = "performance benchmark not implemented yet"]
-async fn test_capture_performance_impact() {}

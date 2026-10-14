@@ -1,6 +1,6 @@
-//! E2E RED: 画像生成API（generations/edits/variations）
+//! E2E: 画像生成API（generations/edits/variations）
 //!
-//! 実装前の期待振る舞いを定義する（ignored）。
+//! スタブエンドポイントを登録し、llmlb 経由の転送結果を検証する。
 
 use crate::support;
 use axum::{
@@ -122,7 +122,6 @@ fn dummy_png_bytes() -> Vec<u8> {
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: image generations E2E not yet implemented"]
 async fn e2e_images_generations_returns_image() {
     let node = spawn_image_stub().await;
     let lb = support::lb::spawn_test_lb().await;
@@ -151,7 +150,6 @@ async fn e2e_images_generations_returns_image() {
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: image edits E2E not yet implemented"]
 async fn e2e_images_edits_returns_image() {
     let node = spawn_image_stub().await;
     let lb = support::lb::spawn_test_lb().await;
@@ -185,7 +183,6 @@ async fn e2e_images_edits_returns_image() {
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: image variations E2E not yet implemented"]
 async fn e2e_images_variations_returns_image() {
     let node = spawn_image_stub().await;
     let lb = support::lb::spawn_test_lb().await;

@@ -34,6 +34,9 @@ pub struct User {
     /// パスワード最終変更時刻（epochミリ秒）。JWTセッション無効化判定に使用する
     #[serde(default)]
     pub password_changed_at: i64,
+    /// 運用通知の宛先メールアドレス（ログイン識別子ではない。未設定は `None`）
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 /// APIキー
@@ -293,6 +296,7 @@ mod tests {
             last_login: None,
             must_change_password: false,
             password_changed_at: 0,
+            email: None,
         };
         assert_eq!(user.username, "alice");
         assert_eq!(user.role, UserRole::Viewer);
@@ -427,6 +431,7 @@ mod tests {
             last_login: Some(Utc::now()),
             must_change_password: true,
             password_changed_at: 0,
+            email: None,
         };
         let json = serde_json::to_string(&user).unwrap();
         let back: User = serde_json::from_str(&json).unwrap();
@@ -448,6 +453,7 @@ mod tests {
             last_login: None,
             must_change_password: false,
             password_changed_at: 0,
+            email: None,
         };
         assert_eq!(user.role, UserRole::Admin);
     }

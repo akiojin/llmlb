@@ -7,7 +7,7 @@
  * - Workflow helpers (register, wait for completion)
  */
 
-import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
 
 const API_BASE = process.env.BASE_URL || 'http://127.0.0.1:32768';
 const AUTH_HEADER = { Authorization: 'Bearer sk_debug' };
@@ -497,35 +497,46 @@ export async function registerModelViaUI(
 }
 
 /**
- * Navigate to Dashboard and login if needed
+ * Navigate to Dashboard and login if needed.
+ *
+ * The app decides between the dashboard and its own redirect to login.html from
+ * the `/api/auth/me` response, so branch on that same response instead of probing
+ * the DOM mid-redirect. Returns only once the dashboard itself is rendered: a
+ * caller that navigates right after would otherwise race the post-login redirect.
  */
 export async function ensureDashboardLogin(page: Page): Promise<void> {
+  const authCheck = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/auth/me',
+  );
   await page.goto(`${API_BASE}/dashboard`);
-  await page.waitForLoadState('networkidle').catch(() => {
-    // WebSocket connections may prevent networkidle; fall back to waiting for dashboard content
-  });
 
-  // Check if login form is present
-  const loginForm = page.locator('form').filter({ hasText: 'Sign in' });
-  if (await loginForm.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await page.fill('input[type="text"], input[name="username"], #username', 'admin');
-    await page.fill('input[type="password"], input[name="password"], #password', 'test');
+  if (!(await authCheck).ok()) {
+    // Unauthenticated: the app redirects to login.html on its own.
+    await expect(page).toHaveURL(/\/login/);
+    await page.fill('#username', 'admin');
+    await page.fill('#password', 'test');
     await page.click('button[type="submit"]');
-
-    // Wait for either dashboard content or URL change
-    await Promise.race([
-      page.waitForURL('**/dashboard/**', { timeout: 10000 }),
-      page.waitForSelector('[data-stat="total-endpoints"]', { timeout: 10000 }),
-      page.waitForSelector('button[role="tab"]', { timeout: 10000 }),
-    ]).catch(() => {
-      // Ignore timeout, continue if we're on dashboard
-    });
-
-    // Verify we're on dashboard
-    await page.waitForLoadState('networkidle').catch(() => {
-      // WebSocket connections may prevent networkidle; continue if dashboard content is visible
-    });
+    // `**/dashboard/**` would also match login.html, so wait for the URL to leave it.
+    await expect(page).not.toHaveURL(/\/login/);
   }
+
+  await expect(page.locator('#theme-toggle')).toBeVisible({ timeout: 15000 });
+}
+
+/**
+ * Open a dashboard hash route (e.g. `playground/<id>`) from an already loaded
+ * dashboard. Hash routes are same-document navigations, so `page.goto` (which
+ * waits for a `load` that a competing app redirect can abort) is the wrong tool.
+ */
+export async function openDashboardRoute(page: Page, route: string): Promise<void> {
+  await page.evaluate((hash) => {
+    window.location.hash = hash;
+  }, route);
+  await expect(page).toHaveURL(new RegExp(`/dashboard/#${escapeRegExp(route)}$`));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ============================================================================

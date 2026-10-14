@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
-        error::AppError,
+        error::OpenAIError,
         model_name::parse_quantized_model_name,
         models::load_registered_model,
         proxy::{forward_streaming_response, save_request_record},
@@ -55,7 +55,7 @@ fn error_response(error: LbError, status: StatusCode) -> Response {
 }
 
 /// OpenAI互換エラーレスポンスを返す（ハンドラで使用）
-fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response, AppError> {
+fn openai_error<T: Into<String>>(msg: T, status: StatusCode) -> Result<Response, OpenAIError> {
     Ok(error_response(LbError::Http(msg.into()), status))
 }
 
@@ -167,6 +167,7 @@ impl ImageBackend {
 async fn select_image_backend(state: &AppState) -> Result<ImageBackend, LbError> {
     // EndpointRegistry経由で検索（SPEC-e8e9326e: 新方式のみ）
     let endpoints = state
+        .balancer
         .endpoint_registry
         .list_online_by_capability(EndpointCapability::ImageGeneration)
         .await;
@@ -196,7 +197,7 @@ pub async fn generations(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     Json(payload): Json<ImageGenerationRequest>,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let client_ip = Some(
         extract_client_ip_from_forwarded_headers(&headers)
             .unwrap_or_else(|| normalize_socket_ip(&addr)),
@@ -215,7 +216,7 @@ pub async fn generations(
         return openai_error("n must be between 1 and 10", StatusCode::BAD_REQUEST);
     }
 
-    let parsed = parse_quantized_model_name(&payload.model).map_err(AppError::from)?;
+    let parsed = parse_quantized_model_name(&payload.model).map_err(OpenAIError::from)?;
     let _lookup_model = parsed.base;
 
     // モデルの ImageGeneration capability を検証
@@ -278,11 +279,11 @@ pub async fn generations(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     // レスポンスを転送
     forward_streaming_response(response)
-        .map_err(AppError::from)
+        .map_err(OpenAIError::from)
         .map(|r| r.into_response())
 }
 
@@ -302,7 +303,7 @@ pub async fn edits(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let client_ip = Some(
         extract_client_ip_from_forwarded_headers(&headers)
             .unwrap_or_else(|| normalize_socket_ip(&addr)),
@@ -510,11 +511,11 @@ pub async fn edits(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     // レスポンスを転送
     forward_streaming_response(response)
-        .map_err(AppError::from)
+        .map_err(OpenAIError::from)
         .map(|r| r.into_response())
 }
 
@@ -532,7 +533,7 @@ pub async fn variations(
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
     mut multipart: Multipart,
-) -> Result<Response, AppError> {
+) -> Result<Response, OpenAIError> {
     let client_ip = Some(
         extract_client_ip_from_forwarded_headers(&headers)
             .unwrap_or_else(|| normalize_socket_ip(&addr)),
@@ -700,11 +701,11 @@ pub async fn variations(
         api_key_id,
     );
 
-    save_request_record(state.request_history.clone(), record);
+    save_request_record(state.balancer.request_history.clone(), record);
 
     // レスポンスを転送
     forward_streaming_response(response)
-        .map_err(AppError::from)
+        .map_err(OpenAIError::from)
         .map(|r| r.into_response())
 }
 

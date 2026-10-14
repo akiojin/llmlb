@@ -73,6 +73,7 @@ pub async fn get_endpoint_logs(
     use crate::types::endpoint::EndpointStatus;
 
     let endpoint = state
+        .balancer
         .endpoint_registry
         .get(endpoint_id)
         .await
@@ -227,6 +228,7 @@ mod tests {
         endpoint.gpu_total_memory_bytes = Some(8_000_000_000);
         let endpoint_id = endpoint.id;
         state
+            .balancer
             .endpoint_registry
             .add(endpoint)
             .await

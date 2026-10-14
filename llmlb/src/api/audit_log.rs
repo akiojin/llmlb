@@ -152,9 +152,9 @@ pub async fn list_audit_logs(
     let per_page = filter.per_page.unwrap_or(50);
     let include_archive = filter.include_archive.unwrap_or(false);
     let search_text = filter.search_text.clone();
-    let storage = &state.audit_log_storage;
+    let storage = &state.audit.storage;
 
-    let (items, total) = match (include_archive, state.audit_archive_pool.as_ref()) {
+    let (items, total) = match (include_archive, state.audit.archive_pool.as_ref()) {
         (true, Some(archive_pool)) => {
             query_with_archive(storage, archive_pool, &filter, search_text.as_deref()).await?
         }
@@ -236,7 +236,7 @@ async fn query_with_archive(
 pub async fn get_audit_log_stats(
     State(state): State<AppState>,
 ) -> Result<Json<AuditLogStatsResponse>, AppError> {
-    let storage = &state.audit_log_storage;
+    let storage = &state.audit.storage;
 
     let total_entries = storage.count(&AuditLogFilter::default()).await?;
 
@@ -267,7 +267,7 @@ pub async fn get_audit_log_stats(
 pub async fn verify_hash_chain(
     State(state): State<AppState>,
 ) -> Result<Json<ChainVerificationResult>, AppError> {
-    let result = hash_chain::verify_chain(&state.audit_log_storage).await?;
+    let result = hash_chain::verify_chain(&state.audit.storage).await?;
     Ok(Json(result))
 }
 
@@ -369,19 +369,27 @@ mod tests {
         );
 
         AppState {
-            load_manager,
-            request_history,
+            balancer: crate::BalancerState {
+                load_manager,
+                endpoint_registry,
+                request_history,
+            },
             db_pool: pool,
-            jwt_secret: "test-secret".to_string(),
+            auth: crate::AuthState {
+                jwt_secret: "test-secret".to_string(),
+            },
             http_client,
             event_bus: crate::events::create_shared_event_bus(),
-            endpoint_registry,
-            inference_gate,
-            shutdown,
-            update_manager,
-            audit_log_writer,
-            audit_log_storage,
-            audit_archive_pool: archive_pool,
+            lifecycle: crate::LifecycleState {
+                inference_gate,
+                shutdown,
+                update_manager,
+            },
+            audit: crate::AuditState {
+                writer: audit_log_writer,
+                storage: audit_log_storage,
+                archive_pool,
+            },
         }
     }
 

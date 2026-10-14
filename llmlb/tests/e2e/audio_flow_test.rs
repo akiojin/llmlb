@@ -1,6 +1,6 @@
-//! E2E RED: 音声API（ASR/TTS）
+//! E2E: 音声API（ASR/TTS）
 //!
-//! 実装前の期待振る舞いを定義する（ignored）。
+//! スタブエンドポイントを登録し、llmlb 経由の転送結果を検証する。
 
 use crate::support;
 use axum::{
@@ -124,7 +124,6 @@ fn build_dummy_wav() -> Vec<u8> {
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: ASR E2E not yet implemented"]
 async fn e2e_audio_transcriptions_returns_text() {
     let node = spawn_audio_stub().await;
     let lb = support::lb::spawn_test_lb().await;
@@ -160,7 +159,6 @@ async fn e2e_audio_transcriptions_returns_text() {
 }
 
 #[tokio::test]
-#[ignore = "TDD RED: TTS E2E not yet implemented"]
 async fn e2e_audio_speech_returns_audio() {
     let node = spawn_audio_stub().await;
     let lb = support::lb::spawn_test_lb().await;

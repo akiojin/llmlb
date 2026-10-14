@@ -980,8 +980,7 @@ dashboard origin.
 | `openai.models.read` | Model discovery (`GET /v1/models*`) |
 | `endpoints.read` | Read-only endpoint APIs (`GET /api/endpoints*`) |
 | `endpoints.manage` | Endpoint mutations (`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`) |
-| `users.manage` | User management (`/api/users*`) |
-| `invitations.manage` | Invitation management (`/api/invitations*`) |
+| `users.manage` | User and registration request management (`/api/users*`, `/api/registration-requests*`) |
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry and lists (`GET /api/models/registry/*`, `GET /api/models`, `GET /api/models/hub`) |
 | `logs.read` | Endpoint log proxy (`GET /api/endpoints/:id/logs`) |
@@ -1016,13 +1015,24 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 | PUT | `/api/me/api-keys/:id` | Update own API key | JWT |
 | DELETE | `/api/me/api-keys/:id` | Delete own API key | JWT |
 
-#### Invitation Management Endpoints
+#### Registration Requests
+
+`POST /api/auth/register` accepts `username` (email format) and `password` without an
+invitation code. It returns `202` with `status: "pending"`; the applicant cannot log in
+or issue API keys until an administrator approves the request. Pending requests are
+limited to 100. Existing and pending usernames must be unique.
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/invitations` | List invitations | JWT+Admin or API key (`invitations.manage`) |
-| POST | `/api/invitations` | Create invitation | JWT+Admin or API key (`invitations.manage`) |
-| DELETE | `/api/invitations/:id` | Revoke invitation | JWT+Admin or API key (`invitations.manage`) |
+| GET | `/api/registration-requests` | List pending requests | JWT+Admin or API key (`users.manage`) |
+| POST | `/api/registration-requests/:id/approve` | Approve with required `role` (`admin` or `viewer`) | JWT+Admin or API key (`users.manage`) |
+| DELETE | `/api/registration-requests/:id` | Reject; allows reapplication | JWT+Admin or API key (`users.manage`) |
+
+The dashboard defaults the approval role to `viewer`. Roles can be changed later in
+Manage Users, but the last administrator cannot be demoted or deleted. New requests
+notify administrators through the configured notification email service; unconfigured
+mail does not prevent registration. Invitation endpoints and unused codes are removed
+in 6.4.0.
 
 #### Endpoint Management Endpoints
 

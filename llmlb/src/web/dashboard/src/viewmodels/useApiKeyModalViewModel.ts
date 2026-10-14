@@ -70,7 +70,6 @@ const ADMIN_PERMISSION_OPTIONS: ApiKeyPermission[] = [
   'endpoints.manage',
   'api_keys.manage',
   'users.manage',
-  'invitations.manage',
   'models.manage',
   'registry.read',
   'logs.read',

@@ -2,7 +2,7 @@
 //!
 //! ログイン、ログアウト、認証情報確認、ユーザー登録、パスワード変更・リセット
 
-use crate::common::auth::{Claims, UserRole};
+use crate::common::auth::Claims;
 use crate::common::error::{CommonError, LbError};
 use crate::AppState;
 use axum::{
@@ -342,157 +342,57 @@ pub async fn me(
     }))
 }
 
-/// ユーザー登録リクエスト
+/// 登録申請リクエスト
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
-    /// 招待コード
-    pub invitation_code: String,
-    /// ユーザー名
+    /// ユーザー名（メールID形式）
     pub username: String,
-    /// パスワード
+    /// 申請者が指定したパスワード
     pub password: String,
 }
 
-/// ユーザー登録レスポンス
+/// 登録申請の受付結果（認証情報は発行しない）
 #[derive(Debug, Serialize)]
 pub struct RegisterResponse {
-    /// ユーザーID
-    pub id: String,
-    /// ユーザー名
-    pub username: String,
-    /// ロール
-    pub role: String,
-    /// 作成日時
-    pub created_at: String,
+    /// 受付状態（pending）
+    pub status: &'static str,
+    /// 管理者承認待ちを伝えるメッセージ
+    pub message: &'static str,
 }
 
-/// POST /api/auth/register - 招待コードでユーザー登録
-///
-/// 有効な招待コードを使ってユーザー登録する（認証不要）
-///
-/// # Arguments
-/// * `State(app_state)` - アプリケーション状態
-/// * `Json(request)` - 登録リクエスト（招待コード、ユーザー名、パスワード）
-///
-/// # Returns
-/// * `201 Created` - 登録成功
-/// * `400 Bad Request` - 招待コードが無効/期限切れ/使用済み
-/// * `409 Conflict` - ユーザー名が既に存在
-/// * `500 Internal Server Error` - サーバーエラー
+/// POST /api/auth/register - 未承認の登録申請を受け付ける。
 pub async fn register(
     State(app_state): State<AppState>,
     Json(request): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<RegisterResponse>), HandlerError> {
-    // パスワード要件を検証（8文字以上・大文字・数字）
-    crate::auth::password::validate_password(&request.password).map_err(|e| {
-        tracing::info!("Password validation failed during registration");
-        AppError(e).into_response()
-    })?;
-
-    // 招待コードを検索
-    let invitation =
-        crate::db::invitations::find_by_code(&app_state.db_pool, &request.invitation_code)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to find invitation code: {}", e);
-                AppError(LbError::Database(format!(
-                    "Failed to find invitation code: {}",
-                    e
-                )))
-                .into_response()
-            })?
-            .ok_or_else(|| {
-                AppError(LbError::Common(CommonError::Validation(
-                    "Invalid invitation code".to_string(),
-                )))
-                .into_response()
-            })?;
-
-    // 招待コードが有効かチェック
-    crate::db::invitations::validate_invitation(&invitation).map_err(|e| {
-        tracing::info!("Invalid invitation code: {}", e);
-        AppError(LbError::Common(CommonError::Validation(e.to_string()))).into_response()
-    })?;
-
-    // ユーザー名の重複チェック
-    let existing = crate::db::users::find_by_username(&app_state.db_pool, &request.username)
+    crate::auth::email::validate_email(&request.username).map_err(AppError)?;
+    crate::auth::password::validate_password(&request.password).map_err(AppError)?;
+    let password_hash =
+        crate::auth::password::hash_password(&request.password).map_err(AppError)?;
+    crate::db::registration_requests::create(&app_state.db_pool, &request.username, &password_hash)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to check username: {}", e);
-            AppError(LbError::Database(format!(
-                "Failed to check username: {}",
-                e
-            )))
-            .into_response()
+        .map_err(|error| match error {
+            crate::db::registration_requests::CreateRequestError::Full => (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": "Too many pending registration requests"
+                })),
+            )
+                .into_response()
+                .into(),
+            crate::db::registration_requests::CreateRequestError::Storage(error) => {
+                HandlerError::from(AppError(error))
+            }
         })?;
-
-    if existing.is_some() {
-        return Err(AppError(LbError::Conflict("Username already exists".to_string())).into());
-    }
-
-    // パスワードをハッシュ化
-    let password_hash = crate::auth::password::hash_password(&request.password).map_err(|e| {
-        tracing::error!("Failed to hash password: {}", e);
-        AppError(LbError::PasswordHash(format!(
-            "Failed to hash password: {}",
-            e
-        )))
-        .into_response()
-    })?;
-
-    // ユーザーを作成（招待登録は常にviewer）
-    let user = crate::db::users::create(
-        &app_state.db_pool,
-        &request.username,
-        &password_hash,
-        UserRole::Viewer,
-        false,
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create user: {}", e);
-        AppError(LbError::Database(format!("Failed to create user: {}", e))).into_response()
-    })?;
-
-    // 招待コードを使用済みにする（atomic conditional update: WHERE status = 'active'）。
-    // 失敗（並行登録で既に消費済み＝rows_affected 0、または DB エラー）の場合は、
-    // 作成済みユーザーを補償削除して登録を拒否する。これにより招待コードの再利用や
-    // 「招待が消費されたのにユーザーだけ残る」孤立を防ぐ。
-    if let Err(e) =
-        crate::db::invitations::mark_as_used(&app_state.db_pool, invitation.id, user.id).await
-    {
-        tracing::warn!(
-            "Failed to consume invitation {} for user {}: {}; rolling back user creation",
-            invitation.id,
-            user.id,
-            e
-        );
-        if let Err(del) = crate::db::users::delete(&app_state.db_pool, user.id).await {
-            tracing::error!(
-                "Failed to roll back user {} after invitation consume failure: {}",
-                user.id,
-                del
-            );
-        }
-        return Err(AppError(LbError::Conflict(
-            "Invitation code is no longer valid".to_string(),
-        ))
-        .into());
-    }
-
-    tracing::info!(
-        "User registered via invitation: {} (id={})",
-        user.username,
-        user.id
+    crate::notifications::registration::start_registration_notification(
+        app_state.db_pool.clone(),
+        request.username,
     );
-
     Ok((
-        StatusCode::CREATED,
+        StatusCode::ACCEPTED,
         Json(RegisterResponse {
-            id: user.id.to_string(),
-            username: user.username,
-            role: format!("{:?}", UserRole::Viewer).to_lowercase(),
-            created_at: user.created_at.to_rfc3339(),
+            status: "pending",
+            message: "Registration request submitted. Wait for administrator approval.",
         }),
     ))
 }
@@ -994,16 +894,15 @@ mod tests {
 
     #[test]
     fn test_register_request_deserialize() {
-        let json = r#"{"invitation_code": "ABC123", "username": "newuser", "password": "secret"}"#;
+        let json = r#"{"username": "newuser", "password": "secret"}"#;
         let request: RegisterRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.invitation_code, "ABC123");
         assert_eq!(request.username, "newuser");
         assert_eq!(request.password, "secret");
     }
 
     #[test]
     fn test_register_request_missing_field_fails() {
-        let json = r#"{"username": "newuser", "password": "secret"}"#;
+        let json = r#"{"username": "newuser"}"#;
         let result = serde_json::from_str::<RegisterRequest>(json);
         assert!(result.is_err());
     }
@@ -1015,16 +914,12 @@ mod tests {
     #[test]
     fn test_register_response_serialize() {
         let response = RegisterResponse {
-            id: "user-id-1".to_string(),
-            username: "testuser".to_string(),
-            role: "viewer".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            status: "pending",
+            message: "Wait for administrator approval",
         };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("user-id-1"));
-        assert!(json.contains("testuser"));
-        assert!(json.contains("viewer"));
-        assert!(json.contains("2024-01-01T00:00:00Z"));
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["status"], "pending");
+        assert_eq!(json.as_object().unwrap().len(), 2);
     }
 
     // =========================================================================

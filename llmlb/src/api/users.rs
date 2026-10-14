@@ -214,7 +214,7 @@ pub async fn create_user(
     .await
     .map_err(|e| {
         tracing::error!("Failed to create user: {}", e);
-        AppError(LbError::Database(format!("Failed to create user: {}", e))).into_response()
+        AppError(e).into_response()
     })?;
 
     Ok((
@@ -316,7 +316,7 @@ pub async fn update_user(
     .await
     .map_err(|e| {
         tracing::error!("Failed to update user: {}", e);
-        AppError(LbError::Database(format!("Failed to update user: {}", e))).into_response()
+        AppError(e).into_response()
     })?;
 
     Ok(Json(UserResponse::from(user)))
@@ -379,7 +379,7 @@ pub async fn delete_user(
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete user: {}", e);
-            AppError(LbError::Database(format!("Failed to delete user: {}", e))).into_response()
+            AppError(e).into_response()
         })?;
 
     Ok(StatusCode::NO_CONTENT)

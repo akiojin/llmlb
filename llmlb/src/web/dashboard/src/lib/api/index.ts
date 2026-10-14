@@ -78,11 +78,8 @@ export type {
   CreateApiKeyResponse,
 } from './api-keys'
 
-export { invitationsApi } from './invitations'
-export type {
-  Invitation,
-  CreateInvitationResponse,
-} from './invitations'
+export { registrationRequestsApi } from './registration-requests'
+export type { RegistrationRequest } from './registration-requests'
 
 export { usersApi } from './users'
 export type { User, CreateUserResponse } from './users'

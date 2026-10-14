@@ -87,6 +87,7 @@ interface UserModalProps {
 
 export function UserModal({ open, onOpenChange }: UserModalProps) {
   const {
+    registrations, canDemoteEditUser, isAdmin,
     createOpen, editUser, deleteUser, setDeleteUser, generatedPassword, copied,
     formUsername, setFormUsername, formPassword, setFormPassword,
     formRole, setFormRole, formEmail, setFormEmail, users, isLoading,
@@ -95,6 +96,8 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
     handleOpenEditDialog, handleCloseEditDialog, handleCreate, handleUpdate,
     handleCopyPassword, handleClosePassword, handlePasswordOpenChange, handleRefresh, handleDelete,
   } = useUserModalViewModel({ open, onOpenChange })
+
+  if (!isAdmin) return null
 
   const getRoleBadge = (role: string) => {
     if (role === 'admin') {
@@ -127,18 +130,62 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-w-0 space-y-4 py-4">
+          <div className="min-h-0 min-w-0 max-h-[60vh] space-y-4 overflow-y-auto py-4">
             {/* Actions */}
             <div className="flex justify-between">
               <Button onClick={handleOpenCreateDialog}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add User
               </Button>
-              <Button variant="outline" size="icon" onClick={handleRefresh}>
+              <Button variant="outline" size="icon" onClick={handleRefresh} aria-label="Refresh users and registrations">
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
 
+            <section aria-label="Pending registrations" className="space-y-2">
+              <h3 className="text-sm font-semibold">Pending registrations</h3>
+              <ScrollArea className={registrations.requests?.length ? 'h-44 rounded-md border' : 'rounded-md border'}>
+                {registrations.isLoading ? (
+                  <div className="flex h-40 items-center justify-center" role="status" aria-label="Loading registrations">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : registrations.error ? (
+                  <p role="alert" className="p-4 text-sm text-destructive">{registrations.error}</p>
+                ) : !registrations.requests?.length ? (
+                  <p className="p-4 text-sm text-muted-foreground">No pending registrations</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Requested</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {registrations.requests.map((request) => (
+                        <TableRow key={request.id} data-testid={`registration-request-${request.id}`}>
+                          <TableCell className="break-all font-medium">{request.username}</TableCell>
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{request.createdAtLabel}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button size="sm" aria-label={`Approve ${request.username}`} onClick={() => registrations.handleOpenApprove(request)}>
+                                Approve
+                              </Button>
+                              <Button size="sm" variant="outline" aria-label={`Reject ${request.username}`} onClick={() => registrations.handleOpenReject(request)}>
+                                Reject
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </ScrollArea>
+            </section>
+
+            <h3 className="text-sm font-semibold">Users</h3>
             {/* Users Table */}
             <ScrollArea className="h-64 rounded-md border">
               {isLoading ? (
@@ -192,6 +239,8 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
                               size="icon"
                               className="h-8 w-8"
                               aria-label={`Delete ${user.username}`}
+                              disabled={!user.canDelete}
+                              title={!user.canDelete ? 'The last administrator cannot be deleted.' : undefined}
                               onClick={() => setDeleteUser(user)}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
@@ -207,6 +256,51 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!registrations.approveRequest} onOpenChange={(nextOpen) => { if (!nextOpen) registrations.handleCloseApprove() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve registration</DialogTitle>
+            <DialogDescription>{`Choose the access role for ${registrations.approveRequest?.username}.`}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            <Label htmlFor="approval-role">Role</Label>
+            <Select value={registrations.approvalRole} onValueChange={(role) => registrations.setApprovalRole(role as 'admin' | 'viewer')}>
+              <SelectTrigger id="approval-role" aria-label="Approval role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">Viewers can use inference. Administrators can also manage users and settings.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={registrations.handleCloseApprove}>Cancel</Button>
+            <Button onClick={registrations.handleApprove} disabled={registrations.isApproving}>
+              {registrations.isApproving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Approve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!registrations.rejectRequest} onOpenChange={(nextOpen) => { if (!nextOpen) registrations.handleCloseReject() }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject registration</AlertDialogTitle>
+            <AlertDialogDescription>{`Reject the request from ${registrations.rejectRequest?.username}? They can submit a new request later.`}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={registrations.handleReject} disabled={registrations.isRejecting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {registrations.isRejecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Reject
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Create User Dialog */}
       <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
@@ -231,7 +325,7 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             <div className="space-y-2">
               <Label htmlFor="create-role">Role</Label>
               <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
-                <SelectTrigger>
+                <SelectTrigger id="create-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -342,11 +436,11 @@ export function UserModal({ open, onOpenChange }: UserModalProps) {
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role</Label>
               <Select value={formRole} onValueChange={(v) => setFormRole(v as 'admin' | 'viewer')}>
-                <SelectTrigger>
+                <SelectTrigger id="edit-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="viewer">Viewer</SelectItem>
+                  <SelectItem value="viewer" disabled={!canDemoteEditUser}>Viewer</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>

@@ -122,13 +122,7 @@ async fn insert(
     .bind(email)
     .execute(pool)
     .await
-    .map_err(|e| {
-        if e.to_string().contains("UNIQUE constraint failed") {
-            LbError::Database(format!("Username '{}' already exists", username))
-        } else {
-            LbError::Database(format!("Failed to create user: {}", e))
-        }
-    })?;
+    .map_err(super::registration_requests::map_write_error)?;
 
     Ok(User {
         id,
@@ -243,9 +237,20 @@ pub async fn update_with_email(
     role: Option<UserRole>,
     email: Option<Option<&str>>,
 ) -> Result<User, LbError> {
-    // 現在のユーザー情報を取得
-    let current = find_by_id(pool, id)
-        .await?
+    // 読み取り前に書き込み権を取得する。独立した更新が古い値を戻して、
+    // ロールやJWT失効時刻、メール等の別列の変更を取り消すことを防ぐ。
+    let mut transaction = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .map_err(super::registration_requests::map_write_error)?;
+    let current = sqlx::query_as::<_, UserRow>(
+        "SELECT id, username, password_hash, role, created_at, last_login, must_change_password, password_changed_at, email FROM users WHERE id = ?",
+    )
+        .bind(id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| LbError::Database(format!("Failed to find user: {error}")))?
+        .map(UserRow::into_user)
         .ok_or_else(|| LbError::Database(format!("User not found: {}", id)))?;
 
     let new_username = username.unwrap_or(&current.username);
@@ -261,8 +266,9 @@ pub async fn update_with_email(
     } else {
         current.must_change_password
     };
-    // パスワード変更時は password_changed_at を厳密単調増加で更新し、既存JWTセッションを無効化する
-    let new_password_changed_at = if password_hash.is_some() {
+    // パスワードまたはロール変更時は既存JWTを失効させる。
+    // JWTに埋め込まれた変更前のロールで管理権限を使い続けることを防ぐ。
+    let new_password_changed_at = if password_hash.is_some() || new_role != current.role {
         std::cmp::max(
             Utc::now().timestamp_millis(),
             current.password_changed_at + 1,
@@ -283,9 +289,13 @@ pub async fn update_with_email(
         .bind(new_password_changed_at)
         .bind(new_email.as_deref())
         .bind(id.to_string())
-        .execute(pool)
+        .execute(&mut *transaction)
         .await
-        .map_err(|e| LbError::Database(format!("Failed to update user: {}", e)))?;
+        .map_err(super::registration_requests::map_write_error)?;
+    transaction
+        .commit()
+        .await
+        .map_err(super::registration_requests::map_write_error)?;
 
     Ok(User {
         id,
@@ -336,7 +346,7 @@ pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<(), LbError> {
         .bind(id.to_string())
         .execute(pool)
         .await
-        .map_err(|e| LbError::Database(format!("Failed to delete user: {}", e)))?;
+        .map_err(super::registration_requests::map_write_error)?;
 
     Ok(())
 }

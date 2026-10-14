@@ -81,9 +81,6 @@ pub enum ApiKeyPermission {
     /// ユーザー管理
     #[serde(rename = "users.manage")]
     UsersManage,
-    /// 招待管理
-    #[serde(rename = "invitations.manage")]
-    InvitationsManage,
     /// モデル管理（register/delete 等）
     #[serde(rename = "models.manage")]
     ModelsManage,
@@ -108,7 +105,6 @@ impl ApiKeyPermission {
             ApiKeyPermission::EndpointsManage,
             ApiKeyPermission::ApiKeysManage,
             ApiKeyPermission::UsersManage,
-            ApiKeyPermission::InvitationsManage,
             ApiKeyPermission::ModelsManage,
             ApiKeyPermission::RegistryRead,
             ApiKeyPermission::LogsRead,
@@ -224,9 +220,9 @@ mod tests {
     }
 
     #[test]
-    fn api_key_permission_all_contains_11_variants() {
+    fn api_key_permission_all_contains_10_variants() {
         let all = ApiKeyPermission::all();
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 10);
     }
 
     #[test]
@@ -383,12 +379,6 @@ mod tests {
     }
 
     #[test]
-    fn api_key_permission_invitations_manage_serde() {
-        let json = serde_json::to_string(&ApiKeyPermission::InvitationsManage).unwrap();
-        assert_eq!(json, r#""invitations.manage""#);
-    }
-
-    #[test]
     fn api_key_permission_models_manage_serde() {
         let json = serde_json::to_string(&ApiKeyPermission::ModelsManage).unwrap();
         assert_eq!(json, r#""models.manage""#);
@@ -476,7 +466,7 @@ mod tests {
         let back: ApiKey = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, key.id);
         assert_eq!(back.name, "test");
-        assert_eq!(back.permissions.len(), 11);
+        assert_eq!(back.permissions.len(), 10);
     }
 
     #[test]

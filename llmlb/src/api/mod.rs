@@ -22,7 +22,6 @@ pub mod endpoints;
 pub mod error;
 pub mod health;
 pub mod images;
-pub mod invitations;
 pub mod logs;
 /// モデル名のパース（量子化サフィックス対応）
 pub mod model_name;
@@ -31,6 +30,7 @@ pub mod openai;
 /// OpenAI互換APIユーティリティ
 pub mod openai_util;
 pub mod proxy;
+pub mod registration_requests;
 /// Open Responses API (SPEC-0f1de549)
 pub mod responses;
 /// System API (self-update)

@@ -12,8 +12,8 @@ pub mod api_keys;
 
 pub mod models;
 
-/// 招待コード管理
-pub mod invitations;
+/// 登録申請管理
+pub mod registration_requests;
 
 /// パスワードリセットトークン管理
 pub mod password_reset_tokens;

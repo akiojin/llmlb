@@ -1,6 +1,6 @@
-//! 認証・アカウント管理（ログイン/ユーザー/APIキー/招待）のルート
+//! 認証・アカウント管理（ログイン/ユーザー/APIキー/登録申請）のルート
 
-use crate::api::{api_keys, auth, invitations, users};
+use crate::api::{api_keys, auth, registration_requests, users};
 use crate::common::auth::{ApiKeyPermission, UserRole};
 use crate::AppState;
 use axum::{
@@ -33,6 +33,15 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
     // NOTE: /api/dashboard/* は管理UI向けのため JWT のみ（APIキー不可）
     let users_routes = Router::new()
         .route("/users", get(users::list_users).post(users::create_user))
+        .route("/registration-requests", get(registration_requests::list))
+        .route(
+            "/registration-requests/{id}/approve",
+            post(registration_requests::approve),
+        )
+        .route(
+            "/registration-requests/{id}",
+            delete(registration_requests::reject),
+        )
         .route(
             "/users/{id}",
             put(users::update_user).delete(users::delete_user),
@@ -74,28 +83,6 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
             crate::auth::middleware::require_jwt_auth_middleware,
         ));
 
-    let invitations_routes = Router::new()
-        .route(
-            "/invitations",
-            get(invitations::list_invitations).post(invitations::create_invitation),
-        )
-        .route("/invitations/{id}", delete(invitations::revoke_invitation))
-        .layer(middleware::from_fn(
-            crate::auth::middleware::require_password_changed_middleware,
-        ))
-        .layer(middleware::from_fn(
-            crate::auth::middleware::csrf_protect_middleware,
-        ))
-        .layer(middleware::from_fn_with_state(
-            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-                app_state: state.clone(),
-                required_permission: ApiKeyPermission::InvitationsManage,
-                jwt_required_role: Some(UserRole::Admin),
-                api_key_role: UserRole::Admin,
-            },
-            crate::auth::middleware::jwt_or_api_key_permission_middleware,
-        ));
-
     Router::new()
         // 認証エンドポイント（ログインは認証不要）
         .route("/auth/login", post(auth::login))
@@ -105,5 +92,4 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         .merge(auth_routes)
         .merge(users_routes)
         .merge(my_api_keys_routes)
-        .merge(invitations_routes)
 }

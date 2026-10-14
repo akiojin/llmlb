@@ -10,6 +10,7 @@ pub mod daily_digest;
 pub mod digest;
 pub mod mailer;
 pub mod offline_alert;
+pub mod registration;
 pub mod schedule;
 pub mod smtp;
 pub mod template;

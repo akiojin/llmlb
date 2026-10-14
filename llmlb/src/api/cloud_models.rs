@@ -366,6 +366,76 @@ pub async fn get_cached_models(client: &reqwest::Client) -> Vec<CloudModelInfo> 
 mod tests {
     use super::*;
 
+    /// #900 AC-3: exercise real cloud catalog rows without external API calls.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn models_filter_cloud_rows_derive_capabilities_from_supported_apis() {
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt;
+
+        let _guard = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = crate::db::test_utils::TestAppStateBuilder::new()
+            .await
+            .build()
+            .await;
+        let app = crate::api::create_app(state);
+        let previous = get_cache()
+            .write()
+            .await
+            .replace(CloudModelsCache::new(vec![CloudModelInfo {
+                id: "openai:filter-cloud-chat".into(),
+                object: "model".into(),
+                created: 123,
+                owned_by: "openai".into(),
+            }]));
+        let cases = [
+            ("", 1),
+            ("?capability=chat_completion,completion", 1),
+            ("?type=llm", 1),
+            ("?type=tts", 0),
+            ("?capability=image_input", 0),
+            ("?capability=embeddings", 0),
+            (
+                "?supported_api=chat_completions&owned_by=openai&ready=true",
+                1,
+            ),
+            ("?supported_api=responses", 0),
+            ("?endpoint_id=00000000-0000-0000-0000-000000000001", 0),
+            ("?q=FILTER-CLOUD", 1),
+        ];
+        let mut results = Vec::new();
+        for (query, expected) in cases {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/v1/models{query}"))
+                        .header("authorization", "Bearer sk_debug")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            results.push((query, expected, status, body));
+        }
+        // Restore the global cache before assertions so a failed case cannot leak it.
+        *get_cache().write().await = previous;
+        for (query, expected, status, body) in results {
+            assert_eq!(status, axum::http::StatusCode::OK, "{query}: {body}");
+            let rows = body["data"].as_array().unwrap();
+            assert_eq!(rows.len(), expected, "{query}: {body}");
+            if expected == 1 {
+                assert!(rows[0].get("capabilities").is_none());
+                assert_eq!(rows[0]["created"], 123);
+            }
+        }
+    }
+
     #[test]
     fn test_parse_openai_models() {
         let response = OpenAIModelsResponse {

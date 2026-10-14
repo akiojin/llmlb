@@ -939,4 +939,77 @@ mod tests {
         assert_eq!(found.username, "renamed");
         assert_eq!(found.role, UserRole::Admin);
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_update_with_email_concurrent_demotion_preserves_role_email_and_revocation() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .min_connections(2)
+            .max_connections(2)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        create(&pool, "remaining-admin", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        let target = create(&pool, "concurrent-update", "hash", UserRole::Admin, false)
+            .await
+            .unwrap();
+        let mut previous_revocation = target.password_changed_at;
+
+        for round in 0..64 {
+            let promoted = update(&pool, target.id, None, None, Some(UserRole::Admin))
+                .await
+                .unwrap();
+            assert!(promoted.password_changed_at >= previous_revocation);
+            let email = format!("round-{round}@example.com");
+            let (demotion, email_update) = tokio::join!(
+                update(&pool, target.id, None, None, Some(UserRole::Viewer)),
+                update_with_email(&pool, target.id, None, None, None, Some(Some(&email))),
+            );
+            let demoted = demotion.unwrap();
+            email_update.unwrap();
+            let found = find_by_id(&pool, target.id).await.unwrap().unwrap();
+            assert_eq!(found.role, UserRole::Viewer, "round {round}");
+            assert_eq!(
+                found.email.as_deref(),
+                Some(email.as_str()),
+                "round {round}"
+            );
+            assert!(
+                found.password_changed_at >= demoted.password_changed_at,
+                "round {round}: session revocation must never be rolled back"
+            );
+            assert!(found.password_changed_at > promoted.password_changed_at);
+            previous_revocation = found.password_changed_at;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_with_email_single_connection_pool() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let user = create(&pool, "single-connection", "hash", UserRole::Viewer, false)
+            .await
+            .unwrap();
+        let updated = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            update_with_email(
+                &pool,
+                user.id,
+                None,
+                None,
+                None,
+                Some(Some("ops@example.com")),
+            ),
+        )
+        .await
+        .expect("update must use only its transaction connection")
+        .unwrap();
+        assert_eq!(updated.email.as_deref(), Some("ops@example.com"));
+    }
 }

@@ -702,16 +702,85 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_migrations_create_invitation_codes_table() {
+    async fn registration_requests_migration_removes_invitation_tables() {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&pool).await.unwrap();
+        for table in ["invitation_codes", "invitation_keys", "invitations"] {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            )
+            .bind(table)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(count, 0, "obsolete table {table} must be removed");
+        }
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM registration_requests")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
 
-        let result = sqlx::query(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='invitation_codes'",
+    #[tokio::test]
+    async fn registration_requests_migration_preserves_existing_accounts_and_key_permissions() {
+        use crate::common::auth::{ApiKeyPermission, UserRole};
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let all = sqlx::migrate!("./migrations");
+        let previous = sqlx::migrate::Migrator {
+            migrations: std::borrow::Cow::Owned(
+                all.iter()
+                    .filter(|migration| migration.version <= 20261001043458)
+                    .cloned()
+                    .collect(),
+            ),
+            ..sqlx::migrate::Migrator::DEFAULT
+        };
+        previous.run(&pool).await.unwrap();
+        let user = crate::db::users::create(
+            &pool,
+            "existing@example.com",
+            "hash",
+            UserRole::Admin,
+            false,
         )
-        .fetch_one(&pool)
-        .await;
-        assert!(result.is_ok(), "invitation_codes table should exist");
+        .await
+        .unwrap();
+        let key = crate::db::api_keys::create(
+            &pool,
+            "preserved",
+            user.id,
+            None,
+            vec![
+                ApiKeyPermission::UsersManage,
+                ApiKeyPermission::OpenaiInference,
+            ],
+        )
+        .await
+        .unwrap();
+        sqlx::query(r#"UPDATE api_keys SET permissions = '["users.manage","invitations.manage","openai.inference"]' WHERE id = ?"#)
+            .bind(key.id.to_string()).execute(&pool).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        assert_eq!(
+            crate::db::users::find_by_id(&pool, user.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .username,
+            "existing@example.com"
+        );
+        let restored = crate::db::api_keys::list(&pool)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(
+            restored.permissions,
+            vec![
+                ApiKeyPermission::UsersManage,
+                ApiKeyPermission::OpenaiInference
+            ]
+        );
     }
 
     #[tokio::test]

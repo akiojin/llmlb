@@ -4,6 +4,17 @@ fn bin_path() -> &'static str {
     env!("CARGO_BIN_EXE_llmlb")
 }
 
+fn isolated_command(temp_dir: &tempfile::TempDir) -> Command {
+    let mut command = Command::new(bin_path());
+    // Lock files live under the child's OS temporary directory. Keep these CLI
+    // probes away from locks belonging to real servers or parallel test suites.
+    command
+        .env("TMPDIR", temp_dir.path())
+        .env("TMP", temp_dir.path())
+        .env("TEMP", temp_dir.path());
+    command
+}
+
 fn unique_test_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("failed to reserve test port");
     let port = listener
@@ -16,8 +27,9 @@ fn unique_test_port() -> u16 {
 
 #[test]
 fn status_subcommand_succeeds_for_unused_port() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let port = unique_test_port();
-    let output = Command::new(bin_path())
+    let output = isolated_command(&temp_dir)
         .args(["status", "--port", &port.to_string()])
         .output()
         .expect("failed to run llmlb status");
@@ -35,8 +47,9 @@ fn status_subcommand_succeeds_for_unused_port() {
 
 #[test]
 fn stop_subcommand_succeeds_for_unused_port() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let port = unique_test_port();
-    let output = Command::new(bin_path())
+    let output = isolated_command(&temp_dir)
         .args(["stop", "--port", &port.to_string(), "--timeout", "1"])
         .output()
         .expect("failed to run llmlb stop");
@@ -61,7 +74,7 @@ fn internal_rollback_subcommand_fails_without_backup() {
     let args_file = temp_dir.path().join("args.json");
     std::fs::write(&args_file, r#"{"args":[],"cwd":""}"#).expect("failed to write args file");
 
-    let output = Command::new(bin_path())
+    let output = isolated_command(&temp_dir)
         .args([
             "__internal",
             "rollback",

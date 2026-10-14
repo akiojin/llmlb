@@ -52,7 +52,6 @@ export class LoginPage {
  */
 export class RegisterPage {
   readonly page: Page;
-  readonly invitationCodeInput: Locator;
   readonly usernameInput: Locator;
   readonly passwordInput: Locator;
   readonly confirmPasswordInput: Locator;
@@ -63,7 +62,6 @@ export class RegisterPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.invitationCodeInput = page.locator('#invitation-code');
     this.usernameInput = page.locator('#username');
     this.passwordInput = page.locator('#password');
     this.confirmPasswordInput = page.locator('#confirm-password');
@@ -71,7 +69,7 @@ export class RegisterPage {
     this.loginLink = page.locator('a[href*="login"]');
     // Radix UI toast (data-state="open") - use first() to handle multiple matches
     this.errorToast = page.locator('[data-state="open"][data-radix-collection-item]').first();
-    this.successMessage = page.locator('text=Registration Complete');
+    this.successMessage = page.getByRole('heading', { name: 'Registration requested', exact: true });
   }
 
   async goto() {
@@ -89,8 +87,7 @@ export class RegisterPage {
     }
   }
 
-  async register(invitationCode: string, username: string, password: string) {
-    await this.invitationCodeInput.fill(invitationCode);
+  async register(username: string, password: string) {
     await this.usernameInput.fill(username);
     await this.passwordInput.fill(password);
     await this.confirmPasswordInput.fill(password);

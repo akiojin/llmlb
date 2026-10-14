@@ -1,3 +1,4 @@
+import { registrationRequestsApi } from '@/lib/api'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -127,6 +128,7 @@ async function renderDashboard({ update = upToDate, system, history = [], user }
     getSystem.mockResolvedValue(systemInfo(update, system))
   }
 
+  vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([])
   renderPage(<Dashboard />, { user })
   await screen.findByText('No endpoints')
   return { getSystem, getUpdateHistory, user: userEvent.setup() }

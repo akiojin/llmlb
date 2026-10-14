@@ -1,9 +1,13 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
-import { notificationsApi } from '@/lib/api'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { notificationsApi, registrationRequestsApi } from '@/lib/api'
 import { adminUser, deferred, renderWithProviders, viewerUser } from '@/test/render'
 import { Header } from './Header'
+
+beforeEach(() => {
+  vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([])
+})
 
 describe('Header user menu', () => {
   it('opens the notification settings from the admin menu', async () => {
@@ -30,4 +34,16 @@ describe('Header user menu', () => {
     expect(screen.queryByRole('menuitem', { name: 'Notifications' })).not.toBeInTheDocument()
     expect(get).not.toHaveBeenCalled()
   })
+})
+
+
+it('shows an administrator the pending count next to Manage Users', async () => {
+  vi.mocked(registrationRequestsApi.list).mockResolvedValue([
+    { id: 'request-one', username: 'one@example.com', created_at: '2026-10-01T00:00:00Z' },
+  ])
+  const user = userEvent.setup()
+  renderWithProviders(<Header user={adminUser} />)
+  await user.click(screen.getByRole('button', { name: 'User menu' }))
+  expect(await screen.findByTestId('pending-registration-count')).toHaveTextContent('1')
+  expect(screen.queryByRole('menuitem', { name: 'Invitation Codes' })).not.toBeInTheDocument()
 })

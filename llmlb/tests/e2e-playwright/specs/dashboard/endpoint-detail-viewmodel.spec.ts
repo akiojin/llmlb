@@ -162,6 +162,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const rowFor = (name: string) => endpointTable.getByRole('row').filter({
         has: page.getByRole('cell', { name, exact: true }),
       })
+      await expect.poll(async () => {
+        await page.clock.runFor(1)
+        return rowFor('alpha-endpoint').count()
+      }).toBe(1)
       await expect(rowFor('alpha-endpoint')).toBeVisible()
       if (colorScheme === 'dark') await expect(page.locator('html')).toHaveClass(/\bdark\b/)
       else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)

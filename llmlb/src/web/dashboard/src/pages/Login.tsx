@@ -130,7 +130,7 @@ export default function LoginPage() {
               </form>
 
               <div className="mt-4 text-center text-sm text-muted-foreground">
-                Have an invitation code?{' '}
+                Need an account?{' '}
                 <a
                   href="/dashboard/register.html"
                   className="text-primary hover:underline"

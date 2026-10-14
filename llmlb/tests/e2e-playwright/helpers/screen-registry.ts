@@ -6,9 +6,9 @@
  * suites derive their test cases from this list, so covering a new screen means
  * adding one entry here.
  *
- * The Invitation Codes modal and `/dashboard/register.html` are deliberately
- * absent: SPEC #582 excludes the invite flow from required coverage. They stay
- * covered as legacy flows by `specs/auth/invitation.spec.ts` and `register.spec.ts`.
+ * `/dashboard/register.html` has dedicated registration-request coverage in
+ * `specs/auth/register.spec.ts` and `registration-requests.spec.ts`. Pending
+ * requests are part of the canonical User Management modal.
  */
 
 import {

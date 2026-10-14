@@ -9,7 +9,6 @@ export type ApiKeyPermission =
   | 'endpoints.manage'
   | 'api_keys.manage'
   | 'users.manage'
-  | 'invitations.manage'
   | 'models.manage'
   | 'registry.read'
   | 'logs.read'

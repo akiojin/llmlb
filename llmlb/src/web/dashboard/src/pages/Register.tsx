@@ -9,10 +9,11 @@ import {
   isPasswordValid,
 } from '@/components/auth/PasswordStrengthMeter'
 import { toast } from '@/hooks/use-toast'
-import { Cpu, Lock, User, Ticket, CheckCircle2 } from 'lucide-react'
+import { useTheme } from '@/hooks/useTheme'
+import { Cpu, Lock, User, CheckCircle2 } from 'lucide-react'
 
 export default function RegisterPage() {
-  const [invitationCode, setInvitationCode] = useState('')
+  useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -44,22 +45,15 @@ export default function RegisterPage() {
 
     try {
       await authApi.register({
-        invitation_code: invitationCode,
         username,
         password,
       })
       setIsSuccess(true)
-      toast({
-        title: 'Registration successful',
-        description: 'You can now sign in with your credentials',
-      })
     } catch (error) {
       let message = 'Registration failed'
       if (error instanceof ApiError) {
-        if (error.status === 400) {
-          message = 'Invalid or expired invitation code'
-        } else if (error.status === 409) {
-          message = 'Username already exists'
+        if (error.status === 409) {
+          message = 'An account or pending registration already uses this email.'
         } else if (error.message) {
           message = error.message
         }
@@ -89,10 +83,10 @@ export default function RegisterPage() {
               </div>
               <div className="text-center">
                 <h1 className="font-display text-3xl font-bold tracking-tight">
-                  Registration Complete
+                  Registration requested
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Your account has been created successfully.
+                  Your registration request has been submitted.
                 </p>
               </div>
             </div>
@@ -101,14 +95,14 @@ export default function RegisterPage() {
               <CardContent className="pt-6">
                 <div className="space-y-4 text-center">
                   <p className="text-muted-foreground">
-                    You can now sign in with your new credentials.
+                    Awaiting administrator approval.
                   </p>
                   <Button
                     variant="glow"
                     className="w-full"
                     onClick={() => window.location.href = '/dashboard/login.html'}
                   >
-                    Go to Sign In
+                    Back to Sign In
                   </Button>
                 </div>
               </CardContent>
@@ -141,7 +135,7 @@ export default function RegisterPage() {
                 LLM Load Balancer
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Create your account
+                Request an account
               </p>
             </div>
           </div>
@@ -150,40 +144,24 @@ export default function RegisterPage() {
           <Card className="glass border-border/50">
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl font-semibold">Register</CardTitle>
-              <CardDescription>Enter your invitation code and create an account</CardDescription>
+              <CardDescription>Submit your email and password for administrator approval.</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="invitation-code">Invitation Code</Label>
-                  <div className="relative">
-                    <Ticket className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="invitation-code"
-                      type="text"
-                      placeholder="inv_xxxxxxxxxxxxxxxx"
-                      value={invitationCode}
-                      onChange={(e) => setInvitationCode(e.target.value)}
-                      className="pl-10 font-mono"
-                      required
-                      autoFocus
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="username">Email</Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="username"
-                      type="text"
-                      placeholder="Choose a username"
+                      type="email"
+                      placeholder="you@example.com"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       className="pl-10"
                       required
                       autoComplete="username"
+                      autoFocus
                     />
                   </div>
                 </div>
@@ -233,10 +211,10 @@ export default function RegisterPage() {
                   {isLoading ? (
                     <div className="flex items-center gap-2">
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      Creating account...
+                      Submitting request...
                     </div>
                   ) : (
-                    'Create Account'
+                    'Request registration'
                   )}
                 </Button>
               </form>

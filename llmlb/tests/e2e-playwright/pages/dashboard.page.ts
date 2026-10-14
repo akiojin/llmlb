@@ -47,7 +47,6 @@ export class DashboardPage {
   readonly chatClose: Locator;
   readonly apiKeysModal: Locator;
   readonly userModal: Locator;
-  readonly invitationModal: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -92,7 +91,6 @@ export class DashboardPage {
     this.chatClose = page.locator(DashboardSelectors.modals.chatClose);
     this.apiKeysModal = page.locator(DashboardSelectors.modals.apiKeysModal);
     this.userModal = page.locator(DashboardSelectors.modals.userModal);
-    this.invitationModal = page.locator(DashboardSelectors.modals.invitationModal);
   }
 
   async goto() {
@@ -220,15 +218,6 @@ export class DashboardPage {
     await this.openUserDropdown();
     await this.page.locator(DashboardSelectors.userDropdown.manageUsers).click();
     await expect(this.userModal).toBeVisible();
-  }
-
-  /**
-   * Opens Invitation Codes modal via the user dropdown (admin only).
-   */
-  async openInvitationModal() {
-    await this.openUserDropdown();
-    await this.page.locator(DashboardSelectors.userDropdown.invitationCodes).click();
-    await expect(this.invitationModal).toBeVisible();
   }
 
   /**

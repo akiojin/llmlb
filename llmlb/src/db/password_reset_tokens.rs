@@ -5,6 +5,7 @@
 
 use crate::common::error::LbError;
 use chrono::{Duration, Utc};
+use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -12,7 +13,10 @@ use uuid::Uuid;
 const TOKEN_LENGTH: usize = 48;
 
 fn hash_token(token: &str) -> String {
-    crate::db::invitations::hash_with_sha256(token)
+    Sha256::digest(token.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// ユーザーのリセットトークンを発行し、平文トークンを返す

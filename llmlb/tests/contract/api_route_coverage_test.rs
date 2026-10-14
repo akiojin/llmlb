@@ -476,9 +476,9 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
     protected("POST", "/api/me/api-keys"),
     protected("PUT", "/api/me/api-keys/{id}"),
     protected("DELETE", "/api/me/api-keys/{id}"),
-    protected("GET", "/api/invitations"),
-    protected("POST", "/api/invitations"),
-    protected("DELETE", "/api/invitations/{id}"),
+    protected("GET", "/api/registration-requests"),
+    protected("POST", "/api/registration-requests/{id}/approve"),
+    protected("DELETE", "/api/registration-requests/{id}"),
     // router/dashboard.rs（api_routes）
     protected("GET", "/api/dashboard/endpoints"),
     protected("GET", "/api/dashboard/models"),

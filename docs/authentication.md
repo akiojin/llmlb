@@ -66,8 +66,7 @@ rejected by the API.
 | `openai.models.read` | Model discovery (`GET /v1/models`, `GET /v1/models/:model_id`) |
 | `endpoints.read` | Read-only endpoint APIs (`GET /api/endpoints*`) |
 | `endpoints.manage` | Endpoint mutations (`POST/PUT/DELETE /api/endpoints*`, `POST /api/endpoints/:id/test`, `POST /api/endpoints/:id/sync`, `POST /api/endpoints/:id/download`) |
-| `users.manage` | User management (`/api/users*`) |
-| `invitations.manage` | Invitation management (`/api/invitations*`) |
+| `users.manage` | User and registration request management (`/api/users*`, `/api/registration-requests*`) |
 | `models.manage` | Model register/delete (`POST /api/models/register`, `DELETE /api/models/*`) |
 | `registry.read` | Model registry access (`GET /api/models/registry/*`) and model list endpoints (`GET /api/models`, `GET /api/models/hub`) |
 | `logs.read` | Node log proxy (`GET /api/nodes/:node_id/logs`) |
@@ -98,3 +97,22 @@ In debug builds (`#[cfg(debug_assertions)]`) the following API keys are accepted
 - `sk_debug_admin`: all permissions
 - `sk_debug_api`: `openai.inference` + `openai.models.read`
 - `sk_debug_runtime`: `registry.read`
+
+## Registration approval
+
+Public registration (`POST /api/auth/register`) accepts an email-format `username` and
+`password`, returning `202` with `status: "pending"`. Passwords are hashed in a separate
+request table; no user or authentication token exists before approval. Pending and
+rejected applicants receive the same login error as nonexistent users.
+
+Administrators review pending requests in Manage Users or use
+`GET /api/registration-requests`. Approve via
+`POST /api/registration-requests/:id/approve` with an explicit `role` (`admin` or `viewer`),
+or reject via `DELETE /api/registration-requests/:id`. These endpoints also accept API
+keys with `users.manage`. Rejection permits reapplication. The dashboard defaults to
+`viewer`; later role changes remain available, with protection for the last admin.
+
+Pending requests are limited to 100, and usernames are unique across users and requests.
+New requests use the existing administrator notification settings and email addresses.
+Missing mail configuration or a delivery failure does not reject a registration.
+Invitation APIs, permissions, and all unused invitation codes were removed in 6.4.0.

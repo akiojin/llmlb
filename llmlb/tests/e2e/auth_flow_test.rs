@@ -462,7 +462,7 @@ async fn test_csrf_token_rotates_on_mutation() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/invitations")
+                .uri("/api/users")
                 .header("content-type", "application/json")
                 .header(header::HOST, "example.com")
                 .header(header::ORIGIN, "http://example.com")
@@ -473,7 +473,7 @@ async fn test_csrf_token_rotates_on_mutation() {
                 )
                 .body(Body::from(
                     serde_json::to_vec(&json!({
-                        "expires_in_hours": 24
+                        "username": "csrf-created@example.com", "role": "viewer"
                     }))
                     .unwrap(),
                 ))

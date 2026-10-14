@@ -1,3 +1,5 @@
+import { useAuth } from '@/hooks/useAuth'
+import { useRegistrationRequestsViewModel, type RegistrationRequestsViewModel } from './useRegistrationRequestsViewModel'
 import { queryKeys } from '@/lib/queryKeys'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -17,9 +19,13 @@ interface UserModalOptions {
 
 export interface UserRow extends User {
   createdAtLabel: string
+  canDelete: boolean
 }
 
 export interface UserModalViewModel {
+  registrations: RegistrationRequestsViewModel
+  canDemoteEditUser: boolean
+  isAdmin: boolean
   createOpen: boolean
   editUser: User | null
   deleteUser: User | null
@@ -58,6 +64,9 @@ export interface UserModalViewModel {
 /** User forms, recipient refreshes and one-time generated-password state. */
 export function useUserModalViewModel({ open, onOpenChange }: UserModalOptions): UserModalViewModel {
   const queryClient = useQueryClient()
+  const { user: currentUser } = useAuth()
+  const isAdmin = currentUser?.role === 'admin'
+  const registrations = useRegistrationRequestsViewModel(open)
   const [createOpen, setCreateOpen] = useState(false)
   const [editUser, setEditUser] = useState<User | null>(null)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
@@ -74,7 +83,7 @@ export function useUserModalViewModel({ open, onOpenChange }: UserModalOptions):
   const { data: users, isLoading, refetch } = useQuery({
     queryKey: queryKeys.users(),
     queryFn: usersApi.list,
-    enabled: open,
+    enabled: open && isAdmin,
   })
 
   // The notification recipients are the admins that have an email, so every
@@ -194,6 +203,7 @@ export function useUserModalViewModel({ open, onOpenChange }: UserModalOptions):
   }
 
   const handleCreate = () => {
+    if (!isAdmin) return
     const email = formEmail.trim()
     createMutation.mutate({
       username: formUsername,
@@ -203,7 +213,7 @@ export function useUserModalViewModel({ open, onOpenChange }: UserModalOptions):
   }
 
   const handleUpdate = () => {
-    if (!editUser) return
+    if (!isAdmin || !editUser) return
     const data: { username?: string; password?: string; role?: string; email?: string } = {}
     if (formUsername !== editUser.username) data.username = formUsername
     if (formPassword) data.password = formPassword
@@ -242,20 +252,24 @@ export function useUserModalViewModel({ open, onOpenChange }: UserModalOptions):
     cleanupManualCopyBuffer()
   }
 
+  const adminCount = users?.filter((user) => user.role === 'admin').length ?? 0
+  const canDemoteEditUser = editUser?.role !== 'admin' || adminCount > 1
+
   return {
+    registrations, canDemoteEditUser, isAdmin,
     createOpen, editUser, deleteUser, setDeleteUser, generatedPassword, copied,
     formUsername, setFormUsername, formPassword, setFormPassword,
     formRole, setFormRole, formEmail, setFormEmail, isLoading,
-    users: users?.map((user) => ({ ...user, createdAtLabel: formatRelativeTime(user.created_at) })),
+    users: isAdmin ? users?.map((user) => ({ ...user, createdAtLabel: formatRelativeTime(user.created_at), canDelete: user.role !== 'admin' || adminCount > 1 })) : undefined,
     isCreating: createMutation.isPending, isUpdating: updateMutation.isPending,
     isDeleting: deleteMutation.isPending,
-    canCreate: !!formUsername && !createMutation.isPending,
-    canUpdate: !!formUsername && !updateMutation.isPending,
+    canCreate: isAdmin && !!formUsername && !createMutation.isPending,
+    canUpdate: isAdmin && !!formUsername && !updateMutation.isPending,
     handleMainOpenChange, handleCreateOpenChange, handleOpenCreateDialog,
     handleOpenEditDialog, handleCloseEditDialog, handleCreate, handleUpdate,
     handleCopyPassword, handleClosePassword,
     handlePasswordOpenChange: (nextOpen: boolean) => { if (!nextOpen) handleClosePassword() },
-    handleRefresh: () => { void refetch() },
-    handleDelete: () => { if (deleteUser) deleteMutation.mutate(deleteUser.id) },
+    handleRefresh: () => { if (isAdmin && open) { void refetch(); registrations.handleRefresh() } },
+    handleDelete: () => { if (isAdmin && deleteUser && (deleteUser.role !== 'admin' || adminCount > 1)) deleteMutation.mutate(deleteUser.id) },
   }
 }

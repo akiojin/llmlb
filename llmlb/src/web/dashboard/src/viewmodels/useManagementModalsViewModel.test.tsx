@@ -1,14 +1,12 @@
 import type { ReactNode } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiKeysApi, invitationsApi, usersApi, type ApiKey, type Invitation, type User } from '@/lib/api'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { apiKeysApi, registrationRequestsApi, usersApi, type ApiKey, type RegistrationRequest, type User } from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
-import * as utils from '@/lib/utils'
 import { invalidateDashboardSubscriptions } from '@/hooks/dashboardSubscriptions'
 import { useApiKeyModalViewModel } from './useApiKeyModalViewModel'
 import { useUserModalViewModel } from './useUserModalViewModel'
-import { useInvitationModalViewModel } from './useInvitationModalViewModel'
 
 const { toast, auth } = vi.hoisted(() => ({
   toast: vi.fn(),
@@ -25,9 +23,8 @@ const user: User = {
   id: 'user-A', username: 'alice', role: 'viewer', email: 'alice@example.com',
   created_at: '2026-10-01T00:00:00Z',
 }
-const invitation: Invitation = {
-  id: 'invitation-A', created_by: 'admin', created_at: '2026-10-01T00:00:00Z',
-  expires_at: '2099-10-01T00:00:00Z', status: 'active',
+const registration: RegistrationRequest = {
+  id: 'request-A', username: 'pending@example.com', created_at: '2026-10-01T00:00:00Z',
 }
 
 function setup(polling = false) {
@@ -41,6 +38,10 @@ function setup(polling = false) {
   return { client, wrapper }
 }
 
+beforeEach(() => {
+  vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([])
+})
+
 afterEach(() => {
   vi.useRealTimers()
   focusManager.setFocused(undefined)
@@ -51,21 +52,20 @@ describe('management modal ViewModels', () => {
   it('gates all acquisition by open without subscribing management caches to unrelated WS resources', async () => {
     const keys = vi.spyOn(apiKeysApi, 'list').mockResolvedValue([key])
     const users = vi.spyOn(usersApi, 'list').mockResolvedValue([user])
-    const invitations = vi.spyOn(invitationsApi, 'list').mockResolvedValue([invitation])
+    const registrations = vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([registration])
     const { client, wrapper } = setup()
     const { result, rerender } = renderHook(({ open }) => ({
       keys: useApiKeyModalViewModel({ open, onOpenChange: vi.fn() }),
       users: useUserModalViewModel({ open, onOpenChange: vi.fn() }),
-      invitations: useInvitationModalViewModel({ open }),
     }), { wrapper, initialProps: { open: false } })
     expect(keys).not.toHaveBeenCalled()
     expect(users).not.toHaveBeenCalled()
-    expect(invitations).not.toHaveBeenCalled()
+    expect(registrations).not.toHaveBeenCalled()
     rerender({ open: true })
-    await waitFor(() => expect(result.current.invitations.invitations).toHaveLength(1))
+    await waitFor(() => expect(result.current.users.registrations.requests).toHaveLength(1))
     expect(keys).toHaveBeenCalledTimes(1)
     expect(users).toHaveBeenCalledTimes(1)
-    expect(invitations).toHaveBeenCalledTimes(1)
+    expect(registrations).toHaveBeenCalledTimes(1)
     const invalidate = vi.spyOn(client, 'invalidateQueries')
     for (const changed of ['endpoints', 'metrics', 'tps', 'system'] as const) {
       await act(() => invalidateDashboardSubscriptions(client, { changed, id: 'A' }))
@@ -73,31 +73,30 @@ describe('management modal ViewModels', () => {
     expect(invalidate).not.toHaveBeenCalled()
   })
 
-  it('inherits provider polling only for users/invitations and stops when closed; API keys ignore focus', async () => {
+  it('inherits provider polling only for users/registrations and stops when closed; API keys ignore focus', async () => {
     vi.useFakeTimers()
     const keys = vi.spyOn(apiKeysApi, 'list').mockResolvedValue([])
     const users = vi.spyOn(usersApi, 'list').mockResolvedValue([])
-    const invitations = vi.spyOn(invitationsApi, 'list').mockResolvedValue([])
+    const registrations = vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([])
     const { wrapper } = setup(true)
     const { rerender, unmount } = renderHook(({ open }) => {
       useApiKeyModalViewModel({ open, onOpenChange: vi.fn() })
       useUserModalViewModel({ open, onOpenChange: vi.fn() })
-      useInvitationModalViewModel({ open })
     }, { wrapper, initialProps: { open: true } })
     await act(() => vi.advanceTimersByTimeAsync(1))
     await act(() => vi.advanceTimersByTimeAsync(10000))
     expect(keys).toHaveBeenCalledTimes(1)
     expect(users).toHaveBeenCalledTimes(3)
-    expect(invitations).toHaveBeenCalledTimes(3)
+    expect(registrations).toHaveBeenCalledTimes(3)
     await act(async () => {
       focusManager.setFocused(false)
       focusManager.setFocused(true)
     })
     expect(keys).toHaveBeenCalledTimes(1)
     rerender({ open: false })
-    const counts = [users.mock.calls.length, invitations.mock.calls.length]
+    const counts = [users.mock.calls.length, registrations.mock.calls.length]
     await act(() => vi.advanceTimersByTimeAsync(10000))
-    expect([users.mock.calls.length, invitations.mock.calls.length]).toEqual(counts)
+    expect([users.mock.calls.length, registrations.mock.calls.length]).toEqual(counts)
     unmount()
   })
 
@@ -206,68 +205,17 @@ describe('management modal ViewModels', () => {
     expect(invalidate).not.toHaveBeenCalled()
   })
 
-  it('derives invitation expiry and revoke availability without changing status semantics', async () => {
-    vi.spyOn(invitationsApi, 'list').mockResolvedValue([
-      invitation,
-      { ...invitation, id: 'old', expires_at: '2000-01-01T00:00:00Z' },
-      { ...invitation, id: 'used', status: 'used', used_by: 'registered-user' },
-      { ...invitation, id: 'revoked', status: 'revoked' },
-    ])
+  it('does not acquire or mutate users for a viewer even when opened directly', async () => {
+    auth.role = 'viewer'
+    const list = vi.spyOn(usersApi, 'list').mockResolvedValue([user])
+    const create = vi.spyOn(usersApi, 'create')
     const { wrapper } = setup()
-    const { result } = renderHook(() => useInvitationModalViewModel({ open: true }), { wrapper })
-    await waitFor(() => expect(result.current.invitations).toHaveLength(4))
-    expect(result.current.invitations?.map(({ displayStatus, canRevoke }) => ({ displayStatus, canRevoke }))).toEqual([
-      { displayStatus: 'active', canRevoke: true }, { displayStatus: 'expired', canRevoke: false },
-      { displayStatus: 'used', canRevoke: false }, { displayStatus: 'revoked', canRevoke: false },
-    ])
-    expect(result.current.invitations?.[2].usedByLabel).toBe('register...')
+    const { result } = renderHook(() => useUserModalViewModel({ open: true, onOpenChange: vi.fn() }), { wrapper })
+    await act(async () => {})
+    expect(list).not.toHaveBeenCalled()
+    act(() => { result.current.setFormUsername('new@example.com') })
+    act(() => result.current.handleCreate())
+    expect(create).not.toHaveBeenCalled()
   })
 
-  it('creates with the selected lifetime, revokes and refreshes invitations without waiting; closing clears the code', async () => {
-    const response = { id: invitation.id, code: 'invite-once', created_at: invitation.created_at, expires_at: invitation.expires_at }
-    const create = vi.spyOn(invitationsApi, 'create').mockResolvedValue(response)
-    const revoke = vi.spyOn(invitationsApi, 'revoke').mockResolvedValue(undefined)
-    const { client, wrapper } = setup()
-    const invalidate = vi.spyOn(client, 'invalidateQueries').mockReturnValue(new Promise<void>(() => {}))
-    const { result } = renderHook(() => useInvitationModalViewModel({ open: false }), { wrapper })
-    expect(result.current.expiresInHours).toBe(72)
-    act(() => { result.current.setCreateOpen(true); result.current.setExpiresInHours(24) })
-    act(() => result.current.handleCreate())
-    await waitFor(() => expect(result.current.createdCode).toEqual(response))
-    expect(create).toHaveBeenCalledExactlyOnceWith(24)
-    expect(result.current.isCreating).toBe(false)
-    act(() => result.current.handleCloseCreatedDialog())
-    expect(result.current.createdCode).toBeNull()
-    expect(result.current.createOpen).toBe(false)
-    expect(result.current.expiresInHours).toBe(24)
-    act(() => result.current.setRevokeInvitation(invitation))
-    act(() => result.current.handleRevoke())
-    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Invitation code revoked' }))
-    expect(revoke).toHaveBeenCalledExactlyOnceWith(invitation.id)
-    expect(invalidate).toHaveBeenCalledTimes(2)
-    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: queryKeys.invitations() })
-    expect(result.current.revokeInvitation).toBeNull()
-    expect(result.current.isRevoking).toBe(false)
-  })
-
-  it('keeps manual-copy fallback and two-second feedback in the ViewModel', async () => {
-    vi.useFakeTimers()
-    vi.spyOn(invitationsApi, 'create').mockResolvedValue({ id: invitation.id,
-      code: 'invite-once', created_at: invitation.created_at, expires_at: invitation.expires_at })
-    const copy = vi.spyOn(utils, 'copyToClipboard').mockResolvedValue({ method: 'manual' })
-    const select = vi.spyOn(utils, 'selectTextForManualCopy').mockReturnValue(true)
-    const { wrapper } = setup()
-    const { result, unmount } = renderHook(() => useInvitationModalViewModel({ open: false }), { wrapper })
-    act(() => result.current.handleCreate())
-    await act(() => vi.advanceTimersByTimeAsync(1))
-    await act(() => result.current.handleCopy())
-    expect(select).toHaveBeenCalledExactlyOnceWith('invite-once')
-    expect(result.current.copied).toBe(false)
-    copy.mockResolvedValue({ method: 'clipboard' })
-    await act(() => result.current.handleCopy())
-    expect(result.current.copied).toBe(true)
-    await act(() => vi.advanceTimersByTimeAsync(2000))
-    expect(result.current.copied).toBe(false)
-    unmount()
-  })
 })

@@ -1,0 +1,249 @@
+{
+  "provenance": {
+    "kind": "captured-http",
+    "upstream": "https://github.com/mw00/project-maya",
+    "release_url": "https://github.com/mw00/project-maya/releases/tag/v1.1.11",
+    "release_tag": "v1.1.11",
+    "commit_sha": "89313399b330600b455603d3c569c1f188f96db1",
+    "captured_at": "2026-10-15T13:44:03.847038+00:00",
+    "os": "Windows-11-10.0.26300-SP0",
+    "gpu": "NVIDIA GeForce RTX 4090, 610.88, 24564 MiB",
+    "python_version": "3.14.3",
+    "model": "Maya-S24",
+    "model_directory": "C:/Maya-models/Maya-S24",
+    "model_integrity_file": "model-integrity.json",
+    "engine_sha256": "1e1bf88123255064975ca187e9da54bc4bacfeb7fb7dc7ccb857ec3c420fb46c",
+    "config_sha256": "f8a20f1bab53187faa8aa2c8653f47b761d4aa4b1b50879090f93dbe24bf9510",
+    "config_file": "runtime-config.json",
+    "mock_engine_used": false,
+    "source_modified": false,
+    "startup_commands": [
+      [
+        "E:\\project-maya\\.venv\\Scripts\\python.exe",
+        "-X",
+        "utf8",
+        "E:\\project-maya\\serve\\server.py",
+        "--engine",
+        "strata",
+        "--config",
+        "E:\\project-maya\\maya-maya-s24.json",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "52314"
+      ],
+      [
+        "E:\\project-maya\\.venv\\Scripts\\python.exe",
+        "-X",
+        "utf8",
+        "E:\\project-maya\\serve\\server.py",
+        "--engine",
+        "strata",
+        "--config",
+        "E:\\project-maya\\maya-maya-s24.json",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "55920",
+        "--api-key",
+        "llmlb-issue-909-maya-test-key"
+      ]
+    ],
+    "runtime_evidence_file": "runtime.json",
+    "scope": "Real CUDA engine with model loaded; identification, registration and persistence only. No inference benchmark."
+  },
+  "responses": [
+    {
+      "case": "auth-disabled-no-bearer",
+      "path": "/health",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:44:03 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "217"
+      },
+      "body_file": "auth-disabled-no-bearer-health.body.json",
+      "raw_file": "auth-disabled-no-bearer-health.http",
+      "body_sha256": "0b4054fb31693cf88ea729ab1cb34179c5f6327f000c814be443daac9f9f46ed",
+      "captured_at": "2026-10-15T13:44:03.847038+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-disabled-no-bearer",
+      "path": "/v1/models",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:44:03 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "208"
+      },
+      "body_file": "auth-disabled-no-bearer-models.body.json",
+      "raw_file": "auth-disabled-no-bearer-models.http",
+      "body_sha256": "991f46c33ef59f788457026ed8fdef7de21dd09ad7a4a5503fd902326fdcb903",
+      "captured_at": "2026-10-15T13:44:03.961251+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-disabled-no-bearer",
+      "path": "/props",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:44:04 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "11209"
+      },
+      "body_file": "auth-disabled-no-bearer-props.body.json",
+      "raw_file": "auth-disabled-no-bearer-props.http",
+      "body_sha256": "1d766e7200db7d3c560c1bbf1e6c2ceae357f5ed8e8b37fe0318eeb5bc9081ed",
+      "captured_at": "2026-10-15T13:44:04.032148+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-no-bearer",
+      "path": "/health",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:46 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "216"
+      },
+      "body_file": "auth-enabled-no-bearer-health.body.json",
+      "raw_file": "auth-enabled-no-bearer-health.http",
+      "body_sha256": "5bab7f09d59fce8f7acb5f2afa6ac3c8a86b764370a1cdd1ecac979856129fea",
+      "captured_at": "2026-10-15T13:45:46.566811+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-no-bearer",
+      "path": "/v1/models",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:46 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82"
+      },
+      "body_file": "auth-enabled-no-bearer-models.body.json",
+      "raw_file": "auth-enabled-no-bearer-models.http",
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "captured_at": "2026-10-15T13:45:46.632547+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-no-bearer",
+      "path": "/props",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:46 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82"
+      },
+      "body_file": "auth-enabled-no-bearer-props.body.json",
+      "raw_file": "auth-enabled-no-bearer-props.http",
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "captured_at": "2026-10-15T13:45:46.838612+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-valid-bearer",
+      "path": "/health",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:47 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "216"
+      },
+      "body_file": "auth-enabled-valid-bearer-health.body.json",
+      "raw_file": "auth-enabled-valid-bearer-health.http",
+      "body_sha256": "5bab7f09d59fce8f7acb5f2afa6ac3c8a86b764370a1cdd1ecac979856129fea",
+      "captured_at": "2026-10-15T13:45:47.401275+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-valid-bearer",
+      "path": "/v1/models",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:47 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "208"
+      },
+      "body_file": "auth-enabled-valid-bearer-models.body.json",
+      "raw_file": "auth-enabled-valid-bearer-models.http",
+      "body_sha256": "991f46c33ef59f788457026ed8fdef7de21dd09ad7a4a5503fd902326fdcb903",
+      "captured_at": "2026-10-15T13:45:47.451791+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-valid-bearer",
+      "path": "/props",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:47 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "11209"
+      },
+      "body_file": "auth-enabled-valid-bearer-props.body.json",
+      "raw_file": "auth-enabled-valid-bearer-props.http",
+      "body_sha256": "1d766e7200db7d3c560c1bbf1e6c2ceae357f5ed8e8b37fe0318eeb5bc9081ed",
+      "captured_at": "2026-10-15T13:45:47.512526+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-invalid-bearer",
+      "path": "/health",
+      "status": 200,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:47 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "216"
+      },
+      "body_file": "auth-enabled-invalid-bearer-health.body.json",
+      "raw_file": "auth-enabled-invalid-bearer-health.http",
+      "body_sha256": "5bab7f09d59fce8f7acb5f2afa6ac3c8a86b764370a1cdd1ecac979856129fea",
+      "captured_at": "2026-10-15T13:45:47.958925+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-invalid-bearer",
+      "path": "/v1/models",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:48 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82"
+      },
+      "body_file": "auth-enabled-invalid-bearer-models.body.json",
+      "raw_file": "auth-enabled-invalid-bearer-models.http",
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "captured_at": "2026-10-15T13:45:48.036601+00:00",
+      "is_measured_http_response": true
+    },
+    {
+      "case": "auth-enabled-invalid-bearer",
+      "path": "/props",
+      "status": 401,
+      "headers": {
+        "Server": "BaseHTTP/0.6 Python/3.14.3",
+        "Date": "Thu, 15 Oct 2026 13:45:48 GMT",
+        "Content-Type": "application/json",
+        "Content-Length": "82"
+      },
+      "body_file": "auth-enabled-invalid-bearer-props.body.json",
+      "raw_file": "auth-enabled-invalid-bearer-props.http",
+      "body_sha256": "8142eac324459bd0ebfac9c329cc9b8c5666220b3fddadc4881026bb42e48376",
+      "captured_at": "2026-10-15T13:45:48.079753+00:00",
+      "is_measured_http_response": true
+    }
+  ]
+}

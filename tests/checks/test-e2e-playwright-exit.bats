@@ -2,11 +2,17 @@
 
 setup() {
     ROOT="$BATS_TEST_DIRNAME/../.."
+    if command -v cygpath >/dev/null 2>&1; then
+        ROOT=$(cygpath -am "$ROOT")
+    fi
     FIXTURE="$BATS_TEST_TMPDIR/worktree"
     mkdir -p "$FIXTURE/llmlb/tests/e2e-playwright" "$BATS_TEST_TMPDIR/bin"
     export E2E_FIXTURE_RUNNER="$ROOT/node_modules/.bin/playwright"
     export E2E_FIXTURE_CONFIG="$BATS_TEST_TMPDIR/playwright.config.cjs"
     export E2E_FIXTURE_REPORT="$BATS_TEST_TMPDIR/results.json"
+    if command -v cygpath >/dev/null 2>&1; then
+        export E2E_FIXTURE_REPORT=$(cygpath -am "$E2E_FIXTURE_REPORT")
+    fi
     export E2E_FIXTURE_MODE=success
     export PLAYWRIGHT_HTML_OPEN=never
     export PATH="$BATS_TEST_TMPDIR/bin:$PATH"

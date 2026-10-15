@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.45s
+     Running tests\integration_tests.rs (target\debug\deps\integration_tests-a92fb0ab354a89d2.exe)
+
+running 1 test
+live detection: endpoint_type=project_maya, reason=Project Maya: /health contains mcp_tools
+live registration: HTTP 201 Created, endpoint_type=project_maya, SQLite=project_maya
+test strata_family_live_test::test_live_project_maya_identification_and_registration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 209 filtered out; finished in 1.51s

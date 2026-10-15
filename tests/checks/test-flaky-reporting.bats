@@ -2,6 +2,11 @@
 
 setup() {
     ROOT="$BATS_TEST_DIRNAME/../.."
+    NODE_TMPDIR="$BATS_TEST_TMPDIR"
+    if command -v cygpath >/dev/null 2>&1; then
+        ROOT=$(cygpath -am "$ROOT")
+        NODE_TMPDIR=$(cygpath -am "$NODE_TMPDIR")
+    fi
     COLLECTOR="$ROOT/scripts/checks/collect-flaky-tests.mjs"
     OUT="$BATS_TEST_TMPDIR/flaky-tests.md"
 }
@@ -100,10 +105,10 @@ LOG
 @test "実Playwright reporterのretry成功を共通台帳へ変換する（ブラウザ不要）" {
     cat > "$BATS_TEST_TMPDIR/playwright.config.cjs" <<CONFIG
 module.exports = {
-  testDir: '$BATS_TEST_TMPDIR',
+  testDir: '$NODE_TMPDIR',
   testMatch: 'reporter-fixture.spec.cjs',
   retries: 1,
-  reporter: [['json', { outputFile: '$BATS_TEST_TMPDIR/real-results.json' }]],
+  reporter: [['json', { outputFile: '$NODE_TMPDIR/real-results.json' }]],
 };
 CONFIG
     cat > "$BATS_TEST_TMPDIR/reporter-fixture.spec.cjs" <<TEST

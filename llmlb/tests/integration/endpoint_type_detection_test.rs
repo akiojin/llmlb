@@ -56,6 +56,77 @@ fn family_response(engine: &str, case: &str, probe: &str) -> ResponseTemplate {
     response
 }
 
+/// Issue #909: source-derived examples cannot substitute for measured Maya responses.
+#[test]
+fn test_project_maya_fixtures_are_measured_http_responses() {
+    use sha2::{Digest, Sha256};
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/detection/project-maya");
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("manifest.json"))
+            .expect("Issue #909 requires real Maya HTTP captures"),
+    )
+    .unwrap();
+    let provenance = &manifest["provenance"];
+    assert_eq!(provenance["kind"], "captured-http");
+    assert_eq!(provenance["mock_engine_used"], false);
+    assert_eq!(provenance["source_modified"], false);
+    assert!(!provenance["release_tag"].as_str().unwrap().is_empty());
+    chrono::DateTime::parse_from_rfc3339(provenance["captured_at"].as_str().unwrap())
+        .expect("capture date is recorded");
+
+    for case in [
+        "auth-disabled-no-bearer",
+        "auth-enabled-no-bearer",
+        "auth-enabled-valid-bearer",
+        "auth-enabled-invalid-bearer",
+    ] {
+        for probe in ["/health", "/v1/models", "/props"] {
+            let entry = manifest["responses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["case"] == case && entry["path"] == probe)
+                .expect("authentication matrix includes each probe");
+            assert_eq!(entry["is_measured_http_response"], true);
+            let (status, body, headers) = family_fixture("project-maya", case, probe);
+            let denied = matches!(
+                case,
+                "auth-enabled-no-bearer" | "auth-enabled-invalid-bearer"
+            ) && probe != "/health";
+            assert_eq!(status, if denied { 401 } else { 200 });
+            assert_eq!(headers["Content-Type"], "application/json");
+            let raw = std::fs::read(root.join(entry["raw_file"].as_str().unwrap())).unwrap();
+            let separator = raw
+                .windows(4)
+                .position(|bytes| bytes == b"\r\n\r\n")
+                .unwrap();
+            let raw_headers = std::str::from_utf8(&raw[..separator]).unwrap();
+            let mut lines = raw_headers.split("\r\n");
+            assert_eq!(
+                lines.next().unwrap().split_whitespace().nth(1).unwrap(),
+                status.to_string()
+            );
+            let captured_headers: serde_json::Map<String, Value> = lines
+                .map(|line| {
+                    let (name, value) = line.split_once(':').unwrap();
+                    (name.to_owned(), Value::String(value.trim().to_owned()))
+                })
+                .collect();
+            assert_eq!(Value::Object(captured_headers), headers);
+            assert_eq!(&raw[separator + 4..], body.as_bytes());
+            assert_eq!(
+                entry["body_sha256"],
+                Sha256::digest(body.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            );
+        }
+    }
+}
+
 async fn create_admin_api_key(db_pool: &SqlitePool) -> String {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
     let created =
@@ -740,7 +811,7 @@ async fn test_health_detection_distinguishes_strata_maya_llamacpp_and_openai() {
             "strata",
         ),
         (
-            family_health("project-maya/source-derived", "auth-disabled-no-bearer"),
+            family_health("project-maya", "auth-disabled-no-bearer"),
             "llama.cpp",
             "project_maya",
         ),
@@ -792,11 +863,12 @@ async fn test_strata_and_maya_detection_uses_only_health() {
             "strata",
         ),
         (
-            family_health("project-maya/source-derived", "auth-enabled-valid-bearer"),
+            family_health("project-maya", "auth-enabled-valid-bearer"),
             "project_maya",
         ),
         (
-            family_health("project-maya/source-derived", "mcp-enabled"),
+            // Synthetic MCP-enabled variant; captured responses keep MCP disabled.
+            json!({"status": "ok", "mcp_tools": true}),
             "project_maya",
         ),
         (
@@ -860,15 +932,15 @@ async fn test_strata_health_invalid_signals_fall_back_to_openai() {
     }
 }
 
-/// #908: replay real Strata responses and explicitly source-derived Maya fixtures.
+/// Issues #908 / #909: replay real Strata and Maya responses, including authentication.
 #[tokio::test]
-async fn test_strata_captured_and_maya_source_derived_http_responses() {
+async fn test_strata_and_maya_captured_http_responses() {
     for (engine, expected, valid_key) in [
         ("strata", "strata", "llmlb-issue-908-strata-test-key"),
         (
-            "project-maya/source-derived",
+            "project-maya",
             "project_maya",
-            "sk_llmlb908_maya_test_only",
+            "llmlb-issue-909-maya-test-key",
         ),
     ] {
         for (case, api_key) in [
@@ -966,7 +1038,7 @@ async fn test_strata_and_maya_registration_persists_detected_type() {
     for (health, expected) in [
         (family_health("strata", "auth-disabled-no-bearer"), "strata"),
         (
-            family_health("project-maya/source-derived", "auth-disabled-no-bearer"),
+            family_health("project-maya", "auth-disabled-no-bearer"),
             "project_maya",
         ),
     ] {
@@ -979,7 +1051,7 @@ async fn test_strata_and_maya_registration_persists_detected_type() {
         let engine = if expected == "strata" {
             "strata"
         } else {
-            "project-maya/source-derived"
+            "project-maya"
         };
         let models: Value = serde_json::from_str(
             &family_fixture(engine, "auth-disabled-no-bearer", "/v1/models").1,

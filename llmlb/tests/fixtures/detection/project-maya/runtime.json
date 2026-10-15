@@ -1,0 +1,227 @@
+{
+  "started_at": "2026-10-15T13:42:31.853799+00:00",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "python_version": "3.14.3",
+  "mock_engine_used": false,
+  "source_modified": false,
+  "model_directory": "C:/Maya-models/Maya-S24",
+  "startup_commands": [
+    [
+      "E:\\project-maya\\.venv\\Scripts\\python.exe",
+      "-X",
+      "utf8",
+      "E:\\project-maya\\serve\\server.py",
+      "--engine",
+      "strata",
+      "--config",
+      "E:\\project-maya\\maya-maya-s24.json",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "52314"
+    ],
+    [
+      "E:\\project-maya\\.venv\\Scripts\\python.exe",
+      "-X",
+      "utf8",
+      "E:\\project-maya\\serve\\server.py",
+      "--engine",
+      "strata",
+      "--config",
+      "E:\\project-maya\\maya-maya-s24.json",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "55920",
+      "--api-key",
+      "llmlb-issue-909-maya-test-key"
+    ]
+  ],
+  "live_smoke": [
+    {
+      "case": "auth-disabled-no-bearer",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "llmlb",
+        "--test",
+        "integration_tests",
+        "strata_family_live_test::test_live_project_maya_identification_and_registration",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "case": "auth-enabled-no-bearer",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "llmlb",
+        "--test",
+        "integration_tests",
+        "strata_family_live_test::test_live_project_maya_identification_and_registration",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "case": "auth-enabled-valid-bearer",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "llmlb",
+        "--test",
+        "integration_tests",
+        "strata_family_live_test::test_live_project_maya_identification_and_registration",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "commit_sha": "89313399b330600b455603d3c569c1f188f96db1",
+  "release_tag": "v1.1.11",
+  "config_sha256": "f8a20f1bab53187faa8aa2c8653f47b761d4aa4b1b50879090f93dbe24bf9510",
+  "engine_sha256": "1e1bf88123255064975ca187e9da54bc4bacfeb7fb7dc7ccb857ec3c420fb46c",
+  "gpu": "NVIDIA GeForce RTX 4090, 610.88, 24564 MiB",
+  "strata_before": {
+    "status": "ok",
+    "max_context": 131072,
+    "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+    "images": true,
+    "api_key": false,
+    "image_generation": false,
+    "loaded": true,
+    "service": "strata"
+  },
+  "strata_unload": {
+    "status": "unloaded",
+    "service": "strata",
+    "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+    "loaded": false,
+    "auto_load": true,
+    "structured_output": {
+      "formats": [
+        "json_object",
+        "json_schema"
+      ],
+      "method": "prompt_and_validate",
+      "constrained_decoding": false,
+      "stream_buffered": true
+    },
+    "engine": "0.1.44.1",
+    "started": 1792071125,
+    "uptime_s": 636,
+    "cache_max_tokens": 131072,
+    "context": {
+      "native": 131072,
+      "max_positions": 131072
+    },
+    "concurrency": {
+      "serving": 1,
+      "requested": 1
+    },
+    "dialects": [
+      "/v1/chat/completions",
+      "/v1/messages",
+      "/v1/responses"
+    ],
+    "vision": {
+      "enabled": true,
+      "available": true,
+      "error": null
+    },
+    "image_generation": {
+      "enabled": false
+    },
+    "activity": {
+      "requests": 0,
+      "in_flight": 0,
+      "last_request_at": 1792071662
+    },
+    "last_timings": null,
+    "vram": {
+      "elastic": false
+    },
+    "machine": {
+      "at": 1792071761,
+      "gpu": {
+        "name": "NVIDIA GeForce RTX 4090",
+        "used_mib": 1383.0,
+        "total_mib": 24564.0,
+        "util_pct": 14,
+        "temp_c": 34,
+        "power_w": 26.029
+      },
+      "ram": {
+        "used_gib": 44.8,
+        "total_gib": 127.7
+      }
+    }
+  },
+  "strata_stopped_python_pids": [
+    11980,
+    42740
+  ],
+  "maya_server_pids": [
+    {
+      "authenticated": false,
+      "pid": 4168
+    },
+    {
+      "authenticated": true,
+      "pid": 41240
+    }
+  ],
+  "no_auth_health": {
+    "status": "ok",
+    "max_context": 32768,
+    "model": "glm-5.3-flash",
+    "images": false,
+    "api_key": false,
+    "defaults": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "reasoning_effort": "high"
+    },
+    "version": "1.1.11",
+    "mcp_tools": false
+  },
+  "auth_health": {
+    "status": "ok",
+    "max_context": 32768,
+    "model": "glm-5.3-flash",
+    "images": false,
+    "api_key": true,
+    "defaults": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "reasoning_effort": "high"
+    },
+    "version": "1.1.11",
+    "mcp_tools": false
+  },
+  "result": "PASS",
+  "strata_after": {
+    "status": "ok",
+    "max_context": 131072,
+    "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+    "images": true,
+    "api_key": false,
+    "image_generation": false,
+    "loaded": true,
+    "service": "strata"
+  },
+  "finished_at": "2026-10-15T13:49:32.423289+00:00"
+}

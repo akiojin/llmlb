@@ -70,16 +70,19 @@ Model weights remained unloaded and inference was not tested. Its
 [capture manifest](llmlb/tests/fixtures/detection/strata/manifest.json)
 records versions, commands, and all `/health`, `/v1/models`, and `/props`
 responses with authentication disabled, absent, valid, and invalid.
-Project Maya v1.1.8 requires a supported Linux/Windows GPU environment;
-its official launcher rejects macOS. Its
-[startup evidence](llmlb/tests/fixtures/detection/project-maya/provenance.json)
-records that limitation. The
-[Maya fixtures](llmlb/tests/fixtures/detection/project-maya/source-derived/manifest.json)
-are explicitly labeled `source-derived`
-and cite the response-building code at the pinned v1.1.8 commit; they are not
-HTTP captures. This fallback follows the Issue #908 PM ruling after Linux
-startup was also attempted. Actual Maya runtime confirmation is tracked
-in [Issue #909](https://github.com/akiojin/llmlb/issues/909); the opt-in test can run on a supported Linux/Windows host.
+Project Maya v1.1.11 was captured on 2026-10-15 on Windows 11 / RTX 4090,
+using the unmodified official CUDA engine with Maya-S24 loaded from
+`C:/Maya-models/Maya-S24` on NVMe. Its
+[capture manifest](llmlb/tests/fixtures/detection/project-maya/manifest.json)
+records all 12 responses, raw HTTP bytes, body digests, and authentication
+conditions. The [runtime evidence](llmlb/tests/fixtures/detection/project-maya/runtime.json)
+and live smoke logs record `project_maya` detection, HTTP 201 registration,
+and SQLite persistence with authentication disabled, without a Bearer token,
+and with a valid token. The captured `/health` marker is `mcp_tools: false`;
+MCP-enabled detection remains a separate synthetic boundary test.
+Model shard digests are checked against the official release's published
+values. The existing Strata service is restored after the Maya checks.
+Inference quality and throughput are outside this identification test.
 
 ## Environment Variables
 - Router: `LLMLB_HOST`, `LLMLB_PORT`, `LLMLB_DATABASE_URL` (or `DATABASE_URL`),

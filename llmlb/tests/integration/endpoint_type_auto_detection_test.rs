@@ -51,12 +51,16 @@ async fn test_unreachable_endpoint_rejected() {
     let client = Client::new();
     let admin_key = create_admin_api_key(&db_pool).await;
 
+    // Reserve a port without listening so other local services cannot make it reachable.
+    let unreachable = tokio::net::TcpSocket::new_v4().unwrap();
+    unreachable.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+
     let response = client
         .post(format!("http://{}/api/endpoints", server.addr()))
         .header("authorization", format!("Bearer {}", admin_key))
         .json(&json!({
             "name": "Unreachable EP",
-            "base_url": "http://localhost:8080"
+            "base_url": format!("http://{}", unreachable.local_addr().unwrap())
         }))
         .send()
         .await

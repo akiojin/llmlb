@@ -1,7 +1,0 @@
-Project Maya v1.1.8 - GLM-5.3-Flash on your own GPU(s).
-
-=== Step 1: checking this PC ===
-
-  [X]  Maya's experimental HIP backend runs on native Linux or Windows
-
-Setup stopped. Fix the item above and run it again - everything already done is kept and skipped.

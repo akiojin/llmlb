@@ -1,0 +1,42 @@
+{
+ "exe": "E:\\project-maya\\build\\strata.exe",
+ "args": [
+  "--glm-pack",
+  "C:\\Maya-models\\Maya-S24\\pack",
+  "--max-context",
+  "32768",
+  "--expert-cache",
+  "auto",
+  "--prefill",
+  "auto",
+  "--kv-streaming",
+  "on",
+  "--expert-profile",
+  "E:\\project-maya\\data\\expert-profile-glm.bin"
+ ],
+ "cwd": "E:\\project-maya",
+ "tokenizer": "C:\\Maya-models\\Maya-S24\\pack\\tokenizer",
+ "model_name": "glm-5.3-flash",
+ "gpu": [
+  0
+ ],
+ "sampling": {
+  "temperature": 1.0,
+  "top_p": 0.95
+ },
+ "reasoning_effort": "high",
+ "lib_dirs": [
+  "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.1\\bin",
+  "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.1\\bin\\x64"
+ ],
+ "port": 8081,
+ "log": "E:\\project-maya\\maya-maya-s24.log",
+ "installer": {
+  "models_dir": "C:\\Maya-models",
+  "quant": "Maya-S24",
+  "gguf": null,
+  "gguf_dir": null,
+  "draft": "mtp",
+  "written": "2026-10-15 22:23"
+ }
+}

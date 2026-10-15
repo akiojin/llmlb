@@ -1,0 +1,4 @@
+# Preserve the measured HTTP status line and header CRLF bytes on every platform.
+*.http -text whitespace=cr-at-eol
+# The manifest records the SHA-256 of the original Windows config bytes.
+runtime-config.json -text whitespace=cr-at-eol

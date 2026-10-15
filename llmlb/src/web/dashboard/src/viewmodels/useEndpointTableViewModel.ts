@@ -11,6 +11,14 @@ import { sortEndpoints, type EndpointSortDirection as SortDirection,
 
 const PAGE_SIZE = 10
 type StatusFilter = 'all' | DashboardEndpoint['status']
+const STATUS_FILTER_VALUES = [
+  'all', 'online', 'pending', 'offline', 'error',
+] as const satisfies readonly StatusFilter[]
+const TYPE_FILTER_VALUES = [
+  'all', 'xllm', 'ollama', 'vllm', 'sglang', 'lmdeploy', 'xinference', 'lemonade',
+  'tgi', 'koboldcpp', 'lm_studio', 'llamacpp', 'strata', 'project_maya',
+  'openai_compatible', 'unknown',
+] as const satisfies readonly ('all' | EndpointType)[]
 interface CreateEndpointForm { name: string; base_url: string; api_key: string; notes: string }
 
 export interface EndpointTableRow extends DashboardEndpoint {
@@ -28,9 +36,9 @@ export interface EndpointTableViewModel {
   search: string
   setSearch: (value: string) => void
   statusFilter: StatusFilter
-  setStatusFilter: (value: StatusFilter) => void
+  setStatusFilter: (value: string) => void
   typeFilter: 'all' | EndpointType
-  setTypeFilter: (value: 'all' | EndpointType) => void
+  setTypeFilter: (value: string) => void
   sortField: SortField
   sortDirection: SortDirection
   handleSort: (field: SortField) => void
@@ -266,8 +274,18 @@ export function useEndpointTableViewModel(endpoints: DashboardEndpoint[]): Endpo
 
   return {
     search, setSearch: (value) => { setSearch(value); setCurrentPage(1) },
-    statusFilter, setStatusFilter: (value) => { setStatusFilter(value); setCurrentPage(1) },
-    typeFilter, setTypeFilter: (value) => { setTypeFilter(value); setCurrentPage(1) },
+    statusFilter, setStatusFilter: (value) => {
+      const filter = STATUS_FILTER_VALUES.find((allowed) => allowed === value)
+      if (filter === undefined) return
+      setStatusFilter(filter)
+      setCurrentPage(1)
+    },
+    typeFilter, setTypeFilter: (value) => {
+      const filter = TYPE_FILTER_VALUES.find((allowed) => allowed === value)
+      if (filter === undefined) return
+      setTypeFilter(filter)
+      setCurrentPage(1)
+    },
     sortField, sortDirection, handleSort, currentPage, totalPages,
     previousPage: () => setCurrentPage((page) => Math.max(1, page - 1)),
     nextPage: () => setCurrentPage((page) => Math.min(totalPages, page + 1)),

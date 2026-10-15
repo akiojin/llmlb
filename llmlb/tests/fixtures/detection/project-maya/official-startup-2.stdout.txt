@@ -1,8 +1,0 @@
-Project Maya v1.1.8 - GLM-5.3-Flash on your own GPU(s).
-
-=== Step 1: checking this PC ===
-
-  [X]  Project Maya runs on Linux and Windows
-       the engine needs an NVIDIA GPU and CUDA
-
-Setup stopped. Fix the item above and run it again - everything already done is kept and skipped.

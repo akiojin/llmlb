@@ -20,6 +20,8 @@ git_sandbox_assert_toplevel() {
     local dir toplevel
     dir=$(cd "$1" && pwd -P)
     toplevel=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || toplevel=""
+    # Git for Windows reports C:/... while Git Bash pwd reports /c/... .
+    toplevel=$(cd "$toplevel" 2>/dev/null && pwd -P) || toplevel=""
     if [ "$toplevel" != "$dir" ]; then
         echo "✗ git sandbox が隔離されていません: $dir (toplevel: ${toplevel:-none})" >&2
         return 1

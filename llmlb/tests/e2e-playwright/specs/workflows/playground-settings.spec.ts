@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../helpers/playground-diagnostics.fixture'
+import { randomUUID } from 'node:crypto'
 import { ensureDashboardLogin, deleteEndpointsByName, listEndpoints, openDashboardRoute } from '../../helpers/api-helpers'
 import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '../../helpers/mock-openai-endpoint'
 
@@ -9,11 +10,15 @@ test.describe.configure({ mode: 'serial' })
 
 test.describe('Playground Settings @playground', () => {
   let mock: MockOpenAIEndpointServer
-  const endpointName = `e2e-playground-settings-${Date.now()}`
+  const endpointName = `e2e-playground-settings-${randomUUID()}`
   let endpointId = ''
+  let beforeChatResponse: (() => Promise<void>) | undefined
 
   test.beforeAll(async ({ request }) => {
-    mock = await startMockOpenAIEndpointServer()
+    mock = await startMockOpenAIEndpointServer({
+      models: [`${endpointName}-model`],
+      beforeChatResponse: async () => { await beforeChatResponse?.() },
+    })
 
     const resp = await request.post(`${API_BASE}/api/endpoints`, {
       headers: AUTH_HEADER,
@@ -35,12 +40,11 @@ test.describe('Playground Settings @playground', () => {
   })
 
   test.afterAll(async ({ request }) => {
-    await deleteEndpointsByName(request, endpointName)
-    // Force-close with timeout to avoid afterAll hook timeout
-    await Promise.race([
-      mock.close(),
-      new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-    ])
+    try {
+      await deleteEndpointsByName(request, endpointName)
+    } finally {
+      await mock?.close()
+    }
   })
 
   test('PS-01: Endpoint Playground -> System Prompt -> message -> response', async ({ page }) => {
@@ -120,41 +124,110 @@ test.describe('Playground Settings @playground', () => {
     await expect(page.locator('pre').filter({ hasText: 'curl' })).toBeVisible({ timeout: 5000 })
   })
 
-  test('PS-04: LB Playground -> Temperature/MaxTokens -> chat send', async ({ page }) => {
-    test.setTimeout(60000)
-    await ensureDashboardLogin(page)
+  for (const colorScheme of ['light', 'dark'] as const) {
+    test.describe(`PS-04 ${colorScheme}`, () => {
+      test.use({ colorScheme })
+      test(`PS-04: LB Playground -> Temperature/MaxTokens -> chat send (${colorScheme})`, async ({ page, request }) => {
+        test.setTimeout(60000)
+        await ensureDashboardLogin(page)
+        await page.evaluate((theme) => localStorage.setItem('llmlb-theme', theme), colorScheme)
+        await page.reload()
+        await expect(page.locator('html')).toHaveClass(colorScheme === 'dark' ? /dark/ : /^(?!.*dark)/)
 
-    const openLbPlayground = page.locator('#lb-playground-button')
-    await expect(openLbPlayground).toBeVisible({ timeout: 10000 })
-    await openLbPlayground.click()
+        // Another suite may sync and delete providers of the generic mock models.
+        // Keep one alive while the model catalog is read, then churn it during chat.
+        const competitor = await startMockOpenAIEndpointServer()
+        let competitorId = ''
+        let releaseChat: (() => void) | undefined
+        try {
+          const created = await request.post('/api/endpoints', {
+            headers: AUTH_HEADER,
+            data: { name: `e2e-ps04-competitor-${randomUUID()}`, base_url: competitor.baseUrl },
+          })
+          expect(created.ok()).toBeTruthy()
+          competitorId = (await created.json()).id as string
+          for (const action of ['test', 'sync']) {
+            const response = await request.post(`/api/endpoints/${competitorId}/${action}`, { headers: AUTH_HEADER })
+            expect(response.ok()).toBeTruthy()
+          }
 
-    await expect(page).toHaveURL(/#lb-playground/)
-    await expect(page.locator('#lb-playground-sidebar')).toBeVisible({ timeout: 10000 })
+          const catalogResponse = await request.get('/v1/models', { headers: AUTH_HEADER })
+          expect(catalogResponse.ok()).toBeTruthy()
+          const catalog = await catalogResponse.json()
+          expect(catalog.data.find((model: { id: string }) => model.id === mock.models[0]).endpoint_ids,
+            'PS-04 must have exactly its own provider, even when a generic mock is online').toEqual([endpointId])
 
-    // Adjust temperature if available
-    const tempInput = page.locator('#lb-temperature, [data-testid="lb-temperature"]')
-    if (await tempInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await tempInput.fill('0.5')
-    }
+          const openLbPlayground = page.locator('#lb-playground-button')
+          await expect(openLbPlayground).toBeVisible({ timeout: 10000 })
+          await openLbPlayground.click()
 
-    // Adjust max tokens if available
-    const maxTokensInput = page.locator('#lb-max-tokens, [data-testid="lb-max-tokens"]')
-    if (await maxTokensInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await maxTokensInput.fill('256')
-    }
+          await expect(page).toHaveURL(/#lb-playground/)
+          await expect(page.locator('#lb-playground-sidebar')).toBeVisible({ timeout: 10000 })
 
-    // Select model
-    const modelSelect = page.locator('#lb-model-select')
-    await modelSelect.click()
-    await page.getByRole('option', { name: mock.models[0] }).click()
+          // Adjust temperature if available
+          const tempInput = page.locator('#lb-temperature, [data-testid="lb-temperature"]')
+          if (await tempInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await tempInput.fill('0.5')
+          }
 
-    // Send message
-    await page.fill('#lb-chat-input', 'Hello from PS-04 LB Playground')
-    await page.click('#lb-send-chat')
+          // Adjust max tokens if available
+          const maxTokensInput = page.locator('#lb-max-tokens, [data-testid="lb-max-tokens"]')
+          if (await maxTokensInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await maxTokensInput.fill('256')
+          }
 
-    // Verify response
-    await expect(page.getByText('MOCK_OK')).toBeVisible({ timeout: 20000 })
-  })
+          // Select model
+          const modelSelect = page.locator('#lb-model-select')
+          await modelSelect.click()
+          await page.getByRole('option', { name: mock.models[0] }).click()
+
+          // Send message
+          await page.fill('#lb-chat-input', 'Hello from PS-04 LB Playground')
+          let chatStarted = false
+          const responseAllowed = new Promise<void>((resolve) => { releaseChat = resolve })
+          beforeChatResponse = async () => {
+            chatStarted = true
+            await responseAllowed
+          }
+          await Promise.all([
+            page.click('#lb-send-chat'),
+            (async () => {
+              // The real inference must reach our provider before churn begins;
+              // its response remains pending until all sync/cleanup has finished.
+              await expect.poll(() => chatStarted, {
+                timeout: 10000, message: 'PS-04 request must reach its own provider',
+              }).toBe(true)
+              try {
+                for (let i = 0; i < 10; i += 1) {
+                  const response = await request.post(`/api/endpoints/${competitorId}/sync`, { headers: AUTH_HEADER })
+                  expect(response.ok()).toBeTruthy()
+                }
+                const removed = await request.delete(`/api/endpoints/${competitorId}`, { headers: AUTH_HEADER })
+                expect(removed.status()).toBe(204)
+              } finally {
+                releaseChat!()
+              }
+            })(),
+          ])
+
+          // Verify response
+          await expect(page.getByText('MOCK_OK')).toBeVisible({ timeout: 20000 })
+          await expect(page.getByText('MOCK_OK')).toContainText(`model=${mock.models[0]}`)
+        } finally {
+          releaseChat?.()
+          beforeChatResponse = undefined
+          try {
+            if (competitorId) {
+              const removed = await request.delete(`/api/endpoints/${competitorId}`, { headers: AUTH_HEADER })
+              expect([204, 404]).toContain(removed.status())
+            }
+          } finally {
+            await competitor.close()
+          }
+        }
+      })
+    })
+  }
 
   test('PS-05: LB Playground -> cURL button -> correct URL and headers', async ({ page }) => {
     test.setTimeout(60000)

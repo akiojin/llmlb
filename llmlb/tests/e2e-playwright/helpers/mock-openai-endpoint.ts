@@ -52,6 +52,7 @@ export async function startMockOpenAIEndpointServer(options?: {
   supportImages?: boolean
   supportResponses?: boolean
   endpointType?: 'xllm' | 'ollama' | 'vllm' | 'openai'
+  beforeChatResponse?: () => Promise<void>
 }): Promise<MockOpenAIEndpointServer> {
   const models = options?.models?.length ? options.models : ['mock-model-a', 'mock-model-b']
   const responseDelayMs = Math.max(0, options?.responseDelayMs ?? 0)
@@ -114,6 +115,7 @@ export async function startMockOpenAIEndpointServer(options?: {
       const model = typeof parsed?.model === 'string' ? parsed.model : 'unknown'
       const lastUser = extractLastUserText(parsed?.messages)
       const reply = `MOCK_OK model=${model} user=${lastUser}`
+      await options?.beforeChatResponse?.()
 
       // Opt-in: when the user message contains the `[[REASON]]` sentinel, emit a
       // separate `reasoning_content` channel (mimics reasoning models like

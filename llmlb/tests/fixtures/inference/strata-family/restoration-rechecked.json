@@ -1,4 +1,4 @@
-﻿{
+{
     "checked_at":  "2026-10-16T17:56:46.9484512+09:00",
     "context":  "Issue #924 Elowen relaunch: original detached Strata process observed and health rechecked",
     "launch_method":  "Existing detached WMI-launched process; this session did not restart Strata",

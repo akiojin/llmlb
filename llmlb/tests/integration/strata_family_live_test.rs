@@ -175,10 +175,7 @@ async fn check_live_inference(prefix: &str, expected: &str, require_key: bool) {
         assert_eq!(status.as_u16(), 200, "inference: {body}");
         if stream {
             assert!(content_type.starts_with("text/event-stream"));
-            let data: Vec<_> = body
-                .lines()
-                .filter_map(|line| line.strip_prefix("data: "))
-                .collect();
+            let data = sse_data_events(&body);
             assert_eq!(data.last().copied(), Some("[DONE]"), "SSE terminal event");
             let mut content = String::new();
             let mut finished = false;
@@ -212,6 +209,32 @@ async fn check_live_inference(prefix: &str, expected: &str, require_key: bool) {
             check_usage(&completion["usage"]);
         }
     }
+}
+
+fn sse_data_events(body: &str) -> Vec<&str> {
+    body.lines()
+        .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
+        .collect()
+}
+
+#[test]
+fn test_sse_data_delimiter_accepts_optional_space() {
+    for log in [
+        include_str!("../fixtures/inference/strata-family/strata.txt"),
+        include_str!("../fixtures/inference/strata-family/maya-no-auth.txt"),
+        include_str!("../fixtures/inference/strata-family/maya-auth.txt"),
+    ] {
+        let expected = sse_data_events(log);
+        assert_eq!(expected.last().copied(), Some("[DONE]"));
+        for event in &expected[..expected.len() - 1] {
+            let _: Value = serde_json::from_str(event).expect("recorded SSE JSON");
+        }
+        let no_space = log.replace("data: ", "data:");
+        assert_eq!(sse_data_events(&no_space), expected);
+        let extra_space = log.replace("data: ", "data:  ");
+        assert_eq!(sse_data_events(&extra_space), expected);
+    }
+    assert!(sse_data_events(": keepalive\n\nevent: message\nid: 1\n").is_empty());
 }
 
 fn check_usage(usage: &Value) {

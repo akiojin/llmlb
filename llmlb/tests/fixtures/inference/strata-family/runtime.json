@@ -183,5 +183,13 @@
       "client_key_variable": "LLMLB_MAYA_API_KEY",
       "STRATA_API_KEY": "<ephemeral key, redacted>"
     }
+  },
+  "captured_smoke_source_commit": "8b56e2b4706d8f0596be40e543681c7ef204c6ee",
+  "smoke_followup": {
+    "source_sha256": "5599783dde9873c665b7cbbcb0c66fb9b5c231a3035cbc5e9237b8099526c0fa",
+    "change": "Only smoke SSE data whitespace normalization and fixture regression checks; inference requests and production source are unchanged",
+    "regression_test": "strata_family_live_test::test_sse_data_delimiter_accepts_optional_space",
+    "regression_result": "PASS",
+    "captured_runtime_evidence_unchanged": true
   }
 }

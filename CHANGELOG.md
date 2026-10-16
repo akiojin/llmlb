@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Tests: Strata / Project Maya の llmlb 経由の JSON・SSE 推論と認証付き推論を
+  検証する任意 smoke を追加し、Windows 実機の応答と Strata 復旧の証跡を保存（#924）。
+
 ## [6.4.1] - 2026-10-15
 
 ### Changed

@@ -64,6 +64,36 @@ For an upstream requiring authentication, also set `LLMLB_STRATA_API_KEY` or
 with a configuration error. A configured but unreachable server or incorrect
 identity fails the test.
 
+For inference coverage, start an upstream with a loaded model and explicitly
+select one of these additional ignored tests (the same URL/key variables apply):
+
+```bash
+LLMLB_STRATA_URL=http://127.0.0.1:8080 \
+  cargo test -p llmlb --test integration_tests \
+  strata_family_live_test::test_live_strata_inference_through_llmlb \
+  -- --ignored --exact --nocapture
+
+LLMLB_MAYA_URL=http://127.0.0.1:8081 \
+  cargo test -p llmlb --test integration_tests \
+  strata_family_live_test::test_live_project_maya_inference_through_llmlb \
+  -- --ignored --exact --nocapture
+
+LLMLB_MAYA_URL=http://127.0.0.1:8081 LLMLB_MAYA_API_KEY='<upstream-key>' \
+  cargo test -p llmlb --test integration_tests \
+  strata_family_live_test::test_live_project_maya_authenticated_inference_through_llmlb \
+  -- --ignored --exact --nocapture
+```
+
+These tests synchronize models, query llmlb's `/v1/models`, and send both JSON
+and SSE `/v1/chat/completions` requests through its authenticated public API.
+They check model IDs, generated text, token usage, finish reasons, and the final
+`[DONE]` event. The authenticated Maya test also requires the upstream to reject
+an unauthenticated model-list request with HTTP 401. Set `LLMLB_STRATA_MODEL`
+or `LLMLB_MAYA_MODEL` when the upstream advertises multiple models. Inference
+uses a 600-second timeout, 64 output tokens, and `reasoning_effort: none` to keep
+this a connectivity smoke rather than a quality or throughput benchmark.
+Request/response evidence is printed without authentication keys.
+
 Strata v0.1.44.1 was captured on 2026-10-14 using its official `--lazy` mode
 with the unmodified HTTP server configured for the freshly built Metal engine.
 Model weights remained unloaded and inference was not tested. Its
@@ -82,7 +112,12 @@ and with a valid token. The captured `/health` marker is `mcp_tools: false`;
 MCP-enabled detection remains a separate synthetic boundary test.
 Model shard digests are checked against the official release's published
 values. The existing Strata service is restored after the Maya checks.
-Inference quality and throughput are outside this identification test.
+On 2026-10-16, the additional inference smoke tests passed on Windows 11 / RTX
+4090 for loaded Strata and Project Maya, including key-protected Maya. The
+[inference evidence](llmlb/tests/fixtures/inference/strata-family/runtime.json)
+records the runtime versions, configuration/engine hashes, three complete
+request/response logs, and Strata's restored `loaded: true` health response.
+Inference quality and throughput are outside these live smoke tests.
 
 ## Environment Variables
 - Router: `LLMLB_HOST`, `LLMLB_PORT`, `LLMLB_DATABASE_URL` (or `DATABASE_URL`),

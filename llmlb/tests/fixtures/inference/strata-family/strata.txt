@@ -1,0 +1,28 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.22s
+     Running tests\integration_tests.rs (E:/llmlb/work/issue-909/target\debug\deps\integration_tests-5cc5aa7dc8dfa1fa.exe)
+
+running 1 test
+live detection: endpoint_type=strata, reason=Strata: /health service is strata
+live registration: HTTP 201 Created, endpoint_type=strata, SQLite=strata
+registration evidence: {"api_key_configured":false,"base_url":"http://127.0.0.1:8080","endpoint_type":"strata","id":"fc0c4ef0-a1a2-46c4-a65d-11f9d017fd1f"}
+GET /v1/models: HTTP 200 OK
+{"data":[{"aliases":[],"canonical_name":"qwen3.8-flash-next-unsloth-ud-iq4_xs","created":1792128728,"download_progress":null,"endpoint_ids":["fc0c4ef0-a1a2-46c4-a65d-11f9d017fd1f"],"id":"qwen3.8-flash-next-unsloth-ud-iq4_xs","is_canonical":false,"lifecycle_status":"registered","max_tokens":null,"object":"model","owned_by":"load balancer","quantization":null,"ready":true,"supported_apis":["chat_completions","responses"]}],"object":"list"}
+POST /v1/chat/completions request: {"max_tokens":64,"messages":[{"content":"Reply with exactly: hello","role":"user"}],"model":"qwen3.8-flash-next-unsloth-ud-iq4_xs","reasoning_effort":"none","stream":false}
+response: HTTP 200 OK, Content-Type: application/json
+{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"hello","role":"assistant"}}],"created":1792128728,"id":"chatcmpl-3723b6d40df54dd190f3019c","model":"qwen3.8-flash-next-unsloth-ud-iq4_xs","object":"chat.completion","timings":{"cache_n":10,"draft_n":3,"draft_n_accepted":3,"predicted_ms":225.1,"predicted_n":2,"predicted_per_second":8.9,"predicted_per_token_ms":112.55,"prompt_ms":404.9,"prompt_n":7,"prompt_per_second":17.3,"prompt_per_token_ms":57.843},"usage":{"completion_tokens":2,"prompt_tokens":17,"prompt_tokens_details":{"cached_tokens":10},"total_tokens":19}}
+POST /v1/chat/completions request: {"max_tokens":64,"messages":[{"content":"Reply with exactly: hello","role":"user"}],"model":"qwen3.8-flash-next-unsloth-ud-iq4_xs","reasoning_effort":"none","stream":true,"stream_options":{"include_usage":true}}
+response: HTTP 200 OK, Content-Type: text/event-stream
+data: {"id": "chatcmpl-5392e8fddec44a3cbada3c11", "object": "chat.completion.chunk", "created": 1792128729, "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
+
+: keep-alive
+
+data: {"id": "chatcmpl-5392e8fddec44a3cbada3c11", "object": "chat.completion.chunk", "created": 1792128729, "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs", "choices": [{"index": 0, "delta": {"content": "hello"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-5392e8fddec44a3cbada3c11", "object": "chat.completion.chunk", "created": 1792128729, "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 17, "completion_tokens": 2, "total_tokens": 19, "prompt_tokens_details": {"cached_tokens": 10}}, "timings": {"cache_n": 10, "prompt_n": 7, "prompt_ms": 143.5, "prompt_per_token_ms": 20.5, "prompt_per_second": 48.8, "predicted_n": 2, "predicted_ms": 197.1, "predicted_per_token_ms": 98.55, "predicted_per_second": 10.1, "draft_n": 3, "draft_n_accepted": 3}}
+
+data: [DONE]
+
+
+test strata_family_live_test::test_live_strata_inference_through_llmlb ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 212 filtered out; finished in 3.77s

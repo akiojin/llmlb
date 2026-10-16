@@ -1,0 +1,18 @@
+{
+    "checked_at":  "2026-10-16T17:56:46.9484512+09:00",
+    "context":  "Issue #924 Elowen relaunch: original detached Strata process observed and health rechecked",
+    "launch_method":  "Existing detached WMI-launched process; this session did not restart Strata",
+    "command":  "E:/Strata/.venv/Scripts/python.exe E:/Strata/serve/server.py --engine strata --config E:/Strata/strata-unsloth-ud-iq4_xs.json --port 8080",
+    "config_sha256":  "d661038031b917793a7c61fbdb2487f38972cab4f3a281ab3d58d6c02f92e7d3",
+    "url":  "http://127.0.0.1:8080/health",
+    "health":  {
+                   "status":  "ok",
+                   "max_context":  131072,
+                   "model":  "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+                   "images":  true,
+                   "api_key":  false,
+                   "image_generation":  false,
+                   "loaded":  true,
+                   "service":  "strata"
+               }
+}

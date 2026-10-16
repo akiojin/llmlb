@@ -1,0 +1,28 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.76s
+     Running tests\integration_tests.rs (E:/llmlb/work/issue-909/target\debug\deps\integration_tests-5cc5aa7dc8dfa1fa.exe)
+
+running 1 test
+live detection: endpoint_type=project_maya, reason=Project Maya: /health contains mcp_tools
+live registration: HTTP 201 Created, endpoint_type=project_maya, SQLite=project_maya
+registration evidence: {"api_key_configured":false,"base_url":"http://127.0.0.1:54847","endpoint_type":"project_maya","id":"aa1c52fb-babb-4a49-a4e8-9cd1c3a14a98"}
+GET /v1/models: HTTP 200 OK
+{"data":[{"aliases":[],"canonical_name":"glm-5.3-flash","created":1792128831,"download_progress":null,"endpoint_ids":["aa1c52fb-babb-4a49-a4e8-9cd1c3a14a98"],"id":"glm-5.3-flash","is_canonical":false,"lifecycle_status":"registered","max_tokens":null,"object":"model","owned_by":"load balancer","quantization":null,"ready":true,"supported_apis":["chat_completions","responses"]}],"object":"list"}
+POST /v1/chat/completions request: {"max_tokens":64,"messages":[{"content":"Reply with exactly: hello","role":"user"}],"model":"glm-5.3-flash","reasoning_effort":"none","stream":false}
+response: HTTP 200 OK, Content-Type: application/json
+{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"hello","role":"assistant"}}],"created":1792128831,"id":"chatcmpl-bb4d9d5094b142418b8077a4","model":"glm-5.3-flash","object":"chat.completion","timings":{"cache_n":0,"draft_n":0,"draft_n_accepted":0,"predicted_ms":88.1,"predicted_n":2,"predicted_per_second":22.7,"predicted_per_token_ms":44.05,"prompt_ms":4027.1,"prompt_n":18,"prompt_per_second":4.5,"prompt_per_token_ms":223.728},"usage":{"completion_tokens":2,"prompt_tokens":18,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":20}}
+POST /v1/chat/completions request: {"max_tokens":64,"messages":[{"content":"Reply with exactly: hello","role":"user"}],"model":"glm-5.3-flash","reasoning_effort":"none","stream":true,"stream_options":{"include_usage":true}}
+response: HTTP 200 OK, Content-Type: text/event-stream
+data: {"id": "chatcmpl-2da8e789d7b741658cb52423", "object": "chat.completion.chunk", "created": 1792128835, "model": "glm-5.3-flash", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
+
+: keep-alive
+
+data: {"id": "chatcmpl-2da8e789d7b741658cb52423", "object": "chat.completion.chunk", "created": 1792128835, "model": "glm-5.3-flash", "choices": [{"index": 0, "delta": {"content": "hello"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-2da8e789d7b741658cb52423", "object": "chat.completion.chunk", "created": 1792128835, "model": "glm-5.3-flash", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 18, "completion_tokens": 2, "total_tokens": 20, "prompt_tokens_details": {"cached_tokens": 17}}, "timings": {"cache_n": 17, "prompt_n": 1, "prompt_ms": 62.3, "prompt_per_token_ms": 62.3, "prompt_per_second": 16.1, "predicted_n": 2, "predicted_ms": 55.5, "predicted_per_token_ms": 27.75, "predicted_per_second": 36.0, "draft_n": 0, "draft_n_accepted": 0}}
+
+data: [DONE]
+
+
+test strata_family_live_test::test_live_project_maya_inference_through_llmlb ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 212 filtered out; finished in 5.65s

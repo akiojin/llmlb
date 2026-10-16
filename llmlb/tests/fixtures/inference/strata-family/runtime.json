@@ -1,0 +1,195 @@
+{
+  "started_at": "2026-10-16T14:31:43.25029+09:00",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "mock_engine_used": false,
+  "upstream_source_modified": false,
+  "cases": [
+    {
+      "case": "strata",
+      "url": "http://127.0.0.1:8080",
+      "api_key_enabled": false,
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "llmlb",
+        "--test",
+        "integration_tests",
+        "strata_family_live_test::test_live_strata_inference_through_llmlb",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "case": "maya-no-auth",
+      "url": "http://127.0.0.1:54847",
+      "api_key_enabled": false,
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "llmlb",
+        "--test",
+        "integration_tests",
+        "strata_family_live_test::test_live_project_maya_inference_through_llmlb",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "case": "maya-auth",
+      "url": "http://127.0.0.1:51722",
+      "api_key_enabled": true,
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "llmlb",
+        "--test",
+        "integration_tests",
+        "strata_family_live_test::test_live_project_maya_authenticated_inference_through_llmlb",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "startup_commands": [
+    [
+      "E:\\project-maya\\.venv\\Scripts\\python.exe",
+      "-X",
+      "utf8",
+      "E:\\project-maya\\serve\\server.py",
+      "--engine",
+      "strata",
+      "--config",
+      "E:\\project-maya\\maya-maya-s24.json",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "54847"
+    ],
+    [
+      "E:\\project-maya\\.venv\\Scripts\\python.exe",
+      "-X",
+      "utf8",
+      "E:\\project-maya\\serve\\server.py",
+      "--engine",
+      "strata",
+      "--config",
+      "E:\\project-maya\\maya-maya-s24.json",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "51722"
+    ],
+    [
+      "E:\\Strata\\.venv\\Scripts\\python.exe",
+      "-X",
+      "utf8",
+      "E:\\Strata\\serve\\server.py",
+      "--engine",
+      "strata",
+      "--config",
+      "E:\\Strata\\strata-unsloth-ud-iq4_xs.json",
+      "--port",
+      "8080"
+    ]
+  ],
+  "llmlb_source_head": "b3178520184dc967a4ed043b853d876a7d41114b",
+  "smoke_source_sha256": "72629aa7e0f99185100452fc0a1ec5929fdc6944d4d5b01890f2bfd98e00c794",
+  "gpu": "NVIDIA GeForce RTX 4090, 610.88, 24564 MiB",
+  "strata": {
+    "commit": "296b59d2f73c8f04a805df29c2fa97655adace78",
+    "config_sha256": "d661038031b917793a7c61fbdb2487f38972cab4f3a281ab3d58d6c02f92e7d3",
+    "engine_sha256": "bd18453f65b4d03b15de6100b1a9226426266560779b51b9265de176ae8f34d4"
+  },
+  "maya": {
+    "commit": "89313399b330600b455603d3c569c1f188f96db1",
+    "config_sha256": "f8a20f1bab53187faa8aa2c8653f47b761d4aa4b1b50879090f93dbe24bf9510",
+    "engine_sha256": "1e1bf88123255064975ca187e9da54bc4bacfeb7fb7dc7ccb857ec3c420fb46c"
+  },
+  "strata_before": {
+    "status": "ok",
+    "max_context": 131072,
+    "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+    "images": true,
+    "api_key": false,
+    "image_generation": false,
+    "loaded": true,
+    "service": "strata"
+  },
+  "maya-no-auth-health": {
+    "status": "ok",
+    "max_context": 32768,
+    "model": "glm-5.3-flash",
+    "images": false,
+    "api_key": false,
+    "defaults": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "reasoning_effort": "high"
+    },
+    "version": "1.1.11",
+    "mcp_tools": false
+  },
+  "maya-auth-health": {
+    "status": "ok",
+    "max_context": 32768,
+    "model": "glm-5.3-flash",
+    "images": false,
+    "api_key": true,
+    "defaults": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "reasoning_effort": "high"
+    },
+    "version": "1.1.11",
+    "mcp_tools": false
+  },
+  "result": "PASS",
+  "strata_after": {
+    "status": "ok",
+    "max_context": 131072,
+    "model": "qwen3.8-flash-next-unsloth-ud-iq4_xs",
+    "images": true,
+    "api_key": false,
+    "image_generation": false,
+    "loaded": true,
+    "service": "strata"
+  },
+  "finished_at": "2026-10-16T14:38:49.96491+09:00",
+  "evidence_sha256": {
+    "maya-no-auth.txt": "83619e63b7ec536d0581d1d4ed11a608ca9424c90eba9c08af04875fa0eb9aeb",
+    "strata.txt": "ef1fedf488c44e44afc4c86d8a246eb300cffe444279d7996c174779de941281",
+    "maya-auth.txt": "d49f32cf199bd5ae84f41a4df6dbafb5442cc40466d64e36d0309d6f3a0113aa",
+    "strata-restored.stdout.txt": "eace13eed4dc4879b92329c12cef20625d46f89e2f32c6b5d37cc373e3fc3d9b"
+  },
+  "user_verification_result": "n/a (autonomous)",
+  "agent_visual_check": "n/a (no UI surface)",
+  "startup_environment": {
+    "maya-no-auth": {
+      "STRATA_API_KEY": ""
+    },
+    "maya-auth": {
+      "client_key_variable": "LLMLB_MAYA_API_KEY",
+      "STRATA_API_KEY": "<ephemeral key, redacted>"
+    }
+  },
+  "captured_smoke_source_commit": "8b56e2b4706d8f0596be40e543681c7ef204c6ee",
+  "smoke_followup": {
+    "source_sha256": "5599783dde9873c665b7cbbcb0c66fb9b5c231a3035cbc5e9237b8099526c0fa",
+    "change": "Only smoke SSE data whitespace normalization and fixture regression checks; inference requests and production source are unchanged",
+    "regression_test": "strata_family_live_test::test_sse_data_delimiter_accepts_optional_space",
+    "regression_result": "PASS",
+    "captured_runtime_evidence_unchanged": true
+  }
+}

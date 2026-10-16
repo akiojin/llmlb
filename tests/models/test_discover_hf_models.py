@@ -1,12 +1,15 @@
 """Issue #885: offline acceptance tests for discovery and publication."""
 
 import importlib.util
+import io
 import json
+from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.client import IncompleteRead
 from pathlib import Path
 import subprocess
+import runpy
 import sys
 from tempfile import TemporaryDirectory
 import threading
@@ -58,7 +61,7 @@ canonical: "outside/after",
                 self.mod.known_models(text)
 
     def test_real_mapping_table_is_read(self):
-        known = self.mod.known_models((ROOT / "llmlb/src/models/mapping.rs").read_text())
+        known = self.mod.known_models((ROOT / "llmlb/src/models/mapping.rs").read_text(encoding="utf-8"))
         self.assertIn("openai/gpt-oss-20b", known)
         self.assertGreater(len(known), 20)
 
@@ -212,7 +215,7 @@ with patch("urllib.request.urlopen", side_effect=error):
                                              str(output), failure],
                                             capture_output=True, text=True, timeout=10)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(json.loads(output.read_text())["status"], "incomplete")
+                    self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["status"], "incomplete")
                     self.assertIn("::warning::", result.stdout)
                     self.assertIn("must not be interpreted as no new models", result.stdout)
 
@@ -228,7 +231,7 @@ with patch("urllib.request.urlopen", side_effect=error):
         self.assertEqual(report["status"], "incomplete")
 
     def test_config_tracks_required_publishers(self):
-        config = json.loads((ROOT / "scripts/models/hf-discovery-config.json").read_text())
+        config = json.loads((ROOT / "scripts/models/hf-discovery-config.json").read_text(encoding="utf-8"))
         self.assertTrue(set(["Qwen", "zai-org", "google", "nvidia", "meta-llama",
                              "moonshotai", "mistralai", "deepseek-ai", "openai",
                              "microsoft"]).issubset(config["authors"]))
@@ -307,6 +310,53 @@ with patch("urllib.request.urlopen", side_effect=error):
 
         self.mod.publish(report, "owner/repo", api)
         self.assertEqual(writes, ["/repos/owner/repo/issues"])
+
+
+@contextmanager
+def cp932_file_default():
+    """Use Japanese Windows' legacy default for actual text file I/O."""
+    original_open = io.open
+
+    def open_file(file, mode="r", buffering=-1, encoding=None, *args, **kwargs):
+        if "b" not in mode and encoding in (None, "locale"):
+            encoding = "cp932"
+        return original_open(file, mode, buffering, encoding, *args, **kwargs)
+
+    with patch("io.open", open_file):
+        yield
+
+
+class EncodingTests(unittest.TestCase):
+    def test_offline_acceptance_with_cp932_file_default(self):
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(DiscoveryTests)
+        log = io.StringIO()
+        with cp932_file_default():
+            result = unittest.TextTestRunner(stream=log).run(suite)
+        self.assertTrue(result.wasSuccessful(), log.getvalue())
+
+    def test_cli_reads_and_writes_utf8_with_cp932_file_default(self):
+        with TemporaryDirectory() as directory:
+            config = Path(directory) / "config.json"
+            mapping = Path(directory) / "mapping.rs"
+            output = Path(directory) / "report.json"
+            config.write_text(json.dumps({
+                "authors": ["Qwen"], "recent_days": 14, "trending_limit": 100,
+                "page_size": 100, "description": "日本語 🦙",
+            }, ensure_ascii=False), encoding="utf-8")
+            mapping.write_text('''// 日本語 🦙
+pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
+    ModelMapping { canonical: "Qwen/Known-7B", aliases: &[] },
+];
+''', encoding="utf-8")
+            argv = [str(SCRIPT), "--config", str(config), "--mapping", str(mapping),
+                    "--output", str(output)]
+            with cp932_file_default(), patch.object(sys, "argv", argv), \
+                    patch("urllib.request.urlopen", side_effect=OSError("取得失敗 🦙")), \
+                    redirect_stdout(io.StringIO()):
+                runpy.run_path(str(SCRIPT), run_name="__main__")
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "incomplete")
+            self.assertTrue(all("取得失敗 🦙" in warning for warning in report["warnings"]))
 
 
 if __name__ == "__main__":

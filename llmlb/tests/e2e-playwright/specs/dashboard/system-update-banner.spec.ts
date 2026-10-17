@@ -99,7 +99,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await route.fulfill({ json: { cancelled: true } })
       })
 
-      await page.clock.install()
+      // Keep the browser ahead of the test runner to cover clock-domain drift.
+      await page.clock.install({ time: Date.now() + 60_000 })
       await ensureDashboardLogin(page)
       await expect.poll(() => Boolean(dashboardSocket)).toBe(true)
       if (colorScheme === 'dark') {
@@ -113,8 +114,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
 
       // Freeze the clock before the mutation. After the system response, only
       // advance notification timers by far less than either polling interval.
-      await page.clock.pauseAt(Date.now() + 1000)
       const pausedAt = await page.evaluate(() => Date.now())
+      // Fix Date before pausing so RPC delays cannot move the target into the
+      // past, then restore advancing Date for the notification-only runFor.
+      await page.clock.setFixedTime(pausedAt)
+      await page.clock.pauseAt(pausedAt)
+      await page.clock.setSystemTime(pausedAt)
 
       // Observe a quiet window after the mutation, with the application clock
       // still frozen, to catch an eager/manual invalidation before any frame.

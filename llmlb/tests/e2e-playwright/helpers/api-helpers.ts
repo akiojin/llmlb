@@ -508,7 +508,7 @@ export async function ensureDashboardLogin(page: Page): Promise<void> {
   const authCheck = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/auth/me',
   );
-  await page.goto(`${API_BASE}/dashboard`);
+  await page.goto(`${API_BASE}/dashboard/`);
 
   if (!(await authCheck).ok()) {
     // Unauthenticated: the app redirects to login.html on its own.

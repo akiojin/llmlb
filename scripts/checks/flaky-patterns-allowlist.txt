@@ -347,7 +347,6 @@ fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-inference-feedb
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-reasoning.spec.ts|1044641137-31|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-settings.spec.ts|3720491205-58|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e/ip_recording_test.rs|718000731-64|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。

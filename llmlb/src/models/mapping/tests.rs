@@ -1020,3 +1020,119 @@ fn test_issue_884_unverified_runtime_names_and_base_skus_stay_unknown() {
         assert_eq!(resolve_canonical(model, &EndpointType::LmStudio), None);
     }
 }
+
+#[test]
+fn test_issue_934_verified_runtime_names_resolve_to_their_own_canonical() {
+    for (canonical, ollama, lm_studio) in [
+        (
+            "openbmb/MiniCPM-V-4.7-35B-A3B",
+            "openbmb/minicpm-v4.7:35b-a3b-q4_K_M",
+            None,
+        ),
+        (
+            "openbmb/MiniCPM-V-4.7-1B",
+            "openbmb/minicpm-v4.7:1b-q4_K_M",
+            None,
+        ),
+        (
+            "LiquidAI/LFM2.5-24B-A2B",
+            "lfm2.5:24b-a2b-q4_K_M",
+            Some("LiquidAI/LFM2.5-24B-A2B-GGUF"),
+        ),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16",
+            "nemotron-3.5-bolt:74b-a9b-iq2",
+            None,
+        ),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+            "nemotron-3.5-super:120b-a12b-nvfp4",
+            Some("nvidia/nemotron-3.5-super-vl"),
+        ),
+        (
+            "JetBrains/Mellum2.1-12B-A2.5B-Thinking",
+            "hf.co/JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF:Q4_K_M",
+            Some("JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF"),
+        ),
+        (
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "llama3.1:8b-instruct-q4_K_M",
+            Some("meta/meta-llama-3.1-8b"),
+        ),
+    ] {
+        assert_issue_884_mapping(canonical, ollama, lm_studio);
+        if let Some(lm_studio) = lm_studio {
+            let quantized = format!("{lm_studio}:Q8_0");
+            let resolution = build_canonical_maps(
+                [
+                    (ollama, resolve_canonical(ollama, &EndpointType::Ollama)),
+                    (
+                        lm_studio,
+                        resolve_canonical(lm_studio, &EndpointType::LmStudio),
+                    ),
+                ]
+                .into_iter(),
+            );
+            assert_eq!(resolution.canonical_for(&quantized), canonical);
+        }
+    }
+}
+
+#[test]
+fn test_issue_934_context_fallbacks_preserve_endpoint_override() {
+    for (canonical, context) in [
+        ("openbmb/MiniCPM-V-4.7-35B-A3B", 262_144),
+        ("openbmb/MiniCPM-V-4.7-1B", 262_144),
+        ("LiquidAI/LFM2.5-24B-A2B", 131_072),
+        ("nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16", 262_144),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+            1_048_576,
+        ),
+        ("JetBrains/Mellum2.1-12B-A2.5B-Thinking", 131_072),
+        ("meta-llama/Llama-3.1-8B-Instruct", 131_072),
+    ] {
+        assert_eq!(known_max_tokens(canonical), Some(context), "{canonical}");
+        assert_eq!(resolve_max_tokens(canonical, None), Some(context));
+        assert_eq!(resolve_max_tokens(canonical, Some(8_192)), Some(8_192));
+    }
+}
+
+#[test]
+fn test_issue_934_unverified_and_different_models_stay_unknown() {
+    for model in [
+        "lfm2.5:latest",
+        "openbmb/minicpm-v4.7:latest",
+        "JetBrains/Mellum2-12B-A2.5B-Base",
+        "LiquidAI/LFM2.5-24B-A2B-Base",
+        "Cloudflare/clef",
+        "Cloudflare/clef-flash",
+        "nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-BF16",
+        "AtomicChat/LFM2.5-24B-A2B-Uncensored-GGUF",
+        "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+}
+
+#[test]
+fn test_issue_934_unverified_lm_studio_names_stay_unsupported() {
+    for (canonical, gguf_repo) in [
+        (
+            "openbmb/MiniCPM-V-4.7-35B-A3B",
+            "openbmb/MiniCPM-V-4.7-35B-A3B-gguf",
+        ),
+        ("openbmb/MiniCPM-V-4.7-1B", "openbmb/MiniCPM-V-4.7-1B-gguf"),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16",
+            "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-GGUF",
+        ),
+    ] {
+        assert_eq!(resolve_canonical(gguf_repo, &EndpointType::LmStudio), None);
+        assert!(!supports_canonical_on_endpoint(
+            canonical,
+            &EndpointType::LmStudio
+        ));
+        assert!(resolve_engine_names(canonical, &EndpointType::LmStudio).is_empty());
+    }
+}

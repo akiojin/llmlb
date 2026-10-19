@@ -492,6 +492,96 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
             },
         ],
     },
+    // Issue #934: 確認済みの固定タグと同一 SKU の公式 GGUF 配布だけを登録する。
+    // 採用・保留の根拠と context length の出典は docs/model-catalog-policy.md を参照。
+    ModelMapping {
+        canonical: "openbmb/MiniCPM-V-4.7-35B-A3B",
+        last_verified: "2026-10-19",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "openbmb/minicpm-v4.7:35b-a3b-q4_K_M",
+        }],
+    },
+    ModelMapping {
+        canonical: "openbmb/MiniCPM-V-4.7-1B",
+        last_verified: "2026-10-19",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "openbmb/minicpm-v4.7:1b-q4_K_M",
+        }],
+    },
+    ModelMapping {
+        canonical: "LiquidAI/LFM2.5-24B-A2B",
+        last_verified: "2026-10-19",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm2.5:24b-a2b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "LiquidAI/LFM2.5-24B-A2B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16",
+        last_verified: "2026-10-19",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "nemotron-3.5-bolt:74b-a9b-iq2",
+        }],
+    },
+    ModelMapping {
+        canonical: "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+        last_verified: "2026-10-19",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nemotron-3.5-super:120b-a12b-nvfp4",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nvidia/nemotron-3.5-super-vl",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "JetBrains/Mellum2.1-12B-A2.5B-Thinking",
+        last_verified: "2026-10-19",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "hf.co/JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF:Q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "meta-llama/Llama-3.1-8B-Instruct",
+        last_verified: "2026-10-19",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "llama3.1:8b-instruct-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "meta/meta-llama-3.1-8b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF",
+            },
+        ],
+    },
 ];
 
 /// Resolve a runtime model ID to its canonical Hugging Face repo ID.
@@ -943,11 +1033,22 @@ const KNOWN_CONTEXT_LENGTHS: &[(&str, u32)] = &[
     ("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", 1_048_576),
     ("nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16", 262_144),
     ("nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16", 262_144),
+    ("nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16", 262_144),
+    (
+        "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+        1_048_576,
+    ),
     // Moonshot AI
     ("moonshotai/Kimi-K3", 1_048_576),
     // Meta Llama
+    ("meta-llama/Llama-3.1-8B-Instruct", 131_072),
     ("meta-llama/Llama-3.3-70B-Instruct", 131_072),
     ("meta-llama/Llama-4-Scout-17B-16E-Instruct", 10_485_760),
+    // Issue #934: OpenBMB, Liquid AI, JetBrains
+    ("openbmb/MiniCPM-V-4.7-35B-A3B", 262_144),
+    ("openbmb/MiniCPM-V-4.7-1B", 262_144),
+    ("LiquidAI/LFM2.5-24B-A2B", 131_072),
+    ("JetBrains/Mellum2.1-12B-A2.5B-Thinking", 131_072),
     // Embeddings
     ("nomic-ai/nomic-embed-text-v1.5", 8_192),
 ];

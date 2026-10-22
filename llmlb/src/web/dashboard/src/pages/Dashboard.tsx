@@ -58,6 +58,7 @@ export default function Dashboard() {
     isLoadingHistory, endpointsData, isLoadingEndpoints, lastRefreshed, fetchTimeMs,
     systemVersion, viewerModels, isLoadingViewerModels, refetchViewerModels,
     modelsView, setModelsView, historyItems, activeTab, setActiveTab, updateBanner: update,
+    activityData, activityStatus, activityConnectionStatus, activityByEndpoint, todayRequests,
   } = useDashboardViewModel()
   const {
     isApplyingUpdate, isApplyingForceUpdate, isForceUpdateDialogOpen, setIsForceUpdateDialogOpen,
@@ -464,13 +465,21 @@ export default function Dashboard() {
         updateState={applyTimedOut ? undefined : update.updateState}
         updateLatest={update.updateLatest}
         minimalViewer={isViewer}
+        activityStatus={activityConnectionStatus}
+        isActivityStale={activityStatus === 'stale'}
       />
 
       {/* Main Content */}
       <main className="relative mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         {!isViewer && updateBanner}
         <section className="mb-8">
-          <OperationsOverview overview={data} isLoading={isLoading} />
+          <OperationsOverview
+            overview={data}
+            isLoading={isLoading}
+            activity={activityData}
+            activityStatus={activityStatus}
+            todayRequests={todayRequests}
+          />
         </section>
 
         {isViewer ? (
@@ -520,6 +529,8 @@ export default function Dashboard() {
               <EndpointTable
                 endpoints={endpointsData || []}
                 isLoading={isLoadingEndpoints}
+                activityByEndpoint={activityByEndpoint}
+                isActivityStale={activityStatus === 'stale'}
               />
             </TabsContent>
 

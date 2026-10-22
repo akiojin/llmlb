@@ -1,6 +1,7 @@
 //! OpenAI 互換ストリーミング応答を Anthropic SSE イベント列へ変換するトラッカー
 
 use crate::api::proxy::record_endpoint_request_stats;
+use crate::balancer::{RequestLease, RequestOutcome};
 use crate::common::protocol::TpsApiKind;
 use crate::token::{StreamingTokenAccumulator, TokenUsage};
 use axum::body::{Body, Bytes};
@@ -51,6 +52,10 @@ pub(super) struct AnthropicStreamTracker {
     pub(super) stop_reason: Option<&'static str>,
     pub(super) stop_sequence: Option<String>,
     pub(super) stats_recorded: bool,
+    /// 成功した HTTP 応答内の SSE error も lease の結果へ反映する。
+    pub(super) stream_failed: bool,
+    /// ヘッダー受信後も本文配信が終わるまで割当中カウンタを保持する。
+    pub(super) request_lease: Option<RequestLease>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -64,6 +69,7 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
     endpoint_registry: crate::registry::endpoints::EndpointRegistry,
     load_manager: crate::balancer::LoadManager,
     event_bus: crate::events::SharedEventBus,
+    request_lease: RequestLease,
 ) -> Response {
     let headers = response.headers().clone();
     let mut accumulator = StreamingTokenAccumulator::new(&model_id);
@@ -92,6 +98,8 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
         stop_reason: None,
         stop_sequence: None,
         stats_recorded: false,
+        stream_failed: false,
+        request_lease: Some(request_lease),
     };
 
     let transformed_stream = futures::stream::try_unfold(state, |mut state| async move {
@@ -107,6 +115,7 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
                 }
                 Some(Err(err)) => {
                     state.record_stats_once(false, TokenUsage::new(None, Some(0), Some(0)));
+                    state.finish_lease(RequestOutcome::Error).await;
                     return Err(io::Error::other(err));
                 }
                 None => {
@@ -115,6 +124,12 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
                         continue;
                     }
                     state.record_stats_once(true, state.accumulator.finalize());
+                    let outcome = if state.stream_failed {
+                        RequestOutcome::Error
+                    } else {
+                        RequestOutcome::Success
+                    };
+                    state.finish_lease(outcome).await;
                     return Ok(None);
                 }
             }
@@ -142,6 +157,22 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
 }
 
 impl AnthropicStreamTracker {
+    async fn finish_lease(&mut self, outcome: RequestOutcome) {
+        let duration = self.request_started_at.elapsed();
+        if matches!(outcome, RequestOutcome::Success) {
+            super::update_inference_latency(&self.endpoint_registry, self.endpoint_id, duration);
+        }
+        if let Some(lease) = self.request_lease.take() {
+            if let Err(err) = lease.complete(outcome, duration).await {
+                tracing::warn!(
+                    endpoint_id = %self.endpoint_id,
+                    error = %err,
+                    "Failed to complete Anthropic streaming request lease"
+                );
+            }
+        }
+    }
+
     fn process_upstream_chunk(&mut self, chunk_text: &str) {
         self.upstream_line_buffer.push_str(chunk_text);
 
@@ -431,6 +462,7 @@ impl AnthropicStreamTracker {
     }
 
     fn record_stats_once(&mut self, success: bool, usage: TokenUsage) {
+        self.stream_failed |= !success;
         if self.stats_recorded {
             return;
         }

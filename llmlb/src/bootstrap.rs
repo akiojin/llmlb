@@ -322,6 +322,7 @@ async fn initialize_inner(
     let event_bus = crate::events::create_shared_event_bus();
     update_manager.set_event_bus(event_bus.clone());
     endpoint_registry.set_event_bus(event_bus.clone());
+    load_manager.set_event_bus(event_bus.clone());
 
     let state = AppState {
         balancer: crate::BalancerState {

@@ -5,6 +5,10 @@
 /* Tailwind v4 loads configuration via the @config directive. */
 @config "../tailwind.config.js";
 
+.activity-queue-stripes {
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, hsl(var(--foreground) / 0.25) 3px 5px);
+}
+
 @layer base {
   :root {
     /* Mission Control - Light Theme */

@@ -38,6 +38,7 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             get(openai::dashboard_playground_models),
         )
         .route("/dashboard/stats", get(dashboard::get_stats))
+        .route("/dashboard/activity", get(dashboard::get_activity))
         .route(
             "/dashboard/request-history",
             get(dashboard::get_request_history),

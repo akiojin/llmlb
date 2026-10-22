@@ -86,6 +86,26 @@ async function fill(user: UserEvent, label: string, value: string) {
 }
 
 describe('EndpointTable', () => {
+  it('shows the activity for each endpoint without mixing their series', () => {
+    const activityByEndpoint = new Map([
+      [alpha.id, { active_requests: 2, queued_requests: 0, requests_per_second: Array(60).fill(1) }],
+      [beta.id, { active_requests: 0, queued_requests: 0, requests_per_second: Array(60).fill(0) }],
+    ])
+    renderWithProviders(<EndpointTable endpoints={[alpha, beta]} isLoading={false} activityByEndpoint={activityByEndpoint} />)
+
+    expect(screen.getByRole('columnheader', { name: 'Activity' })).toBeInTheDocument()
+    expect(within(rowFor('alpha')).getByTestId('request-activity')).toHaveAttribute('data-state', 'busy')
+    expect(within(rowFor('alpha')).getByTestId('request-activity')).toHaveAttribute('data-active-requests', '2')
+    expect(within(rowFor('beta')).queryByTestId('request-activity')).not.toBeInTheDocument()
+    expect(within(rowFor('beta')).getAllByText('—')).toHaveLength(2)
+    expect(screen.getByRole('columnheader', { name: 'Req/s · 60s' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Activity legend')).toHaveTextContent('処理中')
+    expect(screen.getByLabelText('Activity legend')).toHaveTextContent('待ち')
+    expect(within(rowFor('alpha')).getByTestId('endpoint-activity-dot')).toHaveClass('motion-safe:animate-pulse')
+    expect(within(rowFor('alpha')).getByTestId('endpoint-activity-dot')).toHaveClass('bg-accent-foreground')
+    expect(within(rowFor('beta')).getByTestId('endpoint-activity-dot')).not.toHaveClass('motion-safe:animate-pulse')
+  })
+
   it('owns only rendering while its JSX-free ViewModel owns state and commands', () => {
     const source = readFileSync('src/components/dashboard/EndpointTable.tsx', 'utf8')
     const hooks = [...source.matchAll(/\b(use[A-Z]\w*)\s*(?:<[^>]*>)?\s*\(/g)]

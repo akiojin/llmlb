@@ -16,6 +16,149 @@ async fn test_state() -> AppState {
     TestAppStateBuilder::new().await.build().await
 }
 
+/// Activity is additive, JWT protected, and available to viewers who cannot use WS.
+#[tokio::test]
+async fn dashboard_activity_allows_admin_and_viewer_with_sixty_second_buckets() {
+    for role in [UserRole::Admin, UserRole::Viewer] {
+        let state = test_state().await;
+        let token =
+            crate::auth::jwt::create_jwt("activity-user", role, &state.auth.jwt_secret, false, 0)
+                .unwrap();
+        let mut app = create_app(state);
+        let response = app
+            .call(
+                Request::builder()
+                    .uri("/api/dashboard/activity")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let activity: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(activity["bucket_seconds"], 1);
+        assert_eq!(activity["window_seconds"], 60);
+        let timestamp = chrono::DateTime::parse_from_rfc3339(
+            activity["timestamp"].as_str().expect("RFC3339 timestamp"),
+        )
+        .unwrap();
+        assert_eq!(timestamp.timestamp_subsec_nanos(), 0);
+        assert_eq!(activity["total"]["active_requests"], 0);
+        assert_eq!(activity["total"]["queued_requests"], 0);
+        assert_eq!(
+            activity["total"]["requests_per_second"].as_array().unwrap(),
+            &vec![serde_json::json!(0); 60]
+        );
+        assert_eq!(activity["endpoints"], serde_json::json!([]));
+    }
+}
+
+#[tokio::test]
+async fn dashboard_activity_rejects_anonymous_and_api_key_authentication() {
+    for api_key in [None, Some("sk_debug")] {
+        let state = test_state().await;
+        let mut app = create_app(state);
+        let mut request = Request::builder().uri("/api/dashboard/activity");
+        if let Some(key) = api_key {
+            request = request.header("x-api-key", key);
+        }
+        let response = app
+            .call(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+}
+
+#[tokio::test]
+async fn dashboard_activity_observes_in_flight_requests_without_heartbeat() {
+    use crate::types::endpoint::{Endpoint, EndpointType};
+
+    let state = test_state().await;
+    let endpoint = Endpoint::new(
+        "activity-endpoint".into(),
+        "http://localhost:11434".into(),
+        EndpointType::OpenaiCompatible,
+    );
+    let endpoint_id = endpoint.id;
+    state
+        .balancer
+        .endpoint_registry
+        .add(endpoint)
+        .await
+        .unwrap();
+    let token = crate::auth::jwt::create_jwt(
+        "activity-user",
+        UserRole::Admin,
+        &state.auth.jwt_secret,
+        false,
+        0,
+    )
+    .unwrap();
+    let lease = state
+        .balancer
+        .load_manager
+        .begin_request(endpoint_id)
+        .await
+        .unwrap();
+    let mut app = create_app(state.clone());
+    {
+        let response = app
+            .call(
+                Request::builder()
+                    .uri("/api/dashboard/activity")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let activity: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(activity["total"]["active_requests"], 1);
+        assert_eq!(
+            activity["endpoints"][0]["endpoint_id"],
+            endpoint_id.to_string()
+        );
+        assert_eq!(activity["endpoints"][0]["active_requests"], 1);
+        assert_eq!(activity["endpoints"][0]["queued_requests"], 0);
+        assert_eq!(
+            activity["total"]["requests_per_second"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|count| count.as_u64().unwrap())
+                .sum::<u64>(),
+            1
+        );
+    }
+    lease
+        .complete(
+            crate::balancer::RequestOutcome::Success,
+            std::time::Duration::from_secs(40),
+        )
+        .await
+        .unwrap();
+    let response = app
+        .call(
+            Request::builder()
+                .uri("/api/dashboard/activity")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let activity: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(activity["total"]["active_requests"], 0);
+    assert_eq!(activity["endpoints"][0]["active_requests"], 0);
+}
+
 /// 管理者JWTで `/api/dashboard/*` にGETし、ステータスを返す
 async fn dashboard_get_status(uri: &str) -> StatusCode {
     let state = test_state().await;

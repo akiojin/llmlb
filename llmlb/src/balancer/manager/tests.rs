@@ -10,6 +10,7 @@ use tokio::time::{sleep, Duration};
 mod history;
 mod load_state;
 mod model_tps;
+mod request_activity;
 mod request_lifecycle;
 mod selection;
 mod snapshots;

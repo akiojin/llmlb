@@ -103,6 +103,8 @@ pub(crate) mod test_utils {
                 crate::db::audit_log::AuditLogStorage::new(self.db_pool.clone()),
                 crate::audit::writer::AuditLogWriterConfig::default(),
             );
+            let event_bus = crate::events::create_shared_event_bus();
+            load_manager.set_event_bus(event_bus.clone());
             crate::AppState {
                 balancer: crate::BalancerState {
                     load_manager,
@@ -114,7 +116,7 @@ pub(crate) mod test_utils {
                     jwt_secret: "test-secret".into(),
                 },
                 http_client,
-                event_bus: crate::events::create_shared_event_bus(),
+                event_bus,
                 lifecycle: crate::LifecycleState {
                     inference_gate,
                     shutdown,

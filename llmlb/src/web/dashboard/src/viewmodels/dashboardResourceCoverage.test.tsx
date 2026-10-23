@@ -23,13 +23,13 @@ const INVALIDATION_MATRIX: {
     change: { changed: 'endpoints', id: A },
     keys: [queryKeys.dashboardOverview(), queryKeys.dashboardEndpoints(), queryKeys.requestResponses(), queryKeys.endpoint(A)],
   },
-  metrics: { change: { changed: 'metrics', id: A }, keys: [queryKeys.dashboardOverview()] },
+  metrics: { change: { changed: 'metrics', id: A }, keys: [queryKeys.dashboardOverview(), queryKeys.dashboardActivity(), queryKeys.dashboardTodayRequests()] },
   tps: { change: { changed: 'tps', id: A }, keys: [queryKeys.endpointModelTps(A)] },
   system: { change: { changed: 'system' }, keys: [queryKeys.systemInfo()] },
 }
 
 const CACHE_KEYS = [
-  queryKeys.dashboardOverview(), queryKeys.dashboardEndpoints(), queryKeys.requestResponses(),
+  queryKeys.dashboardOverview(), queryKeys.dashboardActivity(), queryKeys.dashboardTodayRequests(), queryKeys.dashboardEndpoints(), queryKeys.requestResponses(),
   queryKeys.systemInfo(), queryKeys.endpoint(A), queryKeys.endpoint(B),
   queryKeys.endpointModelTps(A), queryKeys.endpointModelTps(B), queryKeys.auditLogs({}),
 ]
@@ -37,6 +37,8 @@ const CACHE_KEYS = [
 beforeEach(() => {
   // Keep I/O pending: this suite measures invalidation, not API response content.
   vi.spyOn(dashboardApi, 'getOverview').mockImplementation(() => new Promise(() => {}))
+  vi.spyOn(dashboardApi, 'getActivity').mockImplementation(() => new Promise(() => {}))
+  vi.spyOn(dashboardApi, 'getDailyTokenStats').mockImplementation(() => new Promise(() => {}))
   vi.spyOn(dashboardApi, 'getEndpoints').mockImplementation(() => new Promise(() => {}))
   vi.spyOn(dashboardApi, 'getRequestResponses').mockImplementation(() => new Promise(() => {}))
   vi.spyOn(systemApi, 'getSystem').mockImplementation(() => new Promise(() => {}))
@@ -58,7 +60,7 @@ function setup() {
     useEndpointModelTpsViewModel(B)
     useWebSocket()
   }, { wrapper })
-  for (const key of CACHE_KEYS) queryClient.setQueryData(key, {})
+  for (const key of CACHE_KEYS) queryClient.setQueryData(key, key[0] === 'dashboard-today-requests' ? [] : {})
   const receive = (change: DashboardChange) => act(() => FakeWebSocket.latest().receive(JSON.stringify(change)))
   return { ...hook, queryClient, invalidate, receive }
 }

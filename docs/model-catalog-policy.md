@@ -273,6 +273,102 @@ GLM / Kimi の `:cloud` は Ollama が提供するクラウド実行タグで、
 LM Studio catalog の bare slug や未確認のローカルタグを別名として推測登録しない。
 Gemma の catalog 名は `-it` が省略されて base の HF ID と衝突するため、IT を明示する配布リポジトリ名を使う。
 
+### 2026-10-19 の候補確認結果（Issue #934）
+
+`origin/develop` と作業 HEAD が同一の状態から、通知された48件すべての
+`https://huggingface.co/api/models/<repo>` が HTTP 200 と ID 一致を返すことを確認した。
+次の7 canonicalを採用し、`last_verified` は確認日を記録した。
+推論 API や名前解決アルゴリズムの変更は行わない。
+
+| canonical | context length と出典 | Ollama の確認済み固定名 | LM Studio の確認済み名 |
+|---|---|---|---|
+| `openbmb/MiniCPM-V-4.7-35B-A3B` | [config `text_config.max_position_embeddings`](https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B/blob/main/config.json): 262144 | [`openbmb/minicpm-v4.7:35b-a3b-q4_K_M`](https://ollama.com/openbmb/minicpm-v4.7/tags) | なし（LM Studio名未確認） |
+| `openbmb/MiniCPM-V-4.7-1B` | [config `text_config.max_position_embeddings`](https://huggingface.co/openbmb/MiniCPM-V-4.7-1B/blob/main/config.json): 262144 | [`openbmb/minicpm-v4.7:1b-q4_K_M`](https://ollama.com/openbmb/minicpm-v4.7/tags) | なし（LM Studio名未確認） |
+| `LiquidAI/LFM2.5-24B-A2B` | [config `max_position_embeddings`](https://huggingface.co/LiquidAI/LFM2.5-24B-A2B/blob/main/config.json): 131072 | [`lfm2.5:24b-a2b-q4_K_M`](https://ollama.com/library/lfm2.5/tags) | [`LiquidAI/LFM2.5-24B-A2B-GGUF`](https://huggingface.co/LiquidAI/LFM2.5-24B-A2B-GGUF) |
+| `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16` | [公式モデルカード](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16): 262144 | [`nemotron-3.5-bolt:74b-a9b-iq2`](https://ollama.com/library/nemotron-3.5-bolt/tags) | なし（LM Studio名未確認） |
+| `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16` | [config `llm_config.max_position_embeddings`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16/blob/main/config.json): 1048576 | [`nemotron-3.5-super:120b-a12b-nvfp4`](https://ollama.com/library/nemotron-3.5-super/tags) | [`nvidia/nemotron-3.5-super-vl`](https://lmstudio.ai/models/nvidia/nemotron-3.5-super-vl) |
+| `JetBrains/Mellum2.1-12B-A2.5B-Thinking` | [config `max_position_embeddings`](https://huggingface.co/JetBrains/Mellum2.1-12B-A2.5B-Thinking/blob/main/config.json): 131072 | [`hf.co/JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF:Q4_K_M`](https://huggingface.co/JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF#run-with-ollama) | [`JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF`](https://huggingface.co/JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF) |
+| `meta-llama/Llama-3.1-8B-Instruct` | [Meta公式モデルカード](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct): 131072 | [`llama3.1:8b-instruct-q4_K_M`](https://ollama.com/library/llama3.1/tags) | [`meta/meta-llama-3.1-8b`](https://lmstudio.ai/models/meta/meta-llama-3.1-8b) |
+
+LM Studio は公式 catalog 名、または上表の公開 GGUF 配布リポジトリ名を使う。
+Super VL の catalog が指す
+[`lmstudio-community/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-GGUF`](https://huggingface.co/lmstudio-community/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-GGUF) と、
+Llama の catalog が指す
+[`lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF`](https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF)
+も同一 SKU の alias として登録する。
+Llama の旧 `Meta-Llama-3.1-8B-Instruct` 表記は HF API の redirect 先が上表の ID であることを確認した。
+[LFM2.5 の著者README](https://huggingface.co/LiquidAI/LFM2.5-24B-A2B#-inference) は
+LM Studio対応と[導入手順](https://docs.liquid.ai/deployment/on-device/lm-studio)を明示し、同READMEが公式GGUF配布を案内する。
+Mellum の GGUF README は Ollama / LM Studio 対応と上記コマンドを明示している。
+MiniCPM 2件とBoltは公式GGUFの実在だけではLM Studioでのruntime名の裏づけとして
+不十分なため、Ollamaだけを登録する。LM Studio名は未確認のまま空に保つ。
+MiniCPM 1B / 35B、LFM2 / LFM2.5、Mellum base / Thinking は別 SKU とする。
+
+Bolt は Super VL から圧縮・再学習された別モデルなので、Super VL に統合しない。
+Bolt の24GB版は公式カードの `base_model_relation: quantized` と配布リンクから
+Bolt BF16 に対応付ける。Super VL は120Bモデルだが、候補通知の120B未満という抽出条件と
+静的対応表の採用範囲は別であり、大型モデルも扱う既存方針に従う。
+モデルカード上のコンテキスト長よりエンドポイントの申告値を優先する。
+
+#### 全候補の判定
+
+以下の ID はすべて Hugging Face の同名リポジトリを指す。
+「原モデル採用」は新しい canonical へ対応する配布を確認したことを意味し、
+その ID 自体が未確認 runtime の alias として登録されたことは意味しない。
+保留は今回の調査の結論であり、モデルの不存在や将来の不採用を意味しない。
+fine-tune を `base_model` だけから原モデルへ統合することはしない。
+
+| HF リポジトリ ID | 判定・根拠 |
+|---|---|
+| `openbmb/MiniCPM-V-4.7-35B-A3B` | 採用。公式 Ollama 35B 固定タグと GGUF 配布あり |
+| `jialinyyzz/humanizer` | 保留。Gemma派生の別モデルで、対象runtime名未確認 |
+| `LiquidAI/LFM2.5-24B-A2B` | 採用。公式 Ollama 固定タグと GGUF 配布あり |
+| `baidu/Unlimited-OCR` | 保留。専用OCRアーキテクチャで、対象runtime名未確認 |
+| `openbmb/MiniCPM-V-4.7-1B` | 採用。公式 Ollama 1B 固定タグと GGUF 配布あり |
+| `nvidia/Qwen3.8-Flash-Next-FP4-Local` | 保留。既存QwenのModel Optimizer配布だが、対象runtime名未確認 |
+| `LiquidAI/LFM2.5-24B-A2B-GGUF` | 採用。公式量子化配布をLFM2.5 canonicalのLM aliasへ統合 |
+| `tencent/Hy-Memory-30B-A3B` | 保留。独自hy_v3アーキテクチャで、対象runtime名未確認 |
+| `ConwayResearch/Underdog-Saluki-27B-1.0` | 保留。再学習された派生モデルで、対象runtime名未確認 |
+| `openbmb/MiniCPM-V-4.7-35B-A3B-gguf` | 原モデル採用。公式35B量子化だが、LM Studio名は未確認で登録しない |
+| `nerkyor/Qwen3.8-27B-Coder390-EfficientThink-Opus5.5-GPT6Astra-Grok4.7-DSV4Pro-K3-SFT-RLOO-MTP-DFlash2` | 保留。SFT/RL派生を元Qwenに統合せず、対象runtime名未確認 |
+| `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4` | 原モデル採用。公式quantized関係からSuper VL BF16をcanonicalに選定 |
+| `DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF` | 保留。派生モデルで、対象runtime名未確認 |
+| `Cloudflare/clef` | 保留。Ollama公式説明では通常chatでなく専用 `/v1/systemone` のdecision model |
+| `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB` | 原モデル採用。公式quantized関係からBolt BF16をcanonicalに選定 |
+| `nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-BF16` | 保留。公式手順に専用llama.cpp-doryが必要で、Ollama/LM名未確認 |
+| `LiquidAI/d1-3B` | 保留。独自実行方式を要する派生モデルで、対象runtime名未確認 |
+| `HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF` | 保留。uncensored派生を元Qwenに統合せず、対象runtime名未確認 |
+| `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-GGUF` | 原モデル採用。公式量子化の関係は確認したが、LM Studio名は未確認で登録しない |
+| `prism-ml/Ternary-Bonsai-2-9B-gguf` | 保留。独自ternary実行方式で、対象runtime名未確認 |
+| `ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF` | 保留。既存Qwenの特殊量子化配布だが、対象runtime名未確認 |
+| `orcarouter/OrcaCyber-Nano-1.0` | 保留。専用派生モデルで、対象runtime名未確認 |
+| `openbmb/MiniCPM-V-4.7-1B-gguf` | 原モデル採用。公式1B量子化だが、LM Studio名は未確認で登録しない |
+| `unsloth/LFM2.5-24B-A2B-GGUF` | 原モデル採用。第三者配布のruntime名は追加せず、公式配布名を優先 |
+| `prism-ml/Ternary-Bonsai-2-27B-gguf` | 保留。独自ternary実行方式で、対象runtime名未確認 |
+| `huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF` | 保留。abliterated派生を元Qwenに統合せず、対象runtime名未確認 |
+| `unsloth/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-GGUF` | 原モデル採用。第三者配布のruntime名は追加せず、公式配布名を優先 |
+| `DavidAU/Qwen3.8-27B-Turbo-Brilliance-50X-Reasoning-Instruct-NEO-MAX-MTP-GGUF` | 保留。派生モデルで、対象runtime名未確認 |
+| `meta-llama/Llama-3.1-8B-Instruct` | 採用。Ollama固定タグとLM公式catalogあり |
+| `Cloudflare/clef-flash` | 保留。clef同様、専用 `/v1/systemone` のdecision model |
+| `DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF` | 保留。派生モデルで、対象runtime名未確認 |
+| `JetBrains/Mellum2.1-12B-A2.5B-Thinking` | 採用。公式GGUF READMEがOllama固定名とLM対応を明示 |
+| `alesha-pro/Qwen3.8-Flash-Next-abliterated-GSQ-RCO-Strata-GGUF` | 保留。abliterated派生を元Qwenに統合せず、対象runtime名未確認 |
+| `JonathanColetti/Qwen3.8-27B-Uncensored-GGUF` | 保留。uncensored派生を元Qwenに統合せず、対象runtime名未確認 |
+| `JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF` | 採用。公式量子化配布をThinkingのLM aliasへ統合 |
+| `AtomicChat/LFM2.5-24B-A2B-Uncensored-GGUF` | 保留。uncensored派生を元LFMに統合せず、対象runtime名未確認 |
+| `black-forest-labs/flux-3-image-klein-pup` | 保留。画像向け派生モデルで、対象runtime名未確認 |
+| `Aleph-Alpha/Kolibri-1` | 保留。独自kolibri1アーキテクチャで、対象runtime名未確認 |
+| `ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF` | 保留。Swift派生を元Qwenに統合せず、対象runtime名未確認 |
+| `microsoft/UserRepGen-4B` | 保留。ユーザー表現生成の専用派生モデルで、対象runtime名未確認 |
+| `nvidia/Muse-Spark-Open-816B-A42B-DFlash2` | 保留。816B本体用の投機デコード補助重みを単独chatモデルとして扱わない |
+| `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr` | 保留。補正用派生をBolt本体と統合せず、対象runtime名未確認 |
+| `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr-GGUF` | 保留。補正用派生をBolt本体と統合せず、対象runtime名未確認 |
+| `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16` | 採用。Boltの一次配布元。Super VLとは別モデル |
+| `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4-LiLiCorr` | 保留。補正用派生をSuper VL本体と統合せず、対象runtime名未確認 |
+| `nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-GGUF` | 保留。専用llama.cpp-dory配布で、Ollama/LM名未確認 |
+| `nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-MXFP8` | 保留。Doryの別精度配布で、対象runtime名未確認 |
+| `nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-NVFP4` | 保留。Doryの別精度配布で、対象runtime名未確認 |
+
 ## 量子化サフィックス方針（G-3、暫定実装済み）
 
 モデル ID には量子化サフィックス（`:Q4_K_M`、`:Q5_K_M`、`:Q8_0`、`:F16`、

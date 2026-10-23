@@ -52,6 +52,8 @@ export async function startMockOpenAIEndpointServer(options?: {
   supportImages?: boolean
   supportResponses?: boolean
   endpointType?: 'xllm' | 'ollama' | 'vllm' | 'openai'
+  beforeChatResponse?: () => Promise<void>
+  afterFirstChatChunk?: () => Promise<void>
 }): Promise<MockOpenAIEndpointServer> {
   const models = options?.models?.length ? options.models : ['mock-model-a', 'mock-model-b']
   const responseDelayMs = Math.max(0, options?.responseDelayMs ?? 0)
@@ -114,6 +116,7 @@ export async function startMockOpenAIEndpointServer(options?: {
       const model = typeof parsed?.model === 'string' ? parsed.model : 'unknown'
       const lastUser = extractLastUserText(parsed?.messages)
       const reply = `MOCK_OK model=${model} user=${lastUser}`
+      await options?.beforeChatResponse?.()
 
       // Opt-in: when the user message contains the `[[REASON]]` sentinel, emit a
       // separate `reasoning_content` channel (mimics reasoning models like
@@ -164,8 +167,9 @@ export async function startMockOpenAIEndpointServer(options?: {
 
       // A few chunks so the UI streaming path is exercised.
       const parts = [reply.slice(0, 12), reply.slice(12, 24), reply.slice(24)]
-      for (const part of parts) {
+      for (const [index, part] of parts.entries()) {
         sseWrite(res, { choices: [{ delta: { content: part } }] })
+        if (index === 0) await options?.afterFirstChatChunk?.()
       }
       sseWrite(res, '[DONE]')
       res.end()

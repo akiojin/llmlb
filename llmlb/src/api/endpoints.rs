@@ -1024,8 +1024,13 @@ pub async fn sync_endpoint_models(
 
     match result {
         Ok(result) => {
-            // EndpointRegistryキャッシュをリロードしてモデルマッピングを更新
-            let _ = state.balancer.endpoint_registry.reload().await;
+            // Refresh only this endpoint's model routes. Reloading the entire
+            // registry temporarily removes unrelated endpoints from live traffic.
+            let _ = state
+                .balancer
+                .endpoint_registry
+                .refresh_model_mappings(id)
+                .await;
 
             let synced_models = result
                 .models

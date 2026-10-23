@@ -217,18 +217,18 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--publish", action="store_true", help="create/update the aggregate GitHub Issue")
     args = parser.parse_args()
-    config = json.loads(args.config.read_text())
+    config = json.loads(args.config.read_text(encoding="utf-8"))
     if (not isinstance(config.get("authors"), list) or not config["authors"]
             or any(not isinstance(author, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", author)
                    for author in config["authors"])
             or any(type(config.get(key)) is not int or config[key] < 1
                    for key in ("recent_days", "trending_limit", "page_size"))):
         raise ValueError("invalid discovery config")
-    known = known_models(args.mapping.read_text())
+    known = known_models(args.mapping.read_text(encoding="utf-8"))
     report = discover(config, known, datetime.now(timezone.utc))
     serialized = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
-        args.output.write_text(serialized)
+        args.output.write_text(serialized, encoding="utf-8")
     print(serialized, end="")
     for warning in report["warnings"]:
         escaped = warning.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")

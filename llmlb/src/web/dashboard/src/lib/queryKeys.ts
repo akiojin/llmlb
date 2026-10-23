@@ -4,6 +4,8 @@ import type { ModelsView } from './api/models'
 /** Shared cache keys. Preserve names, parameter order and prefix boundaries. */
 export const queryKeys = {
   dashboardOverview: () => ['dashboard-overview'] as const,
+  dashboardActivity: () => ['dashboard-activity'] as const,
+  dashboardTodayRequests: () => ['dashboard-today-requests'] as const,
   dashboardEndpoints: () => ['dashboard-endpoints'] as const,
   systemInfo: () => ['system-info'] as const,
   systemUpdateHistory: () => ['system-update-history'] as const,

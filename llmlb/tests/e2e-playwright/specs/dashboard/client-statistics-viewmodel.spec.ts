@@ -68,8 +68,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
         saveRoute = route
       })
       await page.route('**/api/dashboard/stats/tokens/daily*', (route) => {
+        const days = new URL(route.request().url()).searchParams.get('days')
+        if (days === '1') {
+          // Overview polls today's count independently of the Usage tab's seven-day query.
+          return route.fulfill({ json: [] })
+        }
         gets.daily++
-        expect(new URL(route.request().url()).searchParams.get('days')).toBe('7')
+        expect(days).toBe('7')
         return route.fulfill({ json: [{ date: '2026-10-01', request_count: 12,
           total_input_tokens: 1000, total_output_tokens: 2000, total_tokens: 3000 }] })
       })

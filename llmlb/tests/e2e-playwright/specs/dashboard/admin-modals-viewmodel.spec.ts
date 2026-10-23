@@ -3,6 +3,8 @@ import { ensureDashboardLogin } from '../../helpers/api-helpers'
 import type { PendingRegistration } from '../../helpers/registration.fixture'
 import type { ApiKey, User } from '../../../../src/web/dashboard/src/lib/api'
 
+test.use({ trace: 'on' })
+
 for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`Admin modal ViewModels (${colorScheme}) @dashboard`, () => {
     test.use({ colorScheme })
@@ -296,8 +298,21 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await hidden(userModal)
       const closedKeys = gets.keys
       const usersAfterRegistration = gets.users
+      // Hold the next poll until the virtual clock has finished advancing.
+      let releaseRegistrationPoll!: () => void
+      const registrationPollGate = new Promise<void>((resolve) => { releaseRegistrationPoll = resolve })
+      await page.route('**/api/registration-requests', async (route) => {
+        expect(route.request().method()).toBe('GET')
+        await registrationPollGate
+        gets.registrations++
+        await route.fulfill({ json: registrations })
+      })
       const registrationsWhileClosed = gets.registrations
+      const registrationPoll = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === '/api/registration-requests' && response.request().method() === 'GET')
       await page.clock.runFor(6000)
+      releaseRegistrationPoll()
+      await (await registrationPoll).finished()
       expect(gets.registrations).toBeGreaterThan(registrationsWhileClosed) // Header remains live.
       expect(gets.users).toBe(usersAfterRegistration)
       expect(gets.keys).toBe(closedKeys)

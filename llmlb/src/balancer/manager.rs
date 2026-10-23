@@ -1,5 +1,9 @@
 //! ロードマネージャー本体（TPS 優先の負荷分散と統計集約）
 
+use super::activity::{
+    EndpointRequestActivity, RequestActivityHistory, RequestActivitySnapshot,
+    RequestActivityTotals, ACTIVITY_WINDOW_SECONDS,
+};
 use super::lease::RequestLease;
 use super::types::{
     EndpointLoadSnapshot, EndpointLoadState, EndpointTpsSummary, MetricsUpdate, ModelTpsInfo,
@@ -9,6 +13,7 @@ use super::types::{
 
 use crate::common::error::{LbError, RouterResult};
 use crate::common::protocol::{TpsApiKind, TpsSource};
+use crate::events::{DashboardEvent, SharedEventBus};
 use crate::registry::endpoints::EndpointRegistry;
 use crate::types::HealthMetrics;
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
@@ -16,7 +21,7 @@ use std::{
     collections::{HashMap, VecDeque},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering as AtomicOrdering},
-        Arc,
+        Arc, Mutex, OnceLock, PoisonError,
     },
     time::Duration as StdDuration,
 };
@@ -51,6 +56,10 @@ pub struct LoadManager {
     queue_waiters: Arc<AtomicUsize>,
     /// エンドポイント×モデル単位のTPS状態（SPEC-4bb5b55f）
     tps_tracker: Arc<RwLock<TpsTrackerMap>>,
+    /// 同期Mutexをstateロック内だけで使い、カウンタと開始数を一貫して読み書きする。
+    activity_history: Arc<Mutex<RequestActivityHistory>>,
+    /// bootstrapで接続する既存ダッシュボードイベントバス。
+    event_bus: Arc<OnceLock<SharedEventBus>>,
 }
 
 impl LoadManager {
@@ -66,6 +75,67 @@ impl LoadManager {
             queue_notify: Arc::new(Notify::new()),
             queue_waiters: Arc::new(AtomicUsize::new(0)),
             tps_tracker: Arc::new(RwLock::new(HashMap::new())),
+            activity_history: Arc::new(Mutex::new(RequestActivityHistory::default())),
+            event_bus: Arc::new(OnceLock::new()),
+        }
+    }
+
+    /// 開始・完了通知を既存の1秒合流窓へ接続する（初回設定のみ有効）。
+    pub fn set_event_bus(&self, event_bus: SharedEventBus) {
+        let _ = self.event_bus.set(event_bus);
+    }
+
+    fn notify_request_activity(&self, endpoint_id: Uuid) {
+        if let Some(event_bus) = self.event_bus.get() {
+            event_bus.publish_coalesced(DashboardEvent::MetricsUpdated {
+                runtime_id: endpoint_id,
+                cpu_usage: None,
+                memory_usage: None,
+                gpu_usage: None,
+            });
+        }
+    }
+
+    /// ゲートウェイが観測した処理中件数と直近60秒の開始数を返す。
+    ///
+    /// heartbeatの鮮度やupstream内部の負荷には依存しない。
+    pub async fn request_activity(&self) -> RequestActivitySnapshot {
+        let registered = self.endpoint_registry.list().await;
+        let state = self.state.read().await;
+        let history = self
+            .activity_history
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let timestamp = Utc::now().with_nanosecond(0).expect("valid UTC second");
+        let second = timestamp.timestamp();
+        let mut total_active = 0u32;
+        let mut endpoints: Vec<_> = registered
+            .iter()
+            .map(|endpoint| {
+                let active = state
+                    .get(&endpoint.id)
+                    .map(|load| load.assigned_active)
+                    .unwrap_or(0);
+                total_active = total_active.saturating_add(active);
+                EndpointRequestActivity {
+                    endpoint_id: endpoint.id,
+                    active_requests: active,
+                    queued_requests: 0,
+                    requests_per_second: history.endpoint_series(endpoint.id, second),
+                }
+            })
+            .collect();
+        endpoints.sort_by_key(|endpoint| endpoint.endpoint_id);
+        RequestActivitySnapshot {
+            timestamp,
+            bucket_seconds: 1,
+            window_seconds: ACTIVITY_WINDOW_SECONDS as u32,
+            total: RequestActivityTotals {
+                active_requests: total_active,
+                queued_requests: self.queue_waiters(),
+                requests_per_second: history.total_series(second),
+            },
+            endpoints,
         }
     }
 
@@ -132,6 +202,10 @@ impl LoadManager {
             let mut tracker = self.tps_tracker.write().await;
             tracker.retain(|(eid, _, _), _| *eid != endpoint_id);
         }
+        self.activity_history
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .forget_endpoint(endpoint_id);
     }
 
     /// エンドポイントのモデル別TPS情報を取得（SPEC-4bb5b55f）
@@ -564,10 +638,17 @@ impl LoadManager {
             return Err(LbError::EndpointOffline(endpoint_id));
         }
 
-        let mut state = self.state.write().await;
-        let entry = state.entry(endpoint_id).or_default();
-        entry.assigned_active = entry.assigned_active.saturating_add(1);
-        entry.total_assigned = entry.total_assigned.saturating_add(1);
+        {
+            let mut state = self.state.write().await;
+            let entry = state.entry(endpoint_id).or_default();
+            entry.assigned_active = entry.assigned_active.saturating_add(1);
+            entry.total_assigned = entry.total_assigned.saturating_add(1);
+            self.activity_history
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .record(endpoint_id, Utc::now().timestamp());
+        }
+        self.notify_request_activity(endpoint_id);
 
         Ok(RequestLease::new(self.clone(), endpoint_id))
     }
@@ -623,6 +704,9 @@ impl LoadManager {
         let should_notify_idle = entry.combined_active() == 0;
 
         drop(state);
+        if !matches!(outcome, RequestOutcome::Queued) {
+            self.notify_request_activity(endpoint_id);
+        }
         if should_notify_idle {
             self.queue_notify.notify_waiters();
         }
@@ -705,6 +789,9 @@ impl LoadManager {
         let should_notify_idle = entry.combined_active() == 0;
 
         drop(state);
+        if !matches!(outcome, RequestOutcome::Queued) {
+            self.notify_request_activity(endpoint_id);
+        }
         if should_notify_idle {
             self.queue_notify.notify_waiters();
         }

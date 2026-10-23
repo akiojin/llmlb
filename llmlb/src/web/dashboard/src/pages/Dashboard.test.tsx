@@ -99,6 +99,12 @@ const requestResponses: RequestResponsesPage = {
 
 function stubDashboardApis() {
   return {
+    getDailyTokenStats: vi.spyOn(dashboardApi, 'getDailyTokenStats').mockResolvedValue([]),
+    getActivity: vi.spyOn(dashboardApi, 'getActivity').mockResolvedValue({
+      timestamp: '2026-10-01T00:00:00Z', bucket_seconds: 1, window_seconds: 60,
+      total: { active_requests: 0, queued_requests: 0, requests_per_second: Array(60).fill(0) },
+      endpoints: [],
+    }),
     getOverview: vi.spyOn(dashboardApi, 'getOverview').mockResolvedValue(overview),
     getEndpoints: vi.spyOn(dashboardApi, 'getEndpoints').mockResolvedValue([endpoint]),
     getRequestResponses: vi
@@ -238,6 +244,19 @@ describe('Dashboard', () => {
     )
   })
 
+  it('keeps the WebSocket pill live when only the activity fetch is delayed', async () => {
+    renderPage(<Dashboard />)
+    await screen.findByText('gpu-box-1')
+    act(() => FakeWebSocket.latest().onopen?.())
+    expect(screen.getByTestId('activity-connection-status')).toHaveTextContent('Live · WebSocket')
+    api.getActivity.mockRejectedValue(new Error('activity unavailable'))
+    act(() => FakeWebSocket.latest().receive(JSON.stringify({ changed: 'metrics' })))
+    await waitFor(() => expect(screen.getByTestId('activity-connection-status')).toHaveTextContent('Update delayed'))
+    expect(screen.getByTestId('activity-connection-status')).toHaveTextContent('Live · WebSocket')
+    expect(screen.getByTestId('activity-connection-status')).not.toHaveTextContent('WebSocket 未接続')
+    expect(screen.getByRole('region', { name: 'Request activity' })).toHaveTextContent('Last known activity')
+  })
+
   // Keep the real ViewModels and query hooks: these counts tie their declared
   // subscriptions to the queries the page runs. With polling frozen, only the
   // event can trigger these refetches.
@@ -280,6 +299,7 @@ describe('Dashboard', () => {
     expect(api.getEndpoints).not.toHaveBeenCalled()
     expect(api.getRequestResponses).not.toHaveBeenCalled()
     expect(api.getSystem).not.toHaveBeenCalled()
+    expect(api.getActivity).toHaveBeenCalled()
     expect(FakeWebSocket.instances).toHaveLength(0)
   })
 })

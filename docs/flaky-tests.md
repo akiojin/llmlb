@@ -5,6 +5,7 @@ SPEC #838。retry で成功しても初回失敗を消さず、観測と根因�
 
 | spec | 観測日 | 発生回数 | 根因パターン | 根因（未確定可） | 関連 Issue・PR | 検査の捕捉 |
 | --- | --- | --- | --- | --- | --- | --- |
+| PS-04 LB Playground（`playground-settings.spec.ts`） | 2026-10-16 | 過去初回1、provider分離検査1/1 RED、同期回帰1/1 RED | (c)モデル共有、同期中cache消失 | 共通`mock-model-a`に他suiteのproviderが混入することを実測。手動syncは全registryをclearしてDBを待つため、実在endpointが一時的に消える。過去初回の発火操作自体はtrace不在で未確定。 | [Issue #926](https://github.com/akiojin/llmlb/issues/926) | 字句検査は共有モデルの意味やcache空窓を検出しない。provider集合の照合と実同期handlerの回帰で検証。 |
 | S-EP-01 Offline alpha（`endpoint-status-colors.spec.ts`、旧:320） | 2026-10-08、2026-10-11調査 | 初回1、回帰fixture 1/1 RED | (b) 確定 | 初回 alpha `0.973421`、期待 `<0.95`、retry 成功。text/class確定後もCSS色は遷移中。新回帰fixtureでは旧helperが14msでalpha=1・animation runningのまま成功を返した。animation.finishedへの同期で解消。 | [PR #837](https://github.com/akiojin/llmlb/pull/837) / [#880](https://github.com/akiojin/llmlb/issues/880)（SPEC #838 T007） | `computed-style` が最終色取得と回帰fixtureを捕捉。遷移完了待ち・旧helperでのREDを根拠に個別allowlistを更新。 |
 | S-EP-01 Playground Offline表示 | 2026-10-10、2026-10-11調査 | #876のbaseline・serial・pre-pushで各1（計3） | (d) hash遷移とcache寿命の競合 | 一覧・詳細Offline後もPlaygroundはError。hashだけの遷移で5秒freshなendpoint queryを再利用し、既定5秒pollと5秒class assertが競合。新documentへreloadして色mappingの観測をcacheから分離。alpha取得前の失敗で、上の色遷移とは別根因。 | [#876](https://github.com/akiojin/llmlb/issues/876) / [PR #877](https://github.com/akiojin/llmlb/pull/877) / [#880](https://github.com/akiojin/llmlb/issues/880) | `navigation-race` が旧hash goto 4箇所を捕捉済み。hash設定→reloadへ置換して不要な4キーを削除。cache寿命自体は静的検査では証明せず、失敗snapshotと実行証跡で確認。 |
 | xLLM `/v1/models` fallback | 2026-09-29 | 1以上（総数未測定） | (e)、残存待機は(a) | エフェメラルポート再利用で別プロセスの要求が混入。非同期モデル同期も厳密な回数assertに混入。UUID base pathと自動同期のthrottleで隔離。修正後の負荷実行30/30成功。 | [#748](https://github.com/akiojin/llmlb/issues/748) / [#753](https://github.com/akiojin/llmlb/pull/753) | `mock-count` が固定path＋回数観測の候補、`fixed-wait` が300msの残存待機を捕捉。UUID隔離・同期の正しさは静的検査だけでは証明できない。 |
@@ -18,6 +19,47 @@ SPEC #838。retry で成功しても初回失敗を消さず、観測と根因�
 
 観測日の過去4件は Issue・初回観測コメントの報告日。発生回数は異なる実行のため合算しない。
 既知の4件に(b)の確定根因はない。S-EP-01の調査で過去4件の根因は書き換えない。
+
+## PS-04 の同期競合調査（2026-10-16、Issue #926）
+
+develop `b3178520184dc967a4ed043b853d876a7d41114b` を基準に検査した。
+Issue #924 の初回は20秒で`MOCK_OK`待ちが失敗し、画面は`Endpoint not found`、
+retry1は1.959秒で成功した。初回traceは未保存で、当時の競合操作は断定しない。
+
+別の汎用mockをOnlineにすると、旧PS-04の`mock-model-a`の`endpoint_ids`が2件になり、
+所有providerだけというassertが失敗した。専用UUIDモデルで対象providerを1件に限定する。
+さらに、手動syncは`EndpointRegistry.reload()`で全cacheをclearしてからDBを待つ。
+単一DB接続を保持してreloadを1回pollすると、既存endpointを取得できず0.10秒でREDとなった。
+この空窓に候補選択後の`begin_request()`が重なると`EndpointNotFound`が成立する。
+
+修正は既存`refresh_model_mappings(id)`の再利用に限定する。
+手動syncが変更する対象endpointのモデル対応だけを更新し、他endpointのcacheには触れない。
+全cacheのsnapshot置換は並行add/status更新を上書きする範囲を広げるため採用しない。
+最終回帰は他endpointのread guardを保持して実同期handlerを呼び出す。
+旧実装は2秒の完了期限でRED（2.14秒）、修正後は0.20秒でGREEN。
+対象の旧モデル消去・新モデル追加と、他endpointのモデル対応維持も検証する。
+
+PS-04は実推論が所有providerに到達した通知で競合処理を開始する。
+応答をpromiseで保留したまま別providerを10回syncして削除し、その後返答を解放する。
+固定sleepやretry成功への依存はなく、light/dark双方でモデル名付き返答とブラウザエラーゼロを確認する。
+
+traceを`retain-on-failure`に変更し、初回からnetwork・endpoint/model状態・実サーバーログを添付する。
+診断fixtureを使用する一時specを`--retries=0`で意図的に1回失敗させ、retry=0のJSON、
+両状態APIの200応答、network一覧、サーバーログ、画像・動画・trace.zipの保存を実測した。
+証跡は`.gwt/tmp/diagnostic-probe-results`と同配下のJSONに保持し、意図した失敗を成功件数に含めない。
+
+修正後の専用port/data dirでのChromium headed反復:
+
+- `playwright test playground-settings --retries=0 --workers=4 --repeat-each=5 --headed`:
+  設定suite全体30/30成功、47.8秒、失敗・skip・flakyゼロ。
+- このうちPS-04はlight 5/5、dark 5/5成功。計100回の競合syncと10回のcleanupを推論中に完了した。
+- JSONは`.gwt/tmp/stress-results.json`、設定はworkers=4・retryなし。console/page errorもゼロ。
+- 事前認証で`/dashboard`に直接留まるケースは既存helperの`/dashboard/#`assertと不一致だったため、
+  login helperの開始URLを正規の`/dashboard/`に統一した。修正前の5失敗・25未実行は成功件数に含めない。
+
+同じcheckoutの全Playwright観測は265成功・8既存skip・1flaky（445.6秒）。
+flakyは範囲外の管理モーダルdarkで、仮想時計を進めた直後のheader poll数が8のままという失敗だった。
+retryは成功したが初回失敗は消さず、PS-04の改善根拠にも含めない。
 
 ## S-EP-01 の根因調査（2026-10-11、Issue #880）
 

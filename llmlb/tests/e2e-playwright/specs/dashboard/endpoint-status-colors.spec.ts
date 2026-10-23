@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
 import { ensureDashboardLogin, deleteEndpointsByName, listEndpoints } from '../../helpers/api-helpers';
 import { startMockOpenAIEndpointServer, type MockOpenAIEndpointServer } from '../../helpers/mock-openai-endpoint';
 import { mkdir } from 'node:fs/promises';
@@ -147,8 +147,7 @@ test.describe('Endpoint Status Colors @dashboard', () => {
   let mockBadClosed = false;
 
   test.beforeAll(async () => {
-    // Delay /v1/models so newly created endpoints remain Pending long enough to assert color mapping.
-    mock = await startMockOpenAIEndpointServer({ responseDelayMs: 3000 });
+    mock = await startMockOpenAIEndpointServer();
     mockBad = await startMockOpenAIEndpointServer();
   });
 
@@ -176,6 +175,20 @@ test.describe('Endpoint Status Colors @dashboard', () => {
     };
 
     try {
+      // Health checks may finish while the three Pending views are inspected.
+      // Keep only this color-mapping phase stable; later transitions use the
+      // real endpoint and explicit connection test below.
+      const pendingSnapshot = async (route: Route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const response = await route.fetch();
+        const endpoints = await response.json();
+        const pending = (endpoint: { name: string }) =>
+          endpoint.name === endpointOkName ? { ...endpoint, status: 'pending' } : endpoint;
+        await route.fulfill({ response, json: Array.isArray(endpoints)
+          ? endpoints.map(pending) : pending(endpoints) });
+      };
+      await page.route('**/api/dashboard/endpoints', pendingSnapshot);
+      await page.route('**/api/endpoints/*', pendingSnapshot);
       await ensureDashboardLogin(page);
 
       // ---------------------------------------------------------------------
@@ -224,6 +237,8 @@ test.describe('Endpoint Status Colors @dashboard', () => {
       // ---------------------------------------------------------------------
       // Online (run explicit connection test for deterministic transition)
       // ---------------------------------------------------------------------
+      await page.unroute('**/api/dashboard/endpoints', pendingSnapshot);
+      await page.unroute('**/api/endpoints/*', pendingSnapshot);
       // Use API-level test connection for reliability (UI button may fail
       // silently if CSRF token is stale or the request takes too long).
       await request.post(`${API_BASE}/api/endpoints/${okEndpoint!.id}/test`, {

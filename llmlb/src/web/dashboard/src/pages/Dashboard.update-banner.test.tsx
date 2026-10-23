@@ -110,6 +110,12 @@ function systemInfo(update: UpdateState, system: Partial<SystemInfo> = {}): Syst
 }
 
 async function renderDashboard({ update = upToDate, system, history = [], user }: Scenario = {}) {
+  vi.spyOn(dashboardApi, 'getActivity').mockResolvedValue({
+    timestamp: '2026-10-01T00:00:00Z', bucket_seconds: 1, window_seconds: 60,
+    total: { active_requests: 0, queued_requests: 0, requests_per_second: Array(60).fill(0) },
+    endpoints: [],
+  })
+  vi.spyOn(dashboardApi, 'getDailyTokenStats').mockResolvedValue([])
   vi.spyOn(dashboardApi, 'getOverview').mockResolvedValue(overview)
   vi.spyOn(dashboardApi, 'getEndpoints').mockResolvedValue([])
   vi.spyOn(dashboardApi, 'getRequestResponses').mockResolvedValue({

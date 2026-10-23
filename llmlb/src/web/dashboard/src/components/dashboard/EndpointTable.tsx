@@ -61,6 +61,8 @@ import {
   Plus,
 } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import type { RequestActivity } from '@/lib/api/dashboard'
+import { ActivityIndicator, RequestRateSparkline } from './ActivityIndicator'
 
 /**
  * SPEC-e8e9326e: Router-Driven Endpoint Registration System
@@ -70,6 +72,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 interface EndpointTableProps {
   endpoints: DashboardEndpoint[]
   isLoading: boolean
+  activityByEndpoint?: ReadonlyMap<string, RequestActivity>
+  isActivityStale?: boolean
 }
 
 function getStatusBadgeVariant(
@@ -119,7 +123,7 @@ function getTypeBadgeVariant(
   }
 }
 
-export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
+export function EndpointTable({ endpoints, isLoading, activityByEndpoint, isActivityStale }: EndpointTableProps) {
   const {
     search, setSearch, statusFilter, setStatusFilter, typeFilter, setTypeFilter,
     sortField, sortDirection, handleSort, currentPage, totalPages, previousPage, nextPage,
@@ -230,6 +234,12 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
             </Select>
           </div>
 
+          <div aria-label="Activity legend" className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-3 rounded-full bg-accent-foreground" aria-hidden="true" />処理中</span>
+            <span className="inline-flex items-center gap-1.5"><span className="activity-queue-stripes h-1.5 w-3 rounded-full bg-warning" aria-hidden="true" />待ち</span>
+            <span>小グラフ: 直近60秒の req/s</span>
+          </div>
+
           {/* Table */}
           <div className="rounded-md border">
             <Table>
@@ -273,13 +283,15 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                     {renderSortIcon('model_count')}
                   </TableHead>
                   <TableHead>Last Seen</TableHead>
+                  <TableHead>Activity</TableHead>
+                  <TableHead>Req/s · 60s</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedEndpoints.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="p-0">
+                    <TableCell colSpan={11} className="p-0">
                       <EmptyState
                         icon={<Server className="h-10 w-10" />}
                         title={
@@ -297,10 +309,18 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                   </TableRow>
                 ) : (
                   paginatedEndpoints.map((endpoint) => {
+                    const endpointActivity = activityByEndpoint?.get(endpoint.id)
+                    const isBusy = endpoint.status === 'online' && (endpointActivity?.active_requests ?? 0) > 0
                     return (
                       <TableRow key={endpoint.id}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
+                            <span
+                              data-testid="endpoint-activity-dot"
+                              data-state={isBusy ? 'busy' : 'idle'}
+                              aria-hidden="true"
+                              className={cn('h-1.5 w-1.5 shrink-0 rounded-full', isBusy ? 'bg-accent-foreground motion-safe:animate-pulse' : 'bg-muted-foreground/50')}
+                            />
                             <span>{endpoint.name}</span>
                           </div>
                         </TableCell>
@@ -350,6 +370,17 @@ export function EndpointTable({ endpoints, isLoading }: EndpointTableProps) {
                       <TableCell className="text-right">{endpoint.model_count}</TableCell>
                       <TableCell>
                         {endpoint.lastSeenLabel}
+                      </TableCell>
+                      <TableCell>
+                        {endpoint.status === 'offline' ? <span className="text-muted-foreground">—</span> : <ActivityIndicator
+                          activity={endpointActivity}
+                          isStale={isActivityStale}
+                          compact
+                          label={`${endpoint.name} request activity`}
+                        />}
+                      </TableCell>
+                      <TableCell>
+                        {endpoint.status === 'offline' ? <span className="text-muted-foreground">—</span> : <RequestRateSparkline activity={endpointActivity} />}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">

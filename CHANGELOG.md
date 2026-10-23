@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-10-24
+
+### Added
+
+- Dashboard: リクエスト活動をリアルタイム表示。処理中リクエストのバーと
+  req/s のスパークラインで、エンドポイントごとの負荷をライブで確認できる（#937）。
+- Models: 確認済みの Hugging Face 候補 7 件を canonical 対応表へ追加し、
+  誤った統合を防ぐ検証を追加（#934）。
+
+### Fixed
+
+- Endpoints: モデル同期時に他のエンドポイントの登録モデルが消えないよう修正（#926）。
+- Models: HF 検出のファイル I/O を UTF-8 に固定し、CP932 既定の Windows でも
+  検出が失敗しないよう修正（#928）。
+
+### Changed
+
+- Tests: Strata / Project Maya の llmlb 経由の JSON・SSE 推論と認証付き推論を
+  検証する任意 smoke を追加し、Windows 実機の応答と Strata 復旧の証跡を保存（#924）。
+- Tests: 通知バナーの仮想時計停止と、管理モーダルの polling・fetch 完了の同期を
+  安定化（#931, #927）。
+- Deps: cargo / npm 依存を更新（React 19.3.1、Radix UI、Playwright 1.64.1 など）。
+
 ## [6.4.1] - 2026-10-15
 
 ### Changed

@@ -15,6 +15,7 @@ import { UserModal } from '@/components/users/UserModal'
 import { usePendingRegistrationCountViewModel } from '@/viewmodels/useRegistrationRequestsViewModel'
 import { Badge } from '@/components/ui/badge'
 import { NotificationSettingsModal } from '@/components/notifications/NotificationSettingsModal'
+import { ActivityConnectionStatus } from './ActivityConnectionStatus'
 import {
   Bell,
   Cpu,
@@ -47,6 +48,8 @@ interface HeaderProps {
   updateState?: UpdateStateSummary
   updateLatest?: string | null
   minimalViewer?: boolean
+  activityStatus?: 'live' | 'polling'
+  isActivityStale?: boolean
 }
 
 export function Header({
@@ -58,6 +61,8 @@ export function Header({
   updateState,
   updateLatest,
   minimalViewer = false,
+  activityStatus,
+  isActivityStale,
 }: HeaderProps) {
   const { logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -76,7 +81,7 @@ export function Header({
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-16 max-w-[1600px] flex-wrap items-center justify-between gap-y-2 px-4 py-2 sm:px-6 lg:px-8">
           {/* Logo */}
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 glow-sm">
@@ -126,7 +131,7 @@ export function Header({
 
           {/* Status Indicators */}
           {!minimalViewer && (
-            <div className="hidden md:flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="hidden items-center gap-4 text-xs text-muted-foreground md:flex">
             {/* Connection Status */}
             <span id="connection-status" className="flex items-center gap-1.5">
               <span
@@ -158,7 +163,8 @@ export function Header({
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {activityStatus ? <ActivityConnectionStatus status={activityStatus} isStale={isActivityStale} /> : null}
             {/* API Keys Button */}
             <Button
               id="api-keys-button"

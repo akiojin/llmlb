@@ -302,6 +302,15 @@ pub async fn get_stats(State(state): State<AppState>) -> Json<DashboardStats> {
     Json(collect_stats(&state).await)
 }
 
+/// GET /api/dashboard/activity
+///
+/// JWT admin/viewer向け。ゲートウェイ自身の処理中・待機・開始数だけを返す。
+pub async fn get_activity(
+    State(state): State<AppState>,
+) -> Json<crate::balancer::RequestActivitySnapshot> {
+    Json(state.balancer.load_manager.request_activity().await)
+}
+
 /// GET /api/dashboard/request-history
 pub async fn get_request_history(State(state): State<AppState>) -> Json<Vec<RequestHistoryPoint>> {
     Json(collect_history(&state).await)

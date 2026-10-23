@@ -486,6 +486,7 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
     protected("GET", "/api/dashboard/stats"),
     protected("GET", "/api/dashboard/request-history"),
     protected("GET", "/api/dashboard/overview"),
+    protected("GET", "/api/dashboard/activity"),
     protected("GET", "/api/dashboard/metrics/{endpoint_id}"),
     protected("GET", "/api/dashboard/request-responses"),
     protected("GET", "/api/dashboard/request-responses/{id}"),

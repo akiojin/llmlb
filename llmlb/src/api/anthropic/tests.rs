@@ -56,6 +56,158 @@ async fn add_online_chat_endpoint_with_model(
         .expect("add endpoint model");
 }
 
+async fn local_streaming_activity_response(
+    upstream_body: &str,
+) -> (AppState, tempfile::TempDir, MockServer, Uuid, Response) {
+    let (state, dir) = create_state_with_tempdir().await;
+    let upstream = MockServer::start().await;
+    let base_path = format!("/{}", Uuid::new_v4());
+    Mock::given(method("POST"))
+        .and(path(format!("{base_path}/v1/chat/completions")))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(upstream_body),
+        )
+        .mount(&upstream)
+        .await;
+    add_online_chat_endpoint_with_model(
+        &state,
+        "anthropic-activity",
+        format!("{}{base_path}", upstream.uri()),
+        EndpointType::OpenaiCompatible,
+        "activity-test-model",
+        None,
+    )
+    .await;
+    let endpoint_id = state.balancer.endpoint_registry.list().await[0].id;
+    let mut headers = HeaderMap::new();
+    headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+    let response = handle_messages(
+        std::net::SocketAddr::from(([127, 0, 0, 1], 8080)),
+        headers,
+        state.clone(),
+        None,
+        json!({
+            "model": "activity-test-model",
+            "max_tokens": 32,
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": true,
+        }),
+    )
+    .await
+    .expect("streaming response");
+    assert_eq!(response.status(), StatusCode::OK);
+    (state, dir, upstream, endpoint_id, response)
+}
+
+#[tokio::test]
+#[serial]
+async fn activity_anthropic_stream_stays_active_until_body_is_consumed() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir, _upstream, endpoint_id, response) = local_streaming_activity_response(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\ndata: [DONE]\n\n",
+    )
+    .await;
+    let activity = state.balancer.load_manager.request_activity().await;
+    assert_eq!(
+        activity.total.active_requests, 1,
+        "headers do not finish inference"
+    );
+    assert_eq!(activity.endpoints[0].active_requests, 1);
+    assert_eq!(activity.total.requests_per_second.iter().sum::<u64>(), 1);
+
+    to_bytes(response.into_body(), 1_000_000).await.unwrap();
+
+    let snapshot = state
+        .balancer
+        .load_manager
+        .snapshot(endpoint_id)
+        .await
+        .unwrap();
+    assert_eq!(snapshot.active_requests, 0);
+    assert_eq!(snapshot.successful_requests, 1);
+    assert_eq!(snapshot.failed_requests, 0);
+    assert_eq!(
+        state
+            .balancer
+            .load_manager
+            .request_activity()
+            .await
+            .total
+            .active_requests,
+        0
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn activity_anthropic_stream_disconnect_releases_active_as_error() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir, _upstream, endpoint_id, response) = local_streaming_activity_response(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\ndata: [DONE]\n\n",
+    )
+    .await;
+    assert_eq!(
+        state
+            .balancer
+            .load_manager
+            .request_activity()
+            .await
+            .total
+            .active_requests,
+        1
+    );
+
+    tokio::time::pause();
+    let mut notifications = state.event_bus.subscribe();
+    drop(response);
+
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let notification = notifications.recv().await.expect("activity event bus remains open");
+            if !matches!(notification, crate::events::DashboardEvent::MetricsUpdated { runtime_id, .. } if runtime_id == endpoint_id) {
+                continue;
+            }
+            let snapshot = state
+                .balancer
+                .load_manager
+                .snapshot(endpoint_id)
+                .await
+                .unwrap();
+            if snapshot.active_requests == 0 {
+                assert_eq!(snapshot.successful_requests, 0);
+                assert_eq!(snapshot.failed_requests, 1);
+                break;
+            }
+        }
+    })
+    .await
+    .expect("dropping a response must notify release of its request lease");
+}
+
+#[tokio::test]
+#[serial]
+async fn activity_anthropic_stream_error_event_finishes_as_error() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir, _upstream, endpoint_id, response) = local_streaming_activity_response(
+        "data: {\"error\":{\"message\":\"upstream failed\"}}\n\ndata: [DONE]\n\n",
+    )
+    .await;
+    let body = to_bytes(response.into_body(), 1_000_000).await.unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("upstream failed"));
+
+    let snapshot = state
+        .balancer
+        .load_manager
+        .snapshot(endpoint_id)
+        .await
+        .unwrap();
+    assert_eq!(snapshot.active_requests, 0);
+    assert_eq!(snapshot.successful_requests, 0);
+    assert_eq!(snapshot.failed_requests, 1);
+}
+
 #[test]
 fn anthropic_request_to_openai_maps_system_and_messages() {
     let converted = anthropic_request_to_openai(&json!({
@@ -396,6 +548,8 @@ async fn streaming_tool_use_accumulates_fragmented_arguments() {
         stop_reason: None,
         stop_sequence: None,
         stats_recorded: false,
+        stream_failed: false,
+        request_lease: None,
     };
 
     tracker.process_upstream_line(
@@ -470,6 +624,8 @@ async fn streaming_text_then_interleaved_parallel_tools() {
         stop_reason: None,
         stop_sequence: None,
         stats_recorded: false,
+        stream_failed: false,
+        request_lease: None,
     };
 
     tracker.process_upstream_line(r#"data: {"choices":[{"delta":{"content":"thinking"}}]}"#);

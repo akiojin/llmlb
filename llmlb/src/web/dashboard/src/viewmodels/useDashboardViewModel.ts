@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { modelsApi, type RegisteredModelView, type ModelsView } from '@/lib/api/models'
 import { systemApi, type VersionResponse } from '@/lib/api/system'
-import type { RequestHistoryItem } from '@/lib/api/dashboard'
+import type { RequestActivity, RequestHistoryItem } from '@/lib/api/dashboard'
 import { queryKeys } from '@/lib/queryKeys'
 import { useAuth } from '@/hooks/useAuth'
 import { useDashboardWebSocket } from '@/hooks/useWebSocket'
@@ -24,6 +24,9 @@ export interface DashboardViewModel extends Omit<DashboardDataViewModel, 'system
   setActiveTab: (tab: string) => void
   updateBanner: SystemUpdateViewModel
   errorMessage: string
+  activityStatus: 'live' | 'polling' | 'stale'
+  activityConnectionStatus: 'live' | 'polling'
+  activityByEndpoint: ReadonlyMap<string, RequestActivity>
 }
 
 const DASHBOARD_TABS = ['endpoints', 'models', 'statistics', 'history', 'clients', 'logs']
@@ -44,6 +47,11 @@ export function useDashboardViewModel(): DashboardViewModel {
   const pollingInterval = wsConnected ? 10000 : 5000
 
   const { systemInfo, requestResponsesData, ...dashboard } = useDashboardDataViewModel({ pollingInterval, isViewer })
+  const activityByEndpoint = useMemo(() => new Map(
+    dashboard.activityData?.endpoints.map((endpoint) => [endpoint.endpoint_id, endpoint]) ?? [],
+  ), [dashboard.activityData])
+  const activityStatus = dashboard.activityError ? 'stale' : wsConnected ? 'live' : 'polling'
+  const activityConnectionStatus = wsConnected ? 'live' : 'polling'
 
   // Bug 3: /api/version は認証不要・軽量なので全ロールで常時取得し、
   // systemInfo 未取得時のフォールバックにする
@@ -94,5 +102,6 @@ export function useDashboardViewModel(): DashboardViewModel {
     refetchViewerModels: () => { void refetchViewerModels() },
     modelsView, setModelsView, historyItems, activeTab, setActiveTab, updateBanner,
     errorMessage: dashboard.error instanceof Error ? dashboard.error.message : 'An error occurred',
+    activityStatus, activityConnectionStatus, activityByEndpoint,
   }
 }

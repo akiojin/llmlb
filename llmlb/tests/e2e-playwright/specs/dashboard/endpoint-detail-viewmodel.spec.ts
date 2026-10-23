@@ -171,7 +171,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
 
       // No detail query starts while the modal is closed, even as time passes.
-      await page.clock.runFor(5000)
+      // The closed-state assertion needs each due timer once; replaying every
+      // dashboard animation frame adds wall-clock load without testing more.
+      await page.clock.fastForward(5000)
       expect(requests[ENDPOINT_A]).toEqual({ today: 0, models: 0, stats: 0, tps: 0, daily: [] })
       expect(requests[ENDPOINT_B]).toEqual({ today: 0, models: 0, stats: 0, tps: 0, daily: [] })
       const openedAt = await page.evaluate(() => Date.now())
@@ -353,7 +355,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       }).toBe(0)
       await expect(dialog).toHaveCount(0)
       const closedRequests = structuredClone(requests[ENDPOINT_A])
-      await page.clock.runFor(6000)
+      await page.clock.fastForward(6000)
       expect(requests[ENDPOINT_A]).toEqual(closedRequests)
       await rowFor('beta-endpoint').getByRole('button', { name: 'Details', exact: true }).click()
       const betaDialog = page.getByRole('dialog', { name: 'beta-endpoint', exact: true })

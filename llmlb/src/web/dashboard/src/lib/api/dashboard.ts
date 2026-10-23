@@ -109,6 +109,25 @@ export interface DashboardOverview {
   generation_time_ms: number
 }
 
+export interface RequestActivity {
+  active_requests: number
+  queued_requests: number
+  /** One arrival count per second, oldest first, including the current second. */
+  requests_per_second: number[]
+}
+
+export interface EndpointRequestActivity extends RequestActivity {
+  endpoint_id: string
+}
+
+export interface DashboardActivity {
+  timestamp: string
+  bucket_seconds: number
+  window_seconds: number
+  total: RequestActivity
+  endpoints: EndpointRequestActivity[]
+}
+
 export interface LogEntry {
   timestamp: string
   level: string
@@ -141,6 +160,8 @@ export interface MonthlyTokenStats extends TokenStats {
 
 export const dashboardApi = {
   getOverview: () => fetchWithAuth<DashboardOverview>('/api/dashboard/overview'),
+
+  getActivity: () => fetchWithAuth<DashboardActivity>('/api/dashboard/activity'),
 
   /** SPEC-e8e9326e: List endpoints */
   getEndpoints: () => fetchWithAuth<DashboardEndpoint[]>('/api/dashboard/endpoints'),

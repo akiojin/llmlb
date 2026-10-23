@@ -8,10 +8,12 @@
 //! このモジュールはEndpointRegistryを使用してエンドポイント情報を管理します。
 //! 負荷分散はTPS優先、同一TPS時はラウンドロビンで行われます。
 
+mod activity;
 pub mod lease;
 pub mod types;
 
 // Re-export all public types for backward compatibility
+pub use activity::{EndpointRequestActivity, RequestActivitySnapshot, RequestActivityTotals};
 pub use lease::RequestLease;
 pub use types::{
     EndpointLoadSnapshot, EndpointTpsSummary, MetricsUpdate, ModelTpsInfo, ModelTpsState,

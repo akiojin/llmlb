@@ -467,19 +467,11 @@ async fn proxy_local_anthropic_messages(
         let upstream_status =
             StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
         let succeeded = upstream_status.is_success();
-        let outcome = if succeeded {
-            RequestOutcome::Success
-        } else {
-            RequestOutcome::Error
-        };
-        request_lease
-            .complete(outcome, duration)
-            .await
-            .map_err(AppError::from)?;
-
-        if succeeded {
-            update_inference_latency(&state.balancer.endpoint_registry, endpoint_id, duration);
-        } else {
+        if !succeeded {
+            request_lease
+                .complete(RequestOutcome::Error, duration)
+                .await
+                .map_err(AppError::from)?;
             record_endpoint_request_stats(
                 state.balancer.endpoint_registry.clone(),
                 endpoint_id,
@@ -492,9 +484,6 @@ async fn proxy_local_anthropic_messages(
                 state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
             );
-        }
-
-        if !succeeded {
             let body = upstream.bytes().await.unwrap_or_default();
             let message = upstream_error_message_from_bytes(upstream_status, &body);
             let (anthropic_status, error_type) =
@@ -546,6 +535,7 @@ async fn proxy_local_anthropic_messages(
             state.balancer.endpoint_registry.clone(),
             state.balancer.load_manager.clone(),
             state.event_bus.clone(),
+            request_lease,
         );
         if let Some(wait_ms) = queued_wait_ms {
             add_queue_headers(&mut response, wait_ms);

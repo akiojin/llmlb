@@ -31,6 +31,8 @@ serde_json = "1"
 
 Run `cargo run --manifest-path <temporary>/Cargo.toml` to generate the fixtures.
 Pass a fixture JSON path after `--` to verify its signatures and all claims.
+Verification requires exactly one admin fixture and one viewer fixture; empty,
+incomplete or duplicate-role input fails without reporting PASS.
 Use a second temporary crate with only `features = ["aws_lc_rs"]` to generate
 new-provider tokens. Match the application lock by also adding
 `aws-lc-rs = { version = "=1.18.1", features = ["prebuilt-nasm"] }` and

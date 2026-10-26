@@ -1,0 +1,22 @@
+[
+  {
+    "claims": {
+      "sub": "issue-948-admin",
+      "role": "admin",
+      "exp": 4102444800,
+      "must_change_password": true,
+      "password_changed_at": 1793010000000
+    },
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJpc3N1ZS05NDgtYWRtaW4iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjQxMDI0NDQ4MDAsIm11c3RfY2hhbmdlX3Bhc3N3b3JkIjp0cnVlLCJwYXNzd29yZF9jaGFuZ2VkX2F0IjoxNzkzMDEwMDAwMDAwfQ.g7ppfTeS_kHr7lUQRNAwMez3EXUHTXhI9_G4ojWFvjY"
+  },
+  {
+    "claims": {
+      "sub": "issue-948-viewer",
+      "role": "viewer",
+      "exp": 4102444800,
+      "must_change_password": false,
+      "password_changed_at": 1793010000000
+    },
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJpc3N1ZS05NDgtdmlld2VyIiwicm9sZSI6InZpZXdlciIsImV4cCI6NDEwMjQ0NDgwMCwibXVzdF9jaGFuZ2VfcGFzc3dvcmQiOmZhbHNlLCJwYXNzd29yZF9jaGFuZ2VkX2F0IjoxNzkzMDEwMDAwMDAwfQ.oAcxWmkOshKDw_YzXvFAgU8QPZL4hw2SkG6fWBZAVGU"
+  }
+]

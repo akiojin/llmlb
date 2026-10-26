@@ -23,6 +23,16 @@ fn main() {
     if let Some(path) = std::env::args().nth(1) {
         let fixtures: Vec<Fixture> =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let mut roles: Vec<_> = fixtures
+            .iter()
+            .map(|fixture| fixture.claims.role.as_str())
+            .collect();
+        roles.sort_unstable();
+        assert_eq!(
+            roles,
+            ["admin", "viewer"],
+            "expected one admin and one viewer fixture"
+        );
         for fixture in fixtures {
             let verified = decode::<Claims>(
                 &fixture.token,

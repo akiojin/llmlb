@@ -402,6 +402,9 @@ pub struct Endpoint {
     pub latency_ms: Option<u32>,
     /// 最終確認時刻
     pub last_seen: Option<DateTime<Utc>>,
+    /// 最後に推論リクエストを割り当てた開始時刻（UTC）
+    #[serde(default)]
+    pub last_request_at: Option<DateTime<Utc>>,
     /// 最後のエラーメッセージ
     pub last_error: Option<String>,
     /// 連続エラー回数
@@ -463,6 +466,7 @@ impl Endpoint {
             inference_timeout_secs: endpoint_type.recommended_inference_timeout_secs(),
             latency_ms: None,
             last_seen: None,
+            last_request_at: None,
             last_error: None,
             error_count: 0,
             registered_at: Utc::now(),

@@ -27,9 +27,9 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
         INSERT INTO endpoints (
             id, name, base_url, api_key_encrypted, status, endpoint_type,
             health_check_interval_secs, inference_timeout_secs,
-            latency_ms, last_seen, last_error, error_count,
+            latency_ms, last_seen, last_request_at, last_error, error_count,
             registered_at, notes, capabilities, device_info, inference_latency_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -42,6 +42,11 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     .bind(endpoint.inference_timeout_secs as i32)
     .bind(endpoint.latency_ms.map(|v| v as i32))
     .bind(&last_seen)
+    .bind(
+        endpoint
+            .last_request_at
+            .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)),
+    )
     .bind(&endpoint.last_error)
     .bind(endpoint.error_count as i32)
     .bind(&registered_at)
@@ -61,7 +66,7 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
                health_check_interval_secs, inference_timeout_secs,
-               latency_ms, last_seen, last_error, error_count,
+               latency_ms, last_seen, last_request_at, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
                total_requests, successful_requests, failed_requests
@@ -81,7 +86,7 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
                health_check_interval_secs, inference_timeout_secs,
-               latency_ms, last_seen, last_error, error_count,
+               latency_ms, last_seen, last_request_at, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
                total_requests, successful_requests, failed_requests
@@ -94,6 +99,27 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
     .await?;
 
     Ok(row.map(|r| r.into()))
+}
+
+/// 実リクエスト開始時刻を保存する。遅着・並行更新でも最新値を保持する。
+pub async fn record_request_started(
+    pool: &SqlitePool,
+    id: Uuid,
+    started_at: chrono::DateTime<chrono::Utc>,
+) -> Result<bool, sqlx::Error> {
+    // UTC・固定精度に揃えることで文字列比較と時系列順を一致させる。
+    let timestamp = started_at.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+    let result = sqlx::query(
+        "UPDATE endpoints SET last_request_at = CASE
+            WHEN last_request_at IS NULL OR last_request_at < ? THEN ?
+            ELSE last_request_at END WHERE id = ?",
+    )
+    .bind(&timestamp)
+    .bind(&timestamp)
+    .bind(id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// エンドポイントを更新
@@ -157,7 +183,7 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
                health_check_interval_secs, inference_timeout_secs,
-               latency_ms, last_seen, last_error, error_count,
+               latency_ms, last_seen, last_request_at, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
                total_requests, successful_requests, failed_requests
@@ -181,7 +207,7 @@ pub async fn list_endpoints_by_status(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
                health_check_interval_secs, inference_timeout_secs,
-               latency_ms, last_seen, last_error, error_count,
+               latency_ms, last_seen, last_request_at, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
                total_requests, successful_requests, failed_requests
@@ -206,7 +232,7 @@ pub async fn list_endpoints_by_type(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
                health_check_interval_secs, inference_timeout_secs,
-               latency_ms, last_seen, last_error, error_count,
+               latency_ms, last_seen, last_request_at, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
                total_requests, successful_requests, failed_requests
@@ -232,7 +258,7 @@ pub async fn list_endpoints_by_type_and_status(
         r#"
         SELECT id, name, base_url, api_key_encrypted, status, endpoint_type,
                health_check_interval_secs, inference_timeout_secs,
-               latency_ms, last_seen, last_error, error_count,
+               latency_ms, last_seen, last_request_at, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
                total_requests, successful_requests, failed_requests
@@ -631,6 +657,7 @@ struct EndpointRow {
     inference_timeout_secs: i32,
     latency_ms: Option<i32>,
     last_seen: Option<String>,
+    last_request_at: Option<String>,
     last_error: Option<String>,
     error_count: i32,
     registered_at: String,
@@ -668,6 +695,10 @@ impl From<EndpointRow> for Endpoint {
             latency_ms: row.latency_ms.map(|v| v as u32),
             last_seen: row
                 .last_seen
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc)),
+            last_request_at: row
+                .last_request_at
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc)),
             last_error: row.last_error,

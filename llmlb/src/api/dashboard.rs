@@ -97,6 +97,8 @@ pub struct DashboardEndpoint {
     pub latency_ms: Option<u32>,
     /// 最終確認時刻
     pub last_seen: Option<DateTime<Utc>>,
+    /// 最後に推論リクエストを割り当てた開始時刻（UTC）
+    pub last_request_at: Option<DateTime<Utc>>,
     /// 最後のエラーメッセージ
     pub last_error: Option<String>,
     /// 連続エラー回数

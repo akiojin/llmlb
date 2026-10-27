@@ -85,6 +85,7 @@ export interface DashboardEndpoint {
   inference_timeout_secs: number
   latency_ms?: number
   last_seen?: string
+  last_request_at?: string | null
   last_error?: string
   error_count: number
   registered_at: string

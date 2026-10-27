@@ -638,6 +638,16 @@ impl LoadManager {
             return Err(LbError::EndpointOffline(endpoint_id));
         }
 
+        let started_at = Utc::now();
+        if !self
+            .endpoint_registry
+            .record_request_started(endpoint_id, started_at)
+            .await
+            .map_err(|error| LbError::Database(error.to_string()))?
+        {
+            return Err(LbError::EndpointNotFound(endpoint_id));
+        }
+
         {
             let mut state = self.state.write().await;
             let entry = state.entry(endpoint_id).or_default();
@@ -646,7 +656,7 @@ impl LoadManager {
             self.activity_history
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .record(endpoint_id, Utc::now().timestamp());
+                .record(endpoint_id, started_at.timestamp());
         }
         self.notify_request_activity(endpoint_id);
 

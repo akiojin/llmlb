@@ -317,13 +317,17 @@ impl EndpointRegistry {
     }
 
     /// エンドポイントを更新（DBとキャッシュ両方）
-    pub async fn update(&self, endpoint: Endpoint) -> Result<bool, sqlx::Error> {
+    pub async fn update(&self, mut endpoint: Endpoint) -> Result<bool, sqlx::Error> {
         // DBを更新
         let updated = db::update_endpoint(&self.pool, &endpoint).await?;
 
         if updated {
             // キャッシュを更新
-            self.endpoints.write().await.insert(endpoint.id, endpoint);
+            let mut endpoints = self.endpoints.write().await;
+            if let Some(current) = endpoints.get(&endpoint.id) {
+                endpoint.last_request_at = current.last_request_at;
+            }
+            endpoints.insert(endpoint.id, endpoint);
         }
 
         Ok(updated)
@@ -485,6 +489,33 @@ impl EndpointRegistry {
 
         // DBを更新
         db::update_device_info(&self.pool, id, device_info.as_ref()).await
+    }
+
+    /// 実リクエスト開始をDBへ永続化してからキャッシュを更新する。
+    pub async fn record_request_started(
+        &self,
+        id: Uuid,
+        started_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<bool, sqlx::Error> {
+        let registry = self.clone();
+        // SQLite can commit even if the caller is cancelled while awaiting it.
+        // Keep cache publication in the same task so both copies converge.
+        tokio::spawn(async move {
+            let updated = db::record_request_started(&registry.pool, id, started_at).await?;
+            if updated {
+                let mut endpoints = registry.endpoints.write().await;
+                if let Some(endpoint) = endpoints.get_mut(&id) {
+                    endpoint.last_request_at = Some(
+                        endpoint
+                            .last_request_at
+                            .map_or(started_at, |current| current.max(started_at)),
+                    );
+                }
+            }
+            Ok(updated)
+        })
+        .await
+        .map_err(|error| sqlx::Error::Io(std::io::Error::other(error)))?
     }
 
     /// エンドポイントのリクエストカウンタをインクリメント（DBとキャッシュ両方）

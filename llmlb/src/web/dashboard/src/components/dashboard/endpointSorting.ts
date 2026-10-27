@@ -6,6 +6,7 @@ export interface EndpointSortRow {
   latency_ms?: number | null
   model_count: number
   registered_at: string
+  last_request_at?: string | null
 }
 
 export type EndpointSortField =
@@ -15,6 +16,7 @@ export type EndpointSortField =
   | 'latency_ms'
   | 'model_count'
   | 'registered_at'
+  | 'last_request_at'
 
 export type EndpointSortDirection = 'asc' | 'desc'
 
@@ -23,6 +25,12 @@ const STATUS_ORDER: Record<EndpointSortRow['status'], number> = {
   pending: 1,
   offline: 2,
   error: 3,
+}
+
+// Date keeps milliseconds; preserve the remaining precision of UTC API timestamps.
+function submillisecondNanoseconds(timestamp: string): number {
+  const fraction = timestamp.match(/\.(\d+)/)?.[1] ?? ''
+  return Number(fraction.padEnd(9, '0').slice(3, 9))
 }
 
 function compareEndpoints(
@@ -34,6 +42,18 @@ function compareEndpoints(
   let comparison = 0
 
   switch (sortField) {
+    case 'last_request_at': {
+      if (a.last_request_at == null && b.last_request_at != null) return 1
+      if (a.last_request_at != null && b.last_request_at == null) return -1
+      const requestComparison = a.last_request_at != null && b.last_request_at != null
+        ? (new Date(a.last_request_at).getTime() - new Date(b.last_request_at).getTime())
+          || (submillisecondNanoseconds(a.last_request_at) - submillisecondNanoseconds(b.last_request_at))
+        : 0
+      if (requestComparison !== 0) {
+        return sortDirection === 'asc' ? requestComparison : -requestComparison
+      }
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    }
     case 'name':
       comparison = a.name.localeCompare(b.name)
       break

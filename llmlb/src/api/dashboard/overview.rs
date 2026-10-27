@@ -36,6 +36,7 @@ pub(super) async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint
             inference_timeout_secs: endpoint.inference_timeout_secs,
             latency_ms: endpoint.latency_ms,
             last_seen: endpoint.last_seen,
+            last_request_at: endpoint.last_request_at,
             last_error: endpoint.last_error,
             error_count: endpoint.error_count,
             registered_at: endpoint.registered_at,

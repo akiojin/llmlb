@@ -140,7 +140,7 @@ export function useEndpointTableViewModel(endpoints: DashboardEndpoint[]): Endpo
     'all' | 'online' | 'pending' | 'offline' | 'error'
   >('all')
   const [typeFilter, setTypeFilter] = useState<'all' | EndpointType>('all')
-  const [sortField, setSortField] = useState<SortField>('status')
+  const [sortField, setSortField] = useState<SortField>('last_request_at')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedEndpoint, setSelectedEndpoint] = useState<DashboardEndpoint | null>(null)

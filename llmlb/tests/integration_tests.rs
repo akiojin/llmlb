@@ -137,3 +137,6 @@ mod dashboard_ws_revocation_test;
 
 // Tests are defined inside the modules; this harness ensures they are built
 // and executed when running `cargo test`.
+
+#[path = "integration/endpoint_last_request_test.rs"]
+mod endpoint_last_request_test;

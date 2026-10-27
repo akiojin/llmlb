@@ -8,6 +8,7 @@ use std::time::Duration as StdDuration;
 use tokio::time::{sleep, Duration};
 
 mod history;
+mod last_request;
 mod load_state;
 mod model_tps;
 mod request_activity;

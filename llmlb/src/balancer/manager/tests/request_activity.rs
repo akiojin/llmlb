@@ -162,12 +162,20 @@ async fn activity_start_and_success_completion_use_existing_coalesced_metrics() 
     tokio::time::pause();
     let manager = &state.balancer.load_manager;
     let mut receiver = state.event_bus.subscribe();
+    // SQLite runs on an external worker. Keep the runtime runnable while starts
+    // await storage, so paused Tokio time cannot auto-advance the coalescing timer.
+    let keep_clock_paused = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
     let first = manager.begin_request(endpoint_id).await.unwrap();
     let second = manager.begin_request(endpoint_id).await.unwrap();
     assert!(
         receiver.try_recv().is_err(),
         "the one-second window is retained"
     );
+    keep_clock_paused.abort();
     next_activity_notification(&mut receiver, endpoint_id).await;
     assert_eq!(
         manager.snapshot(endpoint_id).await.unwrap().active_requests,

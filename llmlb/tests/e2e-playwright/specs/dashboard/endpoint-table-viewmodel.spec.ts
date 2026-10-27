@@ -21,6 +21,72 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test.describe(`Endpoint Table ViewModel (${colorScheme}) @dashboard`, () => {
     test.use({ colorScheme })
 
+    test('orders recent request starts across pages and preserves chosen list conditions (#944)', async ({ page }, testInfo) => {
+      const pageErrors: string[] = []
+      page.on('pageerror', (error) => pageErrors.push(error.message))
+      page.on('console', (message) => {
+        if (message.type() === 'error') pageErrors.push(message.text())
+      })
+      const login = await page.request.post('/api/auth/login', {
+        data: { username: 'admin', password: 'test' },
+      })
+      expect(login.ok()).toBe(true)
+
+      let socket: WebSocketRoute | undefined
+      await page.routeWebSocket('**/ws/dashboard', (connection) => { socket = connection })
+      let endpoints: DashboardEndpoint[] = Array.from({ length: 12 }, (_, index) => ({
+        ...endpoint(`00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, `node-${String(index).padStart(2, '0')}`, index + 1),
+        status: index === 0 ? 'offline' : 'online',
+        endpoint_type: index === 1 ? 'ollama' : 'xllm',
+        last_request_at: index < 2 ? null : `2026-10-26T12:${String(index === 10 ? 11 : index).padStart(2, '0')}:00Z`,
+      }))
+      await page.route('**/api/dashboard/endpoints', (route) => route.fulfill({ json: endpoints }))
+
+      await ensureDashboardLogin(page)
+      await expect.poll(() => Boolean(socket)).toBe(true)
+      if (colorScheme === 'dark') await expect(page.locator('html')).toHaveClass(/\bdark\b/)
+      else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/)
+      const panel = page.getByRole('tabpanel', { name: 'Endpoints', exact: true })
+      const names = panel.getByRole('table').locator('tbody tr td:first-child')
+      const expectedNames = (indices: number[]) => indices.map((index) => `node-${String(index).padStart(2, '0')}`)
+      await expect(names).toHaveText(expectedNames([10, 11, 9, 8, 7, 6, 5, 4, 3, 2]))
+      const pager = panel.getByText('1 / 2', { exact: true }).locator('..')
+      await pager.getByRole('button').nth(1).click()
+      await expect(names).toHaveText(expectedNames([0, 1]))
+
+      // The existing list invalidation updates data without resetting the page.
+      endpoints = endpoints.map((item, index) => index === 0
+        ? { ...item, last_request_at: '2026-10-26T13:00:00Z' } : item)
+      socket!.send(JSON.stringify({ changed: 'endpoints', id: endpoints[0].id }))
+      await expect(names).toHaveText(expectedNames([2, 1]))
+      await expect(panel.getByText('2 / 2', { exact: true })).toBeVisible()
+      await panel.getByText('2 / 2', { exact: true }).locator('..').getByRole('button').nth(0).click()
+      await expect(names).toHaveText(expectedNames([0, 10, 11, 9, 8, 7, 6, 5, 4, 3]))
+
+      const search = panel.getByPlaceholder('Search by name or URL...')
+      await search.fill('node-0')
+      await panel.getByRole('combobox').filter({ hasText: 'All Status' }).click()
+      await page.getByRole('option', { name: 'Online', exact: true }).click()
+      await panel.getByRole('combobox').filter({ hasText: 'All Types' }).click()
+      await page.getByRole('option', { name: 'xLLM', exact: true }).click()
+      await expect(names).toHaveText(expectedNames([9, 8, 7, 6, 5, 4, 3, 2]))
+      await panel.getByRole('columnheader', { name: 'Name', exact: true }).click()
+      // A new start cannot replace a user's explicit Name sort or filters.
+      endpoints = endpoints.map((item, index) => index === 2
+        ? { ...item, last_request_at: '2026-10-26T14:00:00Z' } : item)
+      const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/dashboard/endpoints')
+      socket!.send(JSON.stringify({ changed: 'endpoints', id: endpoints[2].id }))
+      await refreshed
+      await expect(names).toHaveText(expectedNames([9, 8, 7, 6, 5, 4, 3, 2]))
+      await expect(search).toHaveValue('node-0')
+      await expect(panel.getByRole('combobox').filter({ hasText: 'Online' })).toBeVisible()
+      await expect(panel.getByRole('combobox').filter({ hasText: 'xLLM' })).toBeVisible()
+      expect(pageErrors).toEqual([])
+      await testInfo.attach(`recent-request-order-${colorScheme}`, {
+        body: await page.screenshot(), contentType: 'image/png',
+      })
+    })
+
     test('displays, filters and opens details for Strata and Project Maya (#886)', async ({ page }, testInfo) => {
       const pageErrors: string[] = []
       page.on('pageerror', (error) => pageErrors.push(error.message))

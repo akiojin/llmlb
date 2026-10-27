@@ -301,6 +301,78 @@ describe('EndpointTable', () => {
     expect(rowNames()).toEqual(['beta', 'alpha', 'gamma'])
   })
 
+  it('defaults to newest request starts, with deterministic ties and unreceived endpoints last', () => {
+    renderTable([
+      endpoint({ id: 'ep-null-z', name: 'unreceived-z', last_request_at: null, last_seen: '2026-10-26T23:00:00Z' }),
+      endpoint({ id: 'ep-tie-z', name: 'tie-z', last_request_at: '2026-10-26T12:00:00Z' }),
+      endpoint({ id: 'ep-older', name: 'older', last_request_at: '2026-10-26T11:00:00Z', total_requests: 1000 }),
+      endpoint({ id: 'ep-newest', name: 'newest', status: 'offline', last_request_at: '2026-10-26T13:00:00Z' }),
+      endpoint({ id: 'ep-null-a', name: 'unreceived-a' }),
+      endpoint({ id: 'ep-tie-a', name: 'tie-a', last_request_at: '2026-10-26T12:00:00Z' }),
+    ])
+
+    expect(rowNames()).toEqual(['newest', 'tie-a', 'tie-z', 'older', 'unreceived-a', 'unreceived-z'])
+  })
+
+  it('preserves request timestamp precision within the same millisecond', () => {
+    renderTable([
+      endpoint({ id: 'ep-a', name: 'earlier', last_request_at: '2026-10-26T12:00:00.000100Z' }),
+      endpoint({ id: 'ep-z', name: 'later', last_request_at: '2026-10-26T12:00:00.000900Z' }),
+      endpoint({ id: 'ep-b', name: 'nanosecond-later', last_request_at: '2026-10-26T12:00:00.000900001Z' }),
+      endpoint({ id: 'ep-c', name: 'millisecond-start', last_request_at: '2026-10-26T12:00:00.000Z' }),
+    ])
+
+    expect(rowNames()).toEqual(['nanosecond-later', 'later', 'earlier', 'millisecond-start'])
+  })
+
+  it('reorders refreshed request starts while preserving explicit sorting and filters', async () => {
+    const user = userEvent.setup()
+    const older = endpoint({ name: 'alpha-match', last_request_at: '2026-10-26T11:00:00Z' })
+    const newer = endpoint({ id: 'ep-beta', name: 'beta-match', last_request_at: '2026-10-26T12:00:00Z' })
+    const unrelated = endpoint({ id: 'ep-other', name: 'other', endpoint_type: 'ollama', status: 'offline' })
+    const { rerender } = renderTable([older, unrelated, newer])
+    expect(rowNames()).toEqual(['beta-match', 'alpha-match', 'other'])
+
+    const refreshed = { ...older, last_request_at: '2026-10-26T13:00:00Z' }
+    rerender(<EndpointTable endpoints={[newer, unrelated, refreshed]} isLoading={false} />)
+    expect(rowNames()).toEqual(['alpha-match', 'beta-match', 'other'])
+
+    await user.type(screen.getByPlaceholderText('Search by name or URL...'), 'match')
+    await chooseFilter(user, 'All Status', 'Online')
+    await chooseFilter(user, 'All Types', 'xLLM')
+    await user.click(screen.getByRole('columnheader', { name: 'Name' }))
+    expect(rowNames()).toEqual(['beta-match', 'alpha-match'])
+
+    rerender(<EndpointTable endpoints={[
+      refreshed,
+      { ...newer, last_request_at: '2026-10-26T14:00:00Z' },
+      { ...unrelated, last_request_at: '2026-10-26T15:00:00Z' },
+    ]} isLoading={false} />)
+    expect(rowNames()).toEqual(['beta-match', 'alpha-match'])
+    expect(screen.getByPlaceholderText('Search by name or URL...')).toHaveValue('match')
+    expect(screen.getAllByRole('combobox').map((select) => select.textContent)).toEqual(['Online', 'xLLM'])
+  })
+
+  it('sorts all refreshed endpoints before slicing and keeps the selected page', async () => {
+    const user = userEvent.setup()
+    const endpoints = Array.from({ length: 12 }, (_, index) => endpoint({
+      id: `ep-${String(index).padStart(2, '0')}`,
+      name: `node-${String(index).padStart(2, '0')}`,
+      last_request_at: `2026-10-26T12:${String(index).padStart(2, '0')}:00Z`,
+    }))
+    const { rerender } = renderTable(endpoints)
+    expect(rowNames()).toEqual(endpoints.slice(2).reverse().map((item) => item.name))
+
+    const pager = screen.getByText('1 / 2').parentElement as HTMLElement
+    await user.click(within(pager).getAllByRole('button')[1])
+    expect(rowNames()).toEqual(['node-01', 'node-00'])
+
+    rerender(<EndpointTable endpoints={endpoints.map((item, index) => index === 0
+      ? { ...item, last_request_at: '2026-10-26T13:00:00Z' } : item)} isLoading={false} />)
+    expect(screen.getByText('2 / 2')).toBeInTheDocument()
+    expect(rowNames()).toEqual(['node-02', 'node-01'])
+  })
+
   it('pages through more than ten endpoints', async () => {
     const user = userEvent.setup()
     const names = Array.from({ length: 12 }, (_, i) => `node-${String(i + 1).padStart(2, '0')}`)

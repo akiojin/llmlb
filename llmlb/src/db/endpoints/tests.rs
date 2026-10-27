@@ -1,4 +1,6 @@
 use super::*;
+
+mod last_request;
 use crate::db::test_utils::TEST_LOCK;
 
 async fn setup_test_db() -> SqlitePool {

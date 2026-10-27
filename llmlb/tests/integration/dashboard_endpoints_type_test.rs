@@ -85,4 +85,5 @@ async fn test_dashboard_endpoints_includes_endpoint_type() {
         .expect("Endpoint should exist in dashboard list");
 
     assert_eq!(endpoint["endpoint_type"], "xllm");
+    assert_eq!(endpoint.get("last_request_at"), Some(&Value::Null));
 }

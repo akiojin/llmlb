@@ -1,6 +1,136 @@
 use super::*;
 
 #[test]
+fn test_issue_946_verified_runtime_names_resolve_to_official_models() {
+    for (canonical, engine, preferred, aliases) in [
+        (
+            "RecursiveSI/flint",
+            EndpointType::Ollama,
+            "flint:40b-a2b-q4_1",
+            vec!["flint:40b-a2b-q4_1", "flint:40b-a2b", "flint:40b"],
+        ),
+        (
+            "RecursiveSI/flint",
+            EndpointType::LmStudio,
+            "recursivesi/flint",
+            vec!["recursivesi/flint", "lmstudio-community/flint-GGUF"],
+        ),
+        (
+            "XHToken/Spark-X2.6-4B",
+            EndpointType::Ollama,
+            "SparkLLM/Spark-X2.6-4B:q4_k_m",
+            vec![
+                "SparkLLM/Spark-X2.6-4B:q4_k_m",
+                "SparkLLM/Spark-X2.6-4B:q8_0",
+            ],
+        ),
+        (
+            "XHToken/Spark-X2.6-4B",
+            EndpointType::LmStudio,
+            "XHToken/Spark-X2.6-4B-GGUF",
+            vec!["XHToken/Spark-X2.6-4B-GGUF"],
+        ),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+            EndpointType::Ollama,
+            "nemotron-3.5-bolt:e4b",
+            vec!["nemotron-3.5-bolt:e4b"],
+        ),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+            EndpointType::LmStudio,
+            "nvidia/nemotron-3.5-bolt-e4b",
+            vec![
+                "nvidia/nemotron-3.5-bolt-e4b",
+                "lmstudio-community/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF",
+            ],
+        ),
+        (
+            "meta-llama/Meta-Llama-3-8B-Instruct",
+            EndpointType::Ollama,
+            "llama3:8b-instruct-q4_K_M",
+            vec!["llama3:8b-instruct-q4_K_M"],
+        ),
+    ] {
+        assert_eq!(resolve_engine_name(canonical, &engine), Some(preferred));
+        assert_eq!(resolve_engine_names(canonical, &engine), aliases);
+        for alias in aliases {
+            assert_eq!(
+                resolve_canonical(alias, &engine),
+                Some(canonical),
+                "{alias}"
+            );
+            assert_eq!(resolve_canonical_any(alias), Some(canonical), "{alias}");
+            assert_eq!(
+                resolve_canonical(&alias.to_ascii_uppercase(), &engine),
+                Some(canonical)
+            );
+            if alias.contains(':') || alias.ends_with("GGUF") {
+                assert_eq!(resolve_canonical(alias, &EndpointType::Vllm), None);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_issue_946_context_defaults_preserve_endpoint_values() {
+    for (canonical, context) in [
+        ("RecursiveSI/flint", 262_144),
+        ("XHToken/Spark-X2.6-4B", 1_048_576),
+        ("meta-llama/Meta-Llama-3-8B-Instruct", 8_192),
+    ] {
+        assert_eq!(resolve_max_tokens(canonical, None), Some(context));
+        assert_eq!(resolve_max_tokens(canonical, Some(4_096)), Some(4_096));
+    }
+    // E4B distributions advertise 64K or 128K, so only the endpoint can decide.
+    let bolt = "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16";
+    assert_eq!(resolve_max_tokens(bolt, None), None);
+    assert_eq!(resolve_max_tokens(bolt, Some(65_536)), Some(65_536));
+}
+
+#[test]
+fn test_issue_946_verified_quantization_keeps_existing_qwen_preferred_name() {
+    let canonical = "Qwen/Qwen3.8-27B";
+    let alias = "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF";
+    assert_eq!(
+        resolve_canonical(alias, &EndpointType::LmStudio),
+        Some(canonical)
+    );
+    assert_eq!(
+        resolve_engine_name(canonical, &EndpointType::LmStudio),
+        Some("qwen/qwen3.8-27b")
+    );
+    assert_eq!(resolve_canonical(alias, &EndpointType::Ollama), None);
+}
+
+#[test]
+fn test_issue_946_unverified_and_distinct_skus_are_not_merged() {
+    for model in [
+        "flint:latest",
+        "SparkLLM/Spark-X2.6-4B:latest",
+        "XHToken/Spark-X2.6-4B-Base",
+        "llama3:8b-text",
+        "meta-llama/Meta-Llama-3-8B",
+        "incoai/Qwen3.8-Flash-Next-DFlash2",
+        "nvidia/Muse-Spark-Open-816B-A42B-DFlash2",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr-GGUF",
+        "jialinyyzz/humanizer",
+        "Nanbeige/Nanbeige4.3-33B",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+    assert_eq!(
+        resolve_canonical("gemma4:e4b", &EndpointType::Ollama),
+        Some("google/gemma-4-E4B-it")
+    );
+    assert_eq!(
+        resolve_canonical("llama3.1:8b-instruct-q4_K_M", &EndpointType::Ollama),
+        Some("meta-llama/Llama-3.1-8B-Instruct")
+    );
+}
+
+#[test]
 fn test_resolve_canonical_by_ollama_name() {
     let result = resolve_canonical("gpt-oss:20b", &EndpointType::Ollama);
     assert_eq!(result, Some("openai/gpt-oss-20b"));

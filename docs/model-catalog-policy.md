@@ -105,6 +105,8 @@ Gemma 4 の Ollama runtime 名は、SKU を一意にする固定タグだけを�
 
 ## canonical テーブルの更新手順（Issue #776）
 
+直近の候補確認: [2026-10-30 / Issue #946 の全41件の採否と一次情報](model-discovery-946.md)。
+
 ### 新リリースと話題モデルの週次検知（Issue #885）
 
 `HF Model Discovery`（`.github/workflows/model-discovery.yml`）が毎週月曜 03:00 UTC

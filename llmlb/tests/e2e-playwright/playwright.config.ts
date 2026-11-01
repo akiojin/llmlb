@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = (process.env.BASE_URL || 'http://127.0.0.1:32768').replace(/\/$/, '');
+// Isolated verification keeps every test while avoiding shared servers and retries.
+// Pair this with a unique BASE_URL port to create a new per-port database.
+const isolatedRun = process.env.LLMLB_E2E_ISOLATED === '1';
 const basePort = (() => {
   try {
     const url = new URL(baseURL);
@@ -34,8 +37,8 @@ export default defineConfig({
   testDir: './specs',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 1,
-  workers: process.env.CI ? 1 : 4,
+  retries: isolatedRun ? 0 : process.env.CI ? 2 : 1,
+  workers: isolatedRun ? 1 : process.env.CI ? 1 : 4,
   reporter: [
     ['html', { outputFolder: 'reports/html' }],
     ['json', { outputFile: 'reports/results.json' }],
@@ -61,7 +64,7 @@ export default defineConfig({
             ? `set LLMLB_API_KEY_REQUIRED=true&& set LLMLB_DATABASE_URL=sqlite:${e2eDataDir.replace(/\//g, '\\\\')}\\\\llmlb.db&& set LLMLB_LOG_DIR=${e2eDataDir.replace(/\//g, '\\\\')}\\\\logs&& cargo run -p llmlb -- serve --no-tray --port ${basePort}`
             : `LLMLB_API_KEY_REQUIRED=true LLMLB_DATABASE_URL=sqlite:${e2eDataDir}/llmlb.db LLMLB_LOG_DIR=${e2eDataDir}/logs cargo run -p llmlb -- serve --no-tray --port ${basePort}`,
         url: `${baseURL}/dashboard`,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: !isolatedRun && !process.env.CI,
         timeout: 300000,
         cwd: '../../../',
       },

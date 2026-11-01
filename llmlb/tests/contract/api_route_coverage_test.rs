@@ -519,6 +519,9 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
     protected("POST", "/api/dashboard/audit-logs/verify"),
     protected("GET", "/api/dashboard/notifications"),
     protected("PUT", "/api/dashboard/notifications"),
+    // Issue #950: inference_defaults_api_test verifies the dedicated wire/admin contract.
+    protected("GET", "/api/dashboard/inference-defaults"),
+    protected("PUT", "/api/dashboard/inference-defaults"),
     // router/dashboard.rs（ui_routes）
     open("GET", "/dashboard", StatusCode::OK),
     // upgrade ヘッダーの無い要求は、JWT の検査より先に WebSocketUpgrade extractor が拒否する。

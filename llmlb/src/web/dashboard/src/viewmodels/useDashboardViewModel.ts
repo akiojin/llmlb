@@ -38,10 +38,10 @@ function readInitialTab(): string {
 
 /** Own the page's connection, queries, derived state and commands; the page only renders. */
 export function useDashboardViewModel(): DashboardViewModel {
-  const { user } = useAuth()
+  const { user, isLoading: isAuthLoading } = useAuth()
   const isViewer = user?.role === 'viewer'
   const isAdmin = user?.role === 'admin'
-  const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: !isViewer })
+  const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: isAdmin && !isAuthLoading })
   const [activeTab, setActiveTab] = useState(readInitialTab)
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000

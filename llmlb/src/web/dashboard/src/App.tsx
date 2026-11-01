@@ -79,6 +79,9 @@ function App() {
     )
   }
 
+  // Stop protected queries and socket subscriptions before the redirect unloads.
+  if (!isLoggedIn) return null
+
   switch (route.type) {
     case 'audit-log':
       return <AuditLogPage onBack={navigateToDashboard} />

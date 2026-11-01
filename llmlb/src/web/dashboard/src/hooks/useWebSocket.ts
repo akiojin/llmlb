@@ -32,6 +32,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const reconnectAttemptRef = useRef(0)
   const connectRef = useRef<() => void>(() => {})
   const shouldReconnectRef = useRef(false)
+  const generationRef = useRef(0)
   const [isConnected, setIsConnected] = useState(false)
   const [lastEvent, setLastEvent] = useState<DashboardChange | null>(null)
 
@@ -53,11 +54,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
     const delay = getReconnectDelay(reconnectAttemptRef.current)
     reconnectAttemptRef.current += 1
-    reconnectTimeoutRef.current = setTimeout(() => connectRef.current(), delay)
+    const generation = generationRef.current
+    const timeout = setTimeout(() => {
+      if (!shouldReconnectRef.current || generation !== generationRef.current || reconnectTimeoutRef.current !== timeout) return
+      reconnectTimeoutRef.current = null
+      connectRef.current()
+    }, delay)
+    reconnectTimeoutRef.current = timeout
   }, [])
 
   const connect = useCallback(() => {
-    shouldReconnectRef.current = true
+    if (!shouldReconnectRef.current || wsRef.current) return
+    const generation = generationRef.current
 
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -66,14 +74,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     try {
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
+      // Queued events can outlive cleanup, including a later login session.
+      const isCurrent = () => shouldReconnectRef.current && generation === generationRef.current && wsRef.current === ws
 
       ws.onopen = () => {
+        if (!isCurrent()) return
         reconnectAttemptRef.current = 0
         setIsConnected(true)
         onConnectRef.current?.()
       }
 
       ws.onmessage = (event) => {
+        if (!isCurrent()) return
         try {
           const data = JSON.parse(event.data) as DashboardChange
           setLastEvent(data)
@@ -86,6 +98,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       ws.onclose = () => {
+        if (!isCurrent()) return
         setIsConnected(false)
         onDisconnectRef.current?.()
         wsRef.current = null
@@ -101,6 +114,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       // Browser fires onclose automatically after onerror; no manual ws.close() needed
       ws.onerror = () => {
+        if (!isCurrent()) return
         console.warn('WebSocket connection error')
       }
     } catch (err) {
@@ -116,22 +130,25 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   const disconnect = useCallback(() => {
     shouldReconnectRef.current = false
+    generationRef.current += 1
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
     }
     reconnectAttemptRef.current = 0
+    setIsConnected(false)
     if (wsRef.current) {
-      wsRef.current.close()
+      const ws = wsRef.current
       wsRef.current = null
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null
+      ws.close()
+      onDisconnectRef.current?.()
     }
   }, [])
 
   useEffect(() => {
-    if (!enabled) {
-      disconnect()
-      return
-    }
+    if (!enabled) return
+    shouldReconnectRef.current = true
     connect()
     return () => {
       disconnect()

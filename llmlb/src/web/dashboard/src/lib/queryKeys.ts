@@ -33,6 +33,7 @@ export const queryKeys = {
   apiKeys: () => ['api-keys'] as const,
   users: () => ['users'] as const,
   notificationSettings: () => ['notification-settings'] as const,
+  inferenceDefaults: () => ['inference-defaults'] as const,
   alertThreshold: () => ['alert-threshold'] as const,
   // No arguments means prefix invalidation; keep the IP slot even when undefined.
   clientRanking: (...args: [] | [page: number, perPage: number, ip: string | undefined]) =>

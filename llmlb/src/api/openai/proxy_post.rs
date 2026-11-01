@@ -19,7 +19,8 @@ use crate::api::openai_util::{
 use crate::api::proxy::{
     forward_streaming_response_with_tps_tracking, record_endpoint_request_stats,
     save_request_record, select_available_endpoint_with_queue_for_model,
-    select_available_endpoint_with_queue_for_model_and_api, QueueSelection,
+    select_available_endpoint_with_queue_for_model_and_api, select_default_endpoint,
+    QueueSelection,
 };
 use crate::balancer::RequestOutcome;
 use crate::common::error::LbError;
@@ -49,6 +50,32 @@ pub(super) async fn proxy_openai_post(
     request_type: RequestType,
     client_ip: Option<IpAddr>,
     api_key_id: Option<Uuid>,
+) -> Result<Response, OpenAIError> {
+    proxy_openai_post_with_candidates(
+        state,
+        payload,
+        target_path,
+        model,
+        stream,
+        request_type,
+        client_ip,
+        api_key_id,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn proxy_openai_post_with_candidates(
+    state: &AppState,
+    payload: Value,
+    target_path: &str,
+    model: String,
+    stream: bool,
+    request_type: RequestType,
+    client_ip: Option<IpAddr>,
+    api_key_id: Option<Uuid>,
+    default_candidates: Option<Vec<crate::types::endpoint::Endpoint>>,
 ) -> Result<Response, OpenAIError> {
     // Cloud-prefixed model -> forward to provider API
     if parse_cloud_model(&model).is_some() {
@@ -90,12 +117,13 @@ pub(super) async fn proxy_openai_post(
     };
 
     // Check if any endpoint has this model
-    if state
-        .balancer
-        .endpoint_registry
-        .find_by_model(&resolved_model)
-        .await
-        .is_empty()
+    if default_candidates.is_none()
+        && state
+            .balancer
+            .endpoint_registry
+            .find_by_model(&resolved_model)
+            .await
+            .is_empty()
     {
         let is_registered = load_registered_model(&state.db_pool, &resolved_model).await?;
         if is_registered.is_none() {
@@ -114,7 +142,9 @@ pub(super) async fn proxy_openai_post(
     let mut queued_wait_ms: Option<u128> = None;
 
     // FR-004: エンドポイント選択失敗時もリクエスト履歴に記録する
-    let endpoint = match if let Some(required_api) = required_supported_api {
+    let endpoint = match if let Some(candidates) = default_candidates {
+        select_default_endpoint(state, &resolved_model, candidates, tps_api_kind).await
+    } else if let Some(required_api) = required_supported_api {
         select_available_endpoint_with_queue_for_model_and_api(
             state,
             &resolved_model,

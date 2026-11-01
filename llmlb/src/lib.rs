@@ -89,6 +89,9 @@ pub mod lock;
 /// Inference request gate (self-update drain)
 pub mod inference_gate;
 
+/// Global text-generation defaults, resolved once at request ingress.
+pub mod inference_defaults;
+
 /// Shutdown controller (self-update restart)
 pub mod shutdown;
 

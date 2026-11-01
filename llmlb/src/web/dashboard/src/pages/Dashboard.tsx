@@ -7,6 +7,7 @@ import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
 import { ClientsTab } from '@/components/dashboard/ClientsTab'
+import { InferenceDefaultsSettings } from '@/components/dashboard/InferenceDefaultsSettings'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -155,14 +156,18 @@ export default function Dashboard() {
                   <DialogHeader>
                     <DialogTitle>Settings</DialogTitle>
                     <DialogDescription>
-                      Configure access control, update scheduling, and history.
+                      Configure inference, access control, update scheduling, and history.
                     </DialogDescription>
                   </DialogHeader>
                   <Tabs defaultValue="authentication">
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
                       <TabsTrigger value="authentication">
                         <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
                         Auth
+                      </TabsTrigger>
+                      <TabsTrigger value="inference">
+                        <Zap className="mr-1.5 h-3.5 w-3.5" />
+                        Inference
                       </TabsTrigger>
                       <TabsTrigger value="schedule">
                         <Calendar className="mr-1.5 h-3.5 w-3.5" />
@@ -183,6 +188,10 @@ export default function Dashboard() {
                           </p>
                         </div>
                       </div>
+                    </TabsContent>
+
+                    <TabsContent value="inference" className="min-w-0 pt-4">
+                      <InferenceDefaultsSettings />
                     </TabsContent>
 
                     <TabsContent value="schedule" className="space-y-4 pt-4">

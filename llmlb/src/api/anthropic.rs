@@ -9,7 +9,8 @@ use crate::api::models::load_registered_model;
 use crate::api::openai_util::upstream_error_message_from_bytes;
 use crate::api::proxy::{
     forward_streaming_response, forward_to_endpoint, record_endpoint_request_stats,
-    save_request_record, select_available_endpoint_with_queue_for_model, QueueSelection,
+    save_request_record, select_available_endpoint_with_queue_for_model, select_default_endpoint,
+    QueueSelection,
 };
 use crate::auth::middleware::ApiKeyAuthContext;
 use crate::balancer::RequestOutcome;
@@ -65,7 +66,7 @@ async fn handle_messages(
     headers: HeaderMap,
     state: AppState,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
-    payload: Value,
+    mut payload: Value,
 ) -> Result<Response, AppError> {
     let anthropic_version = match extract_required_header(&headers, "anthropic-version") {
         Ok(value) => value,
@@ -77,12 +78,24 @@ async fn handle_messages(
         .map(str::to_string);
 
     let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
+    let used_default =
+        crate::inference_defaults::apply_default(&state.db_pool, &mut payload).await?;
     let request_body = payload.clone();
     let model = match extract_model(&payload) {
         Ok(model) => model,
         Err(response) => return Ok(response),
     };
 
+    // Validate cloud route compatibility before choosing the native adapter.
+    if used_default && crate::api::openai::parse_cloud_model(&model).is_some() {
+        crate::inference_defaults::default_candidates(
+            &state,
+            &model,
+            crate::inference_defaults::TextRoute::Messages,
+            false,
+        )
+        .await?;
+    }
     if let Some(cloud_model) = parse_anthropic_cloud_model(&model) {
         return proxy_anthropic_cloud_messages(
             &state,
@@ -101,6 +114,17 @@ async fn handle_messages(
         Ok(converted) => converted,
         Err(response) => return Ok(response),
     };
+    let candidates = if used_default {
+        crate::inference_defaults::default_candidates(
+            &state,
+            &model,
+            crate::inference_defaults::TextRoute::Messages,
+            crate::api::openai::payload_requires_image_input(&converted.openai_payload),
+        )
+        .await?
+    } else {
+        None
+    };
 
     proxy_local_anthropic_messages(
         &state,
@@ -109,6 +133,7 @@ async fn handle_messages(
         converted,
         client_ip,
         api_key_id,
+        candidates,
     )
     .await
 }
@@ -283,6 +308,7 @@ async fn proxy_local_anthropic_messages(
     converted: ConvertedAnthropicRequest,
     client_ip: Option<IpAddr>,
     api_key_id: Option<Uuid>,
+    default_candidates: Option<Vec<crate::types::endpoint::Endpoint>>,
 ) -> Result<Response, AppError> {
     let resolved_model = {
         let found = state.balancer.endpoint_registry.find_by_model(&model).await;
@@ -306,12 +332,13 @@ async fn proxy_local_anthropic_messages(
         }
     };
 
-    if state
-        .balancer
-        .endpoint_registry
-        .find_by_model(&resolved_model)
-        .await
-        .is_empty()
+    if default_candidates.is_none()
+        && state
+            .balancer
+            .endpoint_registry
+            .find_by_model(&resolved_model)
+            .await
+            .is_empty()
     {
         let is_registered = load_registered_model(&state.db_pool, &resolved_model).await?;
         if is_registered.is_none() {
@@ -327,45 +354,47 @@ async fn proxy_local_anthropic_messages(
     let tps_api_kind = Some(TpsApiKind::ChatCompletions);
     let mut queued_wait_ms = None;
 
-    let endpoint =
-        match select_available_endpoint_with_queue_for_model(state, &resolved_model, tps_api_kind)
-            .await
-        {
-            Ok(QueueSelection::Ready {
-                endpoint,
-                queued_wait_ms: wait_ms,
-            }) => {
-                queued_wait_ms = wait_ms;
-                *endpoint
+    let selection = if let Some(candidates) = default_candidates {
+        select_default_endpoint(state, &resolved_model, candidates, tps_api_kind).await
+    } else {
+        select_available_endpoint_with_queue_for_model(state, &resolved_model, tps_api_kind).await
+    };
+    let endpoint = match selection {
+        Ok(QueueSelection::Ready {
+            endpoint,
+            queued_wait_ms: wait_ms,
+        }) => {
+            queued_wait_ms = wait_ms;
+            *endpoint
+        }
+        Err(err) => {
+            let message = if matches!(err, LbError::NoCapableEndpoints(_)) {
+                format!("No available endpoints support model: {}", model)
+            } else {
+                format!("Endpoint selection failed: {}", err)
+            };
+            save_request_record(
+                state.balancer.request_history.clone(),
+                RequestResponseRecord::error(
+                    model.clone(),
+                    request_type,
+                    request_body,
+                    message.clone(),
+                    queued_wait_ms.unwrap_or(0) as u64,
+                    client_ip,
+                    api_key_id,
+                ),
+            );
+            if matches!(err, LbError::NoCapableEndpoints(_)) {
+                return Ok(anthropic_error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "api_error",
+                    message,
+                ));
             }
-            Err(err) => {
-                let message = if matches!(err, LbError::NoCapableEndpoints(_)) {
-                    format!("No available endpoints support model: {}", model)
-                } else {
-                    format!("Endpoint selection failed: {}", err)
-                };
-                save_request_record(
-                    state.balancer.request_history.clone(),
-                    RequestResponseRecord::error(
-                        model.clone(),
-                        request_type,
-                        request_body,
-                        message.clone(),
-                        queued_wait_ms.unwrap_or(0) as u64,
-                        client_ip,
-                        api_key_id,
-                    ),
-                );
-                if matches!(err, LbError::NoCapableEndpoints(_)) {
-                    return Ok(anthropic_error_response(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "api_error",
-                        message,
-                    ));
-                }
-                return Err(err.into());
-            }
-        };
+            return Err(err.into());
+        }
+    };
 
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();

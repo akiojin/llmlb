@@ -177,10 +177,15 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
         );
 
     // 運用通知の設定API (SPEC #777): adminロールのみ
-    let dashboard_notification_routes = Router::new().route(
-        "/dashboard/notifications",
-        get(dashboard::get_notification_settings).put(dashboard::update_notification_settings),
-    );
+    let dashboard_notification_routes = Router::new()
+        .route(
+            "/dashboard/notifications",
+            get(dashboard::get_notification_settings).put(dashboard::update_notification_settings),
+        )
+        .route(
+            "/dashboard/inference-defaults",
+            get(dashboard::get_inference_defaults).put(dashboard::update_inference_defaults),
+        );
 
     {
         let dashboard_general_routes = dashboard_general_routes

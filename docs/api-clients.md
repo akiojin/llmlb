@@ -2,6 +2,82 @@
 
 Sample calls for the OpenAI-compatible router with cloud prefixes.
 
+## Default text model
+
+A platform administrator can open **Dashboard → Settings → Inference**, choose
+**Default text model**, and click **Save**. Choose **Not set (model required)**
+and save to clear it. The setting is shared by every user and organization on
+this llmlb instance. Offline known models can be saved; saving does not load or
+download a model. If a saved model disappears from the catalog, the dashboard
+keeps its ID visible so an administrator can replace or clear it.
+
+The setting is stored in the existing SQLite database. Keep the database at
+`LLMLB_DATABASE_URL` on persistent storage, including when running in a container.
+No new environment variable or restart is needed. A successful save takes effect
+for requests that read the default after the database commit. Already queued or
+streaming requests keep the model chosen when they arrived.
+
+The dedicated management API requires an authenticated platform administrator:
+
+```bash
+# ADMIN_JWT is a dashboard-session JWT, not an inference API key.
+curl http://localhost:32768/api/dashboard/inference-defaults \
+  -H "Authorization: Bearer $ADMIN_JWT"
+
+curl -X PUT http://localhost:32768/api/dashboard/inference-defaults \
+  -H "Authorization: Bearer $ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"default_text_model":"your-registered-text-model"}'
+
+# Clear the default. GET returns the same nullable wire shape.
+curl -X PUT http://localhost:32768/api/dashboard/inference-defaults \
+  -H "Authorization: Bearer $ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"default_text_model":null}'
+```
+
+Cookie-authenticated PUT requests also require the existing `X-CSRF-Token` and
+same-origin checks. Viewer, organization manager, and inference API-key
+credentials cannot manage this setting. The generic settings API cannot read
+or write the reserved `inference.defaults` key.
+
+Model omission is an **llmlb HTTP JSON extension**. OpenAI and Anthropic SDK
+request types still require `model`; use an explicit model with those types, or
+send HTTP JSON directly when omission is needed. Only an absent `model` key uses
+the default. Explicit values, including `null`, an empty string, or an invalid
+type, keep their existing validation behavior and never fall back to it.
+
+After setting a compatible default, a direct HTTP request can omit the key:
+
+```bash
+curl -X POST http://localhost:32768/v1/chat/completions \
+  -H "Authorization: Bearer $LLMLB_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello"}]}'
+
+# An explicit model always takes precedence.
+curl -X POST http://localhost:32768/v1/chat/completions \
+  -H "Authorization: Bearer $LLMLB_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"another-text-model","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+| API | Behavior when `model` is omitted |
+| --- | --- |
+| `/v1/chat/completions`, dashboard LB Playground | Use the global default; chat and image-input capabilities must match |
+| `/v1/completions` | Use a local text-generation default; cloud defaults are incompatible |
+| `/v1/responses` | Use a local default on a Responses-capable endpoint; cloud defaults are incompatible |
+| `/v1/messages` | Use a local chat-capable or native `anthropic:` default; other required fields and headers remain mandatory |
+| `/v1/embeddings` | Keep its existing embedding environment-variable and built-in defaults |
+| `/v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions` | Keep their existing required-model validation |
+| `/v1/images/edits`, `/v1/images/variations` | Keep their existing `stable-diffusion-xl` multipart default |
+
+A saved default does not guarantee support for every API. An incompatible
+default returns HTTP 400, an unknown model keeps the existing not-found error,
+and an offline model keeps the existing unavailable error. llmlb does not choose
+the first available model or retry another model. Without a default, the text
+generation APIs continue to require an explicit model.
+
 ## curl
 ```bash
 curl -X POST http://localhost:32768/v1/responses \

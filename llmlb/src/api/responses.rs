@@ -27,7 +27,8 @@ use crate::{
         proxy::{
             forward_streaming_response, forward_streaming_response_with_tps_tracking,
             forward_to_endpoint, record_endpoint_request_stats,
-            select_available_endpoint_with_queue_for_model, QueueSelection,
+            select_available_endpoint_with_queue_for_model, select_default_endpoint,
+            QueueSelection,
         },
     },
     balancer::RequestOutcome,
@@ -113,9 +114,28 @@ fn extract_stream(payload: &Value) -> bool {
 /// リクエストをバックエンドにパススルーする（判定/フラグは廃止）。
 pub async fn post_responses(
     State(state): State<AppState>,
-    Json(payload): Json<Value>,
+    Json(mut payload): Json<Value>,
 ) -> Result<Response, AppError> {
+    use crate::inference_defaults::{
+        apply_default, default_candidates, responses_require_image_input, TextRoute,
+    };
+    let used_default = apply_default(&state.db_pool, &mut payload).await?;
     let model = extract_model(&payload)?;
+    let candidates = if used_default {
+        match default_candidates(
+            &state,
+            &model,
+            TextRoute::Responses,
+            responses_require_image_input(&payload),
+        )
+        .await
+        {
+            Ok(candidates) => candidates,
+            Err(error) => return Ok(crate::api::openai::default_model_error_response(error)),
+        }
+    } else {
+        None
+    };
     let stream = extract_stream(&payload);
     let tps_api_kind = Some(TpsApiKind::Responses);
 
@@ -126,12 +146,13 @@ pub async fn post_responses(
     );
 
     // モデルが未登録の場合は404、登録済みなら503（利用可能エンドポイントなし）
-    if state
-        .balancer
-        .endpoint_registry
-        .find_by_model(&model)
-        .await
-        .is_empty()
+    if candidates.is_none()
+        && state
+            .balancer
+            .endpoint_registry
+            .find_by_model(&model)
+            .await
+            .is_empty()
     {
         let is_registered = load_registered_model(&state.db_pool, &model).await?;
         if is_registered.is_none() {
@@ -141,20 +162,24 @@ pub async fn post_responses(
     }
 
     // モデル対応エンドポイントをキュー付きで選択（モデル集合内で分散）
-    let (endpoint, queued_wait_ms) =
-        match select_available_endpoint_with_queue_for_model(&state, &model, tps_api_kind).await {
-            Ok(QueueSelection::Ready {
-                endpoint,
-                queued_wait_ms,
-            }) => (*endpoint, queued_wait_ms),
-            Err(e) => {
-                if matches!(e, LbError::NoCapableEndpoints(_)) {
-                    let message = format!("No available endpoints support model: {}", model);
-                    return Ok(model_unavailable_response(message));
-                }
-                return Err(AppError::from(e));
+    let selection = if let Some(candidates) = candidates {
+        select_default_endpoint(&state, &model, candidates, tps_api_kind).await
+    } else {
+        select_available_endpoint_with_queue_for_model(&state, &model, tps_api_kind).await
+    };
+    let (endpoint, queued_wait_ms) = match selection {
+        Ok(QueueSelection::Ready {
+            endpoint,
+            queued_wait_ms,
+        }) => (*endpoint, queued_wait_ms),
+        Err(e) => {
+            if matches!(e, LbError::NoCapableEndpoints(_)) {
+                let message = format!("No available endpoints support model: {}", model);
+                return Ok(model_unavailable_response(message));
             }
-        };
+            return Err(AppError::from(e));
+        }
+    };
 
     info!(
         endpoint_id = %endpoint.id,

@@ -15,13 +15,16 @@ mod tests;
 pub use catalog::{get_model, list_models, list_models_filtered};
 #[cfg(test)]
 use cloud::cloud_virtual_node;
-use cloud::{parse_cloud_model, proxy_openai_cloud_post};
+pub(crate) use cloud::parse_cloud_model;
+use cloud::proxy_openai_cloud_post;
 use proxy_post::proxy_openai_post;
+use proxy_post::proxy_openai_post_with_candidates;
 
 use crate::common::{
     error::{CommonError, LbError},
     protocol::RequestType,
 };
+use crate::inference_defaults::{apply_default, default_candidates, TextRoute};
 use crate::types::model::ModelCapability;
 use axum::{
     extract::{ConnectInfo, State},
@@ -153,9 +156,10 @@ pub async fn chat_completions(
     headers: HeaderMap,
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
-    Json(payload): Json<Value>,
+    Json(mut payload): Json<Value>,
 ) -> Result<Response, OpenAIError> {
     let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
+    let used_default = apply_default(&state.db_pool, &mut payload).await?;
     let model = extract_model(&payload)?;
     let parsed = if parse_cloud_model(&model).is_some() {
         ParsedModelName {
@@ -167,6 +171,14 @@ pub async fn chat_completions(
         parse_quantized_model_name(&model).map_err(OpenAIError::from)?
     };
     let requires_image_input = payload_requires_image_input(&payload);
+    let candidates = if used_default {
+        match default_candidates(&state, &model, TextRoute::Chat, requires_image_input).await {
+            Ok(candidates) => candidates,
+            Err(error) => return Ok(default_model_error_response(error)),
+        }
+    } else {
+        None
+    };
 
     // モデルの TextGeneration capability を検証
     let models = list_registered_models(&state.db_pool).await?;
@@ -185,7 +197,7 @@ pub async fn chat_completions(
     // 登録されていないモデルはエンドポイント側で処理（クラウドモデル等）
 
     let stream = extract_stream(&payload);
-    proxy_openai_post(
+    proxy_openai_post_with_candidates(
         &state,
         payload,
         "/v1/chat/completions",
@@ -194,6 +206,7 @@ pub async fn chat_completions(
         RequestType::Chat,
         client_ip,
         api_key_id,
+        candidates,
     )
     .await
 }
@@ -232,15 +245,24 @@ pub async fn completions(
     headers: HeaderMap,
     State(state): State<AppState>,
     auth_ctx: Option<axum::Extension<ApiKeyAuthContext>>,
-    Json(payload): Json<Value>,
+    Json(mut payload): Json<Value>,
 ) -> Result<Response, OpenAIError> {
     let (client_ip, api_key_id) = extract_client_info(&addr, &headers, &auth_ctx);
+    let used_default = apply_default(&state.db_pool, &mut payload).await?;
     let model = extract_model(&payload)?;
     if parse_cloud_model(&model).is_none() {
         parse_quantized_model_name(&model).map_err(OpenAIError::from)?;
     }
     let stream = extract_stream(&payload);
-    proxy_openai_post(
+    let candidates = if used_default {
+        match default_candidates(&state, &model, TextRoute::LegacyCompletion, false).await {
+            Ok(candidates) => candidates,
+            Err(error) => return Ok(default_model_error_response(error)),
+        }
+    } else {
+        None
+    };
+    proxy_openai_post_with_candidates(
         &state,
         payload,
         "/v1/completions",
@@ -249,6 +271,7 @@ pub async fn completions(
         RequestType::Generate,
         client_ip,
         api_key_id,
+        candidates,
     )
     .await
 }
@@ -304,7 +327,7 @@ fn extract_stream(payload: &Value) -> bool {
         .unwrap_or(false)
 }
 
-fn payload_requires_image_input(payload: &Value) -> bool {
+pub(crate) fn payload_requires_image_input(payload: &Value) -> bool {
     let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) else {
         return false;
     };
@@ -327,4 +350,14 @@ fn payload_requires_image_input(payload: &Value) -> bool {
 fn validation_error(message: impl Into<String>) -> OpenAIError {
     let err = LbError::Common(CommonError::Validation(message.into()));
     err.into()
+}
+
+/// Preserve the protocol's error envelope while explaining default incompatibility.
+pub(crate) fn default_model_error_response(error: LbError) -> Response {
+    use axum::response::IntoResponse;
+    if let LbError::Common(CommonError::Validation(message)) = error {
+        crate::api::openai_util::openai_error_response(message, axum::http::StatusCode::BAD_REQUEST)
+    } else {
+        OpenAIError::from(error).into_response()
+    }
 }

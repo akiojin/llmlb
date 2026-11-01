@@ -17,7 +17,7 @@ use std::net::IpAddr;
 use std::time::Instant;
 use uuid::Uuid;
 
-pub(super) fn parse_cloud_model(model: &str) -> Option<(String, String)> {
+pub(crate) fn parse_cloud_model(model: &str) -> Option<(String, String)> {
     // Accept prefixes like "openai:foo", "google:bar", "anthropic:baz"
     let prefixes = ["openai:", "google:", "anthropic:", "ahtnorpic:"];
     for p in prefixes.iter() {

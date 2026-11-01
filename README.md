@@ -50,6 +50,7 @@ available for compatibility.
 - **Real-time Monitoring**: Comprehensive visualization of endpoint states and performance metrics via web dashboard
 - **Request History Tracking**: Complete request/response logging with 7-day retention
 - **WebUI Management**: Manage endpoints, monitoring, and control through browser-based dashboard
+- **Default Text Model**: Administrators can set a shared default for requests that omit `model` in Settings → Inference. See [HTTP examples and API scope](docs/api-clients.md#default-text-model).
 - **Cross-Platform Support**: Works on Windows 10+, macOS 12+, and Linux
 - **Self Update (User-Approved)**: Detect new GitHub Releases, notify via dashboard/tray, drain in-flight inference, then restart into the new version — with update scheduling, automatic rollback, and download progress tracking
 - **GPU-Aware Routing**: Intelligent request routing based on GPU capabilities and availability

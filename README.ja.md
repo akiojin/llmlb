@@ -42,6 +42,7 @@ llmlb は OpenAI 互換の推論サーバーにリクエストをルーティン
 - OpenAI 互換 API: `/v1/responses`（推奨）, `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`
 - ロードバランシング: 利用可能なエンドポイントへTPS（Tokens Per Second）ベースで自動ルーティング
 - ダッシュボード: `/dashboard` でエンドポイント、リクエスト履歴、ログ、モデルを管理
+- 既定テキストモデル: 管理者が Settings → Inference で `model` 省略時の共有モデルを設定可能（[HTTP例と対象API](docs/api-clients.md#default-text-model)）
 - エンドポイント管理: LM Studio、Ollama、vLLM、xLLM、llama.cpp等の外部推論サーバーをロードバランサーから一元管理
 - モデル同期: 登録エンドポイントから `GET /v1/models` でモデル一覧を自動同期
 - クラウドプレフィックス: `openai:`, `google:`, `anthropic:` を `model` に付けて同一エンドポイントでプロキシ

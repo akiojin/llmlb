@@ -31,6 +31,27 @@ pub(crate) enum QueueSelection {
     },
 }
 
+/// Select from a prevalidated, request-local default-model candidate set.
+pub(crate) async fn select_default_endpoint(
+    state: &AppState,
+    model_id: &str,
+    endpoints: Vec<Endpoint>,
+    api_kind: Option<TpsApiKind>,
+) -> Result<QueueSelection, LbError> {
+    if endpoints.is_empty() {
+        return Err(LbError::NoCapableEndpoints(model_id.to_string()));
+    }
+    let endpoint = state
+        .balancer
+        .load_manager
+        .select_endpoint_by_tps_ready_from_candidates(endpoints, model_id, api_kind)
+        .await?;
+    Ok(QueueSelection::Ready {
+        endpoint: Box::new(endpoint),
+        queued_wait_ms: None,
+    })
+}
+
 /// モデル対応のエンドポイントをTPS優先・キュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,

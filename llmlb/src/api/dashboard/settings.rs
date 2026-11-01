@@ -48,6 +48,11 @@ pub(super) fn effective_ip_alert_threshold(raw_value: Option<&str>) -> i64 {
 /// `notifications.*`（SPEC #777）は admin 専用の `/api/dashboard/notifications` が検証付きで
 /// 管理する。汎用 API は viewer でも読めて検証もしないため、対象外にする。
 fn reject_reserved_key(key: &str) -> Result<(), LbError> {
+    if key == crate::inference_defaults::storage::SETTINGS_KEY {
+        return Err(LbError::Authorization(
+            "inference.defaults is managed through /api/dashboard/inference-defaults".to_string(),
+        ));
+    }
     if key.starts_with(crate::notifications::config::KEY_PREFIX) {
         return Err(LbError::Authorization(
             "notifications.* settings are managed through /api/dashboard/notifications".to_string(),

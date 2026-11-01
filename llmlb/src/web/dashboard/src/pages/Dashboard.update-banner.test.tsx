@@ -154,6 +154,13 @@ afterEach(() => {
 })
 
 describe('Dashboard update banner', () => {
+  it('offers Inference alongside the existing admin Settings tabs', async () => {
+    const { user } = await renderDashboard()
+    await user.click(await screen.findByRole('button', { name: 'Settings' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+    expect(within(dialog).getByRole('tab', { name: 'Inference' })).toBeInTheDocument()
+  })
+
   describe('status', () => {
     it('stays visible with the check button while the update status is unavailable', async () => {
       await renderDashboard({ update: 'unavailable' })
@@ -534,7 +541,7 @@ describe('Dashboard update banner', () => {
         within(dialog)
           .getAllByRole('tab')
           .map((tab) => tab.textContent),
-      ).toEqual(['Auth', 'Schedule', 'History'])
+      ).toEqual(['Auth', 'Inference', 'Schedule', 'History'])
 
       await user.click(within(dialog).getByRole('tab', { name: 'Schedule' }))
       await user.click(within(dialog).getByRole('radio', { name: 'When idle (in_flight = 0)' }))

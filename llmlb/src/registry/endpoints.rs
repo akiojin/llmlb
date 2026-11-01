@@ -45,6 +45,14 @@ fn endpoint_model_lookup_keys(model: &EndpointModel) -> Vec<String> {
     keys
 }
 
+/// Match a public ID using the registry's existing canonical and alias rules.
+pub(crate) fn endpoint_model_matches(model_id: &str, model: &EndpointModel) -> bool {
+    let requested_keys = model_lookup_keys(model_id);
+    endpoint_model_lookup_keys(model)
+        .iter()
+        .any(|key| requested_keys.contains(key))
+}
+
 fn insert_model_mapping(
     model_map: &mut HashMap<String, Vec<Uuid>>,
     model: &EndpointModel,
@@ -252,7 +260,6 @@ impl EndpointRegistry {
         required_api: SupportedAPI,
     ) -> Vec<Endpoint> {
         let endpoints = self.find_by_model(model_id).await;
-        let requested_keys = model_lookup_keys(model_id);
         let mut resolved = Vec::new();
 
         for endpoint in endpoints {
@@ -268,9 +275,7 @@ impl EndpointRegistry {
 
             let supports_required_api = models.iter().any(|model| {
                 model.supported_apis.contains(&required_api)
-                    && endpoint_model_lookup_keys(model)
-                        .iter()
-                        .any(|key| requested_keys.iter().any(|requested| requested == key))
+                    && endpoint_model_matches(model_id, model)
             });
 
             if supports_required_api {

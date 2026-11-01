@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 mod clients;
 mod endpoint_stats;
+mod inference_defaults;
 mod model_catalog;
 mod notifications;
 mod overview;
@@ -40,6 +41,7 @@ pub use endpoint_stats::{
     get_all_model_stats, get_endpoint_daily_stats, get_endpoint_model_stats,
     get_endpoint_model_tps, get_endpoint_today_stats, EndpointDailyStatsQuery, ModelTpsEntry,
 };
+pub use inference_defaults::{get_inference_defaults, update_inference_defaults};
 pub use model_catalog::{get_models, ModelsViewQuery};
 pub use notifications::{
     get_notification_settings, update_notification_settings, NotificationSettingsResponse,

@@ -329,6 +329,17 @@ pub async fn fetch_all_cloud_models(client: &reqwest::Client) -> Vec<CloudModelI
 // キャッシュ管理
 // ============================================================================
 
+/// Read already observed cloud identities without refreshing or contacting a provider.
+/// Stale identities remain useful for validating configuration while a provider is offline.
+pub(crate) async fn cached_models_snapshot() -> Vec<CloudModelInfo> {
+    get_cache()
+        .read()
+        .await
+        .as_ref()
+        .map(|cached| cached.models.clone())
+        .unwrap_or_default()
+}
+
 /// キャッシュからモデル一覧を取得（必要に応じて更新）
 pub async fn get_cached_models(client: &reqwest::Client) -> Vec<CloudModelInfo> {
     let cache = get_cache();
@@ -365,6 +376,42 @@ pub async fn get_cached_models(client: &reqwest::Client) -> Vec<CloudModelInfo> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #950: saving uses known cached identity even when the provider is offline.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn inference_default_validation_uses_known_stale_cloud_cache_without_refresh() {
+        let _guard = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = crate::db::test_utils::TestAppStateBuilder::new()
+            .await
+            .build()
+            .await;
+        let previous_key = std::env::var_os("OPENAI_API_KEY");
+        std::env::set_var("OPENAI_API_KEY", "test-only-cloud-key");
+        let previous_cache = get_cache().write().await.replace(CloudModelsCache {
+            models: vec![CloudModelInfo {
+                id: "openai:cached-cloud-text".into(),
+                object: "model".into(),
+                created: 123,
+                owned_by: "openai".into(),
+            }],
+            fetched_at: Utc::now() - chrono::Duration::days(2),
+        });
+        let known =
+            crate::inference_defaults::storage::validate_model(&state, "openai:cached-cloud-text")
+                .await;
+        let unknown =
+            crate::inference_defaults::storage::validate_model(&state, "openai:unknown-cloud-text")
+                .await;
+        *get_cache().write().await = previous_cache;
+        if let Some(value) = previous_key {
+            std::env::set_var("OPENAI_API_KEY", value);
+        } else {
+            std::env::remove_var("OPENAI_API_KEY");
+        }
+        assert!(known.is_ok(), "{known:?}");
+        assert!(unknown.is_err(), "unknown cloud IDs must not be accepted");
+    }
 
     /// #900 AC-3: exercise real cloud catalog rows without external API calls.
     #[tokio::test]

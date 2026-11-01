@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import type { ProxyOptions } from 'vite'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeWebSocket } from '@/test/fake-websocket'
 import viteConfig from '../../vite.config'
 import { useWebSocket } from './useWebSocket'
@@ -139,5 +139,118 @@ describe('useWebSocket connection', () => {
     act(() => result.current.disconnect())
     expect(result.current.isConnected).toBe(false)
     expect(onDisconnect).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useWebSocket cleanup and reconnect isolation (Issue #953)', () => {
+  afterEach(() => vi.useRealTimers())
+
+  function lifecycle() {
+    vi.useFakeTimers()
+    const queryClient = new QueryClient()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const onConnect = vi.fn()
+    const onDisconnect = vi.fn()
+    const onMessage = vi.fn()
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const hook = renderHook(({ enabled }) => {
+      useInvalidateOn(['endpoints'], queryKeys.dashboardOverview())
+      return useWebSocket({ enabled, onConnect, onDisconnect, onMessage })
+    }, { wrapper, initialProps: { enabled: true } })
+    const socket = FakeWebSocket.latest()
+    // Preserve already queued callbacks, even if cleanup detaches the handlers.
+    const message = socket.onmessage!
+    const late = {
+      open: socket.onopen!, close: socket.onclose!, error: socket.onerror!,
+      message: () => message({ data: JSON.stringify({ changed: 'endpoints' }) }),
+    }
+    return { ...hook, socket, late, invalidate, onConnect, onDisconnect, onMessage }
+  }
+
+  it.each(['disabled', 'unmounted', 'disconnected'] as const)('ignores old callbacks after %s cleanup', (mode) => {
+    const h = lifecycle()
+    act(() => h.socket.onopen?.())
+    if (mode === 'disabled') h.rerender({ enabled: false })
+    else if (mode === 'unmounted') h.unmount()
+    else act(() => h.result.current.disconnect())
+    h.onConnect.mockClear()
+    h.onDisconnect.mockClear()
+    h.onMessage.mockClear()
+    h.invalidate.mockClear()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    act(() => {
+      h.late.open(); h.late.message(); h.late.error(); h.late.close()
+      vi.advanceTimersByTime(60000)
+    })
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect(h.onConnect).not.toHaveBeenCalled()
+    expect(h.onDisconnect).not.toHaveBeenCalled()
+    expect(h.onMessage).not.toHaveBeenCalled()
+    expect(h.invalidate).not.toHaveBeenCalled()
+    expect(warning).not.toHaveBeenCalled()
+    if (mode !== 'unmounted') expect(h.result.current.isConnected).toBe(false)
+  })
+
+  it('cancels a queued reconnect and rejects a captured timer after disable/re-enable', () => {
+    const h = lifecycle()
+    const timeout = vi.spyOn(globalThis, 'setTimeout')
+    act(() => h.socket.onclose?.())
+    const reconnectTimer = timeout.mock.calls.find(([, delay]) => Number(delay) >= 1000)![0] as () => void
+    h.rerender({ enabled: false })
+    expect(vi.getTimerCount()).toBe(0)
+    h.rerender({ enabled: true })
+    const current = FakeWebSocket.latest()
+    act(() => { current.onopen?.(); reconnectTimer() })
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(h.result.current.isConnected).toBe(true)
+  })
+
+  it('keeps a new session connected when the old session delivers late events', () => {
+    const h = lifecycle()
+    h.rerender({ enabled: false })
+    h.rerender({ enabled: true })
+    const current = FakeWebSocket.latest()
+    act(() => current.onopen?.())
+    h.onMessage.mockClear()
+    h.invalidate.mockClear()
+    act(() => { h.late.close(); h.late.open(); h.late.message() })
+    expect(h.result.current.isConnected).toBe(true)
+    expect(h.onMessage).not.toHaveBeenCalled()
+    expect(h.invalidate).not.toHaveBeenCalled()
+    act(() => current.receive(JSON.stringify({ changed: 'endpoints' })))
+    expect(h.onMessage).toHaveBeenCalledOnce()
+    expect(h.invalidate).toHaveBeenCalledOnce()
+    act(() => vi.advanceTimersByTime(60000))
+    expect(FakeWebSocket.instances).toHaveLength(2)
+  })
+
+  it('uses exponential backoff for ordinary disconnects and resets it after open', () => {
+    const h = lifecycle()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    act(() => h.socket.onclose?.())
+    act(() => vi.advanceTimersByTime(999))
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    act(() => vi.advanceTimersByTime(1))
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    act(() => FakeWebSocket.latest().onclose?.())
+    act(() => vi.advanceTimersByTime(1999))
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    act(() => vi.advanceTimersByTime(1))
+    expect(FakeWebSocket.instances).toHaveLength(3)
+    act(() => { FakeWebSocket.latest().onopen?.(); FakeWebSocket.latest().onclose?.() })
+    act(() => vi.advanceTimersByTime(1000))
+    expect(FakeWebSocket.instances).toHaveLength(4)
+  })
+
+  it('does not let the exported reconnect bypass disabled or unmounted state', () => {
+    const h = lifecycle()
+    const reconnect = h.result.current.reconnect
+    h.rerender({ enabled: false })
+    act(() => reconnect())
+    h.unmount()
+    act(() => reconnect())
+    expect(FakeWebSocket.instances).toHaveLength(1)
   })
 })

@@ -1,7 +1,9 @@
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { adminUser, deferred, renderWithProviders, type TestUser } from '@/test/render'
+import { adminUser, viewerUser, deferred, renderWithProviders, type TestUser } from '@/test/render'
+import { useAuth } from '@/hooks/useAuth'
+import { ApiError, authApi } from '@/lib/api'
 import App from './App'
 
 // App owns routing only. Each page has its own test file, so the pages are
@@ -37,7 +39,26 @@ async function renderAt(hash: string) {
   return (await screen.findByTestId('page')).textContent
 }
 
+function CheckSession() {
+  const { checkAuth } = useAuth()
+  return <button onClick={() => { void checkAuth() }}>check session</button>
+}
+
 describe('App', () => {
+  it('does not mount a protected page while redirecting an unauthenticated session', async () => {
+    renderWithProviders(<App />, { user: null })
+    await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument())
+    expect(screen.queryByTestId('page')).not.toBeInTheDocument()
+  })
+
+  it.each([adminUser, viewerUser])('unmounts the $role page as soon as the session becomes null', async (user) => {
+    renderWithProviders(<><App /><CheckSession /></>, { user })
+    await screen.findByTestId('page')
+    vi.spyOn(authApi, 'me').mockRejectedValue(new ApiError(401, 'Unauthorized'))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'check session' }))
+    await waitFor(() => expect(screen.queryByTestId('page')).not.toBeInTheDocument())
+  })
+
   it('shows a loading indicator until the session check completes', async () => {
     const session = deferred<TestUser>()
     renderWithProviders(<App />, { user: session.promise })

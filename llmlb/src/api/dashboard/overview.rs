@@ -2,7 +2,7 @@
 
 use super::{
     DashboardActionItem, DashboardCapacity, DashboardEndpoint, DashboardOperations, DashboardStats,
-    PersistedRequestTotals, PersistedTokenTotals, LAST_KNOWN_PERSISTED_TOTALS,
+    PersistedTokenTotals,
 };
 use crate::{
     balancer::RequestHistoryPoint,
@@ -11,6 +11,103 @@ use crate::{
 };
 use std::collections::HashSet;
 use tracing::warn;
+
+pub(super) async fn collect_scoped_endpoints(
+    state: &AppState,
+    scope: &crate::auth::scope::Scope,
+) -> Result<Vec<DashboardEndpoint>, crate::api::error::AppError> {
+    let mut endpoints = collect_endpoints(state).await;
+    let storage = state.balancer.request_history.scoped(scope);
+    for endpoint in &mut endpoints {
+        let (total, success, failure, _) = storage
+            .scoped_request_counts(Some(endpoint.id))
+            .await
+            .map_err(crate::api::error::AppError)?;
+        endpoint.total_requests = total;
+        endpoint.successful_requests = success;
+        endpoint.failed_requests = failure;
+    }
+    Ok(endpoints)
+}
+
+pub(super) async fn collect_scoped_stats(
+    state: &AppState,
+    scope: &crate::auth::scope::Scope,
+) -> Result<DashboardStats, crate::api::error::AppError> {
+    use crate::{api::error::AppError, auth::scope::Scope};
+    let storage = state.balancer.request_history.scoped(scope);
+    let totals = storage.scoped_usage_totals().await.map_err(AppError)?;
+    let (_, _, _, average) = storage
+        .scoped_request_counts(None)
+        .await
+        .map_err(AppError)?;
+    let (success, failure, unknown) = storage.scoped_usage_outcomes().await.map_err(AppError)?;
+    let summary = state.balancer.load_manager.summary().await;
+    let endpoints = state.balancer.endpoint_registry.list().await;
+    let global = matches!(scope, Scope::Global);
+    Ok(DashboardStats {
+        total_nodes: summary.total_nodes,
+        online_nodes: summary.online_nodes,
+        pending_nodes: summary.pending_nodes,
+        registering_nodes: summary.registering_nodes,
+        offline_nodes: summary.offline_nodes,
+        total_requests: totals.request_count as u64,
+        successful_requests: success as u64,
+        failed_requests: failure as u64,
+        unknown_outcome_requests: unknown as u64,
+        total_active_requests: if global {
+            summary.total_active_requests
+        } else {
+            u32::try_from(totals.pending_requests).unwrap_or(u32::MAX)
+        },
+        queued_requests: if global { summary.queued_requests } else { 0 },
+        average_response_time_ms: average.map(|value| value as f32),
+        average_gpu_usage: summary.average_gpu_usage,
+        average_gpu_memory_usage: summary.average_gpu_memory_usage,
+        last_metrics_updated_at: summary.last_metrics_updated_at,
+        last_registered_at: endpoints
+            .iter()
+            .map(|endpoint| endpoint.registered_at)
+            .max(),
+        last_seen_at: endpoints
+            .iter()
+            .filter_map(|endpoint| endpoint.last_seen)
+            .max(),
+        openai_key_present: global && std::env::var("OPENAI_API_KEY").is_ok(),
+        google_key_present: global && std::env::var("GOOGLE_API_KEY").is_ok(),
+        anthropic_key_present: global && std::env::var("ANTHROPIC_API_KEY").is_ok(),
+        total_input_tokens: totals.input_tokens as u64,
+        total_output_tokens: totals.output_tokens as u64,
+        total_tokens: totals.total_tokens as u64,
+    })
+}
+
+pub(super) async fn collect_scoped_history(
+    state: &AppState,
+    scope: &crate::auth::scope::Scope,
+) -> Result<Vec<RequestHistoryPoint>, crate::api::error::AppError> {
+    state
+        .balancer
+        .request_history
+        .scoped(scope)
+        .get_recent_history_by_minute(60)
+        .await
+        .map_err(crate::api::error::AppError)?
+        .into_iter()
+        .map(|point| {
+            let minute = point.minute.parse().map_err(|error| {
+                crate::api::error::AppError(crate::common::error::LbError::Database(format!(
+                    "Invalid stored history minute: {error}"
+                )))
+            })?;
+            Ok(RequestHistoryPoint {
+                minute,
+                success: point.success_count as u64,
+                error: point.error_count as u64,
+            })
+        })
+        .collect()
+}
 
 /// エンドポイント一覧を収集
 ///
@@ -50,163 +147,6 @@ pub(super) async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint
     result
 }
 
-pub(super) async fn collect_stats(state: &AppState) -> DashboardStats {
-    let load_manager = state.balancer.load_manager.clone();
-
-    let summary = load_manager.summary().await;
-    let endpoints = state.balancer.endpoint_registry.list().await;
-
-    let last_registered_at = endpoints.iter().map(|e| e.registered_at).max();
-    let last_seen_at = endpoints.iter().filter_map(|e| e.last_seen).max();
-
-    let openai_key_present = std::env::var("OPENAI_API_KEY").is_ok();
-    let google_key_present = std::env::var("GOOGLE_API_KEY").is_ok();
-    let anthropic_key_present = std::env::var("ANTHROPIC_API_KEY").is_ok();
-
-    let to_u64 = |value: i64| -> u64 {
-        if value < 0 {
-            0
-        } else {
-            value as u64
-        }
-    };
-    let cache_key = load_manager.cache_key();
-
-    let request_totals_from_db =
-        match crate::db::endpoints::get_request_totals(&state.db_pool).await {
-            Ok(request_totals) => Some(PersistedRequestTotals {
-                total_requests: to_u64(request_totals.total_requests),
-                successful_requests: to_u64(request_totals.successful_requests),
-                failed_requests: to_u64(request_totals.failed_requests),
-            }),
-            Err(e) => {
-                warn!("Failed to query persisted request totals: {}", e);
-                None
-            }
-        };
-
-    // request_history 廃止完了まで、audit_log/request_history の双方を見て過小計上を避ける
-    let token_totals_from_audit = match state.audit.storage.get_token_statistics().await {
-        Ok(stats) => Some(PersistedTokenTotals {
-            total_input_tokens: to_u64(stats.total_input_tokens),
-            total_output_tokens: to_u64(stats.total_output_tokens),
-            total_tokens: to_u64(stats.total_tokens),
-        }),
-        Err(e) => {
-            warn!("Failed to query token statistics from audit log: {}", e);
-            None
-        }
-    };
-    let token_totals_from_history =
-        match state.balancer.request_history.get_token_statistics().await {
-            Ok(stats) => Some(PersistedTokenTotals {
-                total_input_tokens: stats.total_input_tokens,
-                total_output_tokens: stats.total_output_tokens,
-                total_tokens: stats.total_tokens,
-            }),
-            Err(e) => {
-                warn!(
-                    "Failed to query token statistics from request history: {}",
-                    e
-                );
-                None
-            }
-        };
-    let token_totals_from_db = match (token_totals_from_audit, token_totals_from_history) {
-        (Some(audit), Some(history)) => Some(PersistedTokenTotals {
-            total_input_tokens: audit.total_input_tokens.max(history.total_input_tokens),
-            total_output_tokens: audit.total_output_tokens.max(history.total_output_tokens),
-            total_tokens: audit.total_tokens.max(history.total_tokens),
-        }),
-        (Some(audit), None) => Some(audit),
-        (None, Some(history)) => Some(history),
-        (None, None) => None,
-    };
-
-    let cached_totals = LAST_KNOWN_PERSISTED_TOTALS
-        .read()
-        .ok()
-        .and_then(|guard| guard.get(&cache_key).copied());
-
-    let request_totals = if let Some(request_totals) = request_totals_from_db {
-        request_totals
-    } else if let Some(cached) = cached_totals {
-        warn!("Using last known persisted request totals after DB query failure");
-        cached.request_totals
-    } else {
-        warn!("No cached persisted request totals available; returning zero values");
-        PersistedRequestTotals::default()
-    };
-
-    let token_totals = if let Some(token_totals) = token_totals_from_db {
-        token_totals
-    } else if let Some(cached) = cached_totals {
-        warn!("Using last known persisted token totals after token query failure");
-        cached.token_totals
-    } else {
-        warn!("No cached persisted token totals available; returning zero values");
-        PersistedTokenTotals::default()
-    };
-
-    if request_totals_from_db.is_some() || token_totals_from_db.is_some() {
-        let mut updated_cache = cached_totals.unwrap_or_default();
-        if let Some(request_totals) = request_totals_from_db {
-            updated_cache.request_totals = request_totals;
-        }
-        if let Some(token_totals) = token_totals_from_db {
-            updated_cache.token_totals = token_totals;
-        }
-
-        if let Ok(mut guard) = LAST_KNOWN_PERSISTED_TOTALS.write() {
-            guard.insert(cache_key, updated_cache);
-        } else {
-            warn!("Failed to update persisted totals cache due to poisoned lock");
-        }
-    }
-
-    // Bug 2: インメモリ average_response_time_ms が None の場合、
-    // オンラインエンドポイントの latency_ms（DB永続化済み）から加重平均を計算
-    let average_response_time_ms = summary.average_response_time_ms.or_else(|| {
-        let online_endpoints: Vec<_> = endpoints
-            .iter()
-            .filter(|e| e.status == EndpointStatus::Online && e.latency_ms.is_some())
-            .collect();
-        if online_endpoints.is_empty() {
-            return None;
-        }
-        let total: f64 = online_endpoints
-            .iter()
-            .map(|e| e.latency_ms.unwrap() as f64)
-            .sum();
-        Some((total / online_endpoints.len() as f64) as f32)
-    });
-
-    DashboardStats {
-        total_nodes: summary.total_nodes,
-        online_nodes: summary.online_nodes,
-        pending_nodes: summary.pending_nodes,
-        registering_nodes: summary.registering_nodes,
-        offline_nodes: summary.offline_nodes,
-        total_requests: request_totals.total_requests,
-        successful_requests: request_totals.successful_requests,
-        failed_requests: request_totals.failed_requests,
-        total_active_requests: summary.total_active_requests,
-        queued_requests: summary.queued_requests,
-        average_response_time_ms,
-        average_gpu_usage: summary.average_gpu_usage,
-        average_gpu_memory_usage: summary.average_gpu_memory_usage,
-        last_metrics_updated_at: summary.last_metrics_updated_at,
-        last_registered_at,
-        last_seen_at,
-        openai_key_present,
-        google_key_present,
-        anthropic_key_present,
-        total_input_tokens: token_totals.total_input_tokens,
-        total_output_tokens: token_totals.total_output_tokens,
-        total_tokens: token_totals.total_tokens,
-    }
-}
-
 pub(super) fn collect_operations(
     stats: &DashboardStats,
     endpoints: &[DashboardEndpoint],
@@ -221,8 +161,11 @@ pub(super) fn collect_operations(
         .iter()
         .filter(|endpoint| endpoint.status == EndpointStatus::Offline)
         .count();
-    let success_rate = if stats.total_requests > 0 {
-        Some((stats.successful_requests as f64 / stats.total_requests as f64 * 100.0) as f32)
+    let known_outcomes = stats
+        .successful_requests
+        .saturating_add(stats.failed_requests);
+    let success_rate = if known_outcomes > 0 {
+        Some((stats.successful_requests as f64 / known_outcomes as f64 * 100.0) as f32)
     } else {
         None
     };
@@ -249,6 +192,7 @@ pub(super) fn collect_operations(
         total_requests: stats.total_requests,
         successful_requests: stats.successful_requests,
         failed_requests: stats.failed_requests,
+        unknown_outcome_requests: stats.unknown_outcome_requests,
         success_rate,
         active_requests: stats.total_active_requests,
         queued_requests: stats.queued_requests,
@@ -285,23 +229,6 @@ pub(super) fn calculate_output_tps(
         Some(total_output_tokens / total_duration_seconds)
     } else {
         None
-    }
-}
-
-pub(super) async fn collect_operation_token_totals(state: &AppState) -> PersistedTokenTotals {
-    match state.balancer.request_history.get_token_statistics().await {
-        Ok(stats) => PersistedTokenTotals {
-            total_input_tokens: stats.total_input_tokens,
-            total_output_tokens: stats.total_output_tokens,
-            total_tokens: stats.total_tokens,
-        },
-        Err(e) => {
-            warn!(
-                "Failed to query operation token totals from request history: {}",
-                e
-            );
-            PersistedTokenTotals::default()
-        }
     }
 }
 
@@ -431,8 +358,4 @@ pub(super) fn collect_action_items(operations: &DashboardOperations) -> Vec<Dash
     }
 
     items
-}
-
-pub(super) async fn collect_history(state: &AppState) -> Vec<RequestHistoryPoint> {
-    state.balancer.load_manager.request_history().await
 }

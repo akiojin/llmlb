@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
   ensureDashboardLogin,
+  ensureApiKeyMembership,
   createApiKeyWithPermissions,
   deleteApiKey,
   deleteEndpointsByName,
@@ -78,6 +79,7 @@ test.describe('API Key Lifecycle @api', () => {
       .context()
       .grantPermissions(['clipboard-read', 'clipboard-write'], { origin: DASHBOARD_ORIGIN })
 
+    await ensureApiKeyMembership(request)
     await ensureDashboardLogin(page)
 
     // Open API Keys modal

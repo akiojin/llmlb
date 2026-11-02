@@ -2,6 +2,8 @@ use super::*;
 use axum::{body::Body, http::Request, middleware as axum_middleware, routing::get, Router};
 use tower::ServiceExt;
 
+mod current_identity;
+
 #[test]
 fn test_hash_with_sha256() {
     let input = "test_api_key_12345";
@@ -801,6 +803,8 @@ fn api_key_auth_context_clone() {
         created_by: Uuid::new_v4(),
         permissions: vec![ApiKeyPermission::OpenaiInference],
         expires_at: None,
+        usage_account_id: None,
+        organization_id: None,
     };
     let cloned = ctx.clone();
     assert_eq!(ctx.id, cloned.id);
@@ -815,6 +819,8 @@ fn api_key_auth_context_debug() {
         created_by: Uuid::nil(),
         permissions: vec![],
         expires_at: None,
+        usage_account_id: None,
+        organization_id: None,
     };
     let debug_str = format!("{:?}", ctx);
     assert!(debug_str.contains("ApiKeyAuthContext"));

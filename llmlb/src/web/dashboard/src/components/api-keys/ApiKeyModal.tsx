@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
@@ -51,10 +50,10 @@ interface ApiKeyModalProps {
 export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const {
     isAdmin, createOpen, deleteKey, setDeleteKey, newKeyName, setNewKeyName,
-    newKeyExpires, setNewKeyExpires, selectedPermissions, permissionOptions,
-    createdKey, showKey, copiedId, createdKeyCodeRef, apiKeys, isLoading,
-    isCreating, isDeleting, canCreate, handleMainOpenChange, handleCreateOpenChange,
-    handleOpenCreateDialog, handleCopy, handleCreate, handleTogglePermission,
+    newKeyExpires, setNewKeyExpires,
+    createdKey, showKey, copiedId, createdKeyCodeRef, apiKeys, isLoading, errorMessage,
+    isCreating, isDeleting, canCreate, canIssue, handleMainOpenChange, handleCreateOpenChange,
+    handleOpenCreateDialog, handleCopy, handleCreate,
     toggleCreatedKey, handleRefresh, handleDelete,
   } = useApiKeyModalViewModel({ open, onOpenChange })
 
@@ -75,7 +74,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
           <div className="space-y-4 py-4">
             {/* Actions */}
             <div className="flex justify-between">
-              <Button id="create-api-key" onClick={handleOpenCreateDialog}>
+              <Button id="create-api-key" onClick={handleOpenCreateDialog} disabled={!canIssue}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Key
               </Button>
@@ -89,6 +88,8 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
+            {!canIssue && <p className="text-sm text-muted-foreground">Assign this account to an active organization before creating an inference key.</p>}
+            {errorMessage && <p role="alert" className="text-sm text-destructive">{errorMessage}</p>}
 
             {/* Created Key Alert */}
             {createdKey && (
@@ -158,6 +159,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Access</TableHead>
+                      <TableHead>Attribution</TableHead>
                       <TableHead>Key prefix</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
@@ -176,6 +178,11 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                               </Badge>
                             ))}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {key.usage_account_id && key.organization_id ? <div className="max-w-64 break-all text-xs text-muted-foreground">{`Account ${key.usage_account_id} · Organization ${key.organization_id}`}</div>
+                            : isAdmin && <Badge variant="outline">Unattributed (legacy)</Badge>}
+                          <div className="mt-1 max-w-64 break-all text-xs text-muted-foreground">Issuer: {key.created_by ?? 'Unavailable'}</div>
                         </TableCell>
                         <TableCell>
                           <span
@@ -205,6 +212,9 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => setDeleteKey(key)}
+                            disabled={!key.canDelete}
+                            aria-label={`Delete ${key.name}`}
+                            title={key.canDelete ? 'Delete API key' : 'Only the issuer can delete this key'}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -250,40 +260,13 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             <div className="space-y-2">
               <Label className="text-foreground">Access</Label>
               <div className="rounded-md border border-border/70 bg-muted/20 p-3 text-sm text-muted-foreground">
-                {isAdmin ? (
-                  <div className="space-y-3">
-                    <p>Select one or more permissions for this key:</p>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      {permissionOptions.map((permission) => {
-                        const checked = selectedPermissions.includes(permission)
-                        return (
-                          <label
-                            key={permission}
-                            className="flex items-center gap-2 rounded border border-border/50 bg-background/50 px-2 py-1.5"
-                          >
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={(value) =>
-                                handleTogglePermission(permission, value === true)
-                              }
-                            />
-                            <span className="font-mono text-xs text-foreground">
-                              {permission}
-                            </span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ) : (
                   <>
-                    Viewer keys always include:
+                    New keys belong to your current account and organization and include:
                     <div className="mt-2 flex flex-wrap gap-1">
                       <Badge variant="secondary">openai.inference</Badge>
                       <Badge variant="secondary">openai.models.read</Badge>
                     </div>
                   </>
-                )}
               </div>
             </div>
           </div>

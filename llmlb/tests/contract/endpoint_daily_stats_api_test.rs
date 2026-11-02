@@ -9,7 +9,9 @@ use axum::{
     Router,
 };
 use llmlb::common::auth::UserRole;
-use llmlb::db::endpoint_daily_stats;
+use llmlb::common::protocol::{RequestResponseRecord, RequestType};
+use llmlb::common::usage::{UsageAttribution, UsageTokens};
+use llmlb::db::request_history::RequestHistoryStorage;
 use serde_json::Value;
 use serial_test::serial;
 use sqlx::SqlitePool;
@@ -60,13 +62,48 @@ async fn create_endpoint(
 }
 
 async fn record_request(db_pool: &SqlitePool, endpoint_id: Uuid, model_id: &str, success: bool) {
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    endpoint_daily_stats::upsert_daily_stats(db_pool, endpoint_id, model_id, &today, success, 0, 0)
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    record_request_on(db_pool, endpoint_id, model_id, &today, success)
         .await
-        .expect("upsert daily stats");
-    llmlb::db::endpoints::increment_request_counters(db_pool, endpoint_id, success)
+        .expect("persist accepted request");
+}
+
+async fn record_request_on(
+    db_pool: &SqlitePool,
+    endpoint_id: Uuid,
+    model_id: &str,
+    day: &str,
+    success: bool,
+) -> Result<(), llmlb::common::error::LbError> {
+    let attribution = UsageAttribution {
+        request_id: Uuid::new_v4(),
+        account_id: None,
+        organization_id: None,
+        received_at: format!("{day}T12:00:00Z").parse().unwrap(),
+        api_key_id: None,
+        auth_source: "api_key".into(),
+    };
+    let record = RequestResponseRecord::new(
+        endpoint_id,
+        "fixture endpoint".into(),
+        "127.0.0.1".parse().unwrap(),
+        model_id.into(),
+        RequestType::Chat,
+        serde_json::json!({"model": model_id}),
+        if success {
+            StatusCode::OK
+        } else {
+            StatusCode::BAD_GATEWAY
+        },
+        std::time::Duration::ZERO,
+        None,
+        None,
+    );
+    let storage = RequestHistoryStorage::new(db_pool.clone());
+    storage.accept_usage(&attribution, &record).await?;
+    storage
+        .finish_usage(&attribution, &record, &UsageTokens::missing())
         .await
-        .expect("increment endpoint counters");
 }
 
 async fn add_endpoint_model(db_pool: &SqlitePool, endpoint_id: Uuid, model_id: &str) {
@@ -119,7 +156,7 @@ async fn test_endpoint_daily_stats_with_data() {
     let endpoint_id = Uuid::new_v4();
 
     // 最近の日付を使用（days=365のクランプ内に収まるように）
-    let today = chrono::Local::now();
+    let today = chrono::Utc::now();
     let yesterday = (today - chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
@@ -128,50 +165,18 @@ async fn test_endpoint_daily_stats_with_data() {
         .to_string();
 
     // テストデータを挿入
-    endpoint_daily_stats::upsert_daily_stats(
-        &db_pool,
-        endpoint_id,
-        "llama3:8b",
-        &day_before,
-        true,
-        0,
-        0,
-    )
-    .await
-    .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(
-        &db_pool,
-        endpoint_id,
-        "llama3:8b",
-        &day_before,
-        true,
-        0,
-        0,
-    )
-    .await
-    .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(
-        &db_pool,
-        endpoint_id,
-        "gpt-4",
-        &day_before,
-        false,
-        0,
-        0,
-    )
-    .await
-    .unwrap();
-    endpoint_daily_stats::upsert_daily_stats(
-        &db_pool,
-        endpoint_id,
-        "llama3:8b",
-        &yesterday,
-        true,
-        0,
-        0,
-    )
-    .await
-    .unwrap();
+    record_request_on(&db_pool, endpoint_id, "llama3:8b", &day_before, true)
+        .await
+        .unwrap();
+    record_request_on(&db_pool, endpoint_id, "llama3:8b", &day_before, true)
+        .await
+        .unwrap();
+    record_request_on(&db_pool, endpoint_id, "gpt-4", &day_before, false)
+        .await
+        .unwrap();
+    record_request_on(&db_pool, endpoint_id, "llama3:8b", &yesterday, true)
+        .await
+        .unwrap();
 
     let response = app
         .oneshot(
@@ -258,7 +263,7 @@ async fn test_endpoint_daily_stats_max_days_clamp() {
 
 #[tokio::test]
 #[serial]
-async fn test_dashboard_totals_match_model_stats_after_endpoint_delete() {
+async fn test_dashboard_usage_retains_deleted_endpoint_requests_within_raw_retention() {
     let (app, db_pool, jwt) = build_app().await;
 
     let active_endpoint = create_endpoint(
@@ -298,7 +303,7 @@ async fn test_dashboard_totals_match_model_stats_after_endpoint_delete() {
         .await
         .unwrap();
     let stats_json: Value = serde_json::from_slice(&stats_body).unwrap();
-    assert_eq!(stats_json["total_requests"], 2);
+    assert_eq!(stats_json["total_requests"], 3);
 
     let model_stats_response = app
         .oneshot(
@@ -328,13 +333,17 @@ async fn test_dashboard_totals_match_model_stats_after_endpoint_delete() {
         })
         .sum();
 
-    assert_eq!(total_from_models, 2);
-    assert!(
-        entries
-            .iter()
-            .all(|entry| entry["model_id"] != Value::String("deleted-model".to_string())),
-        "deleted endpoint model must not remain in aggregated stats"
-    );
+    // Inventory deletion cannot erase accepted usage. Model breakdown remains
+    // available while its scoped raw history is retained; the durable total
+    // does not depend on that raw retention window.
+    assert_eq!(total_from_models, 3);
+    let deleted_model = entries
+        .iter()
+        .find(|entry| entry["model_id"] == "deleted-model")
+        .expect("deleted endpoint's accepted model usage is retained");
+    assert_eq!(deleted_model["total_requests"], 1);
+    assert_eq!(deleted_model["successful_requests"], 0);
+    assert_eq!(deleted_model["failed_requests"], 1);
 }
 
 #[tokio::test]

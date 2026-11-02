@@ -2,6 +2,7 @@
 //!
 //! 認証済みユーザーが自分自身のAPIキーを管理するためのAPI。
 
+use crate::auth::scope::Scope;
 use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext, Claims, UserRole};
 use crate::common::error::{CommonError, LbError};
 use crate::AppState;
@@ -16,6 +17,10 @@ use super::error::{AppError, HandlerError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[cfg(test)]
+#[path = "api_keys/attribution_tests.rs"]
+mod attribution_tests;
+
 /// APIキー作成リクエスト
 #[derive(Debug, Deserialize)]
 pub struct CreateApiKeyRequest {
@@ -29,6 +34,10 @@ pub struct CreateApiKeyRequest {
     /// 旧互換: `scopes` は廃止
     #[serde(default)]
     pub scopes: Option<serde_json::Value>,
+    /// Usage account. Omission means the authenticated account, never the issuer of a different key.
+    pub usage_account_id: Option<Uuid>,
+    /// Optional assertion of the usage account's current active organization.
+    pub organization_id: Option<Uuid>,
 }
 
 /// APIキーレスポンス（key_hash除外）
@@ -48,6 +57,10 @@ pub struct ApiKeyResponse {
     pub expires_at: Option<String>,
     /// 付与された権限
     pub permissions: Vec<ApiKeyPermission>,
+    /// Fixed usage account; null identifies a legacy unattributed key.
+    pub usage_account_id: Option<String>,
+    /// Fixed issue-time organization; never changed when the account transfers.
+    pub organization_id: Option<String>,
 }
 
 impl From<ApiKey> for ApiKeyResponse {
@@ -60,6 +73,24 @@ impl From<ApiKey> for ApiKeyResponse {
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
             permissions: api_key.permissions,
+            usage_account_id: None,
+            organization_id: None,
+        }
+    }
+}
+
+impl From<crate::db::api_keys::ApiKeyMetadata> for ApiKeyResponse {
+    fn from(api_key: crate::db::api_keys::ApiKeyMetadata) -> Self {
+        Self {
+            id: api_key.id.to_string(),
+            key_prefix: api_key.key_prefix,
+            name: api_key.name,
+            created_by: api_key.created_by.to_string(),
+            created_at: api_key.created_at.to_rfc3339(),
+            expires_at: api_key.expires_at.map(|time| time.to_rfc3339()),
+            permissions: api_key.permissions,
+            usage_account_id: api_key.usage_account_id.map(|id| id.to_string()),
+            organization_id: api_key.organization_id.map(|id| id.to_string()),
         }
     }
 }
@@ -81,6 +112,10 @@ pub struct CreateApiKeyResponse {
     pub expires_at: Option<String>,
     /// 付与された権限
     pub permissions: Vec<ApiKeyPermission>,
+    /// Validated usage account, distinct from the issuing administrator.
+    pub usage_account_id: Option<String>,
+    /// Validated organization fixed at issuance.
+    pub organization_id: Option<String>,
 }
 
 impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
@@ -93,6 +128,8 @@ impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
             permissions: api_key.permissions,
+            usage_account_id: None,
+            organization_id: None,
         }
     }
 }
@@ -136,6 +173,19 @@ fn resolve_permissions_for_role(
             if permissions.is_empty() {
                 return Err(AppError(LbError::Common(CommonError::Validation(
                     "Field 'permissions' must contain at least one permission.".to_string(),
+                )))
+                .into());
+            }
+
+            if permissions.iter().any(|permission| {
+                !matches!(
+                    permission,
+                    ApiKeyPermission::OpenaiInference | ApiKeyPermission::OpenaiModelsRead
+                )
+            }) {
+                return Err(AppError(LbError::Common(CommonError::Validation(
+                    "Attributed API keys accept only OpenAI inference and models-read permissions."
+                        .to_string(),
                 )))
                 .into());
             }
@@ -186,12 +236,11 @@ fn parse_expires_at(
 
 /// GET /api/me/api-keys - 自分のAPIキー一覧取得
 pub async fn list_api_keys(
-    Extension(claims): Extension<Claims>,
+    Extension(scope): Extension<Scope>,
     State(app_state): State<AppState>,
 ) -> Result<Json<ListApiKeysResponse>, HandlerError> {
-    let user_id = parse_user_id_from_claims(&claims)?;
-
-    let api_keys = crate::db::api_keys::list_by_creator(&app_state.db_pool, user_id)
+    scope.require_assigned()?;
+    let api_keys = crate::db::api_keys::list_scoped(&app_state.db_pool, &scope)
         .await
         .map_err(|e| {
             tracing::error!("Failed to list API keys: {}", e);
@@ -220,10 +269,12 @@ pub async fn create_api_key(
     let user_id = parse_user_id_from_claims(&claims)?;
     let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
-    let api_key = crate::db::api_keys::create(
+    let created = crate::db::api_keys::create_attributed(
         &app_state.db_pool,
         &request.name,
         user_id,
+        request.usage_account_id,
+        request.organization_id,
         expires_at,
         permissions,
     )
@@ -233,26 +284,29 @@ pub async fn create_api_key(
         AppError(e).into_response()
     })?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(CreateApiKeyResponse::from(api_key)),
-    ))
+    let mut response = CreateApiKeyResponse::from(created.api_key);
+    response.usage_account_id = Some(created.usage_account_id.to_string());
+    response.organization_id = Some(created.organization_id.to_string());
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// PUT /api/me/api-keys/:id - 自分のAPIキー更新
 pub async fn update_api_key(
     Extension(claims): Extension<Claims>,
+    Extension(scope): Extension<Scope>,
     State(app_state): State<AppState>,
     Path(key_id): Path<Uuid>,
     Json(request): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<ApiKeyResponse>, HandlerError> {
+    scope.require_assigned()?;
     let user_id = parse_user_id_from_claims(&claims)?;
     let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
-    let updated = crate::db::api_keys::update_by_creator(
+    let updated = crate::db::api_keys::update_scoped_by_creator(
         &app_state.db_pool,
         key_id,
         user_id,
+        &scope,
         &request.name,
         expires_at,
     )
@@ -263,7 +317,7 @@ pub async fn update_api_key(
     })?;
 
     match updated {
-        Some(api_key) => Ok(Json(ApiKeyResponse::from(api_key))),
+        Some(metadata) => Ok(Json(ApiKeyResponse::from(metadata))),
         None => Err(AppError(LbError::NotFound("API key not found".to_string())).into()),
     }
 }
@@ -271,21 +325,24 @@ pub async fn update_api_key(
 /// DELETE /api/me/api-keys/:id - 自分のAPIキー削除
 pub async fn delete_api_key(
     Extension(claims): Extension<Claims>,
+    Extension(scope): Extension<Scope>,
     State(app_state): State<AppState>,
     Path(key_id): Path<Uuid>,
 ) -> Result<StatusCode, HandlerError> {
+    scope.require_assigned()?;
     let user_id = parse_user_id_from_claims(&claims)?;
 
-    let deleted = crate::db::api_keys::delete_by_creator(&app_state.db_pool, key_id, user_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to delete API key: {}", e);
-            AppError(LbError::Database(format!(
-                "Failed to delete API key: {}",
-                e
-            )))
-            .into_response()
-        })?;
+    let deleted =
+        crate::db::api_keys::delete_scoped_by_creator(&app_state.db_pool, key_id, user_id, &scope)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to delete API key: {}", e);
+                AppError(LbError::Database(format!(
+                    "Failed to delete API key: {}",
+                    e
+                )))
+                .into_response()
+            })?;
 
     if !deleted {
         return Err(AppError(LbError::NotFound("API key not found".to_string())).into());
@@ -430,6 +487,8 @@ mod tests {
                 ApiKeyPermission::OpenaiInference,
                 ApiKeyPermission::OpenaiModelsRead,
             ],
+            usage_account_id: None,
+            organization_id: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"id\":\"key-id-1\""));
@@ -498,6 +557,8 @@ mod tests {
                     created_at: "2025-01-01T00:00:00+00:00".to_string(),
                     expires_at: None,
                     permissions: vec![],
+                    usage_account_id: None,
+                    organization_id: None,
                 },
                 ApiKeyResponse {
                     id: "2".to_string(),
@@ -507,6 +568,8 @@ mod tests {
                     created_at: "2025-06-01T00:00:00+00:00".to_string(),
                     expires_at: Some("2026-06-01T00:00:00+00:00".to_string()),
                     permissions: vec![ApiKeyPermission::OpenaiInference],
+                    usage_account_id: None,
+                    organization_id: None,
                 },
             ],
         };
@@ -533,7 +596,7 @@ mod tests {
             UserRole::Admin,
             Some(vec![
                 ApiKeyPermission::OpenaiInference,
-                ApiKeyPermission::EndpointsRead,
+                ApiKeyPermission::OpenaiModelsRead,
             ]),
         );
         assert!(perms.is_ok());

@@ -7,6 +7,12 @@ pub mod request_history;
 /// ユーザー管理
 pub mod users;
 
+/// 組織とアカウントの単一所属
+pub mod organizations;
+
+/// 永続使用量と受付UUIDの重複排除
+pub mod usage;
+
 /// APIキー管理
 pub mod api_keys;
 

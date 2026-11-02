@@ -10,6 +10,8 @@ pub mod jwt;
 pub mod middleware;
 /// パスワードハッシュ化・検証（bcrypt）
 pub mod password;
+/// DBの現在の主体から解決する組織・本人閲覧境界
+pub mod scope;
 
 mod cookie;
 

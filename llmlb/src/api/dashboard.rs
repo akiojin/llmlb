@@ -4,7 +4,8 @@
 //! システム統計を返却する。
 
 use super::error::AppError;
-use crate::types::HealthMetrics;
+use crate::auth::scope::Scope;
+use crate::db::request_history::RequestHistoryStorage;
 use crate::{
     balancer::RequestHistoryPoint,
     types::endpoint::{EndpointStatus, EndpointType},
@@ -12,12 +13,10 @@ use crate::{
 };
 use axum::{
     extract::{Path, State},
-    Json,
+    Extension, Json,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -31,6 +30,9 @@ mod settings;
 #[cfg(test)]
 mod tests;
 mod token_stats;
+/// 組織・アカウント別の永続使用量
+pub mod usage;
+pub use usage::get_usage;
 
 pub use clients::{
     get_client_api_keys, get_client_detail, get_client_heatmap, get_client_models,
@@ -55,10 +57,7 @@ pub use token_stats::{
     DailyTokenStatsQuery, MonthlyTokenStats, MonthlyTokenStatsQuery,
 };
 
-use overview::{
-    collect_action_items, collect_capacity, collect_endpoints, collect_history,
-    collect_operation_token_totals, collect_operations, collect_stats,
-};
+use overview::{collect_action_items, collect_capacity, collect_operations};
 
 #[cfg(test)]
 use clients::default_clients_per_page;
@@ -139,6 +138,8 @@ pub struct DashboardStats {
     pub successful_requests: u64,
     /// 失敗リクエスト数
     pub failed_requests: u64,
+    /// Completed receipts whose result could not be proven after recovery/migration.
+    pub unknown_outcome_requests: u64,
     /// 処理中リクエスト数
     pub total_active_requests: u32,
     /// 待機中リクエスト数
@@ -192,6 +193,8 @@ pub struct DashboardOperations {
     pub successful_requests: u64,
     /// 失敗リクエスト数
     pub failed_requests: u64,
+    /// Completed receipts excluded from success-rate measurement because their outcome is unknown.
+    pub unknown_outcome_requests: u64,
     /// 成功率（0-100）
     pub success_rate: Option<f32>,
     /// 処理中リクエスト数
@@ -268,6 +271,7 @@ pub struct DashboardOverview {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg(test)]
 struct PersistedRequestTotals {
     total_requests: u64,
     successful_requests: u64,
@@ -282,54 +286,93 @@ struct PersistedTokenTotals {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg(test)]
 struct PersistedTotalsCache {
     request_totals: PersistedRequestTotals,
     token_totals: PersistedTokenTotals,
 }
 
-static LAST_KNOWN_PERSISTED_TOTALS: LazyLock<RwLock<HashMap<u64, PersistedTotalsCache>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
-
 /// GET /api/dashboard/endpoints
 ///
 /// SPEC-e8e9326e: llmlb主導エンドポイント登録システム
-pub async fn get_endpoints(State(state): State<AppState>) -> Json<Vec<DashboardEndpoint>> {
-    Json(collect_endpoints(&state).await)
+pub async fn get_endpoints(
+    Extension(scope): Extension<Scope>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<DashboardEndpoint>>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    Ok(Json(
+        overview::collect_scoped_endpoints(&state, &scope).await?,
+    ))
 }
 
 /// GET /api/dashboard/stats
-pub async fn get_stats(State(state): State<AppState>) -> Json<DashboardStats> {
-    Json(collect_stats(&state).await)
+pub async fn get_stats(
+    Extension(scope): Extension<Scope>,
+    State(state): State<AppState>,
+) -> Result<Json<DashboardStats>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    Ok(Json(overview::collect_scoped_stats(&state, &scope).await?))
 }
 
 /// GET /api/dashboard/activity
 ///
 /// JWT admin/viewer向け。ゲートウェイ自身の処理中・待機・開始数だけを返す。
 pub async fn get_activity(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
-) -> Json<crate::balancer::RequestActivitySnapshot> {
-    Json(state.balancer.load_manager.request_activity().await)
+) -> Result<Json<crate::balancer::RequestActivitySnapshot>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    if matches!(scope, Scope::Global) {
+        return Ok(Json(state.balancer.load_manager.request_activity().await));
+    }
+    Ok(Json(
+        state
+            .balancer
+            .request_history
+            .scoped(&scope)
+            .scoped_activity()
+            .await
+            .map_err(AppError)?,
+    ))
 }
 
 /// GET /api/dashboard/request-history
-pub async fn get_request_history(State(state): State<AppState>) -> Json<Vec<RequestHistoryPoint>> {
-    Json(collect_history(&state).await)
+pub async fn get_request_history(
+    Extension(scope): Extension<Scope>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<RequestHistoryPoint>>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    Ok(Json(
+        overview::collect_scoped_history(&state, &scope).await?,
+    ))
 }
 
 /// GET /api/dashboard/overview
-pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOverview> {
+pub async fn get_overview(
+    Extension(scope): Extension<Scope>,
+    State(state): State<AppState>,
+) -> Result<Json<DashboardOverview>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
     let started = Instant::now();
-    let endpoints = collect_endpoints(&state).await;
-    let stats = collect_stats(&state).await;
-    let operation_token_totals = collect_operation_token_totals(&state).await;
-    let endpoint_tps = state.balancer.load_manager.get_all_endpoint_tps().await;
+    let endpoints = overview::collect_scoped_endpoints(&state, &scope).await?;
+    let stats = overview::collect_scoped_stats(&state, &scope).await?;
+    let operation_token_totals = PersistedTokenTotals {
+        total_input_tokens: stats.total_input_tokens,
+        total_output_tokens: stats.total_output_tokens,
+        total_tokens: stats.total_tokens,
+    };
+    let endpoint_tps = if matches!(scope, Scope::Global) {
+        state.balancer.load_manager.get_all_endpoint_tps().await
+    } else {
+        vec![]
+    };
     let operations = collect_operations(&stats, &endpoints, operation_token_totals, &endpoint_tps);
     let capacity = collect_capacity(&state, &endpoints).await;
     let action_items = collect_action_items(&operations);
-    let history = collect_history(&state).await;
+    let history = overview::collect_scoped_history(&state, &scope).await?;
     let generation_time_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
     let generated_at = Utc::now();
-    Json(DashboardOverview {
+    Ok(Json(DashboardOverview {
         endpoints,
         operations,
         capacity,
@@ -338,18 +381,36 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
         endpoint_tps,
         generated_at,
         generation_time_ms,
-    })
+    }))
 }
 
 /// GET /api/dashboard/metrics/:runtime_id
 pub async fn get_node_metrics(
+    Extension(scope): Extension<Scope>,
     Path(endpoint_id): Path<Uuid>,
     State(state): State<AppState>,
-) -> Result<Json<Vec<HealthMetrics>>, AppError> {
+) -> Result<Json<serde_json::Value>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
     let history = state
         .balancer
         .load_manager
         .metrics_history(endpoint_id)
         .await?;
+    let mut history = serde_json::json!(history);
+    if !matches!(scope, Scope::Global) {
+        if let Some(rows) = history.as_array_mut() {
+            for row in rows {
+                if let Some(object) = row.as_object_mut() {
+                    for field in [
+                        "active_requests",
+                        "total_requests",
+                        "average_response_time_ms",
+                    ] {
+                        object.remove(field);
+                    }
+                }
+            }
+        }
+    }
     Ok(Json(history))
 }

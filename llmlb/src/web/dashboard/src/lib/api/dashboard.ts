@@ -5,6 +5,7 @@ import type { DashboardEndpoint } from './endpoints'
 import type { ModelStatEntry } from './endpoints'
 
 export interface DashboardOperations {
+  unknown_outcome_requests?: number
   health: 'healthy' | 'attention' | 'empty' | string
   total_endpoints: number
   online_endpoints: number

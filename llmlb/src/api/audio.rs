@@ -318,6 +318,13 @@ pub async fn transcriptions(
     );
 
     // ASR対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    crate::api::usage_capture::accept_current(
+        &state,
+        &model,
+        RequestType::Transcription,
+        json!({"model":model,"language":language,"response_format":response_format}),
+    )
+    .await?;
     let backend = select_transcription_backend(&state).await?;
 
     // multipart リクエストを構築してプロキシ
@@ -443,6 +450,13 @@ pub async fn speech(
     );
 
     // TTS対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    crate::api::usage_capture::accept_current(
+        &state,
+        &payload.model,
+        RequestType::Speech,
+        serde_json::to_value(&payload).map_err(|error| LbError::Http(error.to_string()))?,
+    )
+    .await?;
     let backend = select_speech_backend(&state).await?;
 
     // JSON リクエストをプロキシ

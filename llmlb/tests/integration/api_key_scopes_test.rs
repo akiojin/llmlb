@@ -41,6 +41,26 @@ async fn create_admin_user(db_pool: &sqlx::SqlitePool) -> uuid::Uuid {
         .id
 }
 
+async fn assign_api_key_membership(
+    db_pool: &sqlx::SqlitePool,
+    accounts: &[uuid::Uuid],
+) -> uuid::Uuid {
+    let organization = llmlb::db::organizations::create(db_pool, "API key scope fixture")
+        .await
+        .expect("create active key organization");
+    for &account_id in accounts {
+        llmlb::db::organizations::set_membership(
+            db_pool,
+            account_id,
+            Some(organization.id),
+            llmlb::db::organizations::OrganizationRole::Member,
+        )
+        .await
+        .expect("assign key account membership");
+    }
+    organization.id
+}
+
 async fn create_api_key(db_pool: &sqlx::SqlitePool, permissions: Vec<ApiKeyPermission>) -> String {
     let admin_id = create_admin_user(db_pool).await;
     let key_name = format!("test-key-{}", uuid::Uuid::new_v4());
@@ -96,6 +116,7 @@ async fn invalid_client_key_is_rejected() {
 async fn jwt_identity_preserved_for_me_api_keys() {
     let (app, db_pool) = build_app().await;
     let admin_id = create_admin_user(&db_pool).await;
+    let organization_id = assign_api_key_membership(&db_pool, &[admin_id]).await;
     let jwt = llmlb::auth::jwt::create_jwt(
         &admin_id.to_string(),
         UserRole::Admin,
@@ -105,7 +126,7 @@ async fn jwt_identity_preserved_for_me_api_keys() {
     )
     .expect("create jwt");
     let key_name = format!("me-key-{}", uuid::Uuid::new_v4());
-    let permissions = vec!["openai.inference"];
+    let permissions = vec!["openai.inference", "openai.models.read"];
 
     let response = app
         .oneshot(
@@ -117,6 +138,8 @@ async fn jwt_identity_preserved_for_me_api_keys() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": key_name,
+                        "usage_account_id": admin_id,
+                        "organization_id": organization_id,
                         "permissions": permissions
                     }))
                     .unwrap(),
@@ -133,6 +156,12 @@ async fn jwt_identity_preserved_for_me_api_keys() {
     assert_eq!(api_keys.len(), 1);
     assert_eq!(api_keys[0].name, key_name);
     assert_eq!(api_keys[0].created_by, admin_id);
+    let metadata = llmlb::db::api_keys::find_metadata(&db_pool, api_keys[0].id)
+        .await
+        .expect("read attributed key metadata")
+        .expect("created key exists");
+    assert_eq!(metadata.usage_account_id, Some(admin_id));
+    assert_eq!(metadata.organization_id, Some(organization_id));
 }
 
 #[tokio::test]
@@ -526,6 +555,7 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
     )
     .await
     .unwrap();
+    let organization_id = assign_api_key_membership(&db_pool, &[admin_id, viewer.id]).await;
 
     let admin_jwt = llmlb::auth::jwt::create_jwt(
         &admin_id.to_string(),
@@ -561,6 +591,8 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
     // viewer can create own key
     let create_payload = json!({
         "name": "viewer-key",
+        "usage_account_id": viewer.id,
+        "organization_id": organization_id,
         "expires_at": null
     });
     let response = app
@@ -585,6 +617,18 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
     let created_key = created["key"].as_str().unwrap();
     let created_id = created["id"].as_str().unwrap();
     assert!(created_key.starts_with("sk_"));
+    let metadata =
+        llmlb::db::api_keys::find_metadata(&db_pool, uuid::Uuid::parse_str(created_id).unwrap())
+            .await
+            .expect("read viewer key metadata")
+            .expect("viewer key exists");
+    assert_eq!(metadata.created_by, viewer.id);
+    assert_eq!(created["usage_account_id"], viewer.id.to_string());
+    assert_eq!(created["organization_id"], organization_id.to_string());
+    assert_eq!(
+        created["permissions"],
+        json!(["openai.inference", "openai.models.read"])
+    );
 
     // viewer list includes the key
     let response = app
@@ -673,6 +717,7 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
     )
     .await
     .unwrap();
+    let organization_id = assign_api_key_membership(&db_pool, &[admin_id, viewer.id]).await;
 
     let admin_jwt = llmlb::auth::jwt::create_jwt(
         &admin_id.to_string(),
@@ -703,6 +748,8 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "admin-key-missing-permissions",
+                        "usage_account_id": admin_id,
+                        "organization_id": organization_id,
                         "expires_at": null
                     }))
                     .unwrap(),
@@ -713,8 +760,35 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
         .unwrap();
     assert_eq!(admin_missing_permissions.status(), StatusCode::BAD_REQUEST);
 
-    // admin: explicit non-empty permissions is accepted
-    let admin_permissions = vec!["openai.inference", "openai.models.read", "endpoints.read"];
+    // admin: attributed keys cannot grant management permissions
+    let admin_management_permissions = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/me/api-keys")
+                .header("authorization", format!("Bearer {}", admin_jwt))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "name": "admin-key-management-permissions",
+                        "usage_account_id": admin_id,
+                        "organization_id": organization_id,
+                        "permissions": ["openai.inference", "openai.models.read", "endpoints.read"]
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        admin_management_permissions.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // admin: explicit non-empty inference/model permissions are accepted
+    let admin_permissions = vec!["openai.inference", "openai.models.read"];
     let admin_create = app
         .clone()
         .oneshot(
@@ -726,6 +800,8 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "admin-key-with-permissions",
+                        "usage_account_id": admin_id,
+                        "organization_id": organization_id,
                         "expires_at": null,
                         "permissions": admin_permissions
                     }))
@@ -743,7 +819,7 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
     let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         created["permissions"],
-        json!(["openai.inference", "openai.models.read", "endpoints.read"])
+        json!(["openai.inference", "openai.models.read"])
     );
 
     // viewer: permissions must not be provided
@@ -758,6 +834,8 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "viewer-key-with-permissions",
+                        "usage_account_id": viewer.id,
+                        "organization_id": organization_id,
                         "expires_at": null,
                         "permissions": ["openai.inference"]
                     }))
@@ -780,6 +858,8 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
                 .body(Body::from(
                     serde_json::to_vec(&json!({
                         "name": "viewer-key-fixed-permissions",
+                        "usage_account_id": viewer.id,
+                        "organization_id": organization_id,
                         "expires_at": null
                     }))
                     .unwrap(),

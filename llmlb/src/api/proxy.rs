@@ -344,6 +344,9 @@ pub(crate) fn save_request_record(
     storage: Arc<crate::db::request_history::RequestHistoryStorage>,
     record: RequestResponseRecord,
 ) {
+    if crate::api::usage_capture::capture_record(&record) {
+        return;
+    }
     tokio::spawn(async move {
         if let Err(e) = storage.save_record(&record).await {
             tracing::error!("Failed to save request record: {}", e);

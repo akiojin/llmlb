@@ -19,6 +19,8 @@ export interface ApiKey {
   name: string
   key_prefix?: string
   created_by?: string
+  usage_account_id?: string | null
+  organization_id?: string | null
   created_at: string
   expires_at?: string
   last_used_at?: string
@@ -33,6 +35,9 @@ export interface CreateApiKeyResponse {
   created_at: string
   expires_at?: string
   permissions: ApiKeyPermission[]
+  created_by?: string
+  usage_account_id?: string | null
+  organization_id?: string | null
 }
 
 export const apiKeysApi = {
@@ -45,6 +50,8 @@ export const apiKeysApi = {
     name: string
     expires_at?: string
     permissions?: ApiKeyPermission[]
+    usage_account_id?: string
+    organization_id?: string
   }) =>
     fetchWithAuth<CreateApiKeyResponse>('/api/me/api-keys', {
       method: 'POST',

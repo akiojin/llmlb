@@ -19,5 +19,8 @@ pub mod log;
 /// 認証・認可関連の型定義
 pub mod auth;
 
+/// 推論受付時の帰属とトークン観測値
+pub mod usage;
+
 /// IPアドレス正規化ユーティリティ
 pub mod ip;

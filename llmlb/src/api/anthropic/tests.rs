@@ -12,6 +12,23 @@ use tempfile::tempdir;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+async fn handle_messages(
+    address: std::net::SocketAddr,
+    headers: HeaderMap,
+    state: AppState,
+    auth: Option<axum::Extension<crate::auth::middleware::ApiKeyAuthContext>>,
+    payload: serde_json::Value,
+) -> Result<Response, AppError> {
+    let (client_ip, api_key_id) = super::extract_client_info(&address, &headers, &auth);
+    crate::api::usage_capture::with_test_capture(
+        &state,
+        client_ip,
+        api_key_id,
+        super::handle_messages(address, headers, state.clone(), auth, payload),
+    )
+    .await
+}
+
 async fn create_local_state() -> AppState {
     TestAppStateBuilder::new().await.build().await
 }

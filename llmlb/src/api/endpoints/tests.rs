@@ -17,6 +17,22 @@ use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+async fn proxy_chat_completions(
+    State(state): State<crate::AppState>,
+    path: Path<Uuid>,
+    body: Bytes,
+) -> axum::response::Response {
+    crate::api::usage_capture::with_test_capture(&state, None, None, async {
+        Ok::<_, std::convert::Infallible>(
+            super::proxy_chat_completions(State(state.clone()), path, body)
+                .await
+                .into_response(),
+        )
+    })
+    .await
+    .unwrap()
+}
+
 #[test]
 fn test_default_health_check_interval() {
     assert_eq!(default_health_check_interval(), 30);

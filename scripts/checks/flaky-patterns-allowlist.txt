@@ -681,3 +681,9 @@ shared-resource|llmlb/tests/support/lb.rs|531089987-55|4
 
 # (a) #695: forgot-passwordは応答後にトークンを発行。DB件数を毎回確認し期待値で即終了する状態pollの間隔。最大100回後も件数assertを維持し、固定待機だけで完了を推定しない。
 fixed-wait|llmlb/tests/contract/auth_api_test.rs|182137248-63|1
+# Issue #947: usage_account_id equality is a lexical count false positive; fixed response, no I/O count assertion. Re-review if call-count dependencies are added.
+mock-count|llmlb/tests/integration/api_key_scopes_test.rs|1146602957-24|1
+# Issue #947: usage_account_id equality is a lexical count false positive; fixed response, no I/O count assertion. Re-review if call-count dependencies are added.
+mock-count|llmlb/tests/integration/api_key_scopes_test.rs|2966524092-23|1
+# Issue #947: usage_account_id equality is a lexical count false positive; fixed response, no I/O count assertion. Re-review if call-count dependencies are added.
+mock-count|llmlb/tests/integration/api_key_scopes_test.rs|3955357935-25|1

@@ -3,10 +3,12 @@
 use super::request_history::default_page;
 use super::settings::effective_ip_alert_threshold;
 use crate::api::error::AppError;
+use crate::auth::scope::Scope;
+use crate::db::request_history::RequestHistoryStorage;
 use crate::AppState;
 use axum::{
     extract::{Query, State},
-    Json,
+    Extension, Json,
 };
 use serde::Deserialize;
 
@@ -39,9 +41,11 @@ pub struct HeatmapQuery {
 /// SPEC-62ac4b68: Clientsタブ基本分析
 pub async fn get_client_rankings(
     Query(params): Query<ClientsQuery>,
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::ClientIpRankingResult>, AppError> {
-    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = state.balancer.request_history.scoped(&scope);
     let mut result = storage
         .get_client_ip_ranking(24, params.page, params.per_page, params.ip.as_deref())
         .await
@@ -72,9 +76,11 @@ pub async fn get_client_rankings(
 ///
 /// SPEC-62ac4b68: 使用パターンの時系列分析
 pub async fn get_client_timeline(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::request_history::UniqueIpTimelinePoint>>, AppError> {
-    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = state.balancer.request_history.scoped(&scope);
     let result = storage.get_unique_ip_timeline(24).await.map_err(AppError)?;
     Ok(Json(result))
 }
@@ -83,9 +89,11 @@ pub async fn get_client_timeline(
 ///
 /// SPEC-62ac4b68: 使用パターンの時系列分析
 pub async fn get_client_models(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::request_history::ModelDistribution>>, AppError> {
-    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = state.balancer.request_history.scoped(&scope);
     let result = storage
         .get_model_distribution_by_clients(24)
         .await
@@ -98,9 +106,11 @@ pub async fn get_client_models(
 /// SPEC-62ac4b68: 時間帯×曜日ヒートマップ
 pub async fn get_client_heatmap(
     Query(params): Query<HeatmapQuery>,
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::request_history::HeatmapCell>>, AppError> {
-    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = state.balancer.request_history.scoped(&scope);
     let result = storage
         .get_request_heatmap(24 * 7, params.ip.as_deref())
         .await
@@ -113,9 +123,11 @@ pub async fn get_client_heatmap(
 /// SPEC-62ac4b68: IPドリルダウン詳細ビュー
 pub async fn get_client_detail(
     axum::extract::Path(ip): axum::extract::Path<String>,
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::ClientDetail>, AppError> {
-    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = state.balancer.request_history.scoped(&scope);
     let result = storage.get_client_detail(&ip, 20).await.map_err(AppError)?;
     Ok(Json(result))
 }
@@ -125,9 +137,11 @@ pub async fn get_client_detail(
 /// SPEC-62ac4b68: APIキーとのクロス分析
 pub async fn get_client_api_keys(
     axum::extract::Path(ip): axum::extract::Path<String>,
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::request_history::ClientApiKeyUsage>>, AppError> {
-    let storage = crate::db::request_history::RequestHistoryStorage::new(state.db_pool.clone());
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = state.balancer.request_history.scoped(&scope);
     let result = storage.get_client_api_keys(&ip).await.map_err(AppError)?;
     Ok(Json(result))
 }

@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { notificationsApi, registrationRequestsApi } from '@/lib/api'
-import { adminUser, deferred, renderWithProviders, viewerUser } from '@/test/render'
+import { adminUser, deferred, renderPage, viewerUser } from '@/test/render'
 import { Header } from './Header'
 
 beforeEach(() => {
@@ -10,13 +10,32 @@ beforeEach(() => {
 })
 
 describe('Header user menu', () => {
+  it('offers the real organization usage route to an assigned member', async () => {
+    const currentUser = { ...viewerUser, organization_id: 'org-A', organization_role: 'member' as const, scope: 'self:org-A:member' }
+    renderPage(<Header user={currentUser} />, { user: currentUser })
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'User menu' }))
+    await userEvent.setup().click(await screen.findByRole('menuitem', { name: 'Organizations & usage' }))
+    expect(window.location.hash).toBe('#organizations')
+    window.location.hash = ''
+  })
+
+  it('removes inference and private-key actions from an unassigned viewer', async () => {
+    renderPage(<Header user={viewerUser} />, { user: viewerUser })
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'User menu' }))
+    expect(await screen.findByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'API Keys' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'LB Playground' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'API Keys' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'LB Playground' })).not.toBeInTheDocument()
+  })
+
   it('opens the notification settings from the admin menu', async () => {
     // Kept pending: this test is about the menu entry, not the dialog content.
     const get = vi.spyOn(notificationsApi, 'get').mockReturnValue(deferred<never>().promise)
     const user = userEvent.setup()
-    renderWithProviders(<Header user={adminUser} />)
+    renderPage(<Header user={adminUser} />)
 
-    await user.click(screen.getByRole('button', { name: 'User menu' }))
+    await user.click(await screen.findByRole('button', { name: 'User menu' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Notifications' }))
 
     expect(await screen.findByRole('dialog', { name: 'Notifications' })).toBeInTheDocument()
@@ -26,9 +45,9 @@ describe('Header user menu', () => {
   it('does not offer the notification settings to a viewer', async () => {
     const get = vi.spyOn(notificationsApi, 'get')
     const user = userEvent.setup()
-    renderWithProviders(<Header user={viewerUser} />, { user: viewerUser })
+    renderPage(<Header user={viewerUser} />, { user: viewerUser })
 
-    await user.click(screen.getByRole('button', { name: 'User menu' }))
+    await user.click(await screen.findByRole('button', { name: 'User menu' }))
 
     expect(await screen.findByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Notifications' })).not.toBeInTheDocument()
@@ -42,8 +61,8 @@ it('shows an administrator the pending count next to Manage Users', async () => 
     { id: 'request-one', username: 'one@example.com', created_at: '2026-10-01T00:00:00Z' },
   ])
   const user = userEvent.setup()
-  renderWithProviders(<Header user={adminUser} />)
-  await user.click(screen.getByRole('button', { name: 'User menu' }))
+  renderPage(<Header user={adminUser} />)
+  await user.click(await screen.findByRole('button', { name: 'User menu' }))
   expect(await screen.findByTestId('pending-registration-count')).toHaveTextContent('1')
   expect(screen.queryByRole('menuitem', { name: 'Invitation Codes' })).not.toBeInTheDocument()
 })

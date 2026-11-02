@@ -54,7 +54,7 @@ import {
 
 export default function Dashboard() {
   const {
-    user, isViewer, isAdmin, data, isLoading, error, errorMessage, refetch,
+    user, isViewer, isAdmin, canRead, data, isLoading, error, errorMessage, refetch,
     isLoadingHistory, endpointsData, isLoadingEndpoints, lastRefreshed, fetchTimeMs,
     systemVersion, viewerModels, isLoadingViewerModels, refetchViewerModels,
     modelsView, setModelsView, historyItems, activeTab, setActiveTab, updateBanner: update,
@@ -429,6 +429,13 @@ export default function Dashboard() {
   )
 
 
+  if (!canRead) {
+    return <div className="min-h-screen bg-background"><Header user={user} minimalViewer />
+      <main className="mx-auto max-w-xl space-y-3 px-6 py-16 text-center"><h1 className="font-display text-xl font-semibold">Organization membership required</h1>
+        <p className="text-sm text-muted-foreground">Ask a system administrator to assign your organization before viewing usage or using inference.</p>
+      </main></div>
+  }
+
   if (error) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
@@ -482,27 +489,12 @@ export default function Dashboard() {
           />
         </section>
 
-        {isViewer ? (
-          <section className="mb-8">
-            <ModelsTable
-              models={viewerModels || []}
-              endpoints={endpointsData || []}
-              isLoading={isLoadingViewerModels}
-              onRefresh={() => {
-                void refetchViewerModels()
-              }}
-              view={modelsView}
-              onViewChange={setModelsView}
-              viewerMode
-            />
-          </section>
-        ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
-              <TabsTrigger value="endpoints" className="gap-2">
+            <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-6' : 'grid-cols-3'} lg:w-auto lg:inline-grid`}>
+              {isAdmin && <TabsTrigger value="endpoints" className="gap-2">
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">Endpoints</span>
-              </TabsTrigger>
+              </TabsTrigger>}
               <TabsTrigger value="models" className="gap-2">
                 <Package className="h-4 w-4" />
                 <span className="hidden sm:inline">Models</span>
@@ -515,14 +507,14 @@ export default function Dashboard() {
                 <History className="h-4 w-4" />
                 <span className="hidden sm:inline">Requests</span>
               </TabsTrigger>
-              <TabsTrigger value="clients" className="gap-2">
+              {isAdmin && <TabsTrigger value="clients" className="gap-2">
                 <Users className="h-4 w-4" />
                 <span className="hidden sm:inline">Traffic</span>
-              </TabsTrigger>
-              <TabsTrigger value="logs" className="gap-2">
+              </TabsTrigger>}
+              {isAdmin && <TabsTrigger value="logs" className="gap-2">
                 <FileText className="h-4 w-4" />
                 <span className="hidden sm:inline">System</span>
-              </TabsTrigger>
+              </TabsTrigger>}
             </TabsList>
 
             <TabsContent value="endpoints" className="animate-fade-in">
@@ -542,6 +534,7 @@ export default function Dashboard() {
                 onRefresh={() => { void refetchViewerModels() }}
                 view={modelsView}
                 onViewChange={setModelsView}
+                viewerMode={isViewer}
               />
             </TabsContent>
 
@@ -564,7 +557,6 @@ export default function Dashboard() {
               <LogViewer />
             </TabsContent>
           </Tabs>
-        )}
       </main>
     </div>
   )

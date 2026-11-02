@@ -29,12 +29,16 @@ pub mod models;
 pub mod openai;
 /// OpenAI互換APIユーティリティ
 pub mod openai_util;
+/// 組織と所属管理（JWTの現在scopeを使用）
+pub mod organizations;
 pub mod proxy;
 pub mod registration_requests;
 /// Open Responses API (SPEC-0f1de549)
 pub mod responses;
 /// System API (self-update)
 pub mod system;
+/// 認可後の推論受付と応答終端の利用計測
+pub mod usage_capture;
 pub mod users;
 
 /// ルーティング（ドメイン別 Router, FR-012）

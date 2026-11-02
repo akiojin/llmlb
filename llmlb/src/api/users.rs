@@ -2,12 +2,14 @@
 //!
 //! Admin専用のユーザーCRUD操作
 
+use crate::auth::{middleware::ApiKeyAuthContext, scope::Scope};
 use crate::common::auth::{Claims, User, UserRole};
 use crate::common::error::{CommonError, LbError};
+use crate::db::organizations::{Membership, OrganizationRole};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Extension, Json,
 };
@@ -15,6 +17,41 @@ use axum::{
 use super::error::{AppError, HandlerError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+/// JWT一覧用のDTO。scopeによるSQL絞込みを終えた行だけを構築する。
+#[derive(Serialize, sqlx::FromRow)]
+struct ScopedUserResponse {
+    id: String,
+    username: String,
+    role: String,
+    created_at: String,
+    last_login: Option<String>,
+    email: Option<String>,
+    organization_id: Option<String>,
+    organization_role: String,
+    disabled: bool,
+}
+
+/// 単一所属の更新。システムロールは別の既存APIで管理する。
+#[derive(Deserialize)]
+pub struct UpdateMembershipRequest {
+    /// nullで所属を解除する。
+    pub organization_id: Option<Uuid>,
+    /// 組織内の固定ロール。
+    #[serde(default = "default_organization_role")]
+    pub organization_role: OrganizationRole,
+}
+
+fn default_organization_role() -> OrganizationRole {
+    OrganizationRole::Member
+}
+
+/// アカウントの有効/無効を切り替える。
+#[derive(Deserialize)]
+pub struct UpdateDisabledRequest {
+    /// trueの間は新しい認証要求を拒否する。
+    pub disabled: bool,
+}
 
 /// ユーザー作成リクエスト
 #[derive(Debug, Deserialize)]
@@ -125,20 +162,126 @@ fn check_admin(claims: &Claims) -> Result<(), HandlerError> {
 /// * `500 Internal Server Error` - サーバーエラー
 pub async fn list_users(
     Extension(claims): Extension<Claims>,
+    scope: Option<Extension<Scope>>,
+    key: Option<Extension<ApiKeyAuthContext>>,
     State(app_state): State<AppState>,
-) -> Result<Json<ListUsersResponse>, HandlerError> {
-    check_admin(&claims)?;
+) -> Result<(HeaderMap, Json<serde_json::Value>), HandlerError> {
+    if key.is_some() {
+        // 許可済みlegacy UsersManageの既存運用DTOを維持し、新所属情報を公開しない。
+        check_admin(&claims)?;
+        let users = crate::db::users::list(&app_state.db_pool)
+            .await
+            .map_err(AppError)?;
+        let response = ListUsersResponse {
+            users: users.into_iter().map(UserResponse::from).collect(),
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::CACHE_CONTROL,
+            "no-store".parse().unwrap(),
+        );
+        return Ok((headers, Json(serde_json::json!(response))));
+    }
 
-    let users = crate::db::users::list(&app_state.db_pool)
+    let Extension(scope) = scope.ok_or_else(|| {
+        AppError(LbError::Authentication(
+            "Authenticated scope is required".into(),
+        ))
+    })?;
+    scope.require_assigned()?;
+    let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT id, username, role, created_at, last_login, email,
+                organization_id, organization_role, disabled FROM users WHERE 1 = 1",
+    );
+    match &scope {
+        Scope::Global => {}
+        Scope::Organization(organization_id) => {
+            query
+                .push(" AND organization_id = ")
+                .push_bind(organization_id.to_string());
+        }
+        Scope::SelfAccount {
+            organization_id,
+            account_id,
+        } => {
+            query
+                .push(" AND organization_id = ")
+                .push_bind(organization_id.to_string());
+            query.push(" AND id = ").push_bind(account_id.to_string());
+        }
+        Scope::Unassigned(_) => unreachable!("require_assigned rejected unassigned scope"),
+    }
+    query.push(" ORDER BY created_at DESC, id");
+    let users = query
+        .build_query_as::<ScopedUserResponse>()
+        .fetch_all(&app_state.db_pool)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to list users: {}", e);
-            AppError(LbError::Database(format!("Failed to list users: {}", e))).into_response()
+        .map_err(|error| {
+            AppError(LbError::Database(format!(
+                "Failed to list scoped users: {error}"
+            )))
         })?;
+    Ok((
+        super::organizations::scoped_headers(&scope),
+        Json(serde_json::json!({
+            "users": users, "scope": scope.cache_key()
+        })),
+    ))
+}
 
-    Ok(Json(ListUsersResponse {
-        users: users.into_iter().map(UserResponse::from).collect(),
-    }))
+async fn membership_response(
+    state: &AppState,
+    membership: Membership,
+) -> Result<serde_json::Value, HandlerError> {
+    let user = crate::db::users::find_by_id(&state.db_pool, membership.account_id)
+        .await
+        .map_err(AppError)?
+        .ok_or_else(|| AppError(LbError::NotFound("User not found".into())))?;
+    let mut value = serde_json::json!(UserResponse::from(user));
+    value["organization_id"] = serde_json::json!(membership.organization_id);
+    value["organization_role"] = serde_json::json!(membership.organization_role);
+    value["disabled"] = serde_json::json!(membership.disabled);
+    Ok(value)
+}
+
+/// PUT /api/users/{id}/membership。JWT global専用。
+pub async fn update_membership(
+    Extension(scope): Extension<Scope>,
+    State(state): State<AppState>,
+    Path(account_id): Path<Uuid>,
+    Json(request): Json<UpdateMembershipRequest>,
+) -> Result<(HeaderMap, Json<serde_json::Value>), HandlerError> {
+    scope.require_global()?;
+    let membership = crate::db::organizations::set_membership(
+        &state.db_pool,
+        account_id,
+        request.organization_id,
+        request.organization_role,
+    )
+    .await
+    .map_err(AppError)?;
+    Ok((
+        super::organizations::scoped_headers(&scope),
+        Json(membership_response(&state, membership).await?),
+    ))
+}
+
+/// PUT /api/users/{id}/disabled。最後の有効global adminは無効にできない。
+pub async fn update_disabled(
+    Extension(scope): Extension<Scope>,
+    State(state): State<AppState>,
+    Path(account_id): Path<Uuid>,
+    Json(request): Json<UpdateDisabledRequest>,
+) -> Result<(HeaderMap, Json<serde_json::Value>), HandlerError> {
+    scope.require_global()?;
+    let membership =
+        crate::db::organizations::set_disabled(&state.db_pool, account_id, request.disabled)
+            .await
+            .map_err(AppError)?;
+    Ok((
+        super::organizations::scoped_headers(&scope),
+        Json(membership_response(&state, membership).await?),
+    ))
 }
 
 /// POST /api/users - ユーザー作成

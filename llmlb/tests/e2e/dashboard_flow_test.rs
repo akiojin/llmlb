@@ -10,6 +10,9 @@ use axum::{
     Router,
 };
 use llmlb::common::auth::UserRole;
+use llmlb::common::protocol::{RequestResponseRecord, RequestType};
+use llmlb::common::usage::{UsageAttribution, UsageTokens};
+use llmlb::db::request_history::RequestHistoryStorage;
 use llmlb::{
     api, balancer::LoadManager, db::endpoints as db_endpoints,
     registry::endpoints::EndpointRegistry, types::endpoint::Endpoint, AppState,
@@ -96,37 +99,68 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     (api::create_app(state), db_pool, jwt)
 }
 
+async fn record_usage(
+    db_pool: &sqlx::SqlitePool,
+    endpoint: &Endpoint,
+    success: bool,
+    tokens: UsageTokens,
+) {
+    let attribution = UsageAttribution {
+        request_id: uuid::Uuid::new_v4(),
+        account_id: None,
+        organization_id: None,
+        received_at: chrono::Utc::now(),
+        api_key_id: None,
+        auth_source: "jwt".into(),
+    };
+    let mut record = RequestResponseRecord::new(
+        endpoint.id,
+        endpoint.name.clone(),
+        "127.0.0.1".parse().unwrap(),
+        "test-model".into(),
+        RequestType::Chat,
+        json!({"model": "test-model"}),
+        if success {
+            StatusCode::OK
+        } else {
+            StatusCode::BAD_GATEWAY
+        },
+        std::time::Duration::from_millis(100),
+        Some("127.0.0.1".parse().unwrap()),
+        None,
+    );
+    record.id = attribution.request_id;
+    record.timestamp = attribution.received_at;
+    let storage = RequestHistoryStorage::new(db_pool.clone());
+    storage
+        .accept_usage(&attribution, &record)
+        .await
+        .expect("persist accepted usage receipt");
+    storage
+        .finish_usage(&attribution, &record, &tokens)
+        .await
+        .expect("finalize usage and daily rollup");
+}
+
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
     let (app, db_pool, jwt) = build_app().await;
 
-    // Seed audit_log_entries with token usage to ensure `/api/dashboard/stats` token totals
-    // match the persisted statistics (used by the Statistics tab).
-    // SPEC-8301d106: stats are now served from audit_log_entries, not request_history.
-    let audit_storage = llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone());
-    let now = chrono::Utc::now();
-    let entry = llmlb::audit::types::AuditLogEntry {
-        id: None,
-        timestamp: now,
-        http_method: "POST".to_string(),
-        request_path: "/v1/chat/completions".to_string(),
-        status_code: 200,
-        actor_type: llmlb::audit::types::ActorType::User,
-        actor_id: Some("1".to_string()),
-        actor_username: Some("admin".to_string()),
-        api_key_owner_id: None,
-        client_ip: Some("127.0.0.1".to_string()),
-        duration_ms: Some(123),
-        input_tokens: Some(150),
-        output_tokens: Some(50),
-        total_tokens: Some(200),
-        model_name: Some("test-model".to_string()),
-        endpoint_id: None,
-        detail: None,
-        is_migrated: false,
-        batch_id: None,
-    };
-    audit_storage.insert_batch(&[entry]).await.unwrap();
+    let endpoint = Endpoint::new(
+        "Stats Token Test".to_string(),
+        "http://127.0.0.1:65533".to_string(),
+        llmlb::types::endpoint::EndpointType::OpenaiCompatible,
+    );
+    db_endpoints::create_endpoint(&db_pool, &endpoint)
+        .await
+        .expect("create endpoint");
+    record_usage(
+        &db_pool,
+        &endpoint,
+        true,
+        UsageTokens::provider(Some(150), Some(50), Some(200)),
+    )
+    .await;
 
     // GET /api/dashboard/stats
     let response = app
@@ -157,17 +191,17 @@ async fn test_dashboard_stats_endpoint() {
     assert_eq!(
         stats["total_input_tokens"].as_u64(),
         Some(150),
-        "total_input_tokens should come from audit_log_entries"
+        "total_input_tokens should come from finalized usage rollups"
     );
     assert_eq!(
         stats["total_output_tokens"].as_u64(),
         Some(50),
-        "total_output_tokens should come from audit_log_entries"
+        "total_output_tokens should come from finalized usage rollups"
     );
     assert_eq!(
         stats["total_tokens"].as_u64(),
         Some(200),
-        "total_tokens should come from audit_log_entries"
+        "total_tokens should come from finalized usage rollups"
     );
 }
 
@@ -184,15 +218,9 @@ async fn test_dashboard_overview_operations_reflects_persisted_request_totals() 
         .await
         .expect("create endpoint");
 
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
-        .await
-        .expect("increment failed request counter");
+    for success in [true, true, false] {
+        record_usage(&db_pool, &endpoint, success, UsageTokens::missing()).await;
+    }
 
     let response = app
         .oneshot(
@@ -235,22 +263,22 @@ async fn test_dashboard_overview_operations_reflects_persisted_request_totals() 
     assert_eq!(
         operations["total_requests"].as_u64(),
         Some(3),
-        "Total requests in overview should reflect persisted endpoint counters"
+        "Total requests in overview should reflect accepted usage receipts"
     );
     assert_eq!(
         operations["successful_requests"].as_u64(),
         Some(2),
-        "Successful requests in overview should reflect persisted endpoint counters"
+        "Successful requests in overview should reflect finalized usage outcomes"
     );
     assert_eq!(
         operations["failed_requests"].as_u64(),
         Some(1),
-        "Failed requests in overview should reflect persisted endpoint counters"
+        "Failed requests in overview should reflect finalized usage outcomes"
     );
 }
 
 #[tokio::test]
-async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
+async fn test_dashboard_stats_uses_persisted_usage_rollups() {
     let (app, db_pool, jwt) = build_app().await;
 
     let endpoint = Endpoint::new(
@@ -262,15 +290,9 @@ async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
         .await
         .expect("create endpoint");
 
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
-        .await
-        .expect("increment failed request counter");
+    for success in [true, true, false] {
+        record_usage(&db_pool, &endpoint, success, UsageTokens::missing()).await;
+    }
 
     let response = app
         .oneshot(
@@ -298,26 +320,26 @@ async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
     assert_eq!(
         stats["total_requests"].as_u64(),
         Some(3),
-        "Total requests should reflect persisted endpoint counters"
+        "Total requests should reflect accepted usage receipts"
     );
     assert_eq!(
         stats["successful_requests"].as_u64(),
         Some(2),
-        "Successful requests should reflect persisted endpoint counters"
+        "Successful requests should reflect finalized usage outcomes"
     );
     assert_eq!(
         stats["failed_requests"].as_u64(),
         Some(1),
-        "Failed requests should reflect persisted endpoint counters"
+        "Failed requests should reflect finalized usage outcomes"
     );
 }
 
 #[tokio::test]
-async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavailable() {
+async fn test_dashboard_stats_rejects_cached_private_totals_when_db_unavailable() {
     let (app, db_pool, jwt) = build_app().await;
 
     let endpoint = Endpoint::new(
-        "Stats Cache Fallback Test".to_string(),
+        "Stats DB Current Auth Test".to_string(),
         "http://127.0.0.1:65534".to_string(),
         llmlb::types::endpoint::EndpointType::OpenaiCompatible,
     );
@@ -325,43 +347,23 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
         .await
         .expect("create endpoint");
 
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
-        .await
-        .expect("increment failed request counter");
+    record_usage(
+        &db_pool,
+        &endpoint,
+        true,
+        UsageTokens::provider(Some(10), Some(20), Some(30)),
+    )
+    .await;
+    record_usage(
+        &db_pool,
+        &endpoint,
+        true,
+        UsageTokens::provider(Some(30), Some(40), Some(70)),
+    )
+    .await;
+    record_usage(&db_pool, &endpoint, false, UsageTokens::missing()).await;
 
-    // SPEC-8301d106: stats are now served from audit_log_entries
-    let audit_storage = llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone());
-    let now = chrono::Utc::now();
-    let entry = llmlb::audit::types::AuditLogEntry {
-        id: None,
-        timestamp: now,
-        http_method: "POST".to_string(),
-        request_path: "/v1/chat/completions".to_string(),
-        status_code: 200,
-        actor_type: llmlb::audit::types::ActorType::User,
-        actor_id: Some("1".to_string()),
-        actor_username: Some("admin".to_string()),
-        api_key_owner_id: None,
-        client_ip: Some("127.0.0.1".to_string()),
-        duration_ms: Some(80),
-        input_tokens: Some(40),
-        output_tokens: Some(60),
-        total_tokens: Some(100),
-        model_name: Some("fallback-model".to_string()),
-        endpoint_id: Some(endpoint.id.to_string()),
-        detail: None,
-        is_migrated: false,
-        batch_id: None,
-    };
-    audit_storage
-        .insert_batch(&[entry])
-        .await
-        .expect("insert audit log entry");
-
-    // Warm cache with persisted totals.
+    // Verify the persisted rollup before authentication loses access to current identity.
     let first_response = app
         .clone()
         .oneshot(
@@ -381,14 +383,14 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
         .await
         .unwrap();
     let first_stats: serde_json::Value = serde_json::from_slice(&first_body).unwrap();
-    assert_eq!(first_stats["total_requests"].as_u64(), Some(2));
-    assert_eq!(first_stats["successful_requests"].as_u64(), Some(1));
+    assert_eq!(first_stats["total_requests"].as_u64(), Some(3));
+    assert_eq!(first_stats["successful_requests"].as_u64(), Some(2));
     assert_eq!(first_stats["failed_requests"].as_u64(), Some(1));
     assert_eq!(first_stats["total_input_tokens"].as_u64(), Some(40));
     assert_eq!(first_stats["total_output_tokens"].as_u64(), Some(60));
     assert_eq!(first_stats["total_tokens"].as_u64(), Some(100));
 
-    // Simulate DB outage and verify stats still return the last persisted values.
+    // DB-current authentication must fail closed instead of serving cached private totals.
     db_pool.close().await;
 
     let second_response = app
@@ -403,18 +405,25 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
         .await
         .unwrap();
 
-    assert_eq!(second_response.status(), StatusCode::OK);
+    assert_eq!(second_response.status(), StatusCode::UNAUTHORIZED);
 
     let second_body = axum::body::to_bytes(second_response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let second_stats: serde_json::Value = serde_json::from_slice(&second_body).unwrap();
-    assert_eq!(second_stats["total_requests"].as_u64(), Some(2));
-    assert_eq!(second_stats["successful_requests"].as_u64(), Some(1));
-    assert_eq!(second_stats["failed_requests"].as_u64(), Some(1));
-    assert_eq!(second_stats["total_input_tokens"].as_u64(), Some(40));
-    assert_eq!(second_stats["total_output_tokens"].as_u64(), Some(60));
-    assert_eq!(second_stats["total_tokens"].as_u64(), Some(100));
+    let second_response = String::from_utf8(second_body.to_vec()).unwrap();
+    for field in [
+        "total_requests",
+        "successful_requests",
+        "failed_requests",
+        "total_input_tokens",
+        "total_output_tokens",
+        "total_tokens",
+    ] {
+        assert!(
+            !second_response.contains(field),
+            "an unauthorized response must not expose cached {field}"
+        );
+    }
 }
 
 #[tokio::test]

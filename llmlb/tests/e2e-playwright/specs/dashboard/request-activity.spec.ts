@@ -210,7 +210,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     })
 
     for (const mode of ['disconnected', 'viewer'] as const) {
-      test(`refreshes once per second through ${mode} polling`, async ({ page, request }) => {
+      test(mode === 'viewer' ? 'requires membership instead of acquiring global activity for an unassigned viewer' : 'refreshes once per second through disconnected polling', async ({ page, request }) => {
         test.setTimeout(60_000)
         expect((await request.post('/api/auth/login', {
           data: { username: 'admin', password: 'test' },
@@ -255,6 +255,23 @@ for (const colorScheme of ['light', 'dark'] as const) {
               endpoints: [],
             } })
           })
+          if (mode === 'viewer') {
+            // An unassigned viewer no longer has global activity access (Issue #947).
+            // The disconnected admin case below retains the one-second polling assertions.
+            const privateReads: string[] = []
+            page.on('request', (request) => {
+              const pathname = new URL(request.url()).pathname
+              if (pathname.startsWith('/api/dashboard/') || pathname === '/api/models' || pathname === '/api/me/api-keys') privateReads.push(pathname)
+            })
+            await page.goto('/dashboard/')
+            await expect(page.getByText(/Ask a system administrator to assign your organization/i)).toBeVisible()
+            await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+            expect(activityReads).toBe(0)
+            expect(privateReads).toEqual([])
+            expect(socketConnections).toBe(0)
+            expect(errors).toEqual([])
+            return
+          }
           await ensureDashboardLogin(page)
           const section = page.getByRole('region', { name: 'Request activity', exact: true })
           const indicator = section.getByTestId('request-activity')
@@ -267,7 +284,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
           expect(Date.now() - changedAt).toBeLessThan(2000)
           await expect(indicator).toHaveAttribute('data-queued-requests', '2')
           expect(activityReads).toBeGreaterThan(readsBefore)
-          if (mode === 'viewer') expect(socketConnections).toBe(0)
           expect(errors).toEqual([])
         } finally {
           await page.close()

@@ -80,6 +80,16 @@ pub async fn dashboard_ws_handler(
         (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", e))
     })?;
 
+    let identity = crate::auth::scope::resolve(&state.db_pool, &claims)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::UNAUTHORIZED,
+                "Session revoked: please sign in again".to_owned(),
+            )
+        })?;
+    let claims = identity.claims;
+
     // Only admin users can access the dashboard WebSocket
     if claims.role != UserRole::Admin {
         return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));

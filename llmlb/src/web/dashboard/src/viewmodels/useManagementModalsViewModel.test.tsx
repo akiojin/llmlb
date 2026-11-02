@@ -10,7 +10,7 @@ import { useUserModalViewModel } from './useUserModalViewModel'
 
 const { toast, auth } = vi.hoisted(() => ({
   toast: vi.fn(),
-  auth: { role: 'admin' },
+  auth: { id: 'user-admin', role: 'admin', organization_id: 'org-A', organization_role: 'member', disabled: false },
 }))
 vi.mock('@/hooks/use-toast', () => ({ toast }))
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: auth }) }))
@@ -18,6 +18,7 @@ vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: auth }) }))
 const key: ApiKey = {
   id: 'key-A', name: 'existing', created_at: '2026-10-01T00:00:00Z',
   key_prefix: 'sk_prefix', permissions: ['openai.inference', 'openai.models.read'],
+  created_by: 'user-admin',
 }
 const user: User = {
   id: 'user-A', username: 'alice', role: 'viewer', email: 'alice@example.com',
@@ -110,14 +111,15 @@ describe('management modal ViewModels', () => {
     await waitFor(() => expect(result.current.apiKeys).toHaveLength(1))
     act(() => {
       result.current.setNewKeyName('new')
-      result.current.handleTogglePermission('users.manage', true)
     })
     act(() => result.current.handleCreate())
     await waitFor(() => expect(result.current.createdKey).toBe(response.key))
     expect(create).toHaveBeenCalledExactlyOnceWith({ name: 'new', expires_at: undefined,
-      permissions: ['openai.inference', 'openai.models.read', 'users.manage'] })
+      usage_account_id: 'user-admin', organization_id: 'org-A',
+      permissions: ['openai.inference', 'openai.models.read'] })
     expect(list).toHaveBeenCalledTimes(1)
-    expect(client.getQueryData(queryKeys.apiKeys())).toEqual([{ ...key, name: 'new', key_prefix: 'sk_new', expires_at: undefined }])
+    expect(client.getQueryData(queryKeys.apiKeys())).toEqual([{ ...key, name: 'new', key_prefix: 'sk_new', expires_at: undefined,
+      usage_account_id: 'user-admin', organization_id: 'org-A' }])
     expect(JSON.stringify(client.getQueryData(queryKeys.apiKeys()))).not.toContain(response.key)
     expect(result.current.newKeyName).toBe('')
     act(() => result.current.toggleCreatedKey())
@@ -126,6 +128,7 @@ describe('management modal ViewModels', () => {
     expect(result.current.createdKey).toBeNull()
     expect(result.current.showKey).toBeNull()
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+    act(() => result.current.setNewKeyName('again'))
     act(() => result.current.handleCreate())
     await waitFor(() => expect(result.current.createdKey).toBe(response.key))
     act(() => result.current.handleMainOpenChange(false))
@@ -140,13 +143,13 @@ describe('management modal ViewModels', () => {
     const { result } = renderHook(() => useApiKeyModalViewModel({ open: false, onOpenChange: vi.fn() }), { wrapper })
     act(() => {
       result.current.setNewKeyName('viewer key')
-      result.current.handleTogglePermission('users.manage', true)
     })
     expect(result.current.selectedPermissions).toEqual(['openai.inference', 'openai.models.read'])
     act(() => result.current.handleCreate())
     await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Failed to create API key',
       description: 'permission denied', variant: 'destructive' }))
-    expect(create).toHaveBeenCalledExactlyOnceWith({ name: 'viewer key', expires_at: undefined })
+    expect(create).toHaveBeenCalledExactlyOnceWith({ name: 'viewer key', expires_at: undefined,
+      usage_account_id: 'user-admin', organization_id: 'org-A' })
     expect(result.current.newKeyName).toBe('viewer key')
     act(() => result.current.handleCreateOpenChange(false))
     expect(result.current.newKeyName).toBe('')

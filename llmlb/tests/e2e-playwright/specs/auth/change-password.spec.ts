@@ -54,11 +54,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
     let pageErrors: string[];
     let consoleErrors: string[];
     let expectedHttpErrors: Map<string, number>;
+    let membership: { organizationId: string; adminToken: string } | undefined;
 
     test.beforeEach(async ({ page, request, baseURL }) => {
       pageErrors = [];
       consoleErrors = [];
       expectedHttpErrors = new Map();
+      membership = undefined;
       page.on('pageerror', (err) => pageErrors.push(err.message));
       page.on('console', (message) => {
         if (message.type() !== 'error') return;
@@ -79,7 +81,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
       // End page requests before deleting its authenticated user.
       await page.close();
       if (user?.id) {
-        await deleteUser(request, user.id);
+        expect(await deleteUser(request, user.id)).toBe(true);
+      }
+      if (membership) {
+        const archived = await request.delete(`/api/organizations/${membership.organizationId}`, {
+          headers: { Authorization: `Bearer ${membership.adminToken}` },
+        });
+        expect(archived.status()).toBe(200);
       }
       expect(pageErrors, 'no uncaught page errors').toEqual([]);
       expect(consoleErrors, 'no unexpected console errors').toEqual([]);
@@ -223,10 +231,28 @@ for (const colorScheme of ['light', 'dark'] as const) {
     });
 
     test('CP-08: signed-in users can change their password from the user menu', async ({
-      page,
+      page, request,
     }) => {
       // Two changes and three sign-ins perform several password hashes on a shared host.
       test.setTimeout(90000);
+      // This case exercises the regular dashboard menu after the forced change.
+      // Other cases retain an unassigned user to cover mandatory password recovery.
+      const adminLogin = await request.post('/api/auth/login', {
+        data: { username: 'admin', password: 'test' },
+      });
+      expect(adminLogin.status()).toBe(200);
+      const adminToken = (await adminLogin.json()).token as string;
+      const organization = await request.post('/api/organizations', {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        data: { name: `Change password fixture ${user.id}` },
+      });
+      expect(organization.status()).toBe(201);
+      membership = { organizationId: (await organization.json()).id, adminToken };
+      const assigned = await request.put(`/api/users/${user.id}/membership`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        data: { organization_id: membership.organizationId, organization_role: 'member' },
+      });
+      expect(assigned.status()).toBe(200);
       // Complete the forced change first so the user lands on the dashboard
       await signInAndReachChangePassword(page, user);
       let form = changePasswordForm(page);

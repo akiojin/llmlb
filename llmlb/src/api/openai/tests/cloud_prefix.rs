@@ -303,6 +303,15 @@ async fn cloud_request_is_recorded_in_history() {
     .expect("cloud proxy succeeds");
 
     assert_eq!(response.status(), StatusCode::OK);
+    to_bytes(response.into_body(), 1_000_000)
+        .await
+        .expect("cloud response body");
+    state
+        .balancer
+        .request_history
+        .drain_usage_writers()
+        .await
+        .expect("cloud terminal history commit");
     sleep(Duration::from_millis(20)).await;
 
     let records = state

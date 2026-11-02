@@ -903,6 +903,8 @@ mod tests {
             created_by: owner_id,
             permissions: vec![],
             expires_at: None,
+            usage_account_id: None,
+            organization_id: None,
         });
         let (actor_type, actor_id, _actor_username, api_key_owner_id) =
             extract_actor_info(&response);
@@ -928,6 +930,8 @@ mod tests {
             created_by: owner_id,
             permissions: vec![],
             expires_at: None,
+            usage_account_id: None,
+            organization_id: None,
         });
         // When both Claims and ApiKeyAuthContext are present, actor_type should be ApiKey
         let (actor_type, actor_id, _actor_username, api_key_owner_id) =

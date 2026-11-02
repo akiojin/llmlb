@@ -84,6 +84,13 @@ async fn handle_messages(
     };
 
     if let Some(cloud_model) = parse_anthropic_cloud_model(&model) {
+        crate::api::usage_capture::accept_current(
+            &state,
+            &model,
+            RequestType::AnthropicMessages,
+            request_body.clone(),
+        )
+        .await?;
         return proxy_anthropic_cloud_messages(
             &state,
             request_body,
@@ -324,6 +331,8 @@ async fn proxy_local_anthropic_messages(
     }
 
     let request_type = RequestType::AnthropicMessages;
+    crate::api::usage_capture::accept_current(state, &model, request_type, request_body.clone())
+        .await?;
     let tps_api_kind = Some(TpsApiKind::ChatCompletions);
     let mut queued_wait_ms = None;
 
@@ -639,6 +648,7 @@ async fn proxy_local_anthropic_messages(
         ));
     }
 
+    crate::api::usage_capture::observe_upstream_body("application/json", &upstream_body);
     match serde_json::from_slice::<Value>(&upstream_body) {
         Ok(body) => {
             let response_text = extract_openai_response_text(&body);

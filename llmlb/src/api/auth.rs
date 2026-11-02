@@ -2,8 +2,10 @@
 //!
 //! ログイン、ログアウト、認証情報確認、ユーザー登録、パスワード変更・リセット
 
+use crate::auth::scope::Scope;
 use crate::common::auth::Claims;
 use crate::common::error::{CommonError, LbError};
+use crate::db::organizations::{Membership, OrganizationRole};
 use crate::AppState;
 use axum::{
     extract::State,
@@ -72,6 +74,27 @@ pub struct MeResponse {
     pub must_change_password: bool,
 }
 
+fn session_scope(user: &crate::common::auth::User, membership: &Membership) -> Scope {
+    if user.role == crate::common::auth::UserRole::Admin {
+        return Scope::Global;
+    }
+    match (membership.organization_id, membership.organization_role) {
+        (Some(organization_id), OrganizationRole::Admin) => Scope::Organization(organization_id),
+        (Some(organization_id), OrganizationRole::Member) => Scope::SelfAccount {
+            organization_id,
+            account_id: user.id,
+        },
+        (None, _) => Scope::Unassigned(user.id),
+    }
+}
+
+fn add_membership_fields(value: &mut serde_json::Value, membership: &Membership, scope: &Scope) {
+    value["organization_id"] = serde_json::json!(membership.organization_id);
+    value["organization_role"] = serde_json::json!(membership.organization_role);
+    value["disabled"] = serde_json::json!(membership.disabled);
+    value["scope"] = serde_json::json!(scope.cache_key());
+}
+
 /// パスワード変更リクエスト
 #[derive(Debug, Deserialize)]
 pub struct ChangePasswordRequest {
@@ -119,47 +142,29 @@ pub async fn login(
 ) -> Result<impl IntoResponse, HandlerError> {
     let is_secure = is_request_secure(&headers);
 
-    // 開発モード: admin/test で固定ログイン可能
+    // 開発用資格情報も実在するDB主体へ結び付ける。合成nil adminを作らない。
     #[cfg(debug_assertions)]
-    if request.username == "admin" && request.password == "test" {
-        let dev_user_id = uuid::Uuid::nil().to_string();
-        let expires_in = 86400;
-        let token = crate::auth::jwt::create_jwt(
-            &dev_user_id,
+    if request.username == "admin"
+        && request.password == "test"
+        && crate::db::users::find_by_username(&app_state.db_pool, "admin")
+            .await
+            .map_err(AppError)?
+            .is_none()
+    {
+        let password_hash = crate::auth::password::hash_password("test").map_err(AppError)?;
+        match crate::db::users::create(
+            &app_state.db_pool,
+            "admin",
+            &password_hash,
             crate::common::auth::UserRole::Admin,
-            &app_state.auth.jwt_secret,
             false,
-            0,
         )
-        .map_err(|e| {
-            tracing::error!("Failed to create JWT: {}", e);
-            AppError(LbError::Jwt(format!("Failed to create JWT: {}", e))).into_response()
-        })?;
-
-        tracing::info!("Development mode login: admin/test");
-        let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
-        let csrf_cookie = crate::auth::build_csrf_cookie(
-            &crate::auth::generate_random_token(32),
-            expires_in,
-            is_secure,
-        );
-        let mut headers = HeaderMap::new();
-        headers.append(header::SET_COOKIE, cookie.parse().unwrap());
-        headers.append(header::SET_COOKIE, csrf_cookie.parse().unwrap());
-        return Ok((
-            StatusCode::OK,
-            headers,
-            Json(LoginResponse {
-                token,
-                expires_in,
-                user: UserInfo {
-                    id: dev_user_id,
-                    username: "admin".to_string(),
-                    role: "admin".to_string(),
-                    must_change_password: false,
-                },
-            }),
-        ));
+        .await
+        {
+            Ok(_) => {}
+            Err(LbError::Conflict(_)) => {} // 同時初回ログインは後続のDB取得へ合流する。
+            Err(error) => return Err(AppError(error).into()),
+        }
     }
 
     // ユーザーを検索
@@ -198,12 +203,29 @@ pub async fn login(
         .into_response()
     })?;
 
+    #[cfg(debug_assertions)]
+    let is_valid = is_valid
+        || (request.username == "admin"
+            && request.password == "test"
+            && user.role == crate::common::auth::UserRole::Admin);
+
     if !is_valid {
         return Err(AppError(LbError::Authentication(
             "Invalid username or password".to_string(),
         ))
         .into());
     }
+
+    let membership = crate::db::organizations::membership(&app_state.db_pool, user.id)
+        .await
+        .map_err(AppError)?
+        .filter(|membership| !membership.disabled)
+        .ok_or_else(|| {
+            AppError(LbError::Authentication(
+                "Invalid username or password".into(),
+            ))
+        })?;
+    let scope = session_scope(&user, &membership);
 
     // 最終ログイン時刻を更新
     crate::db::users::update_last_login(&app_state.db_pool, user.id)
@@ -237,20 +259,19 @@ pub async fn login(
     let mut headers = HeaderMap::new();
     headers.append(header::SET_COOKIE, cookie.parse().unwrap());
     headers.append(header::SET_COOKIE, csrf_cookie.parse().unwrap());
-    Ok((
-        StatusCode::OK,
-        headers,
-        Json(LoginResponse {
-            token,
-            expires_in,
-            user: UserInfo {
-                id: user.id.to_string(),
-                username: user.username.clone(),
-                role: format!("{:?}", user.role).to_lowercase(),
-                must_change_password: user.must_change_password,
-            },
-        }),
-    ))
+    headers.extend(super::organizations::scoped_headers(&scope));
+    let mut response = serde_json::json!(LoginResponse {
+        token,
+        expires_in,
+        user: UserInfo {
+            id: user.id.to_string(),
+            username: user.username.clone(),
+            role: format!("{:?}", user.role).to_lowercase(),
+            must_change_password: user.must_change_password,
+        },
+    });
+    add_membership_fields(&mut response["user"], &membership, &scope);
+    Ok((StatusCode::OK, headers, Json(response)))
 }
 
 /// POST /api/auth/logout - ログアウト
@@ -306,24 +327,14 @@ fn is_request_secure(headers: &HeaderMap) -> bool {
 /// * `500 Internal Server Error` - サーバーエラー
 pub async fn me(
     Extension(claims): Extension<Claims>,
+    Extension(scope): Extension<Scope>,
     State(app_state): State<AppState>,
-) -> Result<Json<MeResponse>, HandlerError> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), HandlerError> {
     // ユーザーIDをパース
     let user_id = claims.sub.parse::<uuid::Uuid>().map_err(|e| {
         tracing::error!("Failed to parse user ID: {}", e);
         AppError(LbError::Internal(format!("Failed to parse user ID: {}", e))).into_response()
     })?;
-
-    // 開発モード: nil UUIDの場合は開発ユーザー情報を返す
-    #[cfg(debug_assertions)]
-    if user_id.is_nil() {
-        return Ok(Json(MeResponse {
-            user_id: user_id.to_string(),
-            username: "admin".to_string(),
-            role: "admin".to_string(),
-            must_change_password: false,
-        }));
-    }
 
     // ユーザー情報を取得
     let user = crate::db::users::find_by_id(&app_state.db_pool, user_id)
@@ -334,12 +345,19 @@ pub async fn me(
         })?
         .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
 
-    Ok(Json(MeResponse {
+    let membership = crate::db::organizations::membership(&app_state.db_pool, user.id)
+        .await
+        .map_err(AppError)?
+        .filter(|membership| !membership.disabled)
+        .ok_or_else(|| AppError(LbError::Authentication("Account is unavailable".into())))?;
+    let mut response = serde_json::json!(MeResponse {
         user_id: user.id.to_string(),
         username: user.username,
         role: format!("{:?}", user.role).to_lowercase(),
         must_change_password: user.must_change_password,
-    }))
+    });
+    add_membership_fields(&mut response, &membership, &scope);
+    Ok((super::organizations::scoped_headers(&scope), Json(response)))
 }
 
 /// 登録申請リクエスト

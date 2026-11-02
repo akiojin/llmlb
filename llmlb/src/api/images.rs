@@ -239,6 +239,14 @@ pub async fn generations(
         "Processing image generation request"
     );
 
+    crate::api::usage_capture::accept_current(
+        &state,
+        &payload.model,
+        RequestType::ImageGeneration,
+        serde_json::to_value(&payload).map_err(|error| LbError::Http(error.to_string()))?,
+    )
+    .await?;
+
     // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
     let backend = select_image_backend(&state).await?;
 
@@ -437,6 +445,14 @@ pub async fn edits(
         has_mask = mask_data.is_some(),
         "Processing image edit request"
     );
+
+    crate::api::usage_capture::accept_current(
+        &state,
+        &model,
+        RequestType::ImageEdit,
+        json!({"model":model,"prompt":prompt}),
+    )
+    .await?;
 
     // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
     let backend = select_image_backend(&state).await?;
@@ -638,6 +654,14 @@ pub async fn variations(
         image_size = image_data.len(),
         "Processing image variation request"
     );
+
+    crate::api::usage_capture::accept_current(
+        &state,
+        &model,
+        RequestType::ImageVariation,
+        json!({"model":model}),
+    )
+    .await?;
 
     // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
     let backend = select_image_backend(&state).await?;

@@ -11,6 +11,11 @@ const basePort = (() => {
   }
 })();
 const e2eDataDir = `llmlb/tests/e2e-playwright/.llmlb-${basePort}`;
+const workerLimit = process.env.LLMLB_E2E_WORKERS;
+if (workerLimit !== undefined &&
+    (!/^[1-9]\d*$/.test(workerLimit) || !Number.isSafeInteger(Number(workerLimit)))) {
+  throw new Error('LLMLB_E2E_WORKERS must be a positive integer');
+}
 const screenshotProjects =
   process.env.PLAYWRIGHT_SCREENSHOTS === '1'
     ? [
@@ -35,7 +40,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 1,
-  workers: process.env.CI ? 1 : 4,
+  workers: workerLimit ? Number(workerLimit) : process.env.CI ? 1 : 4,
   reporter: [
     ['html', { outputFolder: 'reports/html' }],
     ['json', { outputFile: 'reports/results.json' }],
@@ -54,6 +59,7 @@ export default defineConfig({
   webServer: process.env.SKIP_SERVER
     ? undefined
     : {
+        env: { LLMLB_DATA_DIR: e2eDataDir },
         // The broad E2E suite verifies protected-route behavior, so run its
         // server with auth required even though product default is optional.
         command:

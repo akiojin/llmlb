@@ -117,6 +117,11 @@ async fn initialize_inner(
     let request_history = std::sync::Arc::new(
         crate::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
+    // Only at startup, before accepting requests: an unfinished previous-process
+    // receipt is a missing observation, never a measured zero or a new request.
+    crate::db::usage::recover_incomplete(&db_pool)
+        .await
+        .expect("Failed to recover unfinished inference usage");
     if let Err(err) = request_history.import_legacy_json_if_present().await {
         tracing::warn!("Failed to import legacy request history: {}", err);
     }

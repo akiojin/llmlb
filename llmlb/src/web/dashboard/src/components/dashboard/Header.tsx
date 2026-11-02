@@ -18,6 +18,7 @@ import { NotificationSettingsModal } from '@/components/notifications/Notificati
 import { ActivityConnectionStatus } from './ActivityConnectionStatus'
 import {
   Bell,
+  Building2,
   Cpu,
   Key,
   KeyRound,
@@ -64,11 +65,12 @@ export function Header({
   activityStatus,
   isActivityStale,
 }: HeaderProps) {
-  const { logout } = useAuth()
+  const { logout, user: currentUser } = useAuth()
+  const canReadPrivate = !!currentUser && !currentUser.disabled && (currentUser.role === 'admin' || !!currentUser.organization_id)
   const { theme, toggleTheme } = useTheme()
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [userModalOpen, setUserModalOpen] = useState(false)
-  const { pendingCount } = usePendingRegistrationCountViewModel(user?.role === 'admin')
+  const { pendingCount } = usePendingRegistrationCountViewModel(currentUser?.role === 'admin')
   const [notificationModalOpen, setNotificationModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const displayVersion = systemVersion ?? '--'
@@ -166,7 +168,7 @@ export function Header({
           <div className="flex flex-wrap items-center justify-end gap-2">
             {activityStatus ? <ActivityConnectionStatus status={activityStatus} isStale={isActivityStale} /> : null}
             {/* API Keys Button */}
-            <Button
+            {canReadPrivate && <Button
               id="api-keys-button"
               variant="outline"
               size="sm"
@@ -175,9 +177,9 @@ export function Header({
             >
               <Key className="mr-2 h-4 w-4" />
               API Keys
-            </Button>
+            </Button>}
 
-            <Button
+            {canReadPrivate && <Button
               id="lb-playground-button"
               variant="outline"
               size="sm"
@@ -188,7 +190,7 @@ export function Header({
             >
               <Network className="mr-2 h-4 w-4" />
               LB Playground
-            </Button>
+            </Button>}
 
             {user?.role === 'admin' && (
               <Button
@@ -255,14 +257,14 @@ export function Header({
                 <DropdownMenuSeparator />
 
                 {/* Mobile-only items */}
-                <DropdownMenuItem
+                {canReadPrivate && <DropdownMenuItem
                   onClick={() => setApiKeyModalOpen(true)}
                   className="sm:hidden"
                 >
                   <Key className="mr-2 h-4 w-4" />
                   API Keys
-                </DropdownMenuItem>
-                <DropdownMenuItem
+                </DropdownMenuItem>}
+                {canReadPrivate && <DropdownMenuItem
                   onClick={() => {
                     window.location.hash = 'lb-playground'
                   }}
@@ -270,7 +272,10 @@ export function Header({
                 >
                   <Network className="mr-2 h-4 w-4" />
                   LB Playground
-                </DropdownMenuItem>
+                </DropdownMenuItem>}
+                {canReadPrivate && <DropdownMenuItem onClick={() => { window.location.hash = 'organizations' }}>
+                  <Building2 className="mr-2 h-4 w-4" />Organizations &amp; usage
+                </DropdownMenuItem>}
                 <DropdownMenuSeparator className="sm:hidden" />
 
                 {/* Admin-only items */}
@@ -316,7 +321,7 @@ export function Header({
       </header>
 
       {/* Modals */}
-      <ApiKeyModal open={apiKeyModalOpen} onOpenChange={setApiKeyModalOpen} />
+      {canReadPrivate && <ApiKeyModal open={apiKeyModalOpen} onOpenChange={setApiKeyModalOpen} />}
       {user?.role === 'admin' && <UserModal open={userModalOpen} onOpenChange={setUserModalOpen} />}
       {user?.role === 'admin' && (
         <NotificationSettingsModal

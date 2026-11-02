@@ -1,10 +1,12 @@
 //! ダッシュボードのトークン使用量統計（累計・日次・月次）
 
 use crate::api::error::AppError;
+use crate::auth::scope::Scope;
+use crate::db::request_history::RequestHistoryStorage;
 use crate::AppState;
 use axum::{
     extract::{Query, State},
-    Json,
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -12,11 +14,14 @@ use serde::{Deserialize, Serialize};
 ///
 /// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_token_stats(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
     let stats = state
         .balancer
         .request_history
+        .scoped(&scope)
         .get_token_statistics()
         .await
         .map_err(AppError::from)?;
@@ -54,13 +59,16 @@ pub struct DailyTokenStats {
 ///
 /// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_daily_token_stats(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
     Query(query): Query<DailyTokenStatsQuery>,
 ) -> Result<Json<Vec<DailyTokenStats>>, AppError> {
     let days = query.days.unwrap_or(30);
+    RequestHistoryStorage::require_read_scope(&scope)?;
     let stats = state
         .balancer
         .request_history
+        .scoped(&scope)
         .get_daily_token_statistics(days)
         .await
         .map_err(AppError::from)?;
@@ -109,13 +117,16 @@ pub struct MonthlyTokenStats {
 ///
 /// NOTE: request_history廃止完了まで request_history を集計元として扱う
 pub async fn get_monthly_token_stats(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
     Query(query): Query<MonthlyTokenStatsQuery>,
 ) -> Result<Json<Vec<MonthlyTokenStats>>, AppError> {
     let months = query.months.unwrap_or(12);
+    RequestHistoryStorage::require_read_scope(&scope)?;
     let stats = state
         .balancer
         .request_history
+        .scoped(&scope)
         .get_monthly_token_statistics(months)
         .await
         .map_err(AppError::from)?;

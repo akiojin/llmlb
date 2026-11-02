@@ -1,6 +1,7 @@
 //! リクエスト履歴の一覧・詳細・エクスポート
 
 use crate::api::error::AppError;
+use crate::auth::scope::Scope;
 use crate::common::error::{CommonError, LbError};
 use crate::db::request_history::{FilterStatus, RecordFilter};
 use crate::AppState;
@@ -9,7 +10,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Response,
-    Json,
+    Extension, Json,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -147,9 +148,12 @@ impl RequestHistoryExportQuery {
 
 /// T023: リクエスト履歴一覧API
 pub async fn list_request_responses(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
     Query(query): Query<RequestHistoryQuery>,
 ) -> Result<Json<crate::db::request_history::FilteredRecords>, AppError> {
+    crate::db::request_history::RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = state.balancer.request_history.scoped(&scope);
     let filter = query.to_record_filter()?;
     let mut page = if query.page == 0 { 1 } else { query.page };
     let mut per_page = query.normalized_per_page();
@@ -174,9 +178,7 @@ pub async fn list_request_responses(
     const MAX_PAGE: usize = 1_000_000;
     page = page.min(MAX_PAGE);
 
-    let result = state
-        .balancer
-        .request_history
+    let result = storage
         .filter_and_paginate(&filter, page, per_page)
         .await
         .map_err(AppError::from)?;
@@ -185,12 +187,15 @@ pub async fn list_request_responses(
 
 /// T024: リクエスト履歴詳細API
 pub async fn get_request_response_detail(
+    Extension(scope): Extension<Scope>,
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::common::protocol::RequestResponseRecord>, AppError> {
+    crate::db::request_history::RequestHistoryStorage::require_read_scope(&scope)?;
     let record = state
         .balancer
         .request_history
+        .scoped(&scope)
         .get_record_by_id(id)
         .await
         .map_err(AppError::from)?
@@ -202,22 +207,23 @@ pub async fn get_request_response_detail(
 
 /// T025: エクスポートAPI
 pub async fn export_request_responses(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
     Query(query): Query<RequestHistoryExportQuery>,
 ) -> Result<Response, AppError> {
+    crate::db::request_history::RequestHistoryStorage::require_read_scope(&scope)?;
+    let storage = std::sync::Arc::new(state.balancer.request_history.scoped(&scope));
     let filter = query.to_record_filter()?;
     const EXPORT_PAGE_SIZE: usize = 1000;
 
-    let first_page = state
-        .balancer
-        .request_history
+    let first_page = storage
         .filter_and_paginate(&filter, 1, EXPORT_PAGE_SIZE)
         .await
         .map_err(AppError::from)?;
 
     match query.format {
         RequestHistoryExportFormat::Json => {
-            let storage = state.balancer.request_history.clone();
+            let storage = storage.clone();
             let filter = filter.clone();
             let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
@@ -286,7 +292,7 @@ pub async fn export_request_responses(
             Ok(response)
         }
         RequestHistoryExportFormat::Csv => {
-            let storage = state.balancer.request_history.clone();
+            let storage = storage.clone();
             let filter = filter.clone();
             let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;

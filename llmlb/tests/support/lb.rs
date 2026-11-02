@@ -14,6 +14,12 @@ use super::http::{spawn_lb, TestServer};
 /// 指定したDBプールからテスト用のRouterを構築する（複数ヘルパー共用）
 #[allow(dead_code)]
 pub async fn build_test_router(db_pool: SqlitePool) -> Router {
+    build_test_router_with_manager(db_pool).await.0
+}
+
+/// 同じRouterとLoadManagerを返し、実メトリクスの可視性を隔離DB上で検証する。
+#[allow(dead_code)]
+pub async fn build_test_router_with_manager(db_pool: SqlitePool) -> (Router, LoadManager) {
     let request_history = std::sync::Arc::new(
         llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone()),
     );
@@ -39,7 +45,7 @@ pub async fn build_test_router(db_pool: SqlitePool) -> Router {
 
     let state = AppState {
         balancer: llmlb::BalancerState {
-            load_manager,
+            load_manager: load_manager.clone(),
             endpoint_registry,
             request_history,
         },
@@ -64,7 +70,7 @@ pub async fn build_test_router(db_pool: SqlitePool) -> Router {
         },
     };
 
-    api::create_app(state)
+    (api::create_app(state), load_manager)
 }
 
 /// テスト用のload balancerを作成する（.oneshot()スタイルのテスト用）
@@ -504,11 +510,24 @@ pub async fn approve_node_from_register_response(
 /// テスト用の管理者ユーザーを作成してAPIキーを取得する
 #[allow(dead_code)]
 pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> String {
-    // 管理者ユーザーを作成
+    // 専用の実DB主体と有効所属を用意し、新規帰属キーの発行契約を満たす。
+    let username = format!("key-admin-{}", uuid::Uuid::new_v4());
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false)
+    let admin =
+        llmlb::db::users::create(db_pool, &username, &password_hash, UserRole::Admin, false)
+            .await
+            .expect("create key issuer");
+    let organization = llmlb::db::organizations::create(db_pool, &username)
         .await
-        .ok();
+        .expect("create key organization");
+    llmlb::db::organizations::set_membership(
+        db_pool,
+        admin.id,
+        Some(organization.id),
+        llmlb::db::organizations::OrganizationRole::Member,
+    )
+    .await
+    .expect("assign key account");
 
     let client = Client::new();
 
@@ -516,12 +535,13 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
     let login_response = client
         .post(format!("http://{}/api/auth/login", lb_addr))
         .json(&json!({
-            "username": "admin",
+            "username": username,
             "password": "password123"
         }))
         .send()
         .await
         .expect("login should succeed");
+    assert_eq!(login_response.status(), reqwest::StatusCode::OK);
 
     let login_data: Value = login_response.json().await.expect("login json");
     let jwt_token = login_data["token"].as_str().unwrap();
@@ -532,12 +552,15 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
         .header("authorization", format!("Bearer {}", jwt_token))
         .json(&json!({
             "name": "Test API Key",
+            "usage_account_id": admin.id,
+            "organization_id": organization.id,
             "expires_at": null,
             "permissions": ["openai.inference", "openai.models.read"]
         }))
         .send()
         .await
         .expect("create api key should succeed");
+    assert_eq!(create_key_response.status(), reqwest::StatusCode::CREATED);
 
     let key_data: Value = create_key_response.json().await.expect("api key json");
     key_data["key"].as_str().unwrap().to_string()

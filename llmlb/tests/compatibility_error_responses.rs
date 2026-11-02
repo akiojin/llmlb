@@ -4,12 +4,32 @@ use llmlb::common::auth::UserRole;
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 use serial_test::serial;
-use uuid::Uuid;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::lb::{spawn_test_lb_with_db, test_jwt_secret};
+
+async fn registered_admin_jwt(pool: &sqlx::SqlitePool) -> String {
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let admin = llmlb::db::users::create(
+        pool,
+        "compatibility-admin",
+        &password_hash,
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .expect("create compatibility administrator");
+    llmlb::auth::jwt::create_jwt(
+        &admin.id.to_string(),
+        admin.role,
+        &test_jwt_secret(),
+        admin.must_change_password,
+        admin.password_changed_at,
+    )
+    .expect("registered administrator JWT")
+}
 
 async fn assert_compatibility_error(path: &str, payload: Value, close_database: bool) {
     let (server, pool) = spawn_test_lb_with_db().await;
@@ -132,16 +152,21 @@ async fn embeddings_invalid_model_returns_structured_error() {
 #[serial]
 async fn model_catalog_database_failure_keeps_management_exit() {
     let (server, pool) = spawn_test_lb_with_db().await;
-    pool.close().await;
-    let jwt = llmlb::auth::jwt::create_jwt(
-        &Uuid::nil().to_string(),
-        UserRole::Admin,
-        &test_jwt_secret(),
-        false,
-        0,
-    )
-    .expect("test JWT");
+    let jwt = registered_admin_jwt(&pool).await;
+    // All three handlers read ModelStorage::load_models first. Break that
+    // catalog query while preserving the current-identity users/org lookup.
+    sqlx::query("DROP TABLE models")
+        .execute(&pool)
+        .await
+        .expect("inject model catalog database failure");
     let client = Client::new();
+    let identity = client
+        .get(format!("http://{}/api/auth/me", server.addr()))
+        .bearer_auth(&jwt)
+        .send()
+        .await
+        .expect("current identity response");
+    assert_eq!(identity.status(), StatusCode::OK);
     for (path, token, structured) in [
         ("/v1/models", "sk_debug", true),
         ("/v1/models/test-model", "sk_debug", true),
@@ -170,15 +195,8 @@ async fn model_catalog_database_failure_keeps_management_exit() {
 #[tokio::test]
 #[serial]
 async fn dashboard_chat_validation_keeps_flat_error() {
-    let (server, _) = spawn_test_lb_with_db().await;
-    let jwt = llmlb::auth::jwt::create_jwt(
-        &Uuid::nil().to_string(),
-        UserRole::Admin,
-        &test_jwt_secret(),
-        false,
-        0,
-    )
-    .expect("test JWT");
+    let (server, pool) = spawn_test_lb_with_db().await;
+    let jwt = registered_admin_jwt(&pool).await;
     for path in [
         "/api/dashboard/playground/chat/completions",
         "/api/dashboard/playground/load-test/chat/completions",

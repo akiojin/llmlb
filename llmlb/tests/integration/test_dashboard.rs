@@ -24,7 +24,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::http::spawn_lb;
-use crate::support::lb::{spawn_test_lb, spawn_test_lb_with_db, test_jwt_secret};
+use crate::support::lb::{spawn_test_lb_with_db, test_jwt_secret};
 
 /// アップデート確認のテストで GitHub Releases API のモックに使うリポジトリ
 const GITHUB_OWNER: &str = "test-owner";
@@ -108,8 +108,26 @@ async fn build_test_app_with_github_api(github_api_base_url: Option<String>) -> 
 
 type WsRequest = tokio_tungstenite::tungstenite::http::Request<()>;
 
-fn admin_jwt(secret: &str) -> String {
-    create_jwt("test-admin", UserRole::Admin, secret, false, 0).expect("create test jwt")
+async fn admin_jwt(pool: &sqlx::SqlitePool, secret: &str) -> String {
+    let actor = match llmlb::db::users::find_by_username(pool, "dashboard-ws-admin")
+        .await
+        .expect("find websocket fixture actor")
+    {
+        Some(actor) => actor,
+        None => {
+            llmlb::db::users::create(pool, "dashboard-ws-admin", "hash", UserRole::Admin, false)
+                .await
+                .expect("create websocket fixture actor")
+        }
+    };
+    create_jwt(
+        &actor.id.to_string(),
+        actor.role,
+        secret,
+        actor.must_change_password,
+        actor.password_changed_at,
+    )
+    .expect("create registered actor JWT")
 }
 
 /// 認証情報を持たない WebSocket 接続リクエストを生成する。`query` は URL の `?` 以降。
@@ -133,12 +151,8 @@ fn ws_request_with_header(addr: SocketAddr, name: &'static str, value: &str) -> 
 ///
 /// クエリパラメータ経由のトークン受理は廃止されたため、ダッシュボード WS は
 /// `Authorization: Bearer` ヘッダー（または Cookie）で認証する。
-fn ws_request_with_token(addr: SocketAddr, secret: &str) -> WsRequest {
-    ws_request_with_header(
-        addr,
-        "Authorization",
-        &format!("Bearer {}", admin_jwt(secret)),
-    )
+fn ws_request_with_token(addr: SocketAddr, token: &str) -> WsRequest {
+    ws_request_with_header(addr, "Authorization", &format!("Bearer {token}"))
 }
 
 #[tokio::test]
@@ -156,7 +170,8 @@ async fn test_dashboard_websocket_connection() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Act: WebSocket connection
-    let request = ws_request_with_token(addr, &state.auth.jwt_secret);
+    let token = admin_jwt(&state.db_pool, &state.auth.jwt_secret).await;
+    let request = ws_request_with_token(addr, &token);
     let mut subscriber = DashboardSubscriber::connect_with(request).await;
     assert!(subscriber
         .next_event(Duration::from_millis(50))
@@ -179,8 +194,8 @@ struct DashboardSubscriber {
 
 impl DashboardSubscriber {
     /// HTTP upgrade で接続し、ping/pong でサーバーの購読準備を確認する
-    async fn connect(addr: SocketAddr) -> Self {
-        Self::connect_with(ws_request_with_token(addr, &test_jwt_secret())).await
+    async fn connect(addr: SocketAddr, token: &str) -> Self {
+        Self::connect_with(ws_request_with_token(addr, token)).await
     }
 
     /// `request` の HTTP upgrade 後、welcome が無いことと購読準備を確認する
@@ -417,8 +432,8 @@ async fn test_dashboard_websocket_connects_with_login_cookie() {
 async fn test_dashboard_websocket_rejects_query_token() {
     use tokio_tungstenite::tungstenite::Error;
 
-    let server = spawn_test_lb().await;
-    let token = admin_jwt(&test_jwt_secret());
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
 
     let request = ws_request(server.addr(), Some(&format!("token={token}")));
     let error = connect_async(request)
@@ -439,8 +454,9 @@ async fn test_dashboard_websocket_rejects_query_token() {
 async fn test_dashboard_receives_node_registered_once_on_registration() {
     let mock = spawn_openai_compatible_mock().await;
     let sentinel_mock = spawn_openai_compatible_mock().await;
-    let server = spawn_test_lb().await;
-    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr(), &token).await;
     let client = Client::new();
 
     // Act: 管理 API 経由で登録し、番兵として別のエンドポイントを登録する
@@ -473,10 +489,11 @@ async fn test_dashboard_receives_node_registered_once_on_registration() {
 #[tokio::test]
 async fn test_dashboard_receives_no_node_registered_on_failed_registration() {
     let mock = spawn_openai_compatible_mock().await;
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
     let client = Client::new();
     let existing_id = register_endpoint(&client, server.addr(), "existing-node", &mock.uri()).await;
-    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr(), &token).await;
 
     // Act: 名前重複・URL 重複（保存失敗）・到達不能・入力不正の登録はいずれも失敗する
     let other_mock = spawn_openai_compatible_mock().await;
@@ -515,10 +532,11 @@ async fn test_dashboard_receives_no_node_registered_on_failed_registration() {
 async fn test_dashboard_receives_node_removed_once_on_deletion() {
     let mock = spawn_openai_compatible_mock().await;
     let sentinel_mock = spawn_openai_compatible_mock().await;
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
     let client = Client::new();
     let endpoint_id = register_endpoint(&client, server.addr(), "removed-node", &mock.uri()).await;
-    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr(), &token).await;
 
     // Act: 削除し、番兵として別のエンドポイントを登録する
     let deleted = delete_endpoint(&client, server.addr(), &endpoint_id).await;
@@ -551,12 +569,13 @@ async fn test_dashboard_receives_node_removed_once_on_deletion() {
 async fn test_dashboard_receives_no_node_removed_on_failed_deletion() {
     let mock = spawn_openai_compatible_mock().await;
     let sentinel_mock = spawn_openai_compatible_mock().await;
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
     let client = Client::new();
     let endpoint_id = register_endpoint(&client, server.addr(), "removed-node", &mock.uri()).await;
     let deleted = delete_endpoint(&client, server.addr(), &endpoint_id).await;
     assert_eq!(deleted.status().as_u16(), 204);
-    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr(), &token).await;
 
     // Act: 存在しない ID と、削除済みの ID を削除する
     let unknown = delete_endpoint(&client, server.addr(), &uuid::Uuid::new_v4().to_string()).await;
@@ -587,11 +606,12 @@ async fn test_dashboard_receives_no_node_removed_on_failed_deletion() {
 #[tokio::test]
 async fn test_dashboard_receives_metrics_updated_after_proxied_request() {
     let mock = spawn_openai_compatible_mock().await;
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
     let client = Client::new();
     let endpoint_id = register_endpoint(&client, server.addr(), "metrics-node", &mock.uri()).await;
     make_endpoint_routable(&client, server.addr(), &endpoint_id).await;
-    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr(), &token).await;
 
     // Act
     let response = chat_completion(&client, server.addr()).await;
@@ -611,11 +631,12 @@ async fn test_dashboard_metrics_updated_is_coalesced_under_request_burst() {
     const QUIET_PERIOD: Duration = Duration::from_secs(3);
 
     let mock = spawn_openai_compatible_mock().await;
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
     let client = Client::new();
     let endpoint_id = register_endpoint(&client, server.addr(), "burst-node", &mock.uri()).await;
     make_endpoint_routable(&client, server.addr(), &endpoint_id).await;
-    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr(), &token).await;
 
     // Act: 同じエンドポイントへ並行にリクエストを送る
     let burst_started_at = Instant::now();
@@ -655,11 +676,12 @@ async fn test_dashboard_metrics_updated_is_coalesced_under_request_burst() {
 async fn test_dashboard_receives_tps_updated_after_proxied_request() {
     // TPS は処理時間が 1 ms 以上のリクエストだけが計測対象になるため、応答を遅らせる
     let mock = spawn_openai_compatible_mock_with_delay(Duration::from_millis(50)).await;
-    let server = spawn_test_lb().await;
+    let (server, db_pool) = spawn_test_lb_with_db().await;
+    let token = admin_jwt(&db_pool, &test_jwt_secret()).await;
     let client = Client::new();
     let endpoint_id = register_endpoint(&client, server.addr(), "tps-node", &mock.uri()).await;
     make_endpoint_routable(&client, server.addr(), &endpoint_id).await;
-    let mut subscriber = DashboardSubscriber::connect(server.addr()).await;
+    let mut subscriber = DashboardSubscriber::connect(server.addr(), &token).await;
 
     // Act
     let response = chat_completion(&client, server.addr()).await;
@@ -689,13 +711,14 @@ async fn test_dashboard_receives_update_state_changed_after_update_check() {
     let (state, app) = build_test_app_with_github_api(Some(github.uri())).await;
     let server = spawn_lb(app).await;
     let secret = &state.auth.jwt_secret;
+    let token = admin_jwt(&state.db_pool, secret).await;
     let mut subscriber =
-        DashboardSubscriber::connect_with(ws_request_with_token(server.addr(), secret)).await;
+        DashboardSubscriber::connect_with(ws_request_with_token(server.addr(), &token)).await;
 
     // Act
     let response = Client::new()
         .post(format!("http://{}/api/system/update/check", server.addr()))
-        .bearer_auth(admin_jwt(secret))
+        .bearer_auth(&token)
         .send()
         .await
         .expect("update check request failed");
@@ -720,9 +743,9 @@ async fn test_dashboard_receives_node_status_change() {
     // Give the server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
+    let token = admin_jwt(&state.db_pool, &state.auth.jwt_secret).await;
     let mut subscriber =
-        DashboardSubscriber::connect_with(ws_request_with_token(addr, &state.auth.jwt_secret))
-            .await;
+        DashboardSubscriber::connect_with(ws_request_with_token(addr, &token)).await;
 
     // Arrange: register an endpoint (Pending)
     let endpoint = llmlb::types::endpoint::Endpoint::new(
@@ -762,11 +785,9 @@ async fn test_dashboard_wire_projects_all_internal_variants() {
     use llmlb::types::endpoint::EndpointStatus;
     let (state, app) = build_test_app().await;
     let server = spawn_lb(app).await;
-    let mut subscriber = DashboardSubscriber::connect_with(ws_request_with_token(
-        server.addr(),
-        &state.auth.jwt_secret,
-    ))
-    .await;
+    let token = admin_jwt(&state.db_pool, &state.auth.jwt_secret).await;
+    let mut subscriber =
+        DashboardSubscriber::connect_with(ws_request_with_token(server.addr(), &token)).await;
     let id = uuid::Uuid::new_v4();
     let cases = [
         (

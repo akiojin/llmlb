@@ -330,13 +330,18 @@ async fn fetch_endpoint_status(client: &Client, lb_addr: SocketAddr, endpoint_id
         .to_string()
 }
 
-async fn fetch_model_tps(client: &Client, lb_addr: SocketAddr, endpoint_id: &str) -> Vec<Value> {
+async fn fetch_model_tps(
+    client: &Client,
+    lb_addr: SocketAddr,
+    endpoint_id: &str,
+    admin_jwt: &str,
+) -> Vec<Value> {
     let resp = client
         .get(format!(
             "http://{}/api/endpoints/{}/model-tps",
             lb_addr, endpoint_id
         ))
-        .header("authorization", "Bearer sk_debug")
+        .bearer_auth(admin_jwt)
         .send()
         .await
         .expect("model-tps request");
@@ -354,10 +359,15 @@ fn routing_tps(entries: &[Value]) -> f64 {
 }
 
 /// 統計記録は応答後に非同期で行われるため、TPS が計測されるまで待つ
-async fn wait_for_measured_tps(client: &Client, lb_addr: SocketAddr, endpoint_id: &str) -> f64 {
+async fn wait_for_measured_tps(
+    client: &Client,
+    lb_addr: SocketAddr,
+    endpoint_id: &str,
+    admin_jwt: &str,
+) -> f64 {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let tps = routing_tps(&fetch_model_tps(client, lb_addr, endpoint_id).await);
+        let tps = routing_tps(&fetch_model_tps(client, lb_addr, endpoint_id, admin_jwt).await);
         if tps > 0.0 {
             return tps;
         }
@@ -396,6 +406,24 @@ async fn fail_health_checks_until_offline(
 async fn test_offline_detection_resets_endpoint_tps() {
     let (server, load_manager) = spawn_test_lb_with_manager().await;
     let client = Client::new();
+    let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
+    let admin = llmlb::db::users::create(
+        load_manager.endpoint_registry().pool(),
+        "health-check-admin",
+        &password_hash,
+        llmlb::common::auth::UserRole::Admin,
+        false,
+    )
+    .await
+    .expect("create TPS reader administrator");
+    let admin_jwt = llmlb::auth::jwt::create_jwt(
+        &admin.id.to_string(),
+        admin.role,
+        &crate::support::lb::test_jwt_secret(),
+        admin.must_change_password,
+        admin.password_changed_at,
+    )
+    .expect("registered TPS reader JWT");
     let upstream = MockServer::start().await;
     let models = mount_models(&upstream).await;
     mount_chat(&upstream).await;
@@ -406,7 +434,7 @@ async fn test_offline_detection_resets_endpoint_tps() {
     // 計測値を持つ状態にする
     let response = chat_through_proxy(&client, server.addr()).await;
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let measured = wait_for_measured_tps(&client, server.addr(), &endpoint_id).await;
+    let measured = wait_for_measured_tps(&client, server.addr(), &endpoint_id, &admin_jwt).await;
     assert!(measured > 0.0, "TPS must be measured before going offline");
 
     // ヘルスチェックの応答だけを止めてオフラインにする
@@ -414,7 +442,7 @@ async fn test_offline_detection_resets_endpoint_tps() {
     let checker = health_checker(&load_manager);
     fail_health_checks_until_offline(&checker, &client, server.addr(), &endpoint_id).await;
 
-    let entries = fetch_model_tps(&client, server.addr(), &endpoint_id).await;
+    let entries = fetch_model_tps(&client, server.addr(), &endpoint_id, &admin_jwt).await;
     assert!(
         entries.is_empty(),
         "offline detection must discard the measured TPS, got {entries:?}"

@@ -726,6 +726,7 @@ pub async fn create_endpoint(
 
 /// GET /api/endpoints - エンドポイント一覧
 pub async fn list_endpoints(
+    scope: Option<Extension<crate::auth::scope::Scope>>,
     State(state): State<AppState>,
     Query(query): Query<ListEndpointsQuery>,
 ) -> impl IntoResponse {
@@ -767,7 +768,15 @@ pub async fn list_endpoints(
                 endpoints: response_endpoints,
                 total,
             };
-            (StatusCode::OK, Json(response)).into_response()
+            let mut value = serde_json::json!(response);
+            if !matches!(scope, Some(Extension(crate::auth::scope::Scope::Global))) {
+                if let Some(endpoints) = value["endpoints"].as_array_mut() {
+                    for endpoint in endpoints {
+                        remove_usage_counters(endpoint);
+                    }
+                }
+            }
+            (StatusCode::OK, Json(value)).into_response()
         }
         Err(e) => {
             tracing::error!("Failed to list endpoints: {}", e);
@@ -779,6 +788,7 @@ pub async fn list_endpoints(
 
 /// GET /api/endpoints/:id - エンドポイント詳細
 pub async fn get_endpoint(
+    scope: Option<Extension<crate::auth::scope::Scope>>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> impl IntoResponse {
@@ -791,12 +801,24 @@ pub async fn get_endpoint(
             };
             let mut response = EndpointResponse::from(endpoint);
             response.models = models;
-            (StatusCode::OK, Json(response)).into_response()
+            let mut value = serde_json::json!(response);
+            if !matches!(scope, Some(Extension(crate::auth::scope::Scope::Global))) {
+                remove_usage_counters(&mut value);
+            }
+            (StatusCode::OK, Json(value)).into_response()
         }
         Ok(None) => ManagementError(LbError::EndpointNotFound(id)).into_response(),
         Err(e) => {
             tracing::error!("Failed to get endpoint: {}", e);
             ManagementError(LbError::Database("Failed to get endpoint".to_string())).into_response()
+        }
+    }
+}
+
+fn remove_usage_counters(value: &mut serde_json::Value) {
+    if let Some(object) = value.as_object_mut() {
+        for key in ["total_requests", "successful_requests", "failed_requests"] {
+            object.remove(key);
         }
     }
 }
@@ -1135,14 +1157,54 @@ pub async fn proxy_chat_completions(
         "{}/v1/chat/completions",
         endpoint.base_url.trim_end_matches('/')
     );
-    let request_model = serde_json::from_slice::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|payload| {
-            payload
-                .get("model")
-                .and_then(|model| model.as_str())
-                .map(str::to_string)
-        });
+    let payload = match serde_json::from_slice::<serde_json::Value>(&body) {
+        Ok(payload) => payload,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "A JSON inference payload is required",
+            )
+                .into_response()
+        }
+    };
+    let Some(model) = payload
+        .get("model")
+        .and_then(|model| model.as_str())
+        .filter(|model| !model.trim().is_empty())
+    else {
+        return (StatusCode::BAD_REQUEST, "A nonempty model is required").into_response();
+    };
+    let request_model = Some(model.to_string());
+    let history_payload = crate::api::openai_util::sanitize_openai_payload_for_history(&payload);
+    if let Err(error) = crate::api::usage_capture::accept_current(
+        &state,
+        model,
+        crate::common::protocol::RequestType::Chat,
+        history_payload.clone(),
+    )
+    .await
+    {
+        return AppError(error).into_response();
+    }
+    crate::api::usage_capture::capture_record(
+        &crate::common::protocol::RequestResponseRecord::new(
+            endpoint.id,
+            endpoint.name.clone(),
+            endpoint
+                .base_url
+                .parse::<reqwest::Url>()
+                .ok()
+                .and_then(|url| url.host_str().and_then(|host| host.parse().ok()))
+                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+            model.to_string(),
+            crate::common::protocol::RequestType::Chat,
+            history_payload,
+            StatusCode::OK,
+            std::time::Duration::ZERO,
+            None,
+            None,
+        ),
+    );
 
     let mut request = state
         .http_client

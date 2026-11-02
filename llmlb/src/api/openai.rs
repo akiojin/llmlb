@@ -92,7 +92,7 @@ fn extract_client_info(
     (client_ip, api_key_id)
 }
 
-fn extract_client_ip_from_headers(headers: &HeaderMap) -> Option<IpAddr> {
+pub(crate) fn extract_client_ip_from_headers(headers: &HeaderMap) -> Option<IpAddr> {
     extract_x_forwarded_for(headers).or_else(|| extract_forwarded_for(headers))
 }
 

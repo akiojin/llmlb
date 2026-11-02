@@ -631,6 +631,46 @@ export interface CreatedApiKey {
   key: string;
 }
 
+/** Explicitly prepare current self-key attribution without moving an existing membership. */
+export async function ensureApiKeyMembership(
+  request: APIRequestContext,
+  token?: string,
+  baseURL = API_BASE
+): Promise<{ usage_account_id: string; organization_id: string }> {
+  const jwt = token ?? await getDashboardJwt();
+  const headers = { Authorization: `Bearer ${jwt}` };
+  const identity = await request.get(`${baseURL}/api/auth/me`, { headers });
+  expect(identity.status()).toBe(200);
+  const me = await identity.json() as { user_id: string; role: string; organization_id: string | null; disabled: boolean };
+  expect(me.disabled).not.toBe(true);
+  const organizations = async () => {
+    const response = await request.get(`${baseURL}/api/organizations`, { headers });
+    expect(response.status()).toBe(200);
+    return (await response.json()).organizations as Array<{ id: string; name: string; archived_at: string | null }>;
+  };
+  if (me.organization_id) {
+    const existing = (await organizations()).find((organization) => organization.id === me.organization_id);
+    expect(existing, 'existing self membership must remain valid and must not be moved by a fixture').toBeDefined();
+    expect(existing!.archived_at).toBeNull();
+    return { usage_account_id: me.user_id, organization_id: me.organization_id };
+  }
+  expect(me.role, 'only a system admin can explicitly prepare missing membership').toBe('admin');
+  const name = 'E2E API key owners';
+  let organization = (await organizations()).find((item) => item.name === name && !item.archived_at);
+  if (!organization) {
+    const created = await request.post(`${baseURL}/api/organizations`, { headers, data: { name } });
+    // Parallel E2E workers may create the same dedicated fixture organization.
+    expect([201, 409]).toContain(created.status());
+    organization = created.status() === 201 ? await created.json() : (await organizations()).find((item) => item.name === name && !item.archived_at);
+  }
+  expect(organization).toBeDefined();
+  const assigned = await request.put(`${baseURL}/api/users/${me.user_id}/membership`, {
+    headers, data: { organization_id: organization!.id, organization_role: 'member' },
+  });
+  expect(assigned.status()).toBe(200);
+  return { usage_account_id: me.user_id, organization_id: organization!.id };
+}
+
 /**
  * Create an API key for the logged-in user.
  */
@@ -641,7 +681,8 @@ export async function createApiKeyWithPermissions(
   expiresAt?: string
 ): Promise<CreatedApiKey> {
   const token = await getDashboardJwt();
-  const payload: Record<string, unknown> = { name };
+  const attribution = await ensureApiKeyMembership(request, token);
+  const payload: Record<string, unknown> = { name, ...attribution };
   if (expiresAt) {
     payload.expires_at = expiresAt;
   }

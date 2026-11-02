@@ -18,23 +18,19 @@ fn test_jwt_secret() -> String {
     support::lb::test_jwt_secret()
 }
 
-fn admin_jwt(secret: &str) -> String {
-    llmlb::auth::jwt::create_jwt(
-        "test-admin",
-        llmlb::common::auth::UserRole::Admin,
-        secret,
-        false,
-        0,
-    )
-    .expect("create admin jwt")
-}
-
 async fn build_app() -> (String, Router) {
     build_app_with_history(vec![]).await
 }
 
 async fn build_app_with_history(
     history: Vec<llmlb::update::history::HistoryEntry>,
+) -> (String, Router) {
+    build_app_with_actor(history, llmlb::common::auth::UserRole::Admin).await
+}
+
+async fn build_app_with_actor(
+    history: Vec<llmlb::update::history::HistoryEntry>,
+    role: llmlb::common::auth::UserRole,
 ) -> (String, Router) {
     let temp_dir = std::env::temp_dir().join(format!(
         "update-api-test-{}-{}",
@@ -45,6 +41,22 @@ async fn build_app_with_history(
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
 
     let db_pool = support::lb::create_test_db_pool().await;
+    let actor = llmlb::db::users::create(&db_pool, "update-api-actor", "hash", role, false)
+        .await
+        .expect("create registered update API actor");
+    if role == llmlb::common::auth::UserRole::Viewer {
+        let organization = llmlb::db::organizations::create(&db_pool, "Update Viewer")
+            .await
+            .unwrap();
+        llmlb::db::organizations::set_membership(
+            &db_pool,
+            actor.id,
+            Some(organization.id),
+            llmlb::db::organizations::OrganizationRole::Member,
+        )
+        .await
+        .unwrap();
+    }
     let request_history = Arc::new(llmlb::db::request_history::RequestHistoryStorage::new(
         db_pool.clone(),
     ));
@@ -75,6 +87,14 @@ async fn build_app_with_history(
         std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()));
 
     let jwt_secret = test_jwt_secret();
+    let token = llmlb::auth::jwt::create_jwt(
+        &actor.id.to_string(),
+        actor.role,
+        &jwt_secret,
+        actor.must_change_password,
+        actor.password_changed_at,
+    )
+    .expect("sign registered actor JWT");
 
     let app = api::create_app(AppState {
         balancer: llmlb::BalancerState {
@@ -100,13 +120,12 @@ async fn build_app_with_history(
         },
     });
 
-    (jwt_secret, app)
+    (token, app)
 }
 
 #[tokio::test]
 async fn normal_apply_returns_mode_and_queued_flag() {
-    let (secret, app) = build_app().await;
-    let token = admin_jwt(&secret);
+    let (token, app) = build_app().await;
 
     let response = app
         .oneshot(
@@ -136,8 +155,7 @@ async fn normal_apply_returns_mode_and_queued_flag() {
 
 #[tokio::test]
 async fn force_apply_returns_conflict_when_no_update_available() {
-    let (secret, app) = build_app().await;
-    let token = admin_jwt(&secret);
+    let (token, app) = build_app().await;
 
     let response = app
         .oneshot(
@@ -167,8 +185,7 @@ async fn force_apply_returns_conflict_when_no_update_available() {
 /// T234: POST /api/system/update/schedule creates a schedule; 409 on conflict.
 #[tokio::test]
 async fn schedule_create_and_conflict() {
-    let (secret, app) = build_app().await;
-    let token = admin_jwt(&secret);
+    let (token, app) = build_app().await;
     let mut svc = app.into_service();
 
     // First, we need an update to be available for scheduling.
@@ -199,8 +216,7 @@ async fn schedule_create_and_conflict() {
 /// T235: GET /api/system/update/schedule returns null when no schedule.
 #[tokio::test]
 async fn schedule_get_returns_null_when_empty() {
-    let (secret, app) = build_app().await;
-    let token = admin_jwt(&secret);
+    let (token, app) = build_app().await;
 
     let response = app
         .oneshot(
@@ -225,8 +241,7 @@ async fn schedule_get_returns_null_when_empty() {
 /// T235: DELETE /api/system/update/schedule returns 404 when no schedule.
 #[tokio::test]
 async fn schedule_cancel_returns_not_found_when_empty() {
-    let (secret, app) = build_app().await;
-    let token = admin_jwt(&secret);
+    let (token, app) = build_app().await;
 
     let response = app
         .oneshot(
@@ -250,8 +265,7 @@ async fn schedule_cancel_returns_not_found_when_empty() {
 /// T261: POST /api/system/update/rollback returns 409 when no .bak exists.
 #[tokio::test]
 async fn rollback_returns_conflict_when_no_bak() {
-    let (secret, app) = build_app().await;
-    let token = admin_jwt(&secret);
+    let (token, app) = build_app().await;
 
     let response = app
         .oneshot(
@@ -285,8 +299,7 @@ async fn rollback_returns_conflict_when_no_bak() {
 /// T213: POST /api/system/update/check returns 429 on rapid consecutive calls.
 #[tokio::test]
 async fn check_update_rate_limits_within_60_seconds() {
-    let (secret, app) = build_app().await;
-    let token = admin_jwt(&secret);
+    let (token, app) = build_app().await;
     let mut svc = app.into_service();
 
     // First call: may succeed or fail (no real GitHub), but should NOT be 429.
@@ -340,7 +353,7 @@ async fn check_update_rate_limits_within_60_seconds() {
 #[tokio::test]
 async fn admin_history_includes_persisted_update_failure_and_recovery() {
     let message = "Elevation was rejected. Manually run the installer on the server.";
-    let (secret, app) = build_app_with_history(vec![llmlb::update::history::HistoryEntry {
+    let (token, app) = build_app_with_history(vec![llmlb::update::history::HistoryEntry {
         kind: llmlb::update::history::HistoryEventKind::Failed,
         version: "6.3.1".into(),
         message: Some(message.into()),
@@ -351,7 +364,7 @@ async fn admin_history_includes_persisted_update_failure_and_recovery() {
         .oneshot(
             Request::builder()
                 .uri("/api/system/update/history")
-                .header("authorization", format!("Bearer {}", admin_jwt(&secret)))
+                .header("authorization", format!("Bearer {}", &token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -369,7 +382,7 @@ async fn admin_history_includes_persisted_update_failure_and_recovery() {
 
 #[tokio::test]
 async fn update_history_requires_admin_and_is_absent_from_public_status() {
-    let (secret, app) = build_app().await;
+    let (token, app) = build_app_with_actor(vec![], llmlb::common::auth::UserRole::Viewer).await;
     let anonymous = app
         .clone()
         .oneshot(
@@ -381,14 +394,6 @@ async fn update_history_requires_admin_and_is_absent_from_public_status() {
         .await
         .unwrap();
     assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
-    let token = llmlb::auth::jwt::create_jwt(
-        "viewer",
-        llmlb::common::auth::UserRole::Viewer,
-        &secret,
-        false,
-        0,
-    )
-    .unwrap();
     let viewer = app
         .clone()
         .oneshot(

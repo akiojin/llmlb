@@ -27,6 +27,19 @@ async fn create_user_jwt(db_pool: &SqlitePool, username: &str, role: UserRole) -
     let user = llmlb::db::users::create(db_pool, username, &password_hash, role, false)
         .await
         .expect("create route contract user");
+    if role == UserRole::Viewer {
+        let organization = llmlb::db::organizations::create(db_pool, "Route contract viewers")
+            .await
+            .expect("create active route contract organization");
+        llmlb::db::organizations::set_membership(
+            db_pool,
+            user.id,
+            Some(organization.id),
+            llmlb::db::organizations::OrganizationRole::Member,
+        )
+        .await
+        .expect("assign route contract viewer membership");
+    }
     llmlb::auth::jwt::create_jwt(
         &user.id.to_string(),
         role,

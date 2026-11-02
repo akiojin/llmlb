@@ -136,7 +136,8 @@ async function renderDashboard({ update = upToDate, system, history = [], user }
 
   vi.spyOn(registrationRequestsApi, 'list').mockResolvedValue([])
   renderPage(<Dashboard />, { user })
-  await screen.findByText('No endpoints')
+  if (user?.role === 'viewer') await screen.findByRole('tab', { name: 'Models' })
+  else await screen.findByText('No endpoints')
   return { getSystem, getUpdateHistory, user: userEvent.setup() }
 }
 
@@ -320,7 +321,7 @@ describe('Dashboard update banner', () => {
     it('hides the banner and skips the system query for viewers', async () => {
       const { getSystem, getUpdateHistory } = await renderDashboard({
         update: available({ payload: 'not_ready' }),
-        user: viewerUser,
+        user: { ...viewerUser, organization_id: 'org-A', organization_role: 'member', scope: 'self:org-A:user-viewer' },
       })
 
       expect(queryButton('Check for updates')).not.toBeInTheDocument()

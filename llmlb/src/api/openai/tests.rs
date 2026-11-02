@@ -1,6 +1,6 @@
 use super::{
     extract_client_ip_from_headers, parse_client_ip_from_forwarded_value, parse_cloud_model,
-    proxy_openai_cloud_post, proxy_openai_post,
+    proxy_openai_cloud_post,
 };
 use crate::common::protocol::{RecordStatus, RequestType};
 use crate::{
@@ -25,6 +25,60 @@ mod list_models;
 mod payload;
 mod routing;
 mod streaming_tps;
+
+// Direct forwarder tests start after authentication, but still use the real
+// receipt/admission/Body observation fixture rather than omitting accounting.
+#[allow(clippy::too_many_arguments)]
+async fn proxy_openai_post(
+    state: &AppState,
+    payload: serde_json::Value,
+    target_path: &str,
+    model: String,
+    stream: bool,
+    request_type: RequestType,
+    client_ip: Option<IpAddr>,
+    api_key_id: Option<uuid::Uuid>,
+) -> Result<axum::response::Response, crate::api::error::OpenAIError> {
+    crate::api::usage_capture::with_test_capture(
+        state,
+        client_ip,
+        api_key_id,
+        super::proxy_openai_post(
+            state,
+            payload,
+            target_path,
+            model,
+            stream,
+            request_type,
+            client_ip,
+            api_key_id,
+        ),
+    )
+    .await
+}
+
+async fn chat_completions(
+    address: axum::extract::ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::State(state): axum::extract::State<AppState>,
+    auth: Option<axum::Extension<crate::auth::middleware::ApiKeyAuthContext>>,
+    payload: Json<serde_json::Value>,
+) -> Result<axum::response::Response, crate::api::error::OpenAIError> {
+    let (client_ip, api_key_id) = super::extract_client_info(&address.0, &headers, &auth);
+    crate::api::usage_capture::with_test_capture(
+        &state,
+        client_ip,
+        api_key_id,
+        super::chat_completions(
+            address,
+            headers,
+            axum::extract::State(state.clone()),
+            auth,
+            payload,
+        ),
+    )
+    .await
+}
 
 async fn create_local_state() -> AppState {
     TestAppStateBuilder::new().await.build().await

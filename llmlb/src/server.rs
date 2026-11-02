@@ -11,6 +11,7 @@ const BIND_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 /// axumサーバーを起動し、シャットダウンシグナルを待機する
 pub async fn run(state: AppState, bind_addr: &str) {
     let shutdown = state.lifecycle.shutdown.clone();
+    let request_history = state.balancer.request_history.clone();
 
     let app = crate::api::create_app(state);
 
@@ -30,6 +31,11 @@ pub async fn run(state: AppState, bind_addr: &str) {
     .await
     .expect("Server error");
 
+    match tokio::time::timeout(Duration::from_secs(30), request_history.drain_usage_writers()).await {
+        Ok(Ok(())) => {},
+        Ok(Err(error)) => tracing::error!(%error,"Terminal inference usage writer failed during shutdown"),
+        Err(_) => tracing::error!("Terminal inference usage remains pending; persisted receipts will be recovered on startup"),
+    }
     info!("Server shutdown complete");
 }
 

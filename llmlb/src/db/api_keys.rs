@@ -1,16 +1,244 @@
 // T053-T054: APIキーCRUD操作とキー生成
 
+use crate::auth::scope::Scope;
 use crate::common::auth::{ApiKey, ApiKeyPermission, ApiKeyWithPlaintext};
 use crate::common::error::{CommonError, LbError};
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use serde_json;
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, SqlitePool};
 use tracing::warn;
 use uuid::Uuid;
 
+mod scoped_mutations;
+pub use scoped_mutations::{delete_scoped_by_creator, update_scoped_by_creator};
+
 const DUPLICATE_NAME_VALIDATION_MSG: &str = "API key with this name already exists";
+
+/// Public API-key metadata. Hashes and plaintext are never selected for a list.
+#[derive(Debug)]
+pub struct ApiKeyMetadata {
+    /// Key identity.
+    pub id: Uuid,
+    /// Display prefix, when available for this key generation.
+    pub key_prefix: Option<String>,
+    /// User-visible name.
+    pub name: String,
+    /// Issuer for audit and the existing mutation-ownership constraint.
+    pub created_by: Uuid,
+    /// Creation time.
+    pub created_at: DateTime<Utc>,
+    /// Optional expiry.
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Fixed permissions.
+    pub permissions: Vec<ApiKeyPermission>,
+    /// Usage account; legacy keys deliberately remain unattributed.
+    pub usage_account_id: Option<Uuid>,
+    /// Fixed issue-time organization, independent of current membership.
+    pub organization_id: Option<Uuid>,
+}
+
+/// A newly issued attributed key. Plaintext is returned only from issuance.
+pub struct AttributedApiKeyWithPlaintext {
+    /// The existing one-time plaintext response, without changing legacy types.
+    pub api_key: ApiKeyWithPlaintext,
+    /// Validated usage account.
+    pub usage_account_id: Uuid,
+    /// Its active organization at issuance.
+    pub organization_id: Uuid,
+}
+
+const METADATA_SELECT: &str =
+    "SELECT id,key_prefix,name,created_by,created_at,expires_at,permissions,
+            usage_account_id,organization_id FROM api_keys";
+
+#[derive(sqlx::FromRow)]
+struct ApiKeyMetadataRow {
+    id: String,
+    key_prefix: Option<String>,
+    name: String,
+    created_by: String,
+    created_at: String,
+    expires_at: Option<String>,
+    permissions: Option<String>,
+    usage_account_id: Option<String>,
+    organization_id: Option<String>,
+}
+
+impl ApiKeyMetadataRow {
+    fn into_metadata(self) -> Result<ApiKeyMetadata, LbError> {
+        let uuid = |value: &str| {
+            Uuid::parse_str(value)
+                .map_err(|error| LbError::Database(format!("Invalid API key identity: {error}")))
+        };
+        let created_at = DateTime::parse_from_rfc3339(&self.created_at)
+            .map_err(|error| LbError::Database(format!("Invalid API key timestamp: {error}")))?
+            .with_timezone(&Utc);
+        Ok(ApiKeyMetadata {
+            id: uuid(&self.id)?,
+            key_prefix: self.key_prefix,
+            name: self.name,
+            created_by: uuid(&self.created_by)?,
+            created_at,
+            expires_at: self.expires_at.as_deref().and_then(|value| {
+                DateTime::parse_from_rfc3339(value)
+                    .ok()
+                    .map(|time| time.with_timezone(&Utc))
+            }),
+            permissions: parse_permissions(self.permissions),
+            usage_account_id: self.usage_account_id.as_deref().map(uuid).transpose()?,
+            organization_id: self.organization_id.as_deref().map(uuid).transpose()?,
+        })
+    }
+}
+
+/// Fetch metadata with the authorization predicate applied before SQL retrieval.
+pub async fn list_scoped(pool: &SqlitePool, scope: &Scope) -> Result<Vec<ApiKeyMetadata>, LbError> {
+    if matches!(scope, Scope::Unassigned(_)) {
+        return Err(LbError::Authorization(
+            "An active organization membership is required".to_string(),
+        ));
+    }
+    let mut query = QueryBuilder::new(METADATA_SELECT);
+    query.push(" WHERE ");
+    scope.push_sql(&mut query, "organization_id", "usage_account_id");
+    query.push(" ORDER BY created_at DESC, id ASC");
+    query
+        .build_query_as::<ApiKeyMetadataRow>()
+        .fetch_all(pool)
+        .await
+        .map_err(|error| LbError::Database(format!("Failed to list API keys: {error}")))?
+        .into_iter()
+        .map(ApiKeyMetadataRow::into_metadata)
+        .collect()
+}
+
+/// Metadata lookup after an issuer-constrained mutation has authorized the ID.
+pub async fn find_metadata(pool: &SqlitePool, id: Uuid) -> Result<Option<ApiKeyMetadata>, LbError> {
+    let mut query = QueryBuilder::new(METADATA_SELECT);
+    query.push(" WHERE id = ").push_bind(id.to_string());
+    query
+        .build_query_as::<ApiKeyMetadataRow>()
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| LbError::Database(format!("Failed to find API key metadata: {error}")))?
+        .map(ApiKeyMetadataRow::into_metadata)
+        .transpose()
+}
+
+/// Issue a new key with an explicitly validated current usage identity.
+///
+/// The issuer's current system role and the target's active membership are read
+/// under the write transaction. Legacy `create` deliberately remains separate.
+pub async fn create_attributed(
+    pool: &SqlitePool,
+    name: &str,
+    issuer: Uuid,
+    usage_account_id: Option<Uuid>,
+    organization_id: Option<Uuid>,
+    expires_at: Option<DateTime<Utc>>,
+    permissions: Vec<ApiKeyPermission>,
+) -> Result<AttributedApiKeyWithPlaintext, LbError> {
+    if permissions.is_empty()
+        || permissions.iter().any(|permission| {
+            !matches!(
+                permission,
+                ApiKeyPermission::OpenaiInference | ApiKeyPermission::OpenaiModelsRead
+            )
+        })
+    {
+        return Err(LbError::Common(CommonError::Validation(
+            "Attributed API keys accept only OpenAI inference and models-read permissions"
+                .to_string(),
+        )));
+    }
+    let mut transaction = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .map_err(|error| map_write_error(error, name, "begin API key issuance"))?;
+    let issuer_role: Option<String> =
+        sqlx::query_scalar("SELECT role FROM users WHERE id = ? AND disabled = 0")
+            .bind(issuer.to_string())
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|error| {
+                LbError::Database(format!("Failed to verify API key issuer: {error}"))
+            })?;
+    let target = usage_account_id.unwrap_or(issuer);
+    match issuer_role.as_deref() {
+        Some("admin") => {}
+        Some("viewer") if target == issuer => {}
+        _ => {
+            return Err(LbError::Authorization(
+                "Only a system administrator may issue a key for another account".to_string(),
+            ));
+        }
+    }
+    let active_organization: Option<String> = sqlx::query_scalar(
+        "SELECT u.organization_id FROM users u
+         JOIN organizations o ON o.id = u.organization_id AND o.archived_at IS NULL
+         WHERE u.id = ? AND u.disabled = 0",
+    )
+    .bind(target.to_string())
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|error| LbError::Database(format!("Failed to verify key usage account: {error}")))?;
+    let active_organization = active_organization.ok_or_else(|| {
+        LbError::Authorization(
+            "Key usage requires an active account in an active organization".to_string(),
+        )
+    })?;
+    let active_organization = Uuid::parse_str(&active_organization).map_err(|error| {
+        LbError::Database(format!("Invalid key usage organization identity: {error}"))
+    })?;
+    if organization_id.is_some_and(|requested| requested != active_organization) {
+        return Err(LbError::Authorization(
+            "Key usage account must belong to the requested active organization".to_string(),
+        ));
+    }
+    let id = Uuid::new_v4();
+    let key = generate_api_key();
+    let key_hash = hash_with_sha256(&key);
+    let key_prefix = key.chars().take(10).collect::<String>();
+    let created_at = Utc::now();
+    sqlx::query(
+        "INSERT INTO api_keys
+             (id,key_hash,key_prefix,name,created_by,created_at,expires_at,permissions,
+              usage_account_id,organization_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(id.to_string())
+    .bind(key_hash)
+    .bind(&key_prefix)
+    .bind(name)
+    .bind(issuer.to_string())
+    .bind(created_at.to_rfc3339())
+    .bind(expires_at.map(|time| time.to_rfc3339()))
+    .bind(serialize_permissions(&permissions)?)
+    .bind(target.to_string())
+    .bind(active_organization.to_string())
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| map_write_error(error, name, "create attributed API key"))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| map_write_error(error, name, "commit API key issuance"))?;
+    Ok(AttributedApiKeyWithPlaintext {
+        api_key: ApiKeyWithPlaintext {
+            id,
+            key,
+            key_prefix,
+            name: name.to_string(),
+            created_at,
+            expires_at,
+            permissions,
+        },
+        usage_account_id: target,
+        organization_id: active_organization,
+    })
+}
 
 /// APIキーを生成
 ///

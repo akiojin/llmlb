@@ -12,7 +12,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use llmlb::common::protocol::{RecordStatus, RequestResponseRecord};
+use llmlb::common::protocol::RequestResponseRecord;
 use llmlb::db::request_history::RequestHistoryStorage;
 use reqwest::{Client, StatusCode as ReqStatusCode};
 use serde_json::{json, Value};
@@ -148,16 +148,22 @@ async fn load_request_history_from_db(db_pool: &SqlitePool) -> Vec<RequestRespon
 async fn wait_for_latest_error_message(db_pool: &SqlitePool, model: &str) -> String {
     for _ in 0..20 {
         let records = load_request_history_from_db(db_pool).await;
-        if let Some(message) = records
-            .iter()
-            .rev()
-            .find(|record| record.model == model)
-            .and_then(|record| match &record.status {
-                RecordStatus::Error { message } => Some(message.clone()),
-                RecordStatus::Success => None,
-            })
-        {
-            return message;
+        if let Some(record) = records.iter().rev().find(|record| record.model == model) {
+            // Admission already has an Error placeholder. Read the terminal
+            // message and receipt state in one snapshot, so a commit between
+            // the earlier raw read and this query cannot return the placeholder.
+            let message: Option<Option<String>> = sqlx::query_scalar(
+                "SELECT h.error_message FROM request_history h
+                 JOIN usage_receipts r ON r.request_id=h.id
+                 WHERE h.id=? AND h.status='error' AND r.finalized_at IS NOT NULL",
+            )
+            .bind(record.id.to_string())
+            .fetch_optional(db_pool)
+            .await
+            .expect("read finalized request history error");
+            if let Some(Some(message)) = message {
+                return message;
+            }
         }
         sleep(Duration::from_millis(100)).await;
     }

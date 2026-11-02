@@ -290,16 +290,29 @@ describe('Dashboard', () => {
     expect(api.getOverview).toHaveBeenCalledTimes(1)
   })
 
-  it('limits viewers to the model list', async () => {
+  it('gives an unassigned viewer membership recovery without private acquisition', async () => {
     renderPage(<Dashboard />, { user: viewerUser })
 
-    expect(await screen.findByText('Healthy')).toBeInTheDocument()
+    expect(await screen.findByText(/Ask a system administrator to assign your organization/i)).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    expect(api.getRegistered).toHaveBeenCalledWith('canonical')
+    expect(api.getRegistered).not.toHaveBeenCalled()
+    expect(api.getOverview).not.toHaveBeenCalled()
     expect(api.getEndpoints).not.toHaveBeenCalled()
     expect(api.getRequestResponses).not.toHaveBeenCalled()
     expect(api.getSystem).not.toHaveBeenCalled()
-    expect(api.getActivity).toHaveBeenCalled()
+    expect(api.getActivity).not.toHaveBeenCalled()
+    expect(api.getDailyTokenStats).not.toHaveBeenCalled()
+    expect(FakeWebSocket.instances).toHaveLength(0)
+  })
+
+  it('lets an assigned member read scoped requests without acquiring system management data', async () => {
+    renderPage(<Dashboard />, { user: { ...viewerUser, organization_id: 'org-A', organization_role: 'member', scope: 'self:org-A:user-viewer' } })
+    expect(await screen.findByRole('tab', { name: 'Requests' })).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'Requests' }))
+    expect(await screen.findByText('history-only-model')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'System' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Traffic' })).not.toBeInTheDocument()
+    expect(api.getSystem).not.toHaveBeenCalled()
     expect(FakeWebSocket.instances).toHaveLength(0)
   })
 })

@@ -60,6 +60,10 @@ pub struct ApiKeyAuthContext {
     pub permissions: Vec<crate::common::auth::ApiKeyPermission>,
     /// APIキーの有効期限
     pub expires_at: Option<DateTime<Utc>>,
+    /// 固定された利用アカウント。legacyキーでは未帰属。
+    pub usage_account_id: Option<Uuid>,
+    /// 発行時の所属。現在所属へ自動的に付け替えない。
+    pub organization_id: Option<Uuid>,
 }
 
 fn has_permission(
@@ -272,6 +276,8 @@ async fn authenticate_api_key(
             created_by: Uuid::nil(),
             permissions,
             expires_at: None,
+            usage_account_id: None,
+            organization_id: None,
         });
     }
 
@@ -292,11 +298,79 @@ async fn authenticate_api_key(
         }
     }
 
+    let (usage_account_id, organization_id, revoked_at): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT usage_account_id, organization_id, revoked_at FROM api_keys WHERE id = ?",
+    )
+    .bind(api_key_record.id.to_string())
+    .fetch_one(pool)
+    .await
+    .map_err(|_| (StatusCode::UNAUTHORIZED, "API key attribution unavailable").into_response())?;
+    if revoked_at.is_some() {
+        return Err((StatusCode::FORBIDDEN,
+            "API key revoked after membership changed: ask a system administrator to issue a new key")
+            .into_response().into());
+    }
+    let usage_account_id = usage_account_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid API key attribution").into_response())?;
+    let organization_id = organization_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid API key attribution").into_response())?;
+    if usage_account_id.is_some() != organization_id.is_some() {
+        return Err((StatusCode::UNAUTHORIZED, "Incomplete API key attribution")
+            .into_response()
+            .into());
+    }
+    if let (Some(account), Some(org)) = (usage_account_id, organization_id) {
+        let membership = crate::db::organizations::membership(pool, account)
+            .await
+            .map_err(|_| {
+                (StatusCode::UNAUTHORIZED, "API key attribution unavailable").into_response()
+            })?;
+        let valid = membership
+            .is_some_and(|member| !member.disabled && member.organization_id == Some(org));
+        let organization = crate::db::organizations::find(pool, org)
+            .await
+            .map_err(|_| {
+                (StatusCode::UNAUTHORIZED, "API key organization unavailable").into_response()
+            })?;
+        if !valid || organization.is_none_or(|organization| organization.archived_at.is_some()) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "API key membership changed: ask a system administrator to issue a new key",
+            )
+                .into_response()
+                .into());
+        }
+        if api_key_record.permissions.iter().any(|permission| {
+            !matches!(
+                permission,
+                ApiKeyPermission::OpenaiInference | ApiKeyPermission::OpenaiModelsRead
+            )
+        }) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "Attributed keys only authorize inference and model discovery",
+            )
+                .into_response()
+                .into());
+        }
+    }
     Ok(ApiKeyAuthContext {
         id: api_key_record.id,
         created_by: api_key_record.created_by,
         permissions: api_key_record.permissions,
         expires_at: api_key_record.expires_at,
+        usage_account_id,
+        organization_id,
     })
 }
 
@@ -366,37 +440,12 @@ fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, Handler
 ///
 /// token の `password_changed_at` が DB の現在値より小さい場合は 401 を返す
 /// （= パスワードが変更/リセットされた後に発行前のトークンが使われている）。
-/// dev 固定ログイン（nil UUID）や DB 未登録ユーザーはスキップする。
-///
-/// DB 参照に失敗した場合は **fail-open**（セッションを有効として扱う）。
-/// 無効化は「DB の pca がトークンより新しい」と積極的に確認できた場合のみ行う。
-/// DB 障害時に全認証ユーザーをロックアウトすると、ダッシュボードの
-/// グレースフルデグレード（キャッシュ応答）を壊し自己 DoS となるため。
-/// JWT 自体は 24h で失効するので、障害中の無効化遅延は限定的。
+/// 未登録・無効な主体とDB障害も拒否し、現在の認可境界を証明する。
 pub(crate) async fn enforce_session_not_revoked(
     pool: &sqlx::SqlitePool,
     claims: &Claims,
 ) -> Result<(), HandlerError> {
-    let Ok(user_id) = uuid::Uuid::parse_str(&claims.sub) else {
-        return Ok(());
-    };
-    if user_id.is_nil() {
-        return Ok(());
-    }
-    match crate::db::users::find_by_id(pool, user_id).await {
-        Ok(Some(user)) if claims.password_changed_at < user.password_changed_at => Err((
-            StatusCode::UNAUTHORIZED,
-            "Session revoked: please sign in again".to_string(),
-        )
-            .into_response()
-            .into()),
-        Ok(_) => Ok(()),
-        Err(e) => {
-            // fail-open: DB 障害時はセッションを有効扱いにして可用性を優先する。
-            tracing::warn!("Session revocation check skipped (DB error): {}", e);
-            Ok(())
-        }
-    }
+    crate::auth::scope::resolve(pool, claims).await.map(|_| ())
 }
 
 /// JWT認証ミドルウェア
@@ -434,16 +483,38 @@ pub async fn require_jwt_auth_middleware(
     next: Next,
 ) -> Result<Response, HandlerError> {
     let token = extract_bearer_or_cookie_token(request.headers())?;
-    let claims = verify_jwt_claims(&token, &app_state.auth.jwt_secret)?;
-    // パスワード変更/リセット後の旧セッションを無効化する
-    enforce_session_not_revoked(&app_state.db_pool, &claims).await?;
+    let verified = verify_jwt_claims(&token, &app_state.auth.jwt_secret)?;
+    let identity = crate::auth::scope::resolve(&app_state.db_pool, &verified).await?;
+    let claims = identity.claims;
+    let scope_key = identity.scope.cache_key();
+    request.extensions_mut().insert(identity.scope);
 
     let claims_for_response = claims.clone();
     request.extensions_mut().insert(claims);
     let mut response = next.run(request).await;
     // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
     response.extensions_mut().insert(claims_for_response);
+    scope_response_headers(&mut response, &scope_key);
     Ok(response)
+}
+
+fn scope_response_headers(response: &mut Response, scope: &str) {
+    if let Ok(value) = scope.parse() {
+        response.headers_mut().insert("X-LLMLB-Scope", value);
+    }
+    if let Some(account) = response
+        .extensions()
+        .get::<Claims>()
+        .map(|claims| claims.sub.clone())
+    {
+        if let Ok(value) = account.parse() {
+            response.headers_mut().insert("X-LLMLB-Account", value);
+        }
+    }
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
 }
 
 /// JWT claims に admin ロールを要求するミドルウェア
@@ -731,15 +802,21 @@ pub async fn jwt_or_api_key_permission_middleware(
 ) -> Result<Response, HandlerError> {
     // JWTがあれば優先
     if let Some(token) = extract_jwt_from_headers(request.headers()) {
-        let claims = verify_jwt_claims(&token, &config.app_state.auth.jwt_secret)?;
-        // パスワード変更/リセット後の旧セッションを無効化する
-        enforce_session_not_revoked(&config.app_state.db_pool, &claims).await?;
+        let verified = verify_jwt_claims(&token, &config.app_state.auth.jwt_secret)?;
+        let identity = crate::auth::scope::resolve(&config.app_state.db_pool, &verified).await?;
+        let claims = identity.claims;
+        let scope_key = identity.scope.cache_key();
+        request.extensions_mut().insert(identity.scope);
 
         if let Some(required_role) = config.jwt_required_role {
             if claims.role != required_role {
-                return Err((StatusCode::FORBIDDEN, "Admin access required".to_string())
-                    .into_response()
-                    .into());
+                let mut denied =
+                    (StatusCode::FORBIDDEN, "Admin access required".to_string()).into_response();
+                denied.extensions_mut().insert(claims.clone());
+                // The browser must discard an older, broader view even when
+                // the first request after a role change is denied here.
+                scope_response_headers(&mut denied, &scope_key);
+                return Err(denied.into());
             }
         }
 
@@ -748,6 +825,7 @@ pub async fn jwt_or_api_key_permission_middleware(
         let mut response = next.run(request).await;
         // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
         response.extensions_mut().insert(claims_for_response);
+        scope_response_headers(&mut response, &scope_key);
         return Ok(response);
     }
 

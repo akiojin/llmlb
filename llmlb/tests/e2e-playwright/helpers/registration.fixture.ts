@@ -18,6 +18,7 @@ export interface RegistrationUser {
 /** All setup, assertions and cleanup reach the real HTTP server. */
 export class RegistrationApi {
   readonly prefix = `e2e-registration-${randomUUID()}`
+  private readonly organizationIds: string[] = []
 
   constructor(readonly request: APIRequestContext, readonly token: string) {}
 
@@ -41,6 +42,20 @@ export class RegistrationApi {
     const response = await this.request.get('/api/users', { headers: this.headers })
     expect(response.status()).toBe(200)
     return (await response.json()).users
+  }
+
+  async assignOrganization(userId: string): Promise<void> {
+    const created = await this.request.post('/api/organizations', {
+      headers: this.headers, data: { name: `${this.prefix}-${userId}` },
+    })
+    expect(created.status()).toBe(201)
+    const organizationId = (await created.json()).id as string
+    this.organizationIds.push(organizationId)
+    const assigned = await this.request.put(`/api/users/${userId}/membership`, {
+      headers: this.headers,
+      data: { organization_id: organizationId, organization_role: 'member' },
+    })
+    expect(assigned.status()).toBe(200)
   }
 
   async submit(username: string): Promise<PendingRegistration> {
@@ -71,6 +86,10 @@ export class RegistrationApi {
     for (const user of (await this.users()).filter((user) => user.username.startsWith(this.prefix))) {
       const response = await this.request.delete(`/api/users/${user.id}`, { headers: this.headers })
       expect(response.status()).toBe(204)
+    }
+    for (const id of this.organizationIds) {
+      const response = await this.request.delete(`/api/organizations/${id}`, { headers: this.headers })
+      expect(response.status()).toBe(200)
     }
   }
 }

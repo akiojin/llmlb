@@ -134,6 +134,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await testInfo.attach(`approved-user-roles-${colorScheme}`, {
         body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png',
       })
+      const approvedViewer = (await registrationApi.users()).find((user) => user.username === viewerName)
+      expect(approvedViewer).toBeDefined()
+      await registrationApi.assignOrganization(approvedViewer!.id)
       await userModal.getByRole('button', { name: 'Close', exact: true }).click()
       await expectLoggedInRole(page, registrationApi, viewerName, 'viewer')
       await expectLoggedInRole(page, registrationApi, adminName, 'admin')

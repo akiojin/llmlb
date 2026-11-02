@@ -1,9 +1,19 @@
 // Shared API client utilities
 
+import {
+  AuthScopeChangedError,
+  getAuthSessionSnapshot,
+  invalidateAuthSession,
+  isAuthSessionCurrent,
+  type AuthSessionSnapshot,
+} from '@/lib/authSession'
+
 const API_BASE = ''
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>
+  /** `/auth/me` establishes the newly observed scope rather than consuming it. */
+  sessionRefresh?: boolean
 }
 
 interface ApiErrorOptions {
@@ -92,11 +102,34 @@ export async function createApiErrorFromResponse(response: Response): Promise<Ap
 // 行う（多重 navigation によるちらつきを防ぐ）。
 let redirectingToLogin = false
 
+export function redirectToLogin(): void {
+  if (!redirectingToLogin) {
+    redirectingToLogin = true
+    window.location.href = '/dashboard/login.html'
+  }
+}
+
+function requireCurrentSession(snapshot: AuthSessionSnapshot, response: Response, sessionRefresh: boolean): void {
+  if (!isAuthSessionCurrent(snapshot)) throw new AuthScopeChangedError()
+  // A shared scope (global, or one organization) can contain multiple actors.
+  // Cookie changes in another tab must invalidate the previous actor's view too.
+  const responseScope = response.headers.get('X-LLMLB-Scope')
+  const responseAccount = response.headers.get('X-LLMLB-Account')
+  if (!sessionRefresh && (
+    (snapshot.scope && responseScope && responseScope !== snapshot.scope)
+    || (snapshot.accountId && responseAccount && responseAccount !== snapshot.accountId)
+  )) {
+    invalidateAuthSession(true)
+    throw new AuthScopeChangedError()
+  }
+}
+
 export async function fetchWithAuth<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<T> {
-  const { params, ...fetchOptions } = options
+  const { params, sessionRefresh = false, ...fetchOptions } = options
+  const session = getAuthSessionSnapshot()
 
   let url = `${API_BASE}${endpoint}`
   if (params) {
@@ -129,22 +162,26 @@ export async function fetchWithAuth<T>(
     ...fetchOptions,
     headers,
     credentials: 'include',
+    cache: 'no-store',
   })
 
+  requireCurrentSession(session, response, sessionRefresh)
+
   if (response.status === 401) {
-    if (!redirectingToLogin) {
-      redirectingToLogin = true
-      window.location.href = '/dashboard/login.html'
-    }
+    invalidateAuthSession()
+    redirectToLogin()
     throw new ApiError(401, 'Unauthorized')
   }
 
   if (!response.ok) {
-    throw await createApiErrorFromResponse(response)
+    const error = await createApiErrorFromResponse(response)
+    requireCurrentSession(session, response, sessionRefresh)
+    throw error
   }
 
   // Handle empty responses
   const text = await response.text()
+  requireCurrentSession(session, response, sessionRefresh)
   if (!text) {
     return {} as T
   }

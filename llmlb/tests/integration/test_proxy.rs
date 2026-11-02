@@ -28,7 +28,7 @@ use serde_json::{json, Value};
 
 use crate::support::{
     http::{spawn_lb, TestServer},
-    lb::{register_responses_endpoint, spawn_test_lb},
+    lb::{register_responses_endpoint, spawn_test_lb, spawn_test_lb_with_db, test_jwt_secret},
 };
 
 const TPS_MODEL: &str = "cp1-tps-model";
@@ -155,13 +155,18 @@ async fn stream_chat_through_proxy(client: &Client, lb_addr: SocketAddr) -> Stri
     resp.text().await.expect("streaming chat body")
 }
 
-async fn fetch_model_tps(client: &Client, lb_addr: SocketAddr, endpoint_id: &str) -> Vec<Value> {
+async fn fetch_model_tps(
+    client: &Client,
+    lb_addr: SocketAddr,
+    endpoint_id: &str,
+    jwt: &str,
+) -> Vec<Value> {
     let resp = client
         .get(format!(
             "http://{}/api/endpoints/{}/model-tps",
             lb_addr, endpoint_id
         ))
-        .header("authorization", "Bearer sk_debug")
+        .bearer_auth(jwt)
         .send()
         .await
         .expect("model-tps request");
@@ -176,10 +181,11 @@ async fn wait_for_model_tps(
     lb_addr: SocketAddr,
     endpoint_id: &str,
     request_count: u64,
+    jwt: &str,
 ) -> Value {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let entries = fetch_model_tps(client, lb_addr, endpoint_id).await;
+        let entries = fetch_model_tps(client, lb_addr, endpoint_id, jwt).await;
         if let Some(entry) = entries.iter().find(|entry| {
             entry["model_id"] == TPS_MODEL && entry["request_count"].as_u64() == Some(request_count)
         }) {
@@ -210,7 +216,24 @@ async fn test_streaming_proxy_measures_tps_and_updates_ema() {
     const FIRST_TOKENS: u64 = 40;
     const SECOND_TOKENS: u64 = 400;
 
-    let lb = spawn_test_lb().await;
+    let (lb, pool) = spawn_test_lb_with_db().await;
+    let actor = llmlb::db::users::create(
+        &pool,
+        "proxy-tps-admin",
+        "unused-password-hash",
+        llmlb::common::auth::UserRole::Admin,
+        false,
+    )
+    .await
+    .expect("create current database administrator");
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &actor.id.to_string(),
+        actor.role,
+        &test_jwt_secret(),
+        actor.must_change_password,
+        actor.password_changed_at,
+    )
+    .expect("sign current database administrator");
     let client = Client::new();
     let upstream = spawn_streaming_upstream(vec![FIRST_TOKENS, SECOND_TOKENS]).await;
     let endpoint_id = register_responses_endpoint(lb.addr(), upstream.addr(), TPS_MODEL)
@@ -218,7 +241,7 @@ async fn test_streaming_proxy_measures_tps_and_updates_ema() {
         .expect("register upstream endpoint");
 
     assert!(
-        fetch_model_tps(&client, lb.addr(), &endpoint_id)
+        fetch_model_tps(&client, lb.addr(), &endpoint_id, &jwt)
             .await
             .is_empty(),
         "TPS must be unmeasured before any inference request"
@@ -229,7 +252,7 @@ async fn test_streaming_proxy_measures_tps_and_updates_ema() {
     assert!(body.contains(r#""content":"hello""#), "body: {body}");
     assert!(body.contains("data: [DONE]"), "body: {body}");
 
-    let first = wait_for_model_tps(&client, lb.addr(), &endpoint_id, 1).await;
+    let first = wait_for_model_tps(&client, lb.addr(), &endpoint_id, 1, &jwt).await;
     assert_eq!(first["api_kind"], "chat_completions");
     assert_eq!(first["source"], "production");
     assert_eq!(first["total_output_tokens"], FIRST_TOKENS);
@@ -253,7 +276,7 @@ async fn test_streaming_proxy_measures_tps_and_updates_ema() {
     // 2 回目: 直近値での上書きではなく EMA（α=0.2）で更新される
     stream_chat_through_proxy(&client, lb.addr()).await;
 
-    let second = wait_for_model_tps(&client, lb.addr(), &endpoint_id, 2).await;
+    let second = wait_for_model_tps(&client, lb.addr(), &endpoint_id, 2, &jwt).await;
     assert_eq!(second["total_output_tokens"], FIRST_TOKENS + SECOND_TOKENS);
 
     let total_duration_ms = second["average_duration_ms"]

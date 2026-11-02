@@ -4,15 +4,20 @@ import Dashboard from '@/pages/Dashboard'
 import EndpointPlayground from '@/pages/EndpointPlayground'
 import LoadBalancerPlayground from '@/pages/LoadBalancerPlayground'
 import AuditLogPage from '@/pages/AuditLog'
+import OrganizationsPage from '@/pages/Organizations'
+import { redirectToLogin } from '@/lib/api/client'
+import { Button } from '@/components/ui/button'
 
 type Route =
   | { type: 'dashboard' }
   | { type: 'lb-playground'; initialModel?: string }
   | { type: 'playground'; endpointId: string }
   | { type: 'audit-log' }
+  | { type: 'organizations' }
 
 function parseHash(): Route {
   const hash = window.location.hash.slice(1) // Remove #
+  if (hash === 'organizations') return { type: 'organizations' }
   if (hash === 'audit-log') {
     return { type: 'audit-log' }
   }
@@ -35,7 +40,7 @@ function parseHash(): Route {
 }
 
 function App() {
-  const { isLoading, isLoggedIn, user } = useAuth()
+  const { isLoading, isLoggedIn, user, logout } = useAuth()
   const [route, setRoute] = useState<Route>(parseHash)
 
   const navigateToDashboard = useCallback(() => {
@@ -55,7 +60,7 @@ function App() {
     if (isLoading) return
     // Redirect to login if not authenticated
     if (!isLoggedIn) {
-      window.location.href = '/dashboard/login.html'
+      redirectToLogin()
       return
     }
     // Redirect to change-password if password change is required
@@ -79,8 +84,21 @@ function App() {
     )
   }
 
+  // Redirects happen in an effect; private pages must not mount during that interval.
+  if (!isLoggedIn || user?.must_change_password) return null
+  if (user?.role !== 'admin' && !user?.organization_id) {
+    return <main className="flex min-h-screen items-center justify-center bg-background p-6"><div className="max-w-md space-y-4 text-center">
+      <h1 className="font-display text-xl font-semibold">Organization membership required</h1>
+      <p className="text-sm text-muted-foreground">Ask a system administrator to assign your organization before viewing usage or using inference.</p>
+      <Button variant="outline" onClick={() => { void logout() }}>Sign out</Button>
+    </div></main>
+  }
+
   switch (route.type) {
+    case 'organizations':
+      return <OrganizationsPage onBack={navigateToDashboard} />
     case 'audit-log':
+      if (user?.role !== 'admin') return <main className="p-6"><p>System administrator access required.</p><Button variant="link" onClick={navigateToDashboard}>Back to Dashboard</Button></main>
       return <AuditLogPage onBack={navigateToDashboard} />
     case 'lb-playground':
       return <LoadBalancerPlayground onBack={navigateToDashboard} initialModel={route.initialModel} />

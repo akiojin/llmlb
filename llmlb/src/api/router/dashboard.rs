@@ -31,6 +31,7 @@ const _DASHBOARD_ASSETS_BUILD_STAMP: &str = include_str!(concat!(
 pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
     // ダッシュボードAPI（管理UI向け。JWTのみ）
     let dashboard_general_routes = Router::new()
+        .route("/dashboard/usage", get(dashboard::get_usage))
         .route("/dashboard/endpoints", get(dashboard::get_endpoints))
         .route("/dashboard/models", get(dashboard::get_models))
         .route(
@@ -70,18 +71,12 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             "/dashboard/stats/tokens/monthly",
             get(dashboard::get_monthly_token_stats),
         )
-        .route("/dashboard/logs/lb", get(logs::get_lb_logs))
         // モデル別リクエスト統計（全エンドポイント横断）
         .route(
             "/dashboard/model-stats",
             get(dashboard::get_all_model_stats),
         )
         // SPEC-62ac4b68: Clients分析API
-        .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
-        .route(
-            "/benchmarks/tps/{run_id}",
-            get(benchmarks::get_tps_benchmark),
-        )
         .route("/dashboard/clients", get(dashboard::get_client_rankings))
         .route(
             "/dashboard/clients/timeline",
@@ -122,6 +117,10 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             post(openai::dashboard_playground_chat_completions),
         )
         .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api::usage_capture::usage_capture_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::require_password_changed_middleware,
         ))
@@ -146,6 +145,10 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             post(openai::dashboard_playground_chat_completions),
         )
         .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api::usage_capture::usage_capture_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::require_password_changed_middleware,
         ))
@@ -176,11 +179,18 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             post(audit_log::verify_hash_chain),
         );
 
-    // 運用通知の設定API (SPEC #777): adminロールのみ
-    let dashboard_notification_routes = Router::new().route(
-        "/dashboard/notifications",
-        get(dashboard::get_notification_settings).put(dashboard::update_notification_settings),
-    );
+    // プロセス全体のログ・実測と通知設定はsystem adminのJWTだけに許可する。
+    let dashboard_admin_routes = Router::new()
+        .route("/dashboard/logs/lb", get(logs::get_lb_logs))
+        .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
+        .route(
+            "/benchmarks/tps/{run_id}",
+            get(benchmarks::get_tps_benchmark),
+        )
+        .route(
+            "/dashboard/notifications",
+            get(dashboard::get_notification_settings).put(dashboard::update_notification_settings),
+        );
 
     {
         let dashboard_general_routes = dashboard_general_routes
@@ -208,7 +218,7 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
                 crate::auth::middleware::require_jwt_auth_middleware,
             ));
         // 設定を変更する PUT を持つため、Cookie 認証時の CSRF からも保護する
-        let dashboard_notification_routes = dashboard_notification_routes
+        let dashboard_admin_routes = dashboard_admin_routes
             .layer(middleware::from_fn(
                 crate::auth::middleware::require_password_changed_middleware,
             ))
@@ -224,7 +234,7 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             ));
         dashboard_general_routes
             .merge(dashboard_audit_routes)
-            .merge(dashboard_notification_routes)
+            .merge(dashboard_admin_routes)
             .merge(dashboard_playground_routes)
             .merge(dashboard_playground_loadtest_routes)
     }

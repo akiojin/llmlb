@@ -1,0 +1,445 @@
+{
+  "record_type": "Development evidence manifest; not a canonical gwt Verification Run Record",
+  "owner": 947,
+  "generation": "2026-11-02 rebuild",
+  "base_commit": "f684b815d739f101d90470b60e34db7b0784cace",
+  "branch": "work/issue-947",
+  "generated_at": "2026-11-02T09:46:12.0557067Z",
+  "artifact_root": ".gwt/tmp/issue947-rebuild-20261102",
+  "user_verification_result": "n/a (autonomous)",
+  "normal_quality": {
+    "command": "make -j1 'SHELL=C:/Program Files/Git/bin/bash.exe' quality-checks",
+    "environment": {
+      "LLMLB_E2E_WORKERS": "1"
+    },
+    "exit_code": 0,
+    "log": "quality-all6.log",
+    "browser_stats": {
+      "startTime": "2026-11-02T09:15:28.083Z",
+      "duration": 1174310.453,
+      "expected": 275,
+      "skipped": 8,
+      "unexpected": 0,
+      "flaky": 1
+    },
+    "retained_first_failure": "PS-01 console resource and WebSocket ERR_ADDRESS_IN_USE; successful configured retry; no assertion or retry allowance relaxed"
+  },
+  "coverage": {
+    "command": "RUST_TEST_THREADS=1 make -j1 coverage",
+    "exit_code": 0,
+    "rust_passed": 3906,
+    "existing_ignored": 5,
+    "lines_hit": 43701,
+    "lines_found": 49292,
+    "line_percent": 88.65738862290027,
+    "required_percent": 80,
+    "log": "coverage1.log"
+  },
+  "agent_visual_check": {
+    "result": "pass (direct development run only)",
+    "browser": "headed Chromium",
+    "passed": 4,
+    "light": 2,
+    "dark": 2,
+    "retries": 0,
+    "console_errors": 0,
+    "page_errors": 0,
+    "log": "e2e-organization-headed5.log"
+  },
+  "independent_source_review": {
+    "reviewer": "/root/security_review",
+    "unresolved_security_findings": 0,
+    "blocking_architecture_findings": 0,
+    "scope": "Static source review with limited runtime log reconciliation; not a penetration test or delivery approval",
+    "report": "security-review.md"
+  },
+  "tdd_evidence": "tdd-evidence.md (compile RED and runtime assertion RED distinguished; intermediate failures retained)",
+  "delivery_verification": "Not established by this manifest. Fresh canonical verification, Ready PR/CI, manual delivery decision, and develop inclusion remain required.",
+  "artifacts": [
+    {
+      "path": "capture-runtime-snapshot.log",
+      "bytes": 1255,
+      "sha256": "23b129e84e44e18f69e3ac5a0c0ed618175208d472b39f59971bb051b7d4b7ac"
+    },
+    {
+      "path": "contracts-and-fixtures-all.log",
+      "bytes": 38962,
+      "sha256": "ce62e1154001349e51b109ba5a3e49306532d4ed0125742b39681b32405ce8c4"
+    },
+    {
+      "path": "contracts-and-fixtures-green.log",
+      "bytes": 32045,
+      "sha256": "c4f44b15fffb7c21b1d0cafede83f7f7c5a93d5322274b0ffce8eab2732cc872"
+    },
+    {
+      "path": "coverage-summary.json",
+      "bytes": 118,
+      "sha256": "ba66a4ac08d5a14748f6779c65ed86427a1c76f989f902a9b773d35d6f45966f"
+    },
+    {
+      "path": "coverage1.log",
+      "bytes": 323089,
+      "sha256": "728902813e52d2027377b1d2e8b18b900f3dfe09cb2b427b5207d3131b7fe56b"
+    },
+    {
+      "path": "e2e-auth-green2-results.json",
+      "bytes": 684743,
+      "sha256": "32de5e8e9eb25c4ffdfb15e9df60b071129aa3c5895b36f52ee8175e8c083652"
+    },
+    {
+      "path": "e2e-organization-headed3.log",
+      "bytes": 9207,
+      "sha256": "d2e696e0a9655462cf768d91c473043c9ab6a51c6563b9335deedb0e32a0f57c"
+    },
+    {
+      "path": "e2e-organization-headed4.log",
+      "bytes": 1315,
+      "sha256": "2a9135caab276ed340fe17176dd3017c653106677854bd17594a34d4c5f1d875"
+    },
+    {
+      "path": "e2e-organization-headed5.log",
+      "bytes": 1315,
+      "sha256": "38f8de80574aa58afd6b4e933d2bf3f98de560504e5e704b5277d9aef82dcd48"
+    },
+    {
+      "path": "e2e-rust-fixtures.log",
+      "bytes": 5904,
+      "sha256": "6acc364356b386baa57a541f00b16b8d3a892277b940606f96c1922e70970328"
+    },
+    {
+      "path": "green-bootstrap-identity.log",
+      "bytes": 465,
+      "sha256": "c7b347c0870080ab5f4fc42443501b77fbc927195f346afd0023c84a8e681649"
+    },
+    {
+      "path": "green-browser-auth-fixtures.log",
+      "bytes": 15488,
+      "sha256": "c2287a695730b1be979b36efbba97a9289e0a55f80bcea754ca7bb9cf9b7ade1"
+    },
+    {
+      "path": "green-browser-auth-fixtures2.log",
+      "bytes": 1480,
+      "sha256": "15a78f7f0d077b50ea381d28d5aea125bb267a8e7a0b9b433b92ad2084a8f3b3"
+    },
+    {
+      "path": "green-current-identity.log",
+      "bytes": 787,
+      "sha256": "758cceab069ce12ed0d3e8c474c80233c008137c4d235f1527de28a371222a0d"
+    },
+    {
+      "path": "green-e2e-auth-fixtures.log",
+      "bytes": 2138,
+      "sha256": "a46e87693d66b0c5c522933c9e8bb751861be6b7a2ab1995680af2ef01ed4344"
+    },
+    {
+      "path": "green-inference-routes1.log",
+      "bytes": 462,
+      "sha256": "1f398acd324e1e4073d3f8a67fe50263eb4b911fb94007e2433588133b71bef5"
+    },
+    {
+      "path": "green-integration-fixtures.log",
+      "bytes": 18010,
+      "sha256": "bc1eff9ec6677f4a2e3a2e39353cf581fc00f225f89cec722387ecef2b21e57d"
+    },
+    {
+      "path": "green-key-mutation-scope.log",
+      "bytes": 1226,
+      "sha256": "c74da037c9048f228bb4349bbfb8aff8f8bb88b736803d5efef390720c9bf961"
+    },
+    {
+      "path": "green-key-roundtrip.log",
+      "bytes": 343,
+      "sha256": "4835f800e1d1db3dabc78f55a80b74dbf5470fb3eec4209a1ff822192f5c5430"
+    },
+    {
+      "path": "green-organization-contract.log",
+      "bytes": 1031,
+      "sha256": "e4b09e10e4a0827030ee205ce51544c559d6f62c05747052241855ea3f3a5ef6"
+    },
+    {
+      "path": "green-organizations-db.log",
+      "bytes": 1180,
+      "sha256": "a16a2ee310a679eb5e09da4b642f0113fadde1e32b02d1e70b15dcd3a2376e80"
+    },
+    {
+      "path": "green-organizations-heading.log",
+      "bytes": 540,
+      "sha256": "f59c3c78679e3c471537429fb9a2a7358345c623151c8741f451d420cdd4a797"
+    },
+    {
+      "path": "green-organizations-ui2.log",
+      "bytes": 2666,
+      "sha256": "69faacbcc476cb35ff41ca9f1133190395b32e83447c73176553272b0588f846"
+    },
+    {
+      "path": "green-outcomes-all.log",
+      "bytes": 436,
+      "sha256": "77de49f4553eaf3d47d6f96c87daec468de1da43efe7ed62cfdbea88b4208a73"
+    },
+    {
+      "path": "green-outcomes-retention.log",
+      "bytes": 557,
+      "sha256": "6825f0b63123560187b96b6049d6ecaa6e5ab4b6da531e3d897119ed06dde227"
+    },
+    {
+      "path": "green-raw-usage.log",
+      "bytes": 1264,
+      "sha256": "96f3d7d8709bdde53eb52ec1720b13133f7bc7008a7905846c745670dc71e25a"
+    },
+    {
+      "path": "green-read-boundaries1.log",
+      "bytes": 2385,
+      "sha256": "3c6d8c8f952c27abbbe902f7819c60ed7e000dc69d81bf9db0b3df5c79a06aef"
+    },
+    {
+      "path": "green-ui-account-header.log",
+      "bytes": 542,
+      "sha256": "009617b12b013e8c6e89df785ee2208765864cded0e0ee5a23e0b4d0571d7da0"
+    },
+    {
+      "path": "green-ui-scope.log",
+      "bytes": 541,
+      "sha256": "43593bf7446b29b79c785f535baf2affcf5276a5ad0f05cdbf8888bb3af50e1b"
+    },
+    {
+      "path": "green-usage-db.log",
+      "bytes": 988,
+      "sha256": "e5e7306fbb7b9b1569fc085a1b72f243a8fb4da0a6428c0362e560e604de9134"
+    },
+    {
+      "path": "green-usage-scope.log",
+      "bytes": 4808,
+      "sha256": "18e054893fbe56b8c527e6b8105e34051709949fd350b4b206b2c9045cfc687f"
+    },
+    {
+      "path": "quality-all1.log",
+      "bytes": 22267,
+      "sha256": "a3354106068fd0dcbe44718eba4a4f1d8fc885b0b79618bc31f344c46b399f77"
+    },
+    {
+      "path": "quality-all3.log",
+      "bytes": 247862,
+      "sha256": "9ae6f75db5891881bc41c8ae141ce99e24eece9d86350c693c0d3111f2085eb7"
+    },
+    {
+      "path": "quality-all5.log",
+      "bytes": 460152,
+      "sha256": "656058321905918222d05c7991510584f25d57ff98ed8899d153082a4e121be2"
+    },
+    {
+      "path": "quality-all6.log",
+      "bytes": 396206,
+      "sha256": "490c4a1c5708b75492e22e3279a8cfbf9fe3fd8e7200bc4595cf41ac020f6c6d"
+    },
+    {
+      "path": "red-anthropic-history-fixture.log",
+      "bytes": 814,
+      "sha256": "8117dd80bfa9e094d4c782b5c01825908373abcea97d86db97682d5d0f34e9e6"
+    },
+    {
+      "path": "red-bootstrap-identity.log",
+      "bytes": 1128,
+      "sha256": "d11dfe57aea3182b82171a74bf9217fd43baae47d03bf9cc1f60e751c554dd63"
+    },
+    {
+      "path": "red-cancel-commit.log",
+      "bytes": 2841,
+      "sha256": "f60d6e3f49e6ca8e5697e786235081f2587fa55182dba01e4215c72e172ce98c"
+    },
+    {
+      "path": "red-capture.log",
+      "bytes": 1068,
+      "sha256": "5727865ca49a00eecbe04efadcdc660763cbe1130339259d2716acf596114202"
+    },
+    {
+      "path": "red-compatibility-fixtures.log",
+      "bytes": 2266,
+      "sha256": "96d7f7ef5896b845ba48d4171e2f6efd49b6bf0f884c07628104e7aaf4d5f981"
+    },
+    {
+      "path": "red-current-identity-contract.log",
+      "bytes": 826,
+      "sha256": "6ca41da2745f7dbde70923ef0c223e32697aee2c0d57780e8a5878d52c6dacd5"
+    },
+    {
+      "path": "red-current-identity-runtime.log",
+      "bytes": 2501,
+      "sha256": "2c458bd1560894a707887eeafef0f6f4d70a018a319d9a22ff365fe11b3435aa"
+    },
+    {
+      "path": "red-current-identity.log",
+      "bytes": 45494,
+      "sha256": "fc5c85ac8f2803695103c6178fe39f4f4ab3f16fe556c31e2c184b031a70e4fd"
+    },
+    {
+      "path": "red-early-scope-403.log",
+      "bytes": 1574,
+      "sha256": "254e65d4a7b6978eaa5765f79ac6c69330e4dd72faf0c087299710bb60e73a02"
+    },
+    {
+      "path": "red-endpoint-receipt-semantics.log",
+      "bytes": 2026,
+      "sha256": "1f63881ef28d0fe8b64166ae19b2cb8074c905447ec3244a0f3b7207b36c7c73"
+    },
+    {
+      "path": "red-inference-routes2.log",
+      "bytes": 2998,
+      "sha256": "c2767a9f6d4842c44db05d7fb7760c0e7c554554ac7322855fa229f5909a6b35"
+    },
+    {
+      "path": "red-integration-fixtures.log",
+      "bytes": 33054,
+      "sha256": "55ef507c9d9dbbc255376a4729b28c831c80c9031a91db74f0e3545c9aa244d1"
+    },
+    {
+      "path": "red-ip-fixture.log",
+      "bytes": 1088,
+      "sha256": "37efce64594935458f0ac4ad6af3202a2f9f7e340d1871d47a0f32daae00a907"
+    },
+    {
+      "path": "red-key-attribution.log",
+      "bytes": 1188,
+      "sha256": "383050cd5b05d5d1289d17beece5131fb7fb2d5c374ffd456ac738ef453f321b"
+    },
+    {
+      "path": "red-key-mutation-scope.log",
+      "bytes": 5117,
+      "sha256": "ab989e9cff5b169367375f198f1c00b297b5cc311203b8f0fb763114d7e93d62"
+    },
+    {
+      "path": "red-key-roundtrip.log",
+      "bytes": 1773,
+      "sha256": "e0ff6b71fb8eeaba111b5f16fddaea4097ae5a2e5621f9277aef96a562a046e4"
+    },
+    {
+      "path": "red-keys-http.log",
+      "bytes": 4699,
+      "sha256": "2c40f6208922cdae557a6e911c8fab4587258d170bbe8ac567938038f80e6f7b"
+    },
+    {
+      "path": "red-missing-capture.log",
+      "bytes": 1152,
+      "sha256": "2999b69a3846dd3c039e56fc9876fee200be57191a6802cde60c7634446b37c3"
+    },
+    {
+      "path": "red-native-semantic-stream.log",
+      "bytes": 1573,
+      "sha256": "472b3a5baae90e97e3985f5b01f4b683641483c67776e7a45ccbd3ab195bd4a3"
+    },
+    {
+      "path": "red-organizations-heading.log",
+      "bytes": 17385,
+      "sha256": "e370e66a59bf9a061e7c978223a32647de9a4feb51128fd07421a52260f4e5f2"
+    },
+    {
+      "path": "red-organizations-ui.log",
+      "bytes": 4948,
+      "sha256": "a87cb6ce4b6f41fe684528cf4e8da04ead0ae9489ff5f4b6883aa8cf10693766"
+    },
+    {
+      "path": "red-outcomes-retention.log",
+      "bytes": 1756,
+      "sha256": "75a21c0aaba77f4d1e604480d34975326d74b5b9182d7838a698a6db53f3f116"
+    },
+    {
+      "path": "red-raw-usage.log",
+      "bytes": 4789,
+      "sha256": "89caee6021faec685f49153a4c0344114f56180390095f8dd9d8280e8101c09d"
+    },
+    {
+      "path": "red-read-boundaries.log",
+      "bytes": 5090,
+      "sha256": "6146b26253fa47fca69611b7857503711ba6e4bd7bd0a417bbaede5d8fef47ac"
+    },
+    {
+      "path": "red-read-boundaries2.log",
+      "bytes": 4867,
+      "sha256": "1a6b942c0672e193f42785a9fc6369192776f4b3c4fb75093090f4bb888bf713"
+    },
+    {
+      "path": "red-route-ledger.log",
+      "bytes": 1483,
+      "sha256": "e6ed978dbcd9de0849c771a855b5508235bb7e1842d746900b27f3fc5e8e9843"
+    },
+    {
+      "path": "red-semantic-stream-error.log",
+      "bytes": 1208,
+      "sha256": "c59aa8c232596fcc35e198583cc32a256a2b17fa1a4657c491f73ff3e117c0a4"
+    },
+    {
+      "path": "red-server-account-header.log",
+      "bytes": 1226,
+      "sha256": "987a29546cf126eac07168ee086e373f7c68bdded4d89b7d1d5a20fdbf2010ac"
+    },
+    {
+      "path": "red-ui-account-header.log",
+      "bytes": 6384,
+      "sha256": "d3083473deecb908b9ad806b2d4cbf8fc105ee681ae5e9f4f23180ea989afe1d"
+    },
+    {
+      "path": "red-ui-integration.log",
+      "bytes": 99660,
+      "sha256": "2fb49f8500d986a18941bdec016f8d3b3b64728abbd47ac2d3d91487ddbb468c"
+    },
+    {
+      "path": "red-ui-scope.log",
+      "bytes": 9869,
+      "sha256": "8ceb1d187538ec299cc9d2229c64e9d53b8409275ae579b4c5479449e588dd75"
+    },
+    {
+      "path": "red-unknown-outcome-counters.log",
+      "bytes": 1181,
+      "sha256": "21af2c4811dc7b20d32eebe32aac49ffd28684853fdf868e2cb24a98dd14eee0"
+    },
+    {
+      "path": "red-usage-scope.log",
+      "bytes": 4486,
+      "sha256": "39daab443017bcccd82f0de76808297c35bd0f5c4d44c1b02092e15c42b03adc"
+    },
+    {
+      "path": "red-viewer-key-permissions.log",
+      "bytes": 2082,
+      "sha256": "342756125d76ce8330a6365e356f552aed4247345ade1e469e6dfb78ed00265d"
+    },
+    {
+      "path": "red-writer-lifetime.log",
+      "bytes": 1864,
+      "sha256": "b04223e4e65e937c9cfe8c62b8541e381aa920b44b37acfb327c3725fb2af85d"
+    },
+    {
+      "path": "rust-lib-all1.log",
+      "bytes": 250737,
+      "sha256": "241868f8881bd53dae90d6b18b4e4820fe986b3d956b7da54e657142087f39ba"
+    },
+    {
+      "path": "rust-lib-all2.log",
+      "bytes": 237993,
+      "sha256": "57b565b31a4840aa0d15b91e363383af9cbe8f69a436cfc8b9bd627a844c407a"
+    },
+    {
+      "path": "security-review.md",
+      "bytes": 32536,
+      "sha256": "0a32e81ab9a096e91d5fbc8a5042ddd596951f1fc272b3dcaea39c194637bd11"
+    },
+    {
+      "path": "semantic-sse-control.log",
+      "bytes": 234,
+      "sha256": "6efa7923292487085fd1cd5165ae316e8fa48cc18b7717deeb12f027f7c6a735"
+    },
+    {
+      "path": "tdd-evidence.md",
+      "bytes": 14631,
+      "sha256": "c67357297705c5590c6fe1392baf61d8f534deb28c5729026542a9e822a73f04"
+    },
+    {
+      "path": "ui-all4.log",
+      "bytes": 1046,
+      "sha256": "dcbd630fe807be5d819101d29c22b6f7e3bba5677c463e3fc534bce372ec0d57"
+    },
+    {
+      "path": "ui-scope-review1.log",
+      "bytes": 541,
+      "sha256": "527222a0e767975df17cb6d25a98b84a0a1332ddb8fbea4de4cecaa91736628f"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import type { DashboardEndpoint } from '@/lib/api/endpoints'
 import type { SystemInfo } from '@/lib/api/system'
 import { queryKeys } from '@/lib/queryKeys'
 import { useInvalidateOn } from '@/hooks/useInvalidateOn'
+import { getAuthSessionSnapshot, isAuthSessionCurrent } from '@/lib/authSession'
 
 export interface DashboardDataViewModel extends Pick<UseQueryResult<DashboardOverview>,
   'data' | 'isLoading' | 'error' | 'refetch'
@@ -24,17 +25,22 @@ export interface DashboardDataViewModel extends Pick<UseQueryResult<DashboardOve
 }
 
 /** The notified queries composed by the dashboard page ViewModel. */
-export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
+export function useDashboardDataViewModel({ pollingInterval, isViewer, enabled = true, includeHistory = !isViewer }: {
   pollingInterval: number
   isViewer: boolean
+  enabled?: boolean
+  includeHistory?: boolean
 }): DashboardDataViewModel {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
   const fetchWithTiming = useCallback(async () => {
+    const session = getAuthSessionSnapshot()
     const started = performance.now()
     const result = await dashboardApi.getOverview()
-    setFetchTimeMs(Math.round(performance.now() - started))
-    setLastRefreshed(new Date())
+    if (isAuthSessionCurrent(session)) {
+      setFetchTimeMs(Math.round(performance.now() - started))
+      setLastRefreshed(new Date())
+    }
     return result
   }, [])
 
@@ -42,6 +48,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.dashboardOverview(),
     queryFn: fetchWithTiming,
     refetchInterval: pollingInterval,
+    enabled,
   })
   useInvalidateOn(['endpoints', 'metrics'], queryKeys.dashboardOverview())
 
@@ -52,6 +59,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryFn: () => dashboardApi.getActivity(),
     refetchInterval: 1000,
     retry: false,
+    enabled,
   })
   useInvalidateOn(['metrics'], queryKeys.dashboardActivity())
 
@@ -59,6 +67,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.dashboardTodayRequests(),
     queryFn: () => dashboardApi.getDailyTokenStats(1),
     refetchInterval: 5000,
+    enabled,
   })
   useInvalidateOn(['metrics'], queryKeys.dashboardTodayRequests())
   // Daily statistics use UTC dates. A missing day is an actual zero; loading is unknown.
@@ -69,7 +78,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.systemInfo(),
     queryFn: () => systemApi.getSystem(),
     refetchInterval: pollingInterval,
-    enabled: !isViewer,
+    enabled: enabled && !isViewer,
   })
   useInvalidateOn(['system'], queryKeys.systemInfo())
 
@@ -77,7 +86,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.requestResponses(),
     queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
     refetchInterval: pollingInterval,
-    enabled: !isViewer,
+    enabled: enabled && includeHistory,
   })
   useInvalidateOn(['endpoints'], queryKeys.requestResponses())
 
@@ -85,7 +94,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.dashboardEndpoints(),
     queryFn: () => dashboardApi.getEndpoints(),
     refetchInterval: pollingInterval,
-    enabled: !isViewer,
+    enabled: enabled && !isViewer,
   })
   useInvalidateOn(['endpoints'], queryKeys.dashboardEndpoints())
 

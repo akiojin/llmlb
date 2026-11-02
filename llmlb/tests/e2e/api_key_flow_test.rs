@@ -30,9 +30,20 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
     // テスト用の管理者ユーザーを作成
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
+    let admin = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
-        .ok();
+        .expect("create API key flow administrator");
+    let organization = llmlb::db::organizations::create(&db_pool, "API key flow fixture")
+        .await
+        .expect("create active API key flow organization");
+    llmlb::db::organizations::set_membership(
+        &db_pool,
+        admin.id,
+        Some(organization.id),
+        llmlb::db::organizations::OrganizationRole::Member,
+    )
+    .await
+    .expect("assign API key flow administrator membership");
 
     let http_client = reqwest::Client::new();
     let inference_gate = llmlb::inference_gate::InferenceGate::default();

@@ -13,6 +13,7 @@ export interface DashboardViewModel extends Omit<DashboardDataViewModel, 'system
   user: ReturnType<typeof useAuth>['user']
   isViewer: boolean
   isAdmin: boolean
+  canRead: boolean
   systemVersion: string | null
   viewerModels: RegisteredModelView[]
   isLoadingViewerModels: boolean
@@ -31,9 +32,10 @@ export interface DashboardViewModel extends Omit<DashboardDataViewModel, 'system
 
 const DASHBOARD_TABS = ['endpoints', 'models', 'statistics', 'history', 'clients', 'logs']
 
-function readInitialTab(): string {
+function readInitialTab(isAdmin: boolean): string {
   const tabParam = new URLSearchParams(window.location.search).get('tab')
-  return tabParam && DASHBOARD_TABS.includes(tabParam) ? tabParam : 'endpoints'
+  const allowed = isAdmin ? DASHBOARD_TABS : ['models', 'statistics', 'history']
+  return tabParam && allowed.includes(tabParam) ? tabParam : isAdmin ? 'endpoints' : 'models'
 }
 
 /** Own the page's connection, queries, derived state and commands; the page only renders. */
@@ -41,12 +43,16 @@ export function useDashboardViewModel(): DashboardViewModel {
   const { user } = useAuth()
   const isViewer = user?.role === 'viewer'
   const isAdmin = user?.role === 'admin'
-  const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: !isViewer })
-  const [activeTab, setActiveTab] = useState(readInitialTab)
+  const canRead = !!user && !user.disabled && !user.must_change_password && (isAdmin || !!user.organization_id)
+  const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: canRead && isAdmin })
+  const [activeTab, changeActiveTab] = useState(() => readInitialTab(isAdmin))
+  const setActiveTab = (tab: string) => {
+    if ((isAdmin ? DASHBOARD_TABS : ['models', 'statistics', 'history']).includes(tab)) changeActiveTab(tab)
+  }
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
 
-  const { systemInfo, requestResponsesData, ...dashboard } = useDashboardDataViewModel({ pollingInterval, isViewer })
+  const { systemInfo, requestResponsesData, ...dashboard } = useDashboardDataViewModel({ pollingInterval, isViewer, enabled: canRead, includeHistory: canRead })
   const activityByEndpoint = useMemo(() => new Map(
     dashboard.activityData?.endpoints.map((endpoint) => [endpoint.endpoint_id, endpoint]) ?? [],
   ), [dashboard.activityData])
@@ -75,6 +81,7 @@ export function useDashboardViewModel(): DashboardViewModel {
     queryKey: queryKeys.viewerModels(modelsView),
     queryFn: () => modelsApi.getRegistered(modelsView),
     refetchInterval: pollingInterval,
+    enabled: canRead,
   })
 
   // Map RequestResponseRecord to RequestHistoryItem
@@ -97,9 +104,9 @@ export function useDashboardViewModel(): DashboardViewModel {
 
   const updateBanner = useSystemUpdateViewModel(systemInfo, isAdmin)
   return {
-    ...dashboard, user, isViewer, isAdmin, systemVersion,
+    ...dashboard, user, isViewer, isAdmin, canRead, systemVersion,
     viewerModels: viewerModels ?? [], isLoadingViewerModels,
-    refetchViewerModels: () => { void refetchViewerModels() },
+    refetchViewerModels: () => { if (canRead) void refetchViewerModels() },
     modelsView, setModelsView, historyItems, activeTab, setActiveTab, updateBanner,
     errorMessage: dashboard.error instanceof Error ? dashboard.error.message : 'An error occurred',
     activityStatus, activityConnectionStatus, activityByEndpoint,

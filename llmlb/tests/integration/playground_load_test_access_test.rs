@@ -5,7 +5,7 @@
 //! 過負荷を掛けられてしまう。そのため Load Test 専用エンドポイント
 //! `/api/dashboard/playground/load-test/chat/completions` は admin ロールのみ許可する。
 //! 一方、通常の Chat プレイグラウンド（`/api/dashboard/playground/chat/completions`）は
-//! 全認証ユーザーが利用可能のまま（リグレッション防止）。
+//! 有効な組織所属を持つ認証ユーザーが利用可能のまま（リグレッション防止）。
 
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -22,9 +22,22 @@ async fn create_user(
     role: llmlb::common::auth::UserRole,
 ) {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(db_pool, username, &password_hash, role, false)
+    let user = llmlb::db::users::create(db_pool, username, &password_hash, role, false)
         .await
         .unwrap_or_else(|_| panic!("create user {username}"));
+    if role == llmlb::common::auth::UserRole::Viewer {
+        let organization = llmlb::db::organizations::create(db_pool, "Playground viewer fixture")
+            .await
+            .expect("create active playground organization");
+        llmlb::db::organizations::set_membership(
+            db_pool,
+            user.id,
+            Some(organization.id),
+            llmlb::db::organizations::OrganizationRole::Member,
+        )
+        .await
+        .expect("assign playground viewer membership");
+    }
 }
 
 /// `/api/auth/login` でログインし JWT トークンを取得する。

@@ -52,6 +52,13 @@ pub(super) async fn proxy_openai_post(
 ) -> Result<Response, OpenAIError> {
     // Cloud-prefixed model -> forward to provider API
     if parse_cloud_model(&model).is_some() {
+        crate::api::usage_capture::accept_current(
+            state,
+            &model,
+            request_type,
+            sanitize_openai_payload_for_history(&payload),
+        )
+        .await?;
         return proxy_openai_cloud_post(
             state,
             target_path,
@@ -105,6 +112,8 @@ pub(super) async fn proxy_openai_post(
     }
 
     let request_body = sanitize_openai_payload_for_history(&payload);
+    crate::api::usage_capture::accept_current(state, &model, request_type, request_body.clone())
+        .await?;
     let tps_api_kind = TpsApiKind::from_request_type(request_type);
     let required_supported_api = if payload_requires_image_input(&payload) {
         Some(SupportedAPI::ImageInput)

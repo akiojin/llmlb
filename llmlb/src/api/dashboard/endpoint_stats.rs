@@ -1,10 +1,12 @@
 //! エンドポイント単位のリクエスト統計とモデル別 TPS
 
 use crate::api::error::AppError;
+use crate::auth::scope::Scope;
+use crate::db::request_history::RequestHistoryStorage;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
-    Json,
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -13,13 +15,27 @@ use uuid::Uuid;
 ///
 /// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 5)
 pub async fn get_endpoint_today_stats(
+    Extension(scope): Extension<Scope>,
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<crate::db::endpoint_daily_stats::DailyStatEntry>, AppError> {
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let stats = crate::db::endpoint_daily_stats::get_today_stats(&state.db_pool, id, &today)
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let stats = state
+        .balancer
+        .request_history
+        .scoped(&scope)
+        .scoped_endpoint_days(id, 0)
         .await
-        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+        .map_err(AppError)?
+        .into_iter()
+        .find(|row| row.date == today)
+        .unwrap_or(crate::db::endpoint_daily_stats::DailyStatEntry {
+            date: today,
+            total_requests: 0,
+            successful_requests: 0,
+            failed_requests: 0,
+        });
     Ok(Json(stats))
 }
 
@@ -27,14 +43,20 @@ pub async fn get_endpoint_today_stats(
 ///
 /// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 6)
 pub async fn get_endpoint_daily_stats(
+    Extension(scope): Extension<Scope>,
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
     Query(query): Query<EndpointDailyStatsQuery>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::DailyStatEntry>>, AppError> {
     let days = query.days.unwrap_or(7).min(365);
-    let stats = crate::db::endpoint_daily_stats::get_daily_stats(&state.db_pool, id, days)
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let stats = state
+        .balancer
+        .request_history
+        .scoped(&scope)
+        .scoped_endpoint_days(id, days)
         .await
-        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+        .map_err(AppError)?;
     Ok(Json(stats))
 }
 
@@ -50,12 +72,18 @@ pub struct EndpointDailyStatsQuery {
 ///
 /// SPEC-8c32349f: エンドポイント単位リクエスト統計 (Phase 7)
 pub async fn get_endpoint_model_stats(
+    Extension(scope): Extension<Scope>,
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
-    let stats = crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, id)
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let stats = state
+        .balancer
+        .request_history
+        .scoped(&scope)
+        .scoped_model_stats(Some(id))
         .await
-        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+        .map_err(AppError)?;
     Ok(Json(stats))
 }
 
@@ -63,11 +91,17 @@ pub async fn get_endpoint_model_stats(
 ///
 /// SPEC-8c32349f: ダッシュボード向けモデル別集計
 pub async fn get_all_model_stats(
+    Extension(scope): Extension<Scope>,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
-    let stats = crate::db::endpoint_daily_stats::get_all_model_stats(&state.db_pool)
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    let stats = state
+        .balancer
+        .request_history
+        .scoped(&scope)
+        .scoped_model_stats(None)
         .await
-        .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
+        .map_err(AppError)?;
     Ok(Json(stats))
 }
 
@@ -94,11 +128,16 @@ pub struct ModelTpsEntry {
 ///
 /// SPEC-4bb5b55f: エンドポイント×モデル単位TPS可視化 (Phase 3)
 pub async fn get_endpoint_model_tps(
+    Extension(scope): Extension<Scope>,
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
-) -> Json<Vec<ModelTpsEntry>> {
+) -> Result<Json<Vec<ModelTpsEntry>>, AppError> {
+    RequestHistoryStorage::require_read_scope(&scope)?;
+    if !matches!(scope, Scope::Global) {
+        return Ok(Json(vec![]));
+    }
     let tps_list = state.balancer.load_manager.get_model_tps(id).await;
-    Json(
+    Ok(Json(
         tps_list
             .into_iter()
             .map(|info| ModelTpsEntry {
@@ -111,5 +150,5 @@ pub async fn get_endpoint_model_tps(
                 average_duration_ms: info.average_duration_ms,
             })
             .collect(),
-    )
+    ))
 }

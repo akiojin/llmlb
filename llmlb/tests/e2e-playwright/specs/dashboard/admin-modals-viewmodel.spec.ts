@@ -1,5 +1,5 @@
 import { test, expect, type Locator } from '@playwright/test'
-import { ensureDashboardLogin } from '../../helpers/api-helpers'
+import { ensureDashboardLogin, ensureApiKeyMembership } from '../../helpers/api-helpers'
 import type { PendingRegistration } from '../../helpers/registration.fixture'
 import type { ApiKey, User } from '../../../../src/web/dashboard/src/lib/api'
 
@@ -22,6 +22,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         data: { username: 'admin', password: 'test' },
       })
       expect(login.ok()).toBe(true)
+      const keyAttribution = await ensureApiKeyMembership(page.request, (await login.json()).token)
       const createdAt = '2026-10-01T00:00:00Z'
       const secret = 'sk_modal_viewmodel_plaintext_only_once'
       let keys: ApiKey[] = []
@@ -46,6 +47,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
         const key: ApiKey = {
           id: `key-${keyPayloads.length}`, name: payload.name, key_prefix: 'sk_modal',
           created_at: createdAt, permissions: payload.permissions,
+          created_by: keyAttribution.usage_account_id,
+          usage_account_id: payload.usage_account_id, organization_id: payload.organization_id,
         }
         keys = [key, ...keys]
         return route.fulfill({ json: { ...key, key: secret } })
@@ -160,6 +163,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await hidden(keyForm)
       expect(keyPayloads).toEqual([{
         name: 'modal-key', permissions: ['openai.inference', 'openai.models.read'],
+        ...keyAttribution,
       }])
       expect(gets.keys).toBe(1) // Creation inserts the public row without a list refetch.
       await expect(keyModal.getByRole('table')).not.toContainText(secret)

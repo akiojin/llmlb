@@ -140,6 +140,14 @@ pub async fn post_responses(
         }
     }
 
+    crate::api::usage_capture::accept_current(
+        &state,
+        &model,
+        crate::common::protocol::RequestType::Responses,
+        crate::api::openai_util::sanitize_openai_payload_for_history(&payload),
+    )
+    .await?;
+
     // モデル対応エンドポイントをキュー付きで選択（モデル集合内で分散）
     let (endpoint, queued_wait_ms) =
         match select_available_endpoint_with_queue_for_model(&state, &model, tps_api_kind).await {
@@ -160,6 +168,26 @@ pub async fn post_responses(
         endpoint_id = %endpoint.id,
         endpoint_name = %endpoint.name,
         "Forwarding to Responses API endpoint"
+    );
+
+    crate::api::usage_capture::capture_record(
+        &crate::common::protocol::RequestResponseRecord::new(
+            endpoint.id,
+            endpoint.name.clone(),
+            endpoint
+                .base_url
+                .parse::<reqwest::Url>()
+                .ok()
+                .and_then(|url| url.host_str().and_then(|host| host.parse().ok()))
+                .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+            model.clone(),
+            crate::common::protocol::RequestType::Responses,
+            serde_json::json!({"model":model}),
+            StatusCode::OK,
+            std::time::Duration::ZERO,
+            None,
+            None,
+        ),
     );
 
     // リクエストボディをそのままパススルー
@@ -377,7 +405,6 @@ pub async fn post_responses(
 
 #[cfg(test)]
 mod tests {
-    use super::post_responses;
     use crate::{
         db::test_utils::TestAppStateBuilder,
         types::endpoint::{Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI},
@@ -388,6 +415,19 @@ mod tests {
     use tokio::time::{sleep, Duration};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn post_responses(
+        State(state): State<AppState>,
+        payload: Json<serde_json::Value>,
+    ) -> Result<axum::response::Response, crate::api::error::AppError> {
+        crate::api::usage_capture::with_test_capture(
+            &state,
+            None,
+            None,
+            super::post_responses(State(state.clone()), payload),
+        )
+        .await
+    }
 
     async fn create_local_state() -> AppState {
         TestAppStateBuilder::new().await.build().await

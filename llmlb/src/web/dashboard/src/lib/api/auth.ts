@@ -12,6 +12,18 @@ export interface RegisterResponse {
   message: string
 }
 
+export interface CurrentUser {
+  user_id: string
+  username: string
+  role: string
+  must_change_password: boolean
+  organization_id?: string | null
+  organization_role?: 'admin' | 'member' | null
+  disabled?: boolean
+  /** Opaque identity of the server's current authorization scope. */
+  scope?: string
+}
+
 export const authApi = {
   login: async (username: string, password: string) => {
     const response = await fetch(`${API_BASE}/api/auth/login`, {
@@ -33,7 +45,7 @@ export const authApi = {
   },
 
   me: () =>
-    fetchWithAuth<{ user_id: string; username: string; role: string; must_change_password: boolean }>('/api/auth/me'),
+    fetchWithAuth<CurrentUser>('/api/auth/me', { sessionRefresh: true }),
 
   changePassword: async (currentPassword: string, newPassword: string) => {
     await fetchWithAuth('/api/auth/change-password', {

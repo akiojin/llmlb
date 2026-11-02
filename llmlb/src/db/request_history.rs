@@ -16,9 +16,15 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 mod clients;
+mod scoped;
 mod statistics;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod usage_http_tests;
+mod usage_storage;
+#[cfg(test)]
+mod usage_tests;
 
 pub use clients::{
     ClientApiKeyUsage, ClientDetail, ClientIpRanking, ClientIpRankingResult, ClientRecentRequest,
@@ -38,23 +44,28 @@ const LEGACY_REQUEST_HISTORY_CLEANUP_INTERVAL_ENV: &str = "REQUEST_HISTORY_CLEAN
 #[derive(Clone)]
 pub struct RequestHistoryStorage {
     pool: SqlitePool,
+    usage_writers: Arc<std::sync::Mutex<Vec<usage_storage::UsageWriter>>>,
+    scope: Option<crate::auth::scope::Scope>,
 }
 
 impl RequestHistoryStorage {
     /// 新しいストレージインスタンスを作成
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            usage_writers: Arc::default(),
+            scope: None,
+        }
     }
 
     /// IDでレコードを取得
     pub async fn get_record_by_id(&self, id: Uuid) -> RouterResult<Option<RequestResponseRecord>> {
-        let row = sqlx::query_as::<_, RequestHistoryRow>(
-            "SELECT * FROM request_history WHERE id = ? LIMIT 1",
-        )
-        .bind(id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(format!("Failed to load record: {}", e)))?;
+        let scoped_sql = self.read_sql("SELECT * FROM request_history WHERE id = ? LIMIT 1");
+        let row = sqlx::query_as::<_, RequestHistoryRow>(&scoped_sql)
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to load record: {}", e)))?;
 
         match row {
             Some(row) => Ok(Some(row.try_into()?)),
@@ -185,12 +196,11 @@ impl RequestHistoryStorage {
 
     /// すべてのレコードを読み込み（タイムスタンプ降順）
     pub async fn load_records(&self) -> RouterResult<Vec<RequestResponseRecord>> {
-        let rows = sqlx::query_as::<_, RequestHistoryRow>(
-            "SELECT * FROM request_history ORDER BY timestamp DESC",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(format!("Failed to load records: {}", e)))?;
+        let scoped_sql = self.read_sql("SELECT * FROM request_history ORDER BY timestamp DESC");
+        let rows = sqlx::query_as::<_, RequestHistoryRow>(&scoped_sql)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to load records: {}", e)))?;
 
         rows.into_iter().map(|row| row.try_into()).collect()
     }
@@ -214,8 +224,12 @@ impl RequestHistoryStorage {
         minutes: i64,
     ) -> RouterResult<Vec<MinuteHistoryPoint>> {
         let cutoff = (Utc::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
-
-        let rows = sqlx::query_as::<_, MinuteHistoryRow>(
+        let outcome_condition = if self.scope.is_some() {
+            "AND EXISTS (SELECT 1 FROM usage_receipts r WHERE r.request_id=request_history.id AND r.finalized_at IS NOT NULL AND r.outcome IS NOT NULL)"
+        } else {
+            ""
+        };
+        let scoped_sql = self.read_sql(&format!(
             r#"
             SELECT
                 strftime('%Y-%m-%dT%H:%M:00Z', completed_at) AS minute,
@@ -223,14 +237,18 @@ impl RequestHistoryStorage {
                 SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS error_count
             FROM request_history
             WHERE completed_at >= ?
+            {outcome_condition}
             GROUP BY strftime('%Y-%m-%dT%H:%M:00Z', completed_at)
             ORDER BY minute ASC
             "#,
-        )
-        .bind(&cutoff)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(format!("Failed to get recent history by minute: {}", e)))?;
+        ));
+        let rows = sqlx::query_as::<_, MinuteHistoryRow>(&scoped_sql)
+            .bind(&cutoff)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!("Failed to get recent history by minute: {}", e))
+            })?;
 
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
@@ -316,6 +334,8 @@ impl RequestHistoryStorage {
 
     /// カウントクエリを実行
     async fn execute_count_query(&self, sql: &str, params: &[String]) -> RouterResult<usize> {
+        let scoped_sql = self.read_sql(sql);
+        let sql = scoped_sql.as_str();
         // パラメータ数に応じて動的にバインド
         let result = match params.len() {
             0 => {
@@ -389,6 +409,8 @@ impl RequestHistoryStorage {
         limit: i64,
         offset: i64,
     ) -> RouterResult<Vec<RequestHistoryRow>> {
+        let scoped_sql = self.read_sql(sql);
+        let sql = scoped_sql.as_str();
         // パラメータ数に応じて動的にバインド
         let result = match params.len() {
             0 => {
@@ -557,6 +579,7 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             "Chat" => RequestType::Chat,
             "Generate" => RequestType::Generate,
             "Embeddings" => RequestType::Embeddings,
+            "Responses" => RequestType::Responses,
             "Transcription" => RequestType::Transcription,
             "Speech" => RequestType::Speech,
             "ImageGeneration" => RequestType::ImageGeneration,
@@ -616,9 +639,11 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             duration_ms: row.duration_ms as u64,
             status,
             completed_at,
-            input_tokens: row.input_tokens.map(|v| v as u32),
-            output_tokens: row.output_tokens.map(|v| v as u32),
-            total_tokens: row.total_tokens.map(|v| v as u32),
+            input_tokens: row.input_tokens.and_then(|value| u32::try_from(value).ok()),
+            output_tokens: row
+                .output_tokens
+                .and_then(|value| u32::try_from(value).ok()),
+            total_tokens: row.total_tokens.and_then(|value| u32::try_from(value).ok()),
             api_key_id: row
                 .api_key_id
                 .map(|id| {

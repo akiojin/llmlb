@@ -14,13 +14,30 @@ use serial_test::serial;
 use sqlx::SqlitePool;
 use tower::ServiceExt;
 
+async fn assign_key_membership(pool: &SqlitePool, accounts: &[uuid::Uuid]) {
+    let organization = llmlb::db::organizations::create(pool, "API key contract fixture")
+        .await
+        .expect("create active API key organization");
+    for &account_id in accounts {
+        llmlb::db::organizations::set_membership(
+            pool,
+            account_id,
+            Some(organization.id),
+            llmlb::db::organizations::OrganizationRole::Member,
+        )
+        .await
+        .expect("assign API key account membership");
+    }
+}
+
 async fn build_app() -> (Router, SqlitePool) {
     let (app, db_pool) = crate::support::lb::create_test_lb().await;
 
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
+    let admin = llmlb::db::users::create(&db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
-        .ok();
+        .expect("create key contract administrator");
+    assign_key_membership(&db_pool, &[admin.id]).await;
 
     (app, db_pool)
 }
@@ -29,14 +46,16 @@ async fn build_app_with_viewer() -> (Router, SqlitePool) {
     let (app, db_pool) = crate::support::lb::create_test_lb().await;
 
     let admin_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    llmlb::db::users::create(&db_pool, "admin", &admin_hash, UserRole::Admin, false)
+    let admin = llmlb::db::users::create(&db_pool, "admin", &admin_hash, UserRole::Admin, false)
         .await
-        .ok();
+        .expect("create key contract administrator");
 
     let viewer_hash = llmlb::auth::password::hash_password("viewerpass").unwrap();
-    llmlb::db::users::create(&db_pool, "viewer1", &viewer_hash, UserRole::Viewer, false)
-        .await
-        .ok();
+    let viewer =
+        llmlb::db::users::create(&db_pool, "viewer1", &viewer_hash, UserRole::Viewer, false)
+            .await
+            .expect("create key contract viewer");
+    assign_key_membership(&db_pool, &[admin.id, viewer.id]).await;
 
     (app, db_pool)
 }
@@ -61,6 +80,7 @@ async fn login_as(app: &Router, username: &str, password: &str) -> String {
         .await
         .unwrap();
 
+    assert_eq!(response.status(), StatusCode::OK, "registered actor login");
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let data: Value = serde_json::from_slice(&body).unwrap();
     data["token"].as_str().unwrap().to_string()

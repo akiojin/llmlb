@@ -202,3 +202,26 @@ artifactの観測を調査して、このファイルへ根因・Issue/PR・捕�
 CIはsource台帳を直接commitせず、同じ台帳形式のartifactを残す。未確定の根因を推測で確定しない。
 
 artifact名とrunリンクにはattempt番号を含め、CIの再実行で初回観測を上書きしない。
+
+## account 帰属assertの字句誤検出（2026-11-02、Issue #947）
+
+`api_key_scopes_test.rs` の `usage_account_id` 等値検証2行が、
+`assert_eq!.*(count|calls)` の `account` 内の `count` に一致した。
+検出器は同fileの固定path3候補をmock-countに分類したが、
+当該テストは所有するMockServerの固定応答で認可を検査し、I/O回数を観測しない。
+独立した読み取りでもfetch_add・numeric expect・call counter不在を確認した。
+
+API仕様の `/api/system`・`/api/tags`・`/v1/models` を維持し、
+等値assertと検出器を変更せず、この3候補のpath・行内容checksum・出現番号だけを記録した。
+将来このfileへ呼出回数依存を追加する場合は3候補を再審査する。
+これは静的候補の誤検出記録であり、未測定のflake発生率をゼロと主張しない。
+
+## Windowsの接続資源と並列数（2026-11-02、Issue #947）
+
+全ブラウザ実行で静的JS取得にも `net::ERR_ADDRESS_IN_USE` を観測した。
+同時点のTCP TIME_WAITは12,106件、Windowsの動的TCPポート範囲は16,384個だった。
+この計数だけで全失敗の原因を断定せず、失敗traceと初回失敗・retry結果を保持する。
+
+`LLMLB_E2E_WORKERS=1` で同じ全検査を逐次実行できる。正の整数だけを受理し、
+既定のlocal 4 / CI 1、retry、timeout、対象spec、console/page-error検査は変更しない。
+通常serverのdata dirと、専用serverのHOME/USERPROFILE/data dirもテスト領域へ固定する。

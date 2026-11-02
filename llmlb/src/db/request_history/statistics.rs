@@ -7,7 +7,15 @@ use uuid::Uuid;
 impl RequestHistoryStorage {
     /// トークン統計を取得（全体）
     pub async fn get_token_statistics(&self) -> RouterResult<TokenStatistics> {
-        let row = sqlx::query_as::<_, TokenStatisticsRow>(
+        if self.scope.is_some() {
+            let totals = self.scoped_usage_totals().await?;
+            return Ok(TokenStatistics {
+                total_input_tokens: totals.input_tokens as u64,
+                total_output_tokens: totals.output_tokens as u64,
+                total_tokens: totals.total_tokens as u64,
+            });
+        }
+        let scoped_sql = self.read_sql(
             r#"
             SELECT
                 COALESCE(SUM(input_tokens), 0) as total_input_tokens,
@@ -23,10 +31,11 @@ impl RequestHistoryStorage {
                 ) as total_tokens
             FROM request_history
             "#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(format!("Failed to get token statistics: {}", e)))?;
+        );
+        let row = sqlx::query_as::<_, TokenStatisticsRow>(&scoped_sql)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| LbError::Database(format!("Failed to get token statistics: {}", e)))?;
 
         Ok(TokenStatistics {
             total_input_tokens: row.total_input_tokens as u64,
@@ -37,7 +46,7 @@ impl RequestHistoryStorage {
 
     /// トークン統計を取得（モデル別）
     pub async fn get_token_statistics_by_model(&self) -> RouterResult<Vec<ModelTokenStatistics>> {
-        let rows = sqlx::query_as::<_, ModelTokenStatisticsRow>(
+        let scoped_sql = self.read_sql(
             r#"
             SELECT
                 model,
@@ -57,12 +66,13 @@ impl RequestHistoryStorage {
             GROUP BY model
             ORDER BY total_tokens DESC
             "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| {
-            LbError::Database(format!("Failed to get token statistics by model: {}", e))
-        })?;
+        );
+        let rows = sqlx::query_as::<_, ModelTokenStatisticsRow>(&scoped_sql)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!("Failed to get token statistics by model: {}", e))
+            })?;
 
         Ok(rows
             .into_iter()
@@ -80,7 +90,7 @@ impl RequestHistoryStorage {
     pub async fn get_token_statistics_by_endpoint(
         &self,
     ) -> RouterResult<Vec<EndpointTokenStatistics>> {
-        let rows = sqlx::query_as::<_, EndpointTokenStatisticsRow>(
+        let scoped_sql = self.read_sql(
             r#"
             SELECT
                 endpoint_id,
@@ -101,12 +111,13 @@ impl RequestHistoryStorage {
             GROUP BY endpoint_id
             ORDER BY total_tokens DESC
             "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| {
-            LbError::Database(format!("Failed to get token statistics by endpoint: {}", e))
-        })?;
+        );
+        let rows = sqlx::query_as::<_, EndpointTokenStatisticsRow>(&scoped_sql)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!("Failed to get token statistics by endpoint: {}", e))
+            })?;
 
         Ok(rows
             .into_iter()
@@ -129,7 +140,10 @@ impl RequestHistoryStorage {
         &self,
         days: u32,
     ) -> RouterResult<Vec<crate::api::dashboard::DailyTokenStats>> {
-        let rows = sqlx::query_as::<_, DailyTokenStatisticsRow>(
+        if self.scope.is_some() {
+            return self.scoped_daily_tokens(days).await;
+        }
+        let scoped_sql = self.read_sql(
             r#"
             SELECT
                 DATE(timestamp) as date,
@@ -150,11 +164,14 @@ impl RequestHistoryStorage {
             GROUP BY DATE(timestamp)
             ORDER BY date DESC
             "#,
-        )
-        .bind(days as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(format!("Failed to get daily token statistics: {}", e)))?;
+        );
+        let rows = sqlx::query_as::<_, DailyTokenStatisticsRow>(&scoped_sql)
+            .bind(days as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!("Failed to get daily token statistics: {}", e))
+            })?;
 
         Ok(rows
             .into_iter()
@@ -173,7 +190,10 @@ impl RequestHistoryStorage {
         &self,
         months: u32,
     ) -> RouterResult<Vec<crate::api::dashboard::MonthlyTokenStats>> {
-        let rows = sqlx::query_as::<_, MonthlyTokenStatisticsRow>(
+        if self.scope.is_some() {
+            return self.scoped_monthly_tokens(months).await;
+        }
+        let scoped_sql = self.read_sql(
             r#"
             SELECT
                 strftime('%Y-%m', timestamp) as month,
@@ -194,11 +214,14 @@ impl RequestHistoryStorage {
             GROUP BY strftime('%Y-%m', timestamp)
             ORDER BY month DESC
             "#,
-        )
-        .bind(months as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| LbError::Database(format!("Failed to get monthly token statistics: {}", e)))?;
+        );
+        let rows = sqlx::query_as::<_, MonthlyTokenStatisticsRow>(&scoped_sql)
+            .bind(months as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                LbError::Database(format!("Failed to get monthly token statistics: {}", e))
+            })?;
 
         Ok(rows
             .into_iter()

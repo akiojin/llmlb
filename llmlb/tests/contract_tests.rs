@@ -3,6 +3,15 @@
 #[path = "support/mod.rs"]
 pub mod support;
 
+#[path = "contract/organization_isolation_test.rs"]
+mod organization_isolation_test;
+
+#[path = "contract/usage_scope_test.rs"]
+mod usage_scope_test;
+
+#[path = "contract/organization_read_boundaries_test.rs"]
+mod organization_read_boundaries_test;
+
 #[path = "contract/test_proxy_completions.rs"]
 mod test_proxy_completions;
 

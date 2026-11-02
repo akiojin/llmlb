@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { adminUser, deferred, renderWithProviders, type TestUser } from '@/test/render'
@@ -25,6 +25,9 @@ vi.mock('@/pages/EndpointPlayground', () => ({
   default: ({ endpointId }: { endpointId: string }) => (
     <div data-testid="page">playground endpoint={endpointId}</div>
   ),
+}))
+vi.mock('@/pages/Organizations', () => ({
+  default: () => <div data-testid="page">organizations</div>,
 }))
 
 afterEach(() => {
@@ -54,6 +57,7 @@ describe('App', () => {
   it.each([
     ['', 'dashboard'],
     ['#audit-log', 'audit-log back'],
+    ['#organizations', 'organizations'],
     ['#lb-playground', 'lb-playground model=none'],
     ['#lb-playground?model=gpt-oss%3A20b', 'lb-playground model=gpt-oss:20b'],
     ['#playground/ep-42', 'playground endpoint=ep-42'],
@@ -81,5 +85,34 @@ describe('App', () => {
 
     expect(screen.getByTestId('page')).toHaveTextContent('dashboard')
     expect(window.location.hash).toBe('')
+  })
+
+  it.each(['#lb-playground', '#playground/endpoint-A', '#audit-log', '#organizations'])('does not mount %s while signed out', async (hash) => {
+    window.location.hash = hash
+    renderWithProviders(<App />, { user: null })
+    await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument())
+    expect(screen.queryByTestId('page')).not.toBeInTheDocument()
+  })
+
+  it('does not mount a private page for an account that must change its password', async () => {
+    window.location.hash = '#lb-playground'
+    renderWithProviders(<App />, { user: { ...adminUser, must_change_password: true } })
+    await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument())
+    expect(screen.queryByTestId('page')).not.toBeInTheDocument()
+  })
+
+  it('blocks direct audit navigation for an assigned organization administrator', async () => {
+    window.location.hash = '#audit-log'
+    renderWithProviders(<App />, { user: { ...adminUser, role: 'viewer',
+      organization_id: 'org-A', organization_role: 'admin', scope: 'organization:org-A' } })
+    expect(await screen.findByText(/System administrator access required/i)).toBeInTheDocument()
+    expect(screen.queryByText('audit-log back')).not.toBeInTheDocument()
+  })
+
+  it.each(['#lb-playground', '#playground/endpoint-A'])('requires membership before mounting %s for a viewer', async (hash) => {
+    window.location.hash = hash
+    renderWithProviders(<App />, { user: { ...adminUser, role: 'viewer', organization_id: null, organization_role: null, scope: 'unassigned' } })
+    expect(await screen.findByText(/Ask a system administrator to assign your organization/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('page')).not.toBeInTheDocument()
   })
 })

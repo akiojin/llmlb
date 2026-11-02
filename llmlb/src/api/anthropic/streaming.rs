@@ -74,9 +74,16 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
     let headers = response.headers().clone();
     let mut accumulator = StreamingTokenAccumulator::new(&model_id);
     accumulator.set_input_tokens(input_tokens);
+    let usage_observer = crate::api::usage_capture::upstream_observer("text/event-stream");
+    let upstream_observer = usage_observer.clone();
+    let upstream = response.bytes_stream().inspect(move |chunk| {
+        if let (Some(observer), Ok(bytes)) = (&upstream_observer, chunk) {
+            observer.push(bytes);
+        }
+    });
 
     let state = AnthropicStreamTracker {
-        upstream: Box::pin(response.bytes_stream()),
+        upstream: Box::pin(upstream),
         upstream_line_buffer: String::new(),
         output_queue: VecDeque::new(),
         accumulator,
@@ -102,35 +109,53 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
         request_lease: Some(request_lease),
     };
 
-    let transformed_stream = futures::stream::try_unfold(state, |mut state| async move {
-        loop {
-            if let Some(chunk) = state.output_queue.pop_front() {
-                return Ok(Some((chunk, state)));
-            }
+    let transformed_stream = futures::stream::try_unfold(state, move |mut state| {
+        let usage_observer = usage_observer.clone();
+        async move {
+            loop {
+                if let Some(chunk) = state.output_queue.pop_front() {
+                    return Ok(Some((chunk, state)));
+                }
 
-            match state.upstream.next().await {
-                Some(Ok(chunk)) => {
-                    let chunk_text = String::from_utf8_lossy(chunk.as_ref());
-                    state.process_upstream_chunk(&chunk_text);
-                }
-                Some(Err(err)) => {
-                    state.record_stats_once(false, TokenUsage::new(None, Some(0), Some(0)));
-                    state.finish_lease(RequestOutcome::Error).await;
-                    return Err(io::Error::other(err));
-                }
-                None => {
-                    if !state.sent_message_stop {
-                        state.finish_stream();
-                        continue;
+                match state.upstream.next().await {
+                    Some(Ok(chunk)) => {
+                        let chunk_text = String::from_utf8_lossy(chunk.as_ref());
+                        state.process_upstream_chunk(&chunk_text);
                     }
-                    state.record_stats_once(true, state.accumulator.finalize());
-                    let outcome = if state.stream_failed {
-                        RequestOutcome::Error
-                    } else {
-                        RequestOutcome::Success
-                    };
-                    state.finish_lease(outcome).await;
-                    return Ok(None);
+                    Some(Err(err)) => {
+                        if let Some(observer) = &usage_observer {
+                            observer.failed();
+                        }
+                        state.record_stats_once(false, TokenUsage::new(None, Some(0), Some(0)));
+                        state.finish_lease(RequestOutcome::Error).await;
+                        return Err(io::Error::other(err));
+                    }
+                    None => {
+                        if !state.sent_message_stop {
+                            state.finish_stream();
+                            continue;
+                        }
+                        state.record_stats_once(true, state.accumulator.finalize());
+                        if let Some(observer) = &usage_observer {
+                            if state.stream_failed {
+                                observer.failed();
+                            } else {
+                                let estimate = state.accumulator.finalize();
+                                observer.estimate(
+                                    estimate.input_tokens.map(u64::from),
+                                    estimate.output_tokens.map(u64::from),
+                                    estimate.total_tokens.map(u64::from),
+                                );
+                            }
+                        }
+                        let outcome = if state.stream_failed {
+                            RequestOutcome::Error
+                        } else {
+                            RequestOutcome::Success
+                        };
+                        state.finish_lease(outcome).await;
+                        return Ok(None);
+                    }
                 }
             }
         }

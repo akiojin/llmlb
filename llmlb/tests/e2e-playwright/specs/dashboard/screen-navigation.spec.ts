@@ -25,10 +25,28 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
     const viewerUsername = `viewer_nav_${Date.now()}@example.com`;
     const result = await createUser(request, viewerUsername, '', 'viewer');
     const generatedPassword = (result as { generated_password?: string }).generated_password;
+    let membership: { organizationId: string; adminToken: string } | undefined;
 
     try {
       expect(result.id, 'viewer fixture must be created').toBeTruthy();
       expect(generatedPassword, 'viewer fixture must include its password').toBeTruthy();
+      // Exercise the ordinary Viewer dashboard, independently of the unassigned guard.
+      const adminLogin = await request.post('/api/auth/login', {
+        data: { username: 'admin', password: 'test' },
+      });
+      expect(adminLogin.status()).toBe(200);
+      const adminToken = (await adminLogin.json()).token as string;
+      const organization = await request.post('/api/organizations', {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        data: { name: `Navigation viewer fixture ${result.id}` },
+      });
+      expect(organization.status()).toBe(201);
+      membership = { organizationId: (await organization.json()).id, adminToken };
+      const assigned = await request.put(`/api/users/${result.id}/membership`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        data: { organization_id: membership.organizationId, organization_role: 'member' },
+      });
+      expect(assigned.status()).toBe(200);
       // Log out and log in as viewer
       await dashboard.signOut();
 
@@ -80,12 +98,19 @@ test.describe('Screen Navigation @dashboard @navigation', () => {
       await page.waitForTimeout(300);
       await expect(page.locator(DashboardSelectors.userDropdown.manageUsers)).not.toBeVisible();
     } finally {
+      await page.close();
       if (result.id) {
         await deleteUser(request, result.id);
       } else {
         const users = await listUsers(request);
         const viewer = users.find((u) => u.username === viewerUsername);
         if (viewer) await deleteUser(request, viewer.id);
+      }
+      if (membership) {
+        const archived = await request.delete(`/api/organizations/${membership.organizationId}`, {
+          headers: { Authorization: `Bearer ${membership.adminToken}` },
+        });
+        expect(archived.status()).toBe(200);
       }
     }
   });

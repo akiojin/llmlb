@@ -591,6 +591,85 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
     },
     // Issue #946: 確認済みの固定タグと公式 runtime 名。全候補の採否は
     // docs/model-discovery-946.md を参照。base / fine-tune / draft は混同しない。
+    // Issue #958: official fixed tags / GGUF runtime guidance; see docs/model-discovery-958.md.
+    ModelMapping {
+        canonical: "LiquidAI/LFM3-1.7B",
+        last_verified: "2026-11-02",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b-q8_0",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b-bf16",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "LiquidAI/LFM3-1.7B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "LiquidAI/LFM3-VL-2B",
+        last_verified: "2026-11-02",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b-q8_0",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b-bf16",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "liquid/lfm3-vl-2b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/LFM3-VL-2B-GGUF",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "LiquidAI/LFM3-VL-2B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "XHToken/Spark-X2.6-1.7B",
+        last_verified: "2026-11-02",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "SparkLLM/Spark-X2.6-1.7B:q4_k_m",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "SparkLLM/Spark-X2.6-1.7B:q8_0",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "XHToken/Spark-X2.6-1.7B-GGUF",
+            },
+        ],
+    },
     ModelMapping {
         canonical: "RecursiveSI/flint",
         last_verified: "2026-10-30",
@@ -1130,6 +1209,10 @@ const KNOWN_CONTEXT_LENGTHS: &[(&str, u32)] = &[
     ("LiquidAI/LFM2.5-24B-A2B", 131_072),
     ("JetBrains/Mellum2.1-12B-A2.5B-Thinking", 131_072),
     // Issue #946: 公式 config の値。Bolt E4B は配布ごとに異なるため追加しない。
+    // Issue #958: exact max_position_embeddings from the official configs.
+    ("LiquidAI/LFM3-1.7B", 262_144),
+    ("LiquidAI/LFM3-VL-2B", 128_000),
+    ("XHToken/Spark-X2.6-1.7B", 1_048_576),
     ("RecursiveSI/flint", 262_144),
     ("XHToken/Spark-X2.6-4B", 1_048_576),
     // Embeddings

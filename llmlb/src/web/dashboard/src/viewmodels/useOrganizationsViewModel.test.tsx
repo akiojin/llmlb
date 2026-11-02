@@ -174,6 +174,37 @@ describe('organization and usage ViewModel', () => {
     expect(result.current.createdKey).toBeNull()
   })
 
+  it('rejects a saved form command after reopening for the same account', async () => {
+    const issue = vi.spyOn(organizationsApi, 'issueKey').mockResolvedValue({ id: 'key-A', key: 'secret-A' })
+    const { result } = setup()
+    await waitFor(() => expect(result.current.accounts).toHaveLength(2))
+    act(() => result.current.openKeyForAccount(accountA))
+    act(() => result.current.setKeyName('closed form'))
+    const closedCommand = result.current.issueKey
+    act(() => result.current.clearKey())
+    act(() => result.current.openKeyForAccount(accountA))
+    act(() => result.current.setKeyName('current form'))
+    await act(async () => closedCommand())
+    expect(issue).not.toHaveBeenCalled()
+    expect(result.current.createdKey).toBeNull()
+    act(() => result.current.issueKey())
+    await waitFor(() => expect(issue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'current form' })))
+    await waitFor(() => expect(result.current.createdKey).toBe('secret-A'))
+  })
+
+  it.each(['same turn', 'after success'])('consumes a key form command once: %s', async (when) => {
+    const issue = vi.spyOn(organizationsApi, 'issueKey').mockResolvedValue({ id: 'key-A', key: 'secret-A' })
+    const { result } = setup()
+    await waitFor(() => expect(result.current.accounts).toHaveLength(2))
+    act(() => result.current.openKeyForAccount(accountA))
+    act(() => result.current.setKeyName('one issuance'))
+    const command = result.current.issueKey
+    act(() => { command(); if (when === 'same turn') command() })
+    await waitFor(() => expect(result.current.createdKey).toBe('secret-A'))
+    if (when === 'after success') await act(async () => command())
+    expect(issue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'one issuance' }))
+  })
+
   it('does not combine an old-render key target with a newly authenticated session', async () => {
     const issue = vi.spyOn(organizationsApi, 'issueKey')
     const { result } = setup()

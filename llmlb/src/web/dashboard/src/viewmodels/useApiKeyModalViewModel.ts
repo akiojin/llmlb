@@ -193,9 +193,10 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
       if (isAuthSessionCurrent(session) && copyAttempt === attempt.current) toast({ title: 'Failed to copy', variant: 'destructive' })
     }
   }
+  const renderedAttempt = attempt.current
   const handleCreate = () => {
-    if (!canIssue || !user?.organization_id || !isAuthSessionCurrent(session) || !newKeyName.trim() || createMutation.isPending) return
-    createMutation.mutate({ session, attempt: attempt.current, issuerId: user.id,
+    if (renderedAttempt !== attempt.current || !canIssue || !user?.organization_id || !isAuthSessionCurrent(session) || !newKeyName.trim() || createMutation.isPending) return
+    createMutation.mutate({ session, attempt: ++attempt.current, issuerId: user.id,
       payload: { name: newKeyName.trim(), expires_at: newKeyExpires || undefined,
         ...(isAdmin ? { permissions: [...INFERENCE_PERMISSIONS] } : {}),
         usage_account_id: user.id, organization_id: user.organization_id } })

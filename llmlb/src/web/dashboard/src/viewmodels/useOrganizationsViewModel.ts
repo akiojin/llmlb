@@ -235,10 +235,11 @@ export function useOrganizationsViewModel(): OrganizationsViewModel {
     keyTargetRef.current = account
     setKeyTarget(account)
   }
+  const renderedKeyAttempt = keyAttempt.current
   const issueKey = () => {
-    if (!keyTarget || !canIssueFor(keyTarget) || !isAuthSessionCurrent(session) || !keyName.trim() || keyMutation.isPending || createdKey) return
+    if (renderedKeyAttempt !== keyAttempt.current || !keyTarget || !canIssueFor(keyTarget) || !isAuthSessionCurrent(session) || !keyName.trim() || keyMutation.isPending || createdKey) return
     keyMutation.mutate({
-      session, attempt: keyAttempt.current,
+      session, attempt: ++keyAttempt.current,
       payload: { name: keyName.trim(), usage_account_id: keyTarget.id, organization_id: keyTarget.organization_id!,
         permissions: ['openai.inference', 'openai.models.read'] },
     })

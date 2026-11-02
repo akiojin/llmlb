@@ -107,6 +107,37 @@ describe('API key scope and one-time secret boundary', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
+  it('rejects a saved form command after reopening for the same actor', async () => {
+    const create = vi.spyOn(apiKeysApi, 'create').mockResolvedValue(issued)
+    const { result } = setup()
+    await waitFor(() => expect(result.current.apiKeys).toHaveLength(2))
+    act(() => result.current.handleOpenCreateDialog())
+    act(() => result.current.setNewKeyName('closed form'))
+    const closedCommand = result.current.handleCreate
+    act(() => result.current.handleCreateOpenChange(false))
+    act(() => result.current.handleOpenCreateDialog())
+    act(() => result.current.setNewKeyName('current form'))
+    await act(async () => closedCommand())
+    expect(create).not.toHaveBeenCalled()
+    expect(result.current.createdKey).toBeNull()
+    act(() => result.current.handleCreate())
+    await waitFor(() => expect(create).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'current form' })))
+    await waitFor(() => expect(result.current.createdKey).toBe('secret-A'))
+  })
+
+  it.each(['same turn', 'after success'])('consumes a key form command once: %s', async (when) => {
+    const create = vi.spyOn(apiKeysApi, 'create').mockResolvedValue(issued)
+    const { result } = setup()
+    await waitFor(() => expect(result.current.apiKeys).toHaveLength(2))
+    act(() => result.current.handleOpenCreateDialog())
+    act(() => result.current.setNewKeyName('one issuance'))
+    const command = result.current.handleCreate
+    act(() => { command(); if (when === 'same turn') command() })
+    await waitFor(() => expect(result.current.createdKey).toBe('secret-A'))
+    if (when === 'after success') await act(async () => command())
+    expect(create).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'one issuance' }))
+  })
+
   it('does not repopulate a new session cache from an old deferred success callback', async () => {
     const callback = deferred<void>()
     vi.spyOn(apiKeysApi, 'create').mockResolvedValue(issued)

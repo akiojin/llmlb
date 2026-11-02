@@ -33,6 +33,16 @@ afterEach(() => vi.useRealTimers())
 
 describe('endpoint detail ViewModels', () => {
   it.each([
+    [79, 'error'], [80, 'warning'], [94, 'warning'], [95, 'normal'],
+  ])('uses strict success-rate thresholds at %s percent (#943)', (successes, health) => {
+    const { wrapper } = setup()
+    const { result } = renderHook(() => useEndpointDetailViewModel({
+      ...endpoint, successful_requests: successes,
+    }, false, vi.fn()), { wrapper })
+    expect(result.current.requestHealth).toBe(health)
+  })
+
+  it.each([
     ['strata', 'Strata'],
     ['project_maya', 'Project Maya'],
   ] as const)('displays the %s endpoint type in details', (type, label) => {

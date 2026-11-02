@@ -70,6 +70,13 @@ function pagerButtons(indicator: string) {
 }
 
 describe('RequestHistoryTable', () => {
+  it('states when an error request has no recorded error reason (#943)', async () => {
+    const user = userEvent.setup()
+    renderTable([request({ status: 'error', error: undefined })])
+    await user.click(screen.getByRole('row', { name: /gpt-oss:20b/ }))
+    expect(screen.getByText('No error reason was recorded.')).toBeInTheDocument()
+  })
+
   it('shows a loading placeholder instead of the table', () => {
     renderTable([], true)
 

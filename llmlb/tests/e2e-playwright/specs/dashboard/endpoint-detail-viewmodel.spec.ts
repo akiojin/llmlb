@@ -346,6 +346,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
         body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png',
       })
 
+      // The clock is paused, so the last toast cannot expire on its own.
+      // Dismiss it through its control before using the fixed footer beneath it.
+      await page.locator('[toast-close]').click()
+      await page.clock.runFor(300)
+
       await dialog.getByLabel('Display Name', { exact: true }).fill('unsaved draft')
       // The footer button precedes Radix's icon-only Close button.
       await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()

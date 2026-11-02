@@ -84,7 +84,15 @@ async fn test_login_success_with_db_user() {
 #[tokio::test]
 #[serial]
 async fn test_login_success_dev_mode() {
-    let (app, _db_pool) = build_app().await;
+    let (app, db_pool) = build_app().await;
+    // Fixed development credentials must resolve the existing database actor.
+    let updated = sqlx::query("UPDATE users SET id = ? WHERE username = ?")
+        .bind(uuid::Uuid::nil().to_string())
+        .bind("admin")
+        .execute(&db_pool)
+        .await
+        .expect("persist the fixed development account identity");
+    assert_eq!(updated.rows_affected(), 1);
     let (status, body) = login(&app, "admin", "test").await;
 
     assert_eq!(status, StatusCode::OK);

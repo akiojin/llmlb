@@ -22,6 +22,14 @@ async fn build_app() -> (Router, SqlitePool) {
         .await
         .ok();
 
+    for username in ["admin", "viewer1"] {
+        if let Some(account) = llmlb::db::users::find_by_username(&db_pool, username)
+            .await
+            .unwrap()
+        {
+            crate::support::lb::assign_test_organization(&db_pool, account.id).await;
+        }
+    }
     (app, db_pool)
 }
 
@@ -38,6 +46,14 @@ async fn build_app_with_viewer() -> (Router, SqlitePool) {
         .await
         .ok();
 
+    for username in ["admin", "viewer1"] {
+        if let Some(account) = llmlb::db::users::find_by_username(&db_pool, username)
+            .await
+            .unwrap()
+        {
+            crate::support::lb::assign_test_organization(&db_pool, account.id).await;
+        }
+    }
     (app, db_pool)
 }
 

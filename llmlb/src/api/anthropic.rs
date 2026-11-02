@@ -124,6 +124,12 @@ async fn proxy_anthropic_cloud_messages(
     client_ip: Option<IpAddr>,
     api_key_id: Option<Uuid>,
 ) -> Result<Response, AppError> {
+    crate::api::usage_capture::accept_request(
+        &public_model,
+        RequestType::AnthropicMessages,
+        &request_body,
+    )
+    .await?;
     let api_key = match std::env::var("ANTHROPIC_API_KEY") {
         Ok(value) => value,
         Err(_) => {
@@ -144,6 +150,7 @@ async fn proxy_anthropic_cloud_messages(
 
     let endpoint_id = Uuid::parse_str(ANTHROPIC_CLOUD_ENDPOINT_ID)
         .expect("static anthropic cloud endpoint id must be valid");
+    crate::api::usage_capture::set_target_metadata(endpoint_id, "cloud:anthropic").await?;
     let mut upstream_body = request_body.clone();
     upstream_body["model"] = Value::String(cloud_model);
 
@@ -235,6 +242,9 @@ async fn proxy_anthropic_cloud_messages(
         )))
     })?;
     let parsed_body = serde_json::from_slice::<Value>(&bytes).ok();
+    if let Some(body) = &parsed_body {
+        crate::api::usage_capture::record_provider_response(body);
+    }
 
     let mut record = RequestResponseRecord::new(
         endpoint_id,
@@ -324,6 +334,7 @@ async fn proxy_local_anthropic_messages(
     }
 
     let request_type = RequestType::AnthropicMessages;
+    crate::api::usage_capture::accept_request(&model, request_type, &request_body).await?;
     let tps_api_kind = Some(TpsApiKind::ChatCompletions);
     let mut queued_wait_ms = None;
 
@@ -367,6 +378,7 @@ async fn proxy_local_anthropic_messages(
             }
         };
 
+    crate::api::usage_capture::set_target(&endpoint).await?;
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();
     let endpoint_type = endpoint.endpoint_type;
@@ -485,6 +497,7 @@ async fn proxy_local_anthropic_messages(
                 state.event_bus.clone(),
             );
             let body = upstream.bytes().await.unwrap_or_default();
+            crate::api::usage_capture::record_provider_bytes(&body);
             let message = upstream_error_message_from_bytes(upstream_status, &body);
             let (anthropic_status, error_type) =
                 map_upstream_status_to_anthropic_error(upstream_status);
@@ -594,6 +607,7 @@ async fn proxy_local_anthropic_messages(
     let duration = started.elapsed();
 
     if !upstream_status.is_success() {
+        crate::api::usage_capture::record_provider_bytes(&upstream_body);
         request_lease
             .complete(RequestOutcome::Error, duration)
             .await
@@ -647,6 +661,14 @@ async fn proxy_local_anthropic_messages(
                 Some(&request_text),
                 Some(&response_text),
                 &model,
+            );
+            let source = if extract_usage_from_response(&body).is_some() {
+                crate::common::usage::TokenSource::Provider
+            } else {
+                crate::common::usage::TokenSource::Estimated
+            };
+            crate::api::usage_capture::record_upstream_tokens(
+                crate::common::usage::UsageTokens::from_usage(&token_usage, source),
             );
 
             request_lease

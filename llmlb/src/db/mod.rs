@@ -4,8 +4,14 @@
 
 pub mod request_history;
 
+/// Durable organization/account usage receipts and daily rollups.
+pub mod usage;
+
 /// ユーザー管理
 pub mod users;
+
+/// 組織・現在の所属・キーの利用帰属
+pub mod organizations;
 
 /// APIキー管理
 pub mod api_keys;

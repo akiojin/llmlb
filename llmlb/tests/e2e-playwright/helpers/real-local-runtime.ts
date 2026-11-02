@@ -4,6 +4,7 @@ import { DashboardPage } from '../pages/dashboard.page'
 import {
   deleteApiKey,
   deleteEndpointsByName,
+  ensureApiKeyTestMembership,
   listApiKeys,
   listEndpoints,
   type EndpointInfo,
@@ -724,6 +725,8 @@ export async function createApiKeyViaUi(
   page: Page,
   keyName: string
 ): Promise<{ id: string; key: string }> {
+  await ensureApiKeyTestMembership(page.request)
+  await page.reload()
   await page.click('#api-keys-button')
   const apiKeysModal = page.locator('#api-keys-modal')
   await expect(apiKeysModal).toBeVisible({ timeout: 10000 })

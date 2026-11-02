@@ -158,3 +158,33 @@ pnpm --filter @llm/dashboard build
 ```
 
 This regenerates embedded static assets under `llmlb/src/web/static/`.
+
+## Organization and account usage
+
+**Usage** shows requests and input/output/total tokens for the authenticated
+scope. System administrators can group by organization or account and drill from
+an organization into its accounts. Organization administrators see their current
+organization; members see themselves. The **Organizations** dialog manages
+membership for system administrators and provides read-only membership for
+organization administrators. Organization roles do not expose system settings.
+
+Dates use UTC receipt time. **From** and **Through** include both selected days;
+the default is the current UTC calendar month. A stream finishing the next day
+still belongs to its original receipt day. Totals cover every matching account
+or organization, including rows on other pages.
+
+Reported, estimated and missing token observations are distinguished. The token
+sums include known observations; missing values are unknown, rather than measured
+zero. The observation-start timestamp identifies the available aggregation range.
+Legacy unattributed records and archived/deleted identities are labelled. Daily
+usage survives the seven-day raw request-history cleanup, account/key deletion,
+transfers and restarts. Request bodies remain subject to raw-history retention.
+
+Global endpoint/model diagnostics retain their operational counters for current
+endpoints and may cover a different range. Use **Usage** for organization and
+account totals; older diagnostic counters do not create observed usage.
+
+Quota is displayed as **not configured**. This feature reports usage and does not
+enforce the separate monthly-quota feature. See [authentication and migration](authentication.md)
+for organization roles, key attribution and the intentional reduction of global
+viewer access.

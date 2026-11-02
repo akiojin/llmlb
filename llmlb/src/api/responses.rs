@@ -140,6 +140,12 @@ pub async fn post_responses(
         }
     }
 
+    crate::api::usage_capture::accept_request(
+        &model,
+        crate::common::protocol::RequestType::Responses,
+        &payload,
+    )
+    .await?;
     // モデル対応エンドポイントをキュー付きで選択（モデル集合内で分散）
     let (endpoint, queued_wait_ms) =
         match select_available_endpoint_with_queue_for_model(&state, &model, tps_api_kind).await {
@@ -156,6 +162,7 @@ pub async fn post_responses(
             }
         };
 
+    crate::api::usage_capture::set_target(&endpoint).await?;
     info!(
         endpoint_id = %endpoint.id,
         endpoint_name = %endpoint.name,
@@ -307,6 +314,7 @@ pub async fn post_responses(
         }
     };
 
+    crate::api::usage_capture::record_provider_bytes(&body_bytes);
     let outcome = if status.is_success() {
         RequestOutcome::Success
     } else {

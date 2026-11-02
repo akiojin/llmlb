@@ -66,6 +66,12 @@ pub struct UserResponse {
     pub last_login: Option<String>,
     /// 運用通知の宛先メールアドレス（ログイン識別子ではない。未設定は `null`）
     pub email: Option<String>,
+    /// Organization identifier; null denotes unassigned or legacy usage.
+    pub organization_id: Option<String>,
+    /// Role inside the current organization.
+    pub organization_role: Option<String>,
+    /// Whether the account can authenticate.
+    pub is_active: bool,
 }
 
 /// ユーザー一覧レスポンス
@@ -84,8 +90,25 @@ impl From<User> for UserResponse {
             created_at: user.created_at.to_rfc3339(),
             last_login: user.last_login.map(|dt| dt.to_rfc3339()),
             email: user.email,
+            organization_id: None,
+            organization_role: None,
+            is_active: true,
         }
     }
+}
+
+async fn user_response(pool: &sqlx::SqlitePool, user: User) -> Result<UserResponse, HandlerError> {
+    let membership = crate::db::organizations::account(pool, user.id)
+        .await
+        .map_err(AppError)?
+        .ok_or_else(|| AppError(LbError::NotFound("Account not found".into())))?;
+    let mut response = UserResponse::from(user);
+    response.organization_id = membership.organization_id.map(|id| id.to_string());
+    response.organization_role = membership
+        .organization_role
+        .map(|role| role.as_str().to_string());
+    response.is_active = membership.is_active;
+    Ok(response)
 }
 
 /// 通知先 email の入力を検証する（前後の空白を除き、空文字は「未設定」として扱う）
@@ -136,9 +159,11 @@ pub async fn list_users(
             AppError(LbError::Database(format!("Failed to list users: {}", e))).into_response()
         })?;
 
-    Ok(Json(ListUsersResponse {
-        users: users.into_iter().map(UserResponse::from).collect(),
-    }))
+    let mut responses = Vec::with_capacity(users.len());
+    for user in users {
+        responses.push(user_response(&app_state.db_pool, user).await?);
+    }
+    Ok(Json(ListUsersResponse { users: responses }))
 }
 
 /// POST /api/users - ユーザー作成
@@ -220,7 +245,7 @@ pub async fn create_user(
     Ok((
         StatusCode::CREATED,
         Json(CreateUserResponse {
-            user: UserResponse::from(user),
+            user: user_response(&app_state.db_pool, user).await?,
             generated_password,
         }),
     ))
@@ -319,7 +344,7 @@ pub async fn update_user(
         AppError(e).into_response()
     })?;
 
-    Ok(Json(UserResponse::from(user)))
+    Ok(Json(user_response(&app_state.db_pool, user).await?))
 }
 
 /// DELETE /api/users/:id - ユーザー削除
@@ -496,6 +521,10 @@ mod tests {
     #[test]
     fn user_response_serialization() {
         let resp = UserResponse {
+            organization_id: None,
+            organization_role: None,
+            is_active: true,
+
             id: "123".to_string(),
             username: "alice".to_string(),
             role: "admin".to_string(),
@@ -513,6 +542,10 @@ mod tests {
     #[test]
     fn user_response_no_last_login() {
         let resp = UserResponse {
+            organization_id: None,
+            organization_role: None,
+            is_active: true,
+
             id: "456".to_string(),
             username: "bob".to_string(),
             role: "viewer".to_string(),
@@ -608,6 +641,10 @@ mod tests {
     fn create_user_response_serialization() {
         let resp = CreateUserResponse {
             user: UserResponse {
+                organization_id: None,
+                organization_role: None,
+                is_active: true,
+
                 id: "1".to_string(),
                 username: "alice".to_string(),
                 role: "admin".to_string(),
@@ -636,6 +673,10 @@ mod tests {
         let resp = ListUsersResponse {
             users: vec![
                 UserResponse {
+                    organization_id: None,
+                    organization_role: None,
+                    is_active: true,
+
                     id: "1".to_string(),
                     username: "alice".to_string(),
                     role: "admin".to_string(),
@@ -644,6 +685,10 @@ mod tests {
                     email: None,
                 },
                 UserResponse {
+                    organization_id: None,
+                    organization_role: None,
+                    is_active: true,
+
                     id: "2".to_string(),
                     username: "bob".to_string(),
                     role: "viewer".to_string(),

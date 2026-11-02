@@ -20,7 +20,7 @@ fn test_jwt_secret() -> String {
 
 fn admin_jwt(secret: &str) -> String {
     llmlb::auth::jwt::create_jwt(
-        "test-admin",
+        "00000000-0000-0000-0000-000000000001",
         llmlb::common::auth::UserRole::Admin,
         secret,
         false,
@@ -45,6 +45,21 @@ async fn build_app_with_history(
     std::env::set_var("LLMLB_DATA_DIR", &temp_dir);
 
     let db_pool = support::lb::create_test_db_pool().await;
+    for (id, name, role) in [
+        (1_u128, "test-admin", llmlb::common::auth::UserRole::Admin),
+        (2_u128, "viewer", llmlb::common::auth::UserRole::Viewer),
+    ] {
+        llmlb::db::users::create_with_id(
+            &db_pool,
+            uuid::Uuid::from_u128(id),
+            name,
+            "hash",
+            role,
+            false,
+        )
+        .await
+        .unwrap();
+    }
     let request_history = Arc::new(llmlb::db::request_history::RequestHistoryStorage::new(
         db_pool.clone(),
     ));
@@ -382,7 +397,7 @@ async fn update_history_requires_admin_and_is_absent_from_public_status() {
         .unwrap();
     assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
     let token = llmlb::auth::jwt::create_jwt(
-        "viewer",
+        "00000000-0000-0000-0000-000000000002",
         llmlb::common::auth::UserRole::Viewer,
         &secret,
         false,

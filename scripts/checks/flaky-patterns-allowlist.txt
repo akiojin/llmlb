@@ -346,9 +346,9 @@ fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/navigation-screenshots.spe
 fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-inference-feedback.spec.ts|627832841-31|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e-playwright/specs/workflows/playground-reasoning.spec.ts|1044641137-31|1
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-# (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
-fixed-wait|llmlb/tests/e2e/ip_recording_test.rs|718000731-64|1
+# (a) Issue #947: 本文完走後、SQLiteのclient IP/key保存を最大5秒まで条件poll。20msは間隔のみで、未保存/DB errorはFAIL。
+# FR-005: 後段のloopback IPと認証key UUIDのexact assertを維持。旧固定待機のキーを置換し、当該1行だけを許可する。
+fixed-wait|llmlb/tests/e2e/ip_recording_test.rs|182137248-63|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。
 fixed-wait|llmlb/tests/e2e_openai_proxy.rs|3114912644-40|1
 # (a) #754/#763・#748/#753: 既存の待機/状態poll/モック遅延候補。FR-005に従い挙動・assertを維持、内容変更と追加は再検査。

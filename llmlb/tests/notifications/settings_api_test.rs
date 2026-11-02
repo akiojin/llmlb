@@ -283,7 +283,7 @@ async fn ac7_uninterpretable_stored_values_are_reported_instead_of_failing() {
     assert_eq!(body["settings"]["smtp_port"], 587);
 }
 
-/// 通知設定は検証付きの専用 API だけが扱う。viewer も使える汎用の設定 API からは読み書きできない
+/// 通知設定は検証付きの専用 API だけが扱い、全体管理者の汎用設定 API からも読み書きできない
 #[tokio::test]
 #[serial]
 async fn ac5_generic_settings_api_cannot_read_or_write_notification_settings() {
@@ -326,7 +326,16 @@ async fn ac5_generic_settings_api_cannot_read_or_write_notification_settings() {
     assert_eq!(body["settings"], complete_settings_json());
     assert_eq!(body["last_digest_sent_date"], Value::Null);
 
-    // 他のキーは従来どおり汎用の設定 API で扱える
+    // 他のglobal設定は全体管理者だけが汎用 API で扱う。
+    let (status, body) = send_json(
+        &app,
+        Method::GET,
+        "/api/dashboard/settings/ip_alert_threshold",
+        Some(&admin_jwt),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
     let (status, body) = send_json(
         &app,
         Method::GET,
@@ -335,7 +344,7 @@ async fn ac5_generic_settings_api_cannot_read_or_write_notification_settings() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
 }
 
 /// 認証情報の誤りなど、送信してみて初めて分かる不備も設定画面から確認できる

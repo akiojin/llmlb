@@ -566,7 +566,14 @@ LLM Load Balancer (OpenAI-compatible)
 | ロール | 権限 |
 |-------|------|
 | `admin` | `/api` 管理系 API とダッシュボード機能にフルアクセス |
-| `viewer` | ダッシュボード閲覧とエンドポイントREADのみ（管理操作は 403） |
+| `viewer` | 組織管理者は自組織、メンバーは自己の使用量を閲覧（全体管理は不可） |
+
+アカウントの所属組織は最大1つで、組織内admin/memberとシステムadminは別の権限です。
+未所属アカウントは推論・使用量閲覧ができません。
+組織・所属の管理は `/api/organizations`、`/api/organizations/:id/members`、
+`PUT /api/users/:id/membership`、使用量は `GET /api/dashboard/usage` を利用します。
+詳細は[組織の認可と移行手順](docs/authentication.md#organizations-and-usage-attribution)と
+[ダッシュボード使用量](docs/dashboard.md#organization-and-account-usage)を参照してください。
 
 #### ユーザー登録申請
 
@@ -603,9 +610,11 @@ APIキー管理はJWTで本人用エンドポイントを利用します:
 - `DELETE /api/me/api-keys/:id`
 
 `POST /api/me/api-keys` の permissions 指定ルール:
-- `admin`: `permissions` 配列を必須で指定（1件以上）
+- `admin`: `openai.inference` / `openai.models.read` のみから `permissions` を指定（1件以上）
 - `viewer`: `permissions` は指定不可（サーバーが `openai.inference` と
   `openai.models.read` を固定付与）
+新規キーは有効な組織所属が必要です。全体管理者は利用先の `usage_account_id` と
+`organization_id` を明示できます。旧運用キーの管理権限を新規の組織キーへ付与することはできません。
 
 **補足**:
 - `/api/auth/login` は無認証で、JWTをHttpOnly Cookieに設定します（Authorizationヘッダーも利用可）。

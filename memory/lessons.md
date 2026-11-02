@@ -11,6 +11,27 @@
 
 ## 教訓一覧
 
+### 認証切替の保護は非同期 callback まで行う
+
+- **事象**: Issue #947 で、旧 session のキー発行結果が認証切替後の cache や別対象の発行欄へ戻る経路を確認した。
+- **原因**: HTTP 応答の検査後にも TanStack の非同期 callback が待機でき、mutation の reset は実行中処理を中止しない。
+- **再発防止ルール**: 操作時に payload と session 世代を固定し、送信前と状態更新前で照合する。閉じる・対象変更でも操作世代を失効させる。
+- **次回チェック方法**: 実 MutationCache の callback を保留し、認証切替や close/reopen 後に旧 cache・plaintext が戻らず、未送信操作も実行されないことを検証する。
+
+### 受付行と終端行の再保存は metadata と不変帰属を分ける
+
+- **事象**: Issue #947 で、受付行の NULL IP が終端保存後も残り、遅延した受付保存が確定済み endpoint を戻す経路を確認した。
+- **原因**: 同じ要求 ID の UPSERT が、補完可能な metadata と確定済みの記録を区別していなかった。
+- **再発防止ルール**: 組織・account・受付時刻は固定し、終端で IP を補完する。終端後の非終端保存は raw の再生成や確定値の上書きを行わない。
+- **次回チェック方法**: 受付→終端→遅延受付を同じ ID で保存し、raw の metadata と receipt の帰属が一致し、日次件数が一度だけ加算されることを検証する。
+
+### provider の error フィールドは null と実エラーを区別する
+
+- **事象**: Issue #947 で正常な Responses の `error: null` を失敗として raw と使用量へ保存していた。
+- **原因**: bounded metadata reader がフィールド名の存在だけで失敗フラグを立て、値を判定していなかった。
+- **再発防止ルール**: 本文を保持せず値を読み飛ばす場合も、nullable な状態フィールドの意味を維持する。
+- **次回チェック方法**: JSON/SSE の null・実エラーを対比し、実 handler→Body 消費→SQLite の成功/失敗件数と raw 状態を検証する。
+
 ### tokio RwLock の write guard を .await をまたいで保持しない
 
 - **事象**: `check_and_maybe_download` で `state.write().await` の write guard を名前付き変数として保持したまま `ensure_payload_ready().await` を呼び出し、内部で `state.read().await` を試みてデッドロック

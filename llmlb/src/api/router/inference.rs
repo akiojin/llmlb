@@ -27,7 +27,11 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         .route("/v1/images/generations", post(images::generations))
         .route("/v1/images/edits", post(images::edits))
         .route("/v1/images/variations", post(images::variations))
-        .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES));
+        .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api::usage_capture::usage_middleware,
+        ));
     let inference_routes = inference_routes
         .layer(middleware::from_fn_with_state(
             ApiKeyPermission::OpenaiInference,
@@ -46,6 +50,10 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
     let anthropic_inference_routes = Router::new()
         .route("/v1/messages", post(anthropic::messages))
         .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api::usage_capture::usage_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             ApiKeyPermission::OpenaiInference,
             crate::auth::middleware::require_anthropic_api_key_permission_middleware,

@@ -38,6 +38,7 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             get(openai::dashboard_playground_models),
         )
         .route("/dashboard/stats", get(dashboard::get_stats))
+        .route("/dashboard/usage", get(dashboard::get_usage))
         .route("/dashboard/activity", get(dashboard::get_activity))
         .route(
             "/dashboard/request-history",
@@ -70,18 +71,12 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             "/dashboard/stats/tokens/monthly",
             get(dashboard::get_monthly_token_stats),
         )
-        .route("/dashboard/logs/lb", get(logs::get_lb_logs))
         // モデル別リクエスト統計（全エンドポイント横断）
         .route(
             "/dashboard/model-stats",
             get(dashboard::get_all_model_stats),
         )
         // SPEC-62ac4b68: Clients分析API
-        .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
-        .route(
-            "/benchmarks/tps/{run_id}",
-            get(benchmarks::get_tps_benchmark),
-        )
         .route("/dashboard/clients", get(dashboard::get_client_rankings))
         .route(
             "/dashboard/clients/timeline",
@@ -104,10 +99,6 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             get(dashboard::get_client_api_keys),
         )
         // SPEC-62ac4b68: 設定API（閾値設定等）
-        .route(
-            "/dashboard/settings/{key}",
-            get(dashboard::get_setting).put(dashboard::update_setting),
-        )
         // カタログ検索API（HuggingFaceラッパー）
         .route("/catalog/search", get(catalog::search_catalog))
         .route(
@@ -116,12 +107,42 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
         )
         .route("/catalog/{*repo_id}", get(catalog::get_catalog_model));
 
+    // Logs and shared operational controls have no tenant-safe representation.
+    let dashboard_global_routes = Router::new()
+        .route("/dashboard/logs/lb", get(logs::get_lb_logs))
+        .route("/benchmarks/tps", post(benchmarks::start_tps_benchmark))
+        .route(
+            "/benchmarks/tps/{run_id}",
+            get(benchmarks::get_tps_benchmark),
+        )
+        .route(
+            "/dashboard/settings/{key}",
+            get(dashboard::get_setting).put(dashboard::update_setting),
+        )
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_admin_role_middleware,
+        ))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::require_jwt_auth_middleware,
+        ));
+
     let dashboard_playground_routes = Router::new()
         .route(
             "/dashboard/playground/chat/completions",
             post(openai::dashboard_playground_chat_completions),
         )
         .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api::usage_capture::usage_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::require_password_changed_middleware,
         ))
@@ -146,6 +167,10 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
             post(openai::dashboard_playground_chat_completions),
         )
         .layer(DefaultBodyLimit::max(OPENAI_BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api::usage_capture::usage_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::require_password_changed_middleware,
         ))
@@ -184,6 +209,10 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
 
     {
         let dashboard_general_routes = dashboard_general_routes
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                dashboard::authorize_scope,
+            ))
             .layer(middleware::from_fn(
                 crate::auth::middleware::require_password_changed_middleware,
             ))
@@ -223,6 +252,7 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
                 crate::auth::middleware::require_jwt_auth_middleware,
             ));
         dashboard_general_routes
+            .merge(dashboard_global_routes)
             .merge(dashboard_audit_routes)
             .merge(dashboard_notification_routes)
             .merge(dashboard_playground_routes)

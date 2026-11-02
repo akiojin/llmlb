@@ -548,6 +548,7 @@ async fn streaming_tool_use_accumulates_fragmented_arguments() {
         stop_reason: None,
         stop_sequence: None,
         stats_recorded: false,
+        usage_collector: None,
         stream_failed: false,
         request_lease: None,
     };
@@ -624,6 +625,7 @@ async fn streaming_text_then_interleaved_parallel_tools() {
         stop_reason: None,
         stop_sequence: None,
         stats_recorded: false,
+        usage_collector: None,
         stream_failed: false,
         request_lease: None,
     };

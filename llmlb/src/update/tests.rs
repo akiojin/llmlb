@@ -19,6 +19,7 @@ mod platform_assets;
 mod restart_helper;
 mod scheduling;
 mod state_serialization;
+mod system_scope;
 mod version;
 
 fn available_state_with_payload(payload: PayloadState) -> UpdateState {

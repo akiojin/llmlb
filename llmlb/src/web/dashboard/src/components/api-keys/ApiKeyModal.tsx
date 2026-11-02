@@ -50,7 +50,8 @@ interface ApiKeyModalProps {
 
 export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
   const {
-    isAdmin, createOpen, deleteKey, setDeleteKey, newKeyName, setNewKeyName,
+    isAdmin, canIssueSelfKey, issuanceHint, canDeleteSelectedKey,
+    createOpen, deleteKey, setDeleteKey, newKeyName, setNewKeyName,
     newKeyExpires, setNewKeyExpires, selectedPermissions, permissionOptions,
     createdKey, showKey, copiedId, createdKeyCodeRef, apiKeys, isLoading,
     isCreating, isDeleting, canCreate, handleMainOpenChange, handleCreateOpenChange,
@@ -75,7 +76,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
           <div className="space-y-4 py-4">
             {/* Actions */}
             <div className="flex justify-between">
-              <Button id="create-api-key" onClick={handleOpenCreateDialog}>
+              <Button id="create-api-key" onClick={handleOpenCreateDialog} disabled={!canIssueSelfKey}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Key
               </Button>
@@ -89,6 +90,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
+            {issuanceHint && <p className="text-sm text-muted-foreground">{issuanceHint}</p>}
 
             {/* Created Key Alert */}
             {createdKey && (
@@ -167,7 +169,10 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                   <TableBody>
                     {apiKeys.map((key) => (
                       <TableRow key={key.id}>
-                        <TableCell className="font-medium">{key.name}</TableCell>
+                      <TableCell className="font-medium">{key.name}
+                        {key.attribution_revoked_at && <Badge variant="destructive" className="ml-2">Revoked</Badge>}
+                        {!key.organization_id && <Badge variant="secondary" className="ml-2">Unattributed</Badge>}
+                      </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {key.permissions.map((permission) => (
@@ -204,6 +209,9 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
+                            disabled={!key.canDelete}
+                            aria-label={`Delete ${key.name}`}
+                            title={key.canDelete ? 'Delete API key' : 'Only the key issuer can delete this key.'}
                             onClick={() => setDeleteKey(key)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -317,6 +325,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
+              disabled={isDeleting || !canDeleteSelectedKey}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting && (

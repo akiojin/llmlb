@@ -358,6 +358,29 @@ async fn cloud_request_is_listed_in_dashboard_history() {
     std::env::set_var("OPENAI_BASE_URL", server.uri());
     let (state, dir) = create_state_with_tempdir().await;
 
+    // Legacy keys stay unattributed; only a real global administrator may read their history.
+    let username = "cloud-history-admin@example.com";
+    let password = "CloudHistoryPass123";
+    let password_hash = crate::auth::password::hash_password(password).unwrap();
+    let admin = crate::db::users::create(
+        &state.db_pool,
+        username,
+        &password_hash,
+        crate::common::auth::UserRole::Admin,
+        false,
+    )
+    .await
+    .unwrap();
+    let key = crate::db::api_keys::create(
+        &state.db_pool,
+        "legacy cloud history",
+        admin.id,
+        None,
+        vec![crate::common::auth::ApiKeyPermission::OpenaiInference],
+    )
+    .await
+    .unwrap();
+
     // spawn lb
     let app: Router = crate::api::create_app(state.clone());
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -378,7 +401,7 @@ async fn cloud_request_is_listed_in_dashboard_history() {
     let payload = json!({"model":"openai:gpt-4o","messages":[{"role":"user","content":"hi"}]});
     let resp = client
         .post(format!("http://{addr}/v1/chat/completions"))
-        .header("x-api-key", "sk_debug")
+        .header("x-api-key", &key.key)
         .json(&payload)
         .send()
         .await
@@ -395,7 +418,7 @@ async fn cloud_request_is_listed_in_dashboard_history() {
     let login_resp = client
         .post(format!("http://{addr}/api/auth/login"))
         .header("content-type", "application/json")
-        .json(&json!({"username":"admin","password":"test"}))
+        .json(&json!({"username":username,"password":password}))
         .send()
         .await
         .expect("login request");

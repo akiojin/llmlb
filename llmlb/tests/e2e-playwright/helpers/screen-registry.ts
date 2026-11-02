@@ -246,6 +246,16 @@ export const CANONICAL_SCREENS: readonly CanonicalScreen[] = [
 
   // --- Modals ---
   {
+    id: 'modal-organizations',
+    kind: 'modal',
+    title: 'Organizations modal',
+    reach: async (visit) => {
+      await openDashboard(visit);
+      await visit.page.getByRole('button', { name: 'Organizations', exact: true }).click();
+    },
+    landmark: (page) => page.getByRole('dialog', { name: 'Organizations', exact: true }),
+  },
+  {
     id: 'modal-api-keys',
     kind: 'modal',
     title: 'API Keys modal',

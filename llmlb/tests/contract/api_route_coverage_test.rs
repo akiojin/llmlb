@@ -330,17 +330,29 @@ fn scan_router_source(file: &str, source: &str, scan: &mut RouterScan) {
 /// 本番 Router を構成するソース（`router.rs` と `router/*.rs`）を走査する。
 fn scan_production_routers() -> RouterScan {
     let api_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
+    let router_source = std::fs::read_to_string(api_dir.join("router.rs")).expect("read router.rs");
+    let tests_are_test_only = Regex::new(r"(?m)^\s*#\[cfg\(test\)\]\s+mod\s+tests\s*;")
+        .unwrap()
+        .is_match(&strip_line_comments(&router_source));
     let mut files = vec!["router.rs".to_string()];
     for entry in std::fs::read_dir(api_dir.join("router")).expect("read llmlb/src/api/router") {
         let entry = entry.expect("read router directory entry");
         let name = entry.file_name().to_string_lossy().into_owned();
+        // tests.rs and its child modules are outside the production Router.
+        // Verify the cfg boundary rather than ignoring arbitrary directories.
+        if matches!(name.as_str(), "tests.rs" | "tests") {
+            assert!(
+                tests_are_test_only,
+                "router::tests must remain #[cfg(test)]"
+            );
+            continue;
+        }
         assert!(
             entry.path().is_file(),
             "llmlb/src/api/router/{name} はディレクトリです。走査器はサブディレクトリを辿りません。\
              api_route_coverage_test.rs の走査器を拡張してください"
         );
-        // tests.rs は `#[cfg(test)]` の単体テストで、本番 Router には入らない。
-        if name.ends_with(".rs") && name != "tests.rs" {
+        if name.ends_with(".rs") {
             files.push(format!("router/{name}"));
         }
     }
@@ -469,6 +481,12 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
     protected("POST", "/api/auth/logout"),
     protected("PUT", "/api/auth/change-password"),
     protected("GET", "/api/users"),
+    protected("GET", "/api/organizations"),
+    protected("POST", "/api/organizations"),
+    protected("PATCH", "/api/organizations/{id}"),
+    protected("DELETE", "/api/organizations/{id}"),
+    protected("GET", "/api/organizations/{id}/members"),
+    protected("PUT", "/api/users/{id}/membership"),
     protected("POST", "/api/users"),
     protected("PUT", "/api/users/{id}"),
     protected("DELETE", "/api/users/{id}"),
@@ -484,6 +502,7 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
     protected("GET", "/api/dashboard/models"),
     protected("GET", "/api/dashboard/playground/models"),
     protected("GET", "/api/dashboard/stats"),
+    protected("GET", "/api/dashboard/usage"),
     protected("GET", "/api/dashboard/request-history"),
     protected("GET", "/api/dashboard/overview"),
     protected("GET", "/api/dashboard/activity"),

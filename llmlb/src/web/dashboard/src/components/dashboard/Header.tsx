@@ -12,12 +12,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ApiKeyModal } from '@/components/api-keys/ApiKeyModal'
 import { UserModal } from '@/components/users/UserModal'
+import { OrganizationsModal } from '@/components/organizations/OrganizationsModal'
 import { usePendingRegistrationCountViewModel } from '@/viewmodels/useRegistrationRequestsViewModel'
 import { Badge } from '@/components/ui/badge'
 import { NotificationSettingsModal } from '@/components/notifications/NotificationSettingsModal'
 import { ActivityConnectionStatus } from './ActivityConnectionStatus'
 import {
   Bell,
+  Building2,
   Cpu,
   Key,
   KeyRound,
@@ -64,10 +66,13 @@ export function Header({
   activityStatus,
   isActivityStale,
 }: HeaderProps) {
-  const { logout } = useAuth()
+  const { logout, user: currentUser } = useAuth()
+  const canUseScopedActions = !!currentUser && currentUser.scope !== 'unassigned'
+  const canViewOrganizations = user?.role === 'admin' || currentUser?.organization_role === 'admin'
   const { theme, toggleTheme } = useTheme()
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [userModalOpen, setUserModalOpen] = useState(false)
+  const [organizationsOpen, setOrganizationsOpen] = useState(false)
   const { pendingCount } = usePendingRegistrationCountViewModel(user?.role === 'admin')
   const [notificationModalOpen, setNotificationModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -171,6 +176,8 @@ export function Header({
               variant="outline"
               size="sm"
               onClick={() => setApiKeyModalOpen(true)}
+              disabled={!canUseScopedActions}
+              title={!canUseScopedActions ? 'Organization membership required' : undefined}
               className="hidden sm:inline-flex"
             >
               <Key className="mr-2 h-4 w-4" />
@@ -181,6 +188,8 @@ export function Header({
               id="lb-playground-button"
               variant="outline"
               size="sm"
+              disabled={!canUseScopedActions}
+              title={!canUseScopedActions ? 'Organization membership required' : undefined}
               className="hidden lg:inline-flex"
               onClick={() => {
                 window.location.hash = 'lb-playground'
@@ -237,6 +246,9 @@ export function Header({
             </Button>
 
             {/* User Menu */}
+            {canViewOrganizations && <Button variant="outline" onClick={() => setOrganizationsOpen(true)}>
+              <Building2 className="h-4 w-4" /><span>Organizations</span>
+            </Button>}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="relative" aria-label="User menu">
@@ -257,12 +269,16 @@ export function Header({
                 {/* Mobile-only items */}
                 <DropdownMenuItem
                   onClick={() => setApiKeyModalOpen(true)}
+                  disabled={!canUseScopedActions}
+                  title={!canUseScopedActions ? 'Organization membership required' : undefined}
                   className="sm:hidden"
                 >
                   <Key className="mr-2 h-4 w-4" />
                   API Keys
                 </DropdownMenuItem>
                 <DropdownMenuItem
+                  disabled={!canUseScopedActions}
+                  title={!canUseScopedActions ? 'Organization membership required' : undefined}
                   onClick={() => {
                     window.location.hash = 'lb-playground'
                   }}
@@ -317,6 +333,7 @@ export function Header({
 
       {/* Modals */}
       <ApiKeyModal open={apiKeyModalOpen} onOpenChange={setApiKeyModalOpen} />
+      {canViewOrganizations && <OrganizationsModal open={organizationsOpen} onOpenChange={setOrganizationsOpen} />}
       {user?.role === 'admin' && <UserModal open={userModalOpen} onOpenChange={setUserModalOpen} />}
       {user?.role === 'admin' && (
         <NotificationSettingsModal

@@ -72,56 +72,27 @@ pub(super) async fn collect_stats(state: &AppState) -> DashboardStats {
     };
     let cache_key = load_manager.cache_key();
 
-    let request_totals_from_db =
-        match crate::db::endpoints::get_request_totals(&state.db_pool).await {
-            Ok(request_totals) => Some(PersistedRequestTotals {
-                total_requests: to_u64(request_totals.total_requests),
-                successful_requests: to_u64(request_totals.successful_requests),
-                failed_requests: to_u64(request_totals.failed_requests),
-            }),
-            Err(e) => {
-                warn!("Failed to query persisted request totals: {}", e);
-                None
-            }
-        };
-
-    // request_history 廃止完了まで、audit_log/request_history の双方を見て過小計上を避ける
-    let token_totals_from_audit = match state.audit.storage.get_token_statistics().await {
-        Ok(stats) => Some(PersistedTokenTotals {
-            total_input_tokens: to_u64(stats.total_input_tokens),
-            total_output_tokens: to_u64(stats.total_output_tokens),
-            total_tokens: to_u64(stats.total_tokens),
-        }),
-        Err(e) => {
-            warn!("Failed to query token statistics from audit log: {}", e);
+    // All dashboard usage counters share the same post-admission ledger.
+    // Old raw/audit rows remain available to global history readers, but their
+    // unknown attribution must never be inferred into the observation range.
+    let observed = match super::scope::totals(state, &crate::auth::scope::UsageScope::Global).await
+    {
+        Ok(totals) => Some(totals),
+        Err(error) => {
+            warn!("Failed to query durable usage totals: {:?}", error);
             None
         }
     };
-    let token_totals_from_history =
-        match state.balancer.request_history.get_token_statistics().await {
-            Ok(stats) => Some(PersistedTokenTotals {
-                total_input_tokens: stats.total_input_tokens,
-                total_output_tokens: stats.total_output_tokens,
-                total_tokens: stats.total_tokens,
-            }),
-            Err(e) => {
-                warn!(
-                    "Failed to query token statistics from request history: {}",
-                    e
-                );
-                None
-            }
-        };
-    let token_totals_from_db = match (token_totals_from_audit, token_totals_from_history) {
-        (Some(audit), Some(history)) => Some(PersistedTokenTotals {
-            total_input_tokens: audit.total_input_tokens.max(history.total_input_tokens),
-            total_output_tokens: audit.total_output_tokens.max(history.total_output_tokens),
-            total_tokens: audit.total_tokens.max(history.total_tokens),
-        }),
-        (Some(audit), None) => Some(audit),
-        (None, Some(history)) => Some(history),
-        (None, None) => None,
-    };
+    let request_totals_from_db = observed.as_ref().map(|totals| PersistedRequestTotals {
+        total_requests: to_u64(totals.request_count),
+        successful_requests: to_u64(totals.successful_requests),
+        failed_requests: to_u64(totals.failed_requests),
+    });
+    let token_totals_from_db = observed.as_ref().map(|totals| PersistedTokenTotals {
+        total_input_tokens: to_u64(totals.input_tokens),
+        total_output_tokens: to_u64(totals.output_tokens),
+        total_tokens: to_u64(totals.total_tokens),
+    });
 
     let cached_totals = LAST_KNOWN_PERSISTED_TOTALS
         .read()
@@ -285,23 +256,6 @@ pub(super) fn calculate_output_tps(
         Some(total_output_tokens / total_duration_seconds)
     } else {
         None
-    }
-}
-
-pub(super) async fn collect_operation_token_totals(state: &AppState) -> PersistedTokenTotals {
-    match state.balancer.request_history.get_token_statistics().await {
-        Ok(stats) => PersistedTokenTotals {
-            total_input_tokens: stats.total_input_tokens,
-            total_output_tokens: stats.total_output_tokens,
-            total_tokens: stats.total_tokens,
-        },
-        Err(e) => {
-            warn!(
-                "Failed to query operation token totals from request history: {}",
-                e
-            );
-            PersistedTokenTotals::default()
-        }
     }
 }
 

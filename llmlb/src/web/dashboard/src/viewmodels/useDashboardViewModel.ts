@@ -41,12 +41,15 @@ export function useDashboardViewModel(): DashboardViewModel {
   const { user } = useAuth()
   const isViewer = user?.role === 'viewer'
   const isAdmin = user?.role === 'admin'
+  const canReadUsage = !!user && user.scope !== 'unassigned'
   const { isConnected: wsConnected } = useDashboardWebSocket({ enabled: !isViewer })
   const [activeTab, setActiveTab] = useState(readInitialTab)
   // When WebSocket is connected, reduce polling frequency
   const pollingInterval = wsConnected ? 10000 : 5000
 
-  const { systemInfo, requestResponsesData, ...dashboard } = useDashboardDataViewModel({ pollingInterval, isViewer })
+  const { systemInfo, requestResponsesData, ...dashboard } = useDashboardDataViewModel({
+    pollingInterval, isViewer, canReadUsage,
+  })
   const activityByEndpoint = useMemo(() => new Map(
     dashboard.activityData?.endpoints.map((endpoint) => [endpoint.endpoint_id, endpoint]) ?? [],
   ), [dashboard.activityData])
@@ -74,6 +77,7 @@ export function useDashboardViewModel(): DashboardViewModel {
   } = useQuery<RegisteredModelView[]>({
     queryKey: queryKeys.viewerModels(modelsView),
     queryFn: () => modelsApi.getRegistered(modelsView),
+    enabled: canReadUsage,
     refetchInterval: pollingInterval,
   })
 
@@ -100,7 +104,9 @@ export function useDashboardViewModel(): DashboardViewModel {
     ...dashboard, user, isViewer, isAdmin, systemVersion,
     viewerModels: viewerModels ?? [], isLoadingViewerModels,
     refetchViewerModels: () => { void refetchViewerModels() },
-    modelsView, setModelsView, historyItems, activeTab, setActiveTab, updateBanner,
+    modelsView, setModelsView, historyItems,
+    activeTab: isViewer && ['endpoints', 'clients', 'logs'].includes(activeTab) ? 'statistics' : activeTab,
+    setActiveTab, updateBanner,
     errorMessage: dashboard.error instanceof Error ? dashboard.error.message : 'An error occurred',
     activityStatus, activityConnectionStatus, activityByEndpoint,
   }

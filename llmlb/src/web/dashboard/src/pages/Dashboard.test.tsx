@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   dashboardApi,
+  apiKeysApi,
   modelsApi,
   systemApi,
   type DashboardEndpoint,
@@ -100,6 +101,7 @@ const requestResponses: RequestResponsesPage = {
 function stubDashboardApis() {
   return {
     getDailyTokenStats: vi.spyOn(dashboardApi, 'getDailyTokenStats').mockResolvedValue([]),
+    getMonthlyTokenStats: vi.spyOn(dashboardApi, 'getMonthlyTokenStats').mockResolvedValue([]),
     getActivity: vi.spyOn(dashboardApi, 'getActivity').mockResolvedValue({
       timestamp: '2026-10-01T00:00:00Z', bucket_seconds: 1, window_seconds: 60,
       total: { active_requests: 0, queued_requests: 0, requests_per_second: Array(60).fill(0) },
@@ -168,6 +170,100 @@ describe('Dashboard', () => {
       'Traffic',
       'System',
     ])
+  })
+
+  it('offers organization administration to the global administrator', async () => {
+    renderPage(<Dashboard />)
+    expect(await screen.findByRole('button', { name: 'Organizations' })).toBeVisible()
+  })
+
+  it('lets an organization administrator read usage and requests without system controls', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ rows: [], totals: {
+      request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, measured_requests: 0,
+      estimated_requests: 0, missing_requests: 0 }, total_count: 0, page: 1, per_page: 10 }))))
+    renderPage(<Dashboard />, { user: { ...viewerUser, organization_id: 'org-a', organization_role: 'admin', scope: 'organization' } })
+    expect(await screen.findByRole('tab', { name: 'Usage' })).toBeVisible()
+    expect(screen.getByRole('tab', { name: 'Requests' })).toBeVisible()
+    expect(screen.queryByRole('tab', { name: 'System' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('tab', { name: 'Requests' }))
+    expect(await screen.findByText('history-only-model')).toBeVisible()
+  })
+
+  it('creates an organization through the management dialog', async () => {
+    const calls: { url: string; method: string; body?: string }[] = []
+    let organizations: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+      calls.push({ url, method: options?.method ?? 'GET', body: options?.body as string })
+      if (url === '/api/users' || url.endsWith('/members')) return new Response(JSON.stringify({ users: [] }))
+      if (options?.method === 'POST') {
+        const name = JSON.parse(options.body as string).name
+        organizations = [{ id: 'org-a', name, archived_at: null }]
+        return new Response(JSON.stringify(organizations[0]), { status: 201 })
+      }
+      return new Response(JSON.stringify({ organizations }))
+    }))
+    renderPage(<Dashboard />)
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Organizations' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Organizations' })
+    await userEvent.setup().type(within(dialog).getByLabelText('Organization name'), 'Research team')
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Create organization' }))
+    expect(await within(dialog).findByRole('heading', { name: 'Research team' })).toBeVisible()
+    expect(calls).toContainEqual({ url: '/api/organizations', method: 'POST', body: JSON.stringify({ name: 'Research team' }) })
+  })
+
+  it('shows scoped durable usage with missing-token coverage and an inclusive UTC period', async () => {
+    const requests: string[] = []
+    const counts = { request_count: 12, input_tokens: 110, output_tokens: 220, total_tokens: 330,
+      measured_requests: 8, estimated_requests: 1, missing_requests: 3 }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      requests.push(url)
+      return new Response(JSON.stringify({ scope: 'global', group_by: 'organization',
+        from: '2026-10-01', to: '2026-10-31', to_exclusive: '2026-11-01',
+        rows: [{ ...counts, organization_id: 'org-a', account_id: null, organization_name: 'Research team',
+          account_name: null, organization_archived: false, account_deleted: false }],
+        totals: counts, page: 1, per_page: 10, total_count: 1, coverage_start: '2026-10-01T00:00:00Z',
+      }))
+    }))
+    renderPage(<Dashboard />)
+    await userEvent.setup().click(await screen.findByRole('tab', { name: 'Usage' }))
+    const usage = await screen.findByRole('region', { name: 'Organization and account usage' })
+    expect(await within(usage).findByText('Research team')).toBeVisible()
+    expect(within(usage).getByText('3 missing')).toBeVisible()
+    expect(within(usage).getByText('Quota: not configured')).toBeVisible()
+    const request = requests.find((url) => url.startsWith('/api/dashboard/usage?'))!
+    expect(new URL(request, 'http://localhost').searchParams.get('group_by')).toBe('organization')
+    expect(within(usage).getByLabelText('From (UTC)')).toHaveAttribute('type', 'date')
+    expect(within(usage).getByLabelText('Through (UTC, inclusive)')).toHaveAttribute('type', 'date')
+  })
+
+  it('issues an inference key with an explicit account and organization, keeping plaintext out of cache', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/members')
+      ? { users: [{ id: 'account-a', username: 'alice', role: 'viewer', organization_id: 'org-a', organization_role: 'member' }] }
+      : url === '/api/users' ? { users: [] } : { organizations: [{ id: 'org-a', name: 'Research team', archived_at: null }] }))))
+    const create = vi.spyOn(apiKeysApi, 'create').mockResolvedValue({ id: 'key-a', name: 'Research access',
+      key: 'sk_secret_at_creation', key_prefix: 'sk_secret', created_at: '2026-10-30T00:00:00Z', permissions: ['openai.inference'] })
+    const { queryClient } = renderPage(<Dashboard />)
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Organizations' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Organizations' })
+    await userEvent.setup().click(await within(dialog).findByRole('button', { name: 'Issue inference key for alice' }))
+    await userEvent.setup().type(within(dialog).getByLabelText('Key name'), 'Research access')
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Issue key' }))
+    expect(await within(dialog).findByText('sk_secret_at_creation')).toBeVisible()
+    expect(create).toHaveBeenCalledExactlyOnceWith({ name: 'Research access', usage_account_id: 'account-a', organization_id: 'org-a', permissions: ['openai.inference', 'openai.models.read'] })
+    expect(JSON.stringify(queryClient.getQueryCache().getAll().map((q) => q.state.data))).not.toContain('sk_secret_at_creation')
+  })
+
+  it('labels a transferred account without treating it as deleted or inventing its current name', async () => {
+    const counts = { request_count: 1, input_tokens: 11, output_tokens: 7, total_tokens: 18,
+      measured_requests: 1, estimated_requests: 0, missing_requests: 0 }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ scope: 'organization', group_by: 'account',
+      rows: [{ ...counts, organization_id: 'org-a', account_id: 'account-a', organization_name: 'Research team',
+        account_name: null, account_deleted: false, organization_archived: false }],
+      totals: counts, page: 1, per_page: 10, total_count: 1, coverage_start: null }))))
+    renderPage(<Dashboard />, { user: { ...viewerUser, organization_id: 'org-a', organization_role: 'admin', scope: 'organization' } })
+    expect(await screen.findByRole('button', { name: 'Former account account-' })).toBeVisible()
+    expect(screen.queryByText('Deleted account')).not.toBeInTheDocument()
   })
 
   it('shows the request history when the Requests tab is selected', async () => {
@@ -290,16 +386,48 @@ describe('Dashboard', () => {
     expect(api.getOverview).toHaveBeenCalledTimes(1)
   })
 
-  it('limits viewers to the model list', async () => {
+  it('shows unassigned viewers membership guidance without requesting private data', async () => {
     renderPage(<Dashboard />, { user: viewerUser })
 
-    expect(await screen.findByText('Healthy')).toBeInTheDocument()
+    expect(await screen.findByText(/Organization membership required/)).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    expect(api.getRegistered).toHaveBeenCalledWith('canonical')
+    expect(api.getRegistered).not.toHaveBeenCalled()
     expect(api.getEndpoints).not.toHaveBeenCalled()
     expect(api.getRequestResponses).not.toHaveBeenCalled()
     expect(api.getSystem).not.toHaveBeenCalled()
-    expect(api.getActivity).toHaveBeenCalled()
+    expect(api.getActivity).not.toHaveBeenCalled()
+    expect(api.getOverview).not.toHaveBeenCalled()
     expect(FakeWebSocket.instances).toHaveLength(0)
+  })
+
+  it('disables unassigned key and inference actions on desktop and mobile without fetching keys', async () => {
+    const keys = vi.spyOn(apiKeysApi, 'list').mockResolvedValue([])
+    const user = userEvent.setup()
+    renderPage(<Dashboard />, { user: viewerUser })
+    await screen.findByText(/Organization membership required/)
+    for (const name of ['API Keys', 'LB Playground']) {
+      const action = screen.getByRole('button', { name })
+      expect(action).toBeDisabled()
+      await user.click(action)
+    }
+    await user.click(screen.getByRole('button', { name: 'User menu' }))
+    const menu = screen.getByRole('menu')
+    for (const name of ['API Keys', 'LB Playground']) {
+      expect(within(menu).getByRole('menuitem', { name })).toHaveAttribute('aria-disabled', 'true')
+    }
+    expect(screen.queryByRole('dialog', { name: 'API Keys' })).not.toBeInTheDocument()
+    expect(keys).not.toHaveBeenCalled()
+  })
+
+  it('keeps global key viewing available and explains Organizations issuance without self membership', async () => {
+    const keys = vi.spyOn(apiKeysApi, 'list').mockResolvedValue([])
+    const user = userEvent.setup()
+    renderPage(<Dashboard />)
+    await screen.findByRole('button', { name: 'API Keys' })
+    await user.click(screen.getByRole('button', { name: 'API Keys' }))
+    const modal = await screen.findByRole('dialog', { name: 'API Keys' })
+    await waitFor(() => expect(keys).toHaveBeenCalledOnce())
+    expect(within(modal).getByRole('button', { name: 'Create Key' })).toBeDisabled()
+    expect(within(modal).getByText(/Organizations.*issue|issue.*Organizations/)).toBeInTheDocument()
   })
 })

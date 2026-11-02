@@ -7,6 +7,7 @@ import {
   type ApiKeyPermission,
   type CreateApiKeyResponse,
 } from '@/lib/api'
+import { getSessionGeneration } from '@/lib/api/client'
 import { useAuth } from '@/hooks/useAuth'
 import {
   copyToClipboard,
@@ -21,7 +22,19 @@ interface ApiKeyModalOptions {
   onOpenChange: (open: boolean) => void
 }
 
+interface SessionCommand<T> {
+  generation: number
+  payload: T
+}
+
+type CreateApiKeyInput = Parameters<typeof apiKeysApi.create>[0]
+
+interface CreateKeyCommand extends SessionCommand<CreateApiKeyInput> {
+  attempt: number
+}
+
 export interface ApiKeyRow extends ApiKey {
+  canDelete: boolean
   createdAtLabel: string
   expired: boolean
   expiresLabel: string
@@ -29,6 +42,9 @@ export interface ApiKeyRow extends ApiKey {
 
 export interface ApiKeyModalViewModel {
   isAdmin: boolean
+  canIssueSelfKey: boolean
+  issuanceHint: string | null
+  canDeleteSelectedKey: boolean
   createOpen: boolean
   deleteKey: ApiKey | null
   setDeleteKey: (key: ApiKey | null) => void
@@ -66,20 +82,18 @@ const VIEWER_FIXED_PERMISSIONS: ApiKeyPermission[] = [
 const ADMIN_PERMISSION_OPTIONS: ApiKeyPermission[] = [
   'openai.inference',
   'openai.models.read',
-  'endpoints.read',
-  'endpoints.manage',
-  'api_keys.manage',
-  'users.manage',
-  'models.manage',
-  'registry.read',
-  'logs.read',
-  'metrics.read',
 ]
 
 /** API-key state and commands; plaintext stays outside the query cache. */
 export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptions): ApiKeyModalViewModel {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const canReadKeys = !!user && (isAdmin || user.scope === 'organization' || user.scope === 'account')
+  const canIssueSelfKey = canReadKeys && !!user?.organization_id
+  const issuanceHint = canIssueSelfKey ? null : isAdmin
+    ? 'Use Organizations to issue a key for an account, or assign your account to an active organization before creating a self key.'
+    : 'An active organization membership is required to manage API keys.'
+  const canDeleteKey = (key: ApiKey | null) => canReadKeys && !!user?.id && key?.created_by === user.id
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
@@ -92,6 +106,7 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
   const [showKey, setShowKey] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const createdKeyCodeRef = useRef<HTMLElement | null>(null)
+  const createAttempt = useRef(0)
 
   // Fetch API keys
   const {
@@ -101,7 +116,7 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
   } = useQuery({
     queryKey: queryKeys.apiKeys(),
     queryFn: apiKeysApi.list,
-    enabled: open,
+    enabled: open && canReadKeys,
     // Plaintext keys are only shown once at creation time. We must not auto-refresh
     // this query while the modal is open, otherwise it becomes unclear whether the
     // key is still "copyable".
@@ -110,6 +125,8 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
   })
 
   const clearCreatedKeyState = () => {
+    createAttempt.current++
+    createMutation.reset()
     setCreatedKey(null)
     setShowKey(null)
     setCopiedId(null)
@@ -125,18 +142,24 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
   const handleMainOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       clearCreatedKeyState()
+      resetCreateForm()
+      setCreateOpen(false)
     }
     onOpenChange(nextOpen)
   }
 
   const handleCreateOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && !canIssueSelfKey) return
     if (!nextOpen) {
+      clearCreatedKeyState()
       resetCreateForm()
     }
     setCreateOpen(nextOpen)
   }
 
   const handleOpenCreateDialog = () => {
+    if (!canIssueSelfKey) return
+    clearCreatedKeyState()
     resetCreateForm()
     setCreateOpen(true)
   }
@@ -159,14 +182,17 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
   }
 
   // Create API key mutation
+  const isCurrentCreateCommand = (command: CreateKeyCommand) =>
+    command.generation === getSessionGeneration() && command.attempt === createAttempt.current
   const createMutation = useMutation({
-    mutationFn: (data: {
-      name: string
-      expires_at?: string
-      permissions?: ApiKeyPermission[]
-    }) =>
-      apiKeysApi.create(data),
-    onSuccess: (data: CreateApiKeyResponse) => {
+    mutationFn: (command: CreateKeyCommand) => {
+      if (!isCurrentCreateCommand(command)) {
+        throw new Error('API key create command is no longer current')
+      }
+      return apiKeysApi.create(command.payload)
+    },
+    onSuccess: (data: CreateApiKeyResponse, command) => {
+      if (!isCurrentCreateCommand(command)) return
       // Update list without refetching, so the "created key" stays visible/copyable
       // until the user explicitly refreshes or closes the modal.
       queryClient.setQueryData(queryKeys.apiKeys(), (old?: ApiKey[]) => {
@@ -175,10 +201,13 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
         const created: ApiKey = {
           id: data.id,
           name: data.name,
+          created_by: user?.id,
           key_prefix: data.key_prefix,
           created_at: data.created_at,
           expires_at: data.expires_at,
           permissions: data.permissions,
+          usage_account_id: data.usage_account_id,
+          organization_id: data.organization_id,
         }
         return [created, ...withoutDup]
       })
@@ -190,7 +219,8 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
       setCreateOpen(false)
       toast({ title: 'API key created' })
     },
-    onError: (error) => {
+    onError: (error, command) => {
+      if (!isCurrentCreateCommand(command)) return
       toast({
         title: 'Failed to create API key',
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -201,13 +231,20 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
 
   // Delete API key mutation
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiKeysApi.delete(id),
-    onSuccess: () => {
+    mutationFn: (command: SessionCommand<string>) => {
+      if (command.generation !== getSessionGeneration()) {
+        throw new Error('Session changed before API key command')
+      }
+      return apiKeysApi.delete(command.payload)
+    },
+    onSuccess: (_data, command) => {
+      if (command.generation !== getSessionGeneration()) return
       queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys() })
       setDeleteKey(null)
       toast({ title: 'API key deleted' })
     },
-    onError: (error) => {
+    onError: (error, command) => {
+      if (command.generation !== getSessionGeneration()) return
       toast({
         title: 'Failed to delete API key',
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -243,11 +280,8 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
   }
 
   const handleCreate = () => {
-    const payload: {
-      name: string
-      expires_at?: string
-      permissions?: ApiKeyPermission[]
-    } = {
+    if (!canIssueSelfKey) return
+    const payload: CreateApiKeyInput = {
       name: newKeyName,
       expires_at: newKeyExpires || undefined,
     }
@@ -256,11 +290,11 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
       payload.permissions = selectedPermissions
     }
 
-    createMutation.mutate(payload)
+    createMutation.mutate({ generation: getSessionGeneration(), attempt: ++createAttempt.current, payload })
   }
 
   const handleTogglePermission = (permission: ApiKeyPermission, checked: boolean) => {
-    if (!isAdmin) return
+    if (!isAdmin || !ADMIN_PERMISSION_OPTIONS.includes(permission)) return
 
     setSelectedPermissions((prev) => {
       if (checked) {
@@ -277,23 +311,29 @@ export function useApiKeyModalViewModel({ open, onOpenChange }: ApiKeyModalOptio
   }
 
   return {
-    isAdmin, createOpen, deleteKey, setDeleteKey, newKeyName, setNewKeyName,
+    isAdmin, canIssueSelfKey, issuanceHint, canDeleteSelectedKey: canDeleteKey(deleteKey),
+    createOpen, deleteKey, setDeleteKey, newKeyName, setNewKeyName,
     newKeyExpires, setNewKeyExpires, selectedPermissions,
     permissionOptions: ADMIN_PERMISSION_OPTIONS,
     createdKey, showKey, copiedId, createdKeyCodeRef,
     isLoading, isCreating: createMutation.isPending, isDeleting: deleteMutation.isPending,
-    canCreate: !!newKeyName && !createMutation.isPending && (!isAdmin || selectedPermissions.length > 0),
-    apiKeys: apiKeys?.map((key) => ({ ...key,
+    canCreate: canIssueSelfKey && !!newKeyName && !createMutation.isPending && (!isAdmin || selectedPermissions.length > 0),
+    apiKeys: canReadKeys ? apiKeys?.map((key) => ({ ...key,
+      canDelete: canDeleteKey(key),
       createdAtLabel: formatRelativeTime(key.created_at),
       expired: isExpired(key.expires_at),
       expiresLabel: key.expires_at
         ? isExpired(key.expires_at) ? 'Expired' : formatRelativeTime(key.expires_at)
         : 'Never',
-    })),
+    })) : undefined,
     handleMainOpenChange, handleCreateOpenChange, handleOpenCreateDialog,
     handleCopy, handleCreate, handleTogglePermission,
     toggleCreatedKey: () => setShowKey(showKey === 'created' ? null : 'created'),
-    handleRefresh: () => { clearCreatedKeyState(); void refetch() },
-    handleDelete: () => { if (deleteKey) deleteMutation.mutate(deleteKey.id) },
+    handleRefresh: () => { clearCreatedKeyState(); if (canReadKeys) void refetch() },
+    handleDelete: () => {
+      if (deleteKey && canDeleteKey(deleteKey)) {
+        deleteMutation.mutate({ generation: getSessionGeneration(), payload: deleteKey.id })
+      }
+    },
   }
 }

@@ -54,6 +54,7 @@ export async function startMockOpenAIEndpointServer(options?: {
   endpointType?: 'xllm' | 'ollama' | 'vllm' | 'openai'
   beforeChatResponse?: () => Promise<void>
   afterFirstChatChunk?: () => Promise<void>
+  tokenUsage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
 }): Promise<MockOpenAIEndpointServer> {
   const models = options?.models?.length ? options.models : ['mock-model-a', 'mock-model-b']
   const responseDelayMs = Math.max(0, options?.responseDelayMs ?? 0)
@@ -136,6 +137,7 @@ export async function startMockOpenAIEndpointServer(options?: {
           object: 'chat.completion',
           created,
           model,
+          ...(options?.tokenUsage ? { usage: options.tokenUsage } : {}),
           choices: [
             {
               index: 0,
@@ -171,6 +173,7 @@ export async function startMockOpenAIEndpointServer(options?: {
         sseWrite(res, { choices: [{ delta: { content: part } }] })
         if (index === 0) await options?.afterFirstChatChunk?.()
       }
+      if (options?.tokenUsage) sseWrite(res, { choices: [], usage: options.tokenUsage })
       sseWrite(res, '[DONE]')
       res.end()
       return

@@ -67,6 +67,38 @@ pub async fn build_test_router(db_pool: SqlitePool) -> Router {
     api::create_app(state)
 }
 
+/// Give an explicitly selected test account a real organization membership.
+#[allow(dead_code)]
+pub async fn assign_test_organization(pool: &SqlitePool, account_id: uuid::Uuid) -> uuid::Uuid {
+    let membership = llmlb::db::organizations::account(pool, account_id)
+        .await
+        .unwrap()
+        .unwrap();
+    if let Some(id) = membership
+        .organization_id
+        .filter(|_| membership.organization_active)
+    {
+        return id;
+    }
+    let organization = llmlb::db::organizations::create(
+        pool,
+        &format!("Test organization {}", uuid::Uuid::new_v4()),
+    )
+    .await
+    .unwrap();
+    let id = uuid::Uuid::parse_str(&organization.id).unwrap();
+    llmlb::db::organizations::set_membership(
+        pool,
+        account_id,
+        Some(id),
+        llmlb::db::organizations::OrganizationRole::Member,
+        None,
+    )
+    .await
+    .unwrap();
+    id
+}
+
 /// テスト用のload balancerを作成する（.oneshot()スタイルのテスト用）
 #[allow(dead_code)]
 pub async fn create_test_lb() -> (Router, SqlitePool) {
@@ -189,6 +221,13 @@ pub async fn spawn_test_lb() -> TestServer {
 /// llmlbサーバーをテスト用に起動し、LoadManagerも返す
 #[allow(dead_code)]
 pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
+    let (server, load_manager, _db_pool) = spawn_test_lb_with_manager_and_db().await;
+    (server, load_manager)
+}
+
+/// Return the running server, its LoadManager and the database used by both.
+#[allow(dead_code)]
+pub async fn spawn_test_lb_with_manager_and_db() -> (TestServer, LoadManager, SqlitePool) {
     // テスト用に一時ディレクトリを設定
     let temp_dir = std::env::temp_dir().join(format!("or-test-{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir).unwrap();
@@ -239,14 +278,16 @@ pub async fn spawn_test_lb_with_manager() -> (TestServer, LoadManager) {
                 llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone()),
                 llmlb::audit::writer::AuditLogWriterConfig::default(),
             ),
-            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(db_pool)),
+            storage: std::sync::Arc::new(llmlb::db::audit_log::AuditLogStorage::new(
+                db_pool.clone(),
+            )),
             archive_pool: None,
         },
     };
 
     let app = api::create_app(state);
     let server = spawn_lb(app).await;
-    (server, load_manager)
+    (server, load_manager, db_pool)
 }
 
 /// 指定したllmlbにノードを登録する
@@ -509,6 +550,12 @@ pub async fn create_test_api_key(lb_addr: SocketAddr, db_pool: &SqlitePool) -> S
     llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false)
         .await
         .ok();
+
+    let account = llmlb::db::users::find_by_username(db_pool, "admin")
+        .await
+        .unwrap()
+        .unwrap();
+    assign_test_organization(db_pool, account.id).await;
 
     let client = Client::new();
 

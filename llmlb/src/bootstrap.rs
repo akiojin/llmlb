@@ -120,6 +120,16 @@ async fn initialize_inner(
     if let Err(err) = request_history.import_legacy_json_if_present().await {
         tracing::warn!("Failed to import legacy request history: {}", err);
     }
+    let recovered_usage = request_history
+        .recover_interrupted_usage()
+        .await
+        .expect("Failed to recover interrupted inference usage");
+    if recovered_usage > 0 {
+        info!(
+            recovered_usage,
+            "Recovered interrupted inference usage admissions"
+        );
+    }
     // 起動時にDBからリクエスト履歴をseed（直近60分）
     match request_history.get_recent_history_by_minute(60).await {
         Ok(points) => {

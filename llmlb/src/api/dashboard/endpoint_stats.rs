@@ -1,10 +1,11 @@
 //! エンドポイント単位のリクエスト統計とモデル別 TPS
 
 use crate::api::error::AppError;
+use crate::auth::scope::UsageScope;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
-    Json,
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -15,7 +16,9 @@ use uuid::Uuid;
 pub async fn get_endpoint_today_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<crate::db::endpoint_daily_stats::DailyStatEntry>, AppError> {
+    super::scope::global_only(&scope)?;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let stats = crate::db::endpoint_daily_stats::get_today_stats(&state.db_pool, id, &today)
         .await
@@ -30,7 +33,11 @@ pub async fn get_endpoint_daily_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
     Query(query): Query<EndpointDailyStatsQuery>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::DailyStatEntry>>, AppError> {
+    if scope != UsageScope::Global {
+        return Ok(Json(Vec::new()));
+    }
     let days = query.days.unwrap_or(7).min(365);
     let stats = crate::db::endpoint_daily_stats::get_daily_stats(&state.db_pool, id, days)
         .await
@@ -52,7 +59,11 @@ pub struct EndpointDailyStatsQuery {
 pub async fn get_endpoint_model_stats(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
+    if scope != UsageScope::Global {
+        return Ok(Json(Vec::new()));
+    }
     let stats = crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, id)
         .await
         .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
@@ -64,7 +75,11 @@ pub async fn get_endpoint_model_stats(
 /// SPEC-8c32349f: ダッシュボード向けモデル別集計
 pub async fn get_all_model_stats(
     State(state): State<AppState>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<Vec<crate::db::endpoint_daily_stats::ModelStatEntry>>, AppError> {
+    if scope != UsageScope::Global {
+        return Ok(Json(Vec::new()));
+    }
     let stats = crate::db::endpoint_daily_stats::get_all_model_stats(&state.db_pool)
         .await
         .map_err(|e| AppError(crate::common::error::LbError::Database(e.to_string())))?;
@@ -96,7 +111,11 @@ pub struct ModelTpsEntry {
 pub async fn get_endpoint_model_tps(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Json<Vec<ModelTpsEntry>> {
+    if scope != UsageScope::Global {
+        return Json(Vec::new());
+    }
     let tps_list = state.balancer.load_manager.get_model_tps(id).await;
     Json(
         tps_list

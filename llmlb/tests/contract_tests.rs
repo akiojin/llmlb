@@ -147,6 +147,9 @@ mod api_keys_api_test;
 #[path = "contract/registration_requests_api_test.rs"]
 mod registration_requests_api_test;
 
+#[path = "contract/organizations_api_test.rs"]
+mod organizations_api_test;
+
 // SPEC-e8e9326e: エンドポイント管理API拡張契約テスト（不足ケース補完）
 #[path = "contract/endpoints_contract_extended_test.rs"]
 mod endpoints_contract_extended_test;

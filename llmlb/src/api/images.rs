@@ -240,7 +240,14 @@ pub async fn generations(
     );
 
     // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    crate::api::usage_capture::accept_request(
+        &payload.model,
+        RequestType::ImageGeneration,
+        &serde_json::to_value(&payload).unwrap_or_default(),
+    )
+    .await?;
     let backend = select_image_backend(&state).await?;
+    crate::api::usage_capture::set_target(&backend.0).await?;
 
     // JSON リクエストをプロキシ
     let client = &state.http_client;
@@ -439,7 +446,14 @@ pub async fn edits(
     );
 
     // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    crate::api::usage_capture::accept_request(
+        &model,
+        RequestType::ImageEdit,
+        &json!({"model": model, "prompt": prompt}),
+    )
+    .await?;
     let backend = select_image_backend(&state).await?;
+    crate::api::usage_capture::set_target(&backend.0).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;
@@ -640,7 +654,14 @@ pub async fn variations(
     );
 
     // 画像生成対応バックエンドを選択（EndpointRegistry優先、NodeRegistryフォールバック）
+    crate::api::usage_capture::accept_request(
+        &model,
+        RequestType::ImageVariation,
+        &json!({"model": model, "type": "variation"}),
+    )
+    .await?;
     let backend = select_image_backend(&state).await?;
+    crate::api::usage_capture::set_target(&backend.0).await?;
 
     // multipart リクエストを構築してプロキシ
     let client = &state.http_client;

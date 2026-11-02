@@ -73,6 +73,8 @@ pub(super) async fn proxy_openai_cloud_post(
 
     let cloud_provider = resolve_provider(provider.as_str())
         .ok_or_else(|| validation_error("unsupported cloud provider prefix"))?;
+    crate::api::usage_capture::accept_request(model, request_type, &payload).await?;
+    crate::api::usage_capture::set_target_metadata(endpoint_id, &endpoint_name).await?;
     let outcome = match proxy_cloud_provider(
         cloud_provider.as_ref(),
         &state.http_client,

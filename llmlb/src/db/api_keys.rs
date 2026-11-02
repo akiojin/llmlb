@@ -30,6 +30,53 @@ pub async fn create(
     expires_at: Option<DateTime<Utc>>,
     permissions: Vec<ApiKeyPermission>,
 ) -> Result<ApiKeyWithPlaintext, LbError> {
+    create_with_attribution(pool, name, created_by, expires_at, permissions, None).await
+}
+
+/// Issue a key with validated usage ownership in the same write transaction.
+pub async fn create_attributed(
+    pool: &SqlitePool,
+    name: &str,
+    created_by: Uuid,
+    expires_at: Option<DateTime<Utc>>,
+    permissions: Vec<ApiKeyPermission>,
+    usage_account_id: Uuid,
+    organization_id: Uuid,
+) -> Result<ApiKeyWithPlaintext, LbError> {
+    create_with_attribution(
+        pool,
+        name,
+        created_by,
+        expires_at,
+        permissions,
+        Some((usage_account_id, organization_id)),
+    )
+    .await
+}
+
+async fn create_with_attribution(
+    pool: &SqlitePool,
+    name: &str,
+    created_by: Uuid,
+    expires_at: Option<DateTime<Utc>>,
+    permissions: Vec<ApiKeyPermission>,
+    attribution: Option<(Uuid, Uuid)>,
+) -> Result<ApiKeyWithPlaintext, LbError> {
+    let mut transaction = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .map_err(|error| LbError::Database(format!("Key issue transaction failed: {error}")))?;
+    if let Some((account_id, organization_id)) = attribution {
+        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users u JOIN organizations o ON o.id = u.organization_id WHERE u.id = ? AND u.organization_id = ? AND u.is_active = 1 AND o.archived_at IS NULL)")
+            .bind(account_id.to_string()).bind(organization_id.to_string())
+            .fetch_one(&mut *transaction).await
+            .map_err(|error| LbError::Database(format!("Key ownership validation failed: {error}")))?;
+        if !valid {
+            return Err(LbError::Common(CommonError::Validation(
+                "Usage account must belong to the active organization".into(),
+            )));
+        }
+    }
     let id = Uuid::new_v4();
     let key = generate_api_key();
     let key_hash = hash_with_sha256(&key);
@@ -39,8 +86,8 @@ pub async fn create(
     let permissions_json = serialize_permissions(&permissions)?;
 
     sqlx::query(
-        "INSERT INTO api_keys (id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO api_keys (id, key_hash, key_prefix, name, created_by, created_at, expires_at, permissions, usage_account_id, organization_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(&key_hash)
@@ -50,9 +97,15 @@ pub async fn create(
     .bind(created_at.to_rfc3339())
     .bind(expires_at.map(|dt| dt.to_rfc3339()))
     .bind(permissions_json)
-    .execute(pool)
+    .bind(attribution.map(|(account, _)| account.to_string()))
+    .bind(attribution.map(|(_, organization)| organization.to_string()))
+    .execute(&mut *transaction)
     .await
     .map_err(|e| map_write_error(e, name, "create API key"))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| LbError::Database(format!("Key issue commit failed: {error}")))?;
 
     Ok(ApiKeyWithPlaintext {
         id,
@@ -104,6 +157,42 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<ApiKey>, LbError> {
     .map_err(|e| LbError::Database(format!("Failed to list API keys: {}", e)))?;
 
     rows.into_iter().map(|r| r.into_api_key()).collect()
+}
+
+/// Apply authorization before materializing any key metadata.
+pub async fn list_scoped(
+    pool: &SqlitePool,
+    scope: &crate::auth::scope::UsageScope,
+) -> Result<Vec<ApiKey>, LbError> {
+    use crate::auth::scope::UsageScope;
+    let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id,key_hash,key_prefix,name,created_by,created_at,expires_at,permissions FROM api_keys");
+    match scope {
+        UsageScope::Global => {}
+        UsageScope::Organization(id) => {
+            query
+                .push(" WHERE organization_id = ")
+                .push_bind(id.to_string());
+        }
+        UsageScope::Account {
+            organization_id,
+            account_id,
+        } => {
+            query
+                .push(" WHERE organization_id = ")
+                .push_bind(organization_id.to_string())
+                .push(" AND usage_account_id = ")
+                .push_bind(account_id.to_string());
+        }
+    }
+    query.push(" ORDER BY created_at DESC, id");
+    query
+        .build_query_as::<ApiKeyRow>()
+        .fetch_all(pool)
+        .await
+        .map_err(|error| LbError::Database(format!("Scoped key query failed: {error}")))?
+        .into_iter()
+        .map(ApiKeyRow::into_api_key)
+        .collect()
 }
 
 /// 指定ユーザーが発行したAPIキーを取得

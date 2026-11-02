@@ -109,14 +109,16 @@ async fn ac3_startup_offline_arrival_reaches_notifications_without_blocking_serv
     })
     .await;
 
-    let stored = llmlb::db::endpoints::get_endpoint(&pool, endpoint.id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.status, EndpointStatus::Offline);
+    // Report a readiness timeout before asserting its downstream database state.
+    // Otherwise a slow startup only reports Pending and hides the server diagnostics.
     assert!(
         result.is_ok(),
         "initial Offline arrival must reach notifications while the server stays available:\n{}",
         std::fs::read_to_string(output_path).unwrap()
     );
+    let stored = llmlb::db::endpoints::get_endpoint(&pool, endpoint.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.status, EndpointStatus::Offline);
 }

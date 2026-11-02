@@ -746,20 +746,18 @@ mod tests {
         )
         .await
         .unwrap();
-        let key = crate::db::api_keys::create(
-            &pool,
-            "preserved",
-            user.id,
-            None,
-            vec![
-                ApiKeyPermission::UsersManage,
-                ApiKeyPermission::OpenaiInference,
-            ],
-        )
-        .await
-        .unwrap();
-        sqlx::query(r#"UPDATE api_keys SET permissions = '["users.manage","invitations.manage","openai.inference"]' WHERE id = ?"#)
-            .bind(key.id.to_string()).execute(&pool).await.unwrap();
+        // Seed only columns present in the pre-registration schema.
+        let key_id = uuid::Uuid::new_v4();
+        sqlx::query("INSERT INTO api_keys(id,key_hash,key_prefix,name,created_by,created_at,expires_at,permissions) VALUES(?,?,?,?,?,?,?,?)")
+            .bind(key_id.to_string())
+            .bind("legacy-permissions-key-hash")
+            .bind("sk_legacy")
+            .bind("preserved")
+            .bind(user.id.to_string())
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(Option::<String>::None)
+            .bind(r#"["users.manage","invitations.manage","openai.inference"]"#)
+            .execute(&pool).await.unwrap();
         run_migrations(&pool).await.unwrap();
         assert_eq!(
             crate::db::users::find_by_id(&pool, user.id)

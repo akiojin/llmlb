@@ -1,8 +1,11 @@
 import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { adminUser, deferred, renderWithProviders, type TestUser } from '@/test/render'
+import { adminUser, deferred, renderWithProviders, viewerUser, type TestUser } from '@/test/render'
+import { authApi } from '@/lib/api/auth'
 import App from './App'
+
+const pageCalls = vi.hoisted(() => ({ playground: vi.fn(), lb: vi.fn(), audit: vi.fn() }))
 
 // App owns routing only. Each page has its own test file, so the pages are
 // replaced by markers that expose the props App passes to them.
@@ -10,25 +13,28 @@ vi.mock('@/pages/Dashboard', () => ({
   default: () => <div data-testid="page">dashboard</div>,
 }))
 vi.mock('@/pages/AuditLog', () => ({
-  default: ({ onBack }: { onBack: () => void }) => (
+  default: ({ onBack }: { onBack: () => void }) => { pageCalls.audit(); return (
     <div data-testid="page">
       audit-log <button onClick={onBack}>back</button>
     </div>
-  ),
+  ) },
 }))
 vi.mock('@/pages/LoadBalancerPlayground', () => ({
-  default: ({ initialModel }: { initialModel?: string }) => (
+  default: ({ initialModel }: { initialModel?: string }) => { pageCalls.lb(); return (
     <div data-testid="page">lb-playground model={initialModel ?? 'none'}</div>
-  ),
+  ) },
 }))
 vi.mock('@/pages/EndpointPlayground', () => ({
-  default: ({ endpointId }: { endpointId: string }) => (
+  default: ({ endpointId }: { endpointId: string }) => { pageCalls.playground(); return (
     <div data-testid="page">playground endpoint={endpointId}</div>
-  ),
+  ) },
 }))
 
 afterEach(() => {
   window.location.hash = ''
+  pageCalls.playground.mockClear()
+  pageCalls.lb.mockClear()
+  pageCalls.audit.mockClear()
 })
 
 async function renderAt(hash: string) {
@@ -38,6 +44,35 @@ async function renderAt(hash: string) {
 }
 
 describe('App', () => {
+  it('keeps unassigned direct playground URLs on the dashboard without mounting private pages', async () => {
+    for (const hash of ['#lb-playground', '#playground/ep-42']) {
+      window.location.hash = hash
+      const view = renderWithProviders(<App />, { user: viewerUser })
+      expect(await screen.findByTestId('page')).toHaveTextContent('dashboard')
+      expect(pageCalls.lb).not.toHaveBeenCalled()
+      expect(pageCalls.playground).not.toHaveBeenCalled()
+      view.unmount()
+    }
+  })
+
+  it('unmounts an allowed playground when current membership becomes unassigned', async () => {
+    window.location.hash = '#lb-playground'
+    renderWithProviders(<App />, { user: { ...viewerUser, organization_id: 'org-A', organization_role: 'member', scope: 'account' } })
+    expect(await screen.findByTestId('page')).toHaveTextContent('lb-playground')
+    const calls = pageCalls.lb.mock.calls.length
+    vi.mocked(authApi.me).mockResolvedValue({ ...viewerUser, scope: 'unassigned', organization_id: null, organization_role: null })
+    await act(async () => { window.dispatchEvent(new Event('llmlb:auth-scope-invalidated')) })
+    expect(await screen.findByTestId('page')).toHaveTextContent('dashboard')
+    expect(pageCalls.lb).toHaveBeenCalledTimes(calls)
+  })
+
+  it('keeps non-global audit URLs on the dashboard without mounting the audit page', async () => {
+    window.location.hash = '#audit-log'
+    renderWithProviders(<App />, { user: { ...viewerUser, organization_id: 'org-A', organization_role: 'member', scope: 'account' } })
+    expect(await screen.findByTestId('page')).toHaveTextContent('dashboard')
+    expect(pageCalls.audit).not.toHaveBeenCalled()
+  })
+
   it('shows a loading indicator until the session check completes', async () => {
     const session = deferred<TestUser>()
     renderWithProviders(<App />, { user: session.promise })

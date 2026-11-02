@@ -29,6 +29,8 @@ pub mod models;
 pub mod openai;
 /// OpenAI互換APIユーティリティ
 pub mod openai_util;
+/// 組織・所属管理API
+pub mod organizations;
 pub mod proxy;
 pub mod registration_requests;
 /// Open Responses API (SPEC-0f1de549)
@@ -36,6 +38,9 @@ pub mod responses;
 /// System API (self-update)
 pub mod system;
 pub mod users;
+
+/// Inference admission snapshots and once-only usage collection.
+pub(crate) mod usage_capture;
 
 /// ルーティング（ドメイン別 Router, FR-012）
 mod router;

@@ -110,6 +110,11 @@ async fn test_viewer_can_still_use_chat_playground() {
     let (server, db_pool) = spawn_test_lb_with_db().await;
     let client = Client::new();
     create_user(&db_pool, "lt_viewer", llmlb::common::auth::UserRole::Viewer).await;
+    let viewer = llmlb::db::users::find_by_username(&db_pool, "lt_viewer")
+        .await
+        .unwrap()
+        .expect("persisted viewer");
+    crate::support::lb::assign_test_organization(&db_pool, viewer.id).await;
     let viewer_jwt = login(&client, server.addr(), "lt_viewer").await;
 
     let resp = client

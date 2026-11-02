@@ -1,26 +1,22 @@
 //! ダッシュボードのトークン使用量統計（累計・日次・月次）
 
 use crate::api::error::AppError;
+use crate::auth::scope::UsageScope;
 use crate::AppState;
 use axum::{
     extract::{Query, State},
-    Json,
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 
 /// GET /api/dashboard/stats/tokens - トークン統計取得
 ///
-/// NOTE: request_history廃止完了まで request_history を集計元として扱う
+/// 導入後の永続 usage_daily を全scopeで共有し、raw retentionに依存しない。
 pub async fn get_token_stats(
     State(state): State<AppState>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<crate::db::request_history::TokenStatistics>, AppError> {
-    let stats = state
-        .balancer
-        .request_history
-        .get_token_statistics()
-        .await
-        .map_err(AppError::from)?;
-    Ok(Json(stats))
+    Ok(Json(super::usage::token_totals(&state, &scope).await?))
 }
 
 /// 日次トークン統計クエリパラメータ
@@ -52,29 +48,14 @@ pub struct DailyTokenStats {
 
 /// GET /api/dashboard/stats/tokens/daily - 日次トークン統計取得
 ///
-/// NOTE: request_history廃止完了まで request_history を集計元として扱う
+/// 導入後の永続 usage_daily を全scopeで共有し、raw retentionに依存しない。
 pub async fn get_daily_token_stats(
     State(state): State<AppState>,
     Query(query): Query<DailyTokenStatsQuery>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<Vec<DailyTokenStats>>, AppError> {
-    let days = query.days.unwrap_or(30);
-    let stats = state
-        .balancer
-        .request_history
-        .get_daily_token_statistics(days)
-        .await
-        .map_err(AppError::from)?;
     Ok(Json(
-        stats
-            .into_iter()
-            .map(|s| DailyTokenStats {
-                date: s.date,
-                total_input_tokens: s.total_input_tokens,
-                total_output_tokens: s.total_output_tokens,
-                total_tokens: s.total_tokens,
-                request_count: s.request_count,
-            })
-            .collect(),
+        super::usage::daily_tokens(&state, &scope, query.days.unwrap_or(30)).await?,
     ))
 }
 
@@ -107,28 +88,13 @@ pub struct MonthlyTokenStats {
 
 /// GET /api/dashboard/stats/tokens/monthly - 月次トークン統計取得
 ///
-/// NOTE: request_history廃止完了まで request_history を集計元として扱う
+/// 導入後の永続 usage_daily を全scopeで共有し、raw retentionに依存しない。
 pub async fn get_monthly_token_stats(
     State(state): State<AppState>,
     Query(query): Query<MonthlyTokenStatsQuery>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<Vec<MonthlyTokenStats>>, AppError> {
-    let months = query.months.unwrap_or(12);
-    let stats = state
-        .balancer
-        .request_history
-        .get_monthly_token_statistics(months)
-        .await
-        .map_err(AppError::from)?;
     Ok(Json(
-        stats
-            .into_iter()
-            .map(|s| MonthlyTokenStats {
-                month: s.month,
-                total_input_tokens: s.total_input_tokens,
-                total_output_tokens: s.total_output_tokens,
-                total_tokens: s.total_tokens,
-                request_count: s.request_count,
-            })
-            .collect(),
+        super::usage::monthly_tokens(&state, &scope, query.months.unwrap_or(12)).await?,
     ))
 }

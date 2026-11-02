@@ -238,7 +238,7 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
       }
     } else if (updateState === 'draining' && update) {
       title = `Updating to v${update.latest}`
-      description = `Waiting for in-flight requests: ${update.in_flight}`
+      description = `Waiting for in-flight requests: ${update.in_flight ?? 'unknown'}`
     } else if (updateState === 'applying' && update) {
       title = applyTimedOut ? 'Update needs attention' : `Applying update: v${update.latest}`
       description = applyTimedOut
@@ -399,7 +399,7 @@ export function useSystemUpdateViewModel(systemInfo: SystemInfo | undefined, isA
       scheduleInfo,
       updateLatest: update && 'latest' in update ? update.latest ?? null : null,
       restartLabel: update?.state === 'draining'
-        ? `Waiting to update... (${update.in_flight})`
+        ? `Waiting to update... (${update.in_flight ?? 'unknown'})`
         : update?.state === 'applying' ? 'Applying update...' : 'Restart to update',
       downloadProgressPercent: downloadProgress
         ? Math.round(downloadProgress.downloaded_bytes / downloadProgress.total_bytes * 100)

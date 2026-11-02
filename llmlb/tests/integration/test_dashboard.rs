@@ -24,7 +24,32 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::support::http::spawn_lb;
-use crate::support::lb::{spawn_test_lb, spawn_test_lb_with_db, test_jwt_secret};
+use crate::support::lb::test_jwt_secret;
+
+async fn seed_dashboard_admin(pool: &sqlx::SqlitePool) {
+    llmlb::db::users::create_with_id(
+        pool,
+        uuid::Uuid::from_u128(1),
+        "test-admin",
+        "hash",
+        UserRole::Admin,
+        false,
+    )
+    .await
+    .unwrap();
+}
+
+async fn spawn_test_lb() -> crate::support::http::TestServer {
+    let (server, pool) = spawn_test_lb_with_db().await;
+    drop(pool);
+    server
+}
+
+async fn spawn_test_lb_with_db() -> (crate::support::http::TestServer, sqlx::SqlitePool) {
+    let (server, pool) = crate::support::lb::spawn_test_lb_with_db().await;
+    seed_dashboard_admin(&pool).await;
+    (server, pool)
+}
 
 /// アップデート確認のテストで GitHub Releases API のモックに使うリポジトリ
 const GITHUB_OWNER: &str = "test-owner";
@@ -48,6 +73,7 @@ async fn build_test_app_with_github_api(github_api_base_url: Option<String>) -> 
     std::env::set_var("USERPROFILE", &temp_dir);
 
     let db_pool = crate::support::lb::create_test_db_pool().await;
+    seed_dashboard_admin(&db_pool).await;
     let endpoint_registry = EndpointRegistry::new(db_pool.clone())
         .await
         .expect("Failed to create endpoint registry");
@@ -109,7 +135,14 @@ async fn build_test_app_with_github_api(github_api_base_url: Option<String>) -> 
 type WsRequest = tokio_tungstenite::tungstenite::http::Request<()>;
 
 fn admin_jwt(secret: &str) -> String {
-    create_jwt("test-admin", UserRole::Admin, secret, false, 0).expect("create test jwt")
+    create_jwt(
+        "00000000-0000-0000-0000-000000000001",
+        UserRole::Admin,
+        secret,
+        false,
+        0,
+    )
+    .expect("create test jwt")
 }
 
 /// 認証情報を持たない WebSocket 接続リクエストを生成する。`query` は URL の `?` 以降。

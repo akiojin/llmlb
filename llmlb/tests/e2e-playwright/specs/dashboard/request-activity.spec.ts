@@ -210,7 +210,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
     })
 
     for (const mode of ['disconnected', 'viewer'] as const) {
-      test(`refreshes once per second through ${mode} polling`, async ({ page, request }) => {
+      const title = mode === 'viewer'
+        ? 'unassigned viewer sees membership guidance without activity or WebSocket'
+        : 'refreshes once per second through disconnected polling'
+      test(title, async ({ page, request }) => {
         test.setTimeout(60_000)
         expect((await request.post('/api/auth/login', {
           data: { username: 'admin', password: 'test' },
@@ -239,7 +242,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
           })).ok()).toBe(true)
           const identity = await page.context().request.get('/api/auth/me')
           expect(identity.ok()).toBe(true)
-          expect((await identity.json()).role).toBe(mode === 'viewer' ? 'viewer' : 'admin')
+          const current = await identity.json()
+          expect(current.role).toBe(mode === 'viewer' ? 'viewer' : 'admin')
+          if (mode === 'viewer') expect(current.scope).toBe('unassigned')
           const errors = watchErrors(page)
           await page.routeWebSocket('**/ws/dashboard', async (socket) => {
             socketConnections++
@@ -255,8 +260,22 @@ for (const colorScheme of ['light', 'dark'] as const) {
               endpoints: [],
             } })
           })
+          if (mode === 'viewer') await page.clock.install()
           await ensureDashboardLogin(page)
           const section = page.getByRole('region', { name: 'Request activity', exact: true })
+          if (mode === 'viewer') {
+            const guidance = page.getByText('Organization membership required. Ask a system administrator to assign your account before using inference or viewing usage.', { exact: true })
+            await expect(guidance).toBeVisible()
+            // Advance past polling periods after identity and loaded UI are proven.
+            await page.clock.runFor(2500)
+            await expect(guidance).toBeVisible()
+            await expect(section).toHaveCount(0)
+            await expect(page.getByRole('tab', { name: 'Requests', exact: true })).toHaveCount(0)
+            expect(activityReads).toBe(0)
+            expect(socketConnections).toBe(0)
+            expect(errors).toEqual([])
+            return
+          }
           const indicator = section.getByTestId('request-activity')
           await expect(indicator).toHaveAttribute('data-active-requests', '0')
           await expect(page.getByTestId('activity-connection-status')).toContainText(/Polling.*1s.*WebSocket/i)
@@ -267,7 +286,6 @@ for (const colorScheme of ['light', 'dark'] as const) {
           expect(Date.now() - changedAt).toBeLessThan(2000)
           await expect(indicator).toHaveAttribute('data-queued-requests', '2')
           expect(activityReads).toBeGreaterThan(readsBefore)
-          if (mode === 'viewer') expect(socketConnections).toBe(0)
           expect(errors).toEqual([])
         } finally {
           await page.close()

@@ -170,13 +170,22 @@ async fn model_catalog_database_failure_keeps_management_exit() {
 #[tokio::test]
 #[serial]
 async fn dashboard_chat_validation_keeps_flat_error() {
-    let (server, _) = spawn_test_lb_with_db().await;
-    let jwt = llmlb::auth::jwt::create_jwt(
-        &Uuid::nil().to_string(),
+    let (server, pool) = spawn_test_lb_with_db().await;
+    let admin = llmlb::db::users::create(
+        &pool,
+        "compatibility-admin@example.com",
+        "hash",
         UserRole::Admin,
-        &test_jwt_secret(),
         false,
-        0,
+    )
+    .await
+    .expect("persist authenticated dashboard actor");
+    let jwt = llmlb::auth::jwt::create_jwt(
+        &admin.id.to_string(),
+        admin.role,
+        &test_jwt_secret(),
+        admin.must_change_password,
+        admin.password_changed_at,
     )
     .expect("test JWT");
     for path in [

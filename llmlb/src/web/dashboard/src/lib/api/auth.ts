@@ -33,7 +33,9 @@ export const authApi = {
   },
 
   me: () =>
-    fetchWithAuth<{ user_id: string; username: string; role: string; must_change_password: boolean }>('/api/auth/me'),
+    fetchWithAuth<{ user_id: string; username: string; role: string; must_change_password: boolean;
+      organization_id?: string | null; organization_role?: 'admin' | 'member' | null;
+      scope?: 'global' | 'organization' | 'account' | 'unassigned' }>('/api/auth/me'),
 
   changePassword: async (currentPassword: string, newPassword: string) => {
     await fetchWithAuth('/api/auth/change-password', {

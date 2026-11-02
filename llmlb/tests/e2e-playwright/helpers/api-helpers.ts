@@ -631,6 +631,64 @@ export interface CreatedApiKey {
   key: string;
 }
 
+const API_KEY_FIXTURE_ORGANIZATION = 'Playwright API key fixture';
+
+/** Prepare the default test administrator's self-key attribution through real APIs.
+ * Existing active membership is preserved; concurrent workers share one fixed
+ * organization so repeating setup cannot transfer the account or revoke keys.
+ */
+export async function ensureApiKeyTestMembership(
+  request: APIRequestContext,
+  adminToken?: string,
+): Promise<{ accountId: string; organizationId: string }> {
+  const token = adminToken ?? await getDashboardJwt();
+  const headers = { Authorization: `Bearer ${token}` };
+  type Identity = { user_id: string; role: string; organization_id: string | null };
+  type Organization = { id: string; name: string; archived_at: string | null };
+  const identity = async (): Promise<Identity> => {
+    const response = await request.get(`${API_BASE}/api/auth/me`, { headers });
+    if (!response.ok()) throw new Error(`Membership fixture identity failed (${response.status()})`);
+    const account = await response.json() as Identity;
+    if (!account.user_id || account.role !== 'admin') throw new Error('Membership fixture requires the default global administrator');
+    return account;
+  };
+  const organizations = async (): Promise<Organization[]> => {
+    const response = await request.get(`${API_BASE}/api/organizations`, { headers });
+    if (!response.ok()) throw new Error(`Membership fixture organizations failed (${response.status()})`);
+    return (await response.json() as { organizations: Organization[] }).organizations;
+  };
+  const preserve = async (account: Identity) => {
+    if (!account.organization_id) return undefined;
+    const current = (await organizations()).find((org) => org.id === account.organization_id);
+    if (!current || current.archived_at) throw new Error('Existing test membership is unavailable; refusing to move its account');
+    return { accountId: account.user_id, organizationId: current.id };
+  };
+  const first = await identity();
+  const existing = await preserve(first);
+  if (existing) return existing;
+  let organization = (await organizations()).find((org) => org.name === API_KEY_FIXTURE_ORGANIZATION && !org.archived_at);
+  if (!organization) {
+    const created = await request.post(`${API_BASE}/api/organizations`, {
+      headers, data: { name: API_KEY_FIXTURE_ORGANIZATION },
+    });
+    if (created.status() === 201) organization = await created.json() as Organization;
+    else if (created.status() === 409) {
+      // A parallel worker created the same fixed fixture first.
+      organization = (await organizations()).find((org) => org.name === API_KEY_FIXTURE_ORGANIZATION && !org.archived_at);
+    } else throw new Error(`Membership fixture creation failed (${created.status()})`);
+  }
+  if (!organization) throw new Error('Shared membership fixture was not found after creation');
+  // Re-read after creation: another worker may already have completed setup.
+  const current = await identity();
+  const prepared = await preserve(current);
+  if (prepared) return prepared;
+  const assigned = await request.put(`${API_BASE}/api/users/${encodeURIComponent(current.user_id)}/membership`, {
+    headers, data: { organization_id: organization.id, organization_role: 'member' },
+  });
+  if (!assigned.ok()) throw new Error(`Membership fixture assignment failed (${assigned.status()})`);
+  return { accountId: current.user_id, organizationId: organization.id };
+}
+
 /**
  * Create an API key for the logged-in user.
  */
@@ -641,6 +699,7 @@ export async function createApiKeyWithPermissions(
   expiresAt?: string
 ): Promise<CreatedApiKey> {
   const token = await getDashboardJwt();
+  await ensureApiKeyTestMembership(request, token);
   const payload: Record<string, unknown> = { name };
   if (expiresAt) {
     payload.expires_at = expiresAt;

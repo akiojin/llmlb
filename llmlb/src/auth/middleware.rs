@@ -1,6 +1,7 @@
 // T047-T049: 認証ミドルウェア実装
 
-use crate::api::error::HandlerError;
+use crate::api::error::{AppError, HandlerError};
+use crate::auth::scope::PrincipalAttribution;
 use crate::common::auth::{ApiKeyPermission, Claims, UserRole};
 use crate::AppState;
 use axum::{
@@ -264,15 +265,21 @@ fn response_sets_csrf_cookie(response: &Response) -> bool {
 async fn authenticate_api_key(
     pool: &sqlx::SqlitePool,
     api_key: &str,
-) -> Result<ApiKeyAuthContext, HandlerError> {
+) -> Result<(ApiKeyAuthContext, PrincipalAttribution), HandlerError> {
     if let Some(permissions) = debug_api_key_permissions(api_key) {
         tracing::warn!("Authenticated via debug API key (debug build only)");
-        return Ok(ApiKeyAuthContext {
-            id: Uuid::nil(),
-            created_by: Uuid::nil(),
-            permissions,
-            expires_at: None,
-        });
+        let principal = crate::auth::scope::authenticate_key(pool, Uuid::nil())
+            .await
+            .map_err(AppError)?;
+        return Ok((
+            ApiKeyAuthContext {
+                id: Uuid::nil(),
+                created_by: Uuid::nil(),
+                permissions,
+                expires_at: None,
+            },
+            principal,
+        ));
     }
 
     let key_hash = hash_with_sha256(api_key);
@@ -292,12 +299,21 @@ async fn authenticate_api_key(
         }
     }
 
-    Ok(ApiKeyAuthContext {
-        id: api_key_record.id,
-        created_by: api_key_record.created_by,
-        permissions: api_key_record.permissions,
-        expires_at: api_key_record.expires_at,
-    })
+    let principal = crate::auth::scope::authenticate_key(pool, api_key_record.id)
+        .await
+        .map_err(|error| {
+            tracing::warn!("API key ownership verification failed: {}", error);
+            (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()).into_response()
+        })?;
+    Ok((
+        ApiKeyAuthContext {
+            id: api_key_record.id,
+            created_by: api_key_record.created_by,
+            permissions: api_key_record.permissions,
+            expires_at: api_key_record.expires_at,
+        },
+        principal,
+    ))
 }
 
 fn extract_api_key(request: &Request) -> Result<String, HandlerError> {
@@ -334,7 +350,7 @@ fn extract_api_key(request: &Request) -> Result<String, HandlerError> {
 }
 
 /// Authorization ヘッダー（Bearer）または JWT Cookie からトークンを取り出す。無ければ 401。
-fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, HandlerError> {
+pub(crate) fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, HandlerError> {
     if let Some(auth_header) = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
@@ -362,41 +378,24 @@ fn extract_bearer_or_cookie_token(headers: &HeaderMap) -> Result<String, Handler
         .into())
 }
 
-/// パスワード変更/リセット後の旧 JWT セッションを無効化する。
-///
-/// token の `password_changed_at` が DB の現在値より小さい場合は 401 を返す
-/// （= パスワードが変更/リセットされた後に発行前のトークンが使われている）。
-/// dev 固定ログイン（nil UUID）や DB 未登録ユーザーはスキップする。
-///
-/// DB 参照に失敗した場合は **fail-open**（セッションを有効として扱う）。
-/// 無効化は「DB の pca がトークンより新しい」と積極的に確認できた場合のみ行う。
-/// DB 障害時に全認証ユーザーをロックアウトすると、ダッシュボードの
-/// グレースフルデグレード（キャッシュ応答）を壊し自己 DoS となるため。
-/// JWT 自体は 24h で失効するので、障害中の無効化遅延は限定的。
+/// Validate current account availability and revocation, including deleted users and DB failures.
+/// WebSocket authentication uses this helper outside the HTTP authentication layers.
 pub(crate) async fn enforce_session_not_revoked(
     pool: &sqlx::SqlitePool,
     claims: &Claims,
 ) -> Result<(), HandlerError> {
-    let Ok(user_id) = uuid::Uuid::parse_str(&claims.sub) else {
-        return Ok(());
-    };
-    if user_id.is_nil() {
-        return Ok(());
-    }
-    match crate::db::users::find_by_id(pool, user_id).await {
-        Ok(Some(user)) if claims.password_changed_at < user.password_changed_at => Err((
+    let account = crate::auth::scope::current_account(pool, claims)
+        .await
+        .map_err(AppError)?;
+    if account.role != claims.role {
+        return Err((
             StatusCode::UNAUTHORIZED,
             "Session revoked: please sign in again".to_string(),
         )
             .into_response()
-            .into()),
-        Ok(_) => Ok(()),
-        Err(e) => {
-            // fail-open: DB 障害時はセッションを有効扱いにして可用性を優先する。
-            tracing::warn!("Session revocation check skipped (DB error): {}", e);
-            Ok(())
-        }
+            .into());
     }
+    Ok(())
 }
 
 /// JWT認証ミドルウェア
@@ -435,14 +434,18 @@ pub async fn require_jwt_auth_middleware(
 ) -> Result<Response, HandlerError> {
     let token = extract_bearer_or_cookie_token(request.headers())?;
     let claims = verify_jwt_claims(&token, &app_state.auth.jwt_secret)?;
-    // パスワード変更/リセット後の旧セッションを無効化する
-    enforce_session_not_revoked(&app_state.db_pool, &claims).await?;
+    let (claims, principal) = crate::auth::scope::authenticate_jwt(&app_state.db_pool, claims)
+        .await
+        .map_err(AppError)?;
 
     let claims_for_response = claims.clone();
+    let principal_for_response = principal.clone();
+    request.extensions_mut().insert(principal);
     request.extensions_mut().insert(claims);
     let mut response = next.run(request).await;
     // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
     response.extensions_mut().insert(claims_for_response);
+    response.extensions_mut().insert(principal_for_response);
     Ok(response)
 }
 
@@ -570,13 +573,16 @@ pub async fn api_key_auth_middleware(
     next: Next,
 ) -> Result<Response, HandlerError> {
     let api_key = extract_api_key(&request)?;
-    let auth_context = authenticate_api_key(&pool, &api_key).await?;
+    let (auth_context, principal) = authenticate_api_key(&pool, &api_key).await?;
     let auth_context_for_response = auth_context.clone();
+    let principal_for_response = principal.clone();
+    request.extensions_mut().insert(principal);
     request.extensions_mut().insert(auth_context);
 
     let mut response = next.run(request).await;
     // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
     response.extensions_mut().insert(auth_context_for_response);
+    response.extensions_mut().insert(principal_for_response);
     Ok(response)
 }
 
@@ -630,7 +636,7 @@ pub async fn anthropic_api_key_auth_middleware(
             "Invalid or missing x-api-key",
         )
     })?;
-    let auth_context = authenticate_api_key(&pool, &api_key).await.map_err(|_| {
+    let (auth_context, principal) = authenticate_api_key(&pool, &api_key).await.map_err(|_| {
         anthropic_error_response(
             StatusCode::UNAUTHORIZED,
             "authentication_error",
@@ -638,10 +644,13 @@ pub async fn anthropic_api_key_auth_middleware(
         )
     })?;
     let auth_context_for_response = auth_context.clone();
+    let principal_for_response = principal.clone();
+    request.extensions_mut().insert(principal);
     request.extensions_mut().insert(auth_context);
 
     let mut response = next.run(request).await;
     response.extensions_mut().insert(auth_context_for_response);
+    response.extensions_mut().insert(principal_for_response);
     Ok(response)
 }
 
@@ -732,8 +741,10 @@ pub async fn jwt_or_api_key_permission_middleware(
     // JWTがあれば優先
     if let Some(token) = extract_jwt_from_headers(request.headers()) {
         let claims = verify_jwt_claims(&token, &config.app_state.auth.jwt_secret)?;
-        // パスワード変更/リセット後の旧セッションを無効化する
-        enforce_session_not_revoked(&config.app_state.db_pool, &claims).await?;
+        let (claims, principal) =
+            crate::auth::scope::authenticate_jwt(&config.app_state.db_pool, claims)
+                .await
+                .map_err(AppError)?;
 
         if let Some(required_role) = config.jwt_required_role {
             if claims.role != required_role {
@@ -744,16 +755,30 @@ pub async fn jwt_or_api_key_permission_middleware(
         }
 
         let claims_for_response = claims.clone();
+        let principal_for_response = principal.clone();
+        request.extensions_mut().insert(principal);
         request.extensions_mut().insert(claims);
         let mut response = next.run(request).await;
         // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
         response.extensions_mut().insert(claims_for_response);
+        response.extensions_mut().insert(principal_for_response);
         return Ok(response);
     }
 
     // JWTがない/無効ならAPIキーで認証
     let api_key = extract_api_key(&request)?;
-    let auth_context = authenticate_api_key(&config.app_state.db_pool, &api_key).await?;
+    let (auth_context, principal) =
+        authenticate_api_key(&config.app_state.db_pool, &api_key).await?;
+
+    // Tenant keys never inherit the legacy operational-key synthetic system role.
+    if principal.organization_id.is_some() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Attributed API keys cannot access management APIs".to_string(),
+        )
+            .into_response()
+            .into());
+    }
 
     if !has_permission(&auth_context.permissions, config.required_permission) {
         let permission_str = serde_json::to_string(&config.required_permission)
@@ -781,6 +806,8 @@ pub async fn jwt_or_api_key_permission_middleware(
     };
     let claims_for_response = claims.clone();
     let auth_context_for_response = auth_context.clone();
+    let principal_for_response = principal.clone();
+    request.extensions_mut().insert(principal);
     request.extensions_mut().insert(claims);
     request.extensions_mut().insert(auth_context);
 
@@ -788,6 +815,7 @@ pub async fn jwt_or_api_key_permission_middleware(
     // 監査ログミドルウェア (SPEC-8301d106) がresponse extensionsからアクター情報を取得
     response.extensions_mut().insert(claims_for_response);
     response.extensions_mut().insert(auth_context_for_response);
+    response.extensions_mut().insert(principal_for_response);
     Ok(response)
 }
 

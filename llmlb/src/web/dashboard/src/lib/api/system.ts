@@ -28,7 +28,7 @@ export type UpdateState =
   | {
       state: 'draining'
       latest: string
-      in_flight: number
+      in_flight: number | null
       requested_at: string
       timeout_at: string
     }
@@ -71,7 +71,7 @@ export interface HistoryEntry {
 export interface SystemInfo {
   version: string
   pid: number
-  in_flight: number
+  in_flight: number | null
   update: UpdateState
   schedule?: ScheduleInfo | null
   rollback_available?: boolean

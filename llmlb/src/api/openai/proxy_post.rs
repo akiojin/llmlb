@@ -104,6 +104,7 @@ pub(super) async fn proxy_openai_post(
         }
     }
 
+    crate::api::usage_capture::accept_request(&model, request_type, &payload).await?;
     let request_body = sanitize_openai_payload_for_history(&payload);
     let tps_api_kind = TpsApiKind::from_request_type(request_type);
     let required_supported_api = if payload_requires_image_input(&payload) {
@@ -165,6 +166,7 @@ pub(super) async fn proxy_openai_post(
             return Err(e.into());
         }
     };
+    crate::api::usage_capture::set_target(&endpoint).await?;
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();
     let endpoint_type = endpoint.endpoint_type;
@@ -372,6 +374,7 @@ pub(super) async fn proxy_openai_post(
             let status = response.status();
             let headers = response.headers().clone();
             let body_bytes = response.bytes().await.unwrap_or_default();
+            crate::api::usage_capture::record_provider_bytes(&body_bytes);
             let message = upstream_error_message_from_bytes(status, &body_bytes);
 
             let mut record = RequestResponseRecord::new(
@@ -449,6 +452,7 @@ pub(super) async fn proxy_openai_post(
         // ボディはエラー要約にしか使わず、クライアントには新規 JSON を返すため、
         // 巨大ボディによるメモリ枯渇を避けて先頭部分のみ読み取る。
         let body_bytes = read_capped_body(response, UPSTREAM_ERROR_SUMMARY_MAX_BYTES).await;
+        crate::api::usage_capture::record_provider_bytes(&body_bytes);
         let message = upstream_error_message_from_bytes(status, &body_bytes);
 
         {
@@ -490,6 +494,7 @@ pub(super) async fn proxy_openai_post(
 
     match parsed {
         Ok(mut body) => {
+            crate::api::usage_capture::record_provider_response(&body);
             if let Some(body_object) = body.as_object_mut() {
                 body_object.insert("model".to_string(), Value::String(model.clone()));
             }

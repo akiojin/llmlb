@@ -52,6 +52,7 @@ pub(super) struct AnthropicStreamTracker {
     pub(super) stop_reason: Option<&'static str>,
     pub(super) stop_sequence: Option<String>,
     pub(super) stats_recorded: bool,
+    pub(super) usage_collector: Option<crate::api::usage_capture::UsageCollector>,
     /// 成功した HTTP 応答内の SSE error も lease の結果へ反映する。
     pub(super) stream_failed: bool,
     /// ヘッダー受信後も本文配信が終わるまで割当中カウンタを保持する。
@@ -98,6 +99,7 @@ pub(super) fn transform_openai_streaming_response_to_anthropic(
         stop_reason: None,
         stop_sequence: None,
         stats_recorded: false,
+        usage_collector: crate::api::usage_capture::current_collector(),
         stream_failed: false,
         request_lease: Some(request_lease),
     };
@@ -467,6 +469,9 @@ impl AnthropicStreamTracker {
             return;
         }
         self.stats_recorded = true;
+        if let Some(collector) = &self.usage_collector {
+            collector.set_upstream_tokens(self.accumulator.finalize_observation());
+        }
 
         let output_tokens = usage.output_tokens.unwrap_or(0) as u64;
         let duration_ms = if output_tokens > 0 {

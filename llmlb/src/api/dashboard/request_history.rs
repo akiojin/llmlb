@@ -1,6 +1,7 @@
 //! リクエスト履歴の一覧・詳細・エクスポート
 
 use crate::api::error::AppError;
+use crate::auth::scope::UsageScope;
 use crate::common::error::{CommonError, LbError};
 use crate::db::request_history::{FilterStatus, RecordFilter};
 use crate::AppState;
@@ -9,7 +10,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Response,
-    Json,
+    Extension, Json,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -149,6 +150,7 @@ impl RequestHistoryExportQuery {
 pub async fn list_request_responses(
     State(state): State<AppState>,
     Query(query): Query<RequestHistoryQuery>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<crate::db::request_history::FilteredRecords>, AppError> {
     let filter = query.to_record_filter()?;
     let mut page = if query.page == 0 { 1 } else { query.page };
@@ -177,6 +179,7 @@ pub async fn list_request_responses(
     let result = state
         .balancer
         .request_history
+        .scoped(scope.clone())
         .filter_and_paginate(&filter, page, per_page)
         .await
         .map_err(AppError::from)?;
@@ -187,10 +190,12 @@ pub async fn list_request_responses(
 pub async fn get_request_response_detail(
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Json<crate::common::protocol::RequestResponseRecord>, AppError> {
     let record = state
         .balancer
         .request_history
+        .scoped(scope.clone())
         .get_record_by_id(id)
         .await
         .map_err(AppError::from)?
@@ -204,6 +209,7 @@ pub async fn get_request_response_detail(
 pub async fn export_request_responses(
     State(state): State<AppState>,
     Query(query): Query<RequestHistoryExportQuery>,
+    Extension(scope): Extension<UsageScope>,
 ) -> Result<Response, AppError> {
     let filter = query.to_record_filter()?;
     const EXPORT_PAGE_SIZE: usize = 1000;
@@ -211,13 +217,14 @@ pub async fn export_request_responses(
     let first_page = state
         .balancer
         .request_history
+        .scoped(scope.clone())
         .filter_and_paginate(&filter, 1, EXPORT_PAGE_SIZE)
         .await
         .map_err(AppError::from)?;
 
     match query.format {
         RequestHistoryExportFormat::Json => {
-            let storage = state.balancer.request_history.clone();
+            let storage = state.balancer.request_history.scoped(scope.clone());
             let filter = filter.clone();
             let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;
@@ -286,7 +293,7 @@ pub async fn export_request_responses(
             Ok(response)
         }
         RequestHistoryExportFormat::Csv => {
-            let storage = state.balancer.request_history.clone();
+            let storage = state.balancer.request_history.scoped(scope.clone());
             let filter = filter.clone();
             let (reader, mut writer) = tokio::io::duplex(16 * 1024);
             let mut page = 1usize;

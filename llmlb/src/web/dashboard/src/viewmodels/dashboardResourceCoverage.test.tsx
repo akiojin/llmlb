@@ -53,7 +53,7 @@ function setup() {
     <StrictMode><QueryClientProvider client={queryClient}>{children}</QueryClientProvider></StrictMode>
   )
   const hook = renderHook(() => {
-    useDashboardDataViewModel({ pollingInterval: 10000, isViewer: false })
+    useDashboardDataViewModel({ pollingInterval: 10000, isViewer: false, canReadUsage: true })
     useEndpointViewModel(A)
     useEndpointViewModel(B)
     useEndpointModelTpsViewModel(A)

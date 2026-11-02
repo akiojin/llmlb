@@ -258,7 +258,7 @@ async fn test_endpoint_daily_stats_max_days_clamp() {
 
 #[tokio::test]
 #[serial]
-async fn test_dashboard_totals_match_model_stats_after_endpoint_delete() {
+async fn test_dashboard_observed_usage_excludes_legacy_model_diagnostics_after_endpoint_delete() {
     let (app, db_pool, jwt) = build_app().await;
 
     let active_endpoint = create_endpoint(
@@ -282,6 +282,16 @@ async fn test_dashboard_totals_match_model_stats_after_endpoint_delete() {
         .await
         .expect("delete endpoint");
 
+    // These are legacy operational counters, not admitted usage receipts.
+    // Their current-endpoint diagnostic view must not create observed usage.
+    for table in ["usage_receipts", "usage_daily"] {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&db_pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "legacy counters must not backfill {table}");
+    }
+
     let stats_response = app
         .clone()
         .oneshot(
@@ -298,7 +308,12 @@ async fn test_dashboard_totals_match_model_stats_after_endpoint_delete() {
         .await
         .unwrap();
     let stats_json: Value = serde_json::from_slice(&stats_body).unwrap();
-    assert_eq!(stats_json["total_requests"], 2);
+    assert_eq!(
+        stats_json["total_requests"], 0,
+        "observed usage starts at admission; legacy endpoint counters are separate"
+    );
+    assert_eq!(stats_json["successful_requests"], 0);
+    assert_eq!(stats_json["failed_requests"], 0);
 
     let model_stats_response = app
         .oneshot(
@@ -328,7 +343,10 @@ async fn test_dashboard_totals_match_model_stats_after_endpoint_delete() {
         })
         .sum();
 
-    assert_eq!(total_from_models, 2);
+    assert_eq!(
+        total_from_models, 2,
+        "global model diagnostics retain the existing live-endpoint population"
+    );
     assert!(
         entries
             .iter()

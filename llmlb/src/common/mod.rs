@@ -21,3 +21,6 @@ pub mod auth;
 
 /// IPアドレス正規化ユーティリティ
 pub mod ip;
+
+/// Immutable inference attribution and token provenance.
+pub mod usage;

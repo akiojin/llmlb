@@ -9,6 +9,7 @@ mod history_query;
 mod ip_alert_threshold;
 mod overview_stats;
 mod stats_query;
+mod usage_snapshot;
 
 /// フォールバック計算: avg_response_time_ms が None の場合に
 /// オンラインエンドポイントの latency_ms から平均値を計算するロジック

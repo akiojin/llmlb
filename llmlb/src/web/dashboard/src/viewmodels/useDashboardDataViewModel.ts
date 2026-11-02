@@ -24,9 +24,10 @@ export interface DashboardDataViewModel extends Pick<UseQueryResult<DashboardOve
 }
 
 /** The notified queries composed by the dashboard page ViewModel. */
-export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
+export function useDashboardDataViewModel({ pollingInterval, isViewer, canReadUsage }: {
   pollingInterval: number
   isViewer: boolean
+  canReadUsage: boolean
 }): DashboardDataViewModel {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [fetchTimeMs, setFetchTimeMs] = useState<number | null>(null)
@@ -42,6 +43,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.dashboardOverview(),
     queryFn: fetchWithTiming,
     refetchInterval: pollingInterval,
+    enabled: canReadUsage,
   })
   useInvalidateOn(['endpoints', 'metrics'], queryKeys.dashboardOverview())
 
@@ -52,6 +54,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryFn: () => dashboardApi.getActivity(),
     refetchInterval: 1000,
     retry: false,
+    enabled: canReadUsage,
   })
   useInvalidateOn(['metrics'], queryKeys.dashboardActivity())
 
@@ -59,6 +62,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.dashboardTodayRequests(),
     queryFn: () => dashboardApi.getDailyTokenStats(1),
     refetchInterval: 5000,
+    enabled: canReadUsage,
   })
   useInvalidateOn(['metrics'], queryKeys.dashboardTodayRequests())
   // Daily statistics use UTC dates. A missing day is an actual zero; loading is unknown.
@@ -77,7 +81,7 @@ export function useDashboardDataViewModel({ pollingInterval, isViewer }: {
     queryKey: queryKeys.requestResponses(),
     queryFn: () => dashboardApi.getRequestResponses({ limit: 100 }),
     refetchInterval: pollingInterval,
-    enabled: !isViewer,
+    enabled: canReadUsage,
   })
   useInvalidateOn(['endpoints'], queryKeys.requestResponses())
 

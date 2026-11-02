@@ -11,6 +11,7 @@ const BIND_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 /// axumサーバーを起動し、シャットダウンシグナルを待機する
 pub async fn run(state: AppState, bind_addr: &str) {
     let shutdown = state.lifecycle.shutdown.clone();
+    let request_history = state.balancer.request_history.clone();
 
     let app = crate::api::create_app(state);
 
@@ -22,13 +23,15 @@ pub async fn run(state: AppState, bind_addr: &str) {
 
     let shutdown_signal = shutdown_signal(shutdown);
 
-    axum::serve(
+    let serve_result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal)
-    .await
-    .expect("Server error");
+    .await;
+
+    request_history.drain_usage_writes().await;
+    serve_result.expect("Server error");
 
     info!("Server shutdown complete");
 }

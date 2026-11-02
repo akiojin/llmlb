@@ -970,7 +970,11 @@ dashboard origin.
 | Role | Capabilities |
 |------|--------------|
 | `admin` | Full access to `/api` management APIs and all dashboard features |
-| `viewer` | Read-only access to dashboard and endpoint read APIs; cannot access admin management APIs |
+| `viewer` | Organization usage (organization admin) or own-account usage (member); no global management |
+
+Accounts belong to at most one organization. Organization roles are separate from
+system roles. Unassigned accounts cannot run inference or read usage. See
+[organization access and migration](docs/authentication.md#organizations-and-usage-attribution).
 
 **API key permissions:**
 
@@ -993,9 +997,12 @@ interactive prompt). Debug builds accept `sk_debug`, `sk_debug_runtime`, `sk_deb
 
 Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys are rejected).
 `POST /api/me/api-keys` permission rules by role:
-- `admin`: must provide a non-empty `permissions` array.
+- `admin`: must provide a non-empty subset of `openai.inference` and `openai.models.read`.
 - `viewer`: must not provide `permissions`; server assigns fixed OpenAI permissions
   (`openai.inference`, `openai.models.read`).
+New keys require an active organization account; administrators can explicitly set
+`usage_account_id` and `organization_id`. Global automation permissions belong to
+existing legacy operational keys and cannot be issued on a new attributed key.
 
 #### User Management Endpoints
 
@@ -1010,10 +1017,26 @@ Note: when authentication is required, `/api/dashboard/*` is JWT-only (API keys 
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| GET | `/api/me/api-keys` | List own API keys | JWT |
+| GET | `/api/me/api-keys` | List keys within the current organization/account scope | JWT |
 | POST | `/api/me/api-keys` | Create own API key (admin: explicit permissions, viewer: fixed OpenAI permissions) | JWT |
 | PUT | `/api/me/api-keys/:id` | Update own API key | JWT |
 | DELETE | `/api/me/api-keys/:id` | Delete own API key | JWT |
+
+#### Organization and Usage Endpoints
+
+| Method | Path | Description | Auth |
+| --- | --- | --- | --- |
+| GET | `/api/organizations` | List permitted organizations | JWT scope |
+| POST | `/api/organizations` | Create organization | JWT system admin |
+| PATCH | `/api/organizations/:id` | Rename organization | JWT system admin |
+| DELETE | `/api/organizations/:id` | Archive empty organization | JWT system admin |
+| GET | `/api/organizations/:id/members` | List permitted accounts | JWT scope |
+| PUT | `/api/users/:id/membership` | Set single membership and organization role | JWT system admin |
+| GET | `/api/dashboard/usage` | UTC organization/account usage, coverage and totals | JWT scope |
+
+Usage supports `group_by`, inclusive UTC `from`/`to`, `organization_id`,
+`account_id`, `page` and `per_page`. Filters cannot broaden the authenticated scope.
+See [dashboard usage](docs/dashboard.md#organization-and-account-usage).
 
 #### Registration Requests
 

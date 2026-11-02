@@ -36,7 +36,7 @@ function setup(isViewer = false) {
   return {
     queryClient,
     ...renderHook(() => {
-      const data = useDashboardDataViewModel({ pollingInterval: 10000, isViewer })
+      const data = useDashboardDataViewModel({ pollingInterval: 10000, isViewer, canReadUsage: true })
       useWebSocket({ enabled: !isViewer })
       return data
     }, { wrapper }),

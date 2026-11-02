@@ -1,6 +1,26 @@
 // Shared API client utilities
 
 const API_BASE = ''
+export const AUTH_SCOPE_INVALIDATED_EVENT = 'llmlb:auth-scope-invalidated'
+let expectedUsageScope: string | null = null
+let expectedIdentity: string | null = null
+let sessionGeneration = 0
+
+/** Snapshot for commands and cache callbacks that may outlive their account. */
+export function getSessionGeneration(): number {
+  return sessionGeneration
+}
+
+/** Bind data responses to the session confirmed by /auth/me. */
+export function setExpectedUsageScope(scope: string | null, identity: string | null = scope): void {
+  if (scope !== expectedUsageScope || identity !== expectedIdentity) sessionGeneration++
+  expectedUsageScope = scope
+  expectedIdentity = identity
+}
+
+function invalidateAuthScope(): void {
+  window.dispatchEvent(new Event(AUTH_SCOPE_INVALIDATED_EVENT))
+}
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>
@@ -92,10 +112,18 @@ export async function createApiErrorFromResponse(response: Response): Promise<Ap
 // 行う（多重 navigation によるちらつきを防ぐ）。
 let redirectingToLogin = false
 
+/** Share one navigation between API failures and the session gate. */
+export function redirectToLogin(): void {
+  if (redirectingToLogin) return
+  redirectingToLogin = true
+  window.location.href = '/dashboard/login.html'
+}
+
 export async function fetchWithAuth<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<T> {
+  const requestGeneration = sessionGeneration
   const { params, ...fetchOptions } = options
 
   let url = `${API_BASE}${endpoint}`
@@ -131,20 +159,34 @@ export async function fetchWithAuth<T>(
     credentials: 'include',
   })
 
-  if (response.status === 401) {
-    if (!redirectingToLogin) {
-      redirectingToLogin = true
-      window.location.href = '/dashboard/login.html'
+  const responseScope = response.headers.get('x-llmlb-usage-scope')
+  const assertCurrentSession = (cancelUnreadBody = false) => {
+    if (requestGeneration !== sessionGeneration || (expectedUsageScope && responseScope && expectedUsageScope !== responseScope)) {
+      // An old account's response must not refresh the newly confirmed session.
+      if (requestGeneration === sessionGeneration) invalidateAuthScope()
+      if (cancelUnreadBody) void response.body?.cancel().catch(() => {})
+      throw new ApiError(409, 'Session scope changed', { message: 'Your access changed. Reloading your current organization.' })
     }
+  }
+  assertCurrentSession(true)
+  if (response.status === 403 && (endpoint.startsWith('/api/dashboard/') || endpoint.startsWith('/api/organizations') || endpoint.startsWith('/api/me/api-keys'))) {
+    invalidateAuthScope()
+  }
+  if (response.status === 401) {
+    if (!endpoint.startsWith('/api/auth/')) invalidateAuthScope()
+    redirectToLogin()
     throw new ApiError(401, 'Unauthorized')
   }
 
   if (!response.ok) {
-    throw await createApiErrorFromResponse(response)
+    const error = await createApiErrorFromResponse(response)
+    assertCurrentSession()
+    throw error
   }
 
   // Handle empty responses
   const text = await response.text()
+  assertCurrentSession()
   if (!text) {
     return {} as T
   }

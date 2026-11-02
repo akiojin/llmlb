@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
-import { deleteApiKey, deleteEndpointsByName, listApiKeys } from '../../helpers/api-helpers'
+import { deleteApiKey, deleteEndpointsByName, ensureApiKeyTestMembership, listApiKeys } from '../../helpers/api-helpers'
 import { DashboardPage } from '../../pages/dashboard.page'
 import {
   startMockOpenAIEndpointServer,
@@ -60,6 +60,7 @@ test.describe('API Key Create + OpenAI API Calls @api-keys', () => {
     apiKeyName = `e2e-api-key-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
     const dashboard = new DashboardPage(page)
+    await ensureApiKeyTestMembership(request)
     await dashboard.goto()
 
     // 1) Register an endpoint with deterministic models/behavior.

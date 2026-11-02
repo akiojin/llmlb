@@ -127,7 +127,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const next = page.getByRole('button').filter({ has: page.locator('svg.lucide-chevron-right') })
       await next.click()
       await expect.poll(async () => { await page.clock.runFor(1); return rankingPages }).toEqual(['1', '2'])
-      await visible(page.getByText('2 / 2', { exact: true }))
+      await visible(page.getByRole('tabpanel', { name: 'Traffic', exact: true }).getByText('2 / 2', { exact: true }))
       await page.getByRole('button', { name: 'Edit', exact: true }).click()
       await page.getByRole('spinbutton').fill('2500')
       await page.getByRole('button', { name: 'Save', exact: true }).click()

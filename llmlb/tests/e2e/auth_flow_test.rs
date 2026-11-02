@@ -36,6 +36,12 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
         .await
         .ok();
 
+    let account = llmlb::db::users::find_by_username(&db_pool, "admin")
+        .await
+        .unwrap()
+        .unwrap();
+    support::lb::assign_test_organization(&db_pool, account.id).await;
+
     let http_client = reqwest::Client::new();
     let inference_gate = llmlb::inference_gate::InferenceGate::default();
     let shutdown = llmlb::shutdown::ShutdownController::default();

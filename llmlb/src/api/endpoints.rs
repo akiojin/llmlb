@@ -1110,6 +1110,25 @@ pub async fn proxy_chat_completions(
     Path(id): Path<Uuid>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    let payload = match serde_json::from_slice::<serde_json::Value>(&body) {
+        Ok(payload) => payload,
+        Err(_) => {
+            return AppError(LbError::Common(
+                crate::common::error::CommonError::Validation("Invalid JSON request body".into()),
+            ))
+            .into_response()
+        }
+    };
+    let Some(model) = payload
+        .get("model")
+        .and_then(serde_json::Value::as_str)
+        .filter(|model| !model.is_empty())
+    else {
+        return AppError(LbError::Common(
+            crate::common::error::CommonError::Validation("Missing required field: model".into()),
+        ))
+        .into_response();
+    };
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
@@ -1121,6 +1140,18 @@ pub async fn proxy_chat_completions(
         }
     };
 
+    if let Err(error) = crate::api::usage_capture::accept_request(
+        model,
+        crate::common::protocol::RequestType::Chat,
+        &payload,
+    )
+    .await
+    {
+        return AppError(error).into_response();
+    }
+    if let Err(error) = crate::api::usage_capture::set_target(&endpoint).await {
+        return AppError(error).into_response();
+    }
     // エンドポイントがオンラインか確認
     if endpoint.status != EndpointStatus::Online {
         return AppError(LbError::ServiceUnavailable(format!(

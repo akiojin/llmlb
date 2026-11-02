@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
   ensureDashboardLogin,
+  ensureApiKeyTestMembership,
   createApiKeyWithPermissions,
   deleteApiKey,
   deleteEndpointsByName,
@@ -78,6 +79,7 @@ test.describe('API Key Lifecycle @api', () => {
       .context()
       .grantPermissions(['clipboard-read', 'clipboard-write'], { origin: DASHBOARD_ORIGIN })
 
+    await ensureApiKeyTestMembership(request)
     await ensureDashboardLogin(page)
 
     // Open API Keys modal
@@ -232,5 +234,16 @@ test.describe('API Key Lifecycle @api', () => {
 
     // Verify that an "Expired" badge is visible for the expired key
     await expect(apiKeysModal.locator('.bg-destructive:has-text("Expired")').first()).toBeVisible({ timeout: 10000 })
+  })
+
+  test('AKL-05: parallel membership preparation preserves existing keys', async ({ request }) => {
+    const membership = await ensureApiKeyTestMembership(request)
+    const key = await createApiKeyWithPermissions(request, `e2e-akl05-${Date.now()}`, ['openai.models.read'])
+    expect(key.key).toBeTruthy()
+    createdKeyIds.push(key.id)
+    const repeated = await Promise.all(Array.from({ length: 4 }, () => ensureApiKeyTestMembership(request)))
+    expect(repeated).toEqual(Array.from({ length: 4 }, () => membership))
+    const response = await request.get(`${API_BASE}/v1/models`, { headers: { Authorization: `Bearer ${key.key}` } })
+    expect(response.status()).toBe(200)
   })
 })

@@ -92,7 +92,14 @@ impl StreamingTokenAccumulator {
         if let Ok(json) = serde_json::from_str::<Value>(data) {
             // usageフィールドを抽出（最終チャンクに含まれる場合がある）
             if let Some(usage) = extract_usage_from_response(&json) {
-                self.extracted_usage = Some(usage);
+                self.extracted_usage = Some(match &self.extracted_usage {
+                    Some(previous) => TokenUsage::new(
+                        usage.input_tokens.or(previous.input_tokens),
+                        usage.output_tokens.or(previous.output_tokens),
+                        usage.total_tokens.or(previous.total_tokens),
+                    ),
+                    None => usage,
+                });
             }
 
             // delta.contentを抽出して累積
@@ -156,13 +163,37 @@ impl StreamingTokenAccumulator {
 
         // total_tokensを計算
         let total_tokens = match (input_tokens, output_tokens) {
-            (Some(i), Some(o)) => Some(i + o),
+            (Some(i), Some(o)) => i.checked_add(o),
             (Some(i), None) => Some(i),
             (None, Some(o)) => Some(o),
             (None, None) => None,
         };
 
         TokenUsage::new(input_tokens, output_tokens, total_tokens)
+    }
+
+    /// Final token values with provenance, preserving partial or unobserved data.
+    pub fn finalize_observation(&self) -> crate::common::usage::UsageTokens {
+        use crate::common::usage::{TokenMeasurement, TokenSource, UsageTokens};
+        if let Some(usage) = &self.extracted_usage {
+            return UsageTokens::from_usage(usage, TokenSource::Provider);
+        }
+        let input = self.input_tokens;
+        let output = if self.accumulated_content.is_empty() {
+            None
+        } else {
+            estimate_tokens(&self.accumulated_content, &self.model)
+        };
+        UsageTokens {
+            input: TokenMeasurement::new(input, TokenSource::Estimated),
+            output: TokenMeasurement::new(output, TokenSource::Estimated),
+            total: TokenMeasurement::new(
+                input
+                    .zip(output)
+                    .and_then(|(input, output)| input.checked_add(output)),
+                TokenSource::Estimated,
+            ),
+        }
     }
 }
 
@@ -177,25 +208,29 @@ impl StreamingTokenAccumulator {
 pub fn extract_usage_from_response(response_body: &Value) -> Option<TokenUsage> {
     let usage = response_body
         .get("usage")
-        .or_else(|| response_body.get("response").and_then(|r| r.get("usage")))?;
+        .or_else(|| response_body.get("response").and_then(|r| r.get("usage")))
+        .or_else(|| response_body.get("usageMetadata"))?;
 
     // OpenAI互換（prompt/completion）とResponses API（input/output）の両方に対応
     let input_tokens = usage
         .get("prompt_tokens")
         .or_else(|| usage.get("input_tokens"))
+        .or_else(|| usage.get("promptTokenCount"))
         .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+        .and_then(|v| u32::try_from(v).ok());
 
     let output_tokens = usage
         .get("completion_tokens")
         .or_else(|| usage.get("output_tokens"))
+        .or_else(|| usage.get("candidatesTokenCount"))
         .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+        .and_then(|v| u32::try_from(v).ok());
 
     let total_tokens = usage
         .get("total_tokens")
+        .or_else(|| usage.get("totalTokenCount"))
         .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+        .and_then(|v| u32::try_from(v).ok());
 
     Some(TokenUsage::new(input_tokens, output_tokens, total_tokens))
 }
@@ -244,7 +279,7 @@ pub fn extract_or_estimate_tokens(
 
     // total_tokensは入力と出力の合計
     let total_tokens = match (input_tokens, output_tokens) {
-        (Some(i), Some(o)) => Some(i + o),
+        (Some(i), Some(o)) => i.checked_add(o),
         (Some(i), None) => Some(i),
         (None, Some(o)) => Some(o),
         (None, None) => None,
@@ -257,6 +292,65 @@ pub fn extract_or_estimate_tokens(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn usage_observation_preserves_partial_provider_coverage() {
+        use crate::common::usage::TokenSource;
+        let mut accumulator = StreamingTokenAccumulator::new("fixture");
+        accumulator.process_chunk(r#"data: {"usage":{"prompt_tokens":13}}"#);
+        let observation = accumulator.finalize_observation();
+        assert_eq!(observation.input.value, Some(13));
+        assert_eq!(observation.input.source, TokenSource::Provider);
+        assert_eq!(observation.output.value, None);
+        assert_eq!(observation.total.value, None);
+        assert_eq!(observation.coverage(), (0, 0, 1));
+        accumulator.process_chunk(r#"data: {"usage":{"completion_tokens":5,"total_tokens":18}}"#);
+        let complete = accumulator.finalize_observation();
+        assert_eq!(complete.input.value, Some(13));
+        assert_eq!(complete.output.value, Some(5));
+        assert_eq!(complete.total.value, Some(18));
+        assert_eq!(complete.coverage(), (1, 0, 0));
+    }
+
+    #[test]
+    fn usage_observation_distinguishes_missing_from_estimated_and_reported_zero() {
+        use crate::common::usage::TokenSource;
+        let mut accumulator = StreamingTokenAccumulator::new("fixture");
+        assert_eq!(accumulator.finalize_observation().output.value, None);
+        accumulator.process_chunk(r#"data: {"choices":[{"delta":{"content":"hello"}}]}"#);
+        let estimated = accumulator.finalize_observation();
+        assert!(estimated.output.value.unwrap() > 0);
+        assert_eq!(estimated.output.source, TokenSource::Estimated);
+        assert_eq!(estimated.total.value, None);
+        accumulator.process_chunk(
+            r#"data: {"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}"#,
+        );
+        let measured = accumulator.finalize_observation();
+        assert_eq!(measured.output.value, Some(0));
+        assert_eq!(measured.output.source, TokenSource::Provider);
+        assert_eq!(measured.coverage(), (1, 0, 0));
+    }
+
+    #[test]
+    fn provider_usage_rejects_negative_fractional_and_overflowing_counts() {
+        let usage = extract_usage_from_response(&json!({"usage": {
+            "prompt_tokens": -1, "completion_tokens": 1.5, "total_tokens": u64::MAX
+        }}))
+        .unwrap();
+        assert!(
+            usage.is_empty(),
+            "invalid values must remain missing rather than wrap or truncate"
+        );
+    }
+
+    #[test]
+    fn provider_usage_reads_google_report_without_inventing_missing_fields() {
+        let usage = extract_usage_from_response(&json!({"usageMetadata": {
+            "promptTokenCount": 9, "candidatesTokenCount": 4, "totalTokenCount": 13
+        }}))
+        .expect("configured Google provider usage must be preserved before response conversion");
+        assert_eq!(usage, TokenUsage::new(Some(9), Some(4), Some(13)));
+    }
 
     // T-3: usageフィールドからのトークン抽出テスト
     #[test]

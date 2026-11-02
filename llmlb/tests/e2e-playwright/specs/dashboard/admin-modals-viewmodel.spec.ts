@@ -1,5 +1,5 @@
 import { test, expect, type Locator } from '@playwright/test'
-import { ensureDashboardLogin } from '../../helpers/api-helpers'
+import { ensureApiKeyTestMembership, ensureDashboardLogin } from '../../helpers/api-helpers'
 import type { PendingRegistration } from '../../helpers/registration.fixture'
 import type { ApiKey, User } from '../../../../src/web/dashboard/src/lib/api'
 
@@ -18,6 +18,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       })
 
       // Session creation and /api/auth/me remain real; only management data is controlled.
+      const { accountId, organizationId } = await ensureApiKeyTestMembership(page.request)
       const login = await page.request.post('/api/auth/login', {
         data: { username: 'admin', password: 'test' },
       })
@@ -45,7 +46,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
         keyPayloads.push(payload)
         const key: ApiKey = {
           id: `key-${keyPayloads.length}`, name: payload.name, key_prefix: 'sk_modal',
-          created_at: createdAt, permissions: payload.permissions,
+          created_at: createdAt, permissions: payload.permissions, created_by: accountId,
+          organization_id: organizationId, usage_account_id: accountId,
         }
         keys = [key, ...keys]
         return route.fulfill({ json: { ...key, key: secret } })

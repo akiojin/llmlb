@@ -11,6 +11,9 @@ pub mod middleware;
 /// パスワードハッシュ化・検証（bcrypt）
 pub mod password;
 
+/// 現在の組織・アカウントに基づく認可 scope
+pub mod scope;
+
 mod cookie;
 
 pub use cookie::{

@@ -29,6 +29,10 @@ pub struct CreateApiKeyRequest {
     /// 旧互換: `scopes` は廃止
     #[serde(default)]
     pub scopes: Option<serde_json::Value>,
+    /// Usage identity is separate from issuer audit.
+    pub usage_account_id: Option<Uuid>,
+    /// Organization identifier; null denotes unassigned or legacy usage.
+    pub organization_id: Option<Uuid>,
 }
 
 /// APIキーレスポンス（key_hash除外）
@@ -48,6 +52,12 @@ pub struct ApiKeyResponse {
     pub expires_at: Option<String>,
     /// 付与された権限
     pub permissions: Vec<ApiKeyPermission>,
+    /// Usage account, distinct from the key issuer.
+    pub usage_account_id: Option<String>,
+    /// Organization identifier; null denotes unassigned or legacy usage.
+    pub organization_id: Option<String>,
+    /// Permanent ownership revocation time after a transfer or deactivation.
+    pub attribution_revoked_at: Option<String>,
 }
 
 impl From<ApiKey> for ApiKeyResponse {
@@ -60,6 +70,9 @@ impl From<ApiKey> for ApiKeyResponse {
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
             permissions: api_key.permissions,
+            usage_account_id: None,
+            organization_id: None,
+            attribution_revoked_at: None,
         }
     }
 }
@@ -81,6 +94,10 @@ pub struct CreateApiKeyResponse {
     pub expires_at: Option<String>,
     /// 付与された権限
     pub permissions: Vec<ApiKeyPermission>,
+    /// Usage account, distinct from the key issuer.
+    pub usage_account_id: Option<String>,
+    /// Organization identifier; null denotes unassigned or legacy usage.
+    pub organization_id: Option<String>,
 }
 
 impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
@@ -93,6 +110,8 @@ impl From<ApiKeyWithPlaintext> for CreateApiKeyResponse {
             created_at: api_key.created_at.to_rfc3339(),
             expires_at: api_key.expires_at.map(|dt| dt.to_rfc3339()),
             permissions: api_key.permissions,
+            usage_account_id: None,
+            organization_id: None,
         }
     }
 }
@@ -186,21 +205,135 @@ fn parse_expires_at(
 
 /// GET /api/me/api-keys - 自分のAPIキー一覧取得
 pub async fn list_api_keys(
-    Extension(claims): Extension<Claims>,
+    Extension(scope): Extension<crate::auth::scope::UsageScope>,
     State(app_state): State<AppState>,
 ) -> Result<Json<ListApiKeysResponse>, HandlerError> {
-    let user_id = parse_user_id_from_claims(&claims)?;
-
-    let api_keys = crate::db::api_keys::list_by_creator(&app_state.db_pool, user_id)
+    let keys = crate::db::api_keys::list_scoped(&app_state.db_pool, &scope)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to list API keys: {}", e);
-            AppError(LbError::Database(format!("Failed to list API keys: {}", e))).into_response()
-        })?;
-
+        .map_err(AppError)?;
+    let mut responses = Vec::with_capacity(keys.len());
+    for key in keys {
+        responses.push(key_response(&app_state.db_pool, key).await?);
+    }
     Ok(Json(ListApiKeysResponse {
-        api_keys: api_keys.into_iter().map(ApiKeyResponse::from).collect(),
+        api_keys: responses,
     }))
+}
+
+async fn key_response(
+    pool: &sqlx::SqlitePool,
+    key: ApiKey,
+) -> Result<ApiKeyResponse, HandlerError> {
+    let attribution = crate::db::organizations::key_attribution(pool, key.id)
+        .await
+        .map_err(AppError)?;
+    let mut response = ApiKeyResponse::from(key);
+    response.usage_account_id = attribution.usage_account_id;
+    response.organization_id = attribution.organization_id;
+    response.attribution_revoked_at = attribution.attribution_revoked_at;
+    Ok(response)
+}
+
+async fn creation_attribution(
+    pool: &sqlx::SqlitePool,
+    claims: &Claims,
+    account: Option<Uuid>,
+    organization: Option<Uuid>,
+) -> Result<(Uuid, Uuid), HandlerError> {
+    use crate::auth::scope::{resolve_scope, UsageScope};
+    let actor = parse_user_id_from_claims(claims)?;
+    let scope = resolve_scope(pool, claims).await.map_err(|error| {
+        let error = match error {
+            LbError::Authorization(_) => LbError::Common(CommonError::Validation(
+                "An active organization membership is required to issue a key".into(),
+            )),
+            error => error,
+        };
+        AppError(error)
+    })?;
+    match scope {
+        UsageScope::Global if account.is_some() || organization.is_some() => {
+            match (account, organization) {
+                (Some(account), Some(organization)) => Ok((account, organization)),
+                _ => Err(AppError(LbError::Common(CommonError::Validation(
+                    "Both usage_account_id and organization_id are required".into(),
+                )))
+                .into()),
+            }
+        }
+        UsageScope::Global => {
+            let membership = crate::db::organizations::account(pool, actor)
+                .await
+                .map_err(AppError)?;
+            let organization = membership
+                .filter(|account| account.is_active && account.organization_active)
+                .and_then(|account| account.organization_id)
+                .ok_or_else(|| {
+                    AppError(LbError::Common(CommonError::Validation(
+                        "Select an account and active organization for the key".into(),
+                    )))
+                })?;
+            Ok((actor, organization))
+        }
+        UsageScope::Organization(current)
+        | UsageScope::Account {
+            organization_id: current,
+            ..
+        } => {
+            if account.is_some_and(|id| id != actor) || organization.is_some_and(|id| id != current)
+            {
+                return Err(AppError(LbError::Authorization(
+                    "Cannot issue keys for another account or organization".into(),
+                ))
+                .into());
+            }
+            Ok((actor, current))
+        }
+    }
+}
+
+async fn require_visible_key(
+    pool: &sqlx::SqlitePool,
+    claims: &Claims,
+    key_id: Uuid,
+) -> Result<(), HandlerError> {
+    use crate::auth::scope::{resolve_scope, UsageScope};
+    let scope = resolve_scope(pool, claims).await.map_err(AppError)?;
+    let mut query =
+        sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT EXISTS(SELECT 1 FROM api_keys WHERE id = ");
+    query.push_bind(key_id.to_string());
+    match scope {
+        UsageScope::Global => {}
+        UsageScope::Organization(id) => {
+            query
+                .push(" AND organization_id = ")
+                .push_bind(id.to_string());
+        }
+        UsageScope::Account {
+            organization_id,
+            account_id,
+        } => {
+            query
+                .push(" AND organization_id = ")
+                .push_bind(organization_id.to_string())
+                .push(" AND usage_account_id = ")
+                .push_bind(account_id.to_string());
+        }
+    }
+    query.push(")");
+    let visible: bool = query
+        .build_query_scalar()
+        .fetch_one(pool)
+        .await
+        .map_err(|error| {
+            AppError(LbError::Database(format!(
+                "Key visibility query failed: {error}"
+            )))
+        })?;
+    if !visible {
+        return Err(AppError(LbError::NotFound("API key not found".into())).into());
+    }
+    Ok(())
 }
 
 /// POST /api/me/api-keys - APIキー発行
@@ -217,15 +350,35 @@ pub async fn create_api_key(
     }
 
     let permissions = resolve_permissions_for_role(claims.role, request.permissions)?;
+    if permissions.iter().any(|permission| {
+        !matches!(
+            permission,
+            ApiKeyPermission::OpenaiInference | ApiKeyPermission::OpenaiModelsRead
+        )
+    }) {
+        return Err(AppError(LbError::Common(CommonError::Validation(
+            "Attributed keys only support OpenAI inference and model-read permissions".into(),
+        )))
+        .into());
+    }
     let user_id = parse_user_id_from_claims(&claims)?;
     let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
-    let api_key = crate::db::api_keys::create(
+    let (usage_account_id, organization_id) = creation_attribution(
+        &app_state.db_pool,
+        &claims,
+        request.usage_account_id,
+        request.organization_id,
+    )
+    .await?;
+    let api_key = crate::db::api_keys::create_attributed(
         &app_state.db_pool,
         &request.name,
         user_id,
         expires_at,
         permissions,
+        usage_account_id,
+        organization_id,
     )
     .await
     .map_err(|e| {
@@ -233,10 +386,10 @@ pub async fn create_api_key(
         AppError(e).into_response()
     })?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(CreateApiKeyResponse::from(api_key)),
-    ))
+    let mut response = CreateApiKeyResponse::from(api_key);
+    response.usage_account_id = Some(usage_account_id.to_string());
+    response.organization_id = Some(organization_id.to_string());
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// PUT /api/me/api-keys/:id - 自分のAPIキー更新
@@ -247,6 +400,7 @@ pub async fn update_api_key(
     Json(request): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<ApiKeyResponse>, HandlerError> {
     let user_id = parse_user_id_from_claims(&claims)?;
+    require_visible_key(&app_state.db_pool, &claims, key_id).await?;
     let expires_at = parse_expires_at(request.expires_at.as_ref())?;
 
     let updated = crate::db::api_keys::update_by_creator(
@@ -263,7 +417,7 @@ pub async fn update_api_key(
     })?;
 
     match updated {
-        Some(api_key) => Ok(Json(ApiKeyResponse::from(api_key))),
+        Some(api_key) => Ok(Json(key_response(&app_state.db_pool, api_key).await?)),
         None => Err(AppError(LbError::NotFound("API key not found".to_string())).into()),
     }
 }
@@ -275,6 +429,7 @@ pub async fn delete_api_key(
     Path(key_id): Path<Uuid>,
 ) -> Result<StatusCode, HandlerError> {
     let user_id = parse_user_id_from_claims(&claims)?;
+    require_visible_key(&app_state.db_pool, &claims, key_id).await?;
 
     let deleted = crate::db::api_keys::delete_by_creator(&app_state.db_pool, key_id, user_id)
         .await
@@ -420,6 +575,10 @@ mod tests {
     #[test]
     fn api_key_response_serialization() {
         let resp = ApiKeyResponse {
+            usage_account_id: None,
+            organization_id: None,
+            attribution_revoked_at: None,
+
             id: "key-id-1".to_string(),
             key_prefix: Some("sk-ab".to_string()),
             name: "my-key".to_string(),
@@ -491,6 +650,10 @@ mod tests {
         let resp = ListApiKeysResponse {
             api_keys: vec![
                 ApiKeyResponse {
+                    usage_account_id: None,
+                    organization_id: None,
+                    attribution_revoked_at: None,
+
                     id: "1".to_string(),
                     key_prefix: Some("sk-a".to_string()),
                     name: "key-a".to_string(),
@@ -500,6 +663,10 @@ mod tests {
                     permissions: vec![],
                 },
                 ApiKeyResponse {
+                    usage_account_id: None,
+                    organization_id: None,
+                    attribution_revoked_at: None,
+
                     id: "2".to_string(),
                     key_prefix: None,
                     name: "key-b".to_string(),

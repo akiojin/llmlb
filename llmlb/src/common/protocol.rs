@@ -115,6 +115,8 @@ pub enum RequestType {
     Generate,
     /// /v1/embeddings エンドポイント
     Embeddings,
+    /// /v1/responses endpoint.
+    Responses,
     /// /v1/audio/transcriptions エンドポイント (ASR)
     Transcription,
     /// /v1/audio/speech エンドポイント (TTS)
@@ -149,6 +151,7 @@ impl TpsApiKind {
         match request_type {
             RequestType::AnthropicMessages | RequestType::Chat => Some(Self::ChatCompletions),
             RequestType::Generate => Some(Self::Completions),
+            RequestType::Responses => Some(Self::Responses),
             RequestType::Embeddings
             | RequestType::Transcription
             | RequestType::Speech

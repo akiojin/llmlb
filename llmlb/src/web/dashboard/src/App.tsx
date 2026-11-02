@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { redirectToLogin } from '@/lib/api/client'
 import Dashboard from '@/pages/Dashboard'
 import EndpointPlayground from '@/pages/EndpointPlayground'
 import LoadBalancerPlayground from '@/pages/LoadBalancerPlayground'
@@ -55,7 +56,7 @@ function App() {
     if (isLoading) return
     // Redirect to login if not authenticated
     if (!isLoggedIn) {
-      window.location.href = '/dashboard/login.html'
+      redirectToLogin()
       return
     }
     // Redirect to change-password if password change is required
@@ -77,6 +78,12 @@ function App() {
         </div>
       </div>
     )
+  }
+
+  const isPlayground = route.type === 'lb-playground' || route.type === 'playground'
+  if ((isPlayground && (!user || user.scope === 'unassigned')) ||
+      (route.type === 'audit-log' && user?.role !== 'admin')) {
+    return <Dashboard />
   }
 
   switch (route.type) {

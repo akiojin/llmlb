@@ -82,11 +82,11 @@ impl RequestHistoryStorage {
         match filter {
             ClientIpFilter::Exact(exact_ip) => Ok(vec![exact_ip]),
             ClientIpFilter::Ipv6Prefix64(prefix64) => {
-                let rows: Vec<ClientIpValueRow> = sqlx::query_as(
+                let rows: Vec<ClientIpValueRow> = sqlx::query_as(&self.scoped_sql(
                     "SELECT DISTINCT client_ip
                      FROM request_history
                      WHERE client_ip IS NOT NULL",
-                )
+                ))
                 .fetch_all(&self.pool)
                 .await
                 .map_err(|e| LbError::Database(e.to_string()))?;
@@ -130,7 +130,9 @@ impl RequestHistoryStorage {
              ORDER BY request_count DESC"
         };
 
-        let mut query = sqlx::query_as::<_, ClientIpRow>(query_str);
+        let query_str = self.scoped_sql(query_str);
+
+        let mut query = sqlx::query_as::<_, ClientIpRow>(&query_str);
         query = query.bind(&cutoff_str);
         if let Some(prefix) = ip_prefix {
             query = query.bind(prefix);
@@ -196,13 +198,13 @@ impl RequestHistoryStorage {
         let cutoff = Utc::now() - Duration::hours(hours as i64);
         let cutoff_str = cutoff.to_rfc3339();
 
-        let rows: Vec<ClientIpRow> = sqlx::query_as(
+        let rows: Vec<ClientIpRow> = sqlx::query_as(&self.scoped_sql(
             "SELECT client_ip, COUNT(*) as request_count,
                     MAX(timestamp) as last_seen
              FROM request_history
              WHERE client_ip IS NOT NULL AND timestamp >= ?
              GROUP BY client_ip",
-        )
+        ))
         .bind(&cutoff_str)
         .fetch_all(&self.pool)
         .await
@@ -233,14 +235,14 @@ impl RequestHistoryStorage {
         let cutoff = now - Duration::hours(hours as i64);
         let cutoff_str = cutoff.to_rfc3339();
 
-        let rows: Vec<TimelineClientRow> = sqlx::query_as(
+        let rows: Vec<TimelineClientRow> = sqlx::query_as(&self.scoped_sql(
             "SELECT strftime('%Y-%m-%dT%H:00:00', timestamp) as hour,
                     client_ip
              FROM request_history
              WHERE client_ip IS NOT NULL AND timestamp >= ?
              GROUP BY strftime('%Y-%m-%dT%H:00:00', timestamp), client_ip
              ORDER BY hour ASC",
-        )
+        ))
         .bind(&cutoff_str)
         .fetch_all(&self.pool)
         .await
@@ -282,13 +284,13 @@ impl RequestHistoryStorage {
         let cutoff = Utc::now() - Duration::hours(hours as i64);
         let cutoff_str = cutoff.to_rfc3339();
 
-        let rows: Vec<ModelDistRow> = sqlx::query_as(
+        let rows: Vec<ModelDistRow> = sqlx::query_as(&self.scoped_sql(
             "SELECT model, COUNT(*) as request_count
              FROM request_history
              WHERE client_ip IS NOT NULL AND timestamp >= ?
              GROUP BY model
              ORDER BY request_count DESC",
-        )
+        ))
         .bind(&cutoff_str)
         .fetch_all(&self.pool)
         .await
@@ -343,7 +345,9 @@ impl RequestHistoryStorage {
              GROUP BY strftime('%w', timestamp), strftime('%H', timestamp)"
         };
 
-        let mut query = sqlx::query_as::<_, HeatmapRow>(query_str);
+        let query_str = self.scoped_sql(query_str);
+
+        let mut query = sqlx::query_as::<_, HeatmapRow>(&query_str);
         query = query.bind(&cutoff_str);
         if let Some(prefix) = ip_prefix {
             query = query.bind(prefix);
@@ -393,6 +397,7 @@ impl RequestHistoryStorage {
              FROM request_history
              WHERE {where_clause}"
         );
+        let summary_sql = self.scoped_sql(&summary_sql);
         let mut summary_query = sqlx::query_as::<_, ClientSummaryRow>(&summary_sql);
         for matched_ip in &matched_ips {
             summary_query = summary_query.bind(matched_ip);
@@ -415,6 +420,7 @@ impl RequestHistoryStorage {
              ORDER BY timestamp DESC
              LIMIT ?"
         );
+        let recent_sql = self.scoped_sql(&recent_sql);
         let mut recent_query = sqlx::query_as::<_, ClientRecentRequestRow>(&recent_sql);
         for matched_ip in &matched_ips {
             recent_query = recent_query.bind(matched_ip);
@@ -444,6 +450,7 @@ impl RequestHistoryStorage {
              GROUP BY model
              ORDER BY request_count DESC"
         );
+        let model_sql = self.scoped_sql(&model_sql);
         let mut model_query = sqlx::query_as::<_, ModelDistRow>(&model_sql);
         for matched_ip in &matched_ips {
             model_query = model_query.bind(matched_ip);
@@ -479,6 +486,7 @@ impl RequestHistoryStorage {
              GROUP BY strftime('%H', timestamp)
              ORDER BY hour ASC"
         );
+        let hourly_sql = self.scoped_sql(&hourly_sql);
         let mut hourly_query = sqlx::query_as::<_, HourlyPatternRow>(&hourly_sql);
         for matched_ip in &matched_ips {
             hourly_query = hourly_query.bind(matched_ip);
@@ -523,6 +531,7 @@ impl RequestHistoryStorage {
              GROUP BY rh.api_key_id
              ORDER BY request_count DESC"
         );
+        let sql = self.scoped_sql(&sql);
         let mut query = sqlx::query_as::<_, ClientApiKeyRow>(&sql);
         for matched_ip in &matched_ips {
             query = query.bind(matched_ip);

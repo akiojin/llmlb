@@ -5,7 +5,7 @@ use crate::common::error::LbError;
 use crate::AppState;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json,
 };
@@ -19,8 +19,8 @@ use super::error::AppError;
 struct SystemInfoResponse {
     version: String,
     pid: u32,
-    in_flight: usize,
-    update: crate::update::UpdateState,
+    in_flight: Option<usize>,
+    update: serde_json::Value,
     schedule: Option<crate::update::schedule::UpdateSchedule>,
     rollback_available: bool,
 }
@@ -51,20 +51,76 @@ pub async fn get_version() -> Response {
 }
 
 /// GET /api/system
-pub async fn get_system(State(state): State<AppState>) -> Response {
+///
+/// Version and update state stay public; request counts require a current system administrator JWT.
+pub async fn get_system(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let authenticated = optional_system_actor(&state, &headers).await;
+    let show_counts = authenticated
+        .as_ref()
+        .is_some_and(|(_, scope)| matches!(scope, Some(crate::auth::scope::UsageScope::Global)));
     let update = state.lifecycle.update_manager.state().await;
-    let in_flight = state.lifecycle.inference_gate.in_flight();
+    let mut update = match serde_json::to_value(update) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!("Failed to serialize public update status: {}", error);
+            return private_system_response(
+                AppError(LbError::Internal(
+                    "Unable to serialize update status".into(),
+                ))
+                .into_response(),
+            );
+        }
+    };
+    if !show_counts {
+        if let Some(count) = update.get_mut("in_flight") {
+            *count = serde_json::Value::Null;
+        }
+    }
+    let in_flight = show_counts.then(|| state.lifecycle.inference_gate.in_flight());
     let schedule = state.lifecycle.update_manager.get_schedule().ok().flatten();
     let rollback_available = state.lifecycle.update_manager.rollback_available();
-    Json(SystemInfoResponse {
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        pid: std::process::id(),
-        in_flight,
-        update,
-        schedule,
-        rollback_available,
-    })
-    .into_response()
+    let mut response = private_system_response(
+        Json(SystemInfoResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            pid: std::process::id(),
+            in_flight,
+            update,
+            schedule,
+            rollback_available,
+        })
+        .into_response(),
+    );
+    if let Some((claims, _)) = authenticated {
+        response.extensions_mut().insert(claims);
+    }
+    response
+}
+
+async fn optional_system_actor(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Option<(Claims, Option<crate::auth::scope::UsageScope>)> {
+    let token = crate::auth::middleware::extract_bearer_or_cookie_token(headers).ok()?;
+    let mut claims = crate::auth::jwt::verify_jwt(&token, &state.auth.jwt_secret).ok()?;
+    let account = crate::auth::scope::current_account(&state.db_pool, &claims)
+        .await
+        .ok()?;
+    claims.role = account.role;
+    claims.must_change_password = account.must_change_password;
+    let scope = crate::auth::scope::account_scope(&account).ok();
+    Some((claims, scope))
+}
+
+fn private_system_response(mut response: Response) -> Response {
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response.headers_mut().insert(
+        header::VARY,
+        HeaderValue::from_static("Cookie, Authorization"),
+    );
+    response
 }
 
 /// GET /api/system/update/history
@@ -579,8 +635,9 @@ mod tests {
         let resp = super::SystemInfoResponse {
             version: "1.0.0".to_string(),
             pid: 12345,
-            in_flight: 3,
-            update: crate::update::UpdateState::UpToDate { checked_at: None },
+            in_flight: Some(3),
+            update: serde_json::to_value(crate::update::UpdateState::UpToDate { checked_at: None })
+                .unwrap(),
             schedule: None,
             rollback_available: false,
         };

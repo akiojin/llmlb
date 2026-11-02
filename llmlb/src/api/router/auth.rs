@@ -1,11 +1,11 @@
 //! 認証・アカウント管理（ログイン/ユーザー/APIキー/登録申請）のルート
 
-use crate::api::{api_keys, auth, registration_requests, users};
+use crate::api::{api_keys, auth, dashboard, organizations, registration_requests, users};
 use crate::common::auth::{ApiKeyPermission, UserRole};
 use crate::AppState;
 use axum::{
     middleware,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 
@@ -63,15 +63,45 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         ));
 
     // ユーザー自身のAPIキー管理（JWTのみ）
+    let my_api_keys_read_routes = Router::new()
+        .route("/me/api-keys", get(api_keys::list_api_keys))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            dashboard::authorize_scope,
+        ));
     let my_api_keys_routes = Router::new()
-        .route(
-            "/me/api-keys",
-            get(api_keys::list_api_keys).post(api_keys::create_api_key),
-        )
+        .route("/me/api-keys", post(api_keys::create_api_key))
         .route(
             "/me/api-keys/{id}",
             put(api_keys::update_api_key).delete(api_keys::delete_api_key),
         )
+        .merge(my_api_keys_read_routes)
+        .layer(middleware::from_fn(
+            crate::auth::middleware::require_password_changed_middleware,
+        ))
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::require_jwt_auth_middleware,
+        ));
+
+    let organization_read_routes = Router::new()
+        .route("/organizations", get(organizations::list))
+        .route("/organizations/{id}/members", get(organizations::members))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            dashboard::authorize_scope,
+        ));
+    let organization_routes = Router::new()
+        .route("/organizations", post(organizations::create))
+        .route(
+            "/organizations/{id}",
+            patch(organizations::rename).delete(organizations::archive),
+        )
+        .route("/users/{id}/membership", put(organizations::set_membership))
+        .merge(organization_read_routes)
         .layer(middleware::from_fn(
             crate::auth::middleware::require_password_changed_middleware,
         ))
@@ -92,4 +122,5 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         .merge(auth_routes)
         .merge(users_routes)
         .merge(my_api_keys_routes)
+        .merge(organization_routes)
 }

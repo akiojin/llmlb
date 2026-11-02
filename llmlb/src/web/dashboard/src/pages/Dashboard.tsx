@@ -6,6 +6,7 @@ import { ModelsTable } from '@/components/dashboard/ModelsTable'
 import { RequestHistoryTable } from '@/components/dashboard/RequestHistoryTable'
 import { LogViewer } from '@/components/dashboard/LogViewer'
 import { TokenStatsSection } from '@/components/dashboard/TokenStatsSection'
+import { OrganizationUsage } from '@/components/dashboard/OrganizationUsage'
 import { ClientsTab } from '@/components/dashboard/ClientsTab'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -472,7 +473,7 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="relative mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         {!isViewer && updateBanner}
-        <section className="mb-8">
+        {user?.scope !== 'unassigned' && <section className="mb-8">
           <OperationsOverview
             overview={data}
             isLoading={isLoading}
@@ -480,21 +481,25 @@ export default function Dashboard() {
             activityStatus={activityStatus}
             todayRequests={todayRequests}
           />
-        </section>
+          <p className="mt-2 text-xs text-muted-foreground">Usage totals cover the recorded observation range. See Usage for coverage and missing tokens.</p>
+        </section>}
 
-        {isViewer ? (
+        {isViewer && user?.scope !== 'unassigned' ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-grid">
+              <TabsTrigger value="statistics">Usage</TabsTrigger>
+              <TabsTrigger value="history">Requests</TabsTrigger>
+              <TabsTrigger value="models">Models</TabsTrigger>
+            </TabsList>
+            <TabsContent value="statistics"><OrganizationUsage /></TabsContent>
+            <TabsContent value="history"><RequestHistoryTable history={historyItems} isLoading={isLoadingHistory} /></TabsContent>
+            <TabsContent value="models"><ModelsTable models={viewerModels || []} endpoints={endpointsData || []}
+              isLoading={isLoadingViewerModels} onRefresh={() => { void refetchViewerModels() }}
+              view={modelsView} onViewChange={setModelsView} viewerMode /></TabsContent>
+          </Tabs>
+        ) : isViewer ? (
           <section className="mb-8">
-            <ModelsTable
-              models={viewerModels || []}
-              endpoints={endpointsData || []}
-              isLoading={isLoadingViewerModels}
-              onRefresh={() => {
-                void refetchViewerModels()
-              }}
-              view={modelsView}
-              onViewChange={setModelsView}
-              viewerMode
-            />
+            <p className="mb-4 rounded-lg border p-4 text-sm text-muted-foreground">Organization membership required. Ask a system administrator to assign your account before using inference or viewing usage.</p>
           </section>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -546,6 +551,7 @@ export default function Dashboard() {
             </TabsContent>
 
             <TabsContent value="statistics" className="animate-fade-in">
+              <div className="mb-6"><OrganizationUsage /></div>
               <TokenStatsSection />
             </TabsContent>
 

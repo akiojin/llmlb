@@ -2,6 +2,7 @@
 //!
 //! SQLiteベースでリクエスト履歴を永続化（load balancer.dbと統合）
 
+use crate::common::usage::{TokenSource, UsageAttribution, UsageTokens};
 use crate::common::{
     error::{LbError, RouterResult},
     protocol::{RecordStatus, RequestResponseRecord, RequestType},
@@ -16,9 +17,15 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 mod clients;
+pub(crate) mod scoped;
 mod statistics;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod usage_http_tests;
+#[cfg(test)]
+mod usage_tests;
+mod usage_writer;
 
 pub use clients::{
     ClientApiKeyUsage, ClientDetail, ClientIpRanking, ClientIpRankingResult, ClientRecentRequest,
@@ -38,18 +45,24 @@ const LEGACY_REQUEST_HISTORY_CLEANUP_INTERVAL_ENV: &str = "REQUEST_HISTORY_CLEAN
 #[derive(Clone)]
 pub struct RequestHistoryStorage {
     pool: SqlitePool,
+    read_scope: Option<crate::auth::scope::UsageScope>,
+    usage_writer: Arc<usage_writer::UsageWriter>,
 }
 
 impl RequestHistoryStorage {
     /// 新しいストレージインスタンスを作成
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            read_scope: None,
+            usage_writer: Arc::new(usage_writer::UsageWriter::default()),
+        }
     }
 
     /// IDでレコードを取得
     pub async fn get_record_by_id(&self, id: Uuid) -> RouterResult<Option<RequestResponseRecord>> {
         let row = sqlx::query_as::<_, RequestHistoryRow>(
-            "SELECT * FROM request_history WHERE id = ? LIMIT 1",
+            &self.scoped_sql("SELECT * FROM request_history WHERE id = ? LIMIT 1"),
         )
         .bind(id.to_string())
         .fetch_optional(&self.pool)
@@ -65,6 +78,19 @@ impl RequestHistoryStorage {
     /// レコードを保存
     pub async fn save_record(&self, record: &RequestResponseRecord) -> RouterResult<()> {
         self.insert_record(record, false).await?;
+        Ok(())
+    }
+
+    /// Atomically save a raw observation and its immutable, deduplicated usage.
+    pub async fn save_attributed_record(
+        &self,
+        record: &RequestResponseRecord,
+        attribution: &UsageAttribution,
+        tokens: &UsageTokens,
+        finalized: bool,
+    ) -> RouterResult<()> {
+        self.insert_attributed_record(record, false, Some((attribution, tokens, finalized)))
+            .await?;
         Ok(())
     }
 
@@ -116,6 +142,80 @@ impl RequestHistoryStorage {
         record: &RequestResponseRecord,
         ignore_conflicts: bool,
     ) -> RouterResult<u64> {
+        self.insert_attributed_record(record, ignore_conflicts, None)
+            .await
+    }
+
+    async fn insert_attributed_record(
+        &self,
+        record: &RequestResponseRecord,
+        ignore_conflicts: bool,
+        usage: Option<(&UsageAttribution, &UsageTokens, bool)>,
+    ) -> RouterResult<u64> {
+        let fallback_attribution = UsageAttribution {
+            request_id: record.id,
+            received_at: record.timestamp,
+            organization_id: None,
+            account_id: None,
+            api_key_id: record.api_key_id,
+            auth_source: "legacy".into(),
+        };
+        let fallback_tokens = UsageTokens::from_usage(
+            &crate::token::TokenUsage::new(
+                record.input_tokens,
+                record.output_tokens,
+                record.total_tokens,
+            ),
+            TokenSource::Provider,
+        );
+        let (attribution, tokens, finalized) =
+            usage.unwrap_or((&fallback_attribution, &fallback_tokens, true));
+        if record.id != attribution.request_id || record.timestamp != attribution.received_at {
+            return Err(LbError::Database(
+                "Raw record must match its immutable usage receipt".into(),
+            ));
+        }
+        let mut transaction =
+            self.pool.begin().await.map_err(|error| {
+                LbError::Database(format!("Failed to begin request save: {error}"))
+            })?;
+        if !ignore_conflicts {
+            let usage_endpoint_id = if record.endpoint_id.is_nil() {
+                String::new()
+            } else {
+                record.endpoint_id.to_string()
+            };
+            let inserted = crate::db::usage::save_in_transaction(
+                &mut transaction,
+                attribution,
+                &usage_endpoint_id,
+                &record.model,
+                tokens,
+                finalized,
+                matches!(record.status, RecordStatus::Success),
+            )
+            .await?;
+            if !inserted {
+                let (raw_exists, receipt_finalized): (bool, bool) = sqlx::query_as(
+                    "SELECT EXISTS(SELECT 1 FROM request_history WHERE id = ?1), finalized FROM usage_receipts WHERE id = ?1",
+                )
+                        .bind(record.id.to_string())
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(|error| {
+                            LbError::Database(format!("Failed to check retained request: {error}"))
+                        })?;
+                if !raw_exists || (receipt_finalized && !finalized) {
+                    // Late completion enriches the body-free ledger without
+                    // recreating a conversation removed by retention/deletion.
+                    // A late admission cannot overwrite finalized raw metadata.
+                    transaction.commit().await.map_err(|error| {
+                        LbError::Database(format!("Failed to commit usage update: {error}"))
+                    })?;
+                    return Ok(0);
+                }
+            }
+        }
         let id = record.id.to_string();
         let timestamp = record.timestamp.to_rfc3339();
         let request_type = format!("{:?}", record.request_type);
@@ -125,15 +225,35 @@ impl RequestHistoryStorage {
         let request_body = record.request_body.to_string();
         let response_body = record.response_body.as_ref().map(|v| v.to_string());
         let duration_ms = record.duration_ms as i64;
-        let (status, error_message) = match &record.status {
+        let (mut status, mut error_message) = match &record.status {
             RecordStatus::Success => ("success".to_string(), None),
             RecordStatus::Error { message } => ("error".to_string(), Some(message.clone())),
         };
         let completed_at = record.completed_at.to_rfc3339();
 
-        let input_tokens = record.input_tokens.map(|v| v as i64);
-        let output_tokens = record.output_tokens.map(|v| v as i64);
-        let total_tokens = record.total_tokens.map(|v| v as i64);
+        let (input_tokens, output_tokens, total_tokens) = if ignore_conflicts {
+            (
+                record.input_tokens.map(i64::from),
+                record.output_tokens.map(i64::from),
+                record.total_tokens.map(i64::from),
+            )
+        } else {
+            let settled: (Option<i64>, Option<i64>, Option<i64>, bool, bool) = sqlx::query_as(
+                "SELECT input_tokens, output_tokens, total_tokens, finalized, successful FROM usage_receipts WHERE id = ?",
+            ).bind(&id).fetch_one(&mut *transaction).await
+                .map_err(|error| LbError::Database(format!("Failed to read usage settlement: {error}")))?;
+            if settled.3 {
+                status = if settled.4 {
+                    "success".into()
+                } else {
+                    "error".into()
+                };
+                if !settled.4 && error_message.is_none() {
+                    error_message = Some("Inference failed or response stream interrupted".into());
+                }
+            }
+            (settled.0, settled.1, settled.2)
+        };
 
         let api_key_id = record.api_key_id.map(|id| id.to_string());
 
@@ -143,8 +263,8 @@ impl RequestHistoryStorage {
                 id, timestamp, request_type, model, endpoint_id, endpoint_name,
                 endpoint_ip, client_ip, request_body, response_body, duration_ms,
                 status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
-                api_key_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                api_key_id, organization_id, account_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         } else {
             r#"
@@ -152,8 +272,26 @@ impl RequestHistoryStorage {
                 id, timestamp, request_type, model, endpoint_id, endpoint_name,
                 endpoint_ip, client_ip, request_body, response_body, duration_ms,
                 status, error_message, completed_at, input_tokens, output_tokens, total_tokens,
-                api_key_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                api_key_id, organization_id, account_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                client_ip = COALESCE(request_history.client_ip, excluded.client_ip),
+                endpoint_ip = CASE WHEN excluded.endpoint_ip != '0.0.0.0'
+                    THEN excluded.endpoint_ip ELSE request_history.endpoint_ip END,
+                response_body = COALESCE(excluded.response_body, request_history.response_body),
+                input_tokens = (SELECT input_tokens FROM usage_receipts WHERE id = excluded.id),
+                output_tokens = (SELECT output_tokens FROM usage_receipts WHERE id = excluded.id),
+                total_tokens = (SELECT total_tokens FROM usage_receipts WHERE id = excluded.id),
+                status = CASE WHEN (SELECT finalized FROM usage_receipts WHERE id = excluded.id) = 1
+                    THEN CASE WHEN (SELECT successful FROM usage_receipts WHERE id = excluded.id) = 1 THEN 'success' ELSE 'error' END
+                    ELSE request_history.status END,
+                error_message = COALESCE(excluded.error_message, request_history.error_message),
+                completed_at = MAX(excluded.completed_at, request_history.completed_at),
+                duration_ms = MAX(excluded.duration_ms, request_history.duration_ms),
+                endpoint_id = CASE WHEN excluded.endpoint_id != '00000000-0000-0000-0000-000000000000'
+                    THEN excluded.endpoint_id ELSE request_history.endpoint_id END,
+                endpoint_name = CASE WHEN excluded.endpoint_id != '00000000-0000-0000-0000-000000000000'
+                    THEN excluded.endpoint_name ELSE request_history.endpoint_name END
             "#
         };
 
@@ -176,17 +314,22 @@ impl RequestHistoryStorage {
             .bind(output_tokens)
             .bind(total_tokens)
             .bind(&api_key_id)
-            .execute(&self.pool)
+            .bind(attribution.organization_id.map(|id| id.to_string()))
+            .bind(attribution.account_id.map(|id| id.to_string()))
+            .execute(&mut *transaction)
             .await
             .map_err(|e| LbError::Database(format!("Failed to save record: {}", e)))?;
 
+        transaction.commit().await.map_err(|error| {
+            LbError::Database(format!("Failed to commit request save: {error}"))
+        })?;
         Ok(result.rows_affected())
     }
 
     /// すべてのレコードを読み込み（タイムスタンプ降順）
     pub async fn load_records(&self) -> RouterResult<Vec<RequestResponseRecord>> {
         let rows = sqlx::query_as::<_, RequestHistoryRow>(
-            "SELECT * FROM request_history ORDER BY timestamp DESC",
+            &self.scoped_sql("SELECT * FROM request_history ORDER BY timestamp DESC"),
         )
         .fetch_all(&self.pool)
         .await
@@ -215,7 +358,7 @@ impl RequestHistoryStorage {
     ) -> RouterResult<Vec<MinuteHistoryPoint>> {
         let cutoff = (Utc::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
 
-        let rows = sqlx::query_as::<_, MinuteHistoryRow>(
+        let rows = sqlx::query_as::<_, MinuteHistoryRow>(&self.scoped_sql(
             r#"
             SELECT
                 strftime('%Y-%m-%dT%H:%M:00Z', completed_at) AS minute,
@@ -226,7 +369,7 @@ impl RequestHistoryStorage {
             GROUP BY strftime('%Y-%m-%dT%H:%M:00Z', completed_at)
             ORDER BY minute ASC
             "#,
-        )
+        ))
         .bind(&cutoff)
         .fetch_all(&self.pool)
         .await
@@ -314,74 +457,20 @@ impl RequestHistoryStorage {
         })
     }
 
-    /// カウントクエリを実行
+    /// Count and page queries use the same authorized source relation.
     async fn execute_count_query(&self, sql: &str, params: &[String]) -> RouterResult<usize> {
-        // パラメータ数に応じて動的にバインド
-        let result = match params.len() {
-            0 => {
-                sqlx::query_scalar::<_, i64>(sql)
-                    .fetch_one(&self.pool)
-                    .await
-            }
-            1 => {
-                sqlx::query_scalar::<_, i64>(sql)
-                    .bind(&params[0])
-                    .fetch_one(&self.pool)
-                    .await
-            }
-            2 => {
-                sqlx::query_scalar::<_, i64>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .fetch_one(&self.pool)
-                    .await
-            }
-            3 => {
-                sqlx::query_scalar::<_, i64>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .fetch_one(&self.pool)
-                    .await
-            }
-            4 => {
-                sqlx::query_scalar::<_, i64>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .bind(&params[3])
-                    .fetch_one(&self.pool)
-                    .await
-            }
-            5 => {
-                sqlx::query_scalar::<_, i64>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .bind(&params[3])
-                    .bind(&params[4])
-                    .fetch_one(&self.pool)
-                    .await
-            }
-            _ => {
-                sqlx::query_scalar::<_, i64>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .bind(&params[3])
-                    .bind(&params[4])
-                    .bind(&params[5])
-                    .fetch_one(&self.pool)
-                    .await
-            }
-        };
-
-        result
-            .map(|c| c as usize)
-            .map_err(|e| LbError::Database(format!("Failed to count records: {}", e)))
+        let sql = self.scoped_sql(sql);
+        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        for param in params {
+            query = query.bind(param);
+        }
+        query
+            .fetch_one(&self.pool)
+            .await
+            .map(|count| count as usize)
+            .map_err(|error| LbError::Database(format!("Failed to count records: {error}")))
     }
 
-    /// SELECTクエリを実行
     async fn execute_select_query(
         &self,
         sql: &str,
@@ -389,81 +478,17 @@ impl RequestHistoryStorage {
         limit: i64,
         offset: i64,
     ) -> RouterResult<Vec<RequestHistoryRow>> {
-        // パラメータ数に応じて動的にバインド
-        let result = match params.len() {
-            0 => {
-                sqlx::query_as::<_, RequestHistoryRow>(sql)
-                    .bind(limit)
-                    .bind(offset)
-                    .fetch_all(&self.pool)
-                    .await
-            }
-            1 => {
-                sqlx::query_as::<_, RequestHistoryRow>(sql)
-                    .bind(&params[0])
-                    .bind(limit)
-                    .bind(offset)
-                    .fetch_all(&self.pool)
-                    .await
-            }
-            2 => {
-                sqlx::query_as::<_, RequestHistoryRow>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(limit)
-                    .bind(offset)
-                    .fetch_all(&self.pool)
-                    .await
-            }
-            3 => {
-                sqlx::query_as::<_, RequestHistoryRow>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .bind(limit)
-                    .bind(offset)
-                    .fetch_all(&self.pool)
-                    .await
-            }
-            4 => {
-                sqlx::query_as::<_, RequestHistoryRow>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .bind(&params[3])
-                    .bind(limit)
-                    .bind(offset)
-                    .fetch_all(&self.pool)
-                    .await
-            }
-            5 => {
-                sqlx::query_as::<_, RequestHistoryRow>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .bind(&params[3])
-                    .bind(&params[4])
-                    .bind(limit)
-                    .bind(offset)
-                    .fetch_all(&self.pool)
-                    .await
-            }
-            _ => {
-                sqlx::query_as::<_, RequestHistoryRow>(sql)
-                    .bind(&params[0])
-                    .bind(&params[1])
-                    .bind(&params[2])
-                    .bind(&params[3])
-                    .bind(&params[4])
-                    .bind(&params[5])
-                    .bind(limit)
-                    .bind(offset)
-                    .fetch_all(&self.pool)
-                    .await
-            }
-        };
-
-        result.map_err(|e| LbError::Database(format!("Failed to query records: {}", e)))
+        let sql = self.scoped_sql(sql);
+        let mut query = sqlx::query_as::<_, RequestHistoryRow>(&sql);
+        for param in params {
+            query = query.bind(param);
+        }
+        query
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|error| LbError::Database(format!("Failed to load records: {error}")))
     }
 }
 
@@ -557,6 +582,7 @@ impl TryFrom<RequestHistoryRow> for RequestResponseRecord {
             "Chat" => RequestType::Chat,
             "Generate" => RequestType::Generate,
             "Embeddings" => RequestType::Embeddings,
+            "Responses" => RequestType::Responses,
             "Transcription" => RequestType::Transcription,
             "Speech" => RequestType::Speech,
             "ImageGeneration" => RequestType::ImageGeneration,

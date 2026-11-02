@@ -70,6 +70,12 @@ pub struct MeResponse {
     pub role: String,
     /// 初回パスワード変更が必要か
     pub must_change_password: bool,
+    /// Organization identifier; null denotes unassigned or legacy usage.
+    pub organization_id: Option<String>,
+    /// Role inside the current organization.
+    pub organization_role: Option<String>,
+    /// Current server-resolved visibility: global, organization, account or unassigned.
+    pub scope: String,
 }
 
 /// パスワード変更リクエスト
@@ -119,47 +125,19 @@ pub async fn login(
 ) -> Result<impl IntoResponse, HandlerError> {
     let is_secure = is_request_secure(&headers);
 
-    // 開発モード: admin/test で固定ログイン可能
+    // Fixed development credentials still resolve a live database actor.
     #[cfg(debug_assertions)]
     if request.username == "admin" && request.password == "test" {
-        let dev_user_id = uuid::Uuid::nil().to_string();
-        let expires_in = 86400;
-        let token = crate::auth::jwt::create_jwt(
-            &dev_user_id,
-            crate::common::auth::UserRole::Admin,
-            &app_state.auth.jwt_secret,
-            false,
-            0,
-        )
-        .map_err(|e| {
-            tracing::error!("Failed to create JWT: {}", e);
-            AppError(LbError::Jwt(format!("Failed to create JWT: {}", e))).into_response()
-        })?;
-
-        tracing::info!("Development mode login: admin/test");
-        let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
-        let csrf_cookie = crate::auth::build_csrf_cookie(
-            &crate::auth::generate_random_token(32),
-            expires_in,
-            is_secure,
-        );
-        let mut headers = HeaderMap::new();
-        headers.append(header::SET_COOKIE, cookie.parse().unwrap());
-        headers.append(header::SET_COOKIE, csrf_cookie.parse().unwrap());
-        return Ok((
-            StatusCode::OK,
-            headers,
-            Json(LoginResponse {
-                token,
-                expires_in,
-                user: UserInfo {
-                    id: dev_user_id,
-                    username: "admin".to_string(),
-                    role: "admin".to_string(),
-                    must_change_password: false,
-                },
-            }),
-        ));
+        let account = crate::db::organizations::account(&app_state.db_pool, uuid::Uuid::nil())
+            .await
+            .map_err(AppError)?
+            .filter(|account| account.is_active)
+            .ok_or_else(|| {
+                AppError(LbError::Authentication(
+                    "Invalid username or password".into(),
+                ))
+            })?;
+        return session_response(&app_state.auth.jwt_secret, account, is_secure);
     }
 
     // ユーザーを検索
@@ -205,6 +183,18 @@ pub async fn login(
         .into());
     }
 
+    let account = crate::db::organizations::account(&app_state.db_pool, user.id)
+        .await
+        .map_err(AppError)?
+        .filter(|account| {
+            account.is_active && account.password_changed_at == user.password_changed_at
+        })
+        .ok_or_else(|| {
+            AppError(LbError::Authentication(
+                "Invalid username or password".into(),
+            ))
+        })?;
+
     // 最終ログイン時刻を更新
     crate::db::users::update_last_login(&app_state.db_pool, user.id)
         .await
@@ -214,29 +204,40 @@ pub async fn login(
         })
         .ok();
 
-    // JWTを生成（有効期限24時間）
-    let expires_in = 86400; // 24時間（秒）
-    let token = crate::auth::jwt::create_jwt(
-        &user.id.to_string(),
-        user.role,
-        &app_state.auth.jwt_secret,
-        user.must_change_password,
-        user.password_changed_at,
-    )
-    .map_err(|e| {
-        tracing::error!("Failed to create JWT: {}", e);
-        AppError(LbError::Jwt(format!("Failed to create JWT: {}", e))).into_response()
-    })?;
+    session_response(&app_state.auth.jwt_secret, account, is_secure)
+}
 
-    let cookie = crate::auth::build_jwt_cookie(&token, expires_in, is_secure);
-    let csrf_cookie = crate::auth::build_csrf_cookie(
-        &crate::auth::generate_random_token(32),
-        expires_in,
-        is_secure,
-    );
+fn session_response(
+    jwt_secret: &str,
+    account: crate::db::organizations::AccountMembership,
+    is_secure: bool,
+) -> Result<(StatusCode, HeaderMap, Json<LoginResponse>), HandlerError> {
+    let expires_in = 86400;
+    let token = crate::auth::jwt::create_jwt(
+        &account.id.to_string(),
+        account.role,
+        jwt_secret,
+        account.must_change_password,
+        account.password_changed_at,
+    )
+    .map_err(|error| AppError(LbError::Jwt(format!("Failed to create JWT: {error}"))))?;
     let mut headers = HeaderMap::new();
-    headers.append(header::SET_COOKIE, cookie.parse().unwrap());
-    headers.append(header::SET_COOKIE, csrf_cookie.parse().unwrap());
+    headers.append(
+        header::SET_COOKIE,
+        crate::auth::build_jwt_cookie(&token, expires_in, is_secure)
+            .parse()
+            .unwrap(),
+    );
+    headers.append(
+        header::SET_COOKIE,
+        crate::auth::build_csrf_cookie(
+            &crate::auth::generate_random_token(32),
+            expires_in,
+            is_secure,
+        )
+        .parse()
+        .unwrap(),
+    );
     Ok((
         StatusCode::OK,
         headers,
@@ -244,10 +245,10 @@ pub async fn login(
             token,
             expires_in,
             user: UserInfo {
-                id: user.id.to_string(),
-                username: user.username.clone(),
-                role: format!("{:?}", user.role).to_lowercase(),
-                must_change_password: user.must_change_password,
+                id: account.id.to_string(),
+                username: account.username,
+                role: format!("{:?}", account.role).to_lowercase(),
+                must_change_password: account.must_change_password,
             },
         }),
     ))
@@ -308,37 +309,22 @@ pub async fn me(
     Extension(claims): Extension<Claims>,
     State(app_state): State<AppState>,
 ) -> Result<Json<MeResponse>, HandlerError> {
-    // ユーザーIDをパース
-    let user_id = claims.sub.parse::<uuid::Uuid>().map_err(|e| {
-        tracing::error!("Failed to parse user ID: {}", e);
-        AppError(LbError::Internal(format!("Failed to parse user ID: {}", e))).into_response()
-    })?;
-
-    // 開発モード: nil UUIDの場合は開発ユーザー情報を返す
-    #[cfg(debug_assertions)]
-    if user_id.is_nil() {
-        return Ok(Json(MeResponse {
-            user_id: user_id.to_string(),
-            username: "admin".to_string(),
-            role: "admin".to_string(),
-            must_change_password: false,
-        }));
-    }
-
-    // ユーザー情報を取得
-    let user = crate::db::users::find_by_id(&app_state.db_pool, user_id)
+    let account = crate::auth::scope::current_account(&app_state.db_pool, &claims)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to find user: {}", e);
-            AppError(LbError::Database(format!("Failed to find user: {}", e))).into_response()
-        })?
-        .ok_or_else(|| AppError(LbError::NotFound("User not found".to_string())).into_response())?;
-
+        .map_err(AppError)?;
+    let scope = crate::auth::scope::account_scope(&account)
+        .map(|scope| scope.label())
+        .unwrap_or("unassigned");
     Ok(Json(MeResponse {
-        user_id: user.id.to_string(),
-        username: user.username,
-        role: format!("{:?}", user.role).to_lowercase(),
-        must_change_password: user.must_change_password,
+        user_id: account.id.to_string(),
+        username: account.username,
+        role: format!("{:?}", account.role).to_lowercase(),
+        must_change_password: account.must_change_password,
+        organization_id: account.organization_id.map(|id| id.to_string()),
+        organization_role: account
+            .organization_role
+            .map(|role| role.as_str().to_string()),
+        scope: scope.into(),
     }))
 }
 
@@ -703,6 +689,10 @@ mod tests {
     #[test]
     fn test_me_response_serialize() {
         let response = MeResponse {
+            organization_id: None,
+            organization_role: None,
+            scope: "unassigned".into(),
+
             user_id: "user-123".to_string(),
             username: "testuser".to_string(),
             role: "user".to_string(),
@@ -954,6 +944,10 @@ mod tests {
     #[test]
     fn test_me_response_must_change_password_true() {
         let response = MeResponse {
+            organization_id: None,
+            organization_role: None,
+            scope: "unassigned".into(),
+
             user_id: "uid".to_string(),
             username: "bob".to_string(),
             role: "admin".to_string(),
@@ -967,6 +961,10 @@ mod tests {
     #[test]
     fn test_me_response_all_fields_present() {
         let response = MeResponse {
+            organization_id: None,
+            organization_role: None,
+            scope: "unassigned".into(),
+
             user_id: "uid-abc".to_string(),
             username: "charlie".to_string(),
             role: "viewer".to_string(),

@@ -1,4 +1,5 @@
 import { registrationRequestsApi } from '@/lib/api'
+import { usageApi } from '@/lib/api/usage'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -318,9 +319,13 @@ describe('Dashboard update banner', () => {
     })
 
     it('hides the banner and skips the system query for viewers', async () => {
+      vi.spyOn(usageApi, 'get').mockResolvedValue({ scope: 'account', group_by: 'account', from: '2026-10-01',
+        to: '2026-10-31', to_exclusive: '2026-11-01', rows: [], totals: { request_count: 0,
+          input_tokens: 0, output_tokens: 0, total_tokens: 0, measured_requests: 0,
+          estimated_requests: 0, missing_requests: 0 }, total_count: 0, page: 1, per_page: 10, coverage_start: null })
       const { getSystem, getUpdateHistory } = await renderDashboard({
         update: available({ payload: 'not_ready' }),
-        user: viewerUser,
+        user: { ...viewerUser, organization_id: 'org-a', organization_role: 'member', scope: 'account' },
       })
 
       expect(queryButton('Check for updates')).not.toBeInTheDocument()

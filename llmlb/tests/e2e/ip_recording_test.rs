@@ -149,11 +149,23 @@ async fn test_ip_and_api_key_recorded_on_inference_request() {
         response.status()
     );
 
-    // 非同期保存を待つ
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    response
+        .bytes()
+        .await
+        .expect("consume completed inference response");
 
-    // 6. request_historyのclient_ipとapi_key_idを検証
-    let record = get_latest_record(&db_pool).await;
+    // 6. Wait for terminal metadata, rather than reading the admission receipt.
+    let record = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let record = get_latest_record(&db_pool).await;
+            if matches!(&record, Some((Some(_), Some(_)))) {
+                break record;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("completed request must persist its client IP and authenticated key");
     assert!(
         record.is_some(),
         "request_historyにレコードが記録されること"

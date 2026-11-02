@@ -168,6 +168,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         load_manager: crate::balancer::LoadManager,
         event_bus: crate::events::SharedEventBus,
         stats_recorded: bool,
+        usage_collector: Option<crate::api::usage_capture::UsageCollector>,
         // ストリーム完走時に実時間で完了する RequestLease。
         // ヘッダー受信時点で早期解放すると、ストリーミング中の assigned_active が
         // 過小になり、レイテンシも過小評価され、idle 通知も早まる（lease-ttfb）。
@@ -198,6 +199,9 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
                 return;
             }
             self.stats_recorded = true;
+            if let Some(collector) = &self.usage_collector {
+                collector.set_upstream_tokens(self.accumulator.finalize_observation());
+            }
 
             record_endpoint_request_stats(
                 self.endpoint_registry.clone(),
@@ -282,6 +286,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         load_manager,
         event_bus,
         stats_recorded: false,
+        usage_collector: crate::api::usage_capture::current_collector(),
         request_lease,
     };
 
@@ -344,11 +349,27 @@ pub(crate) fn save_request_record(
     storage: Arc<crate::db::request_history::RequestHistoryStorage>,
     record: RequestResponseRecord,
 ) {
-    tokio::spawn(async move {
-        if let Err(e) = storage.save_record(&record).await {
-            tracing::error!("Failed to save request record: {}", e);
-        }
-    });
+    if let Some(collector) = crate::api::usage_capture::current_collector() {
+        collector.set_record(record);
+        return;
+    }
+    let attribution = crate::common::usage::UsageAttribution {
+        request_id: record.id,
+        received_at: record.timestamp,
+        organization_id: None,
+        account_id: None,
+        api_key_id: record.api_key_id,
+        auth_source: "legacy".into(),
+    };
+    let tokens = crate::common::usage::UsageTokens::from_usage(
+        &crate::token::TokenUsage::new(
+            record.input_tokens,
+            record.output_tokens,
+            record.total_tokens,
+        ),
+        crate::common::usage::TokenSource::Provider,
+    );
+    storage.enqueue_usage_settlement(record, attribution, tokens, || {});
 }
 
 /// エンドポイントリクエスト統計を更新（Fire-and-forget）（SPEC-8c32349f）

@@ -29,16 +29,21 @@ async fn build_app() -> (Router, sqlx::SqlitePool) {
 
 async fn create_admin_user(db_pool: &sqlx::SqlitePool) -> uuid::Uuid {
     let password_hash = llmlb::auth::password::hash_password("password123").unwrap();
-    let created =
-        llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false).await;
-    if let Ok(user) = created {
-        return user.id;
-    }
-    llmlb::db::users::find_by_username(db_pool, "admin")
-        .await
-        .unwrap()
-        .unwrap()
-        .id
+    let id =
+        match llmlb::db::users::create(db_pool, "admin", &password_hash, UserRole::Admin, false)
+            .await
+        {
+            Ok(user) => user.id,
+            Err(_) => {
+                llmlb::db::users::find_by_username(db_pool, "admin")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id
+            }
+        };
+    support::lb::assign_test_organization(db_pool, id).await;
+    id
 }
 
 async fn create_api_key(db_pool: &sqlx::SqlitePool, permissions: Vec<ApiKeyPermission>) -> String {
@@ -526,6 +531,7 @@ async fn me_api_keys_routes_require_jwt_and_owner_scope() {
     )
     .await
     .unwrap();
+    support::lb::assign_test_organization(&db_pool, viewer.id).await;
 
     let admin_jwt = llmlb::auth::jwt::create_jwt(
         &admin_id.to_string(),
@@ -673,6 +679,7 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
     )
     .await
     .unwrap();
+    support::lb::assign_test_organization(&db_pool, viewer.id).await;
 
     let admin_jwt = llmlb::auth::jwt::create_jwt(
         &admin_id.to_string(),
@@ -713,8 +720,8 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
         .unwrap();
     assert_eq!(admin_missing_permissions.status(), StatusCode::BAD_REQUEST);
 
-    // admin: explicit non-empty permissions is accepted
-    let admin_permissions = vec!["openai.inference", "openai.models.read", "endpoints.read"];
+    // admin: explicit inference-only permissions are accepted for attributed keys
+    let admin_permissions = vec!["openai.inference", "openai.models.read"];
     let admin_create = app
         .clone()
         .oneshot(
@@ -743,7 +750,7 @@ async fn me_api_keys_create_enforces_role_based_permissions_payload() {
     let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         created["permissions"],
-        json!(["openai.inference", "openai.models.read", "endpoints.read"])
+        json!(["openai.inference", "openai.models.read"])
     );
 
     // viewer: permissions must not be provided

@@ -96,13 +96,65 @@ async fn build_app() -> (Router, sqlx::SqlitePool, String) {
     (api::create_app(state), db_pool, jwt)
 }
 
+// Persist a new observed request through the production raw/receipt/rollup
+// transaction. Legacy endpoint counters are deliberately independent fixtures.
+async fn save_observed_request(
+    db_pool: &sqlx::SqlitePool,
+    endpoint: &Endpoint,
+    successful: bool,
+    usage: llmlb::token::TokenUsage,
+) {
+    use llmlb::common::{
+        protocol::{RequestResponseRecord, RequestType},
+        usage::{TokenSource, UsageAttribution, UsageTokens},
+    };
+
+    // This is the same real database account authenticated by build_app's JWT.
+    // A global administrator may submit inference without an organization.
+    let account_id: String = sqlx::query_scalar("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_one(db_pool)
+        .await
+        .expect("load fixture's authenticated account");
+    let mut record = RequestResponseRecord::new(
+        endpoint.id,
+        endpoint.name.clone(),
+        "127.0.0.1".parse().unwrap(),
+        "observed-model".to_string(),
+        RequestType::Chat,
+        json!({"messages": [{"role": "user", "content": "persisted stats fixture"}]}),
+        if successful {
+            StatusCode::OK
+        } else {
+            StatusCode::BAD_GATEWAY
+        },
+        std::time::Duration::from_millis(1),
+        None,
+        None,
+    );
+    record.input_tokens = usage.input_tokens;
+    record.output_tokens = usage.output_tokens;
+    record.total_tokens = usage.total_tokens;
+    let attribution = UsageAttribution {
+        request_id: record.id,
+        received_at: record.timestamp,
+        organization_id: None,
+        account_id: Some(uuid::Uuid::parse_str(&account_id).unwrap()),
+        api_key_id: None,
+        auth_source: "jwt".to_string(),
+    };
+    let tokens = UsageTokens::from_usage(&usage, TokenSource::Provider);
+    llmlb::db::request_history::RequestHistoryStorage::new(db_pool.clone())
+        .save_attributed_record(&record, &attribution, &tokens, true)
+        .await
+        .expect("persist observed request and final usage together");
+}
+
 #[tokio::test]
 async fn test_dashboard_stats_endpoint() {
     let (app, db_pool, jwt) = build_app().await;
 
-    // Seed audit_log_entries with token usage to ensure `/api/dashboard/stats` token totals
-    // match the persisted statistics (used by the Statistics tab).
-    // SPEC-8301d106: stats are now served from audit_log_entries, not request_history.
+    // Issue #947: current counters come from the durable observation ledger.
+    // Audit/history remain independently available and must not be backfilled.
     let audit_storage = llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone());
     let now = chrono::Utc::now();
     let entry = llmlb::audit::types::AuditLogEntry {
@@ -127,6 +179,8 @@ async fn test_dashboard_stats_endpoint() {
         batch_id: None,
     };
     audit_storage.insert_batch(&[entry]).await.unwrap();
+    sqlx::query("INSERT INTO usage_daily (date,request_count,successful_requests,input_tokens,output_tokens,total_tokens,provider_count) VALUES (?,1,1,150,50,200,1)")
+        .bind(now.date_naive().to_string()).execute(&db_pool).await.unwrap();
 
     // GET /api/dashboard/stats
     let response = app
@@ -157,17 +211,17 @@ async fn test_dashboard_stats_endpoint() {
     assert_eq!(
         stats["total_input_tokens"].as_u64(),
         Some(150),
-        "total_input_tokens should come from audit_log_entries"
+        "total_input_tokens should come from the durable usage ledger"
     );
     assert_eq!(
         stats["total_output_tokens"].as_u64(),
         Some(50),
-        "total_output_tokens should come from audit_log_entries"
+        "total_output_tokens should come from the durable usage ledger"
     );
     assert_eq!(
         stats["total_tokens"].as_u64(),
         Some(200),
-        "total_tokens should come from audit_log_entries"
+        "total_tokens should come from the durable usage ledger"
     );
 }
 
@@ -193,6 +247,11 @@ async fn test_dashboard_overview_operations_reflects_persisted_request_totals() 
     db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
         .await
         .expect("increment failed request counter");
+    // Older endpoint lifetime counters must not redefine the observed range.
+    sqlx::query("UPDATE endpoints SET total_requests=999,successful_requests=888,failed_requests=111 WHERE id=?")
+        .bind(endpoint.id.to_string()).execute(&db_pool).await.unwrap();
+    sqlx::query("INSERT INTO usage_daily (date,endpoint_id,request_count,successful_requests,failed_requests) VALUES (?,?,3,2,1)")
+        .bind(chrono::Utc::now().date_naive().to_string()).bind(endpoint.id.to_string()).execute(&db_pool).await.unwrap();
 
     let response = app
         .oneshot(
@@ -250,7 +309,7 @@ async fn test_dashboard_overview_operations_reflects_persisted_request_totals() 
 }
 
 #[tokio::test]
-async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
+async fn test_dashboard_stats_uses_persisted_observed_usage() {
     let (app, db_pool, jwt) = build_app().await;
 
     let endpoint = Endpoint::new(
@@ -262,15 +321,32 @@ async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
         .await
         .expect("create endpoint");
 
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
-        .await
-        .expect("increment failed request counter");
+    // Conflicting legacy totals must never be backfilled into observed usage.
+    sqlx::query(
+        "UPDATE endpoints SET total_requests=999,successful_requests=888,failed_requests=111 WHERE id=?",
+    )
+    .bind(endpoint.id.to_string())
+    .execute(&db_pool)
+    .await
+    .unwrap();
+    for successful in [true, true, false] {
+        save_observed_request(
+            &db_pool,
+            &endpoint,
+            successful,
+            llmlb::token::TokenUsage::new(Some(11), Some(7), Some(18)),
+        )
+        .await;
+    }
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM usage_receipts WHERE finalized = 1")
+            .fetch_one(&db_pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        receipts, 3,
+        "fixture must contain three settled observations"
+    );
 
     let response = app
         .oneshot(
@@ -298,22 +374,25 @@ async fn test_dashboard_stats_uses_persisted_endpoint_counters() {
     assert_eq!(
         stats["total_requests"].as_u64(),
         Some(3),
-        "Total requests should reflect persisted endpoint counters"
+        "Total requests should reflect persisted observed usage"
     );
     assert_eq!(
         stats["successful_requests"].as_u64(),
         Some(2),
-        "Successful requests should reflect persisted endpoint counters"
+        "Successful requests should reflect persisted observed usage"
     );
     assert_eq!(
         stats["failed_requests"].as_u64(),
         Some(1),
-        "Failed requests should reflect persisted endpoint counters"
+        "Failed requests should reflect persisted observed usage"
     );
+    assert_eq!(stats["total_input_tokens"].as_u64(), Some(33));
+    assert_eq!(stats["total_output_tokens"].as_u64(), Some(21));
+    assert_eq!(stats["total_tokens"].as_u64(), Some(54));
 }
 
 #[tokio::test]
-async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavailable() {
+async fn test_dashboard_stats_keeps_cached_usage_only_while_current_account_can_be_authorized() {
     let (app, db_pool, jwt) = build_app().await;
 
     let endpoint = Endpoint::new(
@@ -325,41 +404,34 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
         .await
         .expect("create endpoint");
 
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, true)
-        .await
-        .expect("increment success request counter");
-    db_endpoints::increment_request_counters(&db_pool, endpoint.id, false)
-        .await
-        .expect("increment failed request counter");
-
-    // SPEC-8301d106: stats are now served from audit_log_entries
-    let audit_storage = llmlb::db::audit_log::AuditLogStorage::new(db_pool.clone());
-    let now = chrono::Utc::now();
-    let entry = llmlb::audit::types::AuditLogEntry {
-        id: None,
-        timestamp: now,
-        http_method: "POST".to_string(),
-        request_path: "/v1/chat/completions".to_string(),
-        status_code: 200,
-        actor_type: llmlb::audit::types::ActorType::User,
-        actor_id: Some("1".to_string()),
-        actor_username: Some("admin".to_string()),
-        api_key_owner_id: None,
-        client_ip: Some("127.0.0.1".to_string()),
-        duration_ms: Some(80),
-        input_tokens: Some(40),
-        output_tokens: Some(60),
-        total_tokens: Some(100),
-        model_name: Some("fallback-model".to_string()),
-        endpoint_id: Some(endpoint.id.to_string()),
-        detail: None,
-        is_migrated: false,
-        batch_id: None,
-    };
-    audit_storage
-        .insert_batch(&[entry])
-        .await
-        .expect("insert audit log entry");
+    // Only observations below define the cache; legacy counters are unrelated.
+    sqlx::query(
+        "UPDATE endpoints SET total_requests=999,successful_requests=888,failed_requests=111 WHERE id=?",
+    )
+    .bind(endpoint.id.to_string())
+    .execute(&db_pool)
+    .await
+    .unwrap();
+    save_observed_request(
+        &db_pool,
+        &endpoint,
+        true,
+        llmlb::token::TokenUsage::new(Some(40), Some(60), Some(100)),
+    )
+    .await;
+    save_observed_request(
+        &db_pool,
+        &endpoint,
+        false,
+        llmlb::token::TokenUsage::default(),
+    )
+    .await;
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM usage_receipts WHERE finalized = 1")
+            .fetch_one(&db_pool)
+            .await
+            .unwrap();
+    assert_eq!(receipts, 2, "fixture must contain two settled observations");
 
     // Warm cache with persisted totals.
     let first_response = app
@@ -388,10 +460,15 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
     assert_eq!(first_stats["total_output_tokens"].as_u64(), Some(60));
     assert_eq!(first_stats["total_tokens"].as_u64(), Some(100));
 
-    // Simulate DB outage and verify stats still return the last persisted values.
-    db_pool.close().await;
+    // Fail only the usage read. Current-account authorization remains live;
+    // this isolates the positive last-known-usage fallback contract.
+    sqlx::query("DROP TABLE usage_daily")
+        .execute(&db_pool)
+        .await
+        .expect("inject usage read failure without disabling authentication");
 
     let second_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("GET")
@@ -404,6 +481,14 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
         .unwrap();
 
     assert_eq!(second_response.status(), StatusCode::OK);
+    assert_eq!(
+        second_response
+            .headers()
+            .get("x-llmlb-usage-scope")
+            .and_then(|value| value.to_str().ok()),
+        Some("global"),
+        "fallback must still pass current database authorization"
+    );
 
     let second_body = axum::body::to_bytes(second_response.into_body(), usize::MAX)
         .await
@@ -415,6 +500,35 @@ async fn test_dashboard_stats_keeps_last_known_persisted_totals_when_db_unavaila
     assert_eq!(second_stats["total_input_tokens"].as_u64(), Some(40));
     assert_eq!(second_stats["total_output_tokens"].as_u64(), Some(60));
     assert_eq!(second_stats["total_tokens"].as_u64(), Some(100));
+
+    // A warm global cache never substitutes for a current DB authorization.
+    // Once the whole database is unavailable, return only the database error.
+    db_pool.close().await;
+    let unavailable_response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/dashboard/stats")
+                .header("authorization", format!("Bearer {}", jwt))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        unavailable_response.status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "cached usage must not bypass current-account authorization"
+    );
+    let unavailable_body = axum::body::to_bytes(unavailable_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let unavailable_json: serde_json::Value = serde_json::from_slice(&unavailable_body).unwrap();
+    assert_eq!(
+        unavailable_json,
+        json!({"error": "Database error"}),
+        "authorization outage must not disclose any cached statistics"
+    );
 }
 
 #[tokio::test]

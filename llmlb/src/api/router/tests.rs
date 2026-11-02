@@ -12,8 +12,43 @@ use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use tower::Service;
 
+mod organization_scope;
+
 async fn test_state() -> AppState {
     TestAppStateBuilder::new().await.build().await
+}
+
+async fn persisted_jwt(state: &AppState, role: UserRole) -> String {
+    let account = crate::db::users::create(
+        &state.db_pool,
+        &format!("router-{}", uuid::Uuid::new_v4()),
+        "hash",
+        role,
+        false,
+    )
+    .await
+    .unwrap();
+    let organization =
+        crate::db::organizations::create(&state.db_pool, &format!("Router fixture {}", account.id))
+            .await
+            .unwrap();
+    crate::db::organizations::set_membership(
+        &state.db_pool,
+        account.id,
+        Some(organization.id.parse().unwrap()),
+        crate::db::organizations::OrganizationRole::Member,
+        None,
+    )
+    .await
+    .unwrap();
+    crate::auth::jwt::create_jwt(
+        &account.id.to_string(),
+        role,
+        &state.auth.jwt_secret,
+        false,
+        0,
+    )
+    .unwrap()
 }
 
 /// Activity is additive, JWT protected, and available to viewers who cannot use WS.
@@ -21,9 +56,7 @@ async fn test_state() -> AppState {
 async fn dashboard_activity_allows_admin_and_viewer_with_sixty_second_buckets() {
     for role in [UserRole::Admin, UserRole::Viewer] {
         let state = test_state().await;
-        let token =
-            crate::auth::jwt::create_jwt("activity-user", role, &state.auth.jwt_secret, false, 0)
-                .unwrap();
+        let token = persisted_jwt(&state, role).await;
         let mut app = create_app(state);
         let response = app
             .call(
@@ -89,14 +122,7 @@ async fn dashboard_activity_observes_in_flight_requests_without_heartbeat() {
         .add(endpoint)
         .await
         .unwrap();
-    let token = crate::auth::jwt::create_jwt(
-        "activity-user",
-        UserRole::Admin,
-        &state.auth.jwt_secret,
-        false,
-        0,
-    )
-    .unwrap();
+    let token = persisted_jwt(&state, UserRole::Admin).await;
     let lease = state
         .balancer
         .load_manager
@@ -162,14 +188,7 @@ async fn dashboard_activity_observes_in_flight_requests_without_heartbeat() {
 /// 管理者JWTで `/api/dashboard/*` にGETし、ステータスを返す
 async fn dashboard_get_status(uri: &str) -> StatusCode {
     let state = test_state().await;
-    let admin_token = crate::auth::jwt::create_jwt(
-        "admin-user",
-        UserRole::Admin,
-        &state.auth.jwt_secret,
-        false,
-        0,
-    )
-    .expect("create admin jwt");
+    let admin_token = persisted_jwt(&state, UserRole::Admin).await;
     let mut app = create_app(state);
     let response = app
         .call(
@@ -243,14 +262,7 @@ async fn test_dashboard_metrics_endpoint_returns_history() {
 #[tokio::test]
 async fn test_dashboard_audit_logs_requires_admin_role() {
     let state = test_state().await;
-    let viewer_token = crate::auth::jwt::create_jwt(
-        "viewer-user",
-        UserRole::Viewer,
-        &state.auth.jwt_secret,
-        false,
-        0,
-    )
-    .expect("create viewer jwt");
+    let viewer_token = persisted_jwt(&state, UserRole::Viewer).await;
     let mut app = create_app(state);
 
     let response = app
@@ -336,14 +348,7 @@ fn test_normalize_dashboard_path_single_file() {
 #[tokio::test]
 async fn test_dashboard_audit_logs_allows_admin_role() {
     let state = test_state().await;
-    let admin_token = crate::auth::jwt::create_jwt(
-        "admin-user",
-        UserRole::Admin,
-        &state.auth.jwt_secret,
-        false,
-        0,
-    )
-    .expect("create admin jwt");
+    let admin_token = persisted_jwt(&state, UserRole::Admin).await;
     let mut app = create_app(state);
 
     let response = app

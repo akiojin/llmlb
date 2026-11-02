@@ -74,17 +74,20 @@ rejected by the API.
 
 ### Self-service API key management
 
-Authenticated users manage their own keys via JWT-only endpoints:
+Authenticated users list keys within their current scope using JWT-only endpoints.
+Updates and deletion still require issuer ownership:
 
 - `GET /api/me/api-keys`
 - `POST /api/me/api-keys`
 - `PUT /api/me/api-keys/:id`
 - `DELETE /api/me/api-keys/:id`
 
-`POST /api/me/api-keys` is server-managed and always issues keys with:
-
-- `openai.inference`
-- `openai.models.read`
+`POST /api/me/api-keys` creates an inference key for an active organization
+account. System administrators specify a non-empty subset of
+`openai.inference` and `openai.models.read`; members omit `permissions` and
+receive both. New attributed keys cannot receive or use global automation
+permissions. Existing unattributed operational keys retain their explicit
+legacy permission gates.
 
 Note: For routes that accept either JWT or API key, llmlb prefers JWT if present. Avoid sending a
 JWT-looking token (three dot-separated segments) as an API key in `Authorization: Bearer`.
@@ -116,3 +119,54 @@ Pending requests are limited to 100, and usernames are unique across users and r
 New requests use the existing administrator notification settings and email addresses.
 Missing mail configuration or a delivery failure does not reject a registration.
 Invitation APIs, permissions, and all unused invitation codes were removed in 6.4.0.
+
+## Organizations and usage attribution
+
+A shared llmlb URL can serve multiple organizations. System `admin` remains a
+separate role from organization `admin` / `member`; an organization administrator
+never gains system administration permissions. Each account has at most one
+organization. An unassigned or disabled non-administrator cannot run inference or
+read usage. JWT requests use the current account and membership in SQLite,
+including when a token was issued before a transfer or role change.
+
+Usage, request lists, details, exports, pagination totals and token counters are
+restricted to the authenticated scope:
+
+| Account | Read scope | Organization and membership changes |
+| --- | --- | --- |
+| System administrator | All organizations and unattributed records | Allowed |
+| Organization administrator | Current organization | Denied |
+| Member | Own account within the current organization | Denied |
+| Unassigned or disabled account | No usage access | Denied |
+| API key | No dashboard usage access | Denied |
+
+The dashboard **Organizations** dialog lets a system administrator create, rename
+and archive empty organizations, assign accounts, and set organization roles.
+Cookie mutations require the same CSRF protection as existing management APIs.
+Archiving an organization with assigned accounts is refused.
+
+New inference keys carry a usage account and organization independently of the
+issuing administrator (`created_by`). System administrators can issue an
+explicitly attributed inference key from an organization's account list. A key
+cannot choose its organization through request headers, body fields or query
+parameters. Transferring, unassigning or disabling its account revokes the old
+organization key; moving back does not reactivate it. Issue a new key for the
+new membership. Historical usage stays with the account and organization
+recorded when the request was received.
+
+### Upgrade from existing accounts and keys
+
+1. Upgrade with a backup of the SQLite database. Migrations preserve system
+   administrators, existing keys, request history and audit records.
+2. Create organizations and assign accounts using a system administrator.
+   Existing accounts are not silently assigned to a presumed historical tenant.
+3. Issue new keys with explicit usage attribution. Distribute them through your
+   existing credential process. The full key is displayed only at creation.
+4. Revoke an old key explicitly after clients have moved. Old keys continue
+   inference as unattributed credentials until revoked; their issuer is not
+   treated as proof of who used them.
+
+The old `viewer` ability to read global dashboard usage is intentionally
+replaced by organization or own-account access. Existing raw history with unknown
+attribution is visible only to system administrators. Past data that has already
+expired is not reconstructed or reassigned to current memberships.

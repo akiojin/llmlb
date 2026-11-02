@@ -121,6 +121,17 @@ pub async fn proxy_cloud_provider(
     let ct = res.headers().get(reqwest::header::CONTENT_TYPE).cloned();
     let bytes = res.bytes().await.map_err(map_reqwest_error)?;
     let parsed_data = serde_json::from_slice::<Value>(&bytes).ok();
+    if let Some(usage) = parsed_data
+        .as_ref()
+        .and_then(crate::token::extract_usage_from_response)
+    {
+        crate::api::usage_capture::record_upstream_tokens(
+            crate::common::usage::UsageTokens::from_usage(
+                &usage,
+                crate::common::usage::TokenSource::Provider,
+            ),
+        );
+    }
 
     let error_message = if status.is_success() {
         None

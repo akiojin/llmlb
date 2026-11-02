@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { authApi, ApiError } from '@/lib/api'
+import { redirectToLogin } from '@/lib/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,7 +31,7 @@ export default function ChangePasswordPage() {
         setIsCheckingAuth(false)
       })
       .catch(() => {
-        window.location.href = '/dashboard/login.html'
+        redirectToLogin()
       })
   }, [])
 
@@ -65,7 +66,7 @@ export default function ChangePasswordPage() {
       })
       // Redirect to login after short delay so toast is visible
       setTimeout(() => {
-        window.location.href = '/dashboard/login.html'
+        redirectToLogin()
       }, 1500)
     } catch (error) {
       const wrongCurrent =

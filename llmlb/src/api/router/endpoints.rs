@@ -44,7 +44,22 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         .route(
             "/endpoints/{id}/models/{model}/info",
             get(endpoints::get_model_info),
-        )
+        );
+    let endpoint_read_routes = endpoint_read_routes
+        .layer(middleware::from_fn(
+            crate::auth::middleware::csrf_protect_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
+                app_state: state.clone(),
+                required_permission: ApiKeyPermission::EndpointsRead,
+                jwt_required_role: None,
+                api_key_role: UserRole::Viewer,
+            },
+            crate::auth::middleware::jwt_or_api_key_permission_middleware,
+        ));
+
+    let endpoint_usage_routes = Router::new()
         // SPEC-8c32349f: エンドポイント単位リクエスト統計
         .route(
             "/endpoints/{id}/today-stats",
@@ -63,18 +78,17 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
             "/endpoints/{id}/model-tps",
             get(dashboard::get_endpoint_model_tps),
         );
-    let endpoint_read_routes = endpoint_read_routes
+    let endpoint_usage_routes = endpoint_usage_routes
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            dashboard::authorize_scope,
+        ))
         .layer(middleware::from_fn(
-            crate::auth::middleware::csrf_protect_middleware,
+            crate::auth::middleware::require_password_changed_middleware,
         ))
         .layer(middleware::from_fn_with_state(
-            crate::auth::middleware::JwtOrApiKeyPermissionConfig {
-                app_state: state.clone(),
-                required_permission: ApiKeyPermission::EndpointsRead,
-                jwt_required_role: None,
-                api_key_role: UserRole::Viewer,
-            },
-            crate::auth::middleware::jwt_or_api_key_permission_middleware,
+            state.clone(),
+            crate::auth::middleware::require_jwt_auth_middleware,
         ));
 
     let endpoint_manage_routes = Router::new()
@@ -115,6 +129,10 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
         post(endpoints::proxy_chat_completions),
     );
     let playground_proxy_routes = playground_proxy_routes
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api::usage_capture::usage_middleware,
+        ))
         .layer(middleware::from_fn(
             crate::auth::middleware::require_password_changed_middleware,
         ))
@@ -134,6 +152,7 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
     Router::new()
         .merge(node_logs_routes)
         .merge(endpoint_read_routes)
+        .merge(endpoint_usage_routes)
         .merge(endpoint_manage_routes)
         .merge(playground_proxy_routes)
 }

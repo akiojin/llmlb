@@ -31,14 +31,19 @@ export function EndpointModelsTable({
   const { rows: consolidatedRows, isLoading, modelsLabel } = useEndpointModelsTableViewModel(endpointId, enabled)
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
+    <div className="min-w-0 max-w-full space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Label className="flex items-center gap-2">
           <Grid3X3 className="h-4 w-4" />
           {modelsLabel}
         </Label>
-        {headerActions && <div className="flex gap-2">{headerActions}</div>}
+        {headerActions && <div className="flex min-w-0 flex-wrap gap-2">{headerActions}</div>}
       </div>
+      <p className="text-xs text-muted-foreground">
+        Success% = successful / total inference requests, cumulative for each model on this endpoint.
+        Red: below 80%. Warning: below 95%. Requests and Avg Duration use the measured production TPS samples.
+        Scroll horizontally or focus the table and use arrow keys to reach all columns.
+      </p>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-4">
@@ -50,8 +55,8 @@ export function EndpointModelsTable({
           No models available
         </p>
       ) : (
-        <div className="rounded-md border">
-          <Table>
+        <div role="region" aria-label="Endpoint models" tabIndex={0} className="max-w-full overflow-x-auto rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>div]:overflow-visible">
+          <Table className="min-w-[48rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>Model</TableHead>
@@ -65,7 +70,7 @@ export function EndpointModelsTable({
             <TableBody>
               {consolidatedRows.map((entry) => (
                 <TableRow key={entry.model_id}>
-                  <TableCell>
+                  <TableCell className="max-w-xs">
                     <ModelIdentity
                       id={entry.model_id}
                       canonicalName={entry.canonical_name}
@@ -81,7 +86,7 @@ export function EndpointModelsTable({
                   <TableCell className="text-right">
                     {entry.requestsLabel}
                   </TableCell>
-                  <TableCell className={`text-right ${entry.requestHealth === 'error' ? 'bg-red-100 text-red-900' : entry.requestHealth === 'warning' ? 'bg-yellow-100 text-yellow-900' : ''}`}>
+                  <TableCell title={entry.successRateDescription} className={`text-right ${entry.requestHealth === 'error' ? 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200' : entry.requestHealth === 'warning' ? 'bg-yellow-100 text-yellow-900 dark:bg-yellow-950 dark:text-yellow-200' : ''}`}>
                     {entry.successRateLabel}
                   </TableCell>
                   <TableCell className="text-right">

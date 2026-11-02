@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +28,7 @@ import {
 import { ModelDownloadDialog } from './ModelDownloadDialog'
 import { EndpointModelsTable } from './EndpointModelsTable'
 import { EndpointRequestChart } from './EndpointRequestChart'
+import { EndpointFailureHistory } from './EndpointFailureHistory'
 
 /**
  * SPEC-e8e9326e: Router-Driven Endpoint Registration System
@@ -110,25 +110,26 @@ function EndpointDetailModalContent({
     recommendedInferenceTimeoutLabel, differsFromRecommendedTimeout,
     isLoadingTodayStats, todayRequestsLabel, totalRequestsLabel, modelCountLabel, successRateLabel, requestHealth,
     statusLabel, typeLabel, latencyLabel, registeredLabel, lastSeenLabel, errorLabel,
+    successRateDescription, failuresOpen, setFailuresOpen, rememberFocus, restoreFocus,
     isSaving, isTesting, isSyncing, handleSave, testConnection, syncModels, openPlayground,
   } = useEndpointDetailViewModel(endpoint, open, onOpenChange)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="flex min-w-0 max-w-4xl flex-col overflow-hidden" onOpenAutoFocus={rememberFocus} onCloseAutoFocus={restoreFocus}>
+        <DialogHeader className="min-w-0 shrink-0 pr-6">
           <DialogTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
-            {endpoint.name}
+            <Server className="h-5 w-5 shrink-0" />
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{endpoint.name}</span>
           </DialogTitle>
-          <DialogDescription>{endpoint.base_url}</DialogDescription>
+          <DialogDescription className="break-all">{endpoint.base_url}</DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[calc(100vh-12rem)]">
-        <div className="space-y-6 py-4">
+        <div role="region" aria-label="Endpoint details" tabIndex={0} className="min-h-0 min-w-0 overflow-y-auto overscroll-contain pr-2">
+        <div className="min-w-0 space-y-6 py-4">
           {/* Status Section */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
               <Badge variant={getStatusBadgeVariant(endpoint.status)}>
                 {statusLabel}
               </Badge>
@@ -142,7 +143,7 @@ function EndpointDetailModalContent({
                 {modelCountLabel}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -162,6 +163,17 @@ function EndpointDetailModalContent({
                 Sync Models
               </Button>
             </div>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <p className="text-muted-foreground">{successRateDescription}</p>
+            <p className="text-xs text-muted-foreground">
+              Red: below 80%. Warning: below 95%. Health checks do not indicate inference success.
+            </p>
+            <Button variant="outline" size="sm" aria-expanded={failuresOpen} aria-controls="endpoint-failures" onClick={() => setFailuresOpen(!failuresOpen)}>
+              {failuresOpen ? 'Hide failed requests' : 'View failed requests'}
+            </Button>
+            {failuresOpen && <EndpointFailureHistory endpointId={endpoint.id} />}
           </div>
 
           <Separator />
@@ -225,7 +237,7 @@ function EndpointDetailModalContent({
           <Separator />
 
           {/* Info Section */}
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <span className="text-muted-foreground">Latency:</span>
               <span className="ml-2">{latencyLabel}</span>
@@ -241,8 +253,12 @@ function EndpointDetailModalContent({
               </span>
             </div>
             <div>
-              <span className="text-muted-foreground">Error Count:</span>
+              <span className="text-muted-foreground">Consecutive health/status errors:</span>
               <span className="ml-2">{endpoint.error_count}</span>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Counts consecutive error-status updates, not the cumulative number of failed inference requests.
+                Resets when the endpoint leaves error status, including when it goes offline.
+              </p>
             </div>
           </div>
 
@@ -258,7 +274,7 @@ function EndpointDetailModalContent({
                   </Badge>
                 )}
               </div>
-              <p className="text-sm text-destructive/80 mt-1">{endpoint.last_error}</p>
+              <p className="text-sm text-destructive/80 mt-1 break-words [overflow-wrap:anywhere]">{endpoint.last_error}</p>
             </div>
           )}
 
@@ -269,7 +285,7 @@ function EndpointDetailModalContent({
             endpointId={endpoint.id}
             enabled={open}
             headerActions={
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {endpoint.endpoint_type === 'xllm' && (
                   <Button
                     variant="outline"
@@ -308,7 +324,7 @@ function EndpointDetailModalContent({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="healthCheckInterval">
                   <Clock className="h-4 w-4 inline mr-1" />
@@ -359,9 +375,9 @@ function EndpointDetailModalContent({
             </div>
           </div>
         </div>
-        </ScrollArea>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>

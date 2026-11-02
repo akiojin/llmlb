@@ -11,6 +11,7 @@ export const queryKeys = {
   systemUpdateHistory: () => ['system-update-history'] as const,
   version: () => ['version'] as const,
   requestResponses: () => ['request-responses'] as const,
+  endpointFailures: (endpointId: string, page: number) => ['request-responses', endpointId, 'error', page] as const,
   viewerModels: (view: ModelsView) => ['viewer-models', view] as const,
   loadBalancerPlaygroundModels: () => ['lb-playground-models'] as const,
   endpointPrefix: () => ['endpoint'] as const,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { type RequestHistoryItem } from '@/lib/api'
 import {
   copyToClipboard,
@@ -51,16 +51,18 @@ import { toast } from '@/hooks/use-toast'
 interface RequestHistoryTableProps {
   history: RequestHistoryItem[]
   isLoading: boolean
+  failuresOnly?: boolean
 }
 
 const PAGE_SIZES = [25, 50, 100]
 
-export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableProps) {
+export function RequestHistoryTable({ history, isLoading, failuresOnly = false }: RequestHistoryTableProps) {
   const [pageSize, setPageSize] = useState(25)
   const [currentPage, setCurrentPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all')
   const [selectedRequest, setSelectedRequest] = useState<RequestHistoryItem | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  const detailOpener = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     return () => cleanupManualCopyBuffer()
@@ -114,7 +116,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <History className="h-5 w-5" />
@@ -134,7 +136,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
 
   return (
     <>
-      <Card>
+      <Card className="min-w-0">
         <CardHeader className="pb-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -146,7 +148,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
             </CardTitle>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Select
+              {!failuresOnly && <Select
                 value={statusFilter}
                 onValueChange={(value) => {
                   setStatusFilter(value as 'all' | 'success' | 'error')
@@ -165,7 +167,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   <SelectItem value="success">Success</SelectItem>
                   <SelectItem value="error">Error</SelectItem>
                 </SelectContent>
-              </Select>
+              </Select>}
               <span className="text-sm text-muted-foreground">Show</span>
               <Select
                 value={pageSize.toString()}
@@ -231,7 +233,9 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                       onClick={() => setSelectedRequest(item)}
                     >
                       <TableCell className="font-mono text-xs">
-                        {formatRelativeTime(item.timestamp)}
+                        <button type="button" className="text-left underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`View request details ${item.request_id}`} onClick={(event) => { event.stopPropagation(); setSelectedRequest(item) }}>
+                          {formatRelativeTime(item.timestamp)}
+                        </button>
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">{item.model}</Badge>
@@ -318,7 +322,12 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
           }
         }}
       >
-        <DialogContent id="request-modal" className="max-w-2xl max-h-[80vh] overflow-hidden">
+        <DialogContent
+          id="request-modal"
+          className="flex min-w-0 max-w-2xl max-h-[80vh] flex-col overflow-hidden"
+          onOpenAutoFocus={() => { detailOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null }}
+          onCloseAutoFocus={(event) => { event.preventDefault(); if (detailOpener.current?.isConnected) detailOpener.current.focus() }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5" />
@@ -326,12 +335,12 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
             </DialogTitle>
             <DialogDescription>
               Request ID:{' '}
-              <code className="text-xs">{selectedRequest?.request_id}</code>
+              <code className="text-xs break-all">{selectedRequest?.request_id}</code>
             </DialogDescription>
           </DialogHeader>
 
           {selectedRequest && (
-            <Tabs defaultValue="overview" className="mt-4 min-w-0">
+            <Tabs defaultValue="overview" className="mt-4 min-h-0 min-w-0 overflow-y-auto [overflow-wrap:anywhere]">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="request">Request</TabsTrigger>
@@ -339,10 +348,10 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4 mt-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Model</p>
-                    <Badge variant="secondary">{selectedRequest.model}</Badge>
+                    <Badge variant="secondary" className="max-w-full whitespace-normal break-all">{selectedRequest.model}</Badge>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Status</p>
@@ -373,7 +382,7 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Timestamp</p>
                     <p className="text-sm">
-                      {new Date(selectedRequest.timestamp).toLocaleString()}
+                      <time dateTime={selectedRequest.timestamp}>{new Date(selectedRequest.timestamp).toLocaleString()}</time>
                     </p>
                   </div>
                   <div className="space-y-1">
@@ -384,10 +393,10 @@ export function RequestHistoryTable({ history, isLoading }: RequestHistoryTableP
                   </div>
                 </div>
 
-                {selectedRequest.error && (
+                {selectedRequest.status === 'error' && (
                   <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
                     <p className="text-sm font-medium text-destructive">Error</p>
-                    <p className="mt-1 text-sm">{selectedRequest.error}</p>
+                    <p className="mt-1 text-sm break-words [overflow-wrap:anywhere]">{selectedRequest.error || 'No error reason was recorded.'}</p>
                   </div>
                 )}
               </TabsContent>

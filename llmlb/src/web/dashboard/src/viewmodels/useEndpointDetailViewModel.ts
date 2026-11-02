@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { endpointsApi, type DashboardEndpoint, type EndpointType,
   getRecommendedInferenceTimeout, getRecommendedInferenceTimeoutLabel } from '@/lib/api'
@@ -27,6 +27,11 @@ export interface EndpointDetailViewModel {
   modelCountLabel: string
   totalRequestsLabel: string
   successRateLabel: string
+  successRateDescription: string
+  failuresOpen: boolean
+  setFailuresOpen: (open: boolean) => void
+  rememberFocus: () => void
+  restoreFocus: (event: Event) => void
   requestHealth: 'normal' | 'warning' | 'error'
   statusLabel: string
   typeLabel: string
@@ -103,6 +108,8 @@ function getTypeLabel(
 export function useEndpointDetailViewModel(
   endpoint: DashboardEndpoint, open: boolean, onOpenChange: (open: boolean) => void,
 ): EndpointDetailViewModel {
+  const [failuresOpen, setFailuresOpen] = useState(false)
+  const opener = useRef<HTMLElement | null>(null)
   const queryClient = useQueryClient()
   // The parent owns endpoint acquisition. Keep the modal's snapshot and keyed form lifetime.
   useInvalidateOn(['endpoints'], queryKeys.dashboardEndpoints())
@@ -218,7 +225,6 @@ export function useEndpointDetailViewModel(
 
   const successRate = endpoint.total_requests === 0
     ? null : (endpoint.successful_requests / endpoint.total_requests) * 100
-  const errorRate = successRate === null ? 0 : 100 - successRate
 
   return {
     name, setName, notes, setNotes, healthCheckInterval, setHealthCheckInterval,
@@ -230,7 +236,11 @@ export function useEndpointDetailViewModel(
     modelCountLabel: `Models: ${endpoint.model_count}`,
     totalRequestsLabel: endpoint.total_requests > 0 ? endpoint.total_requests.toLocaleString() : '-',
     successRateLabel: successRate === null ? '-' : `${successRate.toFixed(1)}%`,
-    requestHealth: errorRate >= 20 ? 'error' : errorRate >= 5 ? 'warning' : 'normal',
+    successRateDescription: `${endpoint.successful_requests.toLocaleString()} successful / ${endpoint.total_requests.toLocaleString()} total inference requests. Cumulative for this endpoint across all models, independent of retained request history.`,
+    failuresOpen, setFailuresOpen,
+    rememberFocus: () => { opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null },
+    restoreFocus: (event) => { event.preventDefault(); if (opener.current?.isConnected) opener.current.focus() },
+    requestHealth: successRate !== null && successRate < 80 ? 'error' : successRate !== null && successRate < 95 ? 'warning' : 'normal',
     statusLabel: getStatusLabel(endpoint.status), typeLabel: getTypeLabel(endpoint.endpoint_type),
     latencyLabel: endpoint.latency_ms != null ? `${endpoint.latency_ms}ms` : '-',
     registeredLabel: formatRelativeTime(endpoint.registered_at),

@@ -183,6 +183,9 @@ export const dashboardApi = {
     model?: string
     status?: string
     client_ip?: string
+    endpoint_id?: string
+    page?: number
+    per_page?: number
   }) => fetchWithAuth<RequestResponsesPage>('/api/dashboard/request-responses', { params }),
 
   getRouterLogs: (params?: { limit?: number }) =>

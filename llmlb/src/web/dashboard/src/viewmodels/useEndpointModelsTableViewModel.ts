@@ -11,6 +11,7 @@ export interface EndpointModelsTableRow {
   tpsLabel: string
   requestsLabel: string
   successRateLabel: string
+  successRateDescription: string
   requestHealth: 'normal' | 'warning' | 'error'
   durationLabel: string
 }
@@ -157,6 +158,7 @@ export function useEndpointModelsTableViewModel(endpointId: string, enabled = tr
       contextLabel: entry.max_tokens ? `${(entry.max_tokens / 1024).toFixed(0)}K` : '—',
       tpsLabel: formatTps(entry.tps), requestsLabel: entry.request_count.toLocaleString(),
       successRateLabel: formatSuccessRate(entry),
+      successRateDescription: `${entry.successful_requests.toLocaleString()} successful / ${entry.total_requests.toLocaleString()} total inference requests (cumulative for this model on this endpoint)`,
       requestHealth: rate !== null && rate < 80 ? 'error' : rate !== null && rate < 95 ? 'warning' : 'normal',
       durationLabel: formatDuration(entry.average_duration_ms),
     }

@@ -1,6 +1,111 @@
 use super::*;
 
 #[test]
+fn test_issue_958_verified_models_resolve_in_both_directions() {
+    for (canonical, engine, aliases) in [
+        (
+            "LiquidAI/LFM3-1.7B",
+            EndpointType::Ollama,
+            vec![
+                "lfm3:1.7b",
+                "lfm3:1.7b-q4_K_M",
+                "lfm3:1.7b-q8_0",
+                "lfm3:1.7b-bf16",
+            ],
+        ),
+        (
+            "LiquidAI/LFM3-1.7B",
+            EndpointType::LmStudio,
+            vec!["LiquidAI/LFM3-1.7B-GGUF"],
+        ),
+        (
+            "LiquidAI/LFM3-VL-2B",
+            EndpointType::Ollama,
+            vec![
+                "lfm3-vl:2b",
+                "lfm3-vl:2b-q4_K_M",
+                "lfm3-vl:2b-q8_0",
+                "lfm3-vl:2b-bf16",
+            ],
+        ),
+        (
+            "LiquidAI/LFM3-VL-2B",
+            EndpointType::LmStudio,
+            vec![
+                "liquid/lfm3-vl-2b",
+                "lmstudio-community/LFM3-VL-2B-GGUF",
+                "LiquidAI/LFM3-VL-2B-GGUF",
+            ],
+        ),
+        (
+            "XHToken/Spark-X2.6-1.7B",
+            EndpointType::Ollama,
+            vec![
+                "SparkLLM/Spark-X2.6-1.7B:q4_k_m",
+                "SparkLLM/Spark-X2.6-1.7B:q8_0",
+            ],
+        ),
+        (
+            "XHToken/Spark-X2.6-1.7B",
+            EndpointType::LmStudio,
+            vec!["XHToken/Spark-X2.6-1.7B-GGUF"],
+        ),
+    ] {
+        assert_eq!(resolve_engine_name(canonical, &engine), Some(aliases[0]));
+        assert_eq!(resolve_engine_names(canonical, &engine), aliases);
+        assert_eq!(resolve_canonical(canonical, &engine), Some(canonical));
+        for alias in aliases {
+            assert_eq!(resolve_canonical(alias, &engine), Some(canonical));
+            assert_eq!(resolve_canonical_any(alias), Some(canonical));
+            assert_eq!(
+                resolve_canonical(&alias.to_ascii_uppercase(), &engine),
+                Some(canonical)
+            );
+            assert_eq!(resolve_canonical(alias, &EndpointType::Vllm), None);
+            let other = if engine == EndpointType::Ollama {
+                EndpointType::LmStudio
+            } else {
+                EndpointType::Ollama
+            };
+            assert_eq!(resolve_canonical(alias, &other), None);
+        }
+    }
+}
+
+#[test]
+fn test_issue_958_context_fallbacks_preserve_endpoint_values() {
+    for (canonical, context) in [
+        ("LiquidAI/LFM3-1.7B", 262_144),
+        ("LiquidAI/LFM3-VL-2B", 128_000),
+        ("XHToken/Spark-X2.6-1.7B", 1_048_576),
+    ] {
+        assert_eq!(resolve_max_tokens(canonical, None), Some(context));
+        assert_eq!(resolve_max_tokens(canonical, Some(4_096)), Some(4_096));
+    }
+}
+
+#[test]
+fn test_issue_958_distinct_and_unverified_models_are_not_merged() {
+    for model in [
+        "lfm3:latest",
+        "lfm3-vl:latest",
+        "LiquidAI/LFM3-1.7B-Base",
+        "AtomicChat/LFM3-1.7B-Uncensored-GGUF",
+        "LiquidAI/d1-2B",
+        "openbmb/MiniCPM-OCR-Jev",
+        "SparkLLM/Spark-X2.6-1.7B:latest",
+        "XHToken/Spark-X2.6-1.7B-Base",
+        "kaitchup/Qwen3.8-27B-SLQ-GGUF",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+    assert_eq!(
+        resolve_canonical("SparkLLM/Spark-X2.6-4B:q4_k_m", &EndpointType::Ollama),
+        Some("XHToken/Spark-X2.6-4B")
+    );
+}
+
+#[test]
 fn test_issue_946_verified_runtime_names_resolve_to_official_models() {
     for (canonical, engine, preferred, aliases) in [
         (

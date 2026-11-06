@@ -28,8 +28,9 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
             id, name, base_url, api_key_encrypted, status, endpoint_type,
             health_check_interval_secs, inference_timeout_secs,
             latency_ms, last_seen, last_error, error_count,
-            registered_at, notes, capabilities, device_info, inference_latency_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            registered_at, notes, capabilities, device_info, inference_latency_ms,
+            paused_at, consecutive_404_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -49,6 +50,8 @@ pub async fn create_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<(
     .bind(&capabilities)
     .bind(&device_info)
     .bind(endpoint.inference_latency_ms)
+    .bind(endpoint.paused_at.map(|dt| dt.to_rfc3339()))
+    .bind(endpoint.consecutive_404_count as i32)
     .execute(pool)
     .await?;
 
@@ -64,7 +67,8 @@ pub async fn list_endpoints(pool: &SqlitePool) -> Result<Vec<Endpoint>, sqlx::Er
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
-               total_requests, successful_requests, failed_requests
+               total_requests, successful_requests, failed_requests,
+               paused_at, consecutive_404_count
         FROM endpoints
         ORDER BY registered_at DESC
         "#,
@@ -84,7 +88,8 @@ pub async fn get_endpoint(pool: &SqlitePool, id: Uuid) -> Result<Option<Endpoint
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
-               total_requests, successful_requests, failed_requests
+               total_requests, successful_requests, failed_requests,
+               paused_at, consecutive_404_count
         FROM endpoints
         WHERE id = ?
         "#,
@@ -115,7 +120,8 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
             name = ?, base_url = ?, api_key_encrypted = ?, status = ?, endpoint_type = ?,
             health_check_interval_secs = ?, inference_timeout_secs = ?,
             latency_ms = ?, last_seen = ?, last_error = ?, error_count = ?,
-            notes = ?, capabilities = ?, device_info = ?, inference_latency_ms = ?
+            notes = ?, capabilities = ?, device_info = ?, inference_latency_ms = ?,
+            paused_at = ?, consecutive_404_count = ?
         WHERE id = ?
         "#,
     )
@@ -134,6 +140,8 @@ pub async fn update_endpoint(pool: &SqlitePool, endpoint: &Endpoint) -> Result<b
     .bind(&capabilities)
     .bind(&device_info)
     .bind(endpoint.inference_latency_ms)
+    .bind(endpoint.paused_at.map(|dt| dt.to_rfc3339()))
+    .bind(endpoint.consecutive_404_count as i32)
     .bind(&id)
     .execute(pool)
     .await?;
@@ -151,6 +159,74 @@ pub async fn delete_endpoint(pool: &SqlitePool, id: Uuid) -> Result<bool, sqlx::
     Ok(result.rows_affected() > 0)
 }
 
+/// 運用者による一時停止状態を設定する。
+///
+/// 停止は冪等: すでに停止中なら最初の `paused_at` を保つ。再開すると
+/// `paused_at` を NULL に戻し、404連続回数もリセットする。
+/// 戻り値は設定後の `paused_at`（RFC3339）。エンドポイントが無ければ `None`。
+pub async fn set_endpoint_paused(
+    pool: &SqlitePool,
+    id: Uuid,
+    paused: bool,
+) -> Result<Option<String>, sqlx::Error> {
+    if paused {
+        sqlx::query("UPDATE endpoints SET paused_at = COALESCE(paused_at, ?) WHERE id = ?")
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(id.to_string())
+            .execute(pool)
+            .await?;
+    } else {
+        sqlx::query(
+            "UPDATE endpoints SET paused_at = NULL, consecutive_404_count = 0 WHERE id = ?",
+        )
+        .bind(id.to_string())
+        .execute(pool)
+        .await?;
+    }
+
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT paused_at FROM endpoints WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(row.and_then(|(paused_at,)| paused_at))
+}
+
+/// 上流404の連続回数を1つ増やし、増加後の値を返す。
+pub async fn increment_endpoint_404(
+    pool: &SqlitePool,
+    id: Uuid,
+) -> Result<Option<u32>, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE endpoints SET consecutive_404_count = consecutive_404_count + 1 WHERE id = ?",
+    )
+    .bind(id.to_string())
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Ok(None);
+    }
+
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT consecutive_404_count FROM endpoints WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(row.map(|(count,)| count.max(0) as u32))
+}
+
+/// 上流404の連続回数を0に戻す（成功応答時）。
+pub async fn reset_endpoint_404(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE endpoints SET consecutive_404_count = 0 WHERE id = ?")
+        .bind(id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// 名前でエンドポイントを検索
 pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoint>, sqlx::Error> {
     let row = sqlx::query_as::<_, EndpointRow>(
@@ -160,7 +236,8 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Endpoi
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
-               total_requests, successful_requests, failed_requests
+               total_requests, successful_requests, failed_requests,
+               paused_at, consecutive_404_count
         FROM endpoints
         WHERE name = ?
         "#,
@@ -184,7 +261,8 @@ pub async fn list_endpoints_by_status(
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
-               total_requests, successful_requests, failed_requests
+               total_requests, successful_requests, failed_requests,
+               paused_at, consecutive_404_count
         FROM endpoints
         WHERE status = ?
         ORDER BY registered_at DESC
@@ -209,7 +287,8 @@ pub async fn list_endpoints_by_type(
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
-               total_requests, successful_requests, failed_requests
+               total_requests, successful_requests, failed_requests,
+               paused_at, consecutive_404_count
         FROM endpoints
         WHERE endpoint_type = ?
         ORDER BY registered_at DESC
@@ -235,7 +314,8 @@ pub async fn list_endpoints_by_type_and_status(
                latency_ms, last_seen, last_error, error_count,
                registered_at, notes, capabilities,
                device_info, inference_latency_ms,
-               total_requests, successful_requests, failed_requests
+               total_requests, successful_requests, failed_requests,
+               paused_at, consecutive_404_count
         FROM endpoints
         WHERE endpoint_type = ? AND status = ?
         ORDER BY registered_at DESC
@@ -647,6 +727,10 @@ struct EndpointRow {
     successful_requests: i64,
     /// SPEC-8c32349f: 累計失敗リクエスト数
     failed_requests: i64,
+    /// 運用者による一時停止時刻
+    paused_at: Option<String>,
+    /// 連続する上流404応答の回数
+    consecutive_404_count: i32,
 }
 
 impl From<EndpointRow> for Endpoint {
@@ -692,6 +776,11 @@ impl From<EndpointRow> for Endpoint {
             total_requests: row.total_requests,
             successful_requests: row.successful_requests,
             failed_requests: row.failed_requests,
+            paused_at: row
+                .paused_at
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc)),
+            consecutive_404_count: row.consecutive_404_count.max(0) as u32,
         }
     }
 }

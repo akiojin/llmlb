@@ -21,6 +21,8 @@ pub(super) async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint
 
     let mut result = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
+        let paused = endpoint.is_paused();
+        let paused_at = endpoint.paused_at;
         let model_count = endpoint_registry
             .list_models(endpoint.id)
             .await
@@ -38,6 +40,8 @@ pub(super) async fn collect_endpoints(state: &AppState) -> Vec<DashboardEndpoint
             last_seen: endpoint.last_seen,
             last_error: endpoint.last_error,
             error_count: endpoint.error_count,
+            paused,
+            paused_at,
             registered_at: endpoint.registered_at,
             notes: endpoint.notes,
             model_count,

@@ -101,6 +101,10 @@ pub struct DashboardEndpoint {
     pub last_error: Option<String>,
     /// 連続エラー回数
     pub error_count: u32,
+    /// 運用者による一時停止中か
+    pub paused: bool,
+    /// 一時停止時刻
+    pub paused_at: Option<DateTime<Utc>>,
     /// 登録日時
     pub registered_at: DateTime<Utc>,
     /// メモ

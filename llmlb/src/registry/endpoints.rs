@@ -162,7 +162,7 @@ impl EndpointRegistry {
             .read()
             .await
             .values()
-            .filter(|e| e.status == EndpointStatus::Online)
+            .filter(|e| e.status == EndpointStatus::Online && !e.is_paused())
             .cloned()
             .collect()
     }
@@ -186,7 +186,9 @@ impl EndpointRegistry {
             .read()
             .await
             .values()
-            .filter(|e| e.status == EndpointStatus::Online && e.has_capability(capability))
+            .filter(|e| {
+                e.status == EndpointStatus::Online && !e.is_paused() && e.has_capability(capability)
+            })
             .cloned()
             .collect()
     }
@@ -213,11 +215,9 @@ impl EndpointRegistry {
 
     /// 指定した機能を持つオンラインエンドポイントが存在するか確認
     pub async fn has_capability_online(&self, capability: EndpointCapability) -> bool {
-        self.endpoints
-            .read()
-            .await
-            .values()
-            .any(|e| e.status == EndpointStatus::Online && e.has_capability(capability))
+        self.endpoints.read().await.values().any(|e| {
+            e.status == EndpointStatus::Online && !e.is_paused() && e.has_capability(capability)
+        })
     }
 
     /// モデルIDからエンドポイントを検索
@@ -234,7 +234,7 @@ impl EndpointRegistry {
                         continue;
                     }
                     if let Some(endpoint) = endpoints.get(id) {
-                        if endpoint.status == EndpointStatus::Online {
+                        if endpoint.status == EndpointStatus::Online && !endpoint.is_paused() {
                             resolved.push(endpoint.clone());
                         }
                     }
@@ -327,6 +327,54 @@ impl EndpointRegistry {
         }
 
         Ok(updated)
+    }
+
+    /// 運用者による一時停止/再開を設定する。
+    ///
+    /// DB（`paused_at`）とキャッシュの両方を更新する。停止中は
+    /// 選択対象から外れるが、`status` は観測値のまま変更しない。
+    pub async fn set_paused(
+        &self,
+        id: Uuid,
+        paused: bool,
+    ) -> Result<Option<Endpoint>, sqlx::Error> {
+        let paused_at = db::set_endpoint_paused(&self.pool, id, paused).await?;
+
+        let mut endpoints = self.endpoints.write().await;
+        let Some(endpoint) = endpoints.get_mut(&id) else {
+            return Ok(None);
+        };
+
+        endpoint.paused_at = paused_at
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc));
+        if !paused {
+            endpoint.consecutive_404_count = 0;
+        }
+
+        Ok(Some(endpoint.clone()))
+    }
+
+    /// 上流404の連続回数を1つ増やし、増加後の値を返す。
+    pub async fn record_404(&self, id: Uuid) -> Result<Option<u32>, sqlx::Error> {
+        let count = db::increment_endpoint_404(&self.pool, id).await?;
+        if let Some(count) = count {
+            if let Some(endpoint) = self.endpoints.write().await.get_mut(&id) {
+                endpoint.consecutive_404_count = count;
+            }
+        }
+        Ok(count)
+    }
+
+    /// 上流404の連続回数を0に戻す（成功応答時）。
+    pub async fn reset_404(&self, id: Uuid) {
+        if let Err(error) = db::reset_endpoint_404(&self.pool, id).await {
+            tracing::warn!(endpoint_id = %id, error = %error, "Failed to reset upstream 404 streak");
+            return;
+        }
+        if let Some(endpoint) = self.endpoints.write().await.get_mut(&id) {
+            endpoint.consecutive_404_count = 0;
+        }
     }
 
     /// エンドポイントのステータスを更新

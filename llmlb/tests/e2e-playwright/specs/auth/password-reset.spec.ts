@@ -27,14 +27,32 @@ for (const colorScheme of ['light', 'dark'] as const) {
     test.use({ colorScheme });
 
     let pageErrors: string[];
+    let consoleErrors: string[];
+    let expectedHttpErrors: Map<string, number>;
 
     test.beforeEach(async ({ page }) => {
       pageErrors = [];
+      consoleErrors = [];
+      expectedHttpErrors = new Map();
       page.on('pageerror', (err) => pageErrors.push(err.message));
+      page.on('console', (message) => {
+        if (message.type() !== 'error') return;
+        const resource = new URL(message.location().url || page.url());
+        const status = expectedHttpErrors.get(resource.pathname);
+        if (
+          resource.origin === new URL(page.url()).origin &&
+          status &&
+          message.text().startsWith(
+            `Failed to load resource: the server responded with a status of ${status} (`
+          )
+        ) return;
+        consoleErrors.push(message.text());
+      });
     });
 
     test.afterEach(() => {
       expect(pageErrors, 'no uncaught page errors').toEqual([]);
+      expect(consoleErrors, 'no unexpected console errors').toEqual([]);
     });
 
     test('PR-01: login page links to the forgot password screen', async ({ page }) => {
@@ -80,6 +98,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     });
 
     test('PR-03: an unknown or expired token is rejected by the server', async ({ page }) => {
+      expectedHttpErrors.set('/api/auth/reset-password', 400);
       await page.goto('/dashboard/reset-password.html#token=not-a-real-token');
 
       const form = resetForm(page);

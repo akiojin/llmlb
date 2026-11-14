@@ -100,6 +100,28 @@ async function expectStatusBadge(badge: Locator, status: 'pending' | 'online' | 
   await expectStatusBadgeStyles(badge, status);
 }
 
+test.describe('Status badge style synchronization @dashboard', () => {
+  test('waits for the Error to Offline background transition', async ({ page }) => {
+    await page.setContent(`
+      <style>
+        #badge { background-color: rgba(220, 38, 38, 1); transition: background-color 10s linear; }
+        #badge.offline { background-color: rgba(220, 38, 38, 0.2); }
+      </style>
+      <div id="badge" class="bg-destructive text-destructive-foreground">Error</div>
+    `);
+    const badge = page.locator('#badge');
+    await expectStatusBadge(badge, 'error');
+    await badge.evaluate((el) => {
+      el.className = 'offline bg-destructive/20 text-destructive';
+      el.textContent = 'Offline';
+    });
+
+    // The class has already changed while the real browser is still animating the color.
+    await expect.poll(() => badge.evaluate((el) => el.getAnimations().length)).toBeGreaterThan(0);
+    await expectStatusBadge(badge, 'offline');
+  });
+});
+
 test.describe('Endpoint Status Colors @dashboard', () => {
   let mock: MockOpenAIEndpointServer;
   let mockBad: MockOpenAIEndpointServer;

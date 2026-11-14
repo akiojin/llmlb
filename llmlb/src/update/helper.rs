@@ -226,19 +226,14 @@ fn remove_target_for_restore(target: &Path) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 fn should_retry_restore_backup(err: &io::Error) -> bool {
-    if err.kind() == io::ErrorKind::PermissionDenied {
-        return true;
-    }
+    err.kind() == io::ErrorKind::PermissionDenied
+}
 
-    #[cfg(windows)]
-    {
-        if let Some(code) = err.raw_os_error() {
-            return matches!(code, 5 | 32 | 33);
-        }
-    }
-
-    false
+#[cfg(windows)]
+fn should_retry_restore_backup(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::PermissionDenied || matches!(err.raw_os_error(), Some(5 | 32 | 33))
 }
 
 #[cfg(not(windows))]

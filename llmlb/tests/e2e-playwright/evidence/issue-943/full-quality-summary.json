@@ -1,0 +1,48 @@
+{
+  "source_head": "6a5fb9fe82a631400731f918d997ce16c9db721f",
+  "command": "BASE_URL=http://127.0.0.1:39451 make quality-checks",
+  "exit_code": 2,
+  "scope": "Direct full quality run; not canonical post-push delivery evidence",
+  "rust": {
+    "suites_completed": 20,
+    "passed_executions_including_repeated_make_targets": 3864,
+    "failed": 0,
+    "ignored": 5
+  },
+  "dashboard": {
+    "passed": 474,
+    "lint_errors": 0,
+    "existing_lint_warnings": 5
+  },
+  "e2e": {
+    "passed": 261,
+    "failed": 7,
+    "flaky": 5,
+    "skipped": 9,
+    "did_not_run": 10
+  },
+  "targeted_recheck": {
+    "workers": 1,
+    "retries": 0,
+    "port": 39453,
+    "selected": 7,
+    "passed": 7,
+    "exit_code": 0
+  },
+  "investigation": {
+    "ports": "No evidence of port32768 contamination; configured39451 and dynamically isolated ports used correctly",
+    "font_errors": "last-admin light/dark and playground-settings failed on external Google Fonts CSS; narrow recheck passed",
+    "host_sleep": "pmset records a 1032-second sleep at2026-10-27 16:56:11+0900; matches concurrent trace gaps",
+    "remaining_initial_failures": "request-activity metrics WS latency and HF register502 not conclusively explained; targeted recheck passed; full failure retained"
+  },
+  "artifacts": "Raw full results JSON and15 traces recovered from a partial archive; some artifacts were replaced before archive completion; targeted run saved after completion",
+  "markdownlint": {
+    "exit_code": 0,
+    "issues": 0,
+    "files_checked": 564
+  },
+  "overall": "FAIL",
+  "source_delivered": false,
+  "user_verification_result": "n/a (autonomous)",
+  "agent_visual_check": "fail(canonical dark/light counts0 despite14 passing headed tests)"
+}

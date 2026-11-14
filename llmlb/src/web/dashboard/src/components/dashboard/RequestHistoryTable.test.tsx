@@ -70,6 +70,15 @@ function pagerButtons(indicator: string) {
 }
 
 describe('RequestHistoryTable', () => {
+  it('omits local page controls for server-paged endpoint failures (#943)', () => {
+    renderWithProviders(<RequestHistoryTable history={requests(25, { status: 'error' })} isLoading={false} failuresOnly />)
+
+    expect(bodyRows()).toHaveLength(25)
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByText('Show')).not.toBeInTheDocument()
+    expect(screen.queryByText('entries')).not.toBeInTheDocument()
+  })
+
   it('states when an error request has no recorded error reason (#943)', async () => {
     const user = userEvent.setup()
     renderTable([request({ status: 'error', error: undefined })])

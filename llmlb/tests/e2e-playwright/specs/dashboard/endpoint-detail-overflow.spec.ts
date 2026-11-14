@@ -148,6 +148,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await page.keyboard.press('Enter')
       const history = dialog.getByRole('region', { name: 'Failed requests', exact: true })
       await expect(history.getByText(/retention/)).toBeVisible()
+      await expect(history.getByRole('combobox')).toHaveCount(0)
       const details = history.getByRole('button', { name: /View request details/ }).first()
       const bodyWidth = await dialog.getByRole('region', { name: 'Endpoint details', exact: true }).evaluate(el => ({ client: el.clientWidth, total: el.scrollWidth }))
       expect(bodyWidth.total).toBeLessThanOrEqual(bodyWidth.client + 1)

@@ -1,0 +1,35 @@
+{
+  "record_id": "vrr-e084389462e94334a354efdd3accbdba",
+  "started_at": "2026-10-26T08:49:39.974293Z",
+  "overall": "FAIL",
+  "user_verification_result": "n/a (autonomous)",
+  "agent_visual_check": "fail: headed measurement counts are zero despite passing browser command",
+  "commands": [
+    {
+      "command": "make dashboard-checks",
+      "exit_code": 0
+    },
+    {
+      "command": "HEADED=1 BASE_URL=http://127.0.0.1:39443 pnpm exec playwright test --config=llmlb/tests/e2e-playwright/playwright.config.ts endpoint-detail-overflow.spec.ts endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0",
+      "exit_code": 0,
+      "headed_e2e": {
+        "chromium_dark_passed": 0,
+        "chromium_light_passed": 0,
+        "failed": 0,
+        "status": "passed"
+      }
+    },
+    {
+      "command": "bash scripts/checks/check-commits.sh --from origin/main --to HEAD",
+      "exit_code": 0
+    },
+    {
+      "command": "make markdownlint",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo audit",
+      "exit_code": 1
+    }
+  ]
+}

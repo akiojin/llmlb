@@ -147,8 +147,8 @@ export function RequestHistoryTable({ history, isLoading, failuresOnly = false }
               </Badge>
             </CardTitle>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {!failuresOnly && <Select
+            {!failuresOnly && <div className="flex flex-wrap items-center gap-2">
+              <Select
                 value={statusFilter}
                 onValueChange={(value) => {
                   setStatusFilter(value as 'all' | 'success' | 'error')
@@ -167,7 +167,7 @@ export function RequestHistoryTable({ history, isLoading, failuresOnly = false }
                   <SelectItem value="success">Success</SelectItem>
                   <SelectItem value="error">Error</SelectItem>
                 </SelectContent>
-              </Select>}
+              </Select>
               <span className="text-sm text-muted-foreground">Show</span>
               <Select
                 value={pageSize.toString()}
@@ -188,7 +188,7 @@ export function RequestHistoryTable({ history, isLoading, failuresOnly = false }
                 </SelectContent>
               </Select>
               <span className="text-sm text-muted-foreground">entries</span>
-            </div>
+            </div>}
           </div>
         </CardHeader>
 

@@ -1,0 +1,24 @@
+{
+  "agent": "シンタロウ",
+  "baseline": "f684b815d739f101d90470b60e34db7b0784cace",
+  "acceptance_against_base": {
+    "AC-1": "未充足: EndpointDetailModal本文がScrollArea/max-w-2xl。3幅のoverflow specと局所scrollで対応。",
+    "AC-2": "未充足: Models表に明示的横scroll/keyboard regionなし。wrapと局所横scrollで対応。",
+    "AC-3": "配送未確認: 既存操作を保持した幅変更・focus復帰を両specで回帰検証する。",
+    "AC-4": "未充足: 3幅のbounding-box/scroll-widthと明暗画像を新規specで検証。",
+    "AC-5": "未充足: 分母分子/集計範囲/厳密80・95境界の説明を追加。",
+    "AC-6": "未充足: Error Countのhealth/status連続エラーという説明を追加。",
+    "AC-7": "未充足: 詳細画面に既存endpoint_id/status=error履歴への導線を追加。",
+    "AC-8": "部分既存: 既存Request Detailsのerror/時刻を再利用し、理由未記録/空/期限外/403を説明。",
+    "AC-9": "未充足: 親artifact追記は存在、T023配送は未完了。明暗/権限/keyboardは対象testに対応。"
+  },
+  "review": "重要/重大0、追加source変更不要",
+  "dashboard_checks": {
+    "exit": 0,
+    "files": 45,
+    "tests": 474,
+    "lint_errors": 0,
+    "existing_warnings": 5
+  },
+  "user_verification": "n/a (autonomous)"
+}

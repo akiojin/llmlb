@@ -106,6 +106,66 @@ fn test_issue_958_distinct_and_unverified_models_are_not_merged() {
 }
 
 #[test]
+fn test_issue_966_candidates_are_not_merged_into_existing_models() {
+    for model in [
+        "xtools-at/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic",
+        "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF",
+        "NousResearch/Arete-27B",
+        "webAI-Official/TwIL-8B",
+        "ccore/Qwen3.5-4B-GLB-3D-Coder",
+        "RikiyaT/Qwen3.5-0.8B-weight-space-programming",
+        "tencent/Qwen3.8-27B-DSpine-b16",
+        "DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF",
+        "sensenova/SenseNova-Loop-9B-Preview",
+        "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+        "huihui_ai/Qwen3.8-abliterated",
+        "huihui_ai/Qwen3.8-abliterated:latest",
+        "huihui_ai/Qwen3.8-abliterated:27b",
+        "huihui_ai/Qwen3.8-abliterated:27b-q4_K_M",
+        "baidu/Unlimited-OCR-2",
+        "HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF",
+        "AtomicChat/LFM3-1.7B-Uncensored-GGUF",
+        "xiaomi-research/Xiaomi-OCR-0",
+        "longwayxu/xiaomi-ocr-0:bf16",
+        "prism-ml/Ternary-Bonsai-2-27B-gguf",
+        "Nanbeige/Nanbeige4.3-33B",
+        "microsoft/Mage-VL-Cowork",
+        "DavidAU/Qwen3.8-27B-Ultimate-Heretic-Uncensored-Turbo-Brilliance-50x-AGI-NEO-GGUF",
+        "ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming",
+        "Axion1-0/Axion-1.0-35B",
+        "axion-35b",
+        "taobao-mnn/MNN-Pocket-0.3B",
+        "taobao-mnn/MNN-Pocket-0.3B-GGUF",
+        "orcarouter/OrcaCyber-Nano-1.0",
+        "maritaca-ai/S5-nano",
+        "maritaca-ai/S5-nano-GGUF",
+        "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+        "nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-BF16",
+        "LiquidAI/d1-2B",
+        "orcarouter/Flint-abliterated-GGUF",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+
+    assert_eq!(
+        resolve_canonical("qwen/qwen3.8-27b", &EndpointType::LmStudio),
+        Some("Qwen/Qwen3.8-27B")
+    );
+    assert_eq!(
+        resolve_canonical("lfm3:1.7b", &EndpointType::Ollama),
+        Some("LiquidAI/LFM3-1.7B")
+    );
+    assert_eq!(
+        resolve_canonical("flint:40b-a2b-q4_1", &EndpointType::Ollama),
+        Some("RecursiveSI/flint")
+    );
+    assert_eq!(
+        resolve_canonical("LiquidAI/d1-2B", &EndpointType::Ollama),
+        None
+    );
+}
+
+#[test]
 fn test_issue_946_verified_runtime_names_resolve_to_official_models() {
     for (canonical, engine, preferred, aliases) in [
         (

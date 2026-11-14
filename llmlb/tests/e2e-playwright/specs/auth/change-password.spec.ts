@@ -52,10 +52,27 @@ for (const colorScheme of ['light', 'dark'] as const) {
 
     let user: ProvisionedUser;
     let pageErrors: string[];
+    let consoleErrors: string[];
+    let expectedHttpErrors: Map<string, number>;
 
     test.beforeEach(async ({ page, request }) => {
       pageErrors = [];
+      consoleErrors = [];
+      expectedHttpErrors = new Map();
       page.on('pageerror', (err) => pageErrors.push(err.message));
+      page.on('console', (message) => {
+        if (message.type() !== 'error') return;
+        const resource = new URL(message.location().url || page.url());
+        const status = expectedHttpErrors.get(resource.pathname);
+        if (
+          resource.origin === new URL(page.url()).origin &&
+          status &&
+          message.text().startsWith(
+            `Failed to load resource: the server responded with a status of ${status} (`
+          )
+        ) return;
+        consoleErrors.push(message.text());
+      });
       user = await provisionUser(request);
     });
 
@@ -64,6 +81,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await deleteUser(request, user.id);
       }
       expect(pageErrors, 'no uncaught page errors').toEqual([]);
+      expect(consoleErrors, 'no unexpected console errors').toEqual([]);
     });
 
     test('CP-01: first sign-in redirects to the change password screen', async ({ page }) => {
@@ -123,6 +141,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     });
 
     test('CP-04: server failure shows an error and keeps the user on the page', async ({ page }) => {
+      expectedHttpErrors.set('/api/auth/change-password', 500);
       await signInAndReachChangePassword(page, user);
 
       await page.route('**/api/auth/change-password', (route) =>
@@ -163,6 +182,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await page.waitForURL(/\/dashboard\/login\.html/, { timeout: 10000 });
 
       // Old password no longer works
+      expectedHttpErrors.set('/api/auth/login', 401);
       const loginPage = new LoginPage(page);
       await loginPage.login(user.username, user.password);
       await expect(page.getByText('Login failed', { exact: true })).toBeVisible({ timeout: 15000 });
@@ -183,6 +203,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     test('CP-07: wrong current password is rejected and the old password keeps working', async ({
       page,
     }) => {
+      expectedHttpErrors.set('/api/auth/change-password', 400);
       await signInAndReachChangePassword(page, user);
 
       const form = changePasswordForm(page);
@@ -244,6 +265,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     });
 
     test('CP-06: unauthenticated access redirects to login', async ({ page }) => {
+      expectedHttpErrors.set('/api/auth/me', 401);
       await page.goto('/dashboard/change-password.html');
       await page.waitForURL(/\/dashboard\/login\.html/, { timeout: 10000 });
     });

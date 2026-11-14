@@ -1,0 +1,193 @@
+{
+  "agent": "シンタロウ",
+  "owner": 943,
+  "parent": 582,
+  "head": "0b0f9d9c3ed6a9e79d0e3cb78c8e37ea93acc5bf",
+  "remote_head_matches": true,
+  "base": "f684b815d739f101d90470b60e34db7b0784cace",
+  "delivery": "pending: no PR; source absent from develop; AC1-9/T023 unchecked",
+  "formal_record": "vrr-c89ef64b95e34c0b8431ca43b445c637",
+  "content_hash": "2571dbd981233a16c45adf06839816a36029b5a69107c24b1203f19205a3f31d",
+  "all_passed": false,
+  "plan_covered": true,
+  "raw_commands": [
+    {
+      "command": "CARGO_TARGET_DIR=/Users/akiojin/Workbench/llmlb/work/issue-943/target BASE_URL=http://127.0.0.1:39463 make -j1 quality-checks",
+      "exit_code": 0,
+      "output_streams": [
+        {
+          "bytes": 372586,
+          "path": "/Users/akiojin/.gwt/projects/9d957b32b3fbd45c/trusted/6193539041b728c6/verification-output-c2d21f60db044f03b7c6412213a0ed83-stdout.log",
+          "sha256": "217fcf257aa8c083fb85c8380f16c370e72bec98e4b8115c4a0e4185bd33d8fd",
+          "stream": "stdout",
+          "tail_start_byte": 364394
+        },
+        {
+          "bytes": 4924,
+          "path": "/Users/akiojin/.gwt/projects/9d957b32b3fbd45c/trusted/6193539041b728c6/verification-output-c2d21f60db044f03b7c6412213a0ed83-stderr.log",
+          "sha256": "28b32a97ddb3477408ae28cdab94c5c74038d13d71f854d2837702d3d5ca0ae2",
+          "stream": "stderr",
+          "tail_start_byte": 0
+        }
+      ]
+    },
+    {
+      "command": "CARGO_TARGET_DIR=/Users/akiojin/Workbench/llmlb/work/issue-943/target HEADED=1 BASE_URL=http://127.0.0.1:39465 pnpm --dir llmlb/tests/e2e-playwright exec playwright test specs/dashboard/endpoint-detail-overflow.spec.ts specs/dashboard/endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0 --headed",
+      "exit_code": 0,
+      "output_streams": [
+        {
+          "bytes": 3009,
+          "path": "/Users/akiojin/.gwt/projects/9d957b32b3fbd45c/trusted/6193539041b728c6/verification-output-e463518012224c2aa74e083361f3c935-stdout.log",
+          "sha256": "ce5b9683b31d9f1959534a3c440b814ea729ebffa6d7a482cad1156f20b80eea",
+          "stream": "stdout",
+          "tail_start_byte": 0
+        },
+        {
+          "bytes": 322,
+          "path": "/Users/akiojin/.gwt/projects/9d957b32b3fbd45c/trusted/6193539041b728c6/verification-output-e463518012224c2aa74e083361f3c935-stderr.log",
+          "sha256": "371393b144d680904048eaf00c76e45d0b5c5ee15aa9920f8efd3c1fa4812a79",
+          "stream": "stderr",
+          "tail_start_byte": 0
+        },
+        {
+          "bytes": 1130,
+          "path": "/Users/akiojin/.gwt/projects/9d957b32b3fbd45c/trusted/6193539041b728c6/verification-output-ee0f63c1d9764fc8a64fdbca9cf22ccb-measurement.log",
+          "sha256": "18f5103e5c928c60b75302ced5d51ba88cecbe506219b4d7b7390f70fe5f138c",
+          "stream": "measurement",
+          "tail_start_byte": 0
+        }
+      ]
+    },
+    {
+      "command": "bash scripts/checks/check-commits.sh --from origin/main --to HEAD",
+      "exit_code": 0,
+      "output_streams": [
+        {
+          "bytes": 7874,
+          "path": "/Users/akiojin/.gwt/projects/9d957b32b3fbd45c/trusted/6193539041b728c6/verification-output-83cb8243e68648d88f0e0f0d7395d845-stdout.log",
+          "sha256": "d93ae70b811fc0f85b4798a5074406fbaca6198db226273ad16d164252d315d5",
+          "stream": "stdout",
+          "tail_start_byte": 0
+        }
+      ]
+    }
+  ],
+  "quality": {
+    "rust_suites": 20,
+    "rust_passed_executions": 3868,
+    "rust_failed": 0,
+    "rust_ignored": 5,
+    "dashboard_tests": 474,
+    "lint_errors": 0,
+    "existing_lint_warnings": 5,
+    "audit_db": 1395,
+    "audit_vulnerabilities": 0,
+    "allowed_audit_warnings": 7,
+    "markdown_files": 566,
+    "markdown_issues": 0,
+    "full_e2e_passed": 284,
+    "full_e2e_skipped": 8,
+    "full_e2e_failed": 0,
+    "full_e2e_flaky": 0,
+    "commitlint_commits": 18
+  },
+  "headed_raw_from_exact_command_stdout": {
+    "light": 7,
+    "dark": 7
+  },
+  "headed_trace_archives": 14,
+  "trace_context_header_versions": {
+    "10": 42
+  },
+  "chromium_context_theme_counts": {
+    "light": 7,
+    "dark": 7
+  },
+  "native_reporter_counts": {
+    "status": "passed",
+    "failed": 0,
+    "chromium_light_passed": 0,
+    "chromium_dark_passed": 0
+  },
+  "agent_visual_check": "blocked: canonical reporter trace v10 incompatibility; raw headed 7 light / 7 dark passed, native counts 0/0; signed FAIL preserved",
+  "user_verification": "n/a (autonomous)",
+  "interrupted_setup_record": "vrr-7c9b4b2558f34dbd9ecd348eadf3bb71",
+  "resource_correction": "canonical verify.cancel preserved Interrupted; explicit same CARGO_TARGET_DIR resolved normal shared slot; no test/timeout/gate changes",
+  "artifacts": [
+    {
+      "path": "/tmp/llmlb-943-prepush-e2e-artifacts-20261102.tar.gz",
+      "bytes": 49668395,
+      "sha256": "9a457beb061f742db7168d58e36ff35ef9247dbea7b69c0aab00fea751e3f988"
+    },
+    {
+      "path": "/tmp/llmlb-943-formal-full-browser-reports-20261102.tar.gz",
+      "bytes": 33498422,
+      "sha256": "ad9e4956130d8f0687b4570c28c7da53de4070f067c52a0ada5c532867a5171a"
+    },
+    {
+      "path": "/tmp/llmlb-943-formal-headed-artifacts-20261102.tar.gz",
+      "bytes": 99724984,
+      "sha256": "0678c28d3a0380554db73f282bed4938128c16fb1f78ae6647fe9861a36e3ca5"
+    }
+  ],
+  "actual_headed_screenshots_reviewed": [
+    "test-results/gwt-attachments/attachment-8.png",
+    "test-results/gwt-attachments/attachment-17.png"
+  ],
+  "report_json_warning": "reports/results.json retains full E2E 284 tests; do not use for headed counts. /tmp/llmlb-943-formal-headed-*-375.png was decoded from full E2E JSON and is not headed proof. Use exact headed stdout and 14 trace archives.",
+  "next": "canonical trace v10 repair, fresh full verify, Ready PR, CI auto-merge, develop inclusion; no Draft or gate bypass",
+  "settlement": {
+    "ecr_status": "blocked",
+    "binding_state": "terminal",
+    "open_obligations": [],
+    "board_escalation": "d98e8e2f-9100-4b12-8cb4-24712d76f1e6",
+    "build_abort": "refused: canonical Work Done has opposite terminal state",
+    "build_active_flag_preserved": true,
+    "feedback_existing_reporter": {
+      "id": "3e662bab-00e1-4a2e-988c-d598b6d521d8",
+      "state": "pending_approval",
+      "sent": false
+    },
+    "feedback_new_lifecycle": {
+      "id": "6137d5ec-9140-4b23-9bab-39bed18ba682",
+      "mode": "auto",
+      "state": "withheld",
+      "error": "insufficient_information",
+      "sent": false
+    },
+    "canonical_dirty_paths_after_push": [],
+    "last_status_obligation_open": true,
+    "stop_retry_pending": true
+  },
+  "source_head": "c4a14642a547b16ac779545a73f6335b9605833d",
+  "formal_verified_head": "c4a14642a547b16ac779545a73f6335b9605833d",
+  "bookkeeping_delivery": {
+    "commit": "0b0f9d9c3ed6a9e79d0e3cb78c8e37ea93acc5bf",
+    "canonical_shards_committed": 31,
+    "upstream": "origin/work/issue-943",
+    "live_remote_matches": true,
+    "untracked_canonical_shards": 0,
+    "product_tree_unchanged_from_source_head": true,
+    "pre_push_exit": 0,
+    "rust_suites": 20,
+    "rust_passed_executions": 3868,
+    "rust_failed": 0,
+    "rust_ignored": 5,
+    "dashboard_passed": 474,
+    "full_e2e_stats": {
+      "startTime": "2026-11-02T09:25:11.688Z",
+      "duration": 491926.412,
+      "expected": 283,
+      "skipped": 8,
+      "unexpected": 0,
+      "flaky": 1
+    },
+    "commitlint_passed_commits": 19,
+    "formal_verify_retried": false,
+    "artifact": {
+      "path": "/tmp/llmlb-943-bookkeeping-e2e-artifacts-20261102.tar.gz",
+      "bytes": 21417092,
+      "sha256": "08154f94c0d292d87392b3552a6e7321b019eebb684856df4830a759ef4dfccb"
+    }
+  }
+}

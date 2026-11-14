@@ -1,0 +1,201 @@
+{
+  "record_id": "vrr-f948535883814c80aff903cc57972942",
+  "started_at": "2026-10-26T09:28:31.421447Z",
+  "scope": "diagnosis of previous blockers; does not replace full matrix",
+  "overall": "FAIL",
+  "user_verification_result": "n/a (autonomous)",
+  "agent_visual_check": "fail: canonical headed counts are zero despite 14 passing browser scenarios",
+  "commands": [
+    {
+      "command": "make dashboard-checks",
+      "exit_code": 0
+    },
+    {
+      "command": "HEADED=1 BASE_URL=http://127.0.0.1:39445 pnpm exec playwright test --config=llmlb/tests/e2e-playwright/playwright.config.ts endpoint-detail-overflow.spec.ts endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0",
+      "exit_code": 0,
+      "headed_e2e": {
+        "chromium_dark_passed": 0,
+        "chromium_light_passed": 0,
+        "failed": 0,
+        "status": "passed"
+      }
+    },
+    {
+      "command": "cargo audit",
+      "exit_code": 1
+    }
+  ],
+  "traces": [
+    {
+      "path": "test-results/dashboard-endpoint-detail--18968--reachable-at-1280x720-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "dark"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--36540-tion-and-chart-periods-864--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "light"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--3def2-hout-inventing-a-cause-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "dark"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--48899-reachable-at-1920x1032-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "light"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--4b131-rinks-the-current-page-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "light"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--638f7-n-reachable-at-375x720-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "light"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--87db7-reachable-at-1920x1032-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "dark"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--903e5-failures-with-keyboard-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "dark"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--962be-n-reachable-at-375x720-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "dark"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--a3488-hout-inventing-a-cause-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "light"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--cc279-tion-and-chart-periods-864--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "dark"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--d43d3-rinks-the-current-page-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "dark"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--df54a-failures-with-keyboard-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "light"
+      ]
+    },
+    {
+      "path": "test-results/dashboard-endpoint-detail--ee328--reachable-at-1280x720-943--chromium/trace.zip",
+      "trace_versions": [
+        10
+      ],
+      "playwright_versions": [
+        "1.64.1"
+      ],
+      "chromium_themes": [
+        "light"
+      ]
+    }
+  ],
+  "cause": "gwtd 9.145.0 embedded reporter accepts only trace v7 and expects legacy launch apiName; actual Playwright 1.64.1 emits trace v10",
+  "review": "Independent code review found no critical or important UI defects",
+  "delivery": "No commit, push, PR, merge, Issue closure, or AC checkbox update"
+}

@@ -1,0 +1,53 @@
+{
+  "record_id": "vrr-1b3ee76f9e1446e4a93e72398e2aa9f4",
+  "started_at": "2026-10-27T07:32:07.606900Z",
+  "source_head": "6a5fb9fe82a631400731f918d997ce16c9db721f",
+  "scope": "diagnostic only; full quality checks run separately; not fresh post-push delivery evidence",
+  "overall": "FAIL",
+  "all_passed": false,
+  "plan_covered": true,
+  "source_delivered": false,
+  "user_verification_result": "n/a (autonomous)",
+  "agent_visual_check": "fail(headed Chromium dark/light execution evidence missing or failing)",
+  "independent_review": "No important or critical source findings or AC gaps",
+  "commands": [
+    {
+      "command": "cargo audit",
+      "exit_code": 0
+    },
+    {
+      "command": "make dashboard-checks",
+      "exit_code": 0
+    },
+    {
+      "command": "HEADED=1 BASE_URL=http://127.0.0.1:39449 pnpm exec playwright test --config=llmlb/tests/e2e-playwright/playwright.config.ts endpoint-detail-overflow.spec.ts endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0",
+      "exit_code": 0,
+      "headed_e2e": {
+        "chromium_dark_passed": 0,
+        "chromium_light_passed": 0,
+        "failed": 0,
+        "status": "passed"
+      }
+    }
+  ],
+  "cargo_audit": {
+    "advisories_loaded": 1378,
+    "vulnerabilities": 0,
+    "existing_allowed_warnings": 7
+  },
+  "dashboard": {
+    "files_passed": 45,
+    "tests_passed": 474,
+    "lint_errors": 0,
+    "existing_lint_warnings": 5
+  },
+  "browser": {
+    "real_headed_chromium_tests_passed": 14,
+    "light_tests": 7,
+    "dark_tests": 7,
+    "console_errors": 0,
+    "page_errors": 0
+  },
+  "delivery_blocker": "Canonical gwtd 9.145.0 still measures 0 dark and 0 light; external tool repair required",
+  "board_escalation": "43aa121e-9933-44de-9a63-a91cd1dd5466"
+}

@@ -1,0 +1,66 @@
+{
+  "all_passed": false,
+  "commands": [],
+  "content_hash": "65b8aafab92ca89884f18ae816abe47215991acf16a2d8c2a297bec16d06cb9f",
+  "continuation": {
+    "authority_hash": "0d17a4d1815a41c60a4d4f35e66f92092958099f2466025e772b5b7fbf97d537",
+    "command_indices": [],
+    "commands": [
+      "BASE_URL=http://127.0.0.1:39463 make -j1 quality-checks",
+      "HEADED=1 BASE_URL=http://127.0.0.1:39465 pnpm --dir llmlb/tests/e2e-playwright exec playwright test specs/dashboard/endpoint-detail-overflow.spec.ts specs/dashboard/endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0 --headed",
+      "bash scripts/checks/check-commits.sh --from origin/main --to HEAD"
+    ],
+    "headed_e2e_commands": [
+      "HEADED=1 BASE_URL=http://127.0.0.1:39465 pnpm --dir llmlb/tests/e2e-playwright exec playwright test specs/dashboard/endpoint-detail-overflow.spec.ts specs/dashboard/endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0 --headed"
+    ]
+  },
+  "created_at": "2026-11-02T08:35:32.218555Z",
+  "execution_binding": {
+    "binding_id": "1d97d903-b4cf-4ad2-9cec-408ea1d1cca5",
+    "generation_id": "gen-f0852e84b91bc9535626cd09",
+    "ledger_head_hash": "3ef76ad3e27d23a2363963ffd2211744591f88e46cf22ef77f3cb7a7a4db284e"
+  },
+  "format_version": 1,
+  "lease_id": "06b6e441-c7a8-4176-aaff-7d0ef8cc8dc1",
+  "lifecycle": {
+    "current_command": "BASE_URL=http://127.0.0.1:39463 make -j1 quality-checks",
+    "reason": "caller cancellation: make wrapperのbuild directoryが未解決でexclusive1200秒上限になっている。直前の同HEAD通常pre-pushでRust実行時間合計1335.2秒に加えて全E2Eを要し、登録full matrixを完走できない。canonical cancelで中断証跡を残し、同じ実targetをinline CARGO_TARGET_DIRで明示する計画へ修正する。テスト・ゲート・timeout値は変更しない。",
+    "runner_pid": 16995,
+    "runner_started_at": 1793608531,
+    "status": "interrupted",
+    "watchdog_token_hash": "90f23d091b474d4ea1cbce9982aa2210925b617ae5d40610eedfb9b2cc1ab830"
+  },
+  "owner_number": 943,
+  "plan_covered": false,
+  "planned_missing": [
+    "BASE_URL=http://127.0.0.1:39463 make -j1 quality-checks",
+    "HEADED=1 BASE_URL=http://127.0.0.1:39465 pnpm --dir llmlb/tests/e2e-playwright exec playwright test specs/dashboard/endpoint-detail-overflow.spec.ts specs/dashboard/endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0 --headed",
+    "bash scripts/checks/check-commits.sh --from origin/main --to HEAD"
+  ],
+  "record_id": "vrr-7c9b4b2558f34dbd9ecd348eadf3bb71",
+  "session_id": "0a7f2807-c4e1-412f-bd58-605a5ddcddc4",
+  "started_at": "2026-11-02T08:35:32.218555Z",
+  "user_verification_result": "n/a (autonomous)",
+  "verification_attempt_id": "vat-87f5ada0e42f4ee3a66063b4a0db8979",
+  "verification_plan_hash": "51d242c2f9cb11e0dd1cc41491abdd5d45f00f84b83f816634a2baed1da1caf4",
+  "verification_plan_snapshot": {
+    "commands": [
+      "BASE_URL=http://127.0.0.1:39463 make -j1 quality-checks",
+      "HEADED=1 BASE_URL=http://127.0.0.1:39465 pnpm --dir llmlb/tests/e2e-playwright exec playwright test specs/dashboard/endpoint-detail-overflow.spec.ts specs/dashboard/endpoint-detail-viewmodel.spec.ts --project=chromium --workers=1 --retries=0 --headed",
+      "bash scripts/checks/check-commits.sh --from origin/main --to HEAD"
+    ],
+    "content_hash": "51d242c2f9cb11e0dd1cc41491abdd5d45f00f84b83f816634a2baed1da1caf4",
+    "created_at": "2026-11-02T08:35:12.841038Z",
+    "execution_binding": {
+      "binding_id": "1d97d903-b4cf-4ad2-9cec-408ea1d1cca5",
+      "generation_id": "gen-f0852e84b91bc9535626cd09",
+      "ledger_head_hash": "3ef76ad3e27d23a2363963ffd2211744591f88e46cf22ef77f3cb7a7a4db284e"
+    },
+    "format_version": 1,
+    "owner_number": 943,
+    "session_id": "0a7f2807-c4e1-412f-bd58-605a5ddcddc4",
+    "worktree_fingerprint": "c6f26b54a40eaf9ae86ab00f6498b14783e05687b0a69fb361511dcee1e36419"
+  },
+  "verified_head": "c4a14642a547b16ac779545a73f6335b9605833d",
+  "worktree_fingerprint": "c6f26b54a40eaf9ae86ab00f6498b14783e05687b0a69fb361511dcee1e36419"
+}

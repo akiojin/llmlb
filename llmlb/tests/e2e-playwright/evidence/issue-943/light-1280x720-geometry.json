@@ -1,0 +1,76 @@
+{
+  "clientWidth": 894,
+  "scrollWidth": 894,
+  "descendants": [
+    {
+      "text": "Test Connection",
+      "x": 768.40625,
+      "width": 144.7109375
+    },
+    {
+      "text": "Sync Models",
+      "x": 921.1171875,
+      "width": 125.8828125
+    },
+    {
+      "text": "View failed requests",
+      "x": 217,
+      "width": 140.2421875
+    },
+    {
+      "text": "7D",
+      "x": 920.328125,
+      "width": 34.7890625
+    },
+    {
+      "text": "30D",
+      "x": 955.1171875,
+      "width": 44
+    },
+    {
+      "text": "90D",
+      "x": 999.1171875,
+      "width": 43.8828125
+    },
+    {
+      "text": "Open Playground",
+      "x": 898.2265625,
+      "width": 148.7734375
+    },
+    {
+      "text": "",
+      "x": 217,
+      "width": 830
+    },
+    {
+      "text": "",
+      "x": 217,
+      "width": 407
+    },
+    {
+      "text": "",
+      "x": 640,
+      "width": 407
+    },
+    {
+      "text": "preserve these notes",
+      "x": 217,
+      "width": 830
+    },
+    {
+      "text": "Close",
+      "x": 883.453125,
+      "width": 71.21875
+    },
+    {
+      "text": "Save",
+      "x": 970.671875,
+      "width": 92.328125
+    },
+    {
+      "text": "Close",
+      "x": 1055,
+      "width": 16
+    }
+  ]
+}

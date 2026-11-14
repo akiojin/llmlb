@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "gwtd hook event PostToolUse",
+            "command": "gwt_bin=\"${GWT_BIN_PATH:-}\"; if [ -z \"$gwt_bin\" ]; then gwt_bin='gwtd'; fi; if command -v \"$gwt_bin\" >/dev/null 2>&1; then \"$gwt_bin\" hook event PostToolUse; else true; fi",
             "type": "command"
           }
         ],
@@ -15,7 +15,7 @@
       {
         "hooks": [
           {
-            "command": "gwtd hook event PreToolUse",
+            "command": "gwt_bin=\"${GWT_BIN_PATH:-}\"; if [ -z \"$gwt_bin\" ]; then gwt_bin='gwtd'; fi; if command -v \"$gwt_bin\" >/dev/null 2>&1; then \"$gwt_bin\" hook event PreToolUse; else true; fi",
             "type": "command"
           }
         ],
@@ -26,7 +26,7 @@
       {
         "hooks": [
           {
-            "command": "gwtd hook event SessionStart",
+            "command": "gwt_bin=\"${GWT_BIN_PATH:-}\"; if [ -z \"$gwt_bin\" ]; then gwt_bin='gwtd'; fi; if command -v \"$gwt_bin\" >/dev/null 2>&1; then \"$gwt_bin\" hook event SessionStart; else true; fi",
             "type": "command"
           }
         ],
@@ -37,7 +37,7 @@
       {
         "hooks": [
           {
-            "command": "gwtd hook event Stop",
+            "command": "gwt_bin=\"${GWT_BIN_PATH:-}\"; if [ -z \"$gwt_bin\" ]; then gwt_bin='gwtd'; fi; if command -v \"$gwt_bin\" >/dev/null 2>&1; then \"$gwt_bin\" hook event Stop; else true; fi",
             "type": "command"
           }
         ],
@@ -48,7 +48,7 @@
       {
         "hooks": [
           {
-            "command": "gwtd hook event UserPromptSubmit",
+            "command": "gwt_bin=\"${GWT_BIN_PATH:-}\"; if [ -z \"$gwt_bin\" ]; then gwt_bin='gwtd'; fi; if command -v \"$gwt_bin\" >/dev/null 2>&1; then \"$gwt_bin\" hook event UserPromptSubmit; else true; fi",
             "type": "command"
           }
         ],

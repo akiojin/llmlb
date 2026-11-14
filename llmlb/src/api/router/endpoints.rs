@@ -84,6 +84,8 @@ pub(super) fn routes(state: &AppState) -> Router<AppState> {
             put(endpoints::update_endpoint).delete(endpoints::delete_endpoint),
         )
         .route("/endpoints/{id}/test", post(endpoints::test_endpoint))
+        .route("/endpoints/{id}/pause", post(endpoints::pause_endpoint))
+        .route("/endpoints/{id}/resume", post(endpoints::resume_endpoint))
         .route(
             "/endpoints/{id}/sync",
             post(endpoints::sync_endpoint_models),

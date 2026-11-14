@@ -56,10 +56,12 @@ export interface EndpointTableViewModel {
   isDeleting: boolean
   isTesting: string | null
   isSyncing: string | null
+  isPausing: string | null
   handleCreate: () => Promise<void>
   handleDelete: () => Promise<void>
   handleTest: (endpoint: DashboardEndpoint) => Promise<void>
   handleSync: (endpoint: DashboardEndpoint) => Promise<void>
+  handlePauseToggle: (endpoint: DashboardEndpoint) => Promise<void>
   isCreateDialogOpen: boolean
   setIsCreateDialogOpen: (open: boolean) => void
   onCreateDialogOpenChange: (open: boolean) => void
@@ -148,6 +150,7 @@ export function useEndpointTableViewModel(endpoints: DashboardEndpoint[]): Endpo
   const [isDeleting, setIsDeleting] = useState(false)
   const [isTesting, setIsTesting] = useState<string | null>(null)
   const [isSyncing, setIsSyncing] = useState<string | null>(null)
+  const [isPausing, setIsPausing] = useState<string | null>(null)
   // Create endpoint state
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
@@ -216,6 +219,22 @@ export function useEndpointTableViewModel(endpoints: DashboardEndpoint[]): Endpo
       console.error('Failed to sync endpoint:', error)
     } finally {
       setIsSyncing(null)
+    }
+  }
+
+  const handlePauseToggle = async (endpoint: DashboardEndpoint) => {
+    setIsPausing(endpoint.id)
+    try {
+      if (endpoint.paused) {
+        await endpointsApi.resume(endpoint.id)
+      } else {
+        await endpointsApi.pause(endpoint.id)
+      }
+      await refreshEndpoints(endpoint.id)
+    } catch (error) {
+      console.error('Failed to pause/resume endpoint:', error)
+    } finally {
+      setIsPausing(null)
     }
   }
 
@@ -292,7 +311,7 @@ export function useEndpointTableViewModel(endpoints: DashboardEndpoint[]): Endpo
     paginationLabel: `Showing ${(currentPage - 1) * PAGE_SIZE + 1} - ${Math.min(currentPage * PAGE_SIZE, sortedEndpoints.length)} of ${sortedEndpoints.length}`,
     filteredCount: filteredEndpoints.length, paginatedEndpoints: rows,
     selectedEndpoint, setSelectedEndpoint, deletingEndpoint, setDeletingEndpoint,
-    isDeleting, isTesting, isSyncing, handleCreate, handleDelete, handleTest, handleSync,
+    isDeleting, isTesting, isSyncing, isPausing, handleCreate, handleDelete, handleTest, handleSync, handlePauseToggle,
     isCreateDialogOpen, setIsCreateDialogOpen, isCreating, createError, createForm,
     updateCreateForm: (field, value) => setCreateForm((form) => ({ ...form, [field]: value })),
     onCreateDialogOpenChange: (open) => {

@@ -1372,3 +1372,19 @@ fn test_endpoint_daily_stats_empty_model_id() {
     let deserialized: EndpointDailyStats = serde_json::from_str(&json).unwrap();
     assert_eq!(deserialized.model_id, "");
 }
+
+#[test]
+fn endpoint_is_paused_follows_paused_at() {
+    let mut endpoint = Endpoint::new(
+        "paused".to_string(),
+        "http://localhost:18101".to_string(),
+        EndpointType::Xllm,
+    );
+    assert!(!endpoint.is_paused());
+
+    endpoint.paused_at = Some(chrono::Utc::now());
+    assert!(endpoint.is_paused());
+
+    endpoint.paused_at = None;
+    assert!(!endpoint.is_paused());
+}

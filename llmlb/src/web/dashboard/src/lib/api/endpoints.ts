@@ -87,6 +87,9 @@ export interface DashboardEndpoint {
   last_seen?: string
   last_error?: string
   error_count: number
+  paused: boolean
+  paused_at?: string
+  consecutive_404_count?: number
   registered_at: string
   notes?: string
   model_count: number
@@ -196,6 +199,20 @@ export const endpointsApi = {
   test: (id: string) =>
     fetchWithAuth<{ success: boolean; message?: string; latency_ms?: number }>(
       `/api/endpoints/${id}/test`,
+      { method: 'POST' }
+    ),
+
+  /** Pause an endpoint (drain: in-flight requests finish, new ones are not assigned) */
+  pause: (id: string) =>
+    fetchWithAuth<{ id: string; paused: boolean; paused_at?: string; in_flight: number }>(
+      `/api/endpoints/${id}/pause`,
+      { method: 'POST' }
+    ),
+
+  /** Resume a paused endpoint */
+  resume: (id: string) =>
+    fetchWithAuth<{ id: string; paused: boolean; paused_at?: string; in_flight: number }>(
+      `/api/endpoints/${id}/resume`,
       { method: 'POST' }
     ),
 

@@ -39,6 +39,8 @@ interface EndpointDetailModalProps {
   endpoint: DashboardEndpoint | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  onPauseToggle: (endpoint: DashboardEndpoint) => void | Promise<void>
+  isPausing: boolean
 }
 
 function getStatusBadgeVariant(
@@ -80,7 +82,7 @@ function getTypeBadgeVariant(
   }
 }
 
-export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDetailModalProps) {
+export function EndpointDetailModal({ endpoint, open, onOpenChange, onPauseToggle, isPausing }: EndpointDetailModalProps) {
   if (!endpoint) return null
 
   return (
@@ -89,6 +91,8 @@ export function EndpointDetailModal({ endpoint, open, onOpenChange }: EndpointDe
       endpoint={endpoint}
       open={open}
       onOpenChange={onOpenChange}
+      onPauseToggle={onPauseToggle}
+      isPausing={isPausing}
     />
   )
 }
@@ -97,12 +101,16 @@ interface EndpointDetailModalContentProps {
   endpoint: DashboardEndpoint
   open: boolean
   onOpenChange: (open: boolean) => void
+  onPauseToggle: (endpoint: DashboardEndpoint) => void | Promise<void>
+  isPausing: boolean
 }
 
 function EndpointDetailModalContent({
   endpoint,
   open,
   onOpenChange,
+  onPauseToggle,
+  isPausing,
 }: EndpointDetailModalContentProps) {
   const {
     name, setName, notes, setNotes, healthCheckInterval, setHealthCheckInterval,
@@ -132,6 +140,11 @@ function EndpointDetailModalContent({
               <Badge variant={getStatusBadgeVariant(endpoint.status)}>
                 {statusLabel}
               </Badge>
+              {endpoint.paused && (
+                <Badge variant="outline" className="border-amber-500/50 text-amber-600 dark:text-amber-400">
+                  Paused
+                </Badge>
+              )}
               <Badge variant={getTypeBadgeVariant(endpoint.endpoint_type)}>
                 {typeLabel}
               </Badge>
@@ -143,6 +156,14 @@ function EndpointDetailModalContent({
               </span>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                variant={endpoint.paused ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => onPauseToggle(endpoint)}
+                disabled={isPausing}
+              >
+                {endpoint.paused ? 'Resume' : 'Pause'}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

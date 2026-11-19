@@ -56,6 +56,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Play,
+  Pause,
   RefreshCw,
   Trash2,
   Plus,
@@ -128,8 +129,8 @@ export function EndpointTable({ endpoints, isLoading, activityByEndpoint, isActi
     search, setSearch, statusFilter, setStatusFilter, typeFilter, setTypeFilter,
     sortField, sortDirection, handleSort, currentPage, totalPages, previousPage, nextPage,
     paginationLabel, filteredCount, paginatedEndpoints, selectedEndpoint, setSelectedEndpoint,
-    deletingEndpoint, setDeletingEndpoint, isDeleting, isTesting, isSyncing,
-    handleCreate, handleDelete, handleTest, handleSync, isCreateDialogOpen, setIsCreateDialogOpen,
+    deletingEndpoint, setDeletingEndpoint, isDeleting, isTesting, isSyncing, isPausing,
+    handleCreate, handleDelete, handleTest, handleSync, handlePauseToggle, isCreateDialogOpen, setIsCreateDialogOpen,
     onCreateDialogOpenChange, isCreating, createError, createForm, updateCreateForm,
   } = useEndpointTableViewModel(endpoints)
 
@@ -340,6 +341,12 @@ export function EndpointTable({ endpoints, isLoading, activityByEndpoint, isActi
                           <Badge variant={getStatusBadgeVariant(endpoint.status)}>
                             {endpoint.statusLabel}
                           </Badge>
+                          {endpoint.paused && (
+                            <Badge variant="outline" className="ml-2 border-amber-500/50 text-amber-600 dark:text-amber-400">
+                              <Pause className="mr-1 h-3 w-3" />
+                              Paused
+                            </Badge>
+                          )}
                           {endpoint.last_error && (
                             <>
                               <span className="ml-2 text-xs text-destructive">
@@ -384,6 +391,15 @@ export function EndpointTable({ endpoints, isLoading, activityByEndpoint, isActi
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant={endpoint.paused ? 'default' : 'outline'}
+                            size="icon"
+                            onClick={() => handlePauseToggle(endpoint)}
+                            disabled={isPausing === endpoint.id}
+                            title={endpoint.paused ? 'Resume endpoint' : 'Pause endpoint'}
+                          >
+                            {endpoint.paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                          </Button>
                           <Button
                             variant="outline"
                             size="icon"
@@ -470,6 +486,8 @@ export function EndpointTable({ endpoints, isLoading, activityByEndpoint, isActi
           endpoint={selectedEndpoint}
           open={!!selectedEndpoint}
           onOpenChange={(open) => !open && setSelectedEndpoint(null)}
+          onPauseToggle={handlePauseToggle}
+          isPausing={isPausing === selectedEndpoint?.id}
         />
       )}
 

@@ -141,6 +141,13 @@ pub struct EndpointResponse {
     pub last_error: Option<String>,
     /// 連続エラー回数
     pub error_count: u32,
+    /// 運用者による一時停止中か
+    pub paused: bool,
+    /// 一時停止時刻（RFC3339、再開時は省略）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused_at: Option<String>,
+    /// 連続する上流404応答の回数
+    pub consecutive_404_count: u32,
     /// 登録日時
     pub registered_at: String,
     /// メモ
@@ -158,6 +165,8 @@ pub struct EndpointResponse {
 
 impl From<Endpoint> for EndpointResponse {
     fn from(ep: Endpoint) -> Self {
+        let paused = ep.is_paused();
+        let paused_at = ep.paused_at.map(|dt| dt.to_rfc3339());
         EndpointResponse {
             id: ep.id,
             name: ep.name,
@@ -170,6 +179,9 @@ impl From<Endpoint> for EndpointResponse {
             last_seen: ep.last_seen.map(|dt| dt.to_rfc3339()),
             last_error: ep.last_error,
             error_count: ep.error_count,
+            paused,
+            paused_at,
+            consecutive_404_count: ep.consecutive_404_count,
             registered_at: ep.registered_at.to_rfc3339(),
             notes: ep.notes,
             device_info: ep.device_info,
@@ -960,6 +972,89 @@ pub async fn delete_endpoint(
             ManagementError(LbError::Database("Failed to delete endpoint".to_string()))
                 .into_response()
         }
+    }
+}
+
+/// `POST /api/endpoints/:id/pause` / `.../resume` の応答
+#[derive(Debug, Serialize)]
+pub struct PauseEndpointResponse {
+    /// エンドポイントID
+    pub id: Uuid,
+    /// 現在停止中か
+    pub paused: bool,
+    /// 停止時刻（停止中のみ）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused_at: Option<String>,
+    /// 現在処理中のリクエスト数（停止はドレインであり強制切断ではない）
+    pub in_flight: u32,
+}
+
+async fn set_endpoint_pause_state(
+    state: &AppState,
+    id: Uuid,
+    paused: bool,
+) -> Result<PauseEndpointResponse, ManagementError> {
+    match state
+        .balancer
+        .endpoint_registry
+        .set_paused(id, paused)
+        .await
+    {
+        Ok(Some(endpoint)) => {
+            let in_flight = state
+                .balancer
+                .load_manager
+                .snapshot(id)
+                .await
+                .map(|snapshot| snapshot.active_requests)
+                .unwrap_or(0);
+
+            Ok(PauseEndpointResponse {
+                id,
+                paused: endpoint.is_paused(),
+                paused_at: endpoint.paused_at.map(|dt| dt.to_rfc3339()),
+                in_flight,
+            })
+        }
+        Ok(None) => Err(ManagementError(LbError::EndpointNotFound(id))),
+        Err(error) => {
+            tracing::error!(endpoint_id = %id, error = %error, "Failed to update endpoint pause state");
+            Err(ManagementError(LbError::Database(
+                "Failed to update endpoint pause state".to_string(),
+            )))
+        }
+    }
+}
+
+/// POST /api/endpoints/:id/pause - エンドポイントを一時停止（冪等、ドレイン）
+pub async fn pause_endpoint(
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
+    match set_endpoint_pause_state(&state, id, true).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// POST /api/endpoints/:id/resume - エンドポイントを再開（冪等）
+pub async fn resume_endpoint(
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    if let Err(e) = ensure_admin(&claims) {
+        return e.into_response();
+    }
+
+    match set_endpoint_pause_state(&state, id, false).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 

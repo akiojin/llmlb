@@ -539,6 +539,8 @@ const ROUTE_CONTRACTS: &[RouteContract] = &[
     protected("PUT", "/api/endpoints/{id}"),
     protected("DELETE", "/api/endpoints/{id}"),
     protected("POST", "/api/endpoints/{id}/test"),
+    protected("POST", "/api/endpoints/{id}/pause"),
+    protected("POST", "/api/endpoints/{id}/resume"),
     protected("POST", "/api/endpoints/{id}/sync"),
     protected("POST", "/api/endpoints/{id}/download"),
     protected("POST", "/api/endpoints/{id}/models/delete"),

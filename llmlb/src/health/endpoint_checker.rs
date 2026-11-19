@@ -140,6 +140,9 @@ impl EndpointHealthChecker {
         let endpoints = self.registry.list().await;
 
         for endpoint in endpoints {
+            if endpoint.is_paused() {
+                continue;
+            }
             if let Err(e) = self.check_endpoint(&endpoint).await {
                 debug!(
                     endpoint_id = %endpoint.id,
@@ -157,7 +160,13 @@ impl EndpointHealthChecker {
     pub async fn check_all_endpoints_parallel(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let endpoints = self.registry.list().await;
+        let endpoints: Vec<_> = self
+            .registry
+            .list()
+            .await
+            .into_iter()
+            .filter(|endpoint| !endpoint.is_paused())
+            .collect();
 
         if endpoints.is_empty() {
             info!("No endpoints to check");
@@ -221,6 +230,12 @@ impl EndpointHealthChecker {
         &self,
         endpoint: &Endpoint,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 運用者が停止したエンドポイントは観測もしない。ここで弾かないと、
+        // 次のヘルスチェックが status を Online に戻して停止が消える。
+        if endpoint.is_paused() {
+            return Ok(());
+        }
+
         let status_before = endpoint.status;
         let is_xllm = matches!(endpoint.endpoint_type, EndpointType::Xllm);
         let (success, error_message, new_status, gpu_info, latency_ms) = if is_xllm {

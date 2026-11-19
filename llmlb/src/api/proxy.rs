@@ -22,6 +22,9 @@ use axum::{
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::{io, pin::Pin, sync::Arc, time::Instant};
 
+/// 上流404がこの回数を超えたらエンドポイントをローテーションから外す（3回目）。
+pub(crate) const UPSTREAM_404_HOP_THRESHOLD: u32 = 2;
+
 /// キュー付きエンドポイント選択の結果
 pub(crate) enum QueueSelection {
     /// エンドポイントが見つかった
@@ -373,6 +376,11 @@ pub(crate) fn record_endpoint_request_stats(
         let date = chrono::Local::now().format("%Y-%m-%d").to_string();
         let pool = endpoint_registry.pool().clone();
 
+        // 成功応答は上流404の連続記録を断ち切る。
+        if success {
+            endpoint_registry.reset_404(endpoint_id).await;
+        }
+
         if let Err(e) = endpoint_registry
             .increment_request_counters(endpoint_id, success)
             .await
@@ -446,6 +454,85 @@ pub(crate) fn record_endpoint_request_stats(
         });
     });
 }
+/// 上流404をエンドポイント障害として記録する。
+///
+/// 404 は「そのモデルを持っていない」だけのこともあるため、1回では外さない。
+/// 連続 `UPSTREAM_404_HOP_THRESHOLD` 回を超えたら `Error` に落として
+/// ローテーションから外す（ヘルスチェックが回復すれば戻る）。
+pub(crate) async fn report_upstream_404(
+    endpoint_registry: crate::registry::endpoints::EndpointRegistry,
+    load_manager: crate::balancer::LoadManager,
+    endpoint_id: uuid::Uuid,
+    model_id: &str,
+    status: StatusCode,
+) {
+    let Some(endpoint) = endpoint_registry.get(endpoint_id).await else {
+        return;
+    };
+
+    let count = match endpoint_registry.record_404(endpoint_id).await {
+        Ok(Some(count)) => count,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::error!(
+                endpoint_id = %endpoint_id,
+                error = %error,
+                "Failed to record upstream 404"
+            );
+            return;
+        }
+    };
+
+    if count <= UPSTREAM_404_HOP_THRESHOLD {
+        tracing::warn!(
+            endpoint_id = %endpoint_id,
+            endpoint_name = %endpoint.name,
+            model = %model_id,
+            upstream_status = %status,
+            consecutive_404 = count,
+            "Upstream 404 recorded; endpoint stays in rotation"
+        );
+        return;
+    }
+
+    if endpoint.status == crate::types::endpoint::EndpointStatus::Offline {
+        return;
+    }
+
+    let message = format!(
+        "upstream {status} for model {model_id}: {count} consecutive 404 responses; endpoint hopped out of rotation"
+    );
+
+    tracing::warn!(
+        endpoint_id = %endpoint_id,
+        endpoint_name = %endpoint.name,
+        model = %model_id,
+        upstream_status = %status,
+        consecutive_404 = count,
+        from = ?endpoint.status,
+        "Upstream 404 threshold exceeded; hopping endpoint out of rotation"
+    );
+
+    if let Err(error) = endpoint_registry
+        .update_status(
+            endpoint_id,
+            crate::types::endpoint::EndpointStatus::Error,
+            None,
+            Some(&message),
+        )
+        .await
+    {
+        tracing::error!(
+            endpoint_id = %endpoint_id,
+            error = %error,
+            "Failed to record upstream 404 in endpoint status"
+        );
+        return;
+    }
+
+    load_manager.clear_tps_for_endpoint(endpoint_id).await;
+}
+
 /// エンドポイントにリクエストを転送
 ///
 /// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す

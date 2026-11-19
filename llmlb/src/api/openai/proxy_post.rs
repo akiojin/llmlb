@@ -18,7 +18,7 @@ use crate::api::openai_util::{
 };
 use crate::api::proxy::{
     forward_streaming_response_with_tps_tracking, record_endpoint_request_stats,
-    save_request_record, select_available_endpoint_with_queue_for_model,
+    report_upstream_404, save_request_record, select_available_endpoint_with_queue_for_model,
     select_available_endpoint_with_queue_for_model_and_api, QueueSelection,
 };
 use crate::balancer::RequestOutcome;
@@ -444,6 +444,17 @@ pub(super) async fn proxy_openai_post(
         // which will mark the endpoint as offline/error if requests fail repeatedly
 
         let status = response.status();
+        // 404 はエンドポイント障害として数える。連続3回でローテーションから外れる。
+        if status == StatusCode::NOT_FOUND {
+            report_upstream_404(
+                state.balancer.endpoint_registry.clone(),
+                state.balancer.load_manager.clone(),
+                endpoint_id,
+                &model,
+                status,
+            )
+            .await;
+        }
         // OpenAI互換経路では upstream 非2xx は 502 に正規化して返す
         let status_code = StatusCode::BAD_GATEWAY;
         // ボディはエラー要約にしか使わず、クライアントには新規 JSON を返すため、

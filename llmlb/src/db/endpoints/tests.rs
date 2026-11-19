@@ -956,3 +956,75 @@ async fn test_endpoint_request_totals_struct() {
     assert_eq!(totals.successful_requests, 90);
     assert_eq!(totals.failed_requests, 10);
 }
+
+#[tokio::test]
+async fn test_endpoint_pause_is_idempotent_and_preserves_first_timestamp() {
+    let _lock = TEST_LOCK.lock().await;
+    let pool = setup_test_db().await;
+
+    let endpoint = Endpoint::new(
+        "Pause Test".to_string(),
+        "http://localhost:18099".to_string(),
+        crate::types::endpoint::EndpointType::Xllm,
+    );
+    create_endpoint(&pool, &endpoint).await.unwrap();
+
+    let first = set_endpoint_paused(&pool, endpoint.id, true)
+        .await
+        .unwrap()
+        .expect("paused_at set");
+    assert!(!first.is_empty());
+
+    // Idempotent: second pause keeps the original timestamp.
+    let second = set_endpoint_paused(&pool, endpoint.id, true)
+        .await
+        .unwrap()
+        .expect("still paused");
+    assert_eq!(first, second);
+
+    let fetched = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+    assert!(fetched.is_paused());
+
+    // Resume clears it.
+    let resumed = set_endpoint_paused(&pool, endpoint.id, false)
+        .await
+        .unwrap();
+    assert!(resumed.is_none());
+
+    let fetched = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+    assert!(!fetched.is_paused());
+    assert_eq!(fetched.consecutive_404_count, 0);
+}
+
+#[tokio::test]
+async fn test_endpoint_404_streak_increments_and_resets() {
+    let _lock = TEST_LOCK.lock().await;
+    let pool = setup_test_db().await;
+
+    let endpoint = Endpoint::new(
+        "404 Test".to_string(),
+        "http://localhost:18100".to_string(),
+        crate::types::endpoint::EndpointType::Xllm,
+    );
+    create_endpoint(&pool, &endpoint).await.unwrap();
+
+    assert_eq!(
+        increment_endpoint_404(&pool, endpoint.id).await.unwrap(),
+        Some(1)
+    );
+    assert_eq!(
+        increment_endpoint_404(&pool, endpoint.id).await.unwrap(),
+        Some(2)
+    );
+    assert_eq!(
+        increment_endpoint_404(&pool, endpoint.id).await.unwrap(),
+        Some(3)
+    );
+
+    let fetched = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+    assert_eq!(fetched.consecutive_404_count, 3);
+
+    reset_endpoint_404(&pool, endpoint.id).await.unwrap();
+    let fetched = get_endpoint(&pool, endpoint.id).await.unwrap().unwrap();
+    assert_eq!(fetched.consecutive_404_count, 0);
+}

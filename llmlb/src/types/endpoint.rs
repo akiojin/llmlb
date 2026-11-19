@@ -406,6 +406,14 @@ pub struct Endpoint {
     pub last_error: Option<String>,
     /// 連続エラー回数
     pub error_count: u32,
+    /// 運用者による一時停止時刻（None = 稼働対象）
+    ///
+    /// `status`（観測された健康状態）とは独立。停止中でも online のままにできる。
+    #[serde(default)]
+    pub paused_at: Option<DateTime<Utc>>,
+    /// 連続する上流404応答の回数（3回目でローテーションから外す）
+    #[serde(default)]
+    pub consecutive_404_count: u32,
     /// 登録日時
     pub registered_at: DateTime<Utc>,
     /// メモ
@@ -465,6 +473,8 @@ impl Endpoint {
             last_seen: None,
             last_error: None,
             error_count: 0,
+            paused_at: None,
+            consecutive_404_count: 0,
             registered_at: Utc::now(),
             notes: None,
             capabilities: vec![EndpointCapability::ChatCompletion], // デフォルトはチャット機能
@@ -484,6 +494,11 @@ impl Endpoint {
     /// 指定した機能をサポートしているか確認
     pub fn has_capability(&self, cap: EndpointCapability) -> bool {
         self.capabilities.contains(&cap)
+    }
+
+    /// 運用者による一時停止中か
+    pub fn is_paused(&self) -> bool {
+        self.paused_at.is_some()
     }
 
     /// 推論レイテンシを更新（EMA α=0.2）（SPEC-f8e3a1b7）

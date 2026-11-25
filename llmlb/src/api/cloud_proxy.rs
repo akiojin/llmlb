@@ -855,4 +855,112 @@ mod tests {
         let url = provider.api_base_url().unwrap();
         assert_eq!(url, "https://api.anthropic.com");
     }
+
+    // --- Issue #984: クラウド向けストリーミングのアイドルタイムアウト ---
+
+    /// テスト用スタブプロバイダ。指定したベースURLへそのまま転送する。
+    struct StubProvider {
+        base_url: String,
+    }
+
+    impl CloudProvider for StubProvider {
+        fn provider_name(&self) -> &str {
+            "stub"
+        }
+
+        fn api_base_url(&self) -> Result<String, AppError> {
+            Ok(self.base_url.clone())
+        }
+
+        fn apply_auth(
+            &self,
+            builder: reqwest::RequestBuilder,
+        ) -> Result<reqwest::RequestBuilder, AppError> {
+            Ok(builder)
+        }
+
+        fn transform_request(
+            &self,
+            payload: &Value,
+            _model: &str,
+            _stream: bool,
+        ) -> Result<(String, Value), AppError> {
+            Ok((
+                format!("{}/v1/chat/completions", self.base_url),
+                payload.clone(),
+            ))
+        }
+
+        fn transform_response(&self, data: &Value, _model: &str) -> Value {
+            data.clone()
+        }
+    }
+
+    /// chunked encoding の SSE を1チャンクだけ送って無応答になるモック
+    /// クラウドプロバイダを起動する。
+    async fn spawn_hanging_cloud_provider() -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut read_buf = [0u8; 4096];
+                let _ = socket.read(&mut read_buf).await;
+                let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+                if socket.write_all(headers.as_bytes()).await.is_err() {
+                    return;
+                }
+                let chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
+                let framed = format!("{:x}\r\n{}\r\n", chunk.len(), chunk);
+                if socket.write_all(framed.as_bytes()).await.is_err() {
+                    return;
+                }
+                let _ = socket.flush().await;
+                // 終端チャンクを送らず接続を保持し続ける（無応答の再現）。
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn cloud_streaming_aborts_when_provider_goes_idle() {
+        let addr = spawn_hanging_cloud_provider().await;
+        let provider = StubProvider {
+            base_url: format!("http://{addr}"),
+        };
+        let payload = serde_json::json!({"model": "stub-model", "messages": []});
+
+        let result = proxy_cloud_provider(
+            &provider,
+            &reqwest::Client::new(),
+            &payload,
+            "stub-model",
+            true,
+        )
+        .await
+        .expect("proxy streaming");
+
+        // プロバイダがヘッダーと1チャンクの送信後に無応答になっても、
+        // アイドルタイムアウトでストリームが打ち切られ、接続が無期限に
+        // 維持されることはない。
+        let started = std::time::Instant::now();
+        let consumed = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            axum::body::to_bytes(result.response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("stream must terminate via idle timeout, not hang");
+        assert!(
+            consumed.is_err(),
+            "アイドル打ち切りはストリームエラーとして伝播するべき"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "無応答のまま接続が維持され続けるべきではない"
+        );
+    }
 }

@@ -113,6 +113,85 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
     })
 }
 
+/// フェイルオーバーの最大試行回数（初回送信を含む総試行回数、Issue #976）
+///
+/// 1回の推論リクエストで試行するエンドポイント数の上限。候補がこれより
+/// 多くても上限までしか試行せず、無制限の再試行はしない。
+pub(crate) const MAX_FAILOVER_ATTEMPTS: usize = 3;
+
+/// 上流の失敗ステータスがフェイルオーバー（別エンドポイントへの再試行）の
+/// 対象かどうか（Issue #976）
+///
+/// 429（上流側の容量・レート制限）と 5xx（上流側の障害）は、別エンドポイント
+/// では成功する可能性があるため再試行する。それ以外の 4xx はクライアント
+/// 起因であり、別エンドポイントでも同じ結果になるため再試行しない
+/// （404 の hop-off は #964 の領分としてここでは扱わない）。
+pub(crate) fn is_failover_retryable_status(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// モデル対応エンドポイントをTPS優先の順序付き候補列で選択（フェイルオーバー用）
+///
+/// 候補列は最大 `MAX_FAILOVER_ATTEMPTS` 件に切り詰める。
+pub(crate) async fn select_endpoint_candidates_with_queue_for_model(
+    state: &AppState,
+    model_id: &str,
+    api_kind: Option<TpsApiKind>,
+) -> Result<Vec<Endpoint>, LbError> {
+    let mut endpoints = state
+        .balancer
+        .load_manager
+        .select_endpoints_by_tps_ready_for_model(model_id, api_kind)
+        .await?;
+    endpoints.truncate(MAX_FAILOVER_ATTEMPTS);
+
+    tracing::debug!(
+        model = %model_id,
+        candidates = endpoints.len(),
+        ?api_kind,
+        "Selected ordered endpoint candidates by TPS priority"
+    );
+
+    Ok(endpoints)
+}
+
+/// モデルと必須APIに対応するエンドポイントをTPS優先の順序付き候補列で選択
+/// （フェイルオーバー用）
+///
+/// 候補列は最大 `MAX_FAILOVER_ATTEMPTS` 件に切り詰める。
+pub(crate) async fn select_endpoint_candidates_with_queue_for_model_and_api(
+    state: &AppState,
+    model_id: &str,
+    required_api: SupportedAPI,
+    api_kind: Option<TpsApiKind>,
+) -> Result<Vec<Endpoint>, LbError> {
+    let endpoints = state
+        .balancer
+        .endpoint_registry
+        .find_by_model_and_supported_api(model_id, required_api)
+        .await;
+    if endpoints.is_empty() {
+        return Err(LbError::NoCapableEndpoints(model_id.to_string()));
+    }
+
+    let mut endpoints = state
+        .balancer
+        .load_manager
+        .select_endpoints_by_tps_ready_from_candidates(endpoints, model_id, api_kind)
+        .await?;
+    endpoints.truncate(MAX_FAILOVER_ATTEMPTS);
+
+    tracing::debug!(
+        model = %model_id,
+        candidates = endpoints.len(),
+        required_api = %required_api,
+        ?api_kind,
+        "Selected ordered endpoint candidates by TPS priority and required API"
+    );
+
+    Ok(endpoints)
+}
+
 /// モデルと必須APIに対応するエンドポイントをTPS優先・キュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
     state: &AppState,
@@ -440,6 +519,27 @@ pub(crate) fn record_endpoint_request_stats(
             tracing::error!("Failed to increment endpoint request counters: {}", e);
         }
 
+        // Issue #975: 推論リクエストの成否をエンドポイントステータスの判定へ反映する。
+        // 成功で連続失敗をリセットし、失敗が連続すると Error / Offline へ遷移して
+        // 選択から外れる（ヘルスチェックだけでは推論経路の詰まりを検知できないため）。
+        if success {
+            endpoint_registry.record_request_success(endpoint_id).await;
+        } else {
+            match endpoint_registry
+                .record_request_failure(endpoint_id, "Inference request failed")
+                .await
+            {
+                Ok(true) => {
+                    // ヘルスチェック側の遷移時と同様に TPS をリセットする
+                    load_manager.clear_tps_for_endpoint(endpoint_id).await;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::error!("Failed to record endpoint request failure: {}", e);
+                }
+            }
+        }
+
         // TPS計測対象かつ成功かつ有効トークンがある場合のみトークン・時間をDB永続化
         let should_update_tps = endpoint_type.is_tps_trackable()
             && api_kind.is_some()
@@ -590,6 +690,51 @@ mod tests {
         };
         let QueueSelection::Ready { queued_wait_ms, .. } = qs;
         assert!(queued_wait_ms.is_none());
+    }
+
+    // --- Issue #976: is_failover_retryable_status ---
+
+    #[test]
+    fn failover_retryable_for_server_errors() {
+        for status in [
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::BAD_GATEWAY,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::GATEWAY_TIMEOUT,
+        ] {
+            assert!(
+                is_failover_retryable_status(status),
+                "expected {status} to be failover-retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn failover_retryable_for_too_many_requests() {
+        // 429 は上流側の容量都合であり、別エンドポイントでは成功しうる
+        assert!(is_failover_retryable_status(StatusCode::TOO_MANY_REQUESTS));
+    }
+
+    #[test]
+    fn failover_not_retryable_for_client_errors() {
+        for status in [
+            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::NOT_FOUND,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ] {
+            assert!(
+                !is_failover_retryable_status(status),
+                "expected {status} to not be failover-retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn failover_not_retryable_for_success() {
+        assert!(!is_failover_retryable_status(StatusCode::OK));
+        assert!(!is_failover_retryable_status(StatusCode::CREATED));
     }
 
     // --- process_sse_lines ---

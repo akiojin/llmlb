@@ -9,7 +9,7 @@
 
 use crate::db::endpoints as db;
 use crate::detection::detect_endpoint_type_with_client;
-use crate::registry::endpoints::EndpointRegistry;
+use crate::registry::endpoints::{EndpointRegistry, CONSECUTIVE_FAILURES_FOR_OFFLINE};
 use crate::sync;
 use crate::types::endpoint::{Endpoint, EndpointHealthCheck, EndpointStatus, EndpointType};
 use chrono::Utc;
@@ -41,9 +41,6 @@ const HEALTH_CHECK_TIMEOUT_SECS: u64 = 5;
 
 /// デフォルトのチェック間隔（秒）
 const DEFAULT_CHECK_INTERVAL_SECS: u64 = 30;
-
-/// オフライン判定までの連続失敗回数
-const CONSECUTIVE_FAILURES_FOR_OFFLINE: u32 = 2;
 
 /// エンドポイントヘルスチェッカー
 ///

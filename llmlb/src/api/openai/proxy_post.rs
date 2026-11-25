@@ -17,15 +17,16 @@ use crate::api::openai_util::{
     UPSTREAM_ERROR_SUMMARY_MAX_BYTES,
 };
 use crate::api::proxy::{
-    forward_streaming_response_with_tps_tracking, record_endpoint_request_stats,
-    save_request_record, select_available_endpoint_with_queue_for_model,
-    select_available_endpoint_with_queue_for_model_and_api, QueueSelection,
+    forward_streaming_response_with_tps_tracking, is_failover_retryable_status,
+    record_endpoint_request_stats, save_request_record,
+    select_endpoint_candidates_with_queue_for_model,
+    select_endpoint_candidates_with_queue_for_model_and_api,
 };
 use crate::balancer::RequestOutcome;
 use crate::common::error::LbError;
 use crate::common::protocol::{RecordStatus, RequestResponseRecord, RequestType, TpsApiKind};
 use crate::token::extract_usage_from_response;
-use crate::types::endpoint::SupportedAPI;
+use crate::types::endpoint::{Endpoint, SupportedAPI};
 use crate::AppState;
 use axum::{
     body::Body,
@@ -111,11 +112,14 @@ pub(super) async fn proxy_openai_post(
     } else {
         None
     };
-    let mut queued_wait_ms: Option<u128> = None;
+    let queued_wait_ms: Option<u128> = None;
 
     // FR-004: エンドポイント選択失敗時もリクエスト履歴に記録する
-    let endpoint = match if let Some(required_api) = required_supported_api {
-        select_available_endpoint_with_queue_for_model_and_api(
+    // Issue #976: フェイルオーバー用に、TPS優先の順序付き候補列を取得する。
+    // 候補列はこの時点のスナップショットであり、試行中のステータス変化
+    // （失敗フィードバックによる Error 化など）には影響されない。
+    let candidates = match if let Some(required_api) = required_supported_api {
+        select_endpoint_candidates_with_queue_for_model_and_api(
             state,
             &resolved_model,
             required_api,
@@ -123,15 +127,9 @@ pub(super) async fn proxy_openai_post(
         )
         .await
     } else {
-        select_available_endpoint_with_queue_for_model(state, &resolved_model, tps_api_kind).await
+        select_endpoint_candidates_with_queue_for_model(state, &resolved_model, tps_api_kind).await
     } {
-        Ok(QueueSelection::Ready {
-            endpoint,
-            queued_wait_ms: wait_ms,
-        }) => {
-            queued_wait_ms = wait_ms;
-            *endpoint
-        }
+        Ok(candidates) => candidates,
         Err(e) => {
             let error_message = if matches!(e, LbError::NoCapableEndpoints(_)) {
                 format!("No available nodes support model: {}", model)
@@ -151,7 +149,8 @@ pub(super) async fn proxy_openai_post(
                     request_type,
                     request_body,
                     error_message.clone(),
-                    queued_wait_ms.unwrap_or(0) as u64,
+                    // 選択自体が失敗した時点ではキュー待機は発生していない
+                    0,
                     client_ip,
                     api_key_id,
                 ),
@@ -165,6 +164,86 @@ pub(super) async fn proxy_openai_post(
             return Err(e.into());
         }
     };
+    // Issue #976: 候補列を先頭から順に試行し、再試行可能な失敗では
+    // 次のエンドポイントへフェイルオーバーする。全候補が失敗した場合は
+    // 最後の試行の失敗をそのまま返す。
+    let total_candidates = candidates.len();
+    let mut last_outcome: Option<AttemptOutcome> = None;
+    for (index, endpoint) in candidates.into_iter().enumerate() {
+        let outcome = match attempt_openai_post_to_endpoint(
+            state,
+            &endpoint,
+            payload.clone(),
+            target_path,
+            model.clone(),
+            &resolved_model,
+            stream,
+            request_type,
+            request_body.clone(),
+            tps_api_kind,
+            client_ip,
+            api_key_id,
+            queued_wait_ms,
+        )
+        .await
+        {
+            Ok(outcome) => outcome,
+            // リース完了などの内部エラーは従来どおり即時に伝播する
+            Err(e) => return Err(e),
+        };
+        if outcome.retryable && index + 1 < total_candidates {
+            warn!(
+                endpoint_id = %endpoint.id,
+                endpoint_name = %endpoint.name,
+                attempt = index + 1,
+                total_candidates,
+                "Inference attempt failed; failing over to the next endpoint"
+            );
+            last_outcome = Some(outcome);
+            continue;
+        }
+        return outcome.result;
+    }
+
+    // 候補が空でないことは選択時点で保証されるため通常は到達しないが、
+    // 全試行が再試行可能な失敗で終わった場合は最後の失敗を返す。
+    last_outcome
+        .expect("at least one endpoint attempt must have run")
+        .result
+}
+
+/// 1エンドポイントへの推論リクエスト試行の結果（Issue #976）
+struct AttemptOutcome {
+    /// クライアントへ返す結果（成功、または最終試行の失敗）
+    result: Result<Response, OpenAIError>,
+    /// 別エンドポイントへの再試行が可能な失敗かどうか
+    retryable: bool,
+}
+
+/// 単一エンドポイントへの OpenAI 互換 POST の1試行。
+///
+/// 統計・履歴は試行ごとに記録する。失敗時は `AttemptOutcome::retryable` で
+/// フェイルオーバー可否を呼び出し側へ伝える。再試行可能な失敗は、送信エラー
+/// （接続エラー・タイムアウト）、上流の 429 / 5xx、成功ステータスでの
+/// 応答パース失敗、および選択直後の状態遷移によるリース取得失敗。
+/// ストリーミングは応答開始（2xx 受信）後の再試行はできないため、失敗判定は
+/// ヘッダー受信時点までに限る。
+#[allow(clippy::too_many_arguments)]
+async fn attempt_openai_post_to_endpoint(
+    state: &AppState,
+    endpoint: &Endpoint,
+    payload: Value,
+    target_path: &str,
+    model: String,
+    resolved_model: &str,
+    stream: bool,
+    request_type: RequestType,
+    request_body: Value,
+    tps_api_kind: Option<TpsApiKind>,
+    client_ip: Option<IpAddr>,
+    api_key_id: Option<Uuid>,
+    queued_wait_ms: Option<u128>,
+) -> Result<AttemptOutcome, OpenAIError> {
     let endpoint_id = endpoint.id;
     let endpoint_name = endpoint.name.clone();
     let endpoint_type = endpoint.endpoint_type;
@@ -172,12 +251,17 @@ pub(super) async fn proxy_openai_post(
     // (今後、RequestResponseRecordのフィールドをリネームすべき)
     let endpoint_host: std::net::IpAddr = UNSPECIFIED_IP;
 
-    let request_lease = state
-        .balancer
-        .load_manager
-        .begin_request(endpoint_id)
-        .await
-        .map_err(OpenAIError::from)?;
+    // 選択直後にエンドポイントが Error / Offline へ遷移していた場合は、
+    // リクエスト全体を失敗させず次の候補へ進む（FM-4）。
+    let request_lease = match state.balancer.load_manager.begin_request(endpoint_id).await {
+        Ok(lease) => lease,
+        Err(e) => {
+            return Ok(AttemptOutcome {
+                result: Err(OpenAIError::from(e)),
+                retryable: true,
+            });
+        }
+    };
 
     let client = state.http_client.clone();
     let runtime_url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), target_path);
@@ -202,7 +286,7 @@ pub(super) async fn proxy_openai_post(
     // 取得失敗時は endpoint_models が空 Vec のため、静的マッピングのフォールバックに流れる。
     let upstream_model = resolve_runtime_model_name_for_endpoint(
         &model,
-        &resolved_model,
+        resolved_model,
         &endpoint_type,
         &endpoint_models,
     );
@@ -280,8 +364,9 @@ pub(super) async fn proxy_openai_post(
                 state.event_bus.clone(),
             );
 
-            // Note: Model exclusion is handled by the health check system
-            // which will mark the endpoint as offline/error if requests fail repeatedly
+            // Note: This failure is fed back into the endpoint status via
+            // record_endpoint_request_stats (Issue #975): repeated failures
+            // move the endpoint to error/offline so selection avoids it.
 
             {
                 let mut record = RequestResponseRecord::new(
@@ -310,14 +395,20 @@ pub(super) async fn proxy_openai_post(
             if let Some(wait_ms) = queued_wait_ms {
                 add_queue_headers(&mut response, wait_ms);
             }
-            return Ok(response);
+            // 送信エラー（接続エラー・タイムアウト等）は別エンドポイントで
+            // 成功する可能性があるため、再試行可能として扱う
+            return Ok(AttemptOutcome {
+                result: Ok(response),
+                retryable: true,
+            });
         }
     };
 
     // ストリームの場合はレスポンスをそのままパススルー
     if stream {
         let duration = start.elapsed();
-        let succeeded = response.status().is_success();
+        let upstream_status = response.status();
+        let succeeded = upstream_status.is_success();
 
         let mut axum_response = if succeeded {
             {
@@ -418,7 +509,12 @@ pub(super) async fn proxy_openai_post(
         if let Some(wait_ms) = queued_wait_ms {
             add_queue_headers(&mut axum_response, wait_ms);
         }
-        return Ok(axum_response);
+        // ストリーミングの再試行判定はヘッダー受信時点まで: 2xx を受けた後は
+        // 再試行しない。非2xx はステータスが再試行対象の場合のみ再試行する
+        return Ok(AttemptOutcome {
+            result: Ok(axum_response),
+            retryable: !succeeded && is_failover_retryable_status(upstream_status),
+        });
     }
 
     if !response.status().is_success() {
@@ -440,8 +536,9 @@ pub(super) async fn proxy_openai_post(
             state.event_bus.clone(),
         );
 
-        // Note: Model exclusion is handled by the health check system
-        // which will mark the endpoint as offline/error if requests fail repeatedly
+        // Note: This failure is fed back into the endpoint status via
+        // record_endpoint_request_stats (Issue #975): repeated failures
+        // move the endpoint to error/offline so selection avoids it.
 
         let status = response.status();
         // OpenAI互換経路では upstream 非2xx は 502 に正規化して返す
@@ -482,7 +579,10 @@ pub(super) async fn proxy_openai_post(
         if let Some(wait_ms) = queued_wait_ms {
             add_queue_headers(&mut response, wait_ms);
         }
-        return Ok(response);
+        return Ok(AttemptOutcome {
+            result: Ok(response),
+            retryable: is_failover_retryable_status(status),
+        });
     }
 
     let parsed = response.json::<Value>().await;
@@ -556,7 +656,10 @@ pub(super) async fn proxy_openai_post(
             if let Some(wait_ms) = queued_wait_ms {
                 add_queue_headers(&mut response, wait_ms);
             }
-            Ok(response)
+            Ok(AttemptOutcome {
+                result: Ok(response),
+                retryable: false,
+            })
         }
         Err(e) => {
             request_lease
@@ -576,8 +679,9 @@ pub(super) async fn proxy_openai_post(
                 state.event_bus.clone(),
             );
 
-            // Note: Model exclusion is handled by the health check system
-            // which will mark the endpoint as offline/error if requests fail repeatedly
+            // Note: This failure is fed back into the endpoint status via
+            // record_endpoint_request_stats (Issue #975): repeated failures
+            // move the endpoint to error/offline so selection avoids it.
 
             {
                 let mut record = RequestResponseRecord::new(
@@ -598,7 +702,14 @@ pub(super) async fn proxy_openai_post(
                 save_request_record(state.balancer.request_history.clone(), record);
             }
 
-            Err(LbError::Http(format!("Failed to parse OpenAI response: {}", e)).into())
+            // 成功ステータスで応答をパースできないのは上流の異常であり、
+            // 別エンドポイントでは正常な応答が得られる可能性がある
+            Ok(AttemptOutcome {
+                result: Err(
+                    LbError::Http(format!("Failed to parse OpenAI response: {}", e)).into(),
+                ),
+                retryable: true,
+            })
         }
     }
 }

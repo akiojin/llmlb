@@ -53,3 +53,21 @@ async fn summary_empty_state() {
     assert_eq!(summary.successful_requests, 0);
     assert_eq!(summary.failed_requests, 0);
 }
+
+// Issue #982: heartbeat メトリクスが無い状態でも、ゲートウェイ自身が観測した
+// 処理中リクエスト数（assigned_active）がサマリーに反映されること。
+// 撤去前の実装では鮮度判定（is_stale）が常に true に倒れ、
+// total_active_requests が常に 0 になっていた。
+#[tokio::test]
+async fn summary_total_active_requests_reflects_in_flight_requests() {
+    let _lock = TEST_LOCK.lock().await;
+    let (load_manager, endpoint_id) = setup_test_load_manager().await;
+
+    let _lease = load_manager
+        .begin_request(endpoint_id)
+        .await
+        .expect("begin_request should succeed");
+
+    let summary = load_manager.summary().await;
+    assert_eq!(summary.total_active_requests, 1);
+}

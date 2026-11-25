@@ -204,24 +204,6 @@ fn fill_history_fills_gaps() {
     }
 }
 
-// ===== metrics_history テスト =====
-
-#[tokio::test]
-async fn metrics_history_unknown_endpoint_returns_error() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, _) = setup_test_load_manager().await;
-    let result = load_manager.metrics_history(Uuid::new_v4()).await;
-    assert!(result.is_err());
-}
-
-#[tokio::test]
-async fn metrics_history_empty_for_no_metrics() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, endpoint_id) = setup_test_load_manager().await;
-    let history = load_manager.metrics_history(endpoint_id).await.unwrap();
-    assert!(history.is_empty());
-}
-
 // ===== record_request_history テスト =====
 
 #[tokio::test]

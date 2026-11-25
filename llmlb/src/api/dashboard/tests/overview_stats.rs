@@ -73,9 +73,6 @@ fn test_dashboard_stats_serialization() {
         total_active_requests: 2,
         queued_requests: 0,
         average_response_time_ms: Some(150.5),
-        average_gpu_usage: None,
-        average_gpu_memory_usage: None,
-        last_metrics_updated_at: None,
         last_registered_at: None,
         last_seen_at: None,
         openai_key_present: true,
@@ -98,7 +95,6 @@ fn test_dashboard_stats_serialization() {
     assert_eq!(json["total_active_requests"], 2);
     assert_eq!(json["queued_requests"], 0);
     assert_eq!(json["average_response_time_ms"], 150.5);
-    assert!(json["average_gpu_usage"].is_null());
     assert_eq!(json["openai_key_present"], true);
     assert_eq!(json["google_key_present"], false);
     assert_eq!(json["anthropic_key_present"], false);
@@ -123,9 +119,6 @@ fn test_dashboard_stats_rename_fields() {
         total_active_requests: 0,
         queued_requests: 0,
         average_response_time_ms: None,
-        average_gpu_usage: None,
-        average_gpu_memory_usage: None,
-        last_metrics_updated_at: None,
         last_registered_at: None,
         last_seen_at: None,
         openai_key_present: false,
@@ -261,9 +254,6 @@ fn test_dashboard_stats_equality() {
         total_active_requests: 0,
         queued_requests: 0,
         average_response_time_ms: None,
-        average_gpu_usage: None,
-        average_gpu_memory_usage: None,
-        last_metrics_updated_at: None,
         last_registered_at: None,
         last_seen_at: None,
         openai_key_present: false,
@@ -337,9 +327,6 @@ fn test_dashboard_stats_all_none_optional_fields() {
         total_active_requests: 0,
         queued_requests: 0,
         average_response_time_ms: None,
-        average_gpu_usage: None,
-        average_gpu_memory_usage: None,
-        last_metrics_updated_at: None,
         last_registered_at: None,
         last_seen_at: None,
         openai_key_present: false,
@@ -351,15 +338,12 @@ fn test_dashboard_stats_all_none_optional_fields() {
     };
     let json = serde_json::to_value(&stats).unwrap();
     assert!(json["average_response_time_ms"].is_null());
-    assert!(json["average_gpu_usage"].is_null());
-    assert!(json["average_gpu_memory_usage"].is_null());
-    assert!(json["last_metrics_updated_at"].is_null());
     assert!(json["last_registered_at"].is_null());
     assert!(json["last_seen_at"].is_null());
 }
 
 #[test]
-fn test_dashboard_stats_with_gpu_metrics() {
+fn test_dashboard_stats_with_optional_fields_set() {
     use super::DashboardStats;
 
     let stats = DashboardStats {
@@ -374,9 +358,6 @@ fn test_dashboard_stats_with_gpu_metrics() {
         total_active_requests: 5,
         queued_requests: 2,
         average_response_time_ms: Some(250.0),
-        average_gpu_usage: Some(85.5),
-        average_gpu_memory_usage: Some(72.3),
-        last_metrics_updated_at: Some(chrono::Utc::now()),
         last_registered_at: Some(chrono::Utc::now()),
         last_seen_at: Some(chrono::Utc::now()),
         openai_key_present: true,
@@ -387,11 +368,7 @@ fn test_dashboard_stats_with_gpu_metrics() {
         total_tokens: 75000,
     };
     let json = serde_json::to_value(&stats).unwrap();
-    let gpu_usage = json["average_gpu_usage"].as_f64().unwrap();
-    assert!((gpu_usage - 85.5).abs() < 0.01);
-    let gpu_mem = json["average_gpu_memory_usage"].as_f64().unwrap();
-    assert!((gpu_mem - 72.3).abs() < 0.01);
-    assert!(json["last_metrics_updated_at"].is_string());
+    assert_eq!(json["average_response_time_ms"], 250.0);
     assert!(json["last_registered_at"].is_string());
     assert!(json["last_seen_at"].is_string());
 }
@@ -412,9 +389,6 @@ fn test_dashboard_stats_token_counts() {
         total_active_requests: 0,
         queued_requests: 0,
         average_response_time_ms: None,
-        average_gpu_usage: None,
-        average_gpu_memory_usage: None,
-        last_metrics_updated_at: None,
         last_registered_at: None,
         last_seen_at: None,
         openai_key_present: false,

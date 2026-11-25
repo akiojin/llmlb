@@ -45,10 +45,6 @@ pub(super) fn api_routes(state: &AppState) -> Router<AppState> {
         )
         .route("/dashboard/overview", get(dashboard::get_overview))
         .route(
-            "/dashboard/metrics/{endpoint_id}",
-            get(dashboard::get_node_metrics),
-        )
-        .route(
             "/dashboard/request-responses",
             get(dashboard::list_request_responses),
         )

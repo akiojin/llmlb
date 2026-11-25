@@ -16,8 +16,8 @@ pub mod types;
 pub use activity::{EndpointRequestActivity, RequestActivitySnapshot, RequestActivityTotals};
 pub use lease::RequestLease;
 pub use types::{
-    EndpointLoadSnapshot, EndpointTpsSummary, MetricsUpdate, ModelTpsInfo, ModelTpsState,
-    RequestHistoryPoint, RequestOutcome, SystemSummary, WaitResult,
+    EndpointLoadSnapshot, EndpointTpsSummary, ModelTpsInfo, ModelTpsState, RequestHistoryPoint,
+    RequestOutcome, SystemSummary, WaitResult,
 };
 
 mod manager;

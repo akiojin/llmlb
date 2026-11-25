@@ -3,17 +3,12 @@
 //! `/api/dashboard/*` 系のエンドポイントを提供し、ノードの状態および
 //! システム統計を返却する。
 
-use super::error::AppError;
-use crate::types::HealthMetrics;
 use crate::{
     balancer::RequestHistoryPoint,
     types::endpoint::{EndpointStatus, EndpointType},
     AppState,
 };
-use axum::{
-    extract::{Path, State},
-    Json,
-};
+use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -145,12 +140,6 @@ pub struct DashboardStats {
     pub queued_requests: usize,
     /// 平均レスポンスタイム
     pub average_response_time_ms: Option<f32>,
-    /// 平均GPU使用率
-    pub average_gpu_usage: Option<f32>,
-    /// 平均GPUメモリ使用率
-    pub average_gpu_memory_usage: Option<f32>,
-    /// 最新メトリクス更新時刻
-    pub last_metrics_updated_at: Option<DateTime<Utc>>,
     /// 最新登録日時
     pub last_registered_at: Option<DateTime<Utc>>,
     /// 最新ヘルスチェック時刻
@@ -339,17 +328,4 @@ pub async fn get_overview(State(state): State<AppState>) -> Json<DashboardOvervi
         generated_at,
         generation_time_ms,
     })
-}
-
-/// GET /api/dashboard/metrics/:runtime_id
-pub async fn get_node_metrics(
-    Path(endpoint_id): Path<Uuid>,
-    State(state): State<AppState>,
-) -> Result<Json<Vec<HealthMetrics>>, AppError> {
-    let history = state
-        .balancer
-        .load_manager
-        .metrics_history(endpoint_id)
-        .await?;
-    Ok(Json(history))
 }

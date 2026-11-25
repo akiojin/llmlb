@@ -19,10 +19,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use llmlb::{
-    balancer::{LoadManager, MetricsUpdate},
-    common::protocol::GenerateRequest,
-};
+use llmlb::{balancer::LoadManager, common::protocol::GenerateRequest};
 use reqwest::{Client, StatusCode as ReqStatusCode};
 use serde_json::Value;
 use serial_test::serial;
@@ -392,7 +389,8 @@ async fn proxy_completions_queue_config_does_not_block_round_robin_forwarding() 
     timeout(Duration::from_secs(1), stub_state.first_started.notified())
         .await
         .expect("first request should reach node");
-    mark_endpoint_busy(&load_manager, endpoint_id).await;
+    // 先行リクエストがリースで処理中（assigned_active=1）になるのを待つ。
+    // 旧実装は heartbeat メトリクスで busy を偽装していたが、Issue #982 で撤去した。
     wait_for_endpoint_active(&load_manager, endpoint_id, Duration::from_secs(1)).await;
 
     let second_resp = client
@@ -445,28 +443,4 @@ async fn wait_for_endpoint_active(
 
         sleep(Duration::from_millis(10)).await;
     }
-}
-
-async fn mark_endpoint_busy(load_manager: &LoadManager, endpoint_id: &str) {
-    let endpoint_uuid = Uuid::parse_str(endpoint_id).expect("endpoint id should be UUID");
-    load_manager
-        .record_metrics(MetricsUpdate {
-            endpoint_id: endpoint_uuid,
-            cpu_usage: 0.0,
-            memory_usage: 0.0,
-            gpu_usage: None,
-            gpu_memory_usage: None,
-            gpu_memory_total_mb: None,
-            gpu_memory_used_mb: None,
-            gpu_temperature: None,
-            gpu_model_name: None,
-            gpu_compute_capability: None,
-            gpu_capability_score: None,
-            active_requests: 1,
-            average_response_time_ms: None,
-            initializing: false,
-            ready_models: None,
-        })
-        .await
-        .expect("recording metrics should succeed");
 }

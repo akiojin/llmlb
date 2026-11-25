@@ -251,6 +251,13 @@ fn forward_streaming_response_inner(
     {
         let response_headers = axum_response.headers_mut();
         for (name, value) in headers.iter() {
+            // 再ストリーミングする body の長さは上流の Content-Length と一致する
+            // 保証がない（中継側で打ち切る場合がある）。引き継ぐと配信側がその
+            // バイト数で body を終端し、ストリームが終端まで読まれないまま
+            // 破棄され得るため除外する（anthropic 経路と同じ扱い）。
+            if name == reqwest::header::CONTENT_LENGTH {
+                continue;
+            }
             if let (Ok(header_name), Ok(header_value)) = (
                 HeaderName::from_bytes(name.as_str().as_bytes()),
                 HeaderValue::from_bytes(value.as_bytes()),
@@ -272,6 +279,36 @@ fn forward_streaming_response_inner(
         );
     }
     Ok(axum_response)
+}
+
+/// SSE 行バッファの上限（バイト数、Issue #981）
+///
+/// 改行が来るまでの部分行を蓄積するバッファの上限。通常の SSE 行はこれより
+/// 十分に短いため正規のストリームでは発動しない。上流が改行なしのデータを
+/// 流し続けた場合にバッファが無制限に成長してメモリを圧迫するのを防ぐ。
+pub(crate) const SSE_LINE_BUFFER_MAX_BYTES: usize = 1024 * 1024;
+
+/// チャンクを行バッファへ追加し、完成した行を取り出す（Issue #981）
+///
+/// 改行のない部分行が `SSE_LINE_BUFFER_MAX_BYTES` を超えたら、その行は
+/// 異常に長いためパースを諦めてバッファを破棄する。中継自体はチャンクを
+/// そのままクライアントへ流すため、破棄しても配信内容には影響せず、
+/// トークン集計・変換の対象から外れるだけである。
+pub(crate) fn drain_sse_lines(buffer: &mut String, chunk_text: &str) -> Vec<String> {
+    buffer.push_str(chunk_text);
+
+    let mut lines = Vec::new();
+    while let Some(newline_idx) = buffer.find('\n') {
+        let line = buffer[..newline_idx].trim_end_matches('\r').to_string();
+        lines.push(line);
+        buffer.drain(..=newline_idx);
+    }
+
+    if buffer.len() > SSE_LINE_BUFFER_MAX_BYTES {
+        buffer.clear();
+    }
+
+    lines
 }
 
 /// チャンク待ちごとにアイドルタイムアウトを適用するストリームラッパー（Issue #984）
@@ -316,12 +353,8 @@ fn process_sse_lines(
     chunk_text: &str,
     accumulator: &mut StreamingTokenAccumulator,
 ) {
-    buffer.push_str(chunk_text);
-
-    while let Some(newline_idx) = buffer.find('\n') {
-        let line = buffer[..newline_idx].trim_end_matches('\r').to_string();
+    for line in drain_sse_lines(buffer, chunk_text) {
         accumulator.process_chunk(&line);
-        buffer.drain(..=newline_idx);
     }
 }
 
@@ -439,10 +472,14 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
                 return;
             }
 
-            let (output_tokens, duration_ms) = self.finalize_output_tokens_and_duration();
-
+            // 統計未記録のまま破棄されたということは、ストリームが正常終了も
+            // エラー終了もせずに終わった（クライアント切断等）ということであり、
+            // 成功ではない。成功として計上すると TPS と成功率が実態より良く
+            // 算出され続けるため、ストリームエラー時と同じく失敗として記録する
+            // （RequestLease の Drop が Error で自動完了するのとも一致する）。
+            // Issue #981
             if tokio::runtime::Handle::try_current().is_ok() {
-                self.record_stats_once(true, output_tokens, duration_ms);
+                self.record_stats_once(false, 0, 0);
             } else {
                 tracing::warn!(
                     endpoint_id = %self.endpoint_id,
@@ -523,6 +560,13 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
     {
         let response_headers = axum_response.headers_mut();
         for (name, value) in headers.iter() {
+            // 再ストリーミングする body の長さは上流の Content-Length と一致する
+            // 保証がない（中継側で打ち切る場合がある）。引き継ぐと配信側がその
+            // バイト数で body を終端し、ストリームが終端まで読まれないまま
+            // 破棄され得るため除外する（anthropic 経路と同じ扱い）。
+            if name == reqwest::header::CONTENT_LENGTH {
+                continue;
+            }
             if let (Ok(header_name), Ok(header_value)) = (
                 HeaderName::from_bytes(name.as_str().as_bytes()),
                 HeaderValue::from_bytes(value.as_bytes()),
@@ -1194,6 +1238,10 @@ mod tests {
     // --- Issue #978: ストリーミング中継のタイムアウト方針テストは
     // proxy/tests/streaming_timeouts.rs へ分離（FR-009 の行数上限対応） ---
     mod streaming_timeouts;
+
+    // --- Issue #981: 異常終了ストリームの成否計上と SSE 行バッファのテストは
+    // proxy/tests/stream_outcome.rs へ分離（FR-009 の行数上限対応） ---
+    mod stream_outcome;
 
     // --- Timeout configuration in forward_to_endpoint ---
 

@@ -709,3 +709,7 @@ fixed-wait|llmlb/src/api/cloud_proxy.rs|576643582-69|2
 fixed-wait|llmlb/src/api/proxy/tests/cloud_streaming_timeouts.rs|576643582-69|1
 # (a) #984: モック上流の hang 再現（無応答ストリーム）。中継側のアイドルタイムアウトが先に打ち切るため、この sleep が完了する経路は正常系では存在しない。同上の分離で移動。
 fixed-wait|llmlb/src/api/proxy/tests/cloud_streaming_timeouts.rs|576652577-61|1
+
+# (b) #981: ストリーム終了時の統計記録（非同期に反映される）を待つ条件ポーリング。sleep はポーリング間隔であり、完了は条件（total_requests >= 1）で判定し、上限 200 回で打ち切る。固定待機で完了を推定しない。
+fixed-wait|llmlb/src/api/proxy/tests/stream_outcome.rs|411471663-63|1
+fixed-wait|llmlb/src/api/anthropic/tests.rs|411471663-63|1

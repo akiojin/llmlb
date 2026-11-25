@@ -310,13 +310,6 @@ components:
           type: integer
         average_response_time_ms:
           type: [number, "null"]
-        average_gpu_usage:
-          type: [number, "null"]
-        average_gpu_memory_usage:
-          type: [number, "null"]
-        last_metrics_updated_at:
-          type: [string, "null"]
-          format: date-time
         last_registered_at:
           type: [string, "null"]
           format: date-time

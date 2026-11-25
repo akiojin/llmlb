@@ -57,7 +57,6 @@ Both dialogs are opened from the user menu in the header.
 - `GET /api/dashboard/overview`
 - `GET /api/dashboard/stats`
 - `GET /api/dashboard/endpoints`
-- `GET /api/dashboard/metrics/:node_id`
 - `GET /api/dashboard/request-history`
 - `GET /api/dashboard/request-responses`
 - `GET /api/dashboard/request-responses/:id`

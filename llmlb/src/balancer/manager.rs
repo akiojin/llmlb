@@ -6,16 +6,15 @@ use super::activity::{
 };
 use super::lease::RequestLease;
 use super::types::{
-    EndpointLoadSnapshot, EndpointLoadState, EndpointTpsSummary, MetricsUpdate, ModelTpsInfo,
-    QueueWaiterGuard, RequestHistoryPoint, RequestOutcome, SystemSummary, TpsTrackerMap,
-    WaitResult, REQUEST_HISTORY_WINDOW_MINUTES,
+    EndpointLoadSnapshot, EndpointLoadState, EndpointTpsSummary, ModelTpsInfo, QueueWaiterGuard,
+    RequestHistoryPoint, RequestOutcome, SystemSummary, TpsTrackerMap, WaitResult,
+    REQUEST_HISTORY_WINDOW_MINUTES,
 };
 
 use crate::common::error::{LbError, RouterResult};
 use crate::common::protocol::{TpsApiKind, TpsSource};
 use crate::events::{DashboardEvent, SharedEventBus};
 use crate::registry::endpoints::EndpointRegistry;
-use crate::types::HealthMetrics;
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
 use std::{
     collections::{HashMap, VecDeque},
@@ -48,8 +47,6 @@ pub struct LoadManager {
     state: Arc<RwLock<HashMap<Uuid, EndpointLoadState>>>,
     round_robin: Arc<AtomicUsize>,
     history: Arc<RwLock<VecDeque<RequestHistoryPoint>>>,
-    /// ready通知
-    ready_notify: Arc<Notify>,
     /// リクエストキュー待機中の通知
     queue_notify: Arc<Notify>,
     /// リクエストキュー待機数
@@ -71,7 +68,6 @@ impl LoadManager {
             state: Arc::new(RwLock::new(HashMap::new())),
             round_robin: Arc::new(AtomicUsize::new(0)),
             history: Arc::new(RwLock::new(VecDeque::new())),
-            ready_notify: Arc::new(Notify::new()),
             queue_notify: Arc::new(Notify::new()),
             queue_waiters: Arc::new(AtomicUsize::new(0)),
             tps_tracker: Arc::new(RwLock::new(HashMap::new())),
@@ -98,7 +94,8 @@ impl LoadManager {
 
     /// ゲートウェイが観測した処理中件数と直近60秒の開始数を返す。
     ///
-    /// heartbeatの鮮度やupstream内部の負荷には依存しない。
+    /// 材料はゲートウェイ自身の観測（割当・開始の記録）のみで、
+    /// upstream 内部の負荷申告には依存しない。
     pub async fn request_activity(&self) -> RequestActivitySnapshot {
         let registered = self.endpoint_registry.list().await;
         let state = self.state.read().await;
@@ -337,7 +334,7 @@ impl LoadManager {
     /// 候補をTPS優先で順序付けする（先頭が最も優先度が高い）。
     ///
     /// 単一選択（`select_endpoint_by_tps_from_endpoints`）と、フェイルオーバー用の
-    /// 順序付き候補列の取得で共有する。初期化中のエンドポイントは除外する。
+    /// 順序付き候補列の取得で共有する。
     async fn order_endpoints_by_tps(
         &self,
         endpoints: Vec<crate::types::endpoint::Endpoint>,
@@ -351,33 +348,24 @@ impl LoadManager {
             });
         }
 
-        // 候補のフィルタと同時に、実行中リクエスト数（combined_active）を
-        // スナップショットする。選択の並び替えで負荷を考慮するため（Issue #977）。
-        let (candidates, active_counts): (Vec<_>, HashMap<Uuid, u32>) = {
+        // 候補の実行中リクエスト数（割当中のリクエスト数）をスナップショット
+        // する。選択の並び替えで負荷を考慮するため（Issue #977）。なお初期化中
+        // フラグによる候補の除外と upstream 申告分の合算は、申告経路の撤去
+        // （Issue #982）に伴い廃止した。
+        let candidates = endpoints;
+        let active_counts: HashMap<Uuid, u32> = {
             let state = self.state.read().await;
-            let mut active_counts = HashMap::new();
-            let candidates = endpoints
-                .into_iter()
-                .filter(|ep| {
-                    state
-                        .get(&ep.id)
-                        .map(|load| !load.initializing)
-                        .unwrap_or(true)
-                })
-                .inspect(|ep| {
+            candidates
+                .iter()
+                .map(|ep| {
                     let active = state
                         .get(&ep.id)
-                        .map(|load| load.combined_active())
+                        .map(|load| load.assigned_active)
                         .unwrap_or(0);
-                    active_counts.insert(ep.id, active);
+                    (ep.id, active)
                 })
-                .collect();
-            (candidates, active_counts)
+                .collect()
         };
-
-        if candidates.is_empty() {
-            return Err(LbError::NoEndpointsAvailable);
-        }
 
         let scores = self
             .compute_endpoint_tps_scores(&candidates, model_id, api_kind)
@@ -463,114 +451,6 @@ impl LoadManager {
         &self.endpoint_registry
     }
 
-    /// ヘルスメトリクスを記録
-    pub async fn record_metrics(&self, update: MetricsUpdate) -> RouterResult<()> {
-        let MetricsUpdate {
-            endpoint_id,
-            cpu_usage,
-            memory_usage,
-            gpu_usage,
-            gpu_memory_usage,
-            gpu_memory_total_mb,
-            gpu_memory_used_mb,
-            gpu_temperature,
-            gpu_model_name,
-            gpu_compute_capability,
-            gpu_capability_score,
-            active_requests,
-            average_response_time_ms,
-            initializing,
-            ready_models,
-        } = update;
-
-        if self.endpoint_registry.get(endpoint_id).await.is_none() {
-            return Err(LbError::EndpointNotFound(endpoint_id));
-        }
-
-        let _ = self
-            .endpoint_registry
-            .update_gpu_info(
-                endpoint_id,
-                None,
-                gpu_memory_total_mb.map(|mb| mb * 1024 * 1024),
-                gpu_memory_used_mb.map(|mb| mb * 1024 * 1024),
-                gpu_capability_score.map(|s| s as f32),
-                Some(active_requests),
-            )
-            .await;
-
-        let mut state = self.state.write().await;
-        let entry = state.entry(endpoint_id).or_default();
-        let was_active = entry.combined_active() > 0;
-        let was_initializing = entry.initializing;
-
-        let derived_average = average_response_time_ms.or_else(|| entry.average_latency_ms());
-        let timestamp = Utc::now();
-        let metrics = HealthMetrics {
-            endpoint_id,
-            cpu_usage,
-            memory_usage,
-            gpu_usage,
-            gpu_memory_usage,
-            gpu_memory_total_mb,
-            gpu_memory_used_mb,
-            gpu_temperature,
-            gpu_model_name,
-            gpu_compute_capability,
-            gpu_capability_score,
-            active_requests,
-            total_requests: entry.total_assigned,
-            average_response_time_ms: derived_average,
-            timestamp,
-        };
-
-        entry.last_metrics = Some(metrics.clone());
-        entry.push_metrics(metrics);
-        entry.initializing = initializing;
-        entry.ready_models = ready_models;
-        if !entry.initializing {
-            self.ready_notify.notify_waiters();
-        }
-        if (was_active && entry.combined_active() == 0)
-            || (was_initializing && !entry.initializing && entry.combined_active() == 0)
-        {
-            self.queue_notify.notify_waiters();
-        }
-
-        Ok(())
-    }
-
-    /// エンドポイント登録時に初期状態を同期
-    pub async fn upsert_initial_state(
-        &self,
-        endpoint_id: Uuid,
-        initializing: bool,
-        ready_models: Option<(u8, u8)>,
-    ) {
-        let mut state = self.state.write().await;
-        let entry = state.entry(endpoint_id).or_default();
-        entry.initializing = initializing;
-        entry.ready_models = ready_models;
-        if !initializing {
-            self.ready_notify.notify_waiters();
-            if entry.combined_active() == 0 {
-                self.queue_notify.notify_waiters();
-            }
-        }
-    }
-
-    /// 初期化完了しているノードが存在するか
-    pub async fn has_ready_nodes(&self) -> bool {
-        let state = self.state.read().await;
-        state.values().any(|s| !s.initializing)
-    }
-
-    /// 全ノードが初期化中かを判定
-    pub async fn all_initializing(&self) -> bool {
-        let state = self.state.read().await;
-        !state.is_empty() && state.values().all(|s| s.initializing)
-    }
-
     /// リクエストキュー待機数を取得
     pub fn queue_waiters(&self) -> usize {
         self.queue_waiters.load(AtomicOrdering::Relaxed)
@@ -584,10 +464,10 @@ impl LoadManager {
 
         let state = self.state.read().await;
         endpoints.iter().any(|endpoint| {
-            let load = state.get(&endpoint.id);
-            let is_not_initializing = load.map(|l| !l.initializing).unwrap_or(true);
-            let is_idle = load.map(|l| l.combined_active() == 0).unwrap_or(true);
-            is_not_initializing && is_idle
+            state
+                .get(&endpoint.id)
+                .map(|l| l.assigned_active == 0)
+                .unwrap_or(true)
         })
     }
 
@@ -599,10 +479,10 @@ impl LoadManager {
 
         let state = self.state.read().await;
         endpoints.iter().any(|endpoint| {
-            let load = state.get(&endpoint.id);
-            let is_not_initializing = load.map(|l| !l.initializing).unwrap_or(true);
-            let is_idle = load.map(|l| l.combined_active() == 0).unwrap_or(true);
-            is_not_initializing && is_idle
+            state
+                .get(&endpoint.id)
+                .map(|l| l.assigned_active == 0)
+                .unwrap_or(true)
         })
     }
 
@@ -727,24 +607,7 @@ impl LoadManager {
             entry.total_latency_ms = entry.total_latency_ms.saturating_add(duration.as_millis());
         }
 
-        let updated_average = entry.average_latency_ms();
-
-        if let Some(metrics) = entry.last_metrics.as_mut() {
-            metrics.total_requests = entry.total_assigned;
-            if updated_average.is_some() {
-                metrics.average_response_time_ms = updated_average;
-            }
-            if let Some(latest) = entry.metrics_history.back_mut() {
-                latest.total_requests = metrics.total_requests;
-                if let Some(avg) = metrics.average_response_time_ms {
-                    latest.average_response_time_ms = Some(avg);
-                }
-                latest.gpu_usage = metrics.gpu_usage;
-                latest.gpu_memory_usage = metrics.gpu_memory_usage;
-            }
-        }
-
-        let should_notify_idle = entry.combined_active() == 0;
+        let should_notify_idle = entry.assigned_active == 0;
 
         drop(state);
         if !matches!(outcome, RequestOutcome::Queued) {
@@ -812,24 +675,7 @@ impl LoadManager {
             }
         }
 
-        let updated_average = entry.average_latency_ms();
-
-        if let Some(metrics) = entry.last_metrics.as_mut() {
-            metrics.total_requests = entry.total_assigned;
-            if updated_average.is_some() {
-                metrics.average_response_time_ms = updated_average;
-            }
-            if let Some(latest) = entry.metrics_history.back_mut() {
-                latest.total_requests = metrics.total_requests;
-                if let Some(avg) = metrics.average_response_time_ms {
-                    latest.average_response_time_ms = Some(avg);
-                }
-                latest.gpu_usage = metrics.gpu_usage;
-                latest.gpu_memory_usage = metrics.gpu_memory_usage;
-            }
-        }
-
-        let should_notify_idle = entry.combined_active() == 0;
+        let should_notify_idle = entry.assigned_active == 0;
 
         drop(state);
         if !matches!(outcome, RequestOutcome::Queued) {
@@ -853,7 +699,7 @@ impl LoadManager {
         let state = self.state.read().await;
         let load_state = state.get(&endpoint_id).cloned().unwrap_or_default();
 
-        Ok(self.build_snapshot_from_endpoint(&endpoint, load_state, Utc::now()))
+        Ok(self.build_snapshot_from_endpoint(&endpoint, load_state))
     }
 
     /// すべてのエンドポイントのロードスナップショットを取得
@@ -861,28 +707,13 @@ impl LoadManager {
         let endpoints = self.endpoint_registry.list().await;
         let state = self.state.read().await;
 
-        let now = Utc::now();
-
         endpoints
             .iter()
             .map(|endpoint| {
                 let load_state = state.get(&endpoint.id).cloned().unwrap_or_default();
-                self.build_snapshot_from_endpoint(endpoint, load_state, now)
+                self.build_snapshot_from_endpoint(endpoint, load_state)
             })
             .collect()
-    }
-
-    /// 指定されたエンドポイントのメトリクス履歴を取得
-    pub async fn metrics_history(&self, endpoint_id: Uuid) -> RouterResult<Vec<HealthMetrics>> {
-        if self.endpoint_registry.get(endpoint_id).await.is_none() {
-            return Err(LbError::EndpointNotFound(endpoint_id));
-        }
-        let state = self.state.read().await;
-        let history = state
-            .get(&endpoint_id)
-            .map(|load_state| load_state.metrics_history.iter().cloned().collect())
-            .unwrap_or_else(Vec::new);
-        Ok(history)
     }
 
     /// システム全体の統計サマリーを取得（SPEC-f8e3a1b7: Endpoint版）
@@ -915,23 +746,12 @@ impl LoadManager {
 
         let mut total_latency_ms = 0u128;
         let mut latency_samples = 0u64;
-        let mut weighted_average_sum = 0f64;
-        let mut weighted_average_weight = 0f64;
-        let mut latest_timestamp: Option<DateTime<Utc>> = None;
-        let mut gpu_usage_total = 0f64;
-        let mut gpu_usage_samples = 0u64;
-        let mut gpu_memory_total = 0f64;
-        let mut gpu_memory_samples = 0u64;
-        let now = Utc::now();
 
         for endpoint in &endpoints {
             if let Some(load_state) = state.get(&endpoint.id) {
-                let is_fresh = !load_state.is_stale(now);
-                if is_fresh {
-                    summary.total_active_requests = summary
-                        .total_active_requests
-                        .saturating_add(load_state.combined_active());
-                }
+                summary.total_active_requests = summary
+                    .total_active_requests
+                    .saturating_add(load_state.assigned_active);
                 summary.total_requests = summary
                     .total_requests
                     .saturating_add(load_state.total_assigned);
@@ -955,53 +775,13 @@ impl LoadManager {
                     total_latency_ms = total_latency_ms.saturating_add(load_state.total_latency_ms);
                     latency_samples = latency_samples.saturating_add(completed);
                 }
-
-                if is_fresh {
-                    if let Some(timestamp) = load_state.last_updated() {
-                        if latest_timestamp.is_none_or(|current| timestamp > current) {
-                            latest_timestamp = Some(timestamp);
-                        }
-                    }
-                    if let Some(avg) = load_state.effective_average_ms() {
-                        let weight = load_state.total_assigned.max(1) as f64;
-                        weighted_average_sum += avg as f64 * weight;
-                        weighted_average_weight += weight;
-                    }
-                    if let Some(metrics) = load_state.last_metrics.as_ref() {
-                        if let Some(gpu) = metrics.gpu_usage {
-                            gpu_usage_total += gpu as f64;
-                            gpu_usage_samples = gpu_usage_samples.saturating_add(1);
-                        }
-                        if let Some(gpu_mem) = metrics.gpu_memory_usage {
-                            gpu_memory_total += gpu_mem as f64;
-                            gpu_memory_samples = gpu_memory_samples.saturating_add(1);
-                        }
-                    }
-                } else if latest_timestamp.is_none() {
-                    if let Some(timestamp) = load_state.last_updated() {
-                        latest_timestamp = Some(timestamp);
-                    }
-                }
             }
         }
 
-        if weighted_average_weight > 0.0 {
-            summary.average_response_time_ms =
-                Some((weighted_average_sum / weighted_average_weight) as f32);
-        } else if latency_samples > 0 {
+        if latency_samples > 0 {
             summary.average_response_time_ms =
                 Some((total_latency_ms as f64 / latency_samples as f64) as f32);
         }
-
-        if gpu_usage_samples > 0 {
-            summary.average_gpu_usage = Some((gpu_usage_total / gpu_usage_samples as f64) as f32);
-        }
-        if gpu_memory_samples > 0 {
-            summary.average_gpu_memory_usage =
-                Some((gpu_memory_total / gpu_memory_samples as f64) as f32);
-        }
-
-        summary.last_metrics_updated_at = latest_timestamp;
 
         summary
     }
@@ -1080,71 +860,16 @@ impl LoadManager {
         &self,
         endpoint: &crate::types::endpoint::Endpoint,
         load_state: EndpointLoadState,
-        now: DateTime<Utc>,
     ) -> EndpointLoadSnapshot {
-        let cpu_usage = load_state
-            .last_metrics
-            .as_ref()
-            .map(|metrics| metrics.cpu_usage);
-        let memory_usage = load_state
-            .last_metrics
-            .as_ref()
-            .map(|metrics| metrics.memory_usage);
-        let gpu_usage = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_usage);
-        let gpu_memory_usage = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_memory_usage);
-        let gpu_memory_total_mb = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_memory_total_mb);
-        let gpu_memory_used_mb = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_memory_used_mb);
-        let gpu_temperature = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_temperature);
-        let gpu_model_name = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_model_name.clone());
-        let gpu_compute_capability = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_compute_capability.clone());
-        let gpu_capability_score = load_state
-            .last_metrics
-            .as_ref()
-            .and_then(|metrics| metrics.gpu_capability_score);
-        let active_requests = load_state.combined_active();
-
         EndpointLoadSnapshot {
             endpoint_id: endpoint.id,
             machine_name: endpoint.name.clone(),
             status: endpoint.status,
-            cpu_usage,
-            memory_usage,
-            gpu_usage,
-            gpu_memory_usage,
-            gpu_memory_total_mb,
-            gpu_memory_used_mb,
-            gpu_temperature,
-            gpu_model_name,
-            gpu_compute_capability,
-            gpu_capability_score,
-            active_requests,
+            active_requests: load_state.assigned_active,
             total_requests: load_state.total_assigned,
             successful_requests: load_state.success_count,
             failed_requests: load_state.error_count,
-            average_response_time_ms: load_state.effective_average_ms(),
-            last_updated: load_state.last_updated(),
-            is_stale: load_state.is_stale(now),
+            average_response_time_ms: load_state.average_latency_ms(),
             total_input_tokens: load_state.total_input_tokens,
             total_output_tokens: load_state.total_output_tokens,
             total_tokens: load_state.total_tokens,
@@ -1199,31 +924,18 @@ impl LoadManager {
         self.select_endpoint_round_robin_from_endpoints(endpoints)
     }
 
-    /// 指定モデルに対応する初期化完了エンドポイントをラウンドロビンで選択
+    /// 指定モデルに対応するエンドポイントをラウンドロビンで選択
     pub async fn select_endpoint_round_robin_ready_for_model(
         &self,
         model_id: &str,
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
         let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
-        let ready_endpoints: Vec<_> = {
-            let state = self.state.read().await;
-            endpoints
-                .into_iter()
-                .filter(|ep| {
-                    state
-                        .get(&ep.id)
-                        .map(|load| !load.initializing)
-                        .unwrap_or(true)
-                })
-                .collect()
-        };
-
-        self.select_endpoint_round_robin_from_endpoints(ready_endpoints)
+        self.select_endpoint_round_robin_from_endpoints(endpoints)
     }
 
-    /// 指定モデルに対応する初期化完了エンドポイントをTPS優先で選択する。
+    /// 指定モデルに対応するエンドポイントをTPS優先で選択する。
     ///
-    /// 実装上は初期化中除外を共通処理で行うため、TPS優先選択の標準経路として使う。
+    /// TPS優先選択の標準経路として使う。
     pub async fn select_endpoint_by_tps_ready_for_model(
         &self,
         model_id: &str,
@@ -1234,7 +946,7 @@ impl LoadManager {
             .await
     }
 
-    /// 指定モデルに対応する初期化完了エンドポイントをTPS優先の順序付き候補列で返す。
+    /// 指定モデルに対応するエンドポイントをTPS優先の順序付き候補列で返す。
     ///
     /// フェイルオーバー（Issue #976）用: 先頭から順に試行するための候補列。
     /// 候補列は呼び出し時点のスナップショットであり、試行中のステータス変化には影響されない。
@@ -1248,7 +960,7 @@ impl LoadManager {
             .await
     }
 
-    /// 指定済み候補から、指定モデルに対応する初期化完了エンドポイントをTPS優先で選択する。
+    /// 指定済み候補から、指定モデルに対応するエンドポイントをTPS優先で選択する。
     pub async fn select_endpoint_by_tps_ready_from_candidates(
         &self,
         endpoints: Vec<crate::types::endpoint::Endpoint>,
@@ -1259,7 +971,7 @@ impl LoadManager {
             .await
     }
 
-    /// 指定済み候補から、指定モデルに対応する初期化完了エンドポイントを
+    /// 指定済み候補から、指定モデルに対応するエンドポイントを
     /// TPS優先の順序付き候補列で返す（フェイルオーバー用、Issue #976）。
     pub async fn select_endpoints_by_tps_ready_from_candidates(
         &self,

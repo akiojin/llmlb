@@ -346,6 +346,6 @@ fn additional_engine_types_roundtrip_with_conservative_capabilities() {
         assert!(!endpoint_type.supports_model_delete());
         assert!(!endpoint_type.supports_model_metadata());
         assert!(endpoint_type.is_tps_trackable());
-        assert_eq!(endpoint_type.recommended_inference_timeout_secs(), 120);
+        assert_eq!(endpoint_type.recommended_inference_timeout_secs(), 600);
     }
 }

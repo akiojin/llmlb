@@ -16,6 +16,12 @@ use tracing::{debug, info, warn};
 /// 単一エンドポイントが「異常な数」のモデルを申告したと判定する閾値。
 /// この値を超えたら `warn!()` ログで運用者に通知する（実態を持たない誤申告の早期検知用）。
 const SUSPICIOUS_MODEL_COUNT_THRESHOLD: usize = 50;
+
+/// オフライン判定までの連続失敗回数
+///
+/// ヘルスチェックの失敗判定と、推論リクエスト失敗のフィードバック
+/// （`record_request_failure`）で共有する（Issue #975）。
+pub(crate) const CONSECUTIVE_FAILURES_FOR_OFFLINE: u32 = 2;
 use uuid::Uuid;
 
 fn model_lookup_keys(model_id: &str) -> Vec<String> {
@@ -91,6 +97,12 @@ pub struct EndpointRegistry {
     pool: SqlitePool,
     /// 状態遷移を通知するダッシュボードイベントバス（bootstrap で設定）
     event_bus: Arc<OnceLock<SharedEventBus>>,
+    /// エンドポイントごとの推論リクエスト連続失敗回数（Issue #975）
+    ///
+    /// ヘルスチェック成功ではリセットされず、成功した推論リクエストでのみ
+    /// リセットされる。キャッシュのみで保持し、再起動後はヘルスチェックが
+    /// 判定を担う。
+    request_failure_streaks: Arc<RwLock<HashMap<Uuid, u32>>>,
 }
 
 impl EndpointRegistry {
@@ -101,6 +113,7 @@ impl EndpointRegistry {
             model_to_endpoints: Arc::new(RwLock::new(HashMap::new())),
             pool,
             event_bus: Arc::new(OnceLock::new()),
+            request_failure_streaks: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // DBからエンドポイントを読み込み
@@ -377,6 +390,59 @@ impl EndpointRegistry {
         Ok(updated)
     }
 
+    /// 推論リクエストの失敗をエンドポイントステータスへ反映する（Issue #975）
+    ///
+    /// `/v1/models` のヘルスチェックだけでは「推論経路だけが詰まっている」
+    /// 状態を検知できないため、実際の推論リクエストの失敗を判定材料に加える。
+    /// 連続失敗回数は成功した推論リクエストでのみリセットされ、ヘルスチェック
+    /// 成功による Online 復帰ではリセットされない。そのため、ヘルスチェックが
+    /// 成功し続けても推論が失敗し続けるエンドポイントは Offline へ倒れる。
+    ///
+    /// 遷移ルールはヘルスチェックの失敗判定と同じ閾値を用いる:
+    /// 1回目の失敗で Error、連続 `CONSECUTIVE_FAILURES_FOR_OFFLINE` 回で Offline。
+    /// Pending / Offline のエンドポイントは遷移させない（復帰はヘルスチェックが担う）。
+    ///
+    /// 戻り値は「Online から非 Online へ遷移したか」。呼び出し側は遷移時に
+    /// TPS リセット等の付随処理を行う。
+    pub async fn record_request_failure(&self, id: Uuid, error: &str) -> Result<bool, sqlx::Error> {
+        let streak = {
+            let mut streaks = self.request_failure_streaks.write().await;
+            let entry = streaks.entry(id).or_insert(0);
+            *entry = entry.saturating_add(1);
+            *entry
+        };
+
+        let Some(endpoint) = self.get(id).await else {
+            // 存在しないエンドポイントの記録は残さない
+            self.request_failure_streaks.write().await.remove(&id);
+            return Ok(false);
+        };
+
+        let status_before = endpoint.status;
+        let target = match status_before {
+            EndpointStatus::Online | EndpointStatus::Error => {
+                if streak >= CONSECUTIVE_FAILURES_FOR_OFFLINE {
+                    EndpointStatus::Offline
+                } else {
+                    EndpointStatus::Error
+                }
+            }
+            EndpointStatus::Pending | EndpointStatus::Offline => return Ok(false),
+        };
+
+        self.update_status(id, target, None, Some(error)).await?;
+
+        Ok(status_before == EndpointStatus::Online && target != EndpointStatus::Online)
+    }
+
+    /// 推論リクエストの成功を記録し、連続失敗回数をリセットする（Issue #975）
+    ///
+    /// ステータス自体は変更しない。Error / Offline からの復帰は従来どおり
+    /// ヘルスチェックが担う。
+    pub async fn record_request_success(&self, id: Uuid) {
+        self.request_failure_streaks.write().await.remove(&id);
+    }
+
     /// エンドポイントのGPU情報を更新（キャッシュのみ、DBには保存しない）
     ///
     /// `/api/health`から取得したGPU情報をキャッシュに反映する。
@@ -528,6 +594,7 @@ impl EndpointRegistry {
         if deleted {
             // キャッシュから削除
             self.endpoints.write().await.remove(&id);
+            self.request_failure_streaks.write().await.remove(&id);
         }
 
         Ok(deleted)

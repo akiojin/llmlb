@@ -192,47 +192,6 @@ pub(crate) async fn select_endpoint_candidates_with_queue_for_model_and_api(
     Ok(endpoints)
 }
 
-/// モデルと必須APIに対応するエンドポイントをTPS優先・キュー付きで選択
-pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
-    state: &AppState,
-    model_id: &str,
-    required_api: SupportedAPI,
-    api_kind: Option<TpsApiKind>,
-) -> Result<QueueSelection, LbError> {
-    let endpoints = state
-        .balancer
-        .endpoint_registry
-        .find_by_model_and_supported_api(model_id, required_api)
-        .await;
-    if endpoints.is_empty() {
-        return Err(LbError::NoCapableEndpoints(model_id.to_string()));
-    }
-
-    // 待機判定はモデル単位で行う（必須APIでの絞り込みまでは見ない近似。
-    // 待っても選択自体はAPI対応候補から行うため、影響は待機時間のみ）。
-    let queued_wait_ms = wait_for_idle_slot_for_model(state, model_id).await;
-
-    let endpoint = state
-        .balancer
-        .load_manager
-        .select_endpoint_by_tps_ready_from_candidates(endpoints, model_id, api_kind)
-        .await?;
-
-    tracing::debug!(
-        model = %model_id,
-        endpoint_id = %endpoint.id,
-        endpoint_name = %endpoint.name,
-        required_api = %required_api,
-        ?api_kind,
-        "Selected ready endpoint by TPS priority and required API"
-    );
-
-    Ok(QueueSelection::Ready {
-        endpoint: Box::new(endpoint),
-        queued_wait_ms,
-    })
-}
-
 pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<Response, LbError> {
     let status = response.status();
     let headers = response.headers().clone();

@@ -9,5 +9,8 @@
 [advisories]
 ignore = [
   "RUSTSEC-2023-0071", # rsa: no fixed upgrade; unreachable unless sqlx-mysql feature is enabled
+  # sqlx-sqlite 0.8.6 requires libsqlite3-sys ^0.30.1, and 0.9.0 still caps it at <0.38.0.
+  # The fixed libsqlite3-sys is >=0.39.0. No released sqlx can select it (sqlx #4516).
+  "RUSTSEC-2026-0459",
 ]
 

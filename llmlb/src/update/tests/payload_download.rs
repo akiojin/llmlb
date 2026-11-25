@@ -413,8 +413,45 @@ fn find_extracted_binary_deep_nested() {
 }
 
 // =======================================================================
-// extract_archive: unsupported format
+// extract_archive: ZIP compatibility and invalid inputs
 // =======================================================================
+#[test]
+fn extract_archive_extracts_zstd_zip_payload() {
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("payload.zip");
+    let binary_name = Platform::detect().unwrap().binary_name();
+    let entry = format!("llmlb-test/{binary_name}");
+    let payload = b"public zstd ZIP compatibility payload";
+    let mut archive = zip::ZipWriter::new(fs::File::create(&archive_path).unwrap());
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Zstd);
+    archive.start_file(&entry, options).unwrap();
+    archive.write_all(payload).unwrap();
+    archive.finish().unwrap();
+    let dest = dir.path().join("extract");
+    fs::create_dir_all(&dest).unwrap();
+
+    extract_archive(&archive_path, &dest).unwrap();
+
+    assert_eq!(
+        fs::read(dest.join("llmlb-test").join(binary_name)).unwrap(),
+        payload
+    );
+}
+
+#[test]
+fn extract_archive_rejects_invalid_zip() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("payload.zip");
+    fs::write(&archive_path, b"not a ZIP archive").unwrap();
+    let dest = dir.path().join("extract");
+    fs::create_dir_all(&dest).unwrap();
+
+    assert!(extract_archive(&archive_path, &dest).is_err());
+}
+
 #[test]
 fn extract_archive_unsupported_format_fails() {
     let dir = tempfile::tempdir().unwrap();

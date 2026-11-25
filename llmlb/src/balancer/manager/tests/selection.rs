@@ -26,7 +26,7 @@ fn wait_result_enum_variants_exist() {
 }
 
 #[tokio::test]
-async fn select_endpoint_round_robin_ready_for_model_excludes_initializing_endpoints() {
+async fn select_endpoint_round_robin_ready_for_model_rotates_across_online_endpoints() {
     let _lock = TEST_LOCK.lock().await;
     let pool = SqlitePool::connect("sqlite::memory:")
         .await
@@ -40,32 +40,32 @@ async fn select_endpoint_round_robin_ready_for_model_excludes_initializing_endpo
         .await
         .expect("Failed to create endpoint registry");
 
-    let mut ready_endpoint = Endpoint::new(
-        "ready-endpoint".to_string(),
+    let mut first_endpoint = Endpoint::new(
+        "first-endpoint".to_string(),
         "http://localhost:11080".to_string(),
         EndpointType::OpenaiCompatible,
     );
-    ready_endpoint.status = EndpointStatus::Online;
-    let ready_endpoint_id = ready_endpoint.id;
+    first_endpoint.status = EndpointStatus::Online;
+    let first_endpoint_id = first_endpoint.id;
     registry
-        .add(ready_endpoint)
+        .add(first_endpoint)
         .await
-        .expect("Failed to add ready endpoint");
+        .expect("Failed to add first endpoint");
 
-    let mut initializing_endpoint = Endpoint::new(
-        "initializing-endpoint".to_string(),
+    let mut second_endpoint = Endpoint::new(
+        "second-endpoint".to_string(),
         "http://localhost:11081".to_string(),
         EndpointType::OpenaiCompatible,
     );
-    initializing_endpoint.status = EndpointStatus::Online;
-    let initializing_endpoint_id = initializing_endpoint.id;
+    second_endpoint.status = EndpointStatus::Online;
+    let second_endpoint_id = second_endpoint.id;
     registry
-        .add(initializing_endpoint)
+        .add(second_endpoint)
         .await
-        .expect("Failed to add initializing endpoint");
+        .expect("Failed to add second endpoint");
 
     let model_id = "gpt-oss:latest".to_string();
-    for endpoint_id in [ready_endpoint_id, initializing_endpoint_id] {
+    for endpoint_id in [first_endpoint_id, second_endpoint_id] {
         registry
             .add_model(&EndpointModel {
                 endpoint_id,
@@ -81,23 +81,19 @@ async fn select_endpoint_round_robin_ready_for_model_excludes_initializing_endpo
     }
 
     let load_manager = LoadManager::new(Arc::new(registry));
-    load_manager
-        .upsert_initial_state(ready_endpoint_id, false, Some((1, 1)))
-        .await;
-    load_manager
-        .upsert_initial_state(initializing_endpoint_id, true, Some((0, 1)))
-        .await;
 
+    // Issue #982: initializing 概念の撤去後は、Online な全エンドポイントが
+    // ラウンドロビンの対象になる。
+    let mut selected_ids = Vec::new();
     for _ in 0..4 {
         let selected = load_manager
             .select_endpoint_round_robin_ready_for_model(&model_id)
             .await
             .expect("selection should succeed");
-        assert_eq!(
-            selected.id, ready_endpoint_id,
-            "initializing endpoint must not be selected"
-        );
+        selected_ids.push(selected.id);
     }
+    assert!(selected_ids.contains(&first_endpoint_id));
+    assert!(selected_ids.contains(&second_endpoint_id));
 }
 
 // ===== compute_round_robin_priority_for_endpoints テスト =====
@@ -149,64 +145,6 @@ fn compute_round_robin_priority_wraps_around() {
     assert_eq!(priority[&id2], 0);
     assert_eq!(priority[&id3], 1);
     assert_eq!(priority[&id1], 2);
-}
-
-// ===== has_ready_nodes / all_initializing テスト =====
-
-#[tokio::test]
-async fn has_ready_nodes_empty_state() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, _) = setup_test_load_manager().await;
-    // 初期状態ではstateにエントリなし
-    assert!(!load_manager.has_ready_nodes().await);
-}
-
-#[tokio::test]
-async fn has_ready_nodes_with_ready_endpoint() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, endpoint_id) = setup_test_load_manager().await;
-    load_manager
-        .upsert_initial_state(endpoint_id, false, Some((1, 1)))
-        .await;
-    assert!(load_manager.has_ready_nodes().await);
-}
-
-#[tokio::test]
-async fn has_ready_nodes_all_initializing() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, endpoint_id) = setup_test_load_manager().await;
-    load_manager
-        .upsert_initial_state(endpoint_id, true, Some((0, 1)))
-        .await;
-    assert!(!load_manager.has_ready_nodes().await);
-}
-
-#[tokio::test]
-async fn all_initializing_empty() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, _) = setup_test_load_manager().await;
-    // stateが空の場合はfalse
-    assert!(!load_manager.all_initializing().await);
-}
-
-#[tokio::test]
-async fn all_initializing_true_when_all_are() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, endpoint_id) = setup_test_load_manager().await;
-    load_manager
-        .upsert_initial_state(endpoint_id, true, Some((0, 1)))
-        .await;
-    assert!(load_manager.all_initializing().await);
-}
-
-#[tokio::test]
-async fn all_initializing_false_when_one_ready() {
-    let _lock = TEST_LOCK.lock().await;
-    let (load_manager, endpoint_id) = setup_test_load_manager().await;
-    load_manager
-        .upsert_initial_state(endpoint_id, false, Some((1, 1)))
-        .await;
-    assert!(!load_manager.all_initializing().await);
 }
 
 // ===== queue_waiters テスト =====
@@ -300,4 +238,26 @@ async fn wait_for_idle_node_for_model_capacity_exceeded() {
         .wait_for_idle_node_with_timeout_for_model("test-model", 0, StdDuration::from_millis(100))
         .await;
     assert_eq!(result, WaitResult::CapacityExceeded);
+}
+
+// ===== effective_tps_score テスト（Issue #977） =====
+
+#[test]
+fn effective_tps_score_no_active_returns_raw_tps() {
+    // アイドル時は割り引かれず、従来の TPS 降順と一致する
+    assert!((super::effective_tps_score(120.0, 0) - 120.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn effective_tps_score_discounts_by_inflight_count() {
+    // 実効スコアは TPS / (実行中 + 1): 120 / (1 + 1) = 60、120 / (3 + 1) = 30
+    assert!((super::effective_tps_score(120.0, 1) - 60.0).abs() < f64::EPSILON);
+    assert!((super::effective_tps_score(120.0, 3) - 30.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn effective_tps_score_zero_tps_stays_zero() {
+    // 未計測（TPS=0）は実行中数によらず 0 のまま（探索は行わない）
+    assert_eq!(super::effective_tps_score(0.0, 0), 0.0);
+    assert_eq!(super::effective_tps_score(0.0, 5), 0.0);
 }

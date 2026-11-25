@@ -227,21 +227,16 @@ impl EndpointType {
     }
 
     /// エンドポイントタイプごとの推論タイムアウト推奨値（秒）
+    ///
+    /// Issue #978: 総量タイムアウトの役割は「生成全体の絶対上限
+    /// （バックストップ）」に純化し、全タイプで 600 秒に統一する。
+    /// 無応答の検出はストリーミング中継のアイドルタイムアウト
+    /// （`api::proxy::STREAM_IDLE_TIMEOUT`）が担うため、正常な推論時間と
+    /// 異常な無応答をこの値で兼用する必要がなくなった。600 秒は従来
+    /// ローカルエンジン（Xllm / Ollama / LmStudio）が使っていた値であり、
+    /// 正当な長生成を切らないための上限として維持する。
     pub fn recommended_inference_timeout_secs(&self) -> u32 {
-        match self {
-            Self::Xllm | Self::Ollama | Self::LmStudio => 600,
-            Self::Vllm
-            | Self::Llamacpp
-            | Self::Strata
-            | Self::ProjectMaya
-            | Self::Sglang
-            | Self::Lmdeploy
-            | Self::Xinference
-            | Self::Lemonade
-            | Self::Tgi
-            | Self::Koboldcpp
-            | Self::OpenaiCompatible => 120,
-        }
+        600
     }
 }
 

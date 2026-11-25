@@ -371,14 +371,21 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
         ],
     },
     // Issue #776 AC-2: 稼働中の LM Studio が報告し、解決に失敗していたモデル ID。
-    // alias は実際の `/v1/models` 応答に基づく。Ollama alias は根拠がないため登録しない。
+    // 優先 alias は実際の `/v1/models` 応答、追加の量子化 alias は Issue #946 の配布元 README に基づく。
+    // Ollama alias は固定タグの根拠がないため登録しない。
     ModelMapping {
         canonical: "Qwen/Qwen3.8-27B",
         last_verified: "2026-09-30",
-        aliases: &[EngineAlias {
-            engine: EndpointType::LmStudio,
-            name: "qwen/qwen3.8-27b",
-        }],
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "qwen/qwen3.8-27b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF",
+            },
+        ],
     },
     // LM Studio の実体は再配布 GGUF（`Phil2Sat/Qwen-Image-Edit-Rapid-AIO-GGUF`）。その
     // `base_model` が指す配布元リポジトリを canonical とする。
@@ -581,6 +588,157 @@ pub static BUILTIN_MAPPINGS: &[ModelMapping] = &[
                 name: "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF",
             },
         ],
+    },
+    // Issue #946: 確認済みの固定タグと公式 runtime 名。全候補の採否は
+    // docs/model-discovery-946.md を参照。base / fine-tune / draft は混同しない。
+    // Issue #958: official fixed tags / GGUF runtime guidance; see docs/model-discovery-958.md.
+    ModelMapping {
+        canonical: "LiquidAI/LFM3-1.7B",
+        last_verified: "2026-11-02",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b-q8_0",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3:1.7b-bf16",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "LiquidAI/LFM3-1.7B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "LiquidAI/LFM3-VL-2B",
+        last_verified: "2026-11-02",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b-q4_K_M",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b-q8_0",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "lfm3-vl:2b-bf16",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "liquid/lfm3-vl-2b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/LFM3-VL-2B-GGUF",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "LiquidAI/LFM3-VL-2B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "XHToken/Spark-X2.6-1.7B",
+        last_verified: "2026-11-02",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "SparkLLM/Spark-X2.6-1.7B:q4_k_m",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "SparkLLM/Spark-X2.6-1.7B:q8_0",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "XHToken/Spark-X2.6-1.7B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "RecursiveSI/flint",
+        last_verified: "2026-10-30",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "flint:40b-a2b-q4_1",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "flint:40b-a2b",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "flint:40b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "recursivesi/flint",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/flint-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "XHToken/Spark-X2.6-4B",
+        last_verified: "2026-10-30",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "SparkLLM/Spark-X2.6-4B:q4_k_m",
+            },
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "SparkLLM/Spark-X2.6-4B:q8_0",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "XHToken/Spark-X2.6-4B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+        last_verified: "2026-10-30",
+        aliases: &[
+            EngineAlias {
+                engine: EndpointType::Ollama,
+                name: "nemotron-3.5-bolt:e4b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "nvidia/nemotron-3.5-bolt-e4b",
+            },
+            EngineAlias {
+                engine: EndpointType::LmStudio,
+                name: "lmstudio-community/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF",
+            },
+        ],
+    },
+    ModelMapping {
+        canonical: "meta-llama/Meta-Llama-3-8B-Instruct",
+        last_verified: "2026-10-30",
+        aliases: &[EngineAlias {
+            engine: EndpointType::Ollama,
+            name: "llama3:8b-instruct-q4_K_M",
+        }],
     },
 ];
 
@@ -1042,6 +1200,7 @@ const KNOWN_CONTEXT_LENGTHS: &[(&str, u32)] = &[
     ("moonshotai/Kimi-K3", 1_048_576),
     // Meta Llama
     ("meta-llama/Llama-3.1-8B-Instruct", 131_072),
+    ("meta-llama/Meta-Llama-3-8B-Instruct", 8_192),
     ("meta-llama/Llama-3.3-70B-Instruct", 131_072),
     ("meta-llama/Llama-4-Scout-17B-16E-Instruct", 10_485_760),
     // Issue #934: OpenBMB, Liquid AI, JetBrains
@@ -1049,6 +1208,13 @@ const KNOWN_CONTEXT_LENGTHS: &[(&str, u32)] = &[
     ("openbmb/MiniCPM-V-4.7-1B", 262_144),
     ("LiquidAI/LFM2.5-24B-A2B", 131_072),
     ("JetBrains/Mellum2.1-12B-A2.5B-Thinking", 131_072),
+    // Issue #946: 公式 config の値。Bolt E4B は配布ごとに異なるため追加しない。
+    // Issue #958: exact max_position_embeddings from the official configs.
+    ("LiquidAI/LFM3-1.7B", 262_144),
+    ("LiquidAI/LFM3-VL-2B", 128_000),
+    ("XHToken/Spark-X2.6-1.7B", 1_048_576),
+    ("RecursiveSI/flint", 262_144),
+    ("XHToken/Spark-X2.6-4B", 1_048_576),
     // Embeddings
     ("nomic-ai/nomic-embed-text-v1.5", 8_192),
 ];

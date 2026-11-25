@@ -38,10 +38,7 @@ fn should_exclude(path: &str) -> bool {
         }
     }
     // ダッシュボードSSEポーリング
-    if path == "/api/dashboard/events" {
-        return true;
-    }
-    false
+    path == "/api/dashboard/events"
 }
 
 /// 監査ログミドルウェア

@@ -359,16 +359,12 @@ async fn dashboard_summary_routes_report_endpoints_models_and_traffic() {
     assert!(history[0]["success"].is_u64());
     assert!(history[0]["error"].is_u64());
 
-    let metrics = lb
-        .get_json(&format!("/api/dashboard/metrics/{}", lb.endpoint_id))
-        .await;
-    assert!(metrics.is_array());
+    // Issue #982: GET /api/dashboard/metrics/{id} は heartbeat 受付の撤去に伴い
+    // 廃止した（従来も常に空配列しか返していなかった）。ルート自体が存在しない。
     let response = lb
-        .get(&format!("/api/dashboard/metrics/{}", Uuid::nil()))
+        .get(&format!("/api/dashboard/metrics/{}", lb.endpoint_id))
         .await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    let body: Value = response.json().await.expect("unknown endpoint error json");
-    assert!(body["error"].is_string());
 
     let models = lb.get_json("/api/dashboard/playground/models").await;
     assert_eq!(models["object"], "list");

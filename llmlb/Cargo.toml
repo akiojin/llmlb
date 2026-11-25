@@ -51,7 +51,7 @@ base64 = "0.23"
 # lockfile に固定されてしまう（= cargo-audit で到達不能な脆弱性が検出される）ため明示制御する。
 sqlx = { version = "0.8.1", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "uuid"] }
 bcrypt = "0.19"
-jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0", features = ["aws_lc_rs"] }
 sha2 = "0.11"
 async-trait = "0.1"
 rand = "0.10"

@@ -186,7 +186,7 @@ async fn llamacpp_streaming_request_updates_model_tps_after_stream_completion() 
 
 #[tokio::test]
 #[serial]
-async fn interrupted_streaming_request_still_records_success_stats() {
+async fn interrupted_streaming_request_records_failure_stats() {
     use crate::types::endpoint::{
         Endpoint, EndpointModel, EndpointStatus, EndpointType, SupportedAPI,
     };
@@ -257,6 +257,8 @@ async fn interrupted_streaming_request_still_records_success_stats() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Simulate client disconnect before fully draining the upstream stream.
+    // Issue #981: 正常終了していないストリームを成功として計上すると TPS と
+    // 成功率が歪むため、中断は失敗として記録される。
     drop(response);
 
     sleep(Duration::from_millis(120)).await;
@@ -266,8 +268,8 @@ async fn interrupted_streaming_request_still_records_success_stats() {
         .expect("get endpoint should succeed")
         .expect("endpoint should exist");
     assert_eq!(endpoint.total_requests, 1);
-    assert_eq!(endpoint.successful_requests, 1);
-    assert_eq!(endpoint.failed_requests, 0);
+    assert_eq!(endpoint.successful_requests, 0);
+    assert_eq!(endpoint.failed_requests, 1);
 
     let model_stats = crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, endpoint_id)
         .await
@@ -277,8 +279,8 @@ async fn interrupted_streaming_request_still_records_success_stats() {
         .find(|s| s.model_id == "stream-interrupted-model")
         .expect("model stats should exist for interrupted stream");
     assert_eq!(stat.total_requests, 1);
-    assert_eq!(stat.successful_requests, 1);
-    assert_eq!(stat.failed_requests, 0);
+    assert_eq!(stat.successful_requests, 0);
+    assert_eq!(stat.failed_requests, 1);
 }
 
 #[tokio::test]

@@ -65,13 +65,24 @@ fn test_endpoint_new() {
 
 #[test]
 fn test_endpoint_type_recommended_inference_timeout() {
+    // Issue #978: 総量タイムアウトは生成全体の絶対上限（バックストップ）に
+    // 純化し、全タイプで 600 秒に統一する。無応答の検出はストリーミングの
+    // アイドルタイムアウトが担うため、タイプ別の値は持たない。
     let test_cases = [
         (EndpointType::Xllm, 600),
         (EndpointType::Ollama, 600),
         (EndpointType::LmStudio, 600),
-        (EndpointType::Vllm, 120),
-        (EndpointType::Llamacpp, 120),
-        (EndpointType::OpenaiCompatible, 120),
+        (EndpointType::Vllm, 600),
+        (EndpointType::Llamacpp, 600),
+        (EndpointType::Strata, 600),
+        (EndpointType::ProjectMaya, 600),
+        (EndpointType::Sglang, 600),
+        (EndpointType::Lmdeploy, 600),
+        (EndpointType::Xinference, 600),
+        (EndpointType::Lemonade, 600),
+        (EndpointType::Tgi, 600),
+        (EndpointType::Koboldcpp, 600),
+        (EndpointType::OpenaiCompatible, 600),
     ];
 
     for (endpoint_type, expected_timeout) in test_cases {
@@ -364,7 +375,7 @@ fn test_strata_family_endpoint_types_roundtrip() {
             serde_json::from_str::<EndpointType>(&json).unwrap(),
             endpoint_type
         );
-        assert_eq!(endpoint_type.recommended_inference_timeout_secs(), 120);
+        assert_eq!(endpoint_type.recommended_inference_timeout_secs(), 600);
         assert!(!endpoint_type.supports_model_download());
         assert!(!endpoint_type.supports_model_delete());
         assert!(!endpoint_type.supports_model_metadata());

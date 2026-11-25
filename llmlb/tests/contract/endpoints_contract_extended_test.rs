@@ -457,7 +457,7 @@ async fn test_create_endpoint_with_inference_timeout() {
     assert_eq!(body["inference_timeout_secs"], 300);
 }
 
-/// POST /api/endpoints - 正常系: OpenAI互換 endpoint の既定 inference_timeout_secs は120
+/// POST /api/endpoints - 正常系: OpenAI互換 endpoint の既定 inference_timeout_secs は600
 #[tokio::test]
 #[serial]
 async fn test_create_endpoint_default_inference_timeout() {
@@ -485,7 +485,7 @@ async fn test_create_endpoint_default_inference_timeout() {
 
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["inference_timeout_secs"], 120);
+    assert_eq!(body["inference_timeout_secs"], 600);
 }
 
 /// POST /api/endpoints - 正常系: Ollama endpoint の既定 inference_timeout_secs は600

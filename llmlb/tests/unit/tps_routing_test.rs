@@ -5,13 +5,13 @@
 //! - モデル別TPS選択
 //! - TPS未計測エンドポイントの最低優先
 //! - 同一TPS時のラウンドロビン
-//! - offline/error/initializing エンドポイントの除外
+//! - offline/error エンドポイントの除外
 //! - 非TPS対象リクエストでは他API種別のTPSを流用しない
 
 use std::sync::Arc;
 
 use llmlb::{
-    balancer::LoadManager,
+    balancer::{LoadManager, RequestOutcome, WaitResult},
     common::protocol::TpsApiKind,
     db::migrations::run_migrations,
     registry::endpoints::EndpointRegistry,
@@ -215,14 +215,13 @@ async fn tps_routing_uses_round_robin_when_tps_is_tied() {
 }
 
 #[tokio::test]
-async fn tps_routing_excludes_offline_error_and_initializing_endpoints() {
+async fn tps_routing_excludes_offline_and_error_endpoints() {
     let load_manager = create_test_load_manager().await;
     let ready = add_online_endpoint(&load_manager, "Ready", &["shared-model"]).await;
-    let initializing = add_online_endpoint(&load_manager, "Initializing", &["shared-model"]).await;
     let offline = add_online_endpoint(&load_manager, "Offline", &["shared-model"]).await;
     let error = add_online_endpoint(&load_manager, "Error", &["shared-model"]).await;
 
-    for endpoint in [&ready, &initializing, &offline, &error] {
+    for endpoint in [&ready, &offline, &error] {
         load_manager
             .update_tps(
                 endpoint.id,
@@ -234,9 +233,6 @@ async fn tps_routing_excludes_offline_error_and_initializing_endpoints() {
             .await;
     }
 
-    load_manager
-        .upsert_initial_state(initializing.id, true, Some((0, 1)))
-        .await;
     load_manager
         .endpoint_registry()
         .update_status(offline.id, EndpointStatus::Offline, None, Some("offline"))
@@ -363,5 +359,159 @@ async fn tps_update_after_offline_does_not_recreate_entry() {
     assert!(
         load_manager.get_model_tps(endpoint.id).await.is_empty(),
         "オフライン後の遅延 update_tps は TPS エントリを再生成してはならない"
+    );
+}
+
+// ===== Issue #977: 実行中リクエスト数を考慮した選択 =====
+
+#[tokio::test]
+async fn tps_routing_avoids_busy_endpoint_when_load_adjusted_score_is_lower() {
+    let load_manager = create_test_load_manager().await;
+    let fast = add_online_endpoint(&load_manager, "FastBusy", &["shared-model"]).await;
+    let slow = add_online_endpoint(&load_manager, "SlowIdle", &["shared-model"]).await;
+
+    // fast: 180 TPS / slow: 60 TPS
+    load_manager
+        .update_tps(
+            fast.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            180,
+            1_000,
+        )
+        .await;
+    load_manager
+        .update_tps(
+            slow.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            60,
+            1_000,
+        )
+        .await;
+
+    // fast に実行中リクエストを3件持たせる。
+    // 実効スコアは 180 / (3 + 1) = 45 となり、アイドルな slow (60) を下回る。
+    let mut leases = Vec::new();
+    for _ in 0..3 {
+        leases.push(
+            load_manager
+                .begin_request(fast.id)
+                .await
+                .expect("lease should start"),
+        );
+    }
+
+    let selected = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("endpoint should be selected");
+    assert_eq!(
+        selected.id, slow.id,
+        "実行中で割り引かれた fast ではなく、アイドルな slow が選ばれるべき"
+    );
+
+    for lease in leases {
+        lease
+            .complete(RequestOutcome::Success, std::time::Duration::from_millis(1))
+            .await
+            .expect("lease should complete");
+    }
+}
+
+#[tokio::test]
+async fn tps_routing_keeps_busy_endpoint_when_load_adjusted_score_still_higher() {
+    let load_manager = create_test_load_manager().await;
+    let fast = add_online_endpoint(&load_manager, "FastBusy", &["shared-model"]).await;
+    let slow = add_online_endpoint(&load_manager, "SlowIdle", &["shared-model"]).await;
+
+    // fast: 180 TPS / slow: 60 TPS
+    load_manager
+        .update_tps(
+            fast.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            180,
+            1_000,
+        )
+        .await;
+    load_manager
+        .update_tps(
+            slow.id,
+            "shared-model".to_string(),
+            TpsApiKind::ChatCompletions,
+            60,
+            1_000,
+        )
+        .await;
+
+    // fast の実行中が1件なら実効スコアは 180 / (1 + 1) = 90 で slow (60) を上回り、
+    // 単純な最小接続数ではなく TPS 優先が維持される。
+    let lease = load_manager
+        .begin_request(fast.id)
+        .await
+        .expect("lease should start");
+
+    let selected = load_manager
+        .select_endpoint_by_tps_ready_for_model("shared-model", Some(TpsApiKind::ChatCompletions))
+        .await
+        .expect("endpoint should be selected");
+    assert_eq!(
+        selected.id, fast.id,
+        "負荷調整後も高スコアなら実行中でも fast が選ばれるべき"
+    );
+
+    lease
+        .complete(RequestOutcome::Success, std::time::Duration::from_millis(1))
+        .await
+        .expect("lease should complete");
+}
+
+#[tokio::test]
+async fn wait_for_idle_for_model_unblocks_when_inflight_request_completes() {
+    let load_manager = create_test_load_manager().await;
+    let endpoint = add_online_endpoint(&load_manager, "Only", &["shared-model"]).await;
+
+    let lease = load_manager
+        .begin_request(endpoint.id)
+        .await
+        .expect("lease should start");
+    assert!(
+        !load_manager
+            .has_idle_endpoint_for_model("shared-model")
+            .await,
+        "実行中リクエストがある間はアイドルなエンドポイントは無い"
+    );
+
+    let waiter_manager = load_manager.clone();
+    let wait_task = tokio::spawn(async move {
+        waiter_manager
+            .wait_for_idle_node_with_timeout_for_model(
+                "shared-model",
+                10,
+                std::time::Duration::from_secs(5),
+            )
+            .await
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        !wait_task.is_finished(),
+        "実行中リクエストがある間は待機が継続するべき"
+    );
+
+    lease
+        .complete(RequestOutcome::Success, std::time::Duration::from_millis(1))
+        .await
+        .expect("lease should complete");
+
+    let result = wait_task.await.expect("wait task should finish");
+    assert_eq!(result, WaitResult::Ready);
+    assert_eq!(load_manager.queue_waiters(), 0, "待機者は解放されるべき");
+    assert!(
+        load_manager
+            .has_idle_endpoint_for_model("shared-model")
+            .await,
+        "完了後はアイドルなエンドポイントが存在する"
     );
 }

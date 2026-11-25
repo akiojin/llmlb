@@ -2,11 +2,92 @@
 
 #[cfg(test)]
 mod jwt_tests {
-    use jsonwebtoken::{encode, EncodingKey, Header};
+    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
     use llmlb::auth::jwt::{create_jwt, verify_jwt};
     use llmlb::common::auth::{Claims, UserRole};
 
     const TEST_SECRET: &str = "test_secret_key_for_jwt_testing_12345678";
+
+    const FIXTURE_SECRET: &str = "public-issue-948-compatibility-fixture-not-a-real-secret";
+
+    #[test]
+    fn test_legacy_provider_tokens_and_new_signatures_are_identical() {
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            claims: Claims,
+            token: String,
+        }
+        let fixtures: Vec<Fixture> =
+            serde_json::from_str(include_str!("../fixtures/jwt/provider-compat.json")).unwrap();
+        assert_eq!(fixtures.len(), 2);
+        for fixture in fixtures {
+            let claims = verify_jwt(&fixture.token, FIXTURE_SECRET).unwrap();
+            assert_eq!(claims, fixture.claims);
+            // HS256 is deterministic: byte identity also preserves verification by
+            // the old provider, without retaining its vulnerable production deps.
+            let token = encode(
+                &Header::default(),
+                &fixture.claims,
+                &EncodingKey::from_secret(FIXTURE_SECRET.as_bytes()),
+            )
+            .unwrap();
+            assert_eq!(token, fixture.token);
+        }
+    }
+
+    #[test]
+    fn test_jwt_retains_all_claims_and_exact_24_hour_lifetime() {
+        let before = chrono::Utc::now().timestamp() as usize;
+        for role in [UserRole::Admin, UserRole::Viewer] {
+            let token =
+                create_jwt("compat-user", role, TEST_SECRET, true, 1_793_010_000_000).unwrap();
+            let claims = verify_jwt(&token, TEST_SECRET).unwrap();
+            let after = chrono::Utc::now().timestamp() as usize;
+            assert_eq!(claims.sub, "compat-user");
+            assert_eq!(claims.role, role);
+            assert!(claims.must_change_password);
+            assert_eq!(claims.password_changed_at, 1_793_010_000_000);
+            assert!((before + 86_400..=after + 86_400).contains(&claims.exp));
+        }
+    }
+
+    #[test]
+    fn test_jwt_rejects_tampered_signature_and_unsigned_none() {
+        let token = create_jwt("user", UserRole::Admin, TEST_SECRET, false, 0).unwrap();
+        let (signed, signature) = token.rsplit_once('.').unwrap();
+        let replacement = if signature.starts_with('A') { "B" } else { "A" };
+        let tampered = format!("{signed}.{replacement}{}", &signature[1..]);
+        assert!(verify_jwt(&tampered, TEST_SECRET).is_err());
+        let payload = token.split('.').nth(1).unwrap();
+        let unsigned = format!("eyJhbGciOiJub25lIn0.{payload}.");
+        assert!(verify_jwt(&unsigned, TEST_SECRET).is_err());
+    }
+
+    #[test]
+    fn test_jwt_rejects_missing_exp_and_disallowed_algorithms() {
+        let claims = serde_json::json!({
+            "sub": "user", "role": "admin", "exp": 4_102_444_800_u64,
+            "must_change_password": false, "password_changed_at": 0
+        });
+        for algorithm in [Algorithm::HS384, Algorithm::HS512] {
+            let token = encode(
+                &Header::new(algorithm),
+                &claims,
+                &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+            )
+            .unwrap();
+            assert!(verify_jwt(&token, TEST_SECRET).is_err());
+        }
+        let mut missing_exp = claims;
+        missing_exp.as_object_mut().unwrap().remove("exp");
+        let token = encode(
+            &Header::default(),
+            &missing_exp,
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+        )
+        .unwrap();
+        assert!(verify_jwt(&token, TEST_SECRET).is_err());
+    }
 
     #[test]
     fn test_create_jwt_generates_valid_token() {

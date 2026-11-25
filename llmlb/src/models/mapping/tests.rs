@@ -1,6 +1,301 @@
 use super::*;
 
 #[test]
+fn test_issue_958_verified_models_resolve_in_both_directions() {
+    for (canonical, engine, aliases) in [
+        (
+            "LiquidAI/LFM3-1.7B",
+            EndpointType::Ollama,
+            vec![
+                "lfm3:1.7b",
+                "lfm3:1.7b-q4_K_M",
+                "lfm3:1.7b-q8_0",
+                "lfm3:1.7b-bf16",
+            ],
+        ),
+        (
+            "LiquidAI/LFM3-1.7B",
+            EndpointType::LmStudio,
+            vec!["LiquidAI/LFM3-1.7B-GGUF"],
+        ),
+        (
+            "LiquidAI/LFM3-VL-2B",
+            EndpointType::Ollama,
+            vec![
+                "lfm3-vl:2b",
+                "lfm3-vl:2b-q4_K_M",
+                "lfm3-vl:2b-q8_0",
+                "lfm3-vl:2b-bf16",
+            ],
+        ),
+        (
+            "LiquidAI/LFM3-VL-2B",
+            EndpointType::LmStudio,
+            vec![
+                "liquid/lfm3-vl-2b",
+                "lmstudio-community/LFM3-VL-2B-GGUF",
+                "LiquidAI/LFM3-VL-2B-GGUF",
+            ],
+        ),
+        (
+            "XHToken/Spark-X2.6-1.7B",
+            EndpointType::Ollama,
+            vec![
+                "SparkLLM/Spark-X2.6-1.7B:q4_k_m",
+                "SparkLLM/Spark-X2.6-1.7B:q8_0",
+            ],
+        ),
+        (
+            "XHToken/Spark-X2.6-1.7B",
+            EndpointType::LmStudio,
+            vec!["XHToken/Spark-X2.6-1.7B-GGUF"],
+        ),
+    ] {
+        assert_eq!(resolve_engine_name(canonical, &engine), Some(aliases[0]));
+        assert_eq!(resolve_engine_names(canonical, &engine), aliases);
+        assert_eq!(resolve_canonical(canonical, &engine), Some(canonical));
+        for alias in aliases {
+            assert_eq!(resolve_canonical(alias, &engine), Some(canonical));
+            assert_eq!(resolve_canonical_any(alias), Some(canonical));
+            assert_eq!(
+                resolve_canonical(&alias.to_ascii_uppercase(), &engine),
+                Some(canonical)
+            );
+            assert_eq!(resolve_canonical(alias, &EndpointType::Vllm), None);
+            let other = if engine == EndpointType::Ollama {
+                EndpointType::LmStudio
+            } else {
+                EndpointType::Ollama
+            };
+            assert_eq!(resolve_canonical(alias, &other), None);
+        }
+    }
+}
+
+#[test]
+fn test_issue_958_context_fallbacks_preserve_endpoint_values() {
+    for (canonical, context) in [
+        ("LiquidAI/LFM3-1.7B", 262_144),
+        ("LiquidAI/LFM3-VL-2B", 128_000),
+        ("XHToken/Spark-X2.6-1.7B", 1_048_576),
+    ] {
+        assert_eq!(resolve_max_tokens(canonical, None), Some(context));
+        assert_eq!(resolve_max_tokens(canonical, Some(4_096)), Some(4_096));
+    }
+}
+
+#[test]
+fn test_issue_958_distinct_and_unverified_models_are_not_merged() {
+    for model in [
+        "lfm3:latest",
+        "lfm3-vl:latest",
+        "LiquidAI/LFM3-1.7B-Base",
+        "AtomicChat/LFM3-1.7B-Uncensored-GGUF",
+        "LiquidAI/d1-2B",
+        "openbmb/MiniCPM-OCR-Jev",
+        "SparkLLM/Spark-X2.6-1.7B:latest",
+        "XHToken/Spark-X2.6-1.7B-Base",
+        "kaitchup/Qwen3.8-27B-SLQ-GGUF",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+    assert_eq!(
+        resolve_canonical("SparkLLM/Spark-X2.6-4B:q4_k_m", &EndpointType::Ollama),
+        Some("XHToken/Spark-X2.6-4B")
+    );
+}
+
+#[test]
+fn test_issue_966_candidates_are_not_merged_into_existing_models() {
+    for model in [
+        "xtools-at/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic",
+        "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF",
+        "NousResearch/Arete-27B",
+        "webAI-Official/TwIL-8B",
+        "ccore/Qwen3.5-4B-GLB-3D-Coder",
+        "RikiyaT/Qwen3.5-0.8B-weight-space-programming",
+        "tencent/Qwen3.8-27B-DSpine-b16",
+        "DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF",
+        "sensenova/SenseNova-Loop-9B-Preview",
+        "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+        "huihui_ai/Qwen3.8-abliterated",
+        "huihui_ai/Qwen3.8-abliterated:latest",
+        "huihui_ai/Qwen3.8-abliterated:27b",
+        "huihui_ai/Qwen3.8-abliterated:27b-q4_K_M",
+        "baidu/Unlimited-OCR-2",
+        "HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF",
+        "AtomicChat/LFM3-1.7B-Uncensored-GGUF",
+        "xiaomi-research/Xiaomi-OCR-0",
+        "longwayxu/xiaomi-ocr-0:bf16",
+        "prism-ml/Ternary-Bonsai-2-27B-gguf",
+        "Nanbeige/Nanbeige4.3-33B",
+        "microsoft/Mage-VL-Cowork",
+        "DavidAU/Qwen3.8-27B-Ultimate-Heretic-Uncensored-Turbo-Brilliance-50x-AGI-NEO-GGUF",
+        "ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming",
+        "Axion1-0/Axion-1.0-35B",
+        "axion-35b",
+        "taobao-mnn/MNN-Pocket-0.3B",
+        "taobao-mnn/MNN-Pocket-0.3B-GGUF",
+        "orcarouter/OrcaCyber-Nano-1.0",
+        "maritaca-ai/S5-nano",
+        "maritaca-ai/S5-nano-GGUF",
+        "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+        "nvidia/NVIDIA-Nemotron-Labs-Dory1.0-4B-BF16",
+        "LiquidAI/d1-2B",
+        "orcarouter/Flint-abliterated-GGUF",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+
+    assert_eq!(
+        resolve_canonical("qwen/qwen3.8-27b", &EndpointType::LmStudio),
+        Some("Qwen/Qwen3.8-27B")
+    );
+    assert_eq!(
+        resolve_canonical("lfm3:1.7b", &EndpointType::Ollama),
+        Some("LiquidAI/LFM3-1.7B")
+    );
+    assert_eq!(
+        resolve_canonical("flint:40b-a2b-q4_1", &EndpointType::Ollama),
+        Some("RecursiveSI/flint")
+    );
+    assert_eq!(
+        resolve_canonical("LiquidAI/d1-2B", &EndpointType::Ollama),
+        None
+    );
+}
+
+#[test]
+fn test_issue_946_verified_runtime_names_resolve_to_official_models() {
+    for (canonical, engine, preferred, aliases) in [
+        (
+            "RecursiveSI/flint",
+            EndpointType::Ollama,
+            "flint:40b-a2b-q4_1",
+            vec!["flint:40b-a2b-q4_1", "flint:40b-a2b", "flint:40b"],
+        ),
+        (
+            "RecursiveSI/flint",
+            EndpointType::LmStudio,
+            "recursivesi/flint",
+            vec!["recursivesi/flint", "lmstudio-community/flint-GGUF"],
+        ),
+        (
+            "XHToken/Spark-X2.6-4B",
+            EndpointType::Ollama,
+            "SparkLLM/Spark-X2.6-4B:q4_k_m",
+            vec![
+                "SparkLLM/Spark-X2.6-4B:q4_k_m",
+                "SparkLLM/Spark-X2.6-4B:q8_0",
+            ],
+        ),
+        (
+            "XHToken/Spark-X2.6-4B",
+            EndpointType::LmStudio,
+            "XHToken/Spark-X2.6-4B-GGUF",
+            vec!["XHToken/Spark-X2.6-4B-GGUF"],
+        ),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+            EndpointType::Ollama,
+            "nemotron-3.5-bolt:e4b",
+            vec!["nemotron-3.5-bolt:e4b"],
+        ),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
+            EndpointType::LmStudio,
+            "nvidia/nemotron-3.5-bolt-e4b",
+            vec![
+                "nvidia/nemotron-3.5-bolt-e4b",
+                "lmstudio-community/NVIDIA-Nemotron-3.5-Bolt-E4B-GGUF",
+            ],
+        ),
+        (
+            "meta-llama/Meta-Llama-3-8B-Instruct",
+            EndpointType::Ollama,
+            "llama3:8b-instruct-q4_K_M",
+            vec!["llama3:8b-instruct-q4_K_M"],
+        ),
+    ] {
+        assert_eq!(resolve_engine_name(canonical, &engine), Some(preferred));
+        assert_eq!(resolve_engine_names(canonical, &engine), aliases);
+        for alias in aliases {
+            assert_eq!(
+                resolve_canonical(alias, &engine),
+                Some(canonical),
+                "{alias}"
+            );
+            assert_eq!(resolve_canonical_any(alias), Some(canonical), "{alias}");
+            assert_eq!(
+                resolve_canonical(&alias.to_ascii_uppercase(), &engine),
+                Some(canonical)
+            );
+            if alias.contains(':') || alias.ends_with("GGUF") {
+                assert_eq!(resolve_canonical(alias, &EndpointType::Vllm), None);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_issue_946_context_defaults_preserve_endpoint_values() {
+    for (canonical, context) in [
+        ("RecursiveSI/flint", 262_144),
+        ("XHToken/Spark-X2.6-4B", 1_048_576),
+        ("meta-llama/Meta-Llama-3-8B-Instruct", 8_192),
+    ] {
+        assert_eq!(resolve_max_tokens(canonical, None), Some(context));
+        assert_eq!(resolve_max_tokens(canonical, Some(4_096)), Some(4_096));
+    }
+    // E4B distributions advertise 64K or 128K, so only the endpoint can decide.
+    let bolt = "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16";
+    assert_eq!(resolve_max_tokens(bolt, None), None);
+    assert_eq!(resolve_max_tokens(bolt, Some(65_536)), Some(65_536));
+}
+
+#[test]
+fn test_issue_946_verified_quantization_keeps_existing_qwen_preferred_name() {
+    let canonical = "Qwen/Qwen3.8-27B";
+    let alias = "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF";
+    assert_eq!(
+        resolve_canonical(alias, &EndpointType::LmStudio),
+        Some(canonical)
+    );
+    assert_eq!(
+        resolve_engine_name(canonical, &EndpointType::LmStudio),
+        Some("qwen/qwen3.8-27b")
+    );
+    assert_eq!(resolve_canonical(alias, &EndpointType::Ollama), None);
+}
+
+#[test]
+fn test_issue_946_unverified_and_distinct_skus_are_not_merged() {
+    for model in [
+        "flint:latest",
+        "SparkLLM/Spark-X2.6-4B:latest",
+        "XHToken/Spark-X2.6-4B-Base",
+        "llama3:8b-text",
+        "meta-llama/Meta-Llama-3-8B",
+        "incoai/Qwen3.8-Flash-Next-DFlash2",
+        "nvidia/Muse-Spark-Open-816B-A42B-DFlash2",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr",
+        "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr-GGUF",
+        "jialinyyzz/humanizer",
+        "Nanbeige/Nanbeige4.3-33B",
+    ] {
+        assert_eq!(resolve_canonical_any(model), None, "{model}");
+    }
+    assert_eq!(
+        resolve_canonical("gemma4:e4b", &EndpointType::Ollama),
+        Some("google/gemma-4-E4B-it")
+    );
+    assert_eq!(
+        resolve_canonical("llama3.1:8b-instruct-q4_K_M", &EndpointType::Ollama),
+        Some("meta-llama/Llama-3.1-8B-Instruct")
+    );
+}
+
+#[test]
 fn test_resolve_canonical_by_ollama_name() {
     let result = resolve_canonical("gpt-oss:20b", &EndpointType::Ollama);
     assert_eq!(result, Some("openai/gpt-oss-20b"));

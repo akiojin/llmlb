@@ -1,6 +1,6 @@
 //! OpenAI 互換ストリーミング応答を Anthropic SSE イベント列へ変換するトラッカー
 
-use crate::api::proxy::record_endpoint_request_stats;
+use crate::api::proxy::{drain_sse_lines, record_endpoint_request_stats};
 use crate::balancer::{RequestLease, RequestOutcome};
 use crate::common::protocol::TpsApiKind;
 use crate::token::{StreamingTokenAccumulator, TokenUsage};
@@ -174,13 +174,8 @@ impl AnthropicStreamTracker {
     }
 
     pub(super) fn process_upstream_chunk(&mut self, chunk_text: &str) {
-        self.upstream_line_buffer.push_str(chunk_text);
-
-        while let Some(newline_idx) = self.upstream_line_buffer.find('\n') {
-            let line = self.upstream_line_buffer[..newline_idx]
-                .trim_end_matches('\r')
-                .to_string();
-            self.upstream_line_buffer.drain(..=newline_idx);
+        // 行バッファの上限と破棄の挙動は proxy 経路と共有する（Issue #981）
+        for line in drain_sse_lines(&mut self.upstream_line_buffer, chunk_text) {
             self.process_upstream_line(&line);
         }
     }
@@ -494,23 +489,19 @@ impl Drop for AnthropicStreamTracker {
     /// クライアント切断などで try_unfold が完走せず drop された場合のフォールバック。
     /// stats_recorded が false のまま破棄されると統計が漏れるため、ここで記録する。
     /// （proxy.rs の TpsTrackingState::drop を踏襲）
+    ///
+    /// 正常終了もエラー終了もしていないため成功ではない。成功として計上すると
+    /// TPS と成功率が実態より良く算出され続けるため、ストリームエラー時と同じく
+    /// 失敗として記録する（Issue #981）。
     fn drop(&mut self) {
         if self.stats_recorded {
             return;
         }
 
-        // 未処理の行バッファをトークン集計へ反映してから確定する。
-        if !self.upstream_line_buffer.is_empty() {
-            let pending = std::mem::take(&mut self.upstream_line_buffer);
-            self.accumulator
-                .process_chunk(pending.trim_end_matches('\r'));
-        }
-        let usage = self.accumulator.finalize();
-
         // record_endpoint_request_stats は内部で tokio::spawn するため、ランタイム外で
         // drop されると panic しうる。Handle の存在を確認してから記録する。
         if tokio::runtime::Handle::try_current().is_ok() {
-            self.record_stats_once(true, usage);
+            self.record_stats_once(false, TokenUsage::new(None, Some(0), Some(0)));
         } else {
             tracing::warn!(
                 endpoint_id = %self.endpoint_id,

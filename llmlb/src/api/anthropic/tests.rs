@@ -1050,10 +1050,7 @@ async fn canonical_model_routes_to_lmstudio_endpoint_without_alias_rewrite() {
 
 // --- Issue #981: 行バッファ上限と異常終了時の統計記録 ---
 
-fn build_test_tracker(
-    state: &AppState,
-    endpoint_id: Uuid,
-) -> AnthropicStreamTracker {
+fn build_test_tracker(state: &AppState, endpoint_id: Uuid) -> AnthropicStreamTracker {
     AnthropicStreamTracker {
         upstream: Box::pin(futures::stream::empty::<Result<Bytes, reqwest::Error>>()),
         upstream_line_buffer: String::new(),
@@ -1099,9 +1096,7 @@ async fn streaming_tracker_line_buffer_stays_bounded() {
     );
 
     // 上限超過の後でも通常の行は処理できる
-    tracker.process_upstream_chunk(
-        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n",
-    );
+    tracker.process_upstream_chunk("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n");
     assert!(tracker.upstream_line_buffer.is_empty());
 }
 

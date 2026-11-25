@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn responses_interrupted_stream_still_records_success_stats() {
+    async fn responses_interrupted_stream_records_failure_stats() {
         let state = create_local_state().await;
         let server = MockServer::start().await;
         let stream_body = concat!(
@@ -566,6 +566,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         // Simulate client disconnect before consuming the full stream.
+        // Issue #981: 正常終了していないストリームは成功として計上しない。
         drop(response);
 
         sleep(Duration::from_millis(120)).await;
@@ -575,8 +576,8 @@ mod tests {
             .expect("get endpoint should succeed")
             .expect("endpoint should exist");
         assert_eq!(endpoint.total_requests, 1);
-        assert_eq!(endpoint.successful_requests, 1);
-        assert_eq!(endpoint.failed_requests, 0);
+        assert_eq!(endpoint.successful_requests, 0);
+        assert_eq!(endpoint.failed_requests, 1);
 
         let model_stats =
             crate::db::endpoint_daily_stats::get_model_stats(&state.db_pool, endpoint_id)
@@ -587,8 +588,8 @@ mod tests {
             .find(|s| s.model_id == "responses-stream-interrupted")
             .expect("model stats should exist for interrupted stream");
         assert_eq!(stat.total_requests, 1);
-        assert_eq!(stat.successful_requests, 1);
-        assert_eq!(stat.failed_requests, 0);
+        assert_eq!(stat.successful_requests, 0);
+        assert_eq!(stat.failed_requests, 1);
     }
 
     // --- extract_model tests ---

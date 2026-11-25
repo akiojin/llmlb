@@ -277,9 +277,10 @@ async fn test_forget_endpoint_clears_state_and_tps() {
     let (load_manager, endpoint_id) = setup_test_load_manager().await;
 
     // 負荷状態（state）を生成
-    load_manager
-        .upsert_initial_state(endpoint_id, false, Some((1, 1)))
-        .await;
+    let _lease = load_manager
+        .begin_request(endpoint_id)
+        .await
+        .expect("begin_request should succeed");
     // TPS状態（tps_tracker）を生成
     load_manager
         .update_tps(

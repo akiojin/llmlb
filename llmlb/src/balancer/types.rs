@@ -3,11 +3,10 @@
 //! ロードバランシングに使用する構造体・列挙型・定数を集約する。
 
 use crate::common::protocol::{TpsApiKind, TpsSource};
-use crate::types::HealthMetrics;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     sync::{
         atomic::{AtomicUsize, Ordering as AtomicOrdering},
         Arc,
@@ -15,12 +14,8 @@ use std::{
 };
 use uuid::Uuid;
 
-/// メトリクスを新鮮とみなすための許容秒数
-pub(crate) const METRICS_STALE_THRESHOLD_SECS: i64 = 120;
 /// リクエスト履歴の保持分数
 pub(crate) const REQUEST_HISTORY_WINDOW_MINUTES: i64 = 60;
-/// ノードメトリクス履歴の最大保持件数
-pub(crate) const METRICS_HISTORY_CAPACITY: usize = 360;
 
 pub(crate) type TpsTrackerKey = (Uuid, String, TpsApiKind);
 pub(crate) type TpsTrackerMap = HashMap<TpsTrackerKey, ModelTpsState>;
@@ -141,17 +136,18 @@ pub struct EndpointTpsSummary {
 }
 
 /// エンドポイントの負荷状態
+///
+/// 負荷の材料はゲートウェイ自身が観測した値のみを使う（割当中のリクエスト数、
+/// 成功/失敗数、レイテンシ）。エンドポイントから内部状態をプッシュさせる
+/// heartbeat 受付は Issue #982 で撤去した（エンドポイントはブラックボックス
+/// として扱うゲートウェイ設計方針のため）。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct EndpointLoadState {
-    pub(crate) last_metrics: Option<HealthMetrics>,
     pub(crate) assigned_active: u32,
     pub(crate) total_assigned: u64,
     pub(crate) success_count: u64,
     pub(crate) error_count: u64,
     pub(crate) total_latency_ms: u128,
-    pub(crate) metrics_history: VecDeque<HealthMetrics>,
-    pub(crate) initializing: bool,
-    pub(crate) ready_models: Option<(u8, u8)>,
     /// 入力トークン累計
     pub(crate) total_input_tokens: u64,
     /// 出力トークン累計
@@ -163,47 +159,12 @@ pub(crate) struct EndpointLoadState {
 // SPEC-f8e3a1b7: NodeLoadState型エイリアスは削除されました
 
 impl EndpointLoadState {
-    pub(crate) fn combined_active(&self) -> u32 {
-        let heartbeat_active = self
-            .last_metrics
-            .as_ref()
-            .map(|m| m.active_requests)
-            .unwrap_or(0);
-        // Avoid double counting when node heartbeat mirrors lb-assigned requests.
-        heartbeat_active.max(self.assigned_active)
-    }
-
     pub(crate) fn average_latency_ms(&self) -> Option<f32> {
         let completed = self.success_count + self.error_count;
         if completed == 0 {
             None
         } else {
             Some((self.total_latency_ms as f64 / completed as f64) as f32)
-        }
-    }
-
-    pub(crate) fn last_updated(&self) -> Option<DateTime<Utc>> {
-        self.last_metrics.as_ref().map(|m| m.timestamp)
-    }
-
-    pub(crate) fn is_stale(&self, now: DateTime<Utc>) -> bool {
-        match self.last_updated() {
-            Some(ts) => (now - ts).num_seconds() > METRICS_STALE_THRESHOLD_SECS,
-            None => true,
-        }
-    }
-
-    pub(crate) fn effective_average_ms(&self) -> Option<f32> {
-        self.last_metrics
-            .as_ref()
-            .and_then(|m| m.average_response_time_ms)
-            .or_else(|| self.average_latency_ms())
-    }
-
-    pub(crate) fn push_metrics(&mut self, metrics: HealthMetrics) {
-        self.metrics_history.push_back(metrics);
-        if self.metrics_history.len() > METRICS_HISTORY_CAPACITY {
-            self.metrics_history.pop_front();
         }
     }
 }
@@ -222,33 +183,7 @@ pub struct EndpointLoadSnapshot {
     pub machine_name: String,
     /// エンドポイント状態
     pub status: crate::types::endpoint::EndpointStatus,
-    /// CPU使用率
-    pub cpu_usage: Option<f32>,
-    /// メモリ使用率
-    pub memory_usage: Option<f32>,
-    /// GPU使用率
-    pub gpu_usage: Option<f32>,
-    /// GPUメモリ使用率
-    pub gpu_memory_usage: Option<f32>,
-    /// GPUメモリ総容量 (MB)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_memory_total_mb: Option<u64>,
-    /// GPU使用メモリ (MB)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_memory_used_mb: Option<u64>,
-    /// GPU温度 (℃)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_temperature: Option<f32>,
-    /// GPUモデル名
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_model_name: Option<String>,
-    /// GPU計算能力
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_compute_capability: Option<String>,
-    /// GPU能力スコア
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_capability_score: Option<u32>,
-    /// 処理中リクエスト数（load balancer観点+ノード自己申告）
+    /// 処理中リクエスト数（ゲートウェイが割り当てた分）
     pub active_requests: u32,
     /// 累積リクエスト数
     pub total_requests: u64,
@@ -258,10 +193,6 @@ pub struct EndpointLoadSnapshot {
     pub failed_requests: u64,
     /// 平均レスポンスタイム (ms)
     pub average_response_time_ms: Option<f32>,
-    /// メトリクス最終更新時刻
-    pub last_updated: Option<DateTime<Utc>>,
-    /// メトリクスが鮮度閾値を超えているか
-    pub is_stale: bool,
     /// 入力トークン累計
     pub total_input_tokens: u64,
     /// 出力トークン累計
@@ -291,57 +222,16 @@ pub struct SystemSummary {
     pub failed_requests: u64,
     /// 平均レスポンスタイム (ms)
     pub average_response_time_ms: Option<f32>,
-    /// 平均GPU使用率 (0-100)
-    pub average_gpu_usage: Option<f32>,
-    /// 平均GPUメモリ使用率 (0-100)
-    pub average_gpu_memory_usage: Option<f32>,
     /// 処理中リクエスト総数
     pub total_active_requests: u32,
     /// 待機中リクエスト総数
     pub queued_requests: usize,
-    /// 最新メトリクス更新時刻
-    pub last_metrics_updated_at: Option<DateTime<Utc>>,
     /// 入力トークン累計
     pub total_input_tokens: u64,
     /// 出力トークン累計
     pub total_output_tokens: u64,
     /// 総トークン累計
     pub total_tokens: u64,
-}
-
-/// ハートビートから記録するメトリクス値
-#[derive(Debug, Clone)]
-pub struct MetricsUpdate {
-    /// 対象エンドポイントのID
-    pub endpoint_id: Uuid,
-    /// CPU使用率（パーセンテージ）
-    pub cpu_usage: f32,
-    /// メモリ使用率（パーセンテージ）
-    pub memory_usage: f32,
-    /// GPU使用率（パーセンテージ）
-    pub gpu_usage: Option<f32>,
-    /// GPUメモリ使用率（パーセンテージ）
-    pub gpu_memory_usage: Option<f32>,
-    /// GPUメモリ総容量 (MB)
-    pub gpu_memory_total_mb: Option<u64>,
-    /// GPU使用メモリ (MB)
-    pub gpu_memory_used_mb: Option<u64>,
-    /// GPU温度 (℃)
-    pub gpu_temperature: Option<f32>,
-    /// GPUモデル名
-    pub gpu_model_name: Option<String>,
-    /// GPU計算能力
-    pub gpu_compute_capability: Option<String>,
-    /// GPU能力スコア
-    pub gpu_capability_score: Option<u32>,
-    /// アクティブなリクエスト数
-    pub active_requests: u32,
-    /// 平均レスポンスタイム（ミリ秒）
-    pub average_response_time_ms: Option<f32>,
-    /// 初期化中フラグ
-    pub initializing: bool,
-    /// 起動済みモデル数/総数
-    pub ready_models: Option<(u8, u8)>,
 }
 
 /// リクエスト履歴ポイント
@@ -412,53 +302,6 @@ mod tests {
 
     // ── EndpointLoadState tests ──
 
-    fn make_metrics(active: u32, ts: DateTime<Utc>) -> HealthMetrics {
-        HealthMetrics {
-            endpoint_id: Uuid::nil(),
-            cpu_usage: 0.0,
-            memory_usage: 0.0,
-            gpu_usage: None,
-            gpu_memory_usage: None,
-            gpu_memory_total_mb: None,
-            gpu_memory_used_mb: None,
-            gpu_temperature: None,
-            gpu_model_name: None,
-            gpu_compute_capability: None,
-            gpu_capability_score: None,
-            active_requests: active,
-            total_requests: 0,
-            average_response_time_ms: None,
-            timestamp: ts,
-        }
-    }
-
-    #[test]
-    fn combined_active_no_metrics_uses_assigned() {
-        let s = EndpointLoadState {
-            assigned_active: 5,
-            ..Default::default()
-        };
-        assert_eq!(s.combined_active(), 5);
-    }
-
-    #[test]
-    fn combined_active_takes_max_of_heartbeat_and_assigned() {
-        let now = Utc::now();
-        let s = EndpointLoadState {
-            last_metrics: Some(make_metrics(10, now)),
-            assigned_active: 3,
-            ..Default::default()
-        };
-        assert_eq!(s.combined_active(), 10);
-
-        let s2 = EndpointLoadState {
-            last_metrics: Some(make_metrics(2, now)),
-            assigned_active: 7,
-            ..Default::default()
-        };
-        assert_eq!(s2.combined_active(), 7);
-    }
-
     #[test]
     fn average_latency_ms_no_completed_returns_none() {
         let s = EndpointLoadState::default();
@@ -477,84 +320,6 @@ mod tests {
         assert!((s.average_latency_ms().unwrap() - 200.0).abs() < 0.01);
     }
 
-    #[test]
-    fn is_stale_no_metrics_returns_true() {
-        let s = EndpointLoadState::default();
-        assert!(s.is_stale(Utc::now()));
-    }
-
-    #[test]
-    fn is_stale_fresh_metrics_returns_false() {
-        let now = Utc::now();
-        let s = EndpointLoadState {
-            last_metrics: Some(make_metrics(0, now)),
-            ..Default::default()
-        };
-        assert!(!s.is_stale(now));
-    }
-
-    #[test]
-    fn is_stale_old_metrics_returns_true() {
-        let now = Utc::now();
-        let old = now - chrono::Duration::seconds(METRICS_STALE_THRESHOLD_SECS + 1);
-        let s = EndpointLoadState {
-            last_metrics: Some(make_metrics(0, old)),
-            ..Default::default()
-        };
-        assert!(s.is_stale(now));
-    }
-
-    #[test]
-    fn push_metrics_respects_capacity() {
-        let mut s = EndpointLoadState::default();
-        let now = Utc::now();
-        for i in 0..METRICS_HISTORY_CAPACITY + 5 {
-            s.push_metrics(make_metrics(i as u32, now));
-        }
-        assert_eq!(s.metrics_history.len(), METRICS_HISTORY_CAPACITY);
-    }
-
-    #[test]
-    fn effective_average_ms_prefers_heartbeat() {
-        let now = Utc::now();
-        let mut metrics = make_metrics(0, now);
-        metrics.average_response_time_ms = Some(42.0);
-        let s = EndpointLoadState {
-            last_metrics: Some(metrics),
-            success_count: 2,
-            total_latency_ms: 200,
-            ..Default::default()
-        };
-        // Should use heartbeat value (42.0), not computed average (100.0)
-        assert!((s.effective_average_ms().unwrap() - 42.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn effective_average_ms_falls_back_to_computed() {
-        let now = Utc::now();
-        let s = EndpointLoadState {
-            last_metrics: Some(make_metrics(0, now)),
-            success_count: 4,
-            total_latency_ms: 400,
-            ..Default::default()
-        };
-        // heartbeat has no average_response_time_ms, falls back to 400/4=100
-        assert!((s.effective_average_ms().unwrap() - 100.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn last_updated_returns_timestamp() {
-        let now = Utc::now();
-        let s = EndpointLoadState {
-            last_metrics: Some(make_metrics(0, now)),
-            ..Default::default()
-        };
-        assert_eq!(s.last_updated(), Some(now));
-
-        let s2 = EndpointLoadState::default();
-        assert!(s2.last_updated().is_none());
-    }
-
     // ── Serialization / type tests ──
 
     #[test]
@@ -564,7 +329,6 @@ mod tests {
         assert_eq!(s.online_nodes, 0);
         assert_eq!(s.total_requests, 0);
         assert!(s.average_response_time_ms.is_none());
-        assert!(s.last_metrics_updated_at.is_none());
     }
 
     #[test]
@@ -621,23 +385,11 @@ mod tests {
             endpoint_id: Uuid::nil(),
             machine_name: "test-node".to_string(),
             status: crate::types::endpoint::EndpointStatus::Online,
-            cpu_usage: Some(50.0),
-            memory_usage: Some(60.0),
-            gpu_usage: None,
-            gpu_memory_usage: None,
-            gpu_memory_total_mb: None,
-            gpu_memory_used_mb: None,
-            gpu_temperature: None,
-            gpu_model_name: None,
-            gpu_compute_capability: None,
-            gpu_capability_score: None,
             active_requests: 3,
             total_requests: 100,
             successful_requests: 90,
             failed_requests: 10,
             average_response_time_ms: Some(150.0),
-            last_updated: None,
-            is_stale: false,
             total_input_tokens: 1000,
             total_output_tokens: 2000,
             total_tokens: 3000,

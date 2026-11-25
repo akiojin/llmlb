@@ -5,7 +5,7 @@
 //! - モデル別TPS選択
 //! - TPS未計測エンドポイントの最低優先
 //! - 同一TPS時のラウンドロビン
-//! - offline/error/initializing エンドポイントの除外
+//! - offline/error エンドポイントの除外
 //! - 非TPS対象リクエストでは他API種別のTPSを流用しない
 
 use std::sync::Arc;
@@ -215,14 +215,13 @@ async fn tps_routing_uses_round_robin_when_tps_is_tied() {
 }
 
 #[tokio::test]
-async fn tps_routing_excludes_offline_error_and_initializing_endpoints() {
+async fn tps_routing_excludes_offline_and_error_endpoints() {
     let load_manager = create_test_load_manager().await;
     let ready = add_online_endpoint(&load_manager, "Ready", &["shared-model"]).await;
-    let initializing = add_online_endpoint(&load_manager, "Initializing", &["shared-model"]).await;
     let offline = add_online_endpoint(&load_manager, "Offline", &["shared-model"]).await;
     let error = add_online_endpoint(&load_manager, "Error", &["shared-model"]).await;
 
-    for endpoint in [&ready, &initializing, &offline, &error] {
+    for endpoint in [&ready, &offline, &error] {
         load_manager
             .update_tps(
                 endpoint.id,
@@ -234,9 +233,6 @@ async fn tps_routing_excludes_offline_error_and_initializing_endpoints() {
             .await;
     }
 
-    load_manager
-        .upsert_initial_state(initializing.id, true, Some((0, 1)))
-        .await;
     load_manager
         .endpoint_registry()
         .update_status(offline.id, EndpointStatus::Offline, None, Some("offline"))

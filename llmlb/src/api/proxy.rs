@@ -22,6 +22,16 @@ use axum::{
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::{io, pin::Pin, sync::Arc, time::Instant};
 
+/// ストリーミング中継のアイドル（無応答）タイムアウト（Issue #978）
+///
+/// 上流からチャンクがこの時間届かなければ、詰まった接続として中継を
+/// 打ち切る。正常な生成ではチャンクは継続的に流れるため、完全な無応答が
+/// 120 秒続く状態は「生成中」ではなく「詰まり」と判定する。沈黙が起こる
+/// 主な局面は初回チャンク前のプリフィルであり、初回チャンク待ちもこの
+/// 対象に含める。生成全体の絶対上限は総量タイムアウト
+/// （`inference_timeout_secs`、既定 600 秒）が引き続き担う。
+pub(crate) const STREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// キュー付きエンドポイント選択の結果
 pub(crate) enum QueueSelection {
     /// エンドポイントが見つかった
@@ -196,6 +206,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
     load_manager: crate::balancer::LoadManager,
     event_bus: crate::events::SharedEventBus,
     request_lease: Option<crate::balancer::RequestLease>,
+    idle_timeout: std::time::Duration,
 ) -> Result<Response, LbError> {
     struct TpsTrackingState {
         upstream: Pin<Box<dyn Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send>>,
@@ -214,6 +225,8 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         // ヘッダー受信時点で早期解放すると、ストリーミング中の assigned_active が
         // 過小になり、レイテンシも過小評価され、idle 通知も早まる（lease-ttfb）。
         request_lease: Option<crate::balancer::RequestLease>,
+        // チャンク無受信の許容時間（Issue #978）。超過したら無応答として打ち切る。
+        idle_timeout: std::time::Duration,
     }
 
     impl TpsTrackingState {
@@ -325,29 +338,49 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         event_bus,
         stats_recorded: false,
         request_lease,
+        idle_timeout,
     };
 
     let tracked_stream = futures::stream::try_unfold(state, |mut state| async move {
-        match state.upstream.next().await {
-            Some(Ok(chunk)) => {
+        // チャンク待ちにアイドルタイムアウトを適用する（Issue #978）。
+        // 初回チャンク待ちも対象で、上流がヘッダー後に無応答になった場合は
+        // 総量タイムアウトを待たず、無応答として失敗扱いで打ち切る。
+        match tokio::time::timeout(state.idle_timeout, state.upstream.next()).await {
+            Ok(Some(Ok(chunk))) => {
                 let chunk_text = String::from_utf8_lossy(chunk.as_ref());
                 process_sse_lines(&mut state.sse_buffer, &chunk_text, &mut state.accumulator);
                 Ok(Some((chunk, state)))
             }
-            Some(Err(err)) => {
+            Ok(Some(Err(err))) => {
                 state.record_stats_once(false, 0, 0);
                 state
                     .finish_lease(crate::balancer::RequestOutcome::Error)
                     .await;
                 Err(io::Error::other(err))
             }
-            None => {
+            Ok(None) => {
                 let (output_tokens, duration_ms) = state.finalize_output_tokens_and_duration();
                 state.record_stats_once(true, output_tokens, duration_ms);
                 state
                     .finish_lease(crate::balancer::RequestOutcome::Success)
                     .await;
                 Ok(None)
+            }
+            Err(_elapsed) => {
+                tracing::warn!(
+                    endpoint_id = %state.endpoint_id,
+                    model_id = %state.model_id,
+                    idle_timeout_secs = state.idle_timeout.as_secs(),
+                    "Streaming relay aborted: upstream idle timeout"
+                );
+                state.record_stats_once(false, 0, 0);
+                state
+                    .finish_lease(crate::balancer::RequestOutcome::Error)
+                    .await;
+                Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "upstream stream idle timeout",
+                ))
             }
         }
     });
@@ -960,6 +993,7 @@ mod tests {
             load_manager.clone(),
             event_bus,
             Some(lease),
+            STREAM_IDLE_TIMEOUT,
         )
         .expect("forward streaming");
 
@@ -987,6 +1021,219 @@ mod tests {
                 .active_requests,
             0,
             "lease must be completed after the stream is fully consumed"
+        );
+    }
+
+    // --- Issue #978: ストリーミング中継のアイドル（無応答）タイムアウト ---
+
+    /// chunked encoding の SSE を返すテスト用上流サーバーを起動する。
+    ///
+    /// `steps` は（送信前遅延ミリ秒, チャンク本文）の列。送信後に `hang` が
+    /// true なら終端チャンクを送らずに接続を保持し続け、false なら終端
+    /// チャンクを送って接続を閉じる。
+    async fn spawn_chunked_sse_server(
+        steps: Vec<(u64, &'static str)>,
+        hang: bool,
+    ) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut read_buf = [0u8; 4096];
+                let _ = socket.read(&mut read_buf).await;
+                let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+                if socket.write_all(headers.as_bytes()).await.is_err() {
+                    return;
+                }
+                for (delay_ms, chunk) in steps {
+                    if delay_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    let framed = format!("{:x}\r\n{}\r\n", chunk.len(), chunk);
+                    if socket.write_all(framed.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let _ = socket.flush().await;
+                }
+                if hang {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                } else {
+                    let _ = socket.write_all(b"0\r\n\r\n").await;
+                    let _ = socket.shutdown().await;
+                }
+            }
+        });
+        addr
+    }
+
+    /// ストリーミング検証用に、レジストリ・LoadManager・イベントバス・リースを用意する。
+    async fn setup_streaming_lease(
+        name: &str,
+    ) -> (
+        crate::registry::endpoints::EndpointRegistry,
+        crate::balancer::LoadManager,
+        crate::events::SharedEventBus,
+        uuid::Uuid,
+        crate::balancer::RequestLease,
+    ) {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create test db");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("run migrations");
+        let registry = crate::registry::endpoints::EndpointRegistry::new(pool)
+            .await
+            .expect("create registry");
+        let endpoint = Endpoint::new(
+            name.to_string(),
+            "http://localhost:1".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        );
+        let endpoint_id = endpoint.id;
+        registry.add(endpoint).await.expect("add endpoint");
+        let load_manager = crate::balancer::LoadManager::new(Arc::new(registry.clone()));
+        let event_bus = crate::events::create_shared_event_bus();
+        let lease = load_manager
+            .begin_request(endpoint_id)
+            .await
+            .expect("begin request");
+        (registry, load_manager, event_bus, endpoint_id, lease)
+    }
+
+    #[tokio::test]
+    async fn streaming_forwarder_aborts_when_upstream_goes_idle() {
+        let addr = spawn_chunked_sse_server(
+            vec![(
+                0,
+                "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+            )],
+            true,
+        )
+        .await;
+        let (registry, load_manager, event_bus, endpoint_id, lease) =
+            setup_streaming_lease("idle-stream-ep").await;
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/v1/chat/completions"))
+            .body("{}")
+            .send()
+            .await
+            .expect("upstream response");
+
+        let axum_response = forward_streaming_response_with_tps_tracking(
+            response,
+            endpoint_id,
+            "m".to_string(),
+            None,
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+            Instant::now(),
+            registry,
+            load_manager.clone(),
+            event_bus,
+            Some(lease),
+            std::time::Duration::from_millis(150),
+        )
+        .expect("forward streaming");
+
+        // 上流がチャンク送信後に無応答になっても、アイドルタイムアウトで
+        // ストリームが打ち切られ、総量タイムアウトまでぶら下がらない。
+        let started = Instant::now();
+        let consumed = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            axum::body::to_bytes(axum_response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("stream must terminate via idle timeout, not hang");
+        assert!(
+            consumed.is_err(),
+            "アイドル打ち切りはストリームエラーとして伝播するべき"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "総量タイムアウトを待たずに打ち切られるべき"
+        );
+
+        // 失敗としてリースが完了し、実行中カウントが残留しない。
+        assert_eq!(
+            load_manager
+                .snapshot(endpoint_id)
+                .await
+                .unwrap()
+                .active_requests,
+            0,
+            "lease must be completed after idle abort"
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_forwarder_tolerates_gaps_below_idle_timeout() {
+        let addr = spawn_chunked_sse_server(
+            vec![
+                (
+                    0,
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+                ),
+                (
+                    80,
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\n",
+                ),
+                (80, "data: [DONE]\n\n"),
+            ],
+            false,
+        )
+        .await;
+        let (registry, load_manager, event_bus, endpoint_id, lease) =
+            setup_streaming_lease("progressing-stream-ep").await;
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/v1/chat/completions"))
+            .body("{}")
+            .send()
+            .await
+            .expect("upstream response");
+
+        let axum_response = forward_streaming_response_with_tps_tracking(
+            response,
+            endpoint_id,
+            "m".to_string(),
+            None,
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+            Instant::now(),
+            registry,
+            load_manager.clone(),
+            event_bus,
+            Some(lease),
+            std::time::Duration::from_secs(2),
+        )
+        .expect("forward streaming");
+
+        // チャンク間隔がアイドルタイムアウト未満なら、間隔が空いても切断されない。
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            axum::body::to_bytes(axum_response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("stream must complete")
+        .expect("consume body");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("[DONE]"),
+            "ストリーム全体が中継されるべき: {text}"
+        );
+        assert_eq!(
+            load_manager
+                .snapshot(endpoint_id)
+                .await
+                .unwrap()
+                .active_requests,
+            0,
+            "lease must be completed after the stream completes"
         );
     }
 

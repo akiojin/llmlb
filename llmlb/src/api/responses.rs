@@ -27,7 +27,7 @@ use crate::{
         proxy::{
             forward_streaming_response, forward_streaming_response_with_tps_tracking,
             forward_to_endpoint, record_endpoint_request_stats,
-            select_available_endpoint_with_queue_for_model, QueueSelection,
+            select_available_endpoint_with_queue_for_model, QueueSelection, STREAM_IDLE_TIMEOUT,
         },
     },
     balancer::RequestOutcome,
@@ -252,6 +252,7 @@ pub async fn post_responses(
                 state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
                 Some(request_lease),
+                STREAM_IDLE_TIMEOUT,
             )
             .map_err(AppError::from)?
         } else {

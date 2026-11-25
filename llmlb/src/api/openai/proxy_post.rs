@@ -20,7 +20,7 @@ use crate::api::proxy::{
     forward_streaming_response_with_tps_tracking, is_failover_retryable_status,
     record_endpoint_request_stats, save_request_record,
     select_endpoint_candidates_with_queue_for_model,
-    select_endpoint_candidates_with_queue_for_model_and_api,
+    select_endpoint_candidates_with_queue_for_model_and_api, STREAM_IDLE_TIMEOUT,
 };
 use crate::balancer::RequestOutcome;
 use crate::common::error::LbError;
@@ -438,6 +438,7 @@ async fn attempt_openai_post_to_endpoint(
                 state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
                 Some(request_lease),
+                STREAM_IDLE_TIMEOUT,
             )
             .map_err(OpenAIError::from)?
         } else {

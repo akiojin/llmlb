@@ -251,6 +251,13 @@ fn forward_streaming_response_inner(
     {
         let response_headers = axum_response.headers_mut();
         for (name, value) in headers.iter() {
+            // 再ストリーミングする body の長さは上流の Content-Length と一致する
+            // 保証がない（中継側で打ち切る場合がある）。引き継ぐと配信側がその
+            // バイト数で body を終端し、ストリームが終端まで読まれないまま
+            // 破棄され得るため除外する（anthropic 経路と同じ扱い）。
+            if name == reqwest::header::CONTENT_LENGTH {
+                continue;
+            }
             if let (Ok(header_name), Ok(header_value)) = (
                 HeaderName::from_bytes(name.as_str().as_bytes()),
                 HeaderValue::from_bytes(value.as_bytes()),
@@ -553,6 +560,13 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
     {
         let response_headers = axum_response.headers_mut();
         for (name, value) in headers.iter() {
+            // 再ストリーミングする body の長さは上流の Content-Length と一致する
+            // 保証がない（中継側で打ち切る場合がある）。引き継ぐと配信側がその
+            // バイト数で body を終端し、ストリームが終端まで読まれないまま
+            // 破棄され得るため除外する（anthropic 経路と同じ扱い）。
+            if name == reqwest::header::CONTENT_LENGTH {
+                continue;
+            }
             if let (Ok(header_name), Ok(header_value)) = (
                 HeaderName::from_bytes(name.as_str().as_bytes()),
                 HeaderValue::from_bytes(value.as_bytes()),

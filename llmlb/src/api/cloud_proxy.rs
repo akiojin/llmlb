@@ -7,7 +7,7 @@ use crate::api::error::AppError;
 use crate::api::openai_util::{
     map_openai_messages_to_anthropic, map_openai_messages_to_google_contents,
 };
-use crate::api::proxy::forward_streaming_response;
+use crate::api::proxy::{forward_streaming_response_with_idle_timeout, CLOUD_STREAM_IDLE_TIMEOUT};
 use crate::cloud_metrics;
 use crate::common::error::LbError;
 use axum::body::Body;
@@ -21,7 +21,9 @@ use uuid::Uuid;
 /// 非ストリーミングのクラウド転送に適用する全体タイムアウト（秒）。
 ///
 /// 共有 http_client には全体タイムアウトが無いため、応答しないクラウドプロバイダで
-/// 無期限ハングするのを防ぐ。ストリーミング経路にはストリームが途中で切れるため付与しない。
+/// 無期限ハングするのを防ぐ。ストリーミング経路には全体タイムアウトではなく、
+/// 無応答を検出するアイドルタイムアウト（`CLOUD_STREAM_IDLE_TIMEOUT`）を付与する
+/// （オーナー決定 2026-11-26: ストリーミングは総量上限なし、アイドルのみで管理）。
 const CLOUD_PROXY_TIMEOUT_SECS: u64 = 300;
 
 /// クラウドプロバイダへのプロキシ結果
@@ -72,6 +74,35 @@ pub async fn proxy_cloud_provider(
     model: &str,
     stream: bool,
 ) -> Result<CloudProxyResult, AppError> {
+    proxy_cloud_provider_with_timeouts(
+        provider,
+        http_client,
+        payload,
+        model,
+        stream,
+        Duration::from_secs(CLOUD_PROXY_TIMEOUT_SECS),
+        CLOUD_STREAM_IDLE_TIMEOUT,
+    )
+    .await
+}
+
+/// タイムアウトを差し替え可能にした本体（テスト可能性のため、Issue #978 の
+/// forwarder が idle_timeout 引数を取る方式と同じ）。
+///
+/// タイムアウト方針（Issue #984、オーナー決定 2026-11-26）: 総量タイムアウトは
+/// 非ストリーミングにのみ付与する。ストリーミングは総量で切らず、正当に
+/// 時間のかかる生成を最後まで中継し、無応答の検出は中継側のアイドル
+/// タイムアウトが担う。
+#[allow(clippy::too_many_arguments)]
+async fn proxy_cloud_provider_with_timeouts(
+    provider: &dyn CloudProvider,
+    http_client: &reqwest::Client,
+    payload: &Value,
+    model: &str,
+    stream: bool,
+    total_timeout: Duration,
+    idle_timeout: Duration,
+) -> Result<CloudProxyResult, AppError> {
     let req_id = Uuid::new_v4();
     let started = Instant::now();
     let provider_name = provider.provider_name();
@@ -81,10 +112,10 @@ pub async fn proxy_cloud_provider(
     let builder = http_client.post(&url).json(&body);
     let mut builder = provider.apply_auth(builder)?;
     // 非ストリーミングは有界レスポンスのため全体タイムアウトを付与する。
-    // ストリーミングは connect_timeout（共有 client）のみで担保し、
-    // 全体タイムアウトでストリームが途中で切れるのを避ける。
+    // ストリーミングは全体タイムアウトで生成が途中で切れるのを避け、
+    // 中継側のアイドルタイムアウトで無応答を検出する（Issue #984）。
     if !stream {
-        builder = builder.timeout(Duration::from_secs(CLOUD_PROXY_TIMEOUT_SECS));
+        builder = builder.timeout(total_timeout);
     }
     let res = builder.send().await.map_err(map_reqwest_error)?;
 
@@ -104,7 +135,8 @@ pub async fn proxy_cloud_provider(
             started.elapsed().as_millis(),
         );
         let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-        let response = forward_streaming_response(res).map_err(AppError::from)?;
+        let response = forward_streaming_response_with_idle_timeout(res, idle_timeout)
+            .map_err(AppError::from)?;
         return Ok(CloudProxyResult {
             response,
             response_body: None,
@@ -854,5 +886,266 @@ mod tests {
         let provider = AnthropicProvider;
         let url = provider.api_base_url().unwrap();
         assert_eq!(url, "https://api.anthropic.com");
+    }
+
+    // --- Issue #984: クラウド向けストリーミングのアイドルタイムアウト ---
+
+    /// テスト用スタブプロバイダ。指定したベースURLへそのまま転送する。
+    struct StubProvider {
+        base_url: String,
+    }
+
+    impl CloudProvider for StubProvider {
+        fn provider_name(&self) -> &str {
+            "stub"
+        }
+
+        fn api_base_url(&self) -> Result<String, AppError> {
+            Ok(self.base_url.clone())
+        }
+
+        fn apply_auth(
+            &self,
+            builder: reqwest::RequestBuilder,
+        ) -> Result<reqwest::RequestBuilder, AppError> {
+            Ok(builder)
+        }
+
+        fn transform_request(
+            &self,
+            payload: &Value,
+            _model: &str,
+            _stream: bool,
+        ) -> Result<(String, Value), AppError> {
+            Ok((
+                format!("{}/v1/chat/completions", self.base_url),
+                payload.clone(),
+            ))
+        }
+
+        fn transform_response(&self, data: &Value, _model: &str) -> Value {
+            data.clone()
+        }
+    }
+
+    /// chunked encoding の SSE を2チャンク送って正常に閉じるモック
+    /// クラウドプロバイダを起動する。
+    async fn spawn_progressing_cloud_provider() -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut read_buf = [0u8; 4096];
+                let _ = socket.read(&mut read_buf).await;
+                let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+                if socket.write_all(headers.as_bytes()).await.is_err() {
+                    return;
+                }
+                for chunk in [
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+                    "data: [DONE]\n\n",
+                ] {
+                    let framed = format!("{:x}\r\n{}\r\n", chunk.len(), chunk);
+                    if socket.write_all(framed.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let _ = socket.flush().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+                let _ = socket.write_all(b"0\r\n\r\n").await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn cloud_streaming_relays_progressing_provider_stream() {
+        // 無応答時の打ち切り自体は proxy.rs の中継テスト（短いアイドル
+        // タイムアウトを渡す形）で検証する。ここでは proxy_cloud_provider の
+        // ストリーミング分岐が、アイドルタイムアウト付き中継を通して
+        // 正常なストリームをそのまま返すことを確認する。
+        let addr = spawn_progressing_cloud_provider().await;
+        let provider = StubProvider {
+            base_url: format!("http://{addr}"),
+        };
+        let payload = serde_json::json!({"model": "stub-model", "messages": []});
+
+        let result = proxy_cloud_provider(
+            &provider,
+            &reqwest::Client::new(),
+            &payload,
+            "stub-model",
+            true,
+        )
+        .await
+        .expect("proxy streaming");
+        assert_eq!(result.status, StatusCode::OK);
+
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            axum::body::to_bytes(result.response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("stream must complete")
+        .expect("consume body");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("[DONE]"),
+            "ストリーム全体が中継されるべき: {text}"
+        );
+    }
+
+    // --- オーナー決定 2026-11-26: ストリーミングは総量タイムアウトで切らない ---
+
+    /// chunked encoding の SSE を返すモックプロバイダを起動する。
+    ///
+    /// `steps` は（送信前遅延ミリ秒, チャンク本文）の列。送信後は終端チャンクを
+    /// 送って接続を閉じる。
+    async fn spawn_chunked_sse_server(steps: Vec<(u64, &'static str)>) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut read_buf = [0u8; 4096];
+                let _ = socket.read(&mut read_buf).await;
+                let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+                if socket.write_all(headers.as_bytes()).await.is_err() {
+                    return;
+                }
+                for (delay_ms, chunk) in steps {
+                    if delay_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    let framed = format!("{:x}\r\n{}\r\n", chunk.len(), chunk);
+                    if socket.write_all(framed.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let _ = socket.flush().await;
+                }
+                let _ = socket.write_all(b"0\r\n\r\n").await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        addr
+    }
+
+    /// 応答全体（ヘッダー含む）を遅延させてから JSON を返すモックプロバイダを
+    /// 起動する。
+    async fn spawn_delayed_json_server(delay_ms: u64, body: &'static str) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut read_buf = [0u8; 4096];
+                let _ = socket.read(&mut read_buf).await;
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn cloud_streaming_is_not_cut_by_total_timeout() {
+        // 総量タイムアウトを1秒に差し替えた条件で、チャンク間隔（800ms）が
+        // アイドル未満のまま約1.6秒続くストリームが最後まで中継される。
+        // ストリーミングに総量が付与されていれば約1秒で切断される。
+        let addr = spawn_chunked_sse_server(vec![
+            (
+                0,
+                "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+            ),
+            (
+                800,
+                "data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\n",
+            ),
+            (800, "data: [DONE]\n\n"),
+        ])
+        .await;
+        let provider = StubProvider {
+            base_url: format!("http://{addr}"),
+        };
+        let payload = serde_json::json!({"model": "stub-model", "messages": []});
+
+        let started = Instant::now();
+        let result = proxy_cloud_provider_with_timeouts(
+            &provider,
+            &reqwest::Client::new(),
+            &payload,
+            "stub-model",
+            true,
+            Duration::from_secs(1),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("proxy streaming");
+        assert_eq!(result.status, StatusCode::OK);
+
+        let bytes = tokio::time::timeout(
+            Duration::from_secs(10),
+            axum::body::to_bytes(result.response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("stream must complete")
+        .expect("ストリームが総量タイムアウトで切断されないべき");
+        assert!(
+            started.elapsed() > Duration::from_secs(1),
+            "総量タイムアウト（1秒）を越えて継続したはず"
+        );
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("[DONE]"),
+            "ストリーム全体が中継されるべき: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cloud_non_streaming_is_bounded_by_total_timeout() {
+        // 非ストリーミングは従来どおり総量タイムアウトが絶対上限として効く。
+        // 総量1秒に対し、上流は2秒遅れて応答するためエラーになる。
+        let addr = spawn_delayed_json_server(2000, "{\"id\":\"x\",\"choices\":[]}").await;
+        let provider = StubProvider {
+            base_url: format!("http://{addr}"),
+        };
+        let payload = serde_json::json!({"model": "stub-model", "messages": []});
+
+        let started = Instant::now();
+        let result = proxy_cloud_provider_with_timeouts(
+            &provider,
+            &reqwest::Client::new(),
+            &payload,
+            "stub-model",
+            false,
+            Duration::from_secs(1),
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "非ストリーミングは総量タイムアウトでエラーになるべき"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "総量タイムアウト（1秒）付近で打ち切られるべき"
+        );
     }
 }

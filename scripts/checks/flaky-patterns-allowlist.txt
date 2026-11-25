@@ -681,3 +681,35 @@ shared-resource|llmlb/tests/support/lb.rs|531089987-55|4
 
 # (a) #695: forgot-passwordは応答後にトークンを発行。DB件数を毎回確認し期待値で即終了する状態pollの間隔。最大100回後も件数assertを維持し、固定待機だけで完了を推定しない。
 fixed-wait|llmlb/tests/contract/auth_api_test.rs|182137248-63|1
+
+# (a) #977: 全エンドポイント実行中に選択がキュー待機することを検証する負の観測窓。リースを保持している限り選択は完了し得ず、完了はリース解放で駆動する。固定待機だけで完了を推定しない。
+fixed-wait|llmlb/src/api/proxy.rs|3090434862-64|1
+# (a) #977: 待機者がアイドル待ちを継続することの負の観測窓。リース保持中は待機が終わり得ず、完了はリース解放で駆動し、WaitResult と待機者数で assert する。
+fixed-wait|llmlb/tests/unit/tps_routing_test.rs|2233052310-64|1
+# (c) #977: テスト用 AppState 構築ヘルパー内の UpdateManager::new。DB はテスト用プールで隔離され、更新処理自体は実行しない。保守的検出として現状固定する。
+shared-resource|llmlb/src/api/proxy.rs|1645937757-55|1
+
+# (a) #978: Playground 経路のタイムアウト検証で使うモック上流の遅延生成。sleep 自体が上流の応答間隔の再現であり、検証はクライアント側の中継が総量で切断されずアイドルで打ち切られることへの assert で行う。固定待機で完了を推定しない。
+fixed-wait|llmlb/src/api/endpoints/tests.rs|532297365-58|1
+fixed-wait|llmlb/src/api/endpoints/tests.rs|532297365-58|2
+# (a) #978: OpenAI 経路のタイムアウト方針テストで使うモック上流の遅延生成。同上（sleep は上流遅延の再現、assert はクライアント側の打ち切り有無）。
+fixed-wait|llmlb/src/api/openai/tests/timeout_policy.rs|576643582-69|1
+fixed-wait|llmlb/src/api/openai/tests/timeout_policy.rs|576643582-69|2
+# (a) #978: ローカル経路のタイムアウト検証で使うモック上流の遅延生成。同上。テスト分離（FR-009）に伴い proxy/tests/streaming_timeouts.rs へ移動。
+fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576643582-69|1
+fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576643582-69|2
+# (a) #978: モック上流の hang 再現（無応答ストリーム）。中継側のアイドルタイムアウトが先に打ち切るため、この sleep が完了する経路は正常系では存在しない。同上の分離で移動。
+fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576652577-61|1
+
+# (a) #984: クラウド経路のタイムアウト検証で使うモック上流のチャンク間隔（50ms）と遅延生成。sleep 自体が上流の送信間隔の再現であり、検証はクライアント側の中継の打ち切り有無への assert で行う。固定待機で完了を推定しない。
+fixed-wait|llmlb/src/api/cloud_proxy.rs|488347826-63|1
+fixed-wait|llmlb/src/api/cloud_proxy.rs|576643582-69|1
+fixed-wait|llmlb/src/api/cloud_proxy.rs|576643582-69|2
+# (a) #984: proxy.rs 内のクラウド向けモック上流の遅延生成。テスト分離（FR-009）に伴い proxy/tests/cloud_streaming_timeouts.rs へ移動。
+fixed-wait|llmlb/src/api/proxy/tests/cloud_streaming_timeouts.rs|576643582-69|1
+# (a) #984: モック上流の hang 再現（無応答ストリーム）。中継側のアイドルタイムアウトが先に打ち切るため、この sleep が完了する経路は正常系では存在しない。同上の分離で移動。
+fixed-wait|llmlb/src/api/proxy/tests/cloud_streaming_timeouts.rs|576652577-61|1
+
+# (b) #981: ストリーム終了時の統計記録（非同期に反映される）を待つ条件ポーリング。sleep はポーリング間隔であり、完了は条件（total_requests >= 1）で判定し、上限 200 回で打ち切る。固定待機で完了を推定しない。
+fixed-wait|llmlb/src/api/proxy/tests/stream_outcome.rs|411471663-63|1
+fixed-wait|llmlb/src/api/anthropic/tests.rs|411471663-63|1

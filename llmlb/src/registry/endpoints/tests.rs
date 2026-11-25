@@ -3,6 +3,7 @@ use crate::db::test_utils::TEST_LOCK;
 use crate::types::endpoint::{EndpointCapability, SupportedAPI};
 
 mod model_sync;
+mod request_outcome;
 
 async fn setup_test_db() -> SqlitePool {
     crate::db::test_utils::test_db_pool().await

@@ -6,6 +6,7 @@ use super::error::{AppError, ManagementError};
 use crate::api::openai_util::{
     classify_upstream_request_error, openai_error_response_with_type, probe_ollama_model_loaded,
 };
+use crate::api::proxy::STREAM_IDLE_TIMEOUT;
 use crate::common::auth::{Claims, UserRole};
 use crate::common::error::{CommonError, LbError};
 use crate::db::endpoints as db;
@@ -1101,6 +1102,42 @@ pub async fn list_endpoint_models(
     }
 }
 
+/// Playground のストリーミング中継にアイドル（無応答）タイムアウトを適用する。
+///
+/// 上流からチャンクが `idle_timeout` の間届かなければ、詰まった接続として
+/// 中継を打ち切る（ストリームをエラーで終端する）。ストリーミングには総量
+/// タイムアウトの上限を設けない方針（オーナー決定 2026-11-26）のため、
+/// 時間管理はこのアイドルタイムアウトのみが担う。本経路の中継
+/// （`api::proxy`）と同じ方式で、TPS 計測を持たない Playground 用に
+/// 軽量化したもの。
+fn relay_stream_with_idle_timeout(
+    upstream: impl futures::Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send + 'static,
+    idle_timeout: Duration,
+) -> impl futures::Stream<Item = Result<axum::body::Bytes, std::io::Error>> + Send {
+    use futures::StreamExt;
+
+    futures::stream::try_unfold(
+        (Box::pin(upstream), idle_timeout),
+        |(mut upstream, idle_timeout)| async move {
+            match tokio::time::timeout(idle_timeout, upstream.next()).await {
+                Ok(Some(Ok(chunk))) => Ok(Some((chunk, (upstream, idle_timeout)))),
+                Ok(Some(Err(err))) => Err(std::io::Error::other(err)),
+                Ok(None) => Ok(None),
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        idle_timeout_secs = idle_timeout.as_secs(),
+                        "Playground streaming relay aborted: upstream idle timeout"
+                    );
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "upstream stream idle timeout",
+                    ))
+                }
+            }
+        },
+    )
+}
+
 /// POST /api/endpoints/:id/chat/completions - エンドポイントへのチャットプロキシ
 ///
 /// ダッシュボードのPlayground用。JWT認証済みユーザーが直接エンドポイントと通信できる。
@@ -1110,6 +1147,25 @@ pub async fn proxy_chat_completions(
     Path(id): Path<Uuid>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    proxy_chat_completions_with_idle_timeout(state, id, body, STREAM_IDLE_TIMEOUT).await
+}
+
+/// `proxy_chat_completions` の本体。`idle_timeout` はテストで短い値に
+/// 差し替えられるよう引数で受ける（本番は `STREAM_IDLE_TIMEOUT`）。
+///
+/// タイムアウト方針（Issue #978、オーナー決定 2026-11-26）を本経路
+/// （`api::proxy`）と揃える：ストリーミング（リクエストの `stream: true`）は
+/// 総量タイムアウトを付与せず、中継側のアイドルタイムアウトのみで管理する。
+/// reqwest の per-request timeout は応答ボディの読み取りにも効くため、
+/// ストリーミングに付与すると正当に時間のかかる生成が総量で切れてしまう。
+/// 非ストリーミングは従来どおり総量タイムアウト
+/// （`inference_timeout_secs`）を絶対上限として付与する。
+async fn proxy_chat_completions_with_idle_timeout(
+    state: AppState,
+    id: Uuid,
+    body: axum::body::Bytes,
+    idle_timeout: Duration,
+) -> axum::response::Response {
     // エンドポイントを取得
     let endpoint = match db::get_endpoint(&state.db_pool, id).await {
         Ok(Some(ep)) => ep,
@@ -1135,30 +1191,37 @@ pub async fn proxy_chat_completions(
         "{}/v1/chat/completions",
         endpoint.base_url.trim_end_matches('/')
     );
-    let request_model = serde_json::from_slice::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|payload| {
-            payload
-                .get("model")
-                .and_then(|model| model.as_str())
-                .map(str::to_string)
-        });
+    let request_payload = serde_json::from_slice::<serde_json::Value>(&body).ok();
+    let request_model = request_payload.as_ref().and_then(|payload| {
+        payload
+            .get("model")
+            .and_then(|model| model.as_str())
+            .map(str::to_string)
+    });
+    // ストリーミングかどうかはリクエストの `stream` フラグで判定する（本経路と同じ）。
+    let request_stream = request_payload
+        .as_ref()
+        .and_then(|payload| payload.get("stream"))
+        .and_then(|stream| stream.as_bool())
+        .unwrap_or(false);
 
     let mut request = state
         .http_client
         .post(&url)
         .header("Content-Type", "application/json")
         .body(body.to_vec());
+    // 総量タイムアウトは非ストリーミングにのみ付与する（方針は
+    // `proxy_chat_completions_with_idle_timeout` のコメント参照）。
+    if !request_stream {
+        request = request.timeout(Duration::from_secs(endpoint.inference_timeout_secs as u64));
+    }
     let started_at = Instant::now();
 
     if let Some(ref api_key) = endpoint.api_key {
         request = request.header("Authorization", format!("Bearer {}", api_key));
     }
 
-    let result = request
-        .timeout(Duration::from_secs(endpoint.inference_timeout_secs as u64))
-        .send()
-        .await;
+    let result = request.send().await;
 
     match result {
         Ok(response) => {
@@ -1195,7 +1258,7 @@ pub async fn proxy_chat_completions(
 
             // ストリーミングレスポンスの場合
             if content_type.contains("text/event-stream") {
-                let stream = response.bytes_stream();
+                let stream = relay_stream_with_idle_timeout(response.bytes_stream(), idle_timeout);
                 let body = axum::body::Body::from_stream(stream);
                 return axum::response::Response::builder()
                     .status(status_code)

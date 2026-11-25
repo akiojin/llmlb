@@ -1078,7 +1078,7 @@ async fn test_strata_and_maya_registration_persists_detected_type() {
             .unwrap()
             .unwrap();
         assert_eq!(stored.endpoint_type.as_str(), expected);
-        assert_eq!(stored.inference_timeout_secs, 120);
+        assert_eq!(stored.inference_timeout_secs, 600);
         assert!(!stored.endpoint_type.supports_model_download());
         assert!(!stored.endpoint_type.supports_model_delete());
         assert!(!stored.endpoint_type.supports_model_metadata());

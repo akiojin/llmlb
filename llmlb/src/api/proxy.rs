@@ -5,6 +5,7 @@
 //! このモジュールはEndpoint型を使用しています。
 
 use crate::api::openai_util::classify_upstream_request_error;
+use crate::balancer::WaitResult;
 use crate::common::{
     error::LbError,
     protocol::{RequestResponseRecord, TpsApiKind},
@@ -22,6 +23,31 @@ use axum::{
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::{io, pin::Pin, sync::Arc, time::Instant};
 
+/// ストリーミング中継のアイドル（無応答）タイムアウト（Issue #978）
+///
+/// 上流からチャンクがこの時間届かなければ、詰まった接続として中継を
+/// 打ち切る。正常な生成ではチャンクは継続的に流れるため、完全な無応答が
+/// 120 秒続く状態は「生成中」ではなく「詰まり」と判定する。沈黙が起こる
+/// 主な局面は初回チャンク前のプリフィルであり、初回チャンク待ちもこの
+/// 対象に含める。ストリーミングには総量タイムアウトの上限を設けず
+/// （オーナー決定 2026-11-26）、時間管理はこのアイドルタイムアウトのみが
+/// 担う。総量タイムアウト（`inference_timeout_secs`、既定 600 秒）は
+/// 非ストリーミング経路の絶対上限としてのみ使う。
+pub(crate) const STREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// キュー待機の上限時間（Issue #977）
+///
+/// 全エンドポイントが実行中の場合に空きを待つ上限。推論タイムアウト
+/// （120〜600秒）に対して短く抑えた機会的な平準化であり、タイムアウト
+/// した場合は従来どおり即時選択へフォールバックする。
+const QUEUE_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// キュー待機者の上限数（Issue #977）
+///
+/// これを超えたリクエストは待機せず即時選択へフォールバックし、
+/// llmlb 側に待機が無制限に積み上がらないようにする。
+const MAX_QUEUE_WAITERS: usize = 100;
+
 /// キュー付きエンドポイント選択の結果
 pub(crate) enum QueueSelection {
     /// エンドポイントが見つかった
@@ -31,12 +57,54 @@ pub(crate) enum QueueSelection {
     },
 }
 
+/// モデル対応エンドポイントにアイドルが無ければ、空きが出るまで上限時間だけ待機する（Issue #977）。
+///
+/// 戻り値は実際に待機したミリ秒数。待機が不要だった場合（アイドルあり）と、
+/// 待機者上限の超過で待機しなかった場合は `None` を返す。タイムアウトした場合も
+/// 待機実績として `Some` を返すが、呼び出し側はそのまま選択へ進むため、
+/// 空きが来なくてもリクエストは従来どおり進む（可用性を落とさない）。
+async fn wait_for_idle_slot_for_model(state: &AppState, model_id: &str) -> Option<u128> {
+    let load_manager = &state.balancer.load_manager;
+    if load_manager.has_idle_endpoint_for_model(model_id).await {
+        return None;
+    }
+
+    let started = Instant::now();
+    match load_manager
+        .wait_for_idle_node_with_timeout_for_model(model_id, MAX_QUEUE_WAITERS, QUEUE_WAIT_TIMEOUT)
+        .await
+    {
+        WaitResult::Ready => {
+            let waited_ms = started.elapsed().as_millis();
+            tracing::debug!(
+                model = %model_id,
+                waited_ms,
+                "Queue wait finished: an endpoint became idle"
+            );
+            Some(waited_ms)
+        }
+        WaitResult::Timeout => {
+            let waited_ms = started.elapsed().as_millis();
+            tracing::debug!(
+                model = %model_id,
+                waited_ms,
+                "Queue wait timed out: falling back to immediate selection"
+            );
+            Some(waited_ms)
+        }
+        WaitResult::CapacityExceeded => None,
+    }
+}
+
 /// モデル対応のエンドポイントをTPS優先・キュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
     model_id: &str,
     api_kind: Option<TpsApiKind>,
 ) -> Result<QueueSelection, LbError> {
+    // 全エンドポイントが実行中なら、選択の前に空きを待つ（Issue #977）
+    let queued_wait_ms = wait_for_idle_slot_for_model(state, model_id).await;
+
     let endpoint = state
         .balancer
         .load_manager
@@ -53,7 +121,7 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
 
     Ok(QueueSelection::Ready {
         endpoint: Box::new(endpoint),
-        queued_wait_ms: None,
+        queued_wait_ms,
     })
 }
 
@@ -136,11 +204,48 @@ pub(crate) async fn select_endpoint_candidates_with_queue_for_model_and_api(
     Ok(endpoints)
 }
 
+/// クラウド向けストリーミング中継のアイドル（無応答）タイムアウト（Issue #984）
+///
+/// クラウド経路のストリーミングには従来タイムアウトが一切無く、プロバイダが
+/// ヘッダー送信後に無応答になると接続が無期限に維持されていた。チャンクが
+/// この時間届かなければ、詰まった接続として中継を打ち切る。値はローカル
+/// 経路のアイドルタイムアウト（Issue #978 の `STREAM_IDLE_TIMEOUT`、120 秒）
+/// と揃える: 正常な生成ではチャンクは継続的に流れるため、120 秒の完全な
+/// 無応答は「生成中」ではなく「詰まり」と判定できる保守的な境界である。
+/// 生成全体の上限はアイドルでは測れない長時間生成を切らないため設けず、
+/// 無応答の検出に本タイムアウトを用いる。
+pub(crate) const CLOUD_STREAM_IDLE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(120);
+
 pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<Response, LbError> {
+    forward_streaming_response_inner(response, None)
+}
+
+/// クラウド経路向けのストリーミング中継（Issue #984）
+///
+/// `forward_streaming_response` にアイドル（無応答）タイムアウトを加えた版。
+/// チャンク待ち（初回チャンク待ちを含む）ごとに `idle_timeout` を適用し、
+/// 超過した場合はストリームをエラーとして打ち切る（上流ストリームは
+/// Drop され、接続が閉じられる）。タイムアウトが正常終了として
+/// 扱われることはない。
+pub(crate) fn forward_streaming_response_with_idle_timeout(
+    response: reqwest::Response,
+    idle_timeout: std::time::Duration,
+) -> Result<Response, LbError> {
+    forward_streaming_response_inner(response, Some(idle_timeout))
+}
+
+fn forward_streaming_response_inner(
+    response: reqwest::Response,
+    idle_timeout: Option<std::time::Duration>,
+) -> Result<Response, LbError> {
     let status = response.status();
     let headers = response.headers().clone();
     let stream = response.bytes_stream().map_err(io::Error::other);
-    let body = Body::from_stream(stream);
+    let body = match idle_timeout {
+        Some(idle_timeout) => Body::from_stream(stream_with_idle_timeout(stream, idle_timeout)),
+        None => Body::from_stream(stream),
+    };
     let mut axum_response = Response::new(body);
     *axum_response.status_mut() = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK);
     {
@@ -199,6 +304,43 @@ pub(crate) fn drain_sse_lines(buffer: &mut String, chunk_text: &str) -> Vec<Stri
     lines
 }
 
+/// チャンク待ちごとにアイドルタイムアウトを適用するストリームラッパー（Issue #984）
+///
+/// 各チャンクの待ち時間（初回チャンク待ちを含む）が `idle_timeout` を
+/// 超えたら、無応答として `io::ErrorKind::TimedOut` でストリームを
+/// 終了させる。ラッパーが終了すると上流ストリームは Drop され、
+/// プロバイダとの接続が閉じられる。
+fn stream_with_idle_timeout<S>(
+    stream: S,
+    idle_timeout: std::time::Duration,
+) -> Pin<Box<dyn Stream<Item = Result<axum::body::Bytes, io::Error>> + Send>>
+where
+    S: Stream<Item = Result<axum::body::Bytes, io::Error>> + Send + 'static,
+{
+    let stream: Pin<Box<dyn Stream<Item = Result<axum::body::Bytes, io::Error>> + Send>> =
+        Box::pin(stream);
+    Box::pin(futures::stream::try_unfold(
+        (stream, idle_timeout),
+        |(mut stream, idle_timeout)| async move {
+            match tokio::time::timeout(idle_timeout, stream.next()).await {
+                Ok(Some(Ok(chunk))) => Ok(Some((chunk, (stream, idle_timeout)))),
+                Ok(Some(Err(err))) => Err(err),
+                Ok(None) => Ok(None),
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        idle_timeout_secs = idle_timeout.as_secs(),
+                        "Streaming relay aborted: upstream idle timeout"
+                    );
+                    Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "upstream stream idle timeout",
+                    ))
+                }
+            }
+        },
+    ))
+}
+
 fn process_sse_lines(
     buffer: &mut String,
     chunk_text: &str,
@@ -222,6 +364,7 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
     load_manager: crate::balancer::LoadManager,
     event_bus: crate::events::SharedEventBus,
     request_lease: Option<crate::balancer::RequestLease>,
+    idle_timeout: std::time::Duration,
 ) -> Result<Response, LbError> {
     struct TpsTrackingState {
         upstream: Pin<Box<dyn Stream<Item = Result<axum::body::Bytes, reqwest::Error>> + Send>>,
@@ -240,6 +383,8 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         // ヘッダー受信時点で早期解放すると、ストリーミング中の assigned_active が
         // 過小になり、レイテンシも過小評価され、idle 通知も早まる（lease-ttfb）。
         request_lease: Option<crate::balancer::RequestLease>,
+        // チャンク無受信の許容時間（Issue #978）。超過したら無応答として打ち切る。
+        idle_timeout: std::time::Duration,
     }
 
     impl TpsTrackingState {
@@ -355,29 +500,49 @@ pub(crate) fn forward_streaming_response_with_tps_tracking(
         event_bus,
         stats_recorded: false,
         request_lease,
+        idle_timeout,
     };
 
     let tracked_stream = futures::stream::try_unfold(state, |mut state| async move {
-        match state.upstream.next().await {
-            Some(Ok(chunk)) => {
+        // チャンク待ちにアイドルタイムアウトを適用する（Issue #978）。
+        // 初回チャンク待ちも対象で、上流がヘッダー後に無応答になった場合は
+        // 総量タイムアウトを待たず、無応答として失敗扱いで打ち切る。
+        match tokio::time::timeout(state.idle_timeout, state.upstream.next()).await {
+            Ok(Some(Ok(chunk))) => {
                 let chunk_text = String::from_utf8_lossy(chunk.as_ref());
                 process_sse_lines(&mut state.sse_buffer, &chunk_text, &mut state.accumulator);
                 Ok(Some((chunk, state)))
             }
-            Some(Err(err)) => {
+            Ok(Some(Err(err))) => {
                 state.record_stats_once(false, 0, 0);
                 state
                     .finish_lease(crate::balancer::RequestOutcome::Error)
                     .await;
                 Err(io::Error::other(err))
             }
-            None => {
+            Ok(None) => {
                 let (output_tokens, duration_ms) = state.finalize_output_tokens_and_duration();
                 state.record_stats_once(true, output_tokens, duration_ms);
                 state
                     .finish_lease(crate::balancer::RequestOutcome::Success)
                     .await;
                 Ok(None)
+            }
+            Err(_elapsed) => {
+                tracing::warn!(
+                    endpoint_id = %state.endpoint_id,
+                    model_id = %state.model_id,
+                    idle_timeout_secs = state.idle_timeout.as_secs(),
+                    "Streaming relay aborted: upstream idle timeout"
+                );
+                state.record_stats_once(false, 0, 0);
+                state
+                    .finish_lease(crate::balancer::RequestOutcome::Error)
+                    .await;
+                Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "upstream stream idle timeout",
+                ))
             }
         }
     });
@@ -452,6 +617,27 @@ pub(crate) fn record_endpoint_request_stats(
             tracing::error!("Failed to increment endpoint request counters: {}", e);
         }
 
+        // Issue #975: 推論リクエストの成否をエンドポイントステータスの判定へ反映する。
+        // 成功で連続失敗をリセットし、失敗が連続すると Error / Offline へ遷移して
+        // 選択から外れる（ヘルスチェックだけでは推論経路の詰まりを検知できないため）。
+        if success {
+            endpoint_registry.record_request_success(endpoint_id).await;
+        } else {
+            match endpoint_registry
+                .record_request_failure(endpoint_id, "Inference request failed")
+                .await
+            {
+                Ok(true) => {
+                    // ヘルスチェック側の遷移時と同様に TPS をリセットする
+                    load_manager.clear_tps_for_endpoint(endpoint_id).await;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::error!("Failed to record endpoint request failure: {}", e);
+                }
+            }
+        }
+
         // TPS計測対象かつ成功かつ有効トークンがある場合のみトークン・時間をDB永続化
         let should_update_tps = endpoint_type.is_tps_trackable()
             && api_kind.is_some()
@@ -520,22 +706,32 @@ pub(crate) fn record_endpoint_request_stats(
 }
 /// エンドポイントにリクエストを転送
 ///
-/// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す
+/// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す。
+///
+/// タイムアウト方針（Issue #978、オーナー決定 2026-11-26）: 総量タイムアウト
+/// （`inference_timeout_secs`）は非ストリーミングにのみ付与する。reqwest の
+/// per-request timeout は応答ボディの読み取りにも効くため、ストリーミングに
+/// 付与すると正当に時間のかかる生成が総量で切れてしまう。ストリーミングの
+/// 無応答検出は、中継側のアイドルタイムアウト（`STREAM_IDLE_TIMEOUT`）が担う。
 pub(crate) async fn forward_to_endpoint(
     client: &reqwest::Client,
     endpoint: &Endpoint,
     path: &str,
     body: Vec<u8>,
+    stream: bool,
 ) -> Result<reqwest::Response, LbError> {
     let url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), path);
 
     let mut request_builder = client
         .post(&url)
         .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(
-            endpoint.inference_timeout_secs as u64,
-        ))
         .body(body);
+
+    if !stream {
+        request_builder = request_builder.timeout(std::time::Duration::from_secs(
+            endpoint.inference_timeout_secs as u64,
+        ));
+    }
 
     // APIキーがあれば追加
     if let Some(api_key) = &endpoint.api_key {
@@ -752,63 +948,6 @@ mod tests {
         assert_eq!(buffer, "remaining");
     }
 
-    // --- Issue #981: SSE行バッファの上限 ---
-
-    #[test]
-    fn process_sse_lines_discards_oversized_partial_line() {
-        let mut buffer = String::new();
-        let mut acc = StreamingTokenAccumulator::new("test-model");
-        // 改行なしで上限（1MiB）を超える部分行はバッファに残り続けない
-        let oversized = "x".repeat(2 * 1024 * 1024);
-        process_sse_lines(&mut buffer, &oversized, &mut acc);
-        assert!(
-            buffer.len() <= 1024 * 1024,
-            "oversized partial line must be discarded, buffer len = {}",
-            buffer.len()
-        );
-    }
-
-    #[test]
-    fn process_sse_lines_buffer_stays_bounded_across_chunks() {
-        let mut buffer = String::new();
-        let mut acc = StreamingTokenAccumulator::new("test-model");
-        // 改行なしチャンクが続いてもバッファは上限以下に保たれる
-        let chunk = "y".repeat(64 * 1024);
-        for _ in 0..64 {
-            process_sse_lines(&mut buffer, &chunk, &mut acc);
-            assert!(
-                buffer.len() <= 1024 * 1024,
-                "buffer must stay bounded, len = {}",
-                buffer.len()
-            );
-        }
-    }
-
-    #[test]
-    fn process_sse_lines_long_line_under_cap_still_accumulates() {
-        let mut buffer = String::new();
-        let mut acc = StreamingTokenAccumulator::new("test-model");
-        // 上限未満の長い行はチャンクをまたいで蓄積され、改行で処理される
-        let half = "z".repeat(256 * 1024);
-        process_sse_lines(&mut buffer, &half, &mut acc);
-        assert_eq!(buffer.len(), 256 * 1024);
-        process_sse_lines(&mut buffer, &half, &mut acc);
-        assert_eq!(buffer.len(), 512 * 1024);
-        process_sse_lines(&mut buffer, "\n", &mut acc);
-        assert!(buffer.is_empty());
-    }
-
-    #[test]
-    fn process_sse_lines_recovers_after_oversized_discard() {
-        let mut buffer = String::new();
-        let mut acc = StreamingTokenAccumulator::new("test-model");
-        let oversized = "x".repeat(2 * 1024 * 1024);
-        process_sse_lines(&mut buffer, &oversized, &mut acc);
-        // 上限超過で破棄された後でも、後続の通常の行は処理できる
-        process_sse_lines(&mut buffer, "data: line1\n", &mut acc);
-        assert!(buffer.is_empty());
-    }
-
     // --- forward_to_endpoint URL construction ---
 
     #[test]
@@ -990,6 +1129,10 @@ mod tests {
         assert_eq!(axum_response.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
+    // --- Issue #984: クラウド向けストリーミング中継のタイムアウト方針テストは
+    // proxy/tests/cloud_streaming_timeouts.rs へ分離（FR-009 の行数上限対応） ---
+    mod cloud_streaming_timeouts;
+
     // --- lease-ttfb: ストリーミング forwarder は配信完了まで lease を保持する ---
 
     #[tokio::test]
@@ -1047,6 +1190,7 @@ mod tests {
             load_manager.clone(),
             event_bus,
             Some(lease),
+            STREAM_IDLE_TIMEOUT,
         )
         .expect("forward streaming");
 
@@ -1077,123 +1221,13 @@ mod tests {
         );
     }
 
-    // --- Issue #981: 異常終了ストリームは成功として計上しない ---
+    // --- Issue #978: ストリーミング中継のタイムアウト方針テストは
+    // proxy/tests/streaming_timeouts.rs へ分離（FR-009 の行数上限対応） ---
+    mod streaming_timeouts;
 
-    async fn setup_stats_test_registry() -> (
-        crate::registry::endpoints::EndpointRegistry,
-        crate::balancer::LoadManager,
-        crate::events::SharedEventBus,
-        uuid::Uuid,
-    ) {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("create test db");
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("run migrations");
-        let registry = crate::registry::endpoints::EndpointRegistry::new(pool)
-            .await
-            .expect("create registry");
-        let endpoint = Endpoint::new(
-            "drop-stats-ep".to_string(),
-            "http://localhost:1".to_string(),
-            crate::types::endpoint::EndpointType::OpenaiCompatible,
-        );
-        let endpoint_id = endpoint.id;
-        registry.add(endpoint).await.expect("add endpoint");
-        let load_manager = crate::balancer::LoadManager::new(Arc::new(registry.clone()));
-        let event_bus = crate::events::create_shared_event_bus();
-        (registry, load_manager, event_bus, endpoint_id)
-    }
-
-    async fn wait_for_recorded_stats(
-        registry: &crate::registry::endpoints::EndpointRegistry,
-        endpoint_id: uuid::Uuid,
-    ) -> Endpoint {
-        for _ in 0..200 {
-            let endpoint = registry.get(endpoint_id).await.expect("endpoint exists");
-            if endpoint.total_requests >= 1 {
-                return endpoint;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-        }
-        registry.get(endpoint_id).await.expect("endpoint exists")
-    }
-
-    #[tokio::test]
-    async fn streaming_tracker_drop_records_failure_not_success() {
-        let (registry, load_manager, event_bus, endpoint_id) = setup_stats_test_registry().await;
-
-        let response = reqwest::Response::from(
-            axum::http::Response::builder()
-                .status(200)
-                .header("content-type", "text/event-stream")
-                .body("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
-                .unwrap(),
-        );
-
-        let axum_response = forward_streaming_response_with_tps_tracking(
-            response,
-            endpoint_id,
-            "m".to_string(),
-            Some(TpsApiKind::ChatCompletions),
-            crate::types::endpoint::EndpointType::OpenaiCompatible,
-            Instant::now(),
-            registry.clone(),
-            load_manager,
-            event_bus,
-            None,
-        )
-        .expect("forward streaming");
-
-        // クライアント切断を模し、ボディを消費せずに drop する
-        drop(axum_response);
-
-        let endpoint = wait_for_recorded_stats(&registry, endpoint_id).await;
-        assert_eq!(endpoint.total_requests, 1);
-        assert_eq!(
-            endpoint.successful_requests, 0,
-            "aborted stream must not be recorded as success"
-        );
-        assert_eq!(endpoint.failed_requests, 1);
-    }
-
-    #[tokio::test]
-    async fn streaming_tracker_completion_records_success() {
-        let (registry, load_manager, event_bus, endpoint_id) = setup_stats_test_registry().await;
-
-        let response = reqwest::Response::from(
-            axum::http::Response::builder()
-                .status(200)
-                .header("content-type", "text/event-stream")
-                .body("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n")
-                .unwrap(),
-        );
-
-        let axum_response = forward_streaming_response_with_tps_tracking(
-            response,
-            endpoint_id,
-            "m".to_string(),
-            Some(TpsApiKind::ChatCompletions),
-            crate::types::endpoint::EndpointType::OpenaiCompatible,
-            Instant::now(),
-            registry.clone(),
-            load_manager,
-            event_bus,
-            None,
-        )
-        .expect("forward streaming");
-
-        let _ = axum::body::to_bytes(axum_response.into_body(), usize::MAX)
-            .await
-            .expect("consume body");
-
-        let endpoint = wait_for_recorded_stats(&registry, endpoint_id).await;
-        assert_eq!(endpoint.total_requests, 1);
-        assert_eq!(endpoint.successful_requests, 1);
-        assert_eq!(endpoint.failed_requests, 0);
-    }
+    // --- Issue #981: 異常終了ストリームの成否計上と SSE 行バッファのテストは
+    // proxy/tests/stream_outcome.rs へ分離（FR-009 の行数上限対応） ---
+    mod stream_outcome;
 
     // --- Timeout configuration in forward_to_endpoint ---
 
@@ -1218,6 +1252,218 @@ mod tests {
         assert_eq!(
             std::time::Duration::from_secs(ep.inference_timeout_secs as u64),
             std::time::Duration::from_secs(60)
+        );
+    }
+
+    // --- Issue #977: キュー待機の接続（select_available_endpoint_with_queue_for_model） ---
+
+    async fn create_test_state() -> AppState {
+        use crate::audit::writer::{AuditLogWriter, AuditLogWriterConfig};
+        use crate::db::audit_log::AuditLogStorage;
+
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create test db");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("run migrations");
+
+        let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
+            pool.clone(),
+        ));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(pool.clone())
+            .await
+            .expect("create endpoint registry");
+        let load_manager = crate::balancer::LoadManager::new(Arc::new(endpoint_registry.clone()));
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("create update manager");
+        let audit_log_storage = Arc::new(AuditLogStorage::new(pool.clone()));
+        let audit_log_writer = AuditLogWriter::new(
+            AuditLogStorage::new(pool.clone()),
+            AuditLogWriterConfig {
+                flush_interval_secs: 300,
+                buffer_capacity: 100,
+                batch_interval_secs: 300,
+            },
+        );
+
+        AppState {
+            balancer: crate::BalancerState {
+                load_manager,
+                endpoint_registry,
+                request_history,
+            },
+            db_pool: pool,
+            auth: crate::AuthState {
+                jwt_secret: "test-secret".to_string(),
+            },
+            http_client,
+            event_bus: crate::events::create_shared_event_bus(),
+            lifecycle: crate::LifecycleState {
+                inference_gate,
+                shutdown,
+                update_manager,
+            },
+            audit: crate::AuditState {
+                writer: audit_log_writer,
+                storage: audit_log_storage,
+                archive_pool: None,
+            },
+        }
+    }
+
+    async fn add_online_endpoint_with_model(
+        state: &AppState,
+        name: &str,
+        model_id: &str,
+    ) -> Endpoint {
+        let mut endpoint = Endpoint::new(
+            name.to_string(),
+            "http://localhost:18080".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = crate::types::endpoint::EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .balancer
+            .endpoint_registry
+            .add(endpoint.clone())
+            .await
+            .expect("add endpoint");
+        state
+            .balancer
+            .endpoint_registry
+            .add_model(&crate::types::endpoint::EndpointModel {
+                endpoint_id,
+                model_id: model_id.to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
+            })
+            .await
+            .expect("add endpoint model");
+        endpoint
+    }
+
+    #[tokio::test]
+    async fn select_with_queue_returns_immediately_when_endpoint_idle() {
+        let _lock = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = create_test_state().await;
+        let endpoint = add_online_endpoint_with_model(&state, "idle-ep", "queue-model").await;
+
+        let started = std::time::Instant::now();
+        let selection = select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
+            .await
+            .expect("selection should succeed");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "アイドルなエンドポイントがある場合は待機しない"
+        );
+
+        let QueueSelection::Ready {
+            endpoint: selected,
+            queued_wait_ms,
+        } = selection;
+        assert_eq!(selected.id, endpoint.id);
+        assert!(
+            queued_wait_ms.is_none(),
+            "待機していない場合は queued_wait_ms は None"
+        );
+    }
+
+    #[tokio::test]
+    async fn select_with_queue_waits_until_busy_endpoint_frees() {
+        let _lock = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = create_test_state().await;
+        let endpoint = add_online_endpoint_with_model(&state, "busy-ep", "queue-model").await;
+        let lease = state
+            .balancer
+            .load_manager
+            .begin_request(endpoint.id)
+            .await
+            .expect("lease should start");
+
+        let select_state = state.clone();
+        let select_task = tokio::spawn(async move {
+            select_available_endpoint_with_queue_for_model(&select_state, "queue-model", None).await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            !select_task.is_finished(),
+            "全エンドポイントが実行中の間は選択がキューで待機するべき"
+        );
+
+        lease
+            .complete(
+                crate::balancer::RequestOutcome::Success,
+                std::time::Duration::from_millis(1),
+            )
+            .await
+            .expect("lease should complete");
+
+        let selection = select_task
+            .await
+            .expect("select task should finish")
+            .expect("selection should succeed");
+        let QueueSelection::Ready {
+            endpoint: selected,
+            queued_wait_ms,
+        } = selection;
+        assert_eq!(selected.id, endpoint.id);
+        let wait_ms = queued_wait_ms.expect("待機した場合は queued_wait_ms が報告されるべき");
+        assert!(
+            wait_ms >= 100,
+            "実測の待機時間が報告されるべき (got {wait_ms}ms)"
+        );
+    }
+
+    #[tokio::test]
+    async fn select_with_queue_falls_back_after_timeout_when_never_free() {
+        let _lock = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = create_test_state().await;
+        let endpoint = add_online_endpoint_with_model(&state, "stuck-ep", "queue-model").await;
+        let _lease = state
+            .balancer
+            .load_manager
+            .begin_request(endpoint.id)
+            .await
+            .expect("lease should start");
+
+        // 空きが永遠に来なくても、待機上限を超えたら従来どおり即時選択へ
+        // フォールバックしてリクエストを進める（可用性を落とさない）。
+        let started = std::time::Instant::now();
+        let selection = select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
+            .await
+            .expect("selection should succeed after queue timeout");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= QUEUE_WAIT_TIMEOUT,
+            "待機上限までは待つべき (elapsed {elapsed:?})"
+        );
+        assert!(
+            elapsed < QUEUE_WAIT_TIMEOUT + std::time::Duration::from_secs(3),
+            "待機上限を超えて待たないべき (elapsed {elapsed:?})"
+        );
+
+        let QueueSelection::Ready {
+            endpoint: selected,
+            queued_wait_ms,
+        } = selection;
+        assert_eq!(selected.id, endpoint.id);
+        assert!(
+            queued_wait_ms.is_some(),
+            "タイムアウト時も実際に待った時間は報告されるべき"
         );
     }
 }

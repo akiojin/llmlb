@@ -1047,3 +1047,106 @@ async fn canonical_model_routes_to_lmstudio_endpoint_without_alias_rewrite() {
     assert_eq!(json["model"], "openai/gpt-oss-20b");
     assert_eq!(json["content"][0]["text"], "ok");
 }
+
+// --- Issue #981: 行バッファ上限と異常終了時の統計記録 ---
+
+fn build_test_tracker(
+    state: &AppState,
+    endpoint_id: Uuid,
+) -> AnthropicStreamTracker {
+    AnthropicStreamTracker {
+        upstream: Box::pin(futures::stream::empty::<Result<Bytes, reqwest::Error>>()),
+        upstream_line_buffer: String::new(),
+        output_queue: VecDeque::new(),
+        accumulator: StreamingTokenAccumulator::new("test-model"),
+        endpoint_id,
+        model_id: "test-model".to_string(),
+        endpoint_type: EndpointType::OpenaiCompatible,
+        request_started_at: Instant::now(),
+        endpoint_registry: state.balancer.endpoint_registry.clone(),
+        load_manager: state.balancer.load_manager.clone(),
+        event_bus: state.event_bus.clone(),
+        sent_message_start: false,
+        sent_message_stop: false,
+        next_block_index: 0,
+        open_text_index: None,
+        tool_buffer: BTreeMap::new(),
+        emitted_tool_use: false,
+        response_id: "msg_test".to_string(),
+        public_model: "test-model".to_string(),
+        stop_reason: None,
+        stop_sequence: None,
+        stats_recorded: false,
+        stream_failed: false,
+        request_lease: None,
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn streaming_tracker_line_buffer_stays_bounded() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+    let mut tracker = build_test_tracker(&state, Uuid::new_v4());
+
+    // 改行なしで上限（1MiB）を超えるチャンクを流してもバッファは有界に保たれる
+    let oversized = "x".repeat(2 * 1024 * 1024);
+    tracker.process_upstream_chunk(&oversized);
+    assert!(
+        tracker.upstream_line_buffer.len() <= 1024 * 1024,
+        "line buffer must stay bounded, len = {}",
+        tracker.upstream_line_buffer.len()
+    );
+
+    // 上限超過の後でも通常の行は処理できる
+    tracker.process_upstream_chunk(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n",
+    );
+    assert!(tracker.upstream_line_buffer.is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn streaming_tracker_drop_records_failure_not_success() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+
+    let endpoint = Endpoint::new(
+        "anthropic-drop-ep".to_string(),
+        "http://localhost:1".to_string(),
+        EndpointType::OpenaiCompatible,
+    );
+    let endpoint_id = endpoint.id;
+    state
+        .balancer
+        .endpoint_registry
+        .add(endpoint)
+        .await
+        .expect("add endpoint");
+
+    // 統計未記録のまま drop する（クライアント切断等の異常終了を模す）
+    let tracker = build_test_tracker(&state, endpoint_id);
+    drop(tracker);
+
+    let mut recorded = None;
+    for _ in 0..200 {
+        let ep = state
+            .balancer
+            .endpoint_registry
+            .get(endpoint_id)
+            .await
+            .expect("endpoint exists");
+        if ep.total_requests >= 1 {
+            recorded = Some(ep);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let ep = recorded.expect("stats must be recorded on drop");
+    assert_eq!(ep.total_requests, 1);
+    assert_eq!(
+        ep.successful_requests, 0,
+        "aborted stream must not be recorded as success"
+    );
+    assert_eq!(ep.failed_requests, 1);
+}

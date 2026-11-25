@@ -173,7 +173,7 @@ impl AnthropicStreamTracker {
         }
     }
 
-    fn process_upstream_chunk(&mut self, chunk_text: &str) {
+    pub(super) fn process_upstream_chunk(&mut self, chunk_text: &str) {
         self.upstream_line_buffer.push_str(chunk_text);
 
         while let Some(newline_idx) = self.upstream_line_buffer.find('\n') {

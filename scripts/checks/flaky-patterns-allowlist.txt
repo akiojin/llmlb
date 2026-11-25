@@ -681,3 +681,10 @@ shared-resource|llmlb/tests/support/lb.rs|531089987-55|4
 
 # (a) #695: forgot-passwordは応答後にトークンを発行。DB件数を毎回確認し期待値で即終了する状態pollの間隔。最大100回後も件数assertを維持し、固定待機だけで完了を推定しない。
 fixed-wait|llmlb/tests/contract/auth_api_test.rs|182137248-63|1
+
+# (a) #977: 全エンドポイント実行中に選択がキュー待機することを検証する負の観測窓。リースを保持している限り選択は完了し得ず、完了はリース解放で駆動する。固定待機だけで完了を推定しない。
+fixed-wait|llmlb/src/api/proxy.rs|3090434862-64|1
+# (a) #977: 待機者がアイドル待ちを継続することの負の観測窓。リース保持中は待機が終わり得ず、完了はリース解放で駆動し、WaitResult と待機者数で assert する。
+fixed-wait|llmlb/tests/unit/tps_routing_test.rs|2233052310-64|1
+# (c) #977: テスト用 AppState 構築ヘルパー内の UpdateManager::new。DB はテスト用プールで隔離され、更新処理自体は実行しない。保守的検出として現状固定する。
+shared-resource|llmlb/src/api/proxy.rs|1645937757-55|1

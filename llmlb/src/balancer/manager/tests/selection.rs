@@ -301,3 +301,25 @@ async fn wait_for_idle_node_for_model_capacity_exceeded() {
         .await;
     assert_eq!(result, WaitResult::CapacityExceeded);
 }
+
+// ===== effective_tps_score テスト（Issue #977） =====
+
+#[test]
+fn effective_tps_score_no_active_returns_raw_tps() {
+    // アイドル時は割り引かれず、従来の TPS 降順と一致する
+    assert!((super::effective_tps_score(120.0, 0) - 120.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn effective_tps_score_discounts_by_inflight_count() {
+    // 実効スコアは TPS / (実行中 + 1): 120 / (1 + 1) = 60、120 / (3 + 1) = 30
+    assert!((super::effective_tps_score(120.0, 1) - 60.0).abs() < f64::EPSILON);
+    assert!((super::effective_tps_score(120.0, 3) - 30.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn effective_tps_score_zero_tps_stays_zero() {
+    // 未計測（TPS=0）は実行中数によらず 0 のまま（探索は行わない）
+    assert_eq!(super::effective_tps_score(0.0, 0), 0.0);
+    assert_eq!(super::effective_tps_score(0.0, 5), 0.0);
+}

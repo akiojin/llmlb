@@ -928,4 +928,218 @@ mod tests {
             std::time::Duration::from_secs(60)
         );
     }
+
+    // --- Issue #977: キュー待機の接続（select_available_endpoint_with_queue_for_model） ---
+
+    async fn create_test_state() -> AppState {
+        use crate::audit::writer::{AuditLogWriter, AuditLogWriterConfig};
+        use crate::db::audit_log::AuditLogStorage;
+
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create test db");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("run migrations");
+
+        let request_history = Arc::new(crate::db::request_history::RequestHistoryStorage::new(
+            pool.clone(),
+        ));
+        let endpoint_registry = crate::registry::endpoints::EndpointRegistry::new(pool.clone())
+            .await
+            .expect("create endpoint registry");
+        let load_manager = crate::balancer::LoadManager::new(Arc::new(endpoint_registry.clone()));
+        let http_client = reqwest::Client::new();
+        let inference_gate = crate::inference_gate::InferenceGate::default();
+        let shutdown = crate::shutdown::ShutdownController::default();
+        let update_manager = crate::update::UpdateManager::new(
+            http_client.clone(),
+            inference_gate.clone(),
+            shutdown.clone(),
+        )
+        .expect("create update manager");
+        let audit_log_storage = Arc::new(AuditLogStorage::new(pool.clone()));
+        let audit_log_writer = AuditLogWriter::new(
+            AuditLogStorage::new(pool.clone()),
+            AuditLogWriterConfig {
+                flush_interval_secs: 300,
+                buffer_capacity: 100,
+                batch_interval_secs: 300,
+            },
+        );
+
+        AppState {
+            balancer: crate::BalancerState {
+                load_manager,
+                endpoint_registry,
+                request_history,
+            },
+            db_pool: pool,
+            auth: crate::AuthState {
+                jwt_secret: "test-secret".to_string(),
+            },
+            http_client,
+            event_bus: crate::events::create_shared_event_bus(),
+            lifecycle: crate::LifecycleState {
+                inference_gate,
+                shutdown,
+                update_manager,
+            },
+            audit: crate::AuditState {
+                writer: audit_log_writer,
+                storage: audit_log_storage,
+                archive_pool: None,
+            },
+        }
+    }
+
+    async fn add_online_endpoint_with_model(
+        state: &AppState,
+        name: &str,
+        model_id: &str,
+    ) -> Endpoint {
+        let mut endpoint = Endpoint::new(
+            name.to_string(),
+            "http://localhost:18080".to_string(),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        );
+        endpoint.status = crate::types::endpoint::EndpointStatus::Online;
+        let endpoint_id = endpoint.id;
+        state
+            .balancer
+            .endpoint_registry
+            .add(endpoint.clone())
+            .await
+            .expect("add endpoint");
+        state
+            .balancer
+            .endpoint_registry
+            .add_model(&crate::types::endpoint::EndpointModel {
+                endpoint_id,
+                model_id: model_id.to_string(),
+                capabilities: None,
+                max_tokens: None,
+                last_checked: None,
+                supported_apis: vec![SupportedAPI::ChatCompletions],
+                canonical_name: None,
+            })
+            .await
+            .expect("add endpoint model");
+        endpoint
+    }
+
+    #[tokio::test]
+    async fn select_with_queue_returns_immediately_when_endpoint_idle() {
+        let _lock = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = create_test_state().await;
+        let endpoint = add_online_endpoint_with_model(&state, "idle-ep", "queue-model").await;
+
+        let started = std::time::Instant::now();
+        let selection =
+            select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
+                .await
+                .expect("selection should succeed");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "アイドルなエンドポイントがある場合は待機しない"
+        );
+
+        let QueueSelection::Ready {
+            endpoint: selected,
+            queued_wait_ms,
+        } = selection;
+        assert_eq!(selected.id, endpoint.id);
+        assert!(
+            queued_wait_ms.is_none(),
+            "待機していない場合は queued_wait_ms は None"
+        );
+    }
+
+    #[tokio::test]
+    async fn select_with_queue_waits_until_busy_endpoint_frees() {
+        let _lock = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = create_test_state().await;
+        let endpoint = add_online_endpoint_with_model(&state, "busy-ep", "queue-model").await;
+        let lease = state
+            .balancer
+            .load_manager
+            .begin_request(endpoint.id)
+            .await
+            .expect("lease should start");
+
+        let select_state = state.clone();
+        let select_task = tokio::spawn(async move {
+            select_available_endpoint_with_queue_for_model(&select_state, "queue-model", None).await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            !select_task.is_finished(),
+            "全エンドポイントが実行中の間は選択がキューで待機するべき"
+        );
+
+        lease
+            .complete(
+                crate::balancer::RequestOutcome::Success,
+                std::time::Duration::from_millis(1),
+            )
+            .await
+            .expect("lease should complete");
+
+        let selection = select_task
+            .await
+            .expect("select task should finish")
+            .expect("selection should succeed");
+        let QueueSelection::Ready {
+            endpoint: selected,
+            queued_wait_ms,
+        } = selection;
+        assert_eq!(selected.id, endpoint.id);
+        let wait_ms = queued_wait_ms.expect("待機した場合は queued_wait_ms が報告されるべき");
+        assert!(
+            wait_ms >= 100,
+            "実測の待機時間が報告されるべき (got {wait_ms}ms)"
+        );
+    }
+
+    #[tokio::test]
+    async fn select_with_queue_falls_back_after_timeout_when_never_free() {
+        let _lock = crate::db::test_utils::TEST_LOCK.lock().await;
+        let state = create_test_state().await;
+        let endpoint = add_online_endpoint_with_model(&state, "stuck-ep", "queue-model").await;
+        let _lease = state
+            .balancer
+            .load_manager
+            .begin_request(endpoint.id)
+            .await
+            .expect("lease should start");
+
+        // 空きが永遠に来なくても、待機上限を超えたら従来どおり即時選択へ
+        // フォールバックしてリクエストを進める（可用性を落とさない）。
+        let started = std::time::Instant::now();
+        let selection =
+            select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
+                .await
+                .expect("selection should succeed after queue timeout");
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= QUEUE_WAIT_TIMEOUT,
+            "待機上限までは待つべき (elapsed {elapsed:?})"
+        );
+        assert!(
+            elapsed < QUEUE_WAIT_TIMEOUT + std::time::Duration::from_secs(3),
+            "待機上限を超えて待たないべき (elapsed {elapsed:?})"
+        );
+
+        let QueueSelection::Ready {
+            endpoint: selected,
+            queued_wait_ms,
+        } = selection;
+        assert_eq!(selected.id, endpoint.id);
+        assert!(
+            queued_wait_ms.is_some(),
+            "タイムアウト時も実際に待った時間は報告されるべき"
+        );
+    }
 }

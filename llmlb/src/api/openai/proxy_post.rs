@@ -280,8 +280,9 @@ pub(super) async fn proxy_openai_post(
                 state.event_bus.clone(),
             );
 
-            // Note: Model exclusion is handled by the health check system
-            // which will mark the endpoint as offline/error if requests fail repeatedly
+            // Note: This failure is fed back into the endpoint status via
+            // record_endpoint_request_stats (Issue #975): repeated failures
+            // move the endpoint to error/offline so selection avoids it.
 
             {
                 let mut record = RequestResponseRecord::new(
@@ -440,8 +441,9 @@ pub(super) async fn proxy_openai_post(
             state.event_bus.clone(),
         );
 
-        // Note: Model exclusion is handled by the health check system
-        // which will mark the endpoint as offline/error if requests fail repeatedly
+        // Note: This failure is fed back into the endpoint status via
+        // record_endpoint_request_stats (Issue #975): repeated failures
+        // move the endpoint to error/offline so selection avoids it.
 
         let status = response.status();
         // OpenAI互換経路では upstream 非2xx は 502 に正規化して返す
@@ -576,8 +578,9 @@ pub(super) async fn proxy_openai_post(
                 state.event_bus.clone(),
             );
 
-            // Note: Model exclusion is handled by the health check system
-            // which will mark the endpoint as offline/error if requests fail repeatedly
+            // Note: This failure is fed back into the endpoint status via
+            // record_endpoint_request_stats (Issue #975): repeated failures
+            // move the endpoint to error/offline so selection avoids it.
 
             {
                 let mut record = RequestResponseRecord::new(

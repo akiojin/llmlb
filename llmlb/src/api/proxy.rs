@@ -380,6 +380,27 @@ pub(crate) fn record_endpoint_request_stats(
             tracing::error!("Failed to increment endpoint request counters: {}", e);
         }
 
+        // Issue #975: 推論リクエストの成否をエンドポイントステータスの判定へ反映する。
+        // 成功で連続失敗をリセットし、失敗が連続すると Error / Offline へ遷移して
+        // 選択から外れる（ヘルスチェックだけでは推論経路の詰まりを検知できないため）。
+        if success {
+            endpoint_registry.record_request_success(endpoint_id).await;
+        } else {
+            match endpoint_registry
+                .record_request_failure(endpoint_id, "Inference request failed")
+                .await
+            {
+                Ok(true) => {
+                    // ヘルスチェック側の遷移時と同様に TPS をリセットする
+                    load_manager.clear_tps_for_endpoint(endpoint_id).await;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::error!("Failed to record endpoint request failure: {}", e);
+                }
+            }
+        }
+
         // TPS計測対象かつ成功かつ有効トークンがある場合のみトークン・時間をDB永続化
         let should_update_tps = endpoint_type.is_tps_trackable()
             && api_kind.is_some()

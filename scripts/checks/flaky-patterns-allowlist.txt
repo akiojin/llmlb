@@ -695,8 +695,8 @@ fixed-wait|llmlb/src/api/endpoints/tests.rs|532297365-58|2
 # (a) #978: OpenAI 経路のタイムアウト方針テストで使うモック上流の遅延生成。同上（sleep は上流遅延の再現、assert はクライアント側の打ち切り有無）。
 fixed-wait|llmlb/src/api/openai/tests/timeout_policy.rs|576643582-69|1
 fixed-wait|llmlb/src/api/openai/tests/timeout_policy.rs|576643582-69|2
-# (a) #978: ローカル経路のタイムアウト検証で使うモック上流の遅延生成。同上。
-fixed-wait|llmlb/src/api/proxy.rs|576643582-69|1
-fixed-wait|llmlb/src/api/proxy.rs|576643582-69|2
-# (a) #978: モック上流の hang 再現（無応答ストリーム）。中継側のアイドルタイムアウトが先に打ち切るため、この sleep が完了する経路は正常系では存在しない。
-fixed-wait|llmlb/src/api/proxy.rs|576652577-61|1
+# (a) #978: ローカル経路のタイムアウト検証で使うモック上流の遅延生成。同上。テスト分離（FR-009）に伴い proxy/tests/streaming_timeouts.rs へ移動。
+fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576643582-69|1
+fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576643582-69|2
+# (a) #978: モック上流の hang 再現（無応答ストリーム）。中継側のアイドルタイムアウトが先に打ち切るため、この sleep が完了する経路は正常系では存在しない。同上の分離で移動。
+fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576652577-61|1

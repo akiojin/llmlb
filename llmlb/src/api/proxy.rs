@@ -28,8 +28,10 @@ use std::{io, pin::Pin, sync::Arc, time::Instant};
 /// 打ち切る。正常な生成ではチャンクは継続的に流れるため、完全な無応答が
 /// 120 秒続く状態は「生成中」ではなく「詰まり」と判定する。沈黙が起こる
 /// 主な局面は初回チャンク前のプリフィルであり、初回チャンク待ちもこの
-/// 対象に含める。生成全体の絶対上限は総量タイムアウト
-/// （`inference_timeout_secs`、既定 600 秒）が引き続き担う。
+/// 対象に含める。ストリーミングには総量タイムアウトの上限を設けず
+/// （オーナー決定 2026-11-26）、時間管理はこのアイドルタイムアウトのみが
+/// 担う。総量タイムアウト（`inference_timeout_secs`、既定 600 秒）は
+/// 非ストリーミング経路の絶対上限としてのみ使う。
 pub(crate) const STREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// キュー付きエンドポイント選択の結果
@@ -523,22 +525,32 @@ pub(crate) fn record_endpoint_request_stats(
 }
 /// エンドポイントにリクエストを転送
 ///
-/// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す
+/// OpenAI互換APIエンドポイントにリクエストを転送し、レスポンスを返す。
+///
+/// タイムアウト方針（Issue #978、オーナー決定 2026-11-26）: 総量タイムアウト
+/// （`inference_timeout_secs`）は非ストリーミングにのみ付与する。reqwest の
+/// per-request timeout は応答ボディの読み取りにも効くため、ストリーミングに
+/// 付与すると正当に時間のかかる生成が総量で切れてしまう。ストリーミングの
+/// 無応答検出は、中継側のアイドルタイムアウト（`STREAM_IDLE_TIMEOUT`）が担う。
 pub(crate) async fn forward_to_endpoint(
     client: &reqwest::Client,
     endpoint: &Endpoint,
     path: &str,
     body: Vec<u8>,
+    stream: bool,
 ) -> Result<reqwest::Response, LbError> {
     let url = format!("{}{}", endpoint.base_url.trim_end_matches('/'), path);
 
     let mut request_builder = client
         .post(&url)
         .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(
-            endpoint.inference_timeout_secs as u64,
-        ))
         .body(body);
+
+    if !stream {
+        request_builder = request_builder.timeout(std::time::Duration::from_secs(
+            endpoint.inference_timeout_secs as u64,
+        ));
+    }
 
     // APIキーがあれば追加
     if let Some(api_key) = &endpoint.api_key {
@@ -1234,6 +1246,206 @@ mod tests {
                 .active_requests,
             0,
             "lease must be completed after the stream completes"
+        );
+    }
+
+    // --- Issue #978 フォローアップ: ストリーミングは総量タイムアウトで切らない ---
+
+    /// 応答全体（ヘッダー含む）を遅延させてから返すテスト用上流サーバーを起動する。
+    async fn spawn_delayed_response_server(
+        delay_ms: u64,
+        body: &'static str,
+    ) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut read_buf = [0u8; 4096];
+                let _ = socket.read(&mut read_buf).await;
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        addr
+    }
+
+    /// forward_to_endpoint のタイムアウト検証用エンドポイント（総量は秒単位で指定）。
+    fn forward_test_endpoint(addr: std::net::SocketAddr, inference_timeout_secs: u32) -> Endpoint {
+        let mut ep = Endpoint::new(
+            "fwd-ep".to_string(),
+            format!("http://{addr}"),
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+        );
+        ep.inference_timeout_secs = inference_timeout_secs;
+        ep
+    }
+
+    #[tokio::test]
+    async fn forward_to_endpoint_streaming_is_not_cut_by_total_timeout() {
+        // 総量タイムアウト（1秒）より長く続くストリームでも、チャンク間隔が
+        // アイドルタイムアウト未満なら最後まで中継される（オーナー決定 2026-11-26）。
+        let addr = spawn_chunked_sse_server(
+            vec![
+                (
+                    0,
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+                ),
+                (
+                    800,
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\n",
+                ),
+                (800, "data: [DONE]\n\n"),
+            ],
+            false,
+        )
+        .await;
+        let (registry, load_manager, event_bus, endpoint_id, lease) =
+            setup_streaming_lease("fwd-stream-ep").await;
+        let endpoint = forward_test_endpoint(addr, 1);
+
+        let started = Instant::now();
+        let response = forward_to_endpoint(
+            &reqwest::Client::new(),
+            &endpoint,
+            "/v1/chat/completions",
+            b"{}".to_vec(),
+            true,
+        )
+        .await
+        .expect("forward streaming request");
+
+        let axum_response = forward_streaming_response_with_tps_tracking(
+            response,
+            endpoint_id,
+            "m".to_string(),
+            None,
+            crate::types::endpoint::EndpointType::OpenaiCompatible,
+            Instant::now(),
+            registry,
+            load_manager.clone(),
+            event_bus,
+            Some(lease),
+            std::time::Duration::from_secs(5),
+        )
+        .expect("forward streaming");
+
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            axum::body::to_bytes(axum_response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("stream must complete")
+        .expect("ストリームが総量タイムアウトで切断されないべき");
+        assert!(
+            started.elapsed() > std::time::Duration::from_secs(1),
+            "総量タイムアウト（1秒）を越えて継続したはず"
+        );
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("[DONE]"),
+            "ストリーム全体が中継されるべき: {text}"
+        );
+        assert_eq!(
+            load_manager
+                .snapshot(endpoint_id)
+                .await
+                .unwrap()
+                .active_requests,
+            0,
+            "lease must be completed after the stream completes"
+        );
+    }
+
+    #[tokio::test]
+    async fn forward_to_endpoint_streaming_waits_beyond_total_timeout_for_headers() {
+        // ヘッダー到着が総量タイムアウト（1秒）より遅くても、ストリーミングでは
+        // 総量で打ち切らずに待てる（無応答の検出は中継側のアイドルが担う）。
+        let addr = spawn_delayed_response_server(2000, "{}").await;
+        let endpoint = forward_test_endpoint(addr, 1);
+
+        let started = Instant::now();
+        let response = forward_to_endpoint(
+            &reqwest::Client::new(),
+            &endpoint,
+            "/v1/chat/completions",
+            b"{}".to_vec(),
+            true,
+        )
+        .await
+        .expect("ストリーミングではヘッダー待ちに総量タイムアウトが効かないべき");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(1500),
+            "ヘッダー到着（2秒）まで待ったはず"
+        );
+    }
+
+    #[tokio::test]
+    async fn forward_to_endpoint_non_streaming_times_out_on_slow_headers() {
+        // 非ストリーミングは従来どおり総量タイムアウトが絶対上限として効く。
+        let addr = spawn_delayed_response_server(2000, "{}").await;
+        let endpoint = forward_test_endpoint(addr, 1);
+
+        let result = forward_to_endpoint(
+            &reqwest::Client::new(),
+            &endpoint,
+            "/v1/chat/completions",
+            b"{}".to_vec(),
+            false,
+        )
+        .await;
+        match result {
+            Err(LbError::Timeout(_)) => {}
+            Err(other) => panic!("expected timeout error, got: {other}"),
+            Ok(_) => panic!("expected timeout error, got a response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn forward_to_endpoint_non_streaming_body_stall_times_out() {
+        // ヘッダー後に無応答になる上流でも、非ストリーミングは総量で打ち切られる。
+        let addr = spawn_chunked_sse_server(
+            vec![(
+                0,
+                "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+            )],
+            true,
+        )
+        .await;
+        let endpoint = forward_test_endpoint(addr, 1);
+
+        let response = forward_to_endpoint(
+            &reqwest::Client::new(),
+            &endpoint,
+            "/v1/chat/completions",
+            b"{}".to_vec(),
+            false,
+        )
+        .await
+        .expect("headers arrive immediately");
+
+        let started = Instant::now();
+        let body_result =
+            tokio::time::timeout(std::time::Duration::from_secs(10), response.bytes())
+                .await
+                .expect("総量タイムアウトで打ち切られるべき（ハングしない）");
+        assert!(
+            body_result.is_err(),
+            "ボディ読み取りはタイムアウトエラーになるべき"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "総量タイムアウト（1秒）付近で打ち切られるべき"
         );
     }
 

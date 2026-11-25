@@ -310,12 +310,17 @@ async fn attempt_openai_post_to_endpoint(
         }
     }
 
-    let mut request_builder = client
-        .post(&runtime_url)
-        .timeout(std::time::Duration::from_secs(
+    let mut request_builder = client.post(&runtime_url).json(&upstream_payload);
+    // タイムアウト方針（Issue #978、オーナー決定 2026-11-26）: 総量タイムアウトは
+    // 非ストリーミングにのみ付与する。reqwest の per-request timeout は応答
+    // ボディの読み取りにも効くため、ストリーミングに付与すると正当に時間を
+    // かける生成が総量で切れてしまう。ストリーミングの無応答検出は、中継側の
+    // アイドルタイムアウト（STREAM_IDLE_TIMEOUT）が担う。
+    if !stream {
+        request_builder = request_builder.timeout(std::time::Duration::from_secs(
             endpoint.inference_timeout_secs as u64,
-        ))
-        .json(&upstream_payload);
+        ));
+    }
     if let Some(api_key) = &endpoint.api_key {
         request_builder = request_builder.bearer_auth(api_key);
     }

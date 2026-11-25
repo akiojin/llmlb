@@ -207,7 +207,9 @@ pub async fn post_responses(
     // forward_to_endpoint() は上流の非2xxもそのまま返すため、エラー本文も
     // レスポンスとして受け取り、ステータスを保持してクライアントへ転送する。
     let response =
-        match forward_to_endpoint(&state.http_client, &endpoint, "/v1/responses", body).await {
+        match forward_to_endpoint(&state.http_client, &endpoint, "/v1/responses", body, stream)
+            .await
+        {
             Ok(response) => response,
             Err(e) => {
                 let duration = start.elapsed();

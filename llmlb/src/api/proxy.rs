@@ -5,6 +5,7 @@
 //! このモジュールはEndpoint型を使用しています。
 
 use crate::api::openai_util::classify_upstream_request_error;
+use crate::balancer::WaitResult;
 use crate::common::{
     error::LbError,
     protocol::{RequestResponseRecord, TpsApiKind},
@@ -22,6 +23,19 @@ use axum::{
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::{io, pin::Pin, sync::Arc, time::Instant};
 
+/// キュー待機の上限時間（Issue #977）
+///
+/// 全エンドポイントが実行中の場合に空きを待つ上限。推論タイムアウト
+/// （120〜600秒）に対して短く抑えた機会的な平準化であり、タイムアウト
+/// した場合は従来どおり即時選択へフォールバックする。
+const QUEUE_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// キュー待機者の上限数（Issue #977）
+///
+/// これを超えたリクエストは待機せず即時選択へフォールバックし、
+/// llmlb 側に待機が無制限に積み上がらないようにする。
+const MAX_QUEUE_WAITERS: usize = 100;
+
 /// キュー付きエンドポイント選択の結果
 pub(crate) enum QueueSelection {
     /// エンドポイントが見つかった
@@ -31,12 +45,54 @@ pub(crate) enum QueueSelection {
     },
 }
 
+/// モデル対応エンドポイントにアイドルが無ければ、空きが出るまで上限時間だけ待機する（Issue #977）。
+///
+/// 戻り値は実際に待機したミリ秒数。待機が不要だった場合（アイドルあり）と、
+/// 待機者上限の超過で待機しなかった場合は `None` を返す。タイムアウトした場合も
+/// 待機実績として `Some` を返すが、呼び出し側はそのまま選択へ進むため、
+/// 空きが来なくてもリクエストは従来どおり進む（可用性を落とさない）。
+async fn wait_for_idle_slot_for_model(state: &AppState, model_id: &str) -> Option<u128> {
+    let load_manager = &state.balancer.load_manager;
+    if load_manager.has_idle_endpoint_for_model(model_id).await {
+        return None;
+    }
+
+    let started = Instant::now();
+    match load_manager
+        .wait_for_idle_node_with_timeout_for_model(model_id, MAX_QUEUE_WAITERS, QUEUE_WAIT_TIMEOUT)
+        .await
+    {
+        WaitResult::Ready => {
+            let waited_ms = started.elapsed().as_millis();
+            tracing::debug!(
+                model = %model_id,
+                waited_ms,
+                "Queue wait finished: an endpoint became idle"
+            );
+            Some(waited_ms)
+        }
+        WaitResult::Timeout => {
+            let waited_ms = started.elapsed().as_millis();
+            tracing::debug!(
+                model = %model_id,
+                waited_ms,
+                "Queue wait timed out: falling back to immediate selection"
+            );
+            Some(waited_ms)
+        }
+        WaitResult::CapacityExceeded => None,
+    }
+}
+
 /// モデル対応のエンドポイントをTPS優先・キュー付きで選択
 pub(crate) async fn select_available_endpoint_with_queue_for_model(
     state: &AppState,
     model_id: &str,
     api_kind: Option<TpsApiKind>,
 ) -> Result<QueueSelection, LbError> {
+    // 全エンドポイントが実行中なら、選択の前に空きを待つ（Issue #977）
+    let queued_wait_ms = wait_for_idle_slot_for_model(state, model_id).await;
+
     let endpoint = state
         .balancer
         .load_manager
@@ -53,7 +109,7 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
 
     Ok(QueueSelection::Ready {
         endpoint: Box::new(endpoint),
-        queued_wait_ms: None,
+        queued_wait_ms,
     })
 }
 
@@ -73,6 +129,10 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
         return Err(LbError::NoCapableEndpoints(model_id.to_string()));
     }
 
+    // 待機判定はモデル単位で行う（必須APIでの絞り込みまでは見ない近似。
+    // 待っても選択自体はAPI対応候補から行うため、影響は待機時間のみ）。
+    let queued_wait_ms = wait_for_idle_slot_for_model(state, model_id).await;
+
     let endpoint = state
         .balancer
         .load_manager
@@ -90,7 +150,7 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
 
     Ok(QueueSelection::Ready {
         endpoint: Box::new(endpoint),
-        queued_wait_ms: None,
+        queued_wait_ms,
     })
 }
 
@@ -1036,10 +1096,9 @@ mod tests {
         let endpoint = add_online_endpoint_with_model(&state, "idle-ep", "queue-model").await;
 
         let started = std::time::Instant::now();
-        let selection =
-            select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
-                .await
-                .expect("selection should succeed");
+        let selection = select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
+            .await
+            .expect("selection should succeed");
         assert!(
             started.elapsed() < std::time::Duration::from_secs(2),
             "アイドルなエンドポイントがある場合は待機しない"
@@ -1118,10 +1177,9 @@ mod tests {
         // 空きが永遠に来なくても、待機上限を超えたら従来どおり即時選択へ
         // フォールバックしてリクエストを進める（可用性を落とさない）。
         let started = std::time::Instant::now();
-        let selection =
-            select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
-                .await
-                .expect("selection should succeed after queue timeout");
+        let selection = select_available_endpoint_with_queue_for_model(&state, "queue-model", None)
+            .await
+            .expect("selection should succeed after queue timeout");
         let elapsed = started.elapsed();
         assert!(
             elapsed >= QUEUE_WAIT_TIMEOUT,

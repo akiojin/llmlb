@@ -347,9 +347,12 @@ impl LoadManager {
             });
         }
 
-        let candidates: Vec<_> = {
+        // 候補のフィルタと同時に、実行中リクエスト数（combined_active）を
+        // スナップショットする。選択の並び替えで負荷を考慮するため（Issue #977）。
+        let (candidates, active_counts): (Vec<_>, HashMap<Uuid, u32>) = {
             let state = self.state.read().await;
-            endpoints
+            let mut active_counts = HashMap::new();
+            let candidates = endpoints
                 .into_iter()
                 .filter(|ep| {
                     state
@@ -357,7 +360,15 @@ impl LoadManager {
                         .map(|load| !load.initializing)
                         .unwrap_or(true)
                 })
-                .collect()
+                .inspect(|ep| {
+                    let active = state
+                        .get(&ep.id)
+                        .map(|load| load.combined_active())
+                        .unwrap_or(0);
+                    active_counts.insert(ep.id, active);
+                })
+                .collect();
+            (candidates, active_counts)
         };
 
         if candidates.is_empty() {
@@ -372,10 +383,18 @@ impl LoadManager {
         let round_robin_priority =
             compute_round_robin_priority_for_endpoints(&candidates, round_robin_start);
 
+        // TPS を実行中リクエスト数で割り引いた実効スコアの降順に並べる。
+        // 全候補がアイドルな場合は従来の TPS 降順と一致する。
         let mut ordered = candidates;
         ordered.sort_by(|a, b| {
-            let a_score = scores.get(&a.id).copied().unwrap_or(0.0);
-            let b_score = scores.get(&b.id).copied().unwrap_or(0.0);
+            let a_score = effective_tps_score(
+                scores.get(&a.id).copied().unwrap_or(0.0),
+                active_counts.get(&a.id).copied().unwrap_or(0),
+            );
+            let b_score = effective_tps_score(
+                scores.get(&b.id).copied().unwrap_or(0.0),
+                active_counts.get(&b.id).copied().unwrap_or(0),
+            );
 
             b_score
                 .partial_cmp(&a_score)
@@ -568,6 +587,13 @@ impl LoadManager {
             let is_idle = load.map(|l| l.combined_active() == 0).unwrap_or(true);
             is_not_initializing && is_idle
         })
+    }
+
+    /// 指定モデルに対応するアイドルなエンドポイントが存在するか
+    ///
+    /// リクエスト経路のキュー待機判定（`api::proxy`、Issue #977）から使う公開ラッパー。
+    pub async fn has_idle_endpoint_for_model(&self, model_id: &str) -> bool {
+        self.has_idle_nodes_for_model(model_id).await
     }
 
     /// タイムアウト付きでアイドルノード待機
@@ -1248,6 +1274,20 @@ fn increment_history(point: &mut RequestHistoryPoint, outcome: RequestOutcome) {
         RequestOutcome::Error => point.error = point.error.saturating_add(1),
         RequestOutcome::Queued => {}
     }
+}
+
+/// TPS スコアを実行中リクエスト数で割り引いた実効スコアを返す（Issue #977）。
+///
+/// 直列に近いバックエンドでは、新規リクエストの期待完了時間は
+/// （実行中件数 + 1）/ TPS に比例する。したがって TPS /（実行中 + 1）の
+/// 最大化は期待完了時間の最小化に対応する。アイドル時（実行中 0）は
+/// TPS そのものになり従来の TPS 降順と一致し、未計測（TPS = 0）は
+/// 実行中件数によらず 0 のままになる。
+fn effective_tps_score(tps: f64, active_requests: u32) -> f64 {
+    if tps <= 0.0 {
+        return 0.0;
+    }
+    tps / f64::from(active_requests + 1)
 }
 
 fn compute_round_robin_priority_for_endpoints(

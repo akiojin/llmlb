@@ -700,3 +700,12 @@ fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576643582-69|1
 fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576643582-69|2
 # (a) #978: モック上流の hang 再現（無応答ストリーム）。中継側のアイドルタイムアウトが先に打ち切るため、この sleep が完了する経路は正常系では存在しない。同上の分離で移動。
 fixed-wait|llmlb/src/api/proxy/tests/streaming_timeouts.rs|576652577-61|1
+
+# (a) #984: クラウド経路のタイムアウト検証で使うモック上流のチャンク間隔（50ms）と遅延生成。sleep 自体が上流の送信間隔の再現であり、検証はクライアント側の中継の打ち切り有無への assert で行う。固定待機で完了を推定しない。
+fixed-wait|llmlb/src/api/cloud_proxy.rs|488347826-63|1
+fixed-wait|llmlb/src/api/cloud_proxy.rs|576643582-69|1
+fixed-wait|llmlb/src/api/cloud_proxy.rs|576643582-69|2
+# (a) #984: proxy.rs 内のクラウド向けモック上流の遅延生成。テスト分離（FR-009）に伴い proxy/tests/cloud_streaming_timeouts.rs へ移動。
+fixed-wait|llmlb/src/api/proxy/tests/cloud_streaming_timeouts.rs|576643582-69|1
+# (a) #984: モック上流の hang 再現（無応答ストリーム）。中継側のアイドルタイムアウトが先に打ち切るため、この sleep が完了する経路は正常系では存在しない。同上の分離で移動。
+fixed-wait|llmlb/src/api/proxy/tests/cloud_streaming_timeouts.rs|576652577-61|1

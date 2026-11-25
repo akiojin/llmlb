@@ -610,3 +610,490 @@ async fn upstream_connect_failure_returns_bad_gateway_response() {
     assert_eq!(json["error"]["type"], "connection_error");
     assert_eq!(json["error"]["code"], 502);
 }
+
+/// Issue #976: 優先エンドポイントに高い TPS を種付けし、選択順を決定的にする。
+async fn seed_tps_priority(state: &AppState, endpoint_id: uuid::Uuid, model_id: &str) {
+    state
+        .balancer
+        .load_manager
+        .update_tps(
+            endpoint_id,
+            model_id.to_string(),
+            crate::common::protocol::TpsApiKind::ChatCompletions,
+            1000,
+            1000,
+        )
+        .await;
+}
+
+fn failover_success_body(content: &str) -> serde_json::Value {
+    json!({
+        "id": "chatcmpl-failover",
+        "object": "chat.completion",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": content},
+            "finish_reason": "stop"
+        }],
+        "usage": {
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+            "total_tokens": 2
+        }
+    })
+}
+
+#[tokio::test]
+#[serial]
+async fn failover_on_upstream_500_succeeds_via_second_endpoint() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+
+    let failing_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "error": {"message": "backend exploded"}
+        })))
+        .mount(&failing_server)
+        .await;
+
+    let healthy_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(failover_success_body("failover-ok")),
+        )
+        .mount(&healthy_server)
+        .await;
+
+    let failing_id = add_online_chat_endpoint(
+        &state,
+        "failing-endpoint",
+        failing_server.uri(),
+        "failover-model",
+        60,
+    )
+    .await;
+    add_online_chat_endpoint(
+        &state,
+        "healthy-endpoint",
+        healthy_server.uri(),
+        "failover-model",
+        60,
+    )
+    .await;
+    seed_tps_priority(&state, failing_id, "failover-model").await;
+
+    let response = proxy_openai_post(
+        &state,
+        json!({
+            "model": "failover-model",
+            "messages": [{"role":"user","content":"hello"}]
+        }),
+        "/v1/chat/completions",
+        "failover-model".to_string(),
+        false,
+        RequestType::Chat,
+        None,
+        None,
+    )
+    .await
+    .expect("failover should return response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 1_000_000)
+        .await
+        .expect("failover body");
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("failover json");
+    assert_eq!(
+        body["choices"][0]["message"]["content"].as_str(),
+        Some("failover-ok")
+    );
+    assert_eq!(
+        failing_server
+            .received_requests()
+            .await
+            .expect("failing requests")
+            .len(),
+        1
+    );
+    assert_eq!(
+        healthy_server
+            .received_requests()
+            .await
+            .expect("healthy requests")
+            .len(),
+        1
+    );
+    std::env::remove_var("LLMLB_DATA_DIR");
+}
+
+#[tokio::test]
+#[serial]
+async fn failover_on_connect_error_succeeds_via_second_endpoint() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+
+    // 接続できない宛先（bind して即 drop したポート）
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let dead_addr = listener.local_addr().expect("listener addr");
+    drop(listener);
+
+    let healthy_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(failover_success_body("connect-ok")))
+        .mount(&healthy_server)
+        .await;
+
+    let dead_id = add_online_chat_endpoint(
+        &state,
+        "dead-endpoint",
+        format!("http://{dead_addr}"),
+        "failover-connect-model",
+        5,
+    )
+    .await;
+    add_online_chat_endpoint(
+        &state,
+        "healthy-endpoint",
+        healthy_server.uri(),
+        "failover-connect-model",
+        60,
+    )
+    .await;
+    seed_tps_priority(&state, dead_id, "failover-connect-model").await;
+
+    let response = proxy_openai_post(
+        &state,
+        json!({
+            "model": "failover-connect-model",
+            "messages": [{"role":"user","content":"hello"}]
+        }),
+        "/v1/chat/completions",
+        "failover-connect-model".to_string(),
+        false,
+        RequestType::Chat,
+        None,
+        None,
+    )
+    .await
+    .expect("connect failover should return response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        healthy_server
+            .received_requests()
+            .await
+            .expect("healthy requests")
+            .len(),
+        1
+    );
+    std::env::remove_var("LLMLB_DATA_DIR");
+}
+
+#[tokio::test]
+#[serial]
+async fn failover_does_not_retry_client_error_400() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+
+    let bad_request_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {"message": "invalid request"}
+        })))
+        .mount(&bad_request_server)
+        .await;
+
+    let healthy_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(failover_success_body("unused")))
+        .mount(&healthy_server)
+        .await;
+
+    let bad_id = add_online_chat_endpoint(
+        &state,
+        "bad-request-endpoint",
+        bad_request_server.uri(),
+        "failover-400-model",
+        60,
+    )
+    .await;
+    add_online_chat_endpoint(
+        &state,
+        "healthy-endpoint",
+        healthy_server.uri(),
+        "failover-400-model",
+        60,
+    )
+    .await;
+    seed_tps_priority(&state, bad_id, "failover-400-model").await;
+
+    let response = proxy_openai_post(
+        &state,
+        json!({
+            "model": "failover-400-model",
+            "messages": [{"role":"user","content":"hello"}]
+        }),
+        "/v1/chat/completions",
+        "failover-400-model".to_string(),
+        false,
+        RequestType::Chat,
+        None,
+        None,
+    )
+    .await
+    .expect("400 should return response without failover");
+
+    // 従来どおり上流 4xx は 502 に正規化して返し、別エンドポイントへは再試行しない
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        bad_request_server
+            .received_requests()
+            .await
+            .expect("bad request requests")
+            .len(),
+        1
+    );
+    assert_eq!(
+        healthy_server
+            .received_requests()
+            .await
+            .expect("healthy requests")
+            .len(),
+        0
+    );
+    std::env::remove_var("LLMLB_DATA_DIR");
+}
+
+#[tokio::test]
+#[serial]
+async fn failover_all_candidates_fail_returns_last_failure() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+
+    let failing_server_a = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "error": {"message": "a exploded"}
+        })))
+        .mount(&failing_server_a)
+        .await;
+
+    let failing_server_b = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(503).set_body_json(json!({
+            "error": {"message": "b unavailable"}
+        })))
+        .mount(&failing_server_b)
+        .await;
+
+    let a_id = add_online_chat_endpoint(
+        &state,
+        "failing-a",
+        failing_server_a.uri(),
+        "failover-all-fail-model",
+        60,
+    )
+    .await;
+    add_online_chat_endpoint(
+        &state,
+        "failing-b",
+        failing_server_b.uri(),
+        "failover-all-fail-model",
+        60,
+    )
+    .await;
+    seed_tps_priority(&state, a_id, "failover-all-fail-model").await;
+
+    let response = proxy_openai_post(
+        &state,
+        json!({
+            "model": "failover-all-fail-model",
+            "messages": [{"role":"user","content":"hello"}]
+        }),
+        "/v1/chat/completions",
+        "failover-all-fail-model".to_string(),
+        false,
+        RequestType::Chat,
+        None,
+        None,
+    )
+    .await
+    .expect("all-fail should return response");
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        failing_server_a
+            .received_requests()
+            .await
+            .expect("a requests")
+            .len(),
+        1
+    );
+    assert_eq!(
+        failing_server_b
+            .received_requests()
+            .await
+            .expect("b requests")
+            .len(),
+        1
+    );
+    std::env::remove_var("LLMLB_DATA_DIR");
+}
+
+#[tokio::test]
+#[serial]
+async fn failover_attempts_are_capped() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+
+    // 候補が上限（3回）より多くても、試行は上限までで止まる
+    let mut servers = Vec::new();
+    for i in 0..4 {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+                "error": {"message": "exploded"}
+            })))
+            .mount(&server)
+            .await;
+        add_online_chat_endpoint(
+            &state,
+            &format!("capped-endpoint-{i}"),
+            server.uri(),
+            "failover-capped-model",
+            60,
+        )
+        .await;
+        servers.push(server);
+    }
+
+    let response = proxy_openai_post(
+        &state,
+        json!({
+            "model": "failover-capped-model",
+            "messages": [{"role":"user","content":"hello"}]
+        }),
+        "/v1/chat/completions",
+        "failover-capped-model".to_string(),
+        false,
+        RequestType::Chat,
+        None,
+        None,
+    )
+    .await
+    .expect("capped failover should return response");
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let mut total_requests = 0;
+    for server in &servers {
+        total_requests += server
+            .received_requests()
+            .await
+            .expect("capped requests")
+            .len();
+    }
+    assert_eq!(total_requests, 3);
+    std::env::remove_var("LLMLB_DATA_DIR");
+}
+
+#[tokio::test]
+#[serial]
+async fn failover_on_streaming_upstream_500_succeeds_via_second_endpoint() {
+    let _guard = TEST_LOCK.lock().await;
+    let (state, _dir) = create_state_with_tempdir().await;
+
+    let failing_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "error": {"message": "stream backend exploded"}
+        })))
+        .mount(&failing_server)
+        .await;
+
+    let healthy_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(
+                    "data: {\"id\":\"chatcmpl-stream\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"stream-ok\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n",
+                ),
+        )
+        .mount(&healthy_server)
+        .await;
+
+    let failing_id = add_online_chat_endpoint(
+        &state,
+        "stream-failing-endpoint",
+        failing_server.uri(),
+        "failover-stream-model",
+        60,
+    )
+    .await;
+    add_online_chat_endpoint(
+        &state,
+        "stream-healthy-endpoint",
+        healthy_server.uri(),
+        "failover-stream-model",
+        60,
+    )
+    .await;
+    seed_tps_priority(&state, failing_id, "failover-stream-model").await;
+
+    let response = proxy_openai_post(
+        &state,
+        json!({
+            "model": "failover-stream-model",
+            "messages": [{"role":"user","content":"hello"}],
+            "stream": true
+        }),
+        "/v1/chat/completions",
+        "failover-stream-model".to_string(),
+        true,
+        RequestType::Chat,
+        None,
+        None,
+    )
+    .await
+    .expect("streaming failover should return response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 1_000_000)
+        .await
+        .expect("streaming failover body");
+    let body_text = String::from_utf8_lossy(&bytes);
+    assert!(
+        body_text.contains("stream-ok"),
+        "expected streamed content from healthy endpoint, got: {body_text}"
+    );
+    assert_eq!(
+        failing_server
+            .received_requests()
+            .await
+            .expect("failing requests")
+            .len(),
+        1
+    );
+    assert_eq!(
+        healthy_server
+            .received_requests()
+            .await
+            .expect("healthy requests")
+            .len(),
+        1
+    );
+    std::env::remove_var("LLMLB_DATA_DIR");
+}

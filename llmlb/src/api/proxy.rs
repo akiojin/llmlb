@@ -136,11 +136,48 @@ pub(crate) async fn select_endpoint_candidates_with_queue_for_model_and_api(
     Ok(endpoints)
 }
 
+/// クラウド向けストリーミング中継のアイドル（無応答）タイムアウト（Issue #984）
+///
+/// クラウド経路のストリーミングには従来タイムアウトが一切無く、プロバイダが
+/// ヘッダー送信後に無応答になると接続が無期限に維持されていた。チャンクが
+/// この時間届かなければ、詰まった接続として中継を打ち切る。値はローカル
+/// 経路のアイドルタイムアウト（Issue #978 の `STREAM_IDLE_TIMEOUT`、120 秒）
+/// と揃える: 正常な生成ではチャンクは継続的に流れるため、120 秒の完全な
+/// 無応答は「生成中」ではなく「詰まり」と判定できる保守的な境界である。
+/// 生成全体の上限はアイドルでは測れない長時間生成を切らないため設けず、
+/// 無応答の検出に本タイムアウトを用いる。
+pub(crate) const CLOUD_STREAM_IDLE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(120);
+
 pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<Response, LbError> {
+    forward_streaming_response_inner(response, None)
+}
+
+/// クラウド経路向けのストリーミング中継（Issue #984）
+///
+/// `forward_streaming_response` にアイドル（無応答）タイムアウトを加えた版。
+/// チャンク待ち（初回チャンク待ちを含む）ごとに `idle_timeout` を適用し、
+/// 超過した場合はストリームをエラーとして打ち切る（上流ストリームは
+/// Drop され、接続が閉じられる）。タイムアウトが正常終了として
+/// 扱われることはない。
+pub(crate) fn forward_streaming_response_with_idle_timeout(
+    response: reqwest::Response,
+    idle_timeout: std::time::Duration,
+) -> Result<Response, LbError> {
+    forward_streaming_response_inner(response, Some(idle_timeout))
+}
+
+fn forward_streaming_response_inner(
+    response: reqwest::Response,
+    idle_timeout: Option<std::time::Duration>,
+) -> Result<Response, LbError> {
     let status = response.status();
     let headers = response.headers().clone();
     let stream = response.bytes_stream().map_err(io::Error::other);
-    let body = Body::from_stream(stream);
+    let body = match idle_timeout {
+        Some(idle_timeout) => Body::from_stream(stream_with_idle_timeout(stream, idle_timeout)),
+        None => Body::from_stream(stream),
+    };
     let mut axum_response = Response::new(body);
     *axum_response.status_mut() = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK);
     {
@@ -167,6 +204,43 @@ pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<
         );
     }
     Ok(axum_response)
+}
+
+/// チャンク待ちごとにアイドルタイムアウトを適用するストリームラッパー（Issue #984）
+///
+/// 各チャンクの待ち時間（初回チャンク待ちを含む）が `idle_timeout` を
+/// 超えたら、無応答として `io::ErrorKind::TimedOut` でストリームを
+/// 終了させる。ラッパーが終了すると上流ストリームは Drop され、
+/// プロバイダとの接続が閉じられる。
+fn stream_with_idle_timeout<S>(
+    stream: S,
+    idle_timeout: std::time::Duration,
+) -> Pin<Box<dyn Stream<Item = Result<axum::body::Bytes, io::Error>> + Send>>
+where
+    S: Stream<Item = Result<axum::body::Bytes, io::Error>> + Send + 'static,
+{
+    let stream: Pin<Box<dyn Stream<Item = Result<axum::body::Bytes, io::Error>> + Send>> =
+        Box::pin(stream);
+    Box::pin(futures::stream::try_unfold(
+        (stream, idle_timeout),
+        |(mut stream, idle_timeout)| async move {
+            match tokio::time::timeout(idle_timeout, stream.next()).await {
+                Ok(Some(Ok(chunk))) => Ok(Some((chunk, (stream, idle_timeout)))),
+                Ok(Some(Err(err))) => Err(err),
+                Ok(None) => Ok(None),
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        idle_timeout_secs = idle_timeout.as_secs(),
+                        "Streaming relay aborted: upstream idle timeout"
+                    );
+                    Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "upstream stream idle timeout",
+                    ))
+                }
+            }
+        },
+    ))
 }
 
 fn process_sse_lines(

@@ -7,7 +7,7 @@ use crate::api::error::AppError;
 use crate::api::openai_util::{
     map_openai_messages_to_anthropic, map_openai_messages_to_google_contents,
 };
-use crate::api::proxy::forward_streaming_response;
+use crate::api::proxy::{forward_streaming_response_with_idle_timeout, CLOUD_STREAM_IDLE_TIMEOUT};
 use crate::cloud_metrics;
 use crate::common::error::LbError;
 use axum::body::Body;
@@ -21,7 +21,8 @@ use uuid::Uuid;
 /// 非ストリーミングのクラウド転送に適用する全体タイムアウト（秒）。
 ///
 /// 共有 http_client には全体タイムアウトが無いため、応答しないクラウドプロバイダで
-/// 無期限ハングするのを防ぐ。ストリーミング経路にはストリームが途中で切れるため付与しない。
+/// 無期限ハングするのを防ぐ。ストリーミング経路には全体タイムアウトではなく、
+/// 無応答を検出するアイドルタイムアウト（`CLOUD_STREAM_IDLE_TIMEOUT`）を付与する。
 const CLOUD_PROXY_TIMEOUT_SECS: u64 = 300;
 
 /// クラウドプロバイダへのプロキシ結果
@@ -81,8 +82,8 @@ pub async fn proxy_cloud_provider(
     let builder = http_client.post(&url).json(&body);
     let mut builder = provider.apply_auth(builder)?;
     // 非ストリーミングは有界レスポンスのため全体タイムアウトを付与する。
-    // ストリーミングは connect_timeout（共有 client）のみで担保し、
-    // 全体タイムアウトでストリームが途中で切れるのを避ける。
+    // ストリーミングは全体タイムアウトで生成が途中で切れるのを避け、
+    // 中継側のアイドルタイムアウトで無応答を検出する（Issue #984）。
     if !stream {
         builder = builder.timeout(Duration::from_secs(CLOUD_PROXY_TIMEOUT_SECS));
     }
@@ -104,7 +105,8 @@ pub async fn proxy_cloud_provider(
             started.elapsed().as_millis(),
         );
         let status = StatusCode::from_u16(res.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-        let response = forward_streaming_response(res).map_err(AppError::from)?;
+        let response = forward_streaming_response_with_idle_timeout(res, CLOUD_STREAM_IDLE_TIMEOUT)
+            .map_err(AppError::from)?;
         return Ok(CloudProxyResult {
             response,
             response_body: None,
@@ -896,9 +898,9 @@ mod tests {
         }
     }
 
-    /// chunked encoding の SSE を1チャンクだけ送って無応答になるモック
+    /// chunked encoding の SSE を2チャンク送って正常に閉じるモック
     /// クラウドプロバイダを起動する。
-    async fn spawn_hanging_cloud_provider() -> std::net::SocketAddr {
+    async fn spawn_progressing_cloud_provider() -> std::net::SocketAddr {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -913,22 +915,31 @@ mod tests {
                 if socket.write_all(headers.as_bytes()).await.is_err() {
                     return;
                 }
-                let chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
-                let framed = format!("{:x}\r\n{}\r\n", chunk.len(), chunk);
-                if socket.write_all(framed.as_bytes()).await.is_err() {
-                    return;
+                for chunk in [
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+                    "data: [DONE]\n\n",
+                ] {
+                    let framed = format!("{:x}\r\n{}\r\n", chunk.len(), chunk);
+                    if socket.write_all(framed.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let _ = socket.flush().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 }
-                let _ = socket.flush().await;
-                // 終端チャンクを送らず接続を保持し続ける（無応答の再現）。
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                let _ = socket.write_all(b"0\r\n\r\n").await;
+                let _ = socket.shutdown().await;
             }
         });
         addr
     }
 
     #[tokio::test]
-    async fn cloud_streaming_aborts_when_provider_goes_idle() {
-        let addr = spawn_hanging_cloud_provider().await;
+    async fn cloud_streaming_relays_progressing_provider_stream() {
+        // 無応答時の打ち切り自体は proxy.rs の中継テスト（短いアイドル
+        // タイムアウトを渡す形）で検証する。ここでは proxy_cloud_provider の
+        // ストリーミング分岐が、アイドルタイムアウト付き中継を通して
+        // 正常なストリームをそのまま返すことを確認する。
+        let addr = spawn_progressing_cloud_provider().await;
         let provider = StubProvider {
             base_url: format!("http://{addr}"),
         };
@@ -943,24 +954,19 @@ mod tests {
         )
         .await
         .expect("proxy streaming");
+        assert_eq!(result.status, StatusCode::OK);
 
-        // プロバイダがヘッダーと1チャンクの送信後に無応答になっても、
-        // アイドルタイムアウトでストリームが打ち切られ、接続が無期限に
-        // 維持されることはない。
-        let started = std::time::Instant::now();
-        let consumed = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
+        let bytes = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
             axum::body::to_bytes(result.response.into_body(), usize::MAX),
         )
         .await
-        .expect("stream must terminate via idle timeout, not hang");
+        .expect("stream must complete")
+        .expect("consume body");
+        let text = String::from_utf8_lossy(&bytes);
         assert!(
-            consumed.is_err(),
-            "アイドル打ち切りはストリームエラーとして伝播するべき"
-        );
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(30),
-            "無応答のまま接続が維持され続けるべきではない"
+            text.contains("[DONE]"),
+            "ストリーム全体が中継されるべき: {text}"
         );
     }
 }

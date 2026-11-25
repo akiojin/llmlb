@@ -334,12 +334,16 @@ impl LoadManager {
         scores
     }
 
-    async fn select_endpoint_by_tps_from_endpoints(
+    /// 候補をTPS優先で順序付けする（先頭が最も優先度が高い）。
+    ///
+    /// 単一選択（`select_endpoint_by_tps_from_endpoints`）と、フェイルオーバー用の
+    /// 順序付き候補列の取得で共有する。初期化中のエンドポイントは除外する。
+    async fn order_endpoints_by_tps(
         &self,
         endpoints: Vec<crate::types::endpoint::Endpoint>,
         model_id: Option<&str>,
         api_kind: Option<TpsApiKind>,
-    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+    ) -> RouterResult<Vec<crate::types::endpoint::Endpoint>> {
         if endpoints.is_empty() {
             return Err(match model_id {
                 Some(model_id) => LbError::NoCapableEndpoints(model_id.to_string()),
@@ -392,6 +396,19 @@ impl LoadManager {
                     a_rank.cmp(&b_rank)
                 })
         });
+
+        Ok(ordered)
+    }
+
+    async fn select_endpoint_by_tps_from_endpoints(
+        &self,
+        endpoints: Vec<crate::types::endpoint::Endpoint>,
+        model_id: Option<&str>,
+        api_kind: Option<TpsApiKind>,
+    ) -> RouterResult<crate::types::endpoint::Endpoint> {
+        let ordered = self
+            .order_endpoints_by_tps(endpoints, model_id, api_kind)
+            .await?;
 
         Ok(ordered
             .into_iter()
@@ -1191,6 +1208,20 @@ impl LoadManager {
             .await
     }
 
+    /// 指定モデルに対応する初期化完了エンドポイントをTPS優先の順序付き候補列で返す。
+    ///
+    /// フェイルオーバー（Issue #976）用: 先頭から順に試行するための候補列。
+    /// 候補列は呼び出し時点のスナップショットであり、試行中のステータス変化には影響されない。
+    pub async fn select_endpoints_by_tps_ready_for_model(
+        &self,
+        model_id: &str,
+        api_kind: Option<TpsApiKind>,
+    ) -> RouterResult<Vec<crate::types::endpoint::Endpoint>> {
+        let endpoints = self.collect_online_endpoints(Some(model_id)).await?;
+        self.order_endpoints_by_tps(endpoints, Some(model_id), api_kind)
+            .await
+    }
+
     /// 指定済み候補から、指定モデルに対応する初期化完了エンドポイントをTPS優先で選択する。
     pub async fn select_endpoint_by_tps_ready_from_candidates(
         &self,
@@ -1199,6 +1230,18 @@ impl LoadManager {
         api_kind: Option<TpsApiKind>,
     ) -> RouterResult<crate::types::endpoint::Endpoint> {
         self.select_endpoint_by_tps_from_endpoints(endpoints, Some(model_id), api_kind)
+            .await
+    }
+
+    /// 指定済み候補から、指定モデルに対応する初期化完了エンドポイントを
+    /// TPS優先の順序付き候補列で返す（フェイルオーバー用、Issue #976）。
+    pub async fn select_endpoints_by_tps_ready_from_candidates(
+        &self,
+        endpoints: Vec<crate::types::endpoint::Endpoint>,
+        model_id: &str,
+        api_kind: Option<TpsApiKind>,
+    ) -> RouterResult<Vec<crate::types::endpoint::Endpoint>> {
+        self.order_endpoints_by_tps(endpoints, Some(model_id), api_kind)
             .await
     }
 

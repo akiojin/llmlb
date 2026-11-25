@@ -57,13 +57,58 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model(
     })
 }
 
-/// モデルと必須APIに対応するエンドポイントをTPS優先・キュー付きで選択
-pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
+/// フェイルオーバーの最大試行回数（初回送信を含む総試行回数、Issue #976）
+///
+/// 1回の推論リクエストで試行するエンドポイント数の上限。候補がこれより
+/// 多くても上限までしか試行せず、無制限の再試行はしない。
+pub(crate) const MAX_FAILOVER_ATTEMPTS: usize = 3;
+
+/// 上流の失敗ステータスがフェイルオーバー（別エンドポイントへの再試行）の
+/// 対象かどうか（Issue #976）
+///
+/// 429（上流側の容量・レート制限）と 5xx（上流側の障害）は、別エンドポイント
+/// では成功する可能性があるため再試行する。それ以外の 4xx はクライアント
+/// 起因であり、別エンドポイントでも同じ結果になるため再試行しない
+/// （404 の hop-off は #964 の領分としてここでは扱わない）。
+pub(crate) fn is_failover_retryable_status(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// モデル対応エンドポイントをTPS優先の順序付き候補列で選択（フェイルオーバー用）
+///
+/// 候補列は最大 `MAX_FAILOVER_ATTEMPTS` 件に切り詰める。
+pub(crate) async fn select_endpoint_candidates_with_queue_for_model(
+    state: &AppState,
+    model_id: &str,
+    api_kind: Option<TpsApiKind>,
+) -> Result<Vec<Endpoint>, LbError> {
+    let mut endpoints = state
+        .balancer
+        .load_manager
+        .select_endpoints_by_tps_ready_for_model(model_id, api_kind)
+        .await?;
+    endpoints.truncate(MAX_FAILOVER_ATTEMPTS);
+
+    tracing::debug!(
+        model = %model_id,
+        candidates = endpoints.len(),
+        ?api_kind,
+        "Selected ordered endpoint candidates by TPS priority"
+    );
+
+    Ok(endpoints)
+}
+
+/// モデルと必須APIに対応するエンドポイントをTPS優先の順序付き候補列で選択
+/// （フェイルオーバー用）
+///
+/// 候補列は最大 `MAX_FAILOVER_ATTEMPTS` 件に切り詰める。
+pub(crate) async fn select_endpoint_candidates_with_queue_for_model_and_api(
     state: &AppState,
     model_id: &str,
     required_api: SupportedAPI,
     api_kind: Option<TpsApiKind>,
-) -> Result<QueueSelection, LbError> {
+) -> Result<Vec<Endpoint>, LbError> {
     let endpoints = state
         .balancer
         .endpoint_registry
@@ -73,25 +118,22 @@ pub(crate) async fn select_available_endpoint_with_queue_for_model_and_api(
         return Err(LbError::NoCapableEndpoints(model_id.to_string()));
     }
 
-    let endpoint = state
+    let mut endpoints = state
         .balancer
         .load_manager
-        .select_endpoint_by_tps_ready_from_candidates(endpoints, model_id, api_kind)
+        .select_endpoints_by_tps_ready_from_candidates(endpoints, model_id, api_kind)
         .await?;
+    endpoints.truncate(MAX_FAILOVER_ATTEMPTS);
 
     tracing::debug!(
         model = %model_id,
-        endpoint_id = %endpoint.id,
-        endpoint_name = %endpoint.name,
+        candidates = endpoints.len(),
         required_api = %required_api,
         ?api_kind,
-        "Selected ready endpoint by TPS priority and required API"
+        "Selected ordered endpoint candidates by TPS priority and required API"
     );
 
-    Ok(QueueSelection::Ready {
-        endpoint: Box::new(endpoint),
-        queued_wait_ms: None,
-    })
+    Ok(endpoints)
 }
 
 pub(crate) fn forward_streaming_response(response: reqwest::Response) -> Result<Response, LbError> {
@@ -530,6 +572,51 @@ mod tests {
         };
         let QueueSelection::Ready { queued_wait_ms, .. } = qs;
         assert!(queued_wait_ms.is_none());
+    }
+
+    // --- Issue #976: is_failover_retryable_status ---
+
+    #[test]
+    fn failover_retryable_for_server_errors() {
+        for status in [
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::BAD_GATEWAY,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::GATEWAY_TIMEOUT,
+        ] {
+            assert!(
+                is_failover_retryable_status(status),
+                "expected {status} to be failover-retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn failover_retryable_for_too_many_requests() {
+        // 429 は上流側の容量都合であり、別エンドポイントでは成功しうる
+        assert!(is_failover_retryable_status(StatusCode::TOO_MANY_REQUESTS));
+    }
+
+    #[test]
+    fn failover_not_retryable_for_client_errors() {
+        for status in [
+            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::NOT_FOUND,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ] {
+            assert!(
+                !is_failover_retryable_status(status),
+                "expected {status} to not be failover-retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn failover_not_retryable_for_success() {
+        assert!(!is_failover_retryable_status(StatusCode::OK));
+        assert!(!is_failover_retryable_status(StatusCode::CREATED));
     }
 
     // --- process_sse_lines ---

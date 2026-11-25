@@ -407,6 +407,236 @@ async fn proxy_chat_completions_does_not_probe_ollama_load_state_on_success() {
     assert_eq!(requests[0].url.path(), "/v1/chat/completions");
 }
 
+/// chunked encoding の SSE を返すテスト用上流サーバーを起動する。
+///
+/// `steps` は（送信前遅延ミリ秒, チャンク本文）の列。送信後は終端チャンクを
+/// 送って接続を閉じる。（openai/tests/timeout_policy.rs と同方式）
+async fn spawn_chunked_sse_server(steps: Vec<(u64, &'static str)>) -> std::net::SocketAddr {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let addr = listener.local_addr().expect("listener addr");
+    tokio::spawn(async move {
+        if let Ok((mut socket, _)) = listener.accept().await {
+            let mut read_buf = [0u8; 4096];
+            let _ = socket.read(&mut read_buf).await;
+            let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+            if socket.write_all(headers.as_bytes()).await.is_err() {
+                return;
+            }
+            for (delay_ms, chunk) in steps {
+                if delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
+                let framed = format!("{:x}\r\n{}\r\n", chunk.len(), chunk);
+                if socket.write_all(framed.as_bytes()).await.is_err() {
+                    return;
+                }
+                let _ = socket.flush().await;
+            }
+            let _ = socket.write_all(b"0\r\n\r\n").await;
+            let _ = socket.shutdown().await;
+        }
+    });
+    addr
+}
+
+/// 応答全体（ヘッダー含む）を遅延させてから返すテスト用上流サーバーを起動する。
+async fn spawn_delayed_response_server(delay_ms: u64, body: &'static str) -> std::net::SocketAddr {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let addr = listener.local_addr().expect("listener addr");
+    tokio::spawn(async move {
+        if let Ok((mut socket, _)) = listener.accept().await {
+            let mut read_buf = [0u8; 4096];
+            let _ = socket.read(&mut read_buf).await;
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = socket.write_all(response.as_bytes()).await;
+            let _ = socket.shutdown().await;
+        }
+    });
+    addr
+}
+
+async fn add_playground_endpoint(
+    state: &AppState,
+    name: &str,
+    base_url: String,
+    inference_timeout_secs: u32,
+) -> Uuid {
+    let mut endpoint = Endpoint::new(name.to_string(), base_url, EndpointType::OpenaiCompatible);
+    endpoint.status = EndpointStatus::Online;
+    endpoint.inference_timeout_secs = inference_timeout_secs;
+    let endpoint_id = endpoint.id;
+    state
+        .balancer
+        .endpoint_registry
+        .add(endpoint)
+        .await
+        .expect("add endpoint to registry");
+    endpoint_id
+}
+
+#[tokio::test]
+async fn proxy_chat_completions_streaming_is_not_cut_by_total_timeout() {
+    let _guard = TEST_LOCK.lock().await;
+    let state = TestAppStateBuilder::new().await.build().await;
+
+    // 総量タイムアウトは1秒。チャンク間隔（800ms）はアイドル（120秒）未満だが、
+    // ストリーム全体は約1.6秒続く。総量が効いていれば途中で切断される。
+    let addr = spawn_chunked_sse_server(vec![
+        (
+            0,
+            "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+        ),
+        (
+            800,
+            "data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\n",
+        ),
+        (800, "data: [DONE]\n\n"),
+    ])
+    .await;
+    let endpoint_id = add_playground_endpoint(
+        &state,
+        "playground-stream-total",
+        format!("http://{addr}"),
+        1,
+    )
+    .await;
+
+    let started = Instant::now();
+    let response = proxy_chat_completions(
+        State(state.clone()),
+        Path(endpoint_id),
+        Bytes::from(
+            serde_json::to_vec(&json!({
+                "model": "playground-model",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": true
+            }))
+            .expect("serialize request"),
+        ),
+    )
+    .await
+    .into_response();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = tokio::time::timeout(
+        Duration::from_secs(10),
+        to_bytes(response.into_body(), 1_000_000),
+    )
+    .await
+    .expect("stream must complete")
+    .expect("ストリームが総量タイムアウトで切断されないべき");
+    assert!(
+        started.elapsed() > Duration::from_secs(1),
+        "総量タイムアウト（1秒）を越えて継続したはず"
+    );
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(
+        text.contains("[DONE]"),
+        "ストリーム全体が中継されるべき: {text}"
+    );
+}
+
+#[tokio::test]
+async fn proxy_chat_completions_streaming_aborts_on_idle_timeout() {
+    let _guard = TEST_LOCK.lock().await;
+    let state = TestAppStateBuilder::new().await.build().await;
+
+    // 最初のチャンクの後、3秒無応答になる上流。アイドルを300msに差し替えると、
+    // 次のチャンクを待たずに中継が打ち切られるはず。
+    let addr = spawn_chunked_sse_server(vec![
+        (
+            0,
+            "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+        ),
+        (3000, "data: [DONE]\n\n"),
+    ])
+    .await;
+    let endpoint_id = add_playground_endpoint(
+        &state,
+        "playground-stream-idle",
+        format!("http://{addr}"),
+        600,
+    )
+    .await;
+
+    let started = Instant::now();
+    let response = proxy_chat_completions_with_idle_timeout(
+        state.clone(),
+        endpoint_id,
+        Bytes::from(
+            serde_json::to_vec(&json!({
+                "model": "playground-model",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": true
+            }))
+            .expect("serialize request"),
+        ),
+        Duration::from_millis(300),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        to_bytes(response.into_body(), 1_000_000),
+    )
+    .await
+    .expect("中継はハングせず終端するはず");
+    assert!(
+        result.is_err(),
+        "アイドルタイムアウトでストリームがエラー終端するべき"
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "次のチャンク（3秒）を待たずに打ち切られるべき"
+    );
+}
+
+#[tokio::test]
+async fn proxy_chat_completions_non_streaming_is_bounded_by_total_timeout() {
+    let _guard = TEST_LOCK.lock().await;
+    let state = TestAppStateBuilder::new().await.build().await;
+
+    // 総量タイムアウトは1秒。上流は2秒遅れて応答するため、非ストリーミングは
+    // 従来どおり総量で打ち切られ、504 が返る。
+    let addr = spawn_delayed_response_server(2000, "{\"id\":\"x\",\"choices\":[]}").await;
+    let endpoint_id = add_playground_endpoint(
+        &state,
+        "playground-nonstream-total",
+        format!("http://{addr}"),
+        1,
+    )
+    .await;
+
+    let response = proxy_chat_completions(
+        State(state.clone()),
+        Path(endpoint_id),
+        Bytes::from(
+            serde_json::to_vec(&json!({
+                "model": "playground-model",
+                "messages": [{"role": "user", "content": "hello"}]
+            }))
+            .expect("serialize request"),
+        ),
+    )
+    .await
+    .into_response();
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+}
+
 fn sample_endpoint() -> Endpoint {
     let mut ep = Endpoint::new(
         "test-ep".to_string(),

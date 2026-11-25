@@ -25,6 +25,7 @@ mod list_models;
 mod payload;
 mod routing;
 mod streaming_tps;
+mod timeout_policy;
 
 async fn create_local_state() -> AppState {
     TestAppStateBuilder::new().await.build().await

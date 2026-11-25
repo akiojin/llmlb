@@ -8,8 +8,9 @@ use crate::api::model_name::rewrite_payload_model_for_endpoint;
 use crate::api::models::load_registered_model;
 use crate::api::openai_util::upstream_error_message_from_bytes;
 use crate::api::proxy::{
-    forward_streaming_response, forward_to_endpoint, record_endpoint_request_stats,
-    save_request_record, select_available_endpoint_with_queue_for_model, QueueSelection,
+    forward_streaming_response_with_idle_timeout, forward_to_endpoint,
+    record_endpoint_request_stats, save_request_record,
+    select_available_endpoint_with_queue_for_model, QueueSelection, CLOUD_STREAM_IDLE_TIMEOUT,
 };
 use crate::auth::middleware::ApiKeyAuthContext;
 use crate::balancer::RequestOutcome;
@@ -43,7 +44,8 @@ const ANTHROPIC_CLOUD_ENDPOINT_ID: &str = "00000000-0000-0000-0000-00000000c003"
 /// 非ストリーミングの Anthropic クラウド転送に適用する全体タイムアウト（秒）。
 ///
 /// 共有 http_client には全体タイムアウトが無いため、応答しないクラウドで
-/// 無期限ハングするのを防ぐ。ストリーミング経路にはストリームが途中で切れるため付与しない。
+/// 無期限ハングするのを防ぐ。ストリーミング経路には全体タイムアウトではなく、
+/// 無応答を検出するアイドルタイムアウト（`CLOUD_STREAM_IDLE_TIMEOUT`）を付与する。
 const ANTHROPIC_CLOUD_TIMEOUT_SECS: u64 = 300;
 
 /// Handle `POST /v1/messages` using the Anthropic-native request/response shape.
@@ -158,8 +160,8 @@ async fn proxy_anthropic_cloud_messages(
         builder = builder.header("anthropic-beta", beta);
     }
     // 非ストリーミングは有界レスポンスのため全体タイムアウトを付与する。
-    // ストリーミングは connect_timeout（共有 client）のみで担保し、
-    // 全体タイムアウトでストリームが途中で切れるのを避ける。
+    // ストリーミングは全体タイムアウトで生成が途中で切れるのを避け、
+    // 中継側のアイドルタイムアウトで無応答を検出する（Issue #984）。
     if !stream {
         builder = builder.timeout(std::time::Duration::from_secs(ANTHROPIC_CLOUD_TIMEOUT_SECS));
     }
@@ -210,7 +212,9 @@ async fn proxy_anthropic_cloud_messages(
     );
 
     if stream && status.is_success() {
-        let response = forward_streaming_response(upstream).map_err(AppError::from)?;
+        let response =
+            forward_streaming_response_with_idle_timeout(upstream, CLOUD_STREAM_IDLE_TIMEOUT)
+                .map_err(AppError::from)?;
         let record = RequestResponseRecord::new(
             endpoint_id,
             "cloud:anthropic".to_string(),
@@ -417,6 +421,7 @@ async fn proxy_local_anthropic_messages(
         &endpoint,
         "/v1/chat/completions",
         body_bytes,
+        stream,
     )
     .await
     {

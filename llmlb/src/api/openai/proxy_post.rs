@@ -20,7 +20,7 @@ use crate::api::proxy::{
     forward_streaming_response_with_tps_tracking, is_failover_retryable_status,
     record_endpoint_request_stats, save_request_record,
     select_endpoint_candidates_with_queue_for_model,
-    select_endpoint_candidates_with_queue_for_model_and_api,
+    select_endpoint_candidates_with_queue_for_model_and_api, STREAM_IDLE_TIMEOUT,
 };
 use crate::balancer::RequestOutcome;
 use crate::common::error::LbError;
@@ -310,12 +310,17 @@ async fn attempt_openai_post_to_endpoint(
         }
     }
 
-    let mut request_builder = client
-        .post(&runtime_url)
-        .timeout(std::time::Duration::from_secs(
+    let mut request_builder = client.post(&runtime_url).json(&upstream_payload);
+    // タイムアウト方針（Issue #978、オーナー決定 2026-11-26）: 総量タイムアウトは
+    // 非ストリーミングにのみ付与する。reqwest の per-request timeout は応答
+    // ボディの読み取りにも効くため、ストリーミングに付与すると正当に時間を
+    // かける生成が総量で切れてしまう。ストリーミングの無応答検出は、中継側の
+    // アイドルタイムアウト（STREAM_IDLE_TIMEOUT）が担う。
+    if !stream {
+        request_builder = request_builder.timeout(std::time::Duration::from_secs(
             endpoint.inference_timeout_secs as u64,
-        ))
-        .json(&upstream_payload);
+        ));
+    }
     if let Some(api_key) = &endpoint.api_key {
         request_builder = request_builder.bearer_auth(api_key);
     }
@@ -364,8 +369,9 @@ async fn attempt_openai_post_to_endpoint(
                 state.event_bus.clone(),
             );
 
-            // Note: Model exclusion is handled by the health check system
-            // which will mark the endpoint as offline/error if requests fail repeatedly
+            // Note: This failure is fed back into the endpoint status via
+            // record_endpoint_request_stats (Issue #975): repeated failures
+            // move the endpoint to error/offline so selection avoids it.
 
             {
                 let mut record = RequestResponseRecord::new(
@@ -438,6 +444,7 @@ async fn attempt_openai_post_to_endpoint(
                 state.balancer.load_manager.clone(),
                 state.event_bus.clone(),
                 Some(request_lease),
+                STREAM_IDLE_TIMEOUT,
             )
             .map_err(OpenAIError::from)?
         } else {
@@ -535,8 +542,9 @@ async fn attempt_openai_post_to_endpoint(
             state.event_bus.clone(),
         );
 
-        // Note: Model exclusion is handled by the health check system
-        // which will mark the endpoint as offline/error if requests fail repeatedly
+        // Note: This failure is fed back into the endpoint status via
+        // record_endpoint_request_stats (Issue #975): repeated failures
+        // move the endpoint to error/offline so selection avoids it.
 
         let status = response.status();
         // OpenAI互換経路では upstream 非2xx は 502 に正規化して返す
@@ -677,8 +685,9 @@ async fn attempt_openai_post_to_endpoint(
                 state.event_bus.clone(),
             );
 
-            // Note: Model exclusion is handled by the health check system
-            // which will mark the endpoint as offline/error if requests fail repeatedly
+            // Note: This failure is fed back into the endpoint status via
+            // record_endpoint_request_stats (Issue #975): repeated failures
+            // move the endpoint to error/offline so selection avoids it.
 
             {
                 let mut record = RequestResponseRecord::new(

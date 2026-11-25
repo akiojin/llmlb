@@ -136,14 +136,15 @@ fn test_endpoint_inference_timeout_range() {
 }
 
 #[test]
-fn test_endpoint_default_inference_timeout_depends_on_endpoint_type() {
+fn test_endpoint_default_inference_timeout_is_unified_for_all_endpoint_types() {
+    // Issue #978: 既定の推論タイムアウトは全タイプ 600 秒に統一された
     let test_cases = [
         (EndpointType::Xllm, 600),
         (EndpointType::Ollama, 600),
         (EndpointType::LmStudio, 600),
-        (EndpointType::Vllm, 120),
-        (EndpointType::Llamacpp, 120),
-        (EndpointType::OpenaiCompatible, 120),
+        (EndpointType::Vllm, 600),
+        (EndpointType::Llamacpp, 600),
+        (EndpointType::OpenaiCompatible, 600),
     ];
 
     for (endpoint_type, expected_timeout) in test_cases {
